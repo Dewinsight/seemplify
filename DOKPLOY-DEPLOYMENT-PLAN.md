@@ -12,6 +12,51 @@ Complete guide to deploying all Semplify applications to an Azure VM using Dokpl
 
 ---
 
+## 🔐 DOKPLOY ADMIN ACCESS
+
+| Item | Value |
+|------|-------|
+| **Dokploy Dashboard URL** | http://4.180.153.209:3000 |
+| **Admin Email** | admin@seemplifyai.com |
+| **Admin Password** | Seemplify2026! |
+| **VM IP Address** | 4.180.153.209 |
+| **VM SSH User** | seemplify |
+| **Azure Region** | West Europe |
+
+### Quick SSH Access
+```powershell
+ssh seemplify@4.180.153.209
+```
+
+---
+
+## 🌐 LIVE PRODUCTION URLs
+
+All applications are deployed and running with SSL certificates:
+
+| Application | URL | Status |
+|-------------|-----|--------|
+| **Recruiter Frontend** | https://app.seemplifyai.com | ✅ Live |
+| **Recruiter Backend API** | https://api.seemplifyai.com | ✅ Live |
+| **Leave Frontend** | https://leave.seemplifyai.com | ✅ Live |
+| **Leave Backend API** | https://api-leave.seemplifyai.com | ✅ Live |
+| **Performance Frontend** | https://performance.seemplifyai.com | ✅ Live |
+| **Performance Backend API** | https://api-performance.seemplifyai.com | ✅ Live |
+| **Payroll Frontend** | https://payroll.seemplifyai.com | ✅ Live |
+| **Payroll Backend API** | https://api-payroll.seemplifyai.com | ✅ Live |
+| **Identity Provider / App Hub** | https://auth.seemplifyai.com | ✅ Live |
+
+### MongoDB Databases (Atlas)
+| Backend | Database Name |
+|---------|---------------|
+| identity-provider | `identity` |
+| recruiter-backend | `smart_hr_db` |
+| leave-backend | `leave-management` |
+| performance-backend | `performance_db` |
+| payroll-backend | `payroll_db` |
+
+---
+
 ## 📋 Table of Contents
 
 1. [Prerequisites](#1-prerequisites)
