@@ -2,6 +2,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Build-time arguments for Next.js public env vars
+ARG NEXT_PUBLIC_API_URL=https://api-leave.seemplifyai.com/api
+ARG NEXT_PUBLIC_IDP_URL=https://auth.seemplifyai.com
+ARG NEXT_PUBLIC_APP_URL=https://leave.seemplifyai.com
+
+# Set them as environment variables for the build
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+
 # Copy package files
 COPY package*.json ./
 
@@ -11,7 +21,10 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build the application
+# Remove any .env files that might have been copied
+RUN rm -f .env .env.local .env.production .env.development 2>/dev/null || true
+
+# Build the application with production env vars
 RUN npm run build
 
 # Production stage
@@ -26,6 +39,6 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 
-EXPOSE 3000
+EXPOSE 5003
 
 CMD ["npm", "start"]
