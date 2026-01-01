@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Build-time arguments for Next.js public env vars
 ARG NEXT_PUBLIC_API_URL=https://api-performance.seemplifyai.com/api
+ARG NEXT_PUBLIC_WS_URL=wss://api-performance.seemplifyai.com/ws
 ARG NEXT_PUBLIC_IDP_URL=https://auth.seemplifyai.com
 ARG NEXTAUTH_URL=https://performance.seemplifyai.com
 ARG OIDC_ISSUER=https://auth.seemplifyai.com
@@ -12,6 +13,7 @@ ARG OIDC_CLIENT_SECRET=performance-management-secret
 
 # Set them as environment variables for the build
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
 ENV NEXTAUTH_URL=$NEXTAUTH_URL
 ENV OIDC_ISSUER=$OIDC_ISSUER

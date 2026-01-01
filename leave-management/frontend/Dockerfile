@@ -4,11 +4,13 @@ WORKDIR /app
 
 # Build-time arguments for Next.js public env vars
 ARG NEXT_PUBLIC_API_URL=https://api-leave.seemplifyai.com/api
+ARG NEXT_PUBLIC_WS_URL=wss://api-leave.seemplifyai.com/ws
 ARG NEXT_PUBLIC_IDP_URL=https://auth.seemplifyai.com
 ARG NEXT_PUBLIC_APP_URL=https://leave.seemplifyai.com
 
 # Set them as environment variables for the build
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 
