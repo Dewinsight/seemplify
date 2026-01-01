@@ -181,7 +181,7 @@ router.get('/:id/accessible-resume-url', authMiddleware, requireOrganization, ca
 router.get('/public/:id/accessible-resume-url', candidateController.getAccessibleResumeUrl);
 
 // @route   GET api/candidates/:id/embedding-status
-// @desc    Check if candidate has embedding in Pinecone
+// @desc    Check if candidate has embedding in Weaviate
 // @access  Private
 router.get('/:id/embedding-status', authMiddleware, requireOrganization, candidateController.checkEmbeddingStatus);
 
