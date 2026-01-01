@@ -5,11 +5,13 @@ async function setupWeaviateSchemas() {
   try {
     console.log('🔄 Setting up Weaviate schemas...');
 
-    // Initialize Weaviate client
-    const client = weaviate.client({
+    // Initialize Weaviate client (correct v2 syntax)
+    const client = weaviate.default.client({
       scheme: process.env.WEAVIATE_SCHEME || 'http',
       host: process.env.WEAVIATE_HOST || 'localhost:8080',
-      apiKey: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY),
+      headers: {
+        'Authorization': `Bearer ${process.env.WEAVIATE_API_KEY}`
+      }
     });
 
     // Check connection

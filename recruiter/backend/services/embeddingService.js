@@ -1,14 +1,24 @@
 const axios = require('axios');
 const { Pinecone } = require('@pinecone-database/pinecone');
 const rankingService = require('./rankingService');
+const weaviateService = require('./weaviateService');
 
 class EmbeddingService {
   constructor() {
+    // Pinecone setup (keep for backward compatibility)
     this.pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
     this.candidateIndexName = 'candidates';
     this.jobIndexName = 'jobs'; // New index for jobs
+    
+    // Weaviate setup
+    this.weaviate = weaviateService;
+    
+    // Feature flag for migration
+    this.useWeaviate = process.env.USE_WEAVIATE === 'true';
+    
+    console.log(`📊 Vector DB Mode: ${this.useWeaviate ? '✨ Weaviate' : '📌 Pinecone'}`);
   }
 
   /**
@@ -475,9 +485,25 @@ class EmbeddingService {
   }
 
   /**
-   * Store embedding in Pinecone with retry logic
+   * Store embedding in Weaviate or Pinecone (dual mode)
    */
   async storeEmbedding(entityId, embedding, metadata, indexName = this.candidateIndexName) {
+    // Weaviate mode
+    if (this.useWeaviate) {
+      try {
+        const isJob = indexName === this.jobIndexName || indexName === 'jobs';
+        if (isJob) {
+          return await this.weaviate.storeJobEmbedding(entityId, embedding, metadata);
+        } else {
+          return await this.weaviate.storeCandidateEmbedding(entityId, embedding, metadata);
+        }
+      } catch (error) {
+        console.error('Error storing embedding in Weaviate:', error);
+        throw new Error(`Failed to store embedding in Weaviate: ${error.message}`);
+      }
+    }
+    
+    // Pinecone mode (original code)
     const RetryHelper = require('../utils/retryHelper');
     
     const storeOperation = async () => {
@@ -534,9 +560,23 @@ class EmbeddingService {
   }
 
   /**
-   * Delete embedding from Pinecone
+   * Delete embedding from Weaviate or Pinecone (dual mode)
    */
   async deleteEmbedding(entityId, indexName = this.candidateIndexName) {
+    // Weaviate mode
+    if (this.useWeaviate) {
+      try {
+        const isJob = indexName === this.jobIndexName || indexName === 'jobs';
+        return isJob
+          ? await this.weaviate.deleteJob(entityId)
+          : await this.weaviate.deleteCandidate(entityId);
+      } catch (error) {
+        console.error('Error deleting embedding from Weaviate:', error);
+        throw new Error('Failed to delete embedding from Weaviate');
+      }
+    }
+    
+    // Pinecone mode (original code)
     try {
       const index = this.pinecone.index(indexName);
       await index.deleteOne(entityId);
@@ -871,7 +911,7 @@ class EmbeddingService {
   }
 
   /**
-   * Search similar candidates (for job matching)
+   * Search similar candidates (for job matching) - Dual mode
    * @param {string} queryText - Text to search for
    * @param {number} topK - Number of top matches to return
    * @param {string} organizationId - Organization ID to filter candidates by
@@ -881,7 +921,18 @@ class EmbeddingService {
       // Generate embedding for the query
       const queryEmbedding = await this.generateEmbedding(queryText);
       
-      // Search in Pinecone with organization filter
+      // Weaviate mode - use hybrid search for better results
+      if (this.useWeaviate) {
+        return await this.weaviate.hybridSearchCandidates(
+          queryText,
+          queryEmbedding,
+          organizationId,
+          topK,
+          0.7 // Favor vector search but include keyword matching
+        );
+      }
+      
+      // Pinecone mode (original code)
       const index = this.pinecone.index(this.candidateIndexName);
       const queryOptions = {
         vector: queryEmbedding,
