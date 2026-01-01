@@ -8,7 +8,6 @@
         "http://localhost:5001/api/auth/oidc/callback",
         "http://127.0.0.1:5001/api/auth/oidc/callback",
         "https://api.seemplifyai.com/api/auth/oidc/callback",
-        "https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net/api/auth/oidc/callback",
         "https://*.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -20,8 +19,6 @@
         "https://app.seemplifyai.com",
         "https://api.seemplifyai.com",
         "https://auth.seemplifyai.com",
-        "https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net",
-        "https://smarthr-identity.azurewebsites.net",
         "https://smarthr.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
@@ -36,7 +33,6 @@
         "http://localhost:5002/api/auth/oidc/callback",
         "http://127.0.0.1:5002/api/auth/oidc/callback",
         "https://api-leave.seemplifyai.com/api/auth/oidc/callback",
-        "https://leave-management-backend.azurewebsites.net/api/auth/oidc/callback",
         "https://*.leave-management.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -47,7 +43,6 @@
         "https://leave.seemplifyai.com",
         "https://api-leave.seemplifyai.com",
         "https://auth.seemplifyai.com",
-        "https://smarthr-identity.azurewebsites.net",
         "https://smarthr-leave-management.netlify.app"
       ],
       "response_types": ["code"],
@@ -61,7 +56,6 @@
         "http://localhost:5004/api/auth/oidc/callback",
         "http://127.0.0.1:5004/api/auth/oidc/callback",
         "https://api-performance.seemplifyai.com/api/auth/oidc/callback",
-        "https://performance-backend.azurewebsites.net/api/auth/oidc/callback",
         "https://*.performance.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -72,9 +66,7 @@
         "https://performance.seemplifyai.com",
         "https://api-performance.seemplifyai.com",
         "https://auth.seemplifyai.com",
-        "https://smarthr-identity.azurewebsites.net",
-        "https://smarthr-performance.netlify.app",
-        "https://performance-backend.azurewebsites.net"
+        "https://smarthr-performance.netlify.app"
       ],
       "response_types": ["code"],
       "grant_types": ["authorization_code", "refresh_token"],
@@ -87,7 +79,6 @@
         "http://localhost:5006/api/auth/oidc/callback",
         "http://127.0.0.1:5006/api/auth/oidc/callback",
         "https://api-payroll.seemplifyai.com/api/auth/oidc/callback",
-        "https://payroll-backend-smarthr.azurewebsites.net/api/auth/oidc/callback",
         "https://*.payroll.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -98,9 +89,7 @@
         "https://payroll.seemplifyai.com",
         "https://api-payroll.seemplifyai.com",
         "https://auth.seemplifyai.com",
-        "https://smarthr-identity.azurewebsites.net",
-        "https://smarthr-payroll.netlify.app",
-        "https://payroll-backend-smarthr.azurewebsites.net"
+        "https://smarthr-payroll.netlify.app"
       ],
       "response_types": ["code"],
       "grant_types": ["authorization_code", "refresh_token"],

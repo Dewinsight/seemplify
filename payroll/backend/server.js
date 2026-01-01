@@ -33,8 +33,10 @@ app.use(cors({
       'http://localhost:5000', // SmartHR frontend local
       'http://localhost:5006', // Legacy port
       'http://localhost:5007', // Frontend dev server
-      'https://smarthr-identity.azurewebsites.net', // IdP production
-      'https://smarthr-payroll.netlify.app', // Payroll frontend production
+      'https://auth.seemplifyai.com', // IdP production
+      'https://payroll.seemplifyai.com', // Payroll frontend production
+      'https://api-payroll.seemplifyai.com', // Payroll backend production
+      'https://smarthr-payroll.netlify.app', // Payroll frontend Netlify
       // Allow any Netlify preview URLs
     ];
     

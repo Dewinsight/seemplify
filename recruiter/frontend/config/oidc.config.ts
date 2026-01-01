@@ -40,7 +40,7 @@ export const oidcConfig = {
    * Automatically uses production URL in production environment
    */
   identityProviderUrl: isProduction 
-    ? 'https://smarthr-identity.azurewebsites.net'
+    ? 'https://auth.seemplifyai.com'
     : 'http://localhost:4000',
 } as const;
 
