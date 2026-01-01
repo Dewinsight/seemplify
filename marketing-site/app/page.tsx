@@ -168,65 +168,55 @@ export default function HomePage() {
   ]
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white overflow-x-hidden">
-      {/* Unique Background Pattern */}
+    <div className="min-h-screen bg-zinc-950 text-white overflow-x-hidden">
+      {/* Refined Background - subtle and professional */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        {/* Gradient orbs */}
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[100px]" />
-        
-        {/* Decorative shapes */}
-        <FloatingShape className="top-20 left-[10%] w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/10" delay={0} />
-        <FloatingShape className="top-40 right-[15%] w-16 h-16 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/10" delay={1} />
-        <FloatingShape className="bottom-40 left-[20%] w-24 h-24 rounded-3xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/10" delay={2} />
-        <FloatingShape className="bottom-20 right-[10%] w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/10" delay={0.5} />
-        
-        {/* Grid pattern */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
+        {/* Subtle gradient orbs - very soft */}
+        <AmbientShape className="top-[-20%] left-[-10%] w-[800px] h-[800px] bg-indigo-500/[0.03] rounded-full blur-[150px]" delay={0} />
+        <AmbientShape className="bottom-[-20%] right-[-10%] w-[700px] h-[700px] bg-violet-500/[0.03] rounded-full blur-[150px]" delay={0.5} />
+
+        {/* Minimal grid pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:80px_80px]" />
       </div>
 
       {/* Header */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-slate-900/95 backdrop-blur-xl border-b border-white/5 shadow-xl' : ''
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-out ${
+        scrolled ? 'bg-zinc-900/80 backdrop-blur-2xl border-b border-white/[0.06]' : ''
       }`}>
-        <nav className="container mx-auto px-4 py-4">
+        <nav className="container mx-auto px-6 py-5">
           <div className="flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center space-x-3 group">
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-              >
-                <SeemplifyLogo size="md" animated={false} />
-              </motion.div>
-              <span className="text-xl font-bold tracking-tight">
-                Seemplify<span className="font-light text-purple-400">AI</span>
+              <SeemplifyLogo size="md" animated={false} />
+              <span className="text-xl font-semibold tracking-tight">
+                Seemplify<span className="font-normal text-zinc-400">AI</span>
               </span>
             </Link>
 
             {/* Desktop Nav */}
-            <div className="hidden lg:flex items-center space-x-8">
-              <Link href="#products" className="text-slate-300 hover:text-white transition-colors">Products</Link>
-              <Link href="#how-it-works" className="text-slate-300 hover:text-white transition-colors">How It Works</Link>
-              <Link href="#why-us" className="text-slate-300 hover:text-white transition-colors">Why Us</Link>
+            <div className="hidden lg:flex items-center space-x-10">
+              <Link href="#products" className="text-zinc-400 hover:text-white transition-colors duration-300 text-sm font-medium">Products</Link>
+              <Link href="#how-it-works" className="text-zinc-400 hover:text-white transition-colors duration-300 text-sm font-medium">How It Works</Link>
+              <Link href="#why-us" className="text-zinc-400 hover:text-white transition-colors duration-300 text-sm font-medium">Why Us</Link>
             </div>
 
             {/* CTA */}
-            <div className="hidden md:flex items-center space-x-4">
-              <Link href={IDP_URL} className="px-4 py-2 text-slate-300 hover:text-white transition-colors">
+            <div className="hidden md:flex items-center space-x-6">
+              <Link href={IDP_URL} className="text-zinc-400 hover:text-white transition-colors duration-300 text-sm font-medium">
                 Sign In
               </Link>
-              <Link href={IDP_URL} className="px-6 py-2.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-xl font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all">
+              <Link href={IDP_URL} className="px-5 py-2.5 bg-white text-zinc-900 rounded-lg font-medium text-sm hover:bg-zinc-100 transition-colors duration-300">
                 Get Started
               </Link>
             </div>
 
             {/* Mobile menu button */}
-            <button className="lg:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button className="lg:hidden p-2 text-zinc-400 hover:text-white transition-colors" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
                 )}
               </svg>
             </button>
@@ -239,12 +229,13 @@ export default function HomePage() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="lg:hidden mt-4 pt-4 border-t border-white/10"
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="lg:hidden mt-4 pt-4 border-t border-white/[0.06]"
               >
-                <div className="flex flex-col space-y-4 pb-4">
-                  <Link href="#products" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-white py-2">Products</Link>
-                  <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-white py-2">How It Works</Link>
-                  <Link href={IDP_URL} className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl font-semibold text-center">Get Started</Link>
+                <div className="flex flex-col space-y-1 pb-4">
+                  <Link href="#products" onClick={() => setMobileMenuOpen(false)} className="text-zinc-400 hover:text-white py-3 text-sm font-medium transition-colors">Products</Link>
+                  <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-zinc-400 hover:text-white py-3 text-sm font-medium transition-colors">How It Works</Link>
+                  <Link href={IDP_URL} className="mt-2 px-5 py-3 bg-white text-zinc-900 rounded-lg font-medium text-sm text-center">Get Started</Link>
                 </div>
               </motion.div>
             )}
@@ -253,60 +244,40 @@ export default function HomePage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 md:pt-44 md:pb-32">
-        <div className="container mx-auto px-4">
-          <div className="max-w-5xl mx-auto text-center">
+      <section className="relative pt-32 pb-16 md:pt-44 md:pb-24">
+        <div className="container mx-auto px-6">
+          <div className="max-w-4xl mx-auto text-center">
             {/* Badge */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center px-4 py-2 rounded-full bg-slate-800/50 border border-slate-700 mb-8"
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="inline-flex items-center px-4 py-2 rounded-full bg-zinc-900 border border-zinc-800 mb-10"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse" />
-              <span className="text-sm text-slate-300">HR tools that work together</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-2.5" />
+              <span className="text-sm text-zinc-400">HR tools that work together</span>
             </motion.div>
 
             {/* Headline */}
             <motion.h1
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-8"
+              transition={{ duration: 0.7, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+              className="text-5xl md:text-6xl lg:text-7xl font-semibold leading-[1.08] tracking-tight mb-8"
             >
               Your Team.
               <br />
-              <span className="relative">
-                <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  Simplified.
-                </span>
-                <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" preserveAspectRatio="none">
-                  <motion.path
-                    d="M0 6 Q75 0 150 6 T300 6"
-                    stroke="url(#underlineGrad)"
-                    strokeWidth="4"
-                    fill="none"
-                    strokeLinecap="round"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ delay: 0.5, duration: 0.8 }}
-                  />
-                  <defs>
-                    <linearGradient id="underlineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#3b82f6" />
-                      <stop offset="50%" stopColor="#8b5cf6" />
-                      <stop offset="100%" stopColor="#ec4899" />
-                    </linearGradient>
-                  </defs>
-                </svg>
+              <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent">
+                Simplified.
               </span>
             </motion.h1>
 
             {/* Subheadline */}
             <motion.p
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-xl md:text-2xl text-slate-400 max-w-2xl mx-auto mb-10"
+              transition={{ duration: 0.7, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="text-lg md:text-xl text-zinc-400 max-w-xl mx-auto mb-12 leading-relaxed"
             >
               Recruiting. Leave. Performance. Payroll.
               <br className="hidden md:block" />
@@ -315,23 +286,23 @@ export default function HomePage() {
 
             {/* CTA Buttons */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="flex flex-col sm:flex-row gap-4 justify-center mb-16"
+              transition={{ duration: 0.7, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col sm:flex-row gap-4 justify-center mb-20"
             >
               <Link
                 href={IDP_URL}
-                className="group inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 rounded-xl font-semibold text-lg hover:bg-slate-100 transition-all shadow-xl"
+                className="group inline-flex items-center justify-center px-7 py-3.5 bg-white text-zinc-900 rounded-lg font-medium hover:bg-zinc-100 transition-all duration-300"
               >
                 Start Free
-                <svg className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                <svg className="ml-2 w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
               </Link>
               <Link
                 href="#how-it-works"
-                className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 rounded-xl font-semibold text-lg hover:bg-slate-800/50 transition-all"
+                className="inline-flex items-center justify-center px-7 py-3.5 border border-zinc-800 rounded-lg font-medium text-zinc-300 hover:text-white hover:border-zinc-700 hover:bg-zinc-900/50 transition-all duration-300"
               >
                 See How It Works
               </Link>
@@ -339,26 +310,27 @@ export default function HomePage() {
 
             {/* Product Cards Preview */}
             <motion.div
-              initial={{ opacity: 0, y: 50 }}
+              initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
+              transition={{ duration: 0.8, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
               className="relative"
             >
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
                 {products.map((product, index) => (
                   <motion.div
                     key={product.title}
-                    className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                    className={`p-4 rounded-xl border cursor-pointer transition-all duration-400 ${
                       activeProduct === index
-                        ? 'bg-slate-800/80 border-white/20 scale-105 shadow-xl'
-                        : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                        ? 'bg-zinc-800/60 border-zinc-700'
+                        : 'bg-zinc-900/40 border-zinc-800/60 hover:border-zinc-700/80 hover:bg-zinc-800/30'
                     }`}
                     onClick={() => setActiveProduct(index)}
-                    whileHover={{ y: -4 }}
+                    whileHover={{ y: -2 }}
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
                   >
                     <div className="mb-3">{product.icon}</div>
-                    <h3 className="font-semibold text-sm mb-1">{product.title.split(' ')[0]}</h3>
-                    <p className="text-xs text-slate-500">{product.tagline}</p>
+                    <h3 className="font-medium text-sm mb-1 text-zinc-200">{product.title.split(' ')[0]}</h3>
+                    <p className="text-xs text-zinc-500">{product.tagline}</p>
                   </motion.div>
                 ))}
               </div>
@@ -367,24 +339,25 @@ export default function HomePage() {
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeProduct}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="mt-8 p-8 rounded-3xl bg-slate-900/70 border border-slate-800 backdrop-blur"
+                  exit={{ opacity: 0, y: -16 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className="mt-6 p-8 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 backdrop-blur-sm"
                 >
                   <div className="flex flex-col md:flex-row items-center gap-8">
                     <div className="flex-shrink-0">
                       {products[activeProduct].illustration}
                     </div>
                     <div className="text-left">
-                      <div className={`inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r ${products[activeProduct].color} text-white text-xs font-medium mb-3`}>
+                      <div className={`inline-flex items-center px-3 py-1 rounded-md bg-gradient-to-r ${products[activeProduct].color} text-white text-xs font-medium mb-4`}>
                         {products[activeProduct].tagline}
                       </div>
-                      <h3 className="text-2xl font-bold mb-2">{products[activeProduct].title}</h3>
-                      <p className="text-slate-400 mb-4">{products[activeProduct].description}</p>
+                      <h3 className="text-2xl font-semibold mb-3 text-zinc-100">{products[activeProduct].title}</h3>
+                      <p className="text-zinc-400 mb-5 leading-relaxed">{products[activeProduct].description}</p>
                       <div className="flex flex-wrap gap-2">
                         {products[activeProduct].features.map((feature) => (
-                          <span key={feature} className="px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-sm">
+                          <span key={feature} className="px-3 py-1.5 rounded-md bg-zinc-800/80 text-zinc-400 text-sm">
                             {feature}
                           </span>
                         ))}
@@ -399,21 +372,22 @@ export default function HomePage() {
       </section>
 
       {/* Products Deep Dive */}
-      <section id="products" className="py-24 relative">
-        <div className="container mx-auto px-4">
+      <section id="products" className="py-28 relative">
+        <div className="container mx-auto px-6">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+            <h2 className="text-4xl md:text-5xl font-semibold tracking-tight mb-6">
               Four Products.
-              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">
                 One Platform.
               </span>
             </h2>
-            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+            <p className="text-lg text-zinc-400 max-w-xl mx-auto leading-relaxed">
               Everything you need to hire, manage, and pay your team — without juggling multiple tools.
             </p>
           </motion.div>
