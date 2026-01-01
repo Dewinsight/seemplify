@@ -91,20 +91,13 @@ const IconPayroll = () => (
   </svg>
 )
 
-// Floating shape component
-const FloatingShape = ({ className, delay = 0 }: { className: string; delay?: number }) => (
+// Subtle ambient shape component - refined and minimal
+const AmbientShape = ({ className, delay = 0 }: { className: string; delay?: number }) => (
   <motion.div
     className={`absolute ${className}`}
-    animate={{
-      y: [0, -20, 0],
-      rotate: [0, 5, -5, 0],
-    }}
-    transition={{
-      duration: 6,
-      delay,
-      repeat: Infinity,
-      ease: "easeInOut",
-    }}
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ duration: 2, delay }}
   />
 )
 

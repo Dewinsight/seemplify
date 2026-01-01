@@ -79,7 +79,7 @@ script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https:/
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
 font-src 'self' https://fonts.gstatic.com; 
 img-src 'self' data: https: http: blob:; 
-connect-src 'self' https://api.nylas.com https://api.brevo.com wss: ws: http://localhost:* https://thesmarthr.netlify.app; 
+connect-src 'self' https://api.seemplifyai.com https://idp.seemplifyai.com https://api.nylas.com https://api.brevo.com wss: ws: http://localhost:* https://thesmarthr.netlify.app; 
 media-src 'self' blob:; 
 object-src 'none'; 
 frame-src 'self' https://api.nylas.com; 
