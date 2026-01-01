@@ -1436,16 +1436,24 @@ class EmbeddingService {
   }
 
   /**
-   * Rank a specific list of candidates for a job
+   * Rank a specific list of candidates for a job (Dual mode)
    */
   async rankCandidatesByIds(job, candidateIds, topK = 10) {
     try {
       const startTime = Date.now();
       
-      // Fetch candidate embeddings from Pinecone
-      const index = this.pinecone.index(this.candidateIndexName);
-      const fetchResult = await index.fetch(candidateIds);
-      const candidateRecords = Object.values(fetchResult.records);
+      // Fetch candidate embeddings from Weaviate or Pinecone
+      let candidateRecords;
+      
+      if (this.useWeaviate) {
+        // Weaviate mode - batch fetch
+        candidateRecords = await this.weaviate.batchFetchCandidates(candidateIds);
+      } else {
+        // Pinecone mode - original code
+        const index = this.pinecone.index(this.candidateIndexName);
+        const fetchResult = await index.fetch(candidateIds);
+        candidateRecords = Object.values(fetchResult.records);
+      }
 
       if (candidateRecords.length === 0) {
         return [];

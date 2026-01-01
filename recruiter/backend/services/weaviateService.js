@@ -341,6 +341,69 @@ class WeaviateService {
   }
 
   /**
+   * Batch fetch candidates by MongoDB IDs
+   * Used for AI ranking/matching
+   */
+  async batchFetchCandidates(candidateIds) {
+    if (!this.client) throw new Error('Weaviate client not initialized');
+    
+    try {
+      // Convert MongoDB IDs to UUIDs
+      const uuids = candidateIds.map(id => this._toUuid(id));
+      
+      // Fetch all candidates by UUID
+      const results = [];
+      for (const uuid of uuids) {
+        try {
+          const result = await this.client.data
+            .getterById()
+            .withClassName('Candidate')
+            .withId(uuid)
+            .withVector()
+            .do();
+          
+          if (result) {
+            // Transform to Pinecone-like format for compatibility
+            results.push({
+              id: result.properties.candidateId, // Original MongoDB ID
+              values: result.vector,
+              metadata: {
+                candidateId: result.properties.candidateId,
+                organizationId: result.properties.organizationId,
+                firstName: result.properties.firstName,
+                lastName: result.properties.lastName,
+                name: `${result.properties.firstName} ${result.properties.lastName}`.trim(),
+                email: result.properties.email,
+                position: result.properties.position,
+                skills: result.properties.skills,
+                totalYearsExp: result.properties.totalYearsExperience,
+                experience: result.properties.totalYearsExperience,
+                resumeText: result.properties.resumeText,
+                aiSummary: result.properties.aiSummary,
+                strengths: result.properties.strengths,
+                // Parse complex fields from JSON
+                education: this._safeJsonParse(result.properties.education),
+                jobHistory: this._safeJsonParse(result.properties.jobHistory),
+              }
+            });
+          }
+        } catch (error) {
+          // Skip candidates that don't exist
+          if (!error.message?.includes('not found')) {
+            console.error(`Error fetching candidate UUID ${uuid}:`, error.message);
+          }
+        }
+      }
+      
+      console.log(`📦 Batch fetched ${results.length}/${candidateIds.length} candidates from Weaviate`);
+      return results;
+    } catch (error) {
+      console.error('❌ Error in batch fetch:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Batch insert candidates
    */
   async batchInsertCandidates(candidates) {
@@ -364,6 +427,17 @@ class WeaviateService {
     } catch (error) {
       console.error('❌ Error in batch insert:', error.message);
       throw error;
+    }
+  }
+  
+  /**
+   * Safely parse JSON string
+   */
+  _safeJsonParse(jsonString) {
+    try {
+      return jsonString ? JSON.parse(jsonString) : null;
+    } catch (error) {
+      return null;
     }
   }
 }
