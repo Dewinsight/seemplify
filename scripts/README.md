@@ -99,12 +99,12 @@ Creates all required Cloudflare DNS records for seemplifyai.com.
 - auth.seemplifyai.com
 - dokploy.seemplifyai.com
 
-### 6. delete-vm.ps1
+### 6. setup-github-secrets.ps1
 
-⚠️ **DANGER:** Deletes the VM and ALL associated resources.
+Interactive script to configure GitHub Actions secrets for CI/CD.
 
 ```powershell
-.\delete-vm.ps1
+.\setup-github-secrets.ps1
 ```
 
 ## File: vm-ip.txt
