@@ -35,6 +35,7 @@ Any references to paddie.io in this document are for informational purposes only
 ✅ **Active Account:** tonyegboo@gmail.com  
 ✅ **Subscription:** Azure subscription 1  
 ✅ **Tenant:** Default Directory (tonyegboogmail.onmicrosoft.com)  
+✅ **User Type:** User account (not service principal)  
 ⚠️ **Updates Available:** 2 updates
 
 ### Current Configuration
@@ -47,6 +48,7 @@ Any references to paddie.io in this document are for informational purposes only
 | User | tonyegboo@gmail.com |
 | State | Enabled |
 | Default Domain | tonyegboogmail.onmicrosoft.com |
+| **Access Level:** Full user access (can manage all resources) |
 
 ### Installed Extensions
 
@@ -144,13 +146,17 @@ az upgrade
 ✅ **Logged in to:** github.com  
 ✅ **Active:** True  
 ✅ **Protocol:** HTTPS  
+✅ **Access Level:** Full repository access (read/write/admin)  
+⚠️ **Updates Available:** None (latest version)
 
 ### Token Scopes
 
 - `gist` - Create and manage gists
 - `read:org` - Read organization data
-- `repo` - Full repository access
+- `repo` - Full repository access (includes read/write/delete/admin)
 - `workflow` - GitHub Actions workflow management
+
+**Access Level:** Full repository permissions to create, read, update, and delete repositories and all repository resources.
 
 ### Repository Details
 
@@ -774,11 +780,11 @@ curl -I https://api.seemplifyai.com
 
 ## 📊 Summary
 
-| Tool | Status | Version | Authenticated | Primary Use |
-|------|--------|---------|--------------|-------------|
-| Azure CLI | ✅ Active | 2.65.0 | ✅ Yes | Resource management, deployment |
-| GitHub CLI | ✅ Active | 2.61.0 | ✅ Yes | Repo management, CI/CD |
-| Cloudflare CLI | ⚠️ Needs auth | 4.51.0 | ❌ No | Workers, DNS, Edge functions |
+| Tool | Status | Version | Authenticated | Access Level | Primary Use |
+|------|--------|---------|--------------|-------------|------------|
+| **Azure CLI** | ✅ Active | 2.65.0 | ✅ Yes | **Full user access** (manage all resources, create/delete, modify) | Resource management, deployment |
+| **GitHub CLI** | ✅ Active | 2.61.0 | ✅ Yes | **Full repo access** (read/write/admin, workflow control) | Repo management, CI/CD |
+| **Cloudflare CLI** | ⚠️ Needs auth | 4.51.0 | ❌ No | Workers, DNS, Edge functions | N/A |
 
 ### Cloud Infrastructure Overview
 
