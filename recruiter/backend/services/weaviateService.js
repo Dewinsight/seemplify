@@ -1,4 +1,5 @@
 const weaviate = require('weaviate-ts-client');
+const { mongoIdToUuid } = require('../utils/uuidHelper');
 
 class WeaviateService {
   constructor() {
@@ -16,6 +17,13 @@ class WeaviateService {
       this.client = null;
     }
   }
+  
+  /**
+   * Convert MongoDB ID to UUID for Weaviate
+   */
+  _toUuid(mongoId) {
+    return mongoIdToUuid(mongoId);
+  }
 
   /**
    * Store candidate embedding in Weaviate
@@ -24,13 +32,15 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(candidateId);
+      
       await this.client.data
         .creator()
         .withClassName('Candidate')
-        .withId(candidateId)
+        .withId(uuid)
         .withVector(embedding)
         .withProperties({
-          candidateId: candidateId,
+          candidateId: candidateId, // Keep original MongoDB ID for reference
           organizationId: metadata.organizationId || '',
           firstName: metadata.firstName || '',
           lastName: metadata.lastName || '',
@@ -183,13 +193,15 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(jobId);
+      
       await this.client.data
         .creator()
         .withClassName('Job')
-        .withId(jobId)
+        .withId(uuid)
         .withVector(embedding)
         .withProperties({
-          jobId: jobId,
+          jobId: jobId, // Keep original MongoDB ID for reference
           organizationId: metadata.organizationId || '',
           title: metadata.title || '',
           department: metadata.department || '',
@@ -283,10 +295,12 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(jobId);
+      
       await this.client.data
         .deleter()
         .withClassName('Job')
-        .withId(jobId)
+        .withId(uuid)
         .do();
       
       console.log(`✅ Deleted job ${jobId} from Weaviate`);
