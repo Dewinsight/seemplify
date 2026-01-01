@@ -2,6 +2,18 @@
 
 Complete documentation for cloud services, CLI tools, and infrastructure credentials for Semplify project.
 
+## ⚠️ IMPORTANT NOTICE
+
+**This document focuses exclusively on SEEMPLIFY resources.**
+
+The domain **paddie.io** is listed in your Cloudflare account for reference/informational purposes only.
+**DO NOT modify, touch, or make changes to paddie.io.**
+Focus all efforts, deployments, and configurations on **seemplifyai.com**.
+
+Any references to paddie.io in this document are for informational purposes only.
+
+---
+
 ## 📋 Table of Contents
 
 - [Azure CLI (az)](#azure-cli-az)
@@ -292,17 +304,14 @@ wrangler kv:key get --namespace-id=<namespace-id> "KEY"
 ```
 
 #### DNS & Zones
-
-#### List zones
+```bash
+# List zones
 wrangler zones list
 
-#### List DNS records for seemplifyai.com
+# List DNS records for seemplifyai.com
 wrangler dns list --zone=bbc142d2d661d64011e2e4becae7a5c3
 
-#### List DNS records for paddie.io
-wrangler dns list --zone=89215efb800fcc1bdc2cb1ca528eae59
-
-#### Create DNS record
+# Create DNS record
 wrangler dns create --zone=<zone-id> --name="subdomain" --type="A" --content="1.2.3.4"
 ```
 
@@ -322,23 +331,23 @@ This will display:
 - Account details
 
 **Available Domains:**
-| Domain | Zone ID | Status | Plan |
-|--------|----------|-------|-------|
-| seemplifyai.com | bbc142d2d661d64011e2e4becae7a5c3 | Active | Free |
-| paddie.io | 89215efb800fcc1bdc2cb1ca528eae59 | Active | Free |
+| Domain | Zone ID | Status | Plan | Nameservers |
+|--------|----------|-------|-------|--------------|
+| **seemplifyai.com** | bbc142d2d661d64011e2e4becae7a5c3 | Active | Free | aliza.ns.cloudflare.com, noel.ns.cloudflare.com |
+
+⚠️ **Note:** The domain paddie.io is also accessible via this API token but should NOT be modified or used for Semplify deployments.
 
 ---
 
 ## 🌩 Cloudflare Configuration
 
-### Domain Configuration
+### Domain Configuration for Semplify
 
-| Domain | Property | Value |
-|--------|-----------|--------|
-| **seemplifyai.com** | Account ID | 7d0fccec5afa3c1f455f7ff6a48b4e8f |
-| **seemplifyai.com** | Zone ID | bbc142d2d661d64011e2e4becae7a5c3 |
-| **paddie.io** | Account ID | 7d0fccec5afa3c1f455f7ff6a48b4e8f |
-| **paddie.io** | Zone ID | 89215efb800fcc1bdc2cb1ca528eae59 |
+| Property | Value |
+|-----------|--------|
+| **Domain** | seemplifyai.com |
+| **Account ID** | 7d0fccec5afa3c1f455f7ff6a48b4e8f |
+| **Zone ID** | bbc142d2d661d64011e2e4becae7a5c3 |
 
 ### API Token
 
@@ -347,21 +356,15 @@ This will display:
 | **Token** | `s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ` |
 | **Scopes** | Zone:Zone - Read, DNS:Edit |
 | **Type** | API Token (Bearer authentication) |
-| **Permissions** | Can manage 2 domains (paddie.io, seemplifyai.com) |
+| **Permissions** | Can manage seemplifyai.com and access account info |
 
-### Environment Variables
+### Environment Variables for Semplify
 
 ```bash
-# Cloudflare API Token
+# Cloudflare for seemplifyai.com
 export CLOUDFLARE_API_TOKEN=s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ
-
-# Cloudflare Zone ID (DNS management)
-export CLOUDFLARE_ZONE_ID=89215efb800fcc1bdc2cb1ca528eae59
-
-# Cloudflare Account ID
 export CLOUDFLARE_ACCOUNT_ID=7d0fccec5afa3c1f455f7ff6a48b4e8f
-
-# Cloudflare Domain
+export CLOUDFLARE_ZONE_ID=bbc142d2d661d64011e2e4becae7a5c3
 export CLOUDFLARE_DOMAIN=seemplifyai.com
 ```
 
@@ -395,32 +398,12 @@ wrangler publish --var API_TOKEN:s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ
 wrangler publish --env-file .env
 ```
 
-### Available Domains
-
-Your Cloudflare account has access to 2 domains:
-
-| Domain | Zone ID | Status | Plan | Primary Use |
-|---------|----------|-------|-------|------------|
-| **seemplifyai.com** | bbc142d2d661d64011e2e4becae7a5c3 | Active | Free | Semplify platform |
-| **paddie.io** | 89215efb800fcc1bdc2cb1ca528eae59 | Active | Free | Personal/Other |
-
-### DNS Configuration Examples
+### DNS Configuration for Semplify
 
 #### Create A Record for seemplifyai.com
 ```bash
 # Point domain to IP address
 wrangler dns create --zone=bbc142d2d661d64011e2e4becae7a5c3 \
-  --name="api" \
-  --type="A" \
-  --content="1.2.3.4" \
-  --ttl=3600 \
-  --proxied=true
-```
-
-#### Create A Record for paddie.io
-```bash
-# Point domain to IP address
-wrangler dns create --zone=89215efb800fcc1bdc2cb1ca528eae59 \
   --name="api" \
   --type="A" \
   --content="1.2.3.4" \
@@ -438,15 +421,6 @@ wrangler dns create --zone=bbc142d2d661d64011e2e4becae7a5c3 \
   --proxied=true
 ```
 
-#### Create TXT Record (Verification)
-```bash
-# Domain verification
-wrangler dns create --zone=$CLOUDFLARE_ZONE_ID \
-  --name="_github-challenge-seemplify" \
-  --type="TXT" \
-  --content="verification-code-here"
-```
-
 ### API Usage (curl)
 
 ```bash
@@ -455,25 +429,8 @@ curl -X GET "https://api.cloudflare.com/client/v4/zones/bbc142d2d661d64011e2e4be
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json"
 
-# List DNS records for paddie.io
-curl -X GET "https://api.cloudflare.com/client/v4/zones/89215efb800fcc1bdc2cb1ca528eae59/dns_records" \
-  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  -H "Content-Type: application/json"
-
 # Create DNS record for seemplifyai.com
 curl -X POST "https://api.cloudflare.com/client/v4/zones/bbc142d2d661d64011e2e4becae7a5c3/dns_records" \
-  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{
-    "type": "A",
-    "name": "api",
-    "content": "1.2.3.4",
-    "ttl": 3600,
-    "proxied": true
-  }'
-
-# Create DNS record for paddie.io
-curl -X POST "https://api.cloudflare.com/client/v4/zones/89215efb800fcc1bdc2cb1ca528eae59/dns_records" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{
@@ -633,34 +590,20 @@ gh auth login --scopes repo,workflow
 |-----------|-------------|----------|
 | `AZURE_WEBAPP_NAME` | Azure Web App name | `seemplify-backend` |
 | `AZURE_RESOURCE_GROUP` | Azure resource group | `seemplify-rg` |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | `s3BUpfG8...` |
-| `CLOUDFLARE_ZONE_ID` | Cloudflare zone ID | `89215efb8...` |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID | `7d0fccec5...` |
-| `CLOUDFLARE_DOMAIN` | Primary domain | `seemplifyai.com` |
 
-### Loading Environment Variables
+### Cloudflare Environment Variables
 
-Create a `.env` file in the project root:
-
+For **seemplifyai.com:**
 ```bash
-# Cloudflare for seemplifyai.com
 CLOUDFLARE_API_TOKEN=s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ
 CLOUDFLARE_ACCOUNT_ID=7d0fccec5afa3c1f455f7ff6a48b4e8f
 CLOUDFLARE_ZONE_ID=bbc142d2d661d64011e2e4becae7a5c3
 CLOUDFLARE_DOMAIN=seemplifyai.com
-
-# Cloudflare for paddie.io (if needed)
-# CLOUDFLARE_API_TOKEN=s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ
-# CLOUDFLARE_ACCOUNT_ID=7d0fccec5afa3c1f455f7ff6a48b4e8f
-# CLOUDFLARE_ZONE_ID=89215efb800fcc1bdc2cb1ca528eae59
-# CLOUDFLARE_DOMAIN=paddie.io
-
-# Azure
-AZURE_SUBSCRIPTION_ID=377ec0a1-1a46-48df-bdfc-9a9664282180
-AZURE_TENANT_ID=bb0b9dc4-36ea-422e-8613-d756caeb2d93
 ```
 
-Load in shell:
+### Loading Environment Variables
+
+Create a `.env` file in the project root:
 
 ```bash
 # Load from .env file
@@ -757,37 +700,13 @@ wrangler publish --log-level=debug
 
 ---
 
-## 📚 Additional Resources
+## 📞 Support & Help
 
-### Documentation Links
-
-- **Azure CLI**: https://docs.microsoft.com/cli/azure/
-- **GitHub CLI**: https://cli.github.com/manual/
-- **Cloudflare Wrangler**: https://developers.cloudflare.com/workers/wrangler/
-- **Cloudflare API**: https://developers.cloudflare.com/api/
-
-### Useful Commands Quick Reference
-
-```bash
-# Azure
-az account show                    # Show current Azure account
-az resource list                    # List all resources
-az webapp list                     # List web apps
-az cost management query            # Query costs
-az upgrade                         # Update CLI
-
-# GitHub
-gh auth status                      # Check login status
-gh repo view                        # View repository
-gh issue list                      # List issues
-gh run list                        # List workflow runs
-
-# Cloudflare
-wrangler whoami                    # Check auth status
-wrangler publish                   # Deploy worker
-wrangler dns list                   # List DNS records
-wrangler tail                      # View logs
-```
+| Service | Documentation | Support |
+|----------|---------------|-----------|
+| Azure CLI | https://docs.microsoft.com/cli/azure/ | Azure Support Portal |
+| GitHub CLI | https://cli.github.com/manual/ | GitHub Community |
+| Cloudflare | https://developers.cloudflare.com/workers/wrangler/ | Cloudflare Support |
 
 ---
 
@@ -809,9 +728,10 @@ cp .env.example .env
 
 ### 2. Configure Cloudflare DNS
 ```bash
-# Set environment variables
+# Set environment variables for seemplifyai.com
 export CLOUDFLARE_API_TOKEN=s3BUpfG8KqcRoxVgwmyCSqJ3ho3R_ClCEpI4tEXJ
-export CLOUDFLARE_ZONE_ID=89215efb800fcc1bdc2cb1ca528eae59
+export CLOUDFLARE_ACCOUNT_ID=7d0fccec5afa3c1f455f7ff6a48b4e8f
+export CLOUDFLARE_ZONE_ID=bbc142d2d661d64011e2e4becae7a5c3
 export CLOUDFLARE_DOMAIN=seemplifyai.com
 
 # Verify DNS configuration
@@ -846,17 +766,7 @@ curl -I https://api.seemplifyai.com
 
 ---
 
-## 📞 Support & Help
-
-| Service | Documentation | Support |
-|----------|---------------|-----------|
-| Azure CLI | https://docs.microsoft.com/cli/azure/ | Azure Support Portal |
-| GitHub CLI | https://cli.github.com/ | GitHub Community |
-| Cloudflare | https://developers.cloudflare.com/ | Cloudflare Support |
-
----
-
-**Document Version:** 1.0.0  
+**Document Version:** 2.0.0  
 **Last Updated:** January 2026  
 **Maintained by:** Semplify Team
 
@@ -881,6 +791,6 @@ curl -I https://api.seemplifyai.com
 1. ✅ Update Azure CLI: `az upgrade`
 2. ✅ Update Cloudflare CLI: `npm update -g wrangler`
 3. ✅ Authenticate with Cloudflare: `wrangler login`
-4. ✅ Configure DNS records for all applications
+4. ✅ Configure DNS records for seemplifyai.com
 5. ✅ Set up CI/CD pipelines with GitHub Actions
 6. ✅ Monitor costs and usage across all platforms
