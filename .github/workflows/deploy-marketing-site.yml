@@ -1,0 +1,37 @@
+# Deploy Marketing Site to Dokploy
+name: Deploy Marketing Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketing-site/**'
+      - '.github/workflows/deploy-marketing-site.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: marketing-site
+  APP_PATH: marketing-site
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          # Use tRPC API format for Dokploy
+          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy?batch=1" \
+            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"0":{"json":{"applicationId":"${{ secrets.MARKETING_SITE_APP_ID }}"}}}'
+          
+          echo "Deployment triggered for ${{ env.APP_NAME }}"
+
+      - name: Deployment Status
+        if: success()
+        run: echo "✅ ${{ env.APP_NAME }} deployment triggered successfully"
