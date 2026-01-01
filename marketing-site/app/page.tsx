@@ -11,6 +11,7 @@ import {
   PayrollIllustration,
   WorkflowConnector,
 } from '@/components/AnimatedIllustrations'
+import SeemplifyLogo, { SeemplifyIcon } from '@/components/SeemplifyLogo'
 
 // Dynamic imports for ReactFlow components (client-side only)
 const HiringPipelineFlow = dynamic(() => import('@/components/HiringPipelineFlow'), { 
@@ -200,20 +201,9 @@ export default function HomePage() {
             {/* Logo */}
             <Link href="/" className="flex items-center space-x-3 group">
               <motion.div 
-                className="relative w-11 h-11"
                 whileHover={{ scale: 1.05 }}
               >
-                <svg viewBox="0 0 44 44" className="w-full h-full">
-                  <defs>
-                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#3b82f6" />
-                      <stop offset="50%" stopColor="#8b5cf6" />
-                      <stop offset="100%" stopColor="#ec4899" />
-                    </linearGradient>
-                  </defs>
-                  <rect x="2" y="2" width="40" height="40" rx="12" fill="url(#logoGrad)" />
-                  <path d="M12 22 L20 22 L24 14 L28 30 L32 22 L32 22" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <SeemplifyLogo size="md" animated={false} />
               </motion.div>
               <span className="text-xl font-bold tracking-tight">
                 Seemplify<span className="font-light text-purple-400">AI</span>
@@ -720,16 +710,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-4 gap-8 mb-12">
             <div className="md:col-span-1">
               <Link href="/" className="flex items-center space-x-2 mb-4">
-                <svg viewBox="0 0 32 32" className="w-8 h-8">
-                  <rect width="32" height="32" rx="8" fill="url(#footerLogoGrad)" />
-                  <path d="M8 16 L14 16 L17 10 L20 22 L23 16 L24 16" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                  <defs>
-                    <linearGradient id="footerLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#3b82f6" />
-                      <stop offset="100%" stopColor="#8b5cf6" />
-                    </linearGradient>
-                  </defs>
-                </svg>
+                <SeemplifyIcon size="md" />
                 <span className="font-bold">SeemplifyAI</span>
               </Link>
               <p className="text-slate-500 text-sm">HR tools that work together.</p>
