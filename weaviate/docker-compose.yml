@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.24.0
+    container_name: weaviate
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      # Persistence
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      
+      # Query defaults
+      QUERY_DEFAULTS_LIMIT: 25
+      
+      # Authentication
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'
+      AUTHENTICATION_APIKEY_ENABLED: 'true'
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: 'lJAiU5kO0QcSLZYxfzpr1E9dD8NRHFMV'
+      AUTHENTICATION_APIKEY_USERS: 'seemplify-admin'
+      
+      # Vectorizer - We use Azure OpenAI externally
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      
+      # No modules needed (we generate embeddings ourselves)
+      ENABLE_MODULES: ''
+      
+      # Cluster settings
+      CLUSTER_HOSTNAME: 'node1'
+      CLUSTER_GOSSIP_BIND_PORT: '7100'
+      CLUSTER_DATA_BIND_PORT: '7101'
+      
+      # Resource limits
+      GOMEMLIMIT: '2GiB'
+      GOGC: '100'
+      
+      # Logging
+      LOG_LEVEL: 'info'
+      LOG_FORMAT: 'text'
+      
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  weaviate_data:
+    driver: local
