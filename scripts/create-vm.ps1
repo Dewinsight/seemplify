@@ -8,7 +8,7 @@ Write-Host ""
 
 # Variables
 $RESOURCE_GROUP = "seemplify-vm-rg"
-$LOCATION = "uksouth"
+$LOCATION = "westeurope"
 $VM_NAME = "seemplify-vm"
 $VM_SIZE = "Standard_D4s_v3"
 $ADMIN_USER = "seemplify"
