@@ -1,317 +1,267 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Image from 'next/image'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ArrowRight,
-  Users,
-  Calendar,
-  TrendingUp,
-  DollarSign,
-  Shield,
-  Zap,
-  CheckCircle,
-  Menu,
-  X,
-  Sparkles,
-  BarChart3,
-  Clock,
-  Target,
-  Briefcase,
-  ChevronRight,
-  Play,
-  Workflow,
-  Layers,
-  Globe,
-  Lock,
-  MessageSquare,
-  PieChart,
-  Award,
-  FileText,
-  UserCheck,
-  CalendarCheck,
-  ClipboardCheck,
-  LineChart,
-  Mail,
-  Building2,
-  Search,
-  Filter,
-  Video,
-  Bell,
-  FileSearch,
-  Megaphone,
-  Send,
-  ListChecks,
-  Timer,
-  Wallet,
-  Receipt,
-  Calculator,
-  UserPlus,
-  GitBranch,
-  MessageCircle,
-  Star,
-} from 'lucide-react'
+  TeamIllustration,
+  CalendarIllustration,
+  ChartIllustration,
+  PayrollIllustration,
+  WorkflowConnector,
+} from '@/components/AnimatedIllustrations'
+
+// Dynamic imports for ReactFlow components (client-side only)
+const HiringPipelineFlow = dynamic(() => import('@/components/HiringPipelineFlow'), { 
+  ssr: false,
+  loading: () => <div className="w-full h-[250px] rounded-2xl bg-slate-900/50 animate-pulse" />
+})
+const LeaveApprovalFlow = dynamic(() => import('@/components/LeaveApprovalFlow'), { 
+  ssr: false,
+  loading: () => <div className="w-full h-[180px] rounded-2xl bg-slate-900/50 animate-pulse" />
+})
+const PerformanceCycleFlow = dynamic(() => import('@/components/PerformanceCycleFlow'), { 
+  ssr: false,
+  loading: () => <div className="w-full h-64 rounded-2xl bg-slate-900/50 animate-pulse" />
+})
 
 const IDP_URL = 'https://auth.seemplifyai.com'
 
-// Services data with accurate descriptions
-const services = [
-  {
-    id: 'smarthr',
-    title: 'SmartHR Recruiting',
-    subtitle: 'Applicant Tracking System',
-    description: 'A complete recruiting platform to source, track, and hire the best candidates. From job posting to offer letter.',
-    icon: Users,
-    color: 'from-blue-500 to-cyan-400',
-    bgColor: 'bg-blue-500/10',
-    features: [
-      { icon: Megaphone, text: 'Job Posting & Distribution' },
-      { icon: GitBranch, text: 'Customizable Pipelines' },
-      { icon: CalendarCheck, text: 'Interview Scheduling' },
-      { icon: Video, text: 'AI Notetaker Integration' },
-      { icon: FileSearch, text: 'CV Parsing & Screening' },
-      { icon: ClipboardCheck, text: 'Feedback & Scorecards' },
-    ],
-    image: 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=800&q=80',
-    url: 'https://app.seemplifyai.com',
-  },
-  {
-    id: 'leave',
-    title: 'Leave Management',
-    subtitle: 'Time-Off & Attendance',
-    description: 'Simplify leave requests, approvals, and balance tracking. Keep your team organized with clear visibility.',
-    icon: Calendar,
-    color: 'from-green-500 to-emerald-400',
-    bgColor: 'bg-green-500/10',
-    features: [
-      { icon: Send, text: 'Easy Leave Requests' },
-      { icon: CheckCircle, text: 'Manager Approvals' },
-      { icon: PieChart, text: 'Balance Tracking' },
-      { icon: Calendar, text: 'Team Calendar View' },
-      { icon: ListChecks, text: 'Custom Leave Policies' },
-      { icon: Bell, text: 'Notifications & Alerts' },
-    ],
-    image: 'https://images.unsplash.com/photo-1506784983877-45594efa4cbe?auto=format&fit=crop&w=800&q=80',
-    url: 'https://leave.seemplifyai.com',
-  },
-  {
-    id: 'performance',
-    title: 'Performance Management',
-    subtitle: 'Reviews, OKRs & Feedback',
-    description: 'Drive growth with structured reviews, goal tracking, and continuous feedback. Build high-performing teams.',
-    icon: TrendingUp,
-    color: 'from-purple-500 to-pink-400',
-    bgColor: 'bg-purple-500/10',
-    features: [
-      { icon: Target, text: 'OKRs & Goal Setting' },
-      { icon: Star, text: '360° Reviews' },
-      { icon: MessageCircle, text: 'Continuous Feedback' },
-      { icon: Users, text: 'One-on-Ones' },
-      { icon: LineChart, text: 'Development Plans' },
-      { icon: BarChart3, text: 'Analytics & Reports' },
-    ],
-    image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=800&q=80',
-    url: 'https://performance.seemplifyai.com',
-  },
-  {
-    id: 'payroll',
-    title: 'Payroll',
-    subtitle: 'Compensation & Payments',
-    description: 'Streamline payroll processing with automated calculations, compliance tools, and detailed payslips.',
-    icon: DollarSign,
-    color: 'from-amber-500 to-orange-400',
-    bgColor: 'bg-amber-500/10',
-    features: [
-      { icon: Calculator, text: 'Payroll Processing' },
-      { icon: Receipt, text: 'Payslip Generation' },
-      { icon: Shield, text: 'Tax Compliance' },
-      { icon: Wallet, text: 'Compensation Management' },
-      { icon: Timer, text: 'Scheduled Runs' },
-      { icon: FileText, text: 'Detailed Reports' },
-    ],
-    image: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=800&q=80',
-    url: 'https://payroll.seemplifyai.com',
-  },
-]
+// Custom animated icons
+const IconRecruiting = () => (
+  <svg viewBox="0 0 48 48" className="w-12 h-12">
+    <defs>
+      <linearGradient id="recruitGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#3b82f6" />
+        <stop offset="100%" stopColor="#6366f1" />
+      </linearGradient>
+    </defs>
+    <circle cx="20" cy="16" r="8" fill="url(#recruitGrad)" />
+    <path d="M8 38c0-8 6-14 12-14s12 6 12 14" fill="url(#recruitGrad)" opacity="0.8" />
+    <circle cx="36" cy="20" r="6" fill="#22c55e" />
+    <path d="M32 22 L35 25 L41 18" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
 
-// SmartHR detailed features
-const recruitingFeatures = [
-  {
-    category: 'Candidate Sourcing',
-    icon: Search,
-    features: [
-      'Job posting to multiple boards',
-      'Careers page builder',
-      'CV parsing and screening',
-      'Candidate database management',
-    ]
-  },
-  {
-    category: 'Applicant Tracking',
-    icon: GitBranch,
-    features: [
-      'Customizable hiring pipelines',
-      'Stage-based candidate management',
-      'Team collaboration tools',
-      'Email templates & automation',
-    ]
-  },
-  {
-    category: 'Interview Management',
-    icon: Video,
-    features: [
-      'Self-service scheduling',
-      'Calendar integrations',
-      'AI meeting notetaker',
-      'Structured feedback forms',
-    ]
-  },
-  {
-    category: 'Hiring & Analytics',
-    icon: BarChart3,
-    features: [
-      'Offer letter workflows',
-      'Hiring analytics & reports',
-      'Department management',
-      'Multi-currency support',
-    ]
-  },
-]
+const IconCalendar = () => (
+  <svg viewBox="0 0 48 48" className="w-12 h-12">
+    <defs>
+      <linearGradient id="calGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#10b981" />
+        <stop offset="100%" stopColor="#059669" />
+      </linearGradient>
+    </defs>
+    <rect x="6" y="10" width="36" height="32" rx="4" fill="url(#calGrad2)" opacity="0.2" />
+    <rect x="6" y="10" width="36" height="10" rx="4" fill="url(#calGrad2)" />
+    <rect x="12" y="26" width="8" height="6" rx="1" fill="url(#calGrad2)" />
+    <rect x="28" y="26" width="8" height="6" rx="1" fill="url(#calGrad2)" opacity="0.5" />
+    <rect x="12" y="35" width="8" height="6" rx="1" fill="url(#calGrad2)" opacity="0.5" />
+    <circle cx="12" cy="6" r="2" fill="#64748b" />
+    <circle cx="36" cy="6" r="2" fill="#64748b" />
+  </svg>
+)
 
-// Benefits
-const benefits = [
-  {
-    icon: Layers,
-    title: 'All-in-One Platform',
-    description: 'Recruiting, leave, performance, and payroll in one unified system. No more switching between tools.',
-  },
-  {
-    icon: Workflow,
-    title: 'Streamlined Workflows',
-    description: 'Customizable pipelines and approval flows that match how your team actually works.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Actionable Insights',
-    description: 'Built-in analytics and reports to help you make data-driven HR decisions.',
-  },
-  {
-    icon: Shield,
-    title: 'Secure & Compliant',
-    description: 'Enterprise-grade security with role-based access controls and audit trails.',
-  },
-  {
-    icon: Globe,
-    title: 'Work From Anywhere',
-    description: 'Cloud-based platform accessible from any device. Your HR data, always available.',
-  },
-  {
-    icon: Zap,
-    title: 'Quick Setup',
-    description: 'Get started in minutes. Import your data, configure your workflows, and go live.',
-  },
-]
+const IconPerformance = () => (
+  <svg viewBox="0 0 48 48" className="w-12 h-12">
+    <defs>
+      <linearGradient id="perfGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#8b5cf6" />
+        <stop offset="100%" stopColor="#a855f7" />
+      </linearGradient>
+    </defs>
+    <path d="M4 40 L16 28 L24 34 L36 18 L44 24" stroke="url(#perfGrad)" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="44" cy="24" r="4" fill="#ec4899" />
+    <path d="M38 10 L44 4 L44 12 L38 10" fill="#ec4899" />
+  </svg>
+)
 
-// Integration logos
-const integrations = [
-  { name: 'Calendar', icon: Calendar },
-  { name: 'Email', icon: Mail },
-  { name: 'Video', icon: Video },
-  { name: 'Slack', icon: MessageSquare },
-  { name: 'Analytics', icon: BarChart3 },
-]
+const IconPayroll = () => (
+  <svg viewBox="0 0 48 48" className="w-12 h-12">
+    <defs>
+      <linearGradient id="payGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#f59e0b" />
+        <stop offset="100%" stopColor="#d97706" />
+      </linearGradient>
+    </defs>
+    <circle cx="24" cy="24" r="18" fill="url(#payGrad)" opacity="0.2" />
+    <circle cx="24" cy="24" r="12" fill="url(#payGrad)" />
+    <text x="24" y="29" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">$</text>
+  </svg>
+)
+
+// Floating shape component
+const FloatingShape = ({ className, delay = 0 }: { className: string; delay?: number }) => (
+  <motion.div
+    className={`absolute ${className}`}
+    animate={{
+      y: [0, -20, 0],
+      rotate: [0, 5, -5, 0],
+    }}
+    transition={{
+      duration: 6,
+      delay,
+      repeat: Infinity,
+      ease: "easeInOut",
+    }}
+  />
+)
 
 export default function HomePage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [activeProduct, setActiveProduct] = useState(0)
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 50)
-    }
+    const handleScroll = () => setScrolled(window.scrollY > 50)
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  // Auto-rotate products
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveProduct(prev => (prev + 1) % 4)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const products = [
+    {
+      title: 'SmartHR Recruiting',
+      tagline: 'Find & Hire Talent',
+      description: 'Post jobs, track candidates, schedule interviews, and make better hiring decisions.',
+      icon: <IconRecruiting />,
+      illustration: <TeamIllustration />,
+      color: 'from-blue-500 to-indigo-600',
+      bgGlow: 'bg-blue-500/20',
+      features: ['Job posting', 'Pipeline tracking', 'Interview scheduling', 'Feedback collection'],
+      url: 'https://app.seemplifyai.com',
+    },
+    {
+      title: 'Leave Management',
+      tagline: 'Time-Off Made Simple',
+      description: 'Request, approve, and track leave balances. Keep your team calendar organized.',
+      icon: <IconCalendar />,
+      illustration: <CalendarIllustration />,
+      color: 'from-emerald-500 to-green-600',
+      bgGlow: 'bg-emerald-500/20',
+      features: ['Leave requests', 'Manager approvals', 'Balance tracking', 'Team calendar'],
+      url: 'https://leave.seemplifyai.com',
+    },
+    {
+      title: 'Performance',
+      tagline: 'Grow Your People',
+      description: 'Set goals, gather feedback, and run performance reviews that actually help.',
+      icon: <IconPerformance />,
+      illustration: <ChartIllustration />,
+      color: 'from-purple-500 to-pink-600',
+      bgGlow: 'bg-purple-500/20',
+      features: ['OKR tracking', '360° feedback', 'Review cycles', 'Development plans'],
+      url: 'https://performance.seemplifyai.com',
+    },
+    {
+      title: 'Payroll',
+      tagline: 'Pay Day, Easy Way',
+      description: 'Process payroll, generate payslips, and stay compliant without the headache.',
+      icon: <IconPayroll />,
+      illustration: <PayrollIllustration />,
+      color: 'from-amber-500 to-orange-600',
+      bgGlow: 'bg-amber-500/20',
+      features: ['Payroll runs', 'Payslip generation', 'Tax compliance', 'Compensation data'],
+      url: 'https://payroll.seemplifyai.com',
+    },
+  ]
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-x-hidden">
-      {/* Animated Background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <motion.div 
-          className="absolute top-20 left-10 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl"
-          animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div 
-          className="absolute top-1/3 right-10 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl"
-          animate={{ x: [0, -30, 0], y: [0, 50, 0] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div 
-          className="absolute bottom-20 left-1/3 w-80 h-80 bg-pink-500/15 rounded-full blur-3xl"
-          animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+    <div className="min-h-screen bg-slate-950 text-white overflow-x-hidden">
+      {/* Unique Background Pattern */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        {/* Gradient orbs */}
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[100px]" />
+        
+        {/* Decorative shapes */}
+        <FloatingShape className="top-20 left-[10%] w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/10" delay={0} />
+        <FloatingShape className="top-40 right-[15%] w-16 h-16 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/10" delay={1} />
+        <FloatingShape className="bottom-40 left-[20%] w-24 h-24 rounded-3xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/10" delay={2} />
+        <FloatingShape className="bottom-20 right-[10%] w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/10" delay={0.5} />
+        
+        {/* Grid pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
       </div>
 
       {/* Header */}
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-slate-900/90 backdrop-blur-xl border-b border-white/10 shadow-lg' : ''
+        scrolled ? 'bg-slate-900/95 backdrop-blur-xl border-b border-white/5 shadow-xl' : ''
       }`}>
         <nav className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
+            {/* Logo */}
             <Link href="/" className="flex items-center space-x-3 group">
               <motion.div 
-                className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25"
-                whileHover={{ scale: 1.05, rotate: 5 }}
+                className="relative w-11 h-11"
+                whileHover={{ scale: 1.05 }}
               >
-                <Sparkles className="w-6 h-6 text-white" />
+                <svg viewBox="0 0 44 44" className="w-full h-full">
+                  <defs>
+                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="50%" stopColor="#8b5cf6" />
+                      <stop offset="100%" stopColor="#ec4899" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="2" y="2" width="40" height="40" rx="12" fill="url(#logoGrad)" />
+                  <path d="M12 22 L20 22 L24 14 L28 30 L32 22 L32 22" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </motion.div>
-              <div>
-                <span className="text-xl font-bold tracking-tight">Seemplify</span>
-                <span className="text-xl font-light text-purple-400">AI</span>
-              </div>
+              <span className="text-xl font-bold tracking-tight">
+                Seemplify<span className="font-light text-purple-400">AI</span>
+              </span>
             </Link>
 
+            {/* Desktop Nav */}
             <div className="hidden lg:flex items-center space-x-8">
-              <Link href="#products" className="text-slate-300 hover:text-white transition-colors font-medium">Products</Link>
-              <Link href="#features" className="text-slate-300 hover:text-white transition-colors font-medium">Features</Link>
-              <Link href="#benefits" className="text-slate-300 hover:text-white transition-colors font-medium">Why Us</Link>
-              <Link href="#pricing" className="text-slate-300 hover:text-white transition-colors font-medium">Pricing</Link>
+              <Link href="#products" className="text-slate-300 hover:text-white transition-colors">Products</Link>
+              <Link href="#how-it-works" className="text-slate-300 hover:text-white transition-colors">How It Works</Link>
+              <Link href="#why-us" className="text-slate-300 hover:text-white transition-colors">Why Us</Link>
             </div>
 
+            {/* CTA */}
             <div className="hidden md:flex items-center space-x-4">
-              <Link href={IDP_URL} className="px-5 py-2.5 text-slate-300 hover:text-white transition-colors font-medium">
+              <Link href={IDP_URL} className="px-4 py-2 text-slate-300 hover:text-white transition-colors">
                 Sign In
               </Link>
-              <Link href={IDP_URL} className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg shadow-purple-500/25">
-                Start Free Trial
+              <Link href={IDP_URL} className="px-6 py-2.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-xl font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all">
+                Get Started
               </Link>
             </div>
 
-            <button className="lg:hidden p-2 text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {/* Mobile menu button */}
+            <button className="lg:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {mobileMenuOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
             </button>
           </div>
 
+          {/* Mobile menu */}
           <AnimatePresence>
             {mobileMenuOpen && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="lg:hidden mt-4 pb-4 border-t border-white/10 pt-4"
+                className="lg:hidden mt-4 pt-4 border-t border-white/10"
               >
-                <div className="flex flex-col space-y-4">
-                  <Link href="#products" className="text-slate-300 hover:text-white py-2" onClick={() => setMobileMenuOpen(false)}>Products</Link>
-                  <Link href="#features" className="text-slate-300 hover:text-white py-2" onClick={() => setMobileMenuOpen(false)}>Features</Link>
-                  <Link href="#benefits" className="text-slate-300 hover:text-white py-2" onClick={() => setMobileMenuOpen(false)}>Why Us</Link>
-                  <Link href={IDP_URL} className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl font-semibold text-center mt-4">
-                    Start Free Trial
-                  </Link>
+                <div className="flex flex-col space-y-4 pb-4">
+                  <Link href="#products" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-white py-2">Products</Link>
+                  <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-white py-2">How It Works</Link>
+                  <Link href={IDP_URL} className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl font-semibold text-center">Get Started</Link>
                 </div>
               </motion.div>
             )}
@@ -320,40 +270,67 @@ export default function HomePage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 md:pt-44 md:pb-32 overflow-hidden">
+      <section className="relative pt-32 pb-20 md:pt-44 md:pb-32">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto text-center">
+            {/* Badge */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-purple-500/20 mb-8"
+              className="inline-flex items-center px-4 py-2 rounded-full bg-slate-800/50 border border-slate-700 mb-8"
             >
-              <Sparkles className="w-4 h-4 text-purple-400 mr-2" />
-              <span className="text-sm font-medium text-purple-300">All-in-One HR Platform</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse" />
+              <span className="text-sm text-slate-300">HR tools that work together</span>
             </motion.div>
 
+            {/* Headline */}
             <motion.h1
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
               className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-8"
             >
-              Find, Hire, and Manage
-              <span className="block mt-2 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Your Best People
+              Your Team.
+              <br />
+              <span className="relative">
+                <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                  Simplified.
+                </span>
+                <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" preserveAspectRatio="none">
+                  <motion.path
+                    d="M0 6 Q75 0 150 6 T300 6"
+                    stroke="url(#underlineGrad)"
+                    strokeWidth="4"
+                    fill="none"
+                    strokeLinecap="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ delay: 0.5, duration: 0.8 }}
+                  />
+                  <defs>
+                    <linearGradient id="underlineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="50%" stopColor="#8b5cf6" />
+                      <stop offset="100%" stopColor="#ec4899" />
+                    </linearGradient>
+                  </defs>
+                </svg>
               </span>
             </motion.h1>
 
+            {/* Subheadline */}
             <motion.p
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="text-xl md:text-2xl text-slate-300 max-w-3xl mx-auto mb-10 leading-relaxed"
+              className="text-xl md:text-2xl text-slate-400 max-w-2xl mx-auto mb-10"
             >
-              The complete HR platform for growing teams. Recruiting, leave management, 
-              performance reviews, and payroll — all in one place.
+              Recruiting. Leave. Performance. Payroll.
+              <br className="hidden md:block" />
+              One platform to manage your entire team.
             </motion.p>
 
+            {/* CTA Buttons */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -362,123 +339,84 @@ export default function HomePage() {
             >
               <Link
                 href={IDP_URL}
-                className="group inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-xl font-semibold text-lg shadow-2xl shadow-purple-500/30 hover:shadow-purple-500/50 transition-all"
+                className="group inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 rounded-xl font-semibold text-lg hover:bg-slate-100 transition-all shadow-xl"
               >
-                Start Free Trial
-                <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                Start Free
+                <svg className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
               </Link>
               <Link
-                href="#products"
-                className="inline-flex items-center justify-center px-8 py-4 bg-white/5 backdrop-blur border border-white/10 rounded-xl font-semibold text-lg hover:bg-white/10 transition-all"
+                href="#how-it-works"
+                className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 rounded-xl font-semibold text-lg hover:bg-slate-800/50 transition-all"
               >
-                Explore Products
+                See How It Works
               </Link>
             </motion.div>
 
-            {/* Hero Illustration */}
+            {/* Product Cards Preview */}
             <motion.div
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="relative max-w-4xl mx-auto"
+              className="relative"
             >
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-purple-500/20 bg-gradient-to-br from-slate-900 to-slate-800">
-                <div className="absolute top-0 left-0 right-0 h-8 bg-slate-800 flex items-center px-4 gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                </div>
-                <Image
-                  src="https://images.unsplash.com/photo-1531973576160-7125cd663d86?auto=format&fit=crop&w=1200&q=80"
-                  alt="Seemplify Dashboard"
-                  width={1200}
-                  height={700}
-                  className="w-full object-cover mt-8"
-                  priority
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-transparent" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
+                {products.map((product, index) => (
+                  <motion.div
+                    key={product.title}
+                    className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                      activeProduct === index
+                        ? 'bg-slate-800/80 border-white/20 scale-105 shadow-xl'
+                        : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                    }`}
+                    onClick={() => setActiveProduct(index)}
+                    whileHover={{ y: -4 }}
+                  >
+                    <div className="mb-3">{product.icon}</div>
+                    <h3 className="font-semibold text-sm mb-1">{product.title.split(' ')[0]}</h3>
+                    <p className="text-xs text-slate-500">{product.tagline}</p>
+                  </motion.div>
+                ))}
               </div>
 
-              {/* Floating Cards */}
-              <motion.div
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.8 }}
-                className="absolute -left-4 md:-left-12 top-1/4 glass rounded-xl p-4 shadow-xl"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center">
-                    <UserPlus className="w-5 h-5 text-white" />
+              {/* Active Product Showcase */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeProduct}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="mt-8 p-8 rounded-3xl bg-slate-900/70 border border-slate-800 backdrop-blur"
+                >
+                  <div className="flex flex-col md:flex-row items-center gap-8">
+                    <div className="flex-shrink-0">
+                      {products[activeProduct].illustration}
+                    </div>
+                    <div className="text-left">
+                      <div className={`inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r ${products[activeProduct].color} text-white text-xs font-medium mb-3`}>
+                        {products[activeProduct].tagline}
+                      </div>
+                      <h3 className="text-2xl font-bold mb-2">{products[activeProduct].title}</h3>
+                      <p className="text-slate-400 mb-4">{products[activeProduct].description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {products[activeProduct].features.map((feature) => (
+                          <span key={feature} className="px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-sm">
+                            {feature}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-400">New Application</p>
-                    <p className="font-semibold text-white">Sarah Chen</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1 }}
-                className="absolute -right-4 md:-right-12 top-1/3 glass rounded-xl p-4 shadow-xl"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-400 to-cyan-500 flex items-center justify-center">
-                    <CalendarCheck className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Interview</p>
-                    <p className="font-semibold text-white">Scheduled</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.2 }}
-                className="absolute left-1/4 -bottom-6 glass rounded-xl p-4 shadow-xl"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Leave Request</p>
-                    <p className="font-semibold text-white">Approved</p>
-                  </div>
-                </div>
-              </motion.div>
+                </motion.div>
+              </AnimatePresence>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Integrations Strip */}
-      <section className="py-12 relative z-10 border-y border-white/5">
-        <div className="container mx-auto px-4">
-          <p className="text-center text-slate-500 text-sm mb-8">INTEGRATES WITH YOUR TOOLS</p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
-            {integrations.map((integration, index) => (
-              <motion.div
-                key={integration.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                <integration.icon className="w-6 h-6" />
-                <span className="font-medium">{integration.name}</span>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Products Section */}
-      <section id="products" className="py-24 relative z-10">
+      {/* Products Deep Dive */}
+      <section id="products" className="py-24 relative">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -486,174 +424,184 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <span className="inline-flex items-center px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-sm font-medium mb-6">
-              <Layers className="w-4 h-4 mr-2" />
-              Our Products
-            </span>
             <h2 className="text-4xl md:text-5xl font-bold mb-6">
-              Everything You Need to
+              Four Products.
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
-                Manage Your Team
+                One Platform.
               </span>
             </h2>
             <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-              Four powerful modules that work together. Start with what you need, add more as you grow.
+              Everything you need to hire, manage, and pay your team — without juggling multiple tools.
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-            {services.map((service, index) => (
-              <motion.div
-                key={service.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="group relative"
-              >
-                <div className="glass rounded-2xl overflow-hidden hover:border-white/20 transition-all duration-300">
-                  <div className="relative h-48 overflow-hidden">
-                    <Image
-                      src={service.image}
-                      alt={service.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent" />
-                    <div className={`absolute top-4 left-4 p-3 rounded-xl bg-gradient-to-br ${service.color} shadow-lg`}>
-                      <service.icon className="w-6 h-6 text-white" />
-                    </div>
-                  </div>
-
-                  <div className="p-6">
-                    <div className="mb-4">
-                      <h3 className="text-2xl font-bold mb-1">{service.title}</h3>
-                      <p className={`text-sm font-medium bg-gradient-to-r ${service.color} bg-clip-text text-transparent`}>
-                        {service.subtitle}
-                      </p>
-                    </div>
-                    
-                    <p className="text-slate-400 mb-6">{service.description}</p>
-
-                    <div className="grid grid-cols-2 gap-3 mb-6">
-                      {service.features.map((feature, fIndex) => (
-                        <div key={fIndex} className="flex items-center text-sm text-slate-300">
-                          <feature.icon className="w-4 h-4 mr-2 text-slate-500" />
-                          {feature.text}
-                        </div>
-                      ))}
-                    </div>
-
-                    <Link
-                      href={service.url}
-                      className={`inline-flex items-center px-5 py-2.5 rounded-lg bg-gradient-to-r ${service.color} text-white font-medium group/btn hover:shadow-lg transition-all`}
-                    >
-                      Learn More
-                      <ChevronRight className="w-4 h-4 ml-1 group-hover/btn:translate-x-1 transition-transform" />
-                    </Link>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* SmartHR Features Deep Dive */}
-      <section id="features" className="py-24 relative z-10 overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/5 rounded-full blur-3xl" />
-        
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <span className="inline-flex items-center px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm font-medium mb-6">
-              <Users className="w-4 h-4 mr-2" />
-              SmartHR Recruiting
-            </span>
-            <h2 className="text-4xl md:text-5xl font-bold mb-6">
-              Your Complete
-              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                Applicant Tracking System
-              </span>
-            </h2>
-            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-              Everything you need to find, evaluate, and hire the best candidates — from sourcing to offer.
-            </p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-            {recruitingFeatures.map((category, index) => (
-              <motion.div
-                key={category.category}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="glass rounded-2xl p-6 hover:bg-white/10 transition-all"
-              >
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center mb-4">
-                  <category.icon className="w-6 h-6 text-blue-400" />
-                </div>
-                <h3 className="text-lg font-bold mb-4">{category.category}</h3>
-                <ul className="space-y-2">
-                  {category.features.map((feature, fIndex) => (
-                    <li key={fIndex} className="flex items-start text-sm text-slate-400">
-                      <CheckCircle className="w-4 h-4 mr-2 text-blue-400 mt-0.5 flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Feature Highlight */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-16 glass rounded-2xl p-8 max-w-4xl mx-auto"
-          >
-            <div className="grid md:grid-cols-2 gap-8 items-center">
+          {/* SmartHR Section with Pipeline Flow */}
+          <div className="mb-20">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="grid lg:grid-cols-2 gap-8 items-center"
+            >
               <div>
-                <h3 className="text-2xl font-bold mb-4">Interview Management Made Simple</h3>
-                <p className="text-slate-400 mb-6">
-                  Schedule interviews, collect feedback, and make better hiring decisions — all in one place.
+                <div className="flex items-center gap-3 mb-4">
+                  <IconRecruiting />
+                  <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-sm font-medium">Recruiting</span>
+                </div>
+                <h3 className="text-3xl font-bold mb-4">Track Every Candidate</h3>
+                <p className="text-slate-400 mb-6 text-lg">
+                  From application to offer. See your entire hiring pipeline at a glance, schedule interviews with calendar sync, and collect structured feedback from your team.
                 </p>
-                <ul className="space-y-3">
-                  {[
-                    'Self-service scheduling with calendar sync',
-                    'Customizable interview stages',
-                    'Structured feedback forms and scorecards',
-                    'AI notetaker for automatic meeting summaries',
-                  ].map((item, index) => (
-                    <li key={index} className="flex items-center text-slate-300">
-                      <CheckCircle className="w-5 h-5 mr-3 text-green-400" />
+                <ul className="space-y-3 mb-6">
+                  {['Customizable hiring stages', 'Self-service interview scheduling', 'Team feedback & scorecards', 'CV parsing & screening'].map((item) => (
+                    <li key={item} className="flex items-center text-slate-300">
+                      <svg className="w-5 h-5 mr-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
                       {item}
                     </li>
                   ))}
                 </ul>
+                <Link href="https://app.seemplifyai.com" className="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium group">
+                  Try SmartHR
+                  <svg className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
+                </Link>
               </div>
-              <div className="relative">
-                <Image
-                  src="https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=600&q=80"
-                  alt="Interview Management"
-                  width={600}
-                  height={400}
-                  className="rounded-xl"
-                />
+              <div>
+                <HiringPipelineFlow />
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
+
+          {/* Leave Management with Approval Flow */}
+          <div className="mb-20">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="grid lg:grid-cols-2 gap-8 items-center"
+            >
+              <div className="order-2 lg:order-1">
+                <LeaveApprovalFlow />
+                <div className="mt-4 text-center text-sm text-slate-500">
+                  Request → Review → Approve → Done
+                </div>
+              </div>
+              <div className="order-1 lg:order-2">
+                <div className="flex items-center gap-3 mb-4">
+                  <IconCalendar />
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-sm font-medium">Time Off</span>
+                </div>
+                <h3 className="text-3xl font-bold mb-4">Leave Without the Hassle</h3>
+                <p className="text-slate-400 mb-6 text-lg">
+                  Your team requests time off. Managers approve with one click. Balances update automatically. No more spreadsheets or email chains.
+                </p>
+                <ul className="space-y-3 mb-6">
+                  {['One-click approvals', 'Real-time balance tracking', 'Team calendar view', 'Custom leave policies'].map((item) => (
+                    <li key={item} className="flex items-center text-slate-300">
+                      <svg className="w-5 h-5 mr-3 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="https://leave.seemplifyai.com" className="inline-flex items-center text-emerald-400 hover:text-emerald-300 font-medium group">
+                  Try Leave Management
+                  <svg className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
+                </Link>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Performance with Cycle Flow */}
+          <div className="mb-20">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="grid lg:grid-cols-2 gap-8 items-center"
+            >
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <IconPerformance />
+                  <span className="px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-sm font-medium">Growth</span>
+                </div>
+                <h3 className="text-3xl font-bold mb-4">Reviews That Drive Growth</h3>
+                <p className="text-slate-400 mb-6 text-lg">
+                  Set goals. Track progress. Gather 360° feedback. Run review cycles that actually help your people improve.
+                </p>
+                <ul className="space-y-3 mb-6">
+                  {['OKR tracking', '360° feedback', 'One-on-one templates', 'Development plans'].map((item) => (
+                    <li key={item} className="flex items-center text-slate-300">
+                      <svg className="w-5 h-5 mr-3 text-purple-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="https://performance.seemplifyai.com" className="inline-flex items-center text-purple-400 hover:text-purple-300 font-medium group">
+                  Try Performance
+                  <svg className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
+                </Link>
+              </div>
+              <div className="flex justify-center">
+                <PerformanceCycleFlow />
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Payroll */}
+          <div>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="grid lg:grid-cols-2 gap-8 items-center"
+            >
+              <div className="order-2 lg:order-1 flex justify-center">
+                <PayrollIllustration />
+              </div>
+              <div className="order-1 lg:order-2">
+                <div className="flex items-center gap-3 mb-4">
+                  <IconPayroll />
+                  <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-sm font-medium">Payroll</span>
+                </div>
+                <h3 className="text-3xl font-bold mb-4">Pay Day, Sorted</h3>
+                <p className="text-slate-400 mb-6 text-lg">
+                  Run payroll, generate payslips, and stay on top of compliance. All your compensation data in one place.
+                </p>
+                <ul className="space-y-3 mb-6">
+                  {['Automated calculations', 'Payslip generation', 'Tax compliance', 'Compensation reports'].map((item) => (
+                    <li key={item} className="flex items-center text-slate-300">
+                      <svg className="w-5 h-5 mr-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="https://payroll.seemplifyai.com" className="inline-flex items-center text-amber-400 hover:text-amber-300 font-medium group">
+                  Try Payroll
+                  <svg className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  </svg>
+                </Link>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* Benefits Section */}
-      <section id="benefits" className="py-24 relative z-10">
+      {/* How It Works */}
+      <section id="how-it-works" className="py-24 bg-slate-900/50 relative">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -661,125 +609,135 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <span className="inline-flex items-center px-4 py-2 rounded-full bg-green-500/10 border border-green-500/20 text-green-300 text-sm font-medium mb-6">
-              <Award className="w-4 h-4 mr-2" />
-              Why Seemplify
-            </span>
             <h2 className="text-4xl md:text-5xl font-bold mb-6">
-              Built for Growing
-              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400">
-                Teams Like Yours
-              </span>
+              How It
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400"> Works</span>
+            </h2>
+            <p className="text-xl text-slate-400">Get up and running in minutes, not days.</p>
+          </motion.div>
+
+          <div className="max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-8">
+              {[
+                { step: '01', title: 'Sign Up', desc: 'Create your account and invite your team. No credit card required.', icon: '👤' },
+                { step: '02', title: 'Configure', desc: 'Set up your departments, leave policies, and workflows.', icon: '⚙️' },
+                { step: '03', title: 'Go Live', desc: 'Start hiring, tracking leave, running reviews, and processing payroll.', icon: '🚀' },
+              ].map((item, index) => (
+                <motion.div
+                  key={item.step}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.1 }}
+                  className="relative"
+                >
+                  <div className="p-6 rounded-2xl bg-slate-800/50 border border-slate-700 h-full">
+                    <span className="text-5xl mb-4 block">{item.icon}</span>
+                    <div className="text-sm font-mono text-purple-400 mb-2">STEP {item.step}</div>
+                    <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                    <p className="text-slate-400">{item.desc}</p>
+                  </div>
+                  {index < 2 && (
+                    <div className="hidden md:block absolute top-1/2 -right-4 z-10">
+                      <WorkflowConnector />
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Us */}
+      <section id="why-us" className="py-24 relative">
+        <div className="container mx-auto px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+              Why Teams Choose
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400"> Seemplify</span>
             </h2>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {benefits.map((benefit, index) => (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {[
+              { title: 'All-in-One', desc: 'Stop juggling multiple HR tools. Everything you need in one place.', icon: '📦' },
+              { title: 'Fast Setup', desc: 'Get started in minutes. Import your data or start fresh.', icon: '⚡' },
+              { title: 'Secure', desc: 'Enterprise-grade security with role-based access controls.', icon: '🔒' },
+              { title: 'Flexible', desc: 'Start with what you need. Add more as you grow.', icon: '🧩' },
+              { title: 'Affordable', desc: 'Pricing that works for growing teams. No enterprise lock-in.', icon: '💰' },
+              { title: 'Supported', desc: 'Real humans ready to help when you need it.', icon: '🤝' },
+            ].map((item, index) => (
               <motion.div
-                key={benefit.title}
+                key={item.title}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="glass rounded-2xl p-6 hover:bg-white/10 transition-all group"
+                transition={{ delay: index * 0.05 }}
+                className="p-6 rounded-2xl bg-slate-900/50 border border-slate-800 hover:border-slate-700 transition-all"
               >
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <benefit.icon className="w-6 h-6 text-green-400" />
-                </div>
-                <h3 className="text-xl font-bold mb-2">{benefit.title}</h3>
-                <p className="text-slate-400">{benefit.description}</p>
+                <span className="text-3xl mb-4 block">{item.icon}</span>
+                <h3 className="text-lg font-bold mb-2">{item.title}</h3>
+                <p className="text-slate-400 text-sm">{item.desc}</p>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section id="pricing" className="py-24 relative z-10">
+      {/* CTA */}
+      <section className="py-24 relative">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="glass rounded-3xl p-8 md:p-16 max-w-4xl mx-auto text-center relative overflow-hidden"
+            className="max-w-3xl mx-auto text-center p-12 rounded-3xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700 relative overflow-hidden"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10" />
-            
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-purple-500/5 to-pink-500/5" />
             <div className="relative z-10">
-              <span className="inline-flex items-center px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm font-medium mb-6">
-                <Sparkles className="w-4 h-4 mr-2" />
-                Get Started Today
-              </span>
-              
-              <h2 className="text-4xl md:text-5xl font-bold mb-6">
-                Ready to Simplify
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-400">
-                  Your HR?
-                </span>
-              </h2>
-              
-              <p className="text-xl text-slate-300 mb-8 max-w-2xl mx-auto">
-                Start your free trial today. No credit card required. 
-                Set up in minutes, not days.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link
-                  href={IDP_URL}
-                  className="group inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl font-semibold text-lg shadow-2xl shadow-orange-500/30 hover:shadow-orange-500/50 transition-all"
-                >
-                  Start Free Trial
-                  <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </Link>
-                <Link
-                  href="mailto:hello@seemplifyai.com"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-white/5 border border-white/10 rounded-xl font-semibold text-lg hover:bg-white/10 transition-all"
-                >
-                  Contact Sales
-                </Link>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-6 mt-8 text-sm text-slate-400">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span>14-day free trial</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span>No credit card required</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span>Cancel anytime</span>
-                </div>
-              </div>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">Ready to simplify your HR?</h2>
+              <p className="text-slate-400 mb-8 text-lg">Start your free trial today. No credit card required.</p>
+              <Link
+                href={IDP_URL}
+                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 rounded-xl font-semibold text-lg hover:bg-slate-100 transition-all shadow-xl"
+              >
+                Get Started Free
+              </Link>
             </div>
           </motion.div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-16 border-t border-white/10 relative z-10">
+      <footer className="py-16 border-t border-slate-800 relative">
         <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-5 gap-8 mb-12">
-            <div className="md:col-span-2 space-y-4">
-              <Link href="/" className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <span className="text-xl font-bold">Seemplify</span>
-                  <span className="text-xl font-light text-purple-400">AI</span>
-                </div>
+          <div className="grid md:grid-cols-4 gap-8 mb-12">
+            <div className="md:col-span-1">
+              <Link href="/" className="flex items-center space-x-2 mb-4">
+                <svg viewBox="0 0 32 32" className="w-8 h-8">
+                  <rect width="32" height="32" rx="8" fill="url(#footerLogoGrad)" />
+                  <path d="M8 16 L14 16 L17 10 L20 22 L23 16 L24 16" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  <defs>
+                    <linearGradient id="footerLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#8b5cf6" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <span className="font-bold">SeemplifyAI</span>
               </Link>
-              <p className="text-slate-400 max-w-sm">
-                The all-in-one HR platform for modern teams. Recruiting, leave management, performance reviews, and payroll.
-              </p>
+              <p className="text-slate-500 text-sm">HR tools that work together.</p>
             </div>
 
             <div>
               <h4 className="font-semibold mb-4">Products</h4>
-              <ul className="space-y-2 text-slate-400">
+              <ul className="space-y-2 text-sm text-slate-500">
                 <li><Link href="https://app.seemplifyai.com" className="hover:text-white transition-colors">SmartHR Recruiting</Link></li>
                 <li><Link href="https://leave.seemplifyai.com" className="hover:text-white transition-colors">Leave Management</Link></li>
                 <li><Link href="https://performance.seemplifyai.com" className="hover:text-white transition-colors">Performance</Link></li>
@@ -789,30 +747,24 @@ export default function HomePage() {
 
             <div>
               <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-slate-400">
+              <ul className="space-y-2 text-sm text-slate-500">
                 <li><Link href="#" className="hover:text-white transition-colors">About</Link></li>
                 <li><Link href="#" className="hover:text-white transition-colors">Blog</Link></li>
-                <li><Link href="#" className="hover:text-white transition-colors">Careers</Link></li>
                 <li><Link href="mailto:hello@seemplifyai.com" className="hover:text-white transition-colors">Contact</Link></li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-slate-400">
+              <ul className="space-y-2 text-sm text-slate-500">
                 <li><Link href="#" className="hover:text-white transition-colors">Privacy</Link></li>
                 <li><Link href="#" className="hover:text-white transition-colors">Terms</Link></li>
-                <li><Link href="#" className="hover:text-white transition-colors">Security</Link></li>
               </ul>
             </div>
           </div>
 
-          <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-slate-500 text-sm">© 2025 Seemplify AI. All rights reserved.</p>
-            <div className="flex items-center gap-2 text-slate-500 text-sm">
-              <Lock className="w-4 h-4" />
-              <span>Enterprise-grade security</span>
-            </div>
+          <div className="border-t border-slate-800 pt-8 text-center text-sm text-slate-600">
+            © 2025 Seemplify AI. All rights reserved.
           </div>
         </div>
       </footer>
