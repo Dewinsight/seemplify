@@ -1,0 +1,36 @@
+# Deploy Identity Provider to Dokploy
+name: Deploy Identity Provider
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Identityprovider/**'
+      - '.github/workflows/deploy-identity-provider.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: identity-provider
+  APP_PATH: Identityprovider
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/application.redeploy" \
+            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"applicationId": "${{ secrets.IDENTITY_PROVIDER_APP_ID }}"}'
+          
+          echo "Deployment triggered for ${{ env.APP_NAME }}"
+
+      - name: Deployment Status
+        if: success()
+        run: echo "✅ ${{ env.APP_NAME }} deployment triggered successfully"

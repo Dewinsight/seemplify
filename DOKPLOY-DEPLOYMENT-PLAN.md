@@ -8,6 +8,7 @@ Complete guide to deploying all Semplify applications to an Azure VM using Dokpl
 - **DO NOT TOUCH:** paddie.io
 - **Target:** New Azure VM with Dokploy
 - **Apps to Deploy:** 5 backends + 4 frontends
+- **Deployment Method:** GitHub Actions CI/CD (automatic on push)
 
 ---
 
@@ -20,15 +21,16 @@ Complete guide to deploying all Semplify applications to an Azure VM using Dokpl
 5. [Phase 4: Install Dokploy](#5-phase-4-install-dokploy)
 6. [Phase 5: Configure Dokploy](#6-phase-5-configure-dokploy)
 7. [Phase 6: Connect GitHub Repository](#7-phase-6-connect-github-repository)
-8. [Phase 7: Deploy Applications](#8-phase-7-deploy-applications)
-9. [Phase 8: Configure Domains in Cloudflare](#9-phase-8-configure-domains-in-cloudflare)
-10. [Phase 9: Set Production Environment Variables](#10-phase-9-set-production-environment-variables)
-11. [Phase 10: SSL/TLS Configuration](#11-phase-10-ssltls-configuration)
-12. [Phase 11: Database Setup](#12-phase-11-database-setup)
-13. [Phase 12: Verification & Testing](#13-phase-12-verification--testing)
-14. [Scripts](#14-scripts)
-15. [Troubleshooting](#15-troubleshooting)
-16. [Maintenance](#16-maintenance)
+8. [Phase 7: Initial Application Setup in Dokploy](#8-phase-7-initial-application-setup-in-dokploy)
+9. [Phase 8: GitHub Actions CI/CD Setup](#9-phase-8-github-actions-cicd-setup) ⭐ **NEW**
+10. [Phase 9: Configure Domains in Cloudflare](#10-phase-9-configure-domains-in-cloudflare)
+11. [Phase 10: Set Production Environment Variables](#11-phase-10-set-production-environment-variables)
+12. [Phase 11: SSL/TLS Configuration](#12-phase-11-ssltls-configuration)
+13. [Phase 12: Database Setup](#13-phase-12-database-setup)
+14. [Phase 13: Verification & Testing](#14-phase-13-verification--testing)
+15. [Scripts](#15-scripts)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Maintenance](#17-maintenance)
 
 ---
 
@@ -492,7 +494,9 @@ In Dokploy Dashboard:
 
 ---
 
-## 8. Phase 7: Deploy Applications
+## 8. Phase 7: Initial Application Setup in Dokploy
+
+> **Note:** This phase sets up the applications in Dokploy. After this, GitHub Actions will handle automatic deployments on every push to `main`.
 
 ### Step 7.1: Deploy Recruiter Backend
 
@@ -622,7 +626,179 @@ In Dokploy Dashboard:
 
 ---
 
-## 9. Phase 8: Configure Domains in Cloudflare
+## 9. Phase 8: GitHub Actions CI/CD Setup ⭐
+
+This is the key phase - setting up automatic deployments via GitHub Actions.
+
+### How It Works
+
+```
+Push to main → GitHub Actions triggers → Dokploy API called → App rebuilds & deploys
+```
+
+**Workflow Files Created:**
+
+| Workflow | Triggers On | File |
+|----------|-------------|------|
+| Deploy Recruiter Backend | `recruiter/backend/**` changes | `.github/workflows/deploy-recruiter-backend.yml` |
+| Deploy Recruiter Frontend | `recruiter/frontend/**` changes | `.github/workflows/deploy-recruiter-frontend.yml` |
+| Deploy Leave Backend | `leave-management/backend/**` changes | `.github/workflows/deploy-leave-backend.yml` |
+| Deploy Leave Frontend | `leave-management/frontend/**` changes | `.github/workflows/deploy-leave-frontend.yml` |
+| Deploy Performance Backend | `performance/backend/**` changes | `.github/workflows/deploy-performance-backend.yml` |
+| Deploy Performance Frontend | `performance/frontend/**` changes | `.github/workflows/deploy-performance-frontend.yml` |
+| Deploy Payroll Backend | `payroll/backend/**` changes | `.github/workflows/deploy-payroll-backend.yml` |
+| Deploy Payroll Frontend | `payroll/frontend/**` changes | `.github/workflows/deploy-payroll-frontend.yml` |
+| Deploy Identity Provider | `Identityprovider/**` changes | `.github/workflows/deploy-identity-provider.yml` |
+| Deploy All Apps | Manual trigger only | `.github/workflows/deploy-all.yml` |
+
+### Step 8.1: Get Dokploy API Token
+
+1. Open Dokploy Dashboard: `https://dokploy.seemplifyai.com` (or `http://<VM_IP>:3000`)
+2. Go to **Settings** → **API** → **Tokens**
+3. Click **Create Token**
+4. Name: `github-actions`
+5. Copy the token (you'll need it for GitHub secrets)
+
+### Step 8.2: Get Application IDs from Dokploy
+
+For each application you created in Phase 7, get its ID:
+
+1. Go to **Projects** → **seemplify**
+2. Click on each application
+3. Look at the URL: `https://dokploy.seemplifyai.com/project/<project_id>/services/application/<APP_ID>`
+4. Copy the `<APP_ID>` for each application
+
+**Record all Application IDs:**
+
+| Application | App ID |
+|-------------|--------|
+| recruiter-backend | `<copy from URL>` |
+| recruiter-frontend | `<copy from URL>` |
+| leave-backend | `<copy from URL>` |
+| leave-frontend | `<copy from URL>` |
+| performance-backend | `<copy from URL>` |
+| performance-frontend | `<copy from URL>` |
+| payroll-backend | `<copy from URL>` |
+| payroll-frontend | `<copy from URL>` |
+| identity-provider | `<copy from URL>` |
+
+### Step 8.3: Add GitHub Repository Secrets
+
+Go to: **GitHub Repo** → **Settings** → **Secrets and variables** → **Actions**
+
+Click **New repository secret** for each:
+
+| Secret Name | Value | Description |
+|-------------|-------|-------------|
+| `DOKPLOY_URL` | `https://dokploy.seemplifyai.com` | Dokploy dashboard URL |
+| `DOKPLOY_TOKEN` | `<your-api-token>` | API token from Step 8.1 |
+| `RECRUITER_BACKEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `RECRUITER_FRONTEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `LEAVE_BACKEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `LEAVE_FRONTEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `PERFORMANCE_BACKEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `PERFORMANCE_FRONTEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `PAYROLL_BACKEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `PAYROLL_FRONTEND_APP_ID` | `<app-id>` | From Dokploy URL |
+| `IDENTITY_PROVIDER_APP_ID` | `<app-id>` | From Dokploy URL |
+
+### Step 8.4: Add Secrets via GitHub CLI (Alternative)
+
+```bash
+# Set Dokploy URL
+gh secret set DOKPLOY_URL --body "https://dokploy.seemplifyai.com"
+
+# Set Dokploy API Token
+gh secret set DOKPLOY_TOKEN --body "<your-api-token>"
+
+# Set Application IDs
+gh secret set RECRUITER_BACKEND_APP_ID --body "<app-id>"
+gh secret set RECRUITER_FRONTEND_APP_ID --body "<app-id>"
+gh secret set LEAVE_BACKEND_APP_ID --body "<app-id>"
+gh secret set LEAVE_FRONTEND_APP_ID --body "<app-id>"
+gh secret set PERFORMANCE_BACKEND_APP_ID --body "<app-id>"
+gh secret set PERFORMANCE_FRONTEND_APP_ID --body "<app-id>"
+gh secret set PAYROLL_BACKEND_APP_ID --body "<app-id>"
+gh secret set PAYROLL_FRONTEND_APP_ID --body "<app-id>"
+gh secret set IDENTITY_PROVIDER_APP_ID --body "<app-id>"
+```
+
+### Step 8.5: Test Automatic Deployment
+
+1. Make a small change to any application (e.g., add a comment)
+2. Commit and push to `main`:
+
+```bash
+git add .
+git commit -m "test: trigger CI/CD deployment"
+git push
+```
+
+3. Go to **GitHub** → **Actions** tab
+4. Watch the workflow run
+5. Check Dokploy dashboard for deployment status
+
+### Step 8.6: Manual Deployment (All Apps)
+
+To deploy all applications at once:
+
+1. Go to **GitHub** → **Actions**
+2. Select **Deploy All Applications**
+3. Click **Run workflow**
+4. Type `deploy-all` to confirm
+5. Click **Run workflow**
+
+### Step 8.7: Verify GitHub Actions Setup
+
+```bash
+# Check workflow files exist
+ls -la .github/workflows/
+
+# List all workflows
+gh workflow list
+
+# View recent workflow runs
+gh run list --limit 10
+```
+
+### CI/CD Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        DEVELOPER                                 │
+│  1. Edit code in recruiter/frontend/                            │
+│  2. git commit -m "feat: add new feature"                       │
+│  3. git push origin main                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      GITHUB ACTIONS                              │
+│  • Detects change in recruiter/frontend/**                      │
+│  • Triggers deploy-recruiter-frontend.yml                       │
+│  • Calls Dokploy API: POST /api/application.redeploy            │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         DOKPLOY                                  │
+│  • Receives redeploy request                                    │
+│  • Pulls latest code from GitHub                                │
+│  • Builds application (npm install, npm run build)              │
+│  • Deploys to Docker container                                  │
+│  • Updates Traefik routing                                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      LIVE APPLICATION                            │
+│  • https://app.seemplifyai.com now shows new feature            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 10. Phase 9: Configure Domains in Cloudflare
 
 ### Step 8.1: Get VM Public IP
 
@@ -803,7 +979,7 @@ For each application in Dokploy:
 
 ---
 
-## 10. Phase 9: Set Production Environment Variables
+## 11. Phase 10: Set Production Environment Variables
 
 ### Step 9.1: Recruiter Backend Environment Variables
 
@@ -989,7 +1165,7 @@ openssl rand -hex 32
 
 ---
 
-## 11. Phase 10: SSL/TLS Configuration
+## 12. Phase 11: SSL/TLS Configuration
 
 ### Step 10.1: Configure Cloudflare SSL
 
@@ -1020,7 +1196,7 @@ openssl s_client -connect app.seemplifyai.com:443 -servername app.seemplifyai.co
 
 ---
 
-## 12. Phase 11: Database Setup
+## 13. Phase 12: Database Setup
 
 ### Option A: MongoDB Atlas (Recommended)
 
@@ -1071,7 +1247,7 @@ db.createUser({user: "idp", pwd: "<password>", roles: ["readWrite"]})
 
 ---
 
-## 13. Phase 12: Verification & Testing
+## 14. Phase 13: Verification & Testing
 
 ### Step 12.1: Check All Containers Running
 
@@ -1143,7 +1319,7 @@ docker stats
 
 ---
 
-## 14. Scripts
+## 15. Scripts
 
 ### Script 1: SSH into VM (Windows PowerShell)
 
@@ -1426,7 +1602,7 @@ Write-Host "DNS Records Creation Complete!" -ForegroundColor Cyan
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 ### Problem: Can't SSH into VM
 
@@ -1495,7 +1671,7 @@ mongosh "mongodb+srv://<cluster>.mongodb.net/test"
 
 ---
 
-## 16. Maintenance
+## 17. Maintenance
 
 ### Daily Tasks
 

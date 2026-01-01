@@ -1,0 +1,36 @@
+# Deploy Performance Frontend to Dokploy
+name: Deploy Performance Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'performance/frontend/**'
+      - '.github/workflows/deploy-performance-frontend.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: performance-frontend
+  APP_PATH: performance/frontend
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/application.redeploy" \
+            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"applicationId": "${{ secrets.PERFORMANCE_FRONTEND_APP_ID }}"}'
+          
+          echo "Deployment triggered for ${{ env.APP_NAME }}"
+
+      - name: Deployment Status
+        if: success()
+        run: echo "✅ ${{ env.APP_NAME }} deployment triggered successfully"
