@@ -1,0 +1,13 @@
+[build]
+  command = "npm install --legacy-peer-deps && npm run build"
+  publish = ".next"
+  base = "leave-management/frontend"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+  # Disable pnpm detection - force npm
+  NETLIFY_USE_PNPM = "false"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

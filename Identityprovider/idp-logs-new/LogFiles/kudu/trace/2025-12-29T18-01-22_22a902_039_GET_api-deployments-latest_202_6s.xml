@@ -1,0 +1,8 @@
+<step title="Incoming Request" date="2025-12-29T18:01:22.819" instance="22a902" url="/api/deployments/latest?deployer=OneDeploy&amp;time=2025-12-29_18-01-22Z" method="GET" type="request" pid="843,1,87" Host="smarthr-identity.scm.azurewebsites.net" User-Agent="GITHUBACTIONS_DeployWebAppToAzure_0595eca4481c4da5a6886b0543c1213ae2596c27e462449a1cc777eb06398f8b" Authorization="Bas..." Content-Type="application/json; charset=utf-8" Cookie="ARRAffinity=22a9029632a2ff84e0c16214d871eb635a2ac7274db079050bfa610f4e960c3d;Path=/;HttpOnly;Secure;Domain=smarthr-identity.scm.azurewebsites.net; ARRAffinitySameSite=22a9029632a2ff84e0c16214d871eb635a2ac7274db079050bfa610f4e960c3d;Path=/;HttpOnly;SameSite=None;Secure;Domain=smarthr-identity.scm.azurewebsites.net" Content-Length="0" X-ARR-LOG-ID="0fc1eb2c-1f4d-44b7-88b0-f723788653a9" CLIENT-IP="20.169.72.162:42000" X-SITE-DEPLOYMENT-ID="smarthr-identity" WAS-DEFAULT-HOSTNAME="smarthr-identity.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/deployments/latest?deployer=OneDeploy&amp;time=2025-12-29_18-01-22Z" X-Client-IP="20.169.72.162" X-Client-Port="42000" >
+  <step title="DeploymentService.GetResult" date="2025-12-29T18:01:22.868" >
+    <step title="DeploymentService.GetLatestDeployment" date="2025-12-29T18:01:22.877" >
+      <step title="DeploymentManager.GetResults" date="2025-12-29T18:01:22.897" /><!-- duration: 4530ms -->
+    </step><!-- duration: 4742ms -->
+  </step><!-- duration: 4999ms -->
+  <step title="Outgoing response" date="2025-12-29T18:01:28.119" type="response" statusCode="202" statusText="Accepted" /><!-- duration: 167ms -->
+</step><!-- duration: 5511ms -->

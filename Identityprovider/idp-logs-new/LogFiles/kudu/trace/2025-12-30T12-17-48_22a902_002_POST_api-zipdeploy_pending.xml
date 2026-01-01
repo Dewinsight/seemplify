@@ -1,0 +1,20 @@
+<step title="Incoming Request" date="2025-12-30T12:17:48.765" instance="22a902" url="/api/zipdeploy?isAsync=true" method="POST" type="request" pid="837,1,24" Accept="*/*" Host="smarthr-identity.scm.azurewebsites.net" User-Agent="AZURECLI/2.65.0 (MSI)" Accept-Encoding="gzip, deflate" Authorization="Bas..." Cache-Control="no-cache" Content-Type="application/octet-stream" Content-Length="7126819" x-ms-client-request-id="8922d9d0-e579-11f0-9d6f-8cf8c5144c26" x-ms-artifact-checksum="73c202817deb9739cddf321e78b27de91bb4b3941b490e387056cdca978a031f" X-ARR-LOG-ID="8922d9d0-e579-11f0-9d6f-8cf8c5144c26" CLIENT-IP="81.111.2.5:51141" X-SITE-DEPLOYMENT-ID="smarthr-identity" WAS-DEFAULT-HOSTNAME="smarthr-identity.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/zipdeploy?isAsync=true" X-Client-IP="81.111.2.5" X-Client-Port="51141" >
+  <step title="ZipPushDeploy" date="2025-12-30T12:17:49.727" >
+    <step title="ZipDeploy. Extract zip." date="2025-12-30T12:17:49.742" /><!-- duration: 3ms -->
+    <step title="None repository commit" date="2025-12-30T12:17:49.753" >
+      <step title="Commit id: 11c13f61-6a06-4364-8d28-eacb1b48104e" date="2025-12-30T12:17:49.756" Message="N/A" AuthorName="N/A" AuthorEmail="N/A" /><!-- duration: 2ms -->
+    </step><!-- duration: 19ms -->
+    <step title="Starting PushDeployAsync" date="2025-12-30T12:17:49.782" /><!-- duration: 9ms -->
+    <step title="Removing node_modules symlink" date="2025-12-30T12:17:49.880" >
+      <step title="Removing _del_node_modules symlink" date="2025-12-30T12:17:49.994" >
+        <step title="Writing artifact to /tmp/zipdeploy/b32b5105-0c5b-451a-9c8d-d546258017ee.zip" date="2025-12-30T12:17:50.110" >
+          <step title="Writing multipart request body to /tmp/zipdeploy/b32b5105-0c5b-451a-9c8d-d546258017ee.zip" date="2025-12-30T12:17:50.114" /><!-- duration: 9ms -->
+        </step><!-- duration: 423ms -->
+        <step title="Removing previous build artifact&apos;s manifest file" date="2025-12-30T12:17:50.591" >
+          <step title="Start deployment in the background" date="2025-12-30T12:17:50.617" >
+            <step title="Acquiring Deployment Lock" date="2025-12-30T12:17:50.657" /><!-- duration: 8ms -->
+            <step title="Acquired Deployment Lock" date="2025-12-30T12:17:50.718" /><!-- duration: 3ms -->
+          </step><!-- duration: 218ms -->
+        </step><!-- duration: 253ms -->
+        <step title="Outgoing response" date="2025-12-30T12:17:50.869" type="response" statusCode="202" statusText="Accepted" /><!-- duration: 6ms -->
+      </step><!-- duration: 884ms -->

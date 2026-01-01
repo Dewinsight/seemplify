@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Teams - <%= organization.name %> - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --brand: #60a5fa;
+      --brand-2: #a855f7;
+      --surface: #0b1224;
+      --surface-2: #0f172a;
+      --surface-3: #1e293b;
+      --line: #1f2a44;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
+      min-height: 100vh;
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    .header-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--surface-3);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn-secondary:hover {
+      background: var(--line);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .card {
+      background: linear-gradient(160deg, rgba(16, 24, 40, 0.88), rgba(11, 18, 36, 0.92));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .team-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .team-info {
+      flex: 1;
+      min-width: 300px;
+    }
+
+    .team-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .team-description {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .team-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .team-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hierarchy-path {
+      color: var(--brand);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .manager-badge {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .role-member {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    .role-line_manager {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+    }
+
+    .role-team_lead {
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
+    }
+
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .back-link:hover {
+      color: var(--text);
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 600px;
+      margin: 16px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 20px;
+      color: #f8fafc;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .empty-state h3 {
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .members-list {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .member-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .member-item:last-child {
+      border-bottom: none;
+    }
+
+    .member-info {
+      flex: 1;
+    }
+
+    .member-name {
+      font-weight: 500;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .member-email {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .member-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .is-manager {
+      background: rgba(168, 85, 247, 0.15);
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      color: #c084fc;
+      font-weight: 600;
+    }
+
+    /* Top Navigation */
+    .top-nav {
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      margin: -24px -24px 24px -24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .top-nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .top-nav-brand svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .top-nav-brand span {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .top-nav-links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .top-nav-link {
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .top-nav-link:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-link.active {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-user {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .top-nav-user-info {
+      text-align: right;
+    }
+
+    .top-nav-user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .top-nav-user-email {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .top-nav-logout {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .top-nav-logout:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    @media (max-width: 768px) {
+      .top-nav {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .top-nav-user-info {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="/" class="top-nav-brand">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 17L12 22L22 17" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 12L12 17L22 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <defs>
+          <linearGradient id="grad1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#60a5fa" />
+            <stop offset="1" stop-color="#a855f7" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>AIIN Identity</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/organizations" class="top-nav-link active">Organizations</a>
+      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+    <div class="top-nav-user">
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name">
+          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+        </div>
+        <div class="top-nav-user-email">
+          <%= user.email %>
+        </div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <a href="/organizations" class="back-link">← Back to Organizations</a>
+
+    <div class="header">
+      <div>
+        <h1>Teams</h1>
+        <div class="header-subtitle">
+          <%= organization.name %>
+        </div>
+      </div>
+      <div class="header-actions">
+        <% if (['owner', 'admin' ].includes(yourRole)) { %>
+          <button class="btn btn-primary" onclick="showCreateModal()">
+            + Create Team
+          </button>
+          <% } %>
+      </div>
+    </div>
+
+    <% if (typeof error !=='undefined' && error) { %>
+      <div class="alert alert-error">
+        <%= error %>
+      </div>
+      <% } %>
+
+        <% if (typeof success !=='undefined' && success) { %>
+          <div class="alert alert-success">
+            <%= success %>
+          </div>
+          <% } %>
+
+            <% if (teams && teams.length> 0) { %>
+              <% teams.forEach(team=> { %>
+                <div class="card team-card">
+                  <div class="team-info">
+                    <% if (team.parentTeam) { %>
+                      <div class="hierarchy-path">
+                        📁 Parent: <%= team.parentTeam.name %>
+                      </div>
+                      <% } %>
+                        <div class="team-name">
+                          <%= team.name %>
+                            <% if (team.manager) { %>
+                              <span class="manager-badge">👤 <%= team.manager.name || team.manager.email %></span>
+                              <% } %>
+                        </div>
+                        <% if (team.description) { %>
+                          <div class="team-description">
+                            <%= team.description %>
+                          </div>
+                          <% } %>
+                            <div class="team-meta">
+                              <span>
+                                <%= team.memberCount || 0 %> member<%= team.memberCount !==1 ? 's' : '' %>
+                              </span>
+                              <% if (team.manager) { %>
+                                <span>Manager: <%= team.manager.name || team.manager.email %></span>
+                                <% } else { %>
+                                  <span style="color: var(--warning);">No manager assigned</span>
+                                  <% } %>
+                            </div>
+                            <% if (team.members && team.members.length> 0) { %>
+                              <div class="members-list">
+                                <div
+                                  style="font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 600;">
+                                  Members:</div>
+                                <% team.members.slice(0, 3).forEach(member=> { %>
+                                  <div style="display: inline-block; margin-right: 12px; margin-bottom: 8px;">
+                                    <span class="role-badge role-<%= member.role %>">
+                                      <%= member.role.replace('_', ' ' ) %>
+                                    </span>
+                                    <span style="font-size: 12px; color: var(--muted); margin-left: 6px;">
+                                      <%= member.name || member.email %>
+                                    </span>
+                                  </div>
+                                  <% }) %>
+                                    <% if (team.members.length> 3) { %>
+                                      <span style="font-size: 12px; color: var(--muted);">+<%= team.members.length - 3
+                                          %> more</span>
+                                      <% } %>
+                              </div>
+                              <% } %>
+                  </div>
+                  <div class="team-actions">
+                    <button class="btn btn-secondary btn-sm"
+                      onclick="manageMembers('<%= team.id %>', '<%= team.name %>')">
+                      👥 Members
+                    </button>
+                    <% if (['owner', 'admin' ].includes(yourRole)) { %>
+                      <button class="btn btn-secondary btn-sm"
+                        onclick="setManager('<%= team.id %>', '<%= team.name %>')">
+                        👤 Manager
+                      </button>
+                      <button class="btn btn-secondary btn-sm"
+                        onclick="editTeam('<%= team.id %>', '<%= team.name %>', '<%= (team.description || '').replace(/'/g, "
+                        \\'") %>', '<%= team.parentTeam ? team.parentTeam.id : '' %>')">
+                          ✏️ Edit
+                      </button>
+                      <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', '<%= team.name %>')">
+                        🗑️ Delete
+                      </button>
+                      <% } %>
+                  </div>
+                </div>
+                <% }) %>
+                  <% } else { %>
+                    <div class="card empty-state">
+                      <h3>No teams yet</h3>
+                      <p>Create teams to organize your organization structure.</p>
+                      <% if (['owner', 'admin' ].includes(yourRole)) { %>
+                        <button class="btn btn-primary" onclick="showCreateModal()">
+                          + Create Team
+                        </button>
+                        <% } %>
+                    </div>
+                    <% } %>
+  </div>
+
+  <!-- Create Team Modal -->
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Team</h2>
+        <button class="modal-close" onclick="hideCreateModal()">&times;</button>
+      </div>
+      <form id="createForm">
+        <div class="form-group">
+          <label for="teamName">Team Name *</label>
+          <input type="text" id="teamName" name="name" required maxlength="100"
+            placeholder="e.g., Engineering, Sales, Marketing">
+        </div>
+        <div class="form-group">
+          <label for="teamDescription">Description</label>
+          <textarea id="teamDescription" name="description" maxlength="500"
+            placeholder="Brief description (optional)"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="parentTeam">Parent Team (optional)</label>
+          <select id="parentTeam" name="parentTeamId">
+            <option value="">No parent (root team)</option>
+            <% teams.forEach(team=> { %>
+              <option value="<%= team.id %>">
+                <%= team.name %>
+              </option>
+              <% }) %>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Team</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Team Modal -->
+  <div class="modal" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Team</h2>
+        <button class="modal-close" onclick="hideEditModal()">&times;</button>
+      </div>
+      <form id="editForm">
+        <input type="hidden" id="editTeamId">
+        <div class="form-group">
+          <label for="editTeamName">Team Name *</label>
+          <input type="text" id="editTeamName" name="name" required maxlength="100">
+        </div>
+        <div class="form-group">
+          <label for="editTeamDescription">Description</label>
+          <textarea id="editTeamDescription" name="description" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editParentTeam">Parent Team (optional)</label>
+          <select id="editParentTeam" name="parentTeamId">
+            <option value="">No parent (root team)</option>
+            <% teams.forEach(team=> { %>
+              <option value="<%= team.id %>">
+                <%= team.name %>
+              </option>
+              <% }) %>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Manage Members Modal -->
+  <div class="modal" id="membersModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="membersModalTitle">Team Members</h2>
+        <button class="modal-close" onclick="hideMembersModal()">&times;</button>
+      </div>
+      <div id="membersModalContent">
+        <div style="text-align: center; padding: 20px;">
+          <div class="spinner"
+            style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;">
+          </div>
+          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Set Manager Modal -->
+  <div class="modal" id="managerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="managerModalTitle">Set Team Manager</h2>
+        <button class="modal-close" onclick="hideManagerModal()">&times;</button>
+      </div>
+      <div id="managerModalContent">
+        <div style="text-align: center; padding: 20px;">
+          <div class="spinner"
+            style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;">
+          </div>
+          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const orgId = '<%= organization._id %>';
+    const orgMembers = <% - JSON.stringify(orgMembers) %>;
+    const teams = <% - JSON.stringify(teams) %>;
+
+    function showCreateModal() {
+      document.getElementById('createModal').classList.add('active');
+    }
+
+    function hideCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+      document.getElementById('createForm').reset();
+    }
+
+    function showEditModal() {
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    function hideEditModal() {
+      document.getElementById('editModal').classList.remove('active');
+    }
+
+    function editTeam(teamId, name, description, parentTeamId) {
+      document.getElementById('editTeamId').value = teamId;
+      document.getElementById('editTeamName').value = name;
+      document.getElementById('editTeamDescription').value = description || '';
+      document.getElementById('editParentTeam').value = parentTeamId || '';
+      showEditModal();
+    }
+
+    async function manageMembers(teamId, teamName) {
+      document.getElementById('membersModalTitle').textContent = `Manage Members - ${teamName}`;
+      document.getElementById('membersModalContent').innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+          <div class="spinner" style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
+        </div>
+      `;
+      document.getElementById('membersModal').classList.add('active');
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}`);
+        const team = await response.json();
+
+        const currentMemberIds = team.members.map(m => m.id);
+        const availableMembers = orgMembers.filter(m => !currentMemberIds.includes(m.id));
+
+        document.getElementById('membersModalContent').innerHTML = `
+          <div class="members-list">
+            <h3 style="font-size: 16px; margin-bottom: 16px; color: #f8fafc;">Current Members (${team.members.length})</h3>
+            ${team.members.length > 0 ? team.members.map(m => `
+              <div class="member-item">
+                <div class="member-info">
+                  <div class="member-name">
+                    ${m.name || 'No name'}
+                    ${team.manager && team.manager.id === m.id ? '<span class="is-manager">MANAGER</span>' : ''}
+                  </div>
+                  <div class="member-email">${m.email}</div>
+                </div>
+                <div class="member-actions">
+                  <select onchange="updateMemberRole('${teamId}', '${m.id}', this.value)" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; margin-right: 8px;">
+                    <option value="member" ${m.role === 'member' ? 'selected' : ''}>Member</option>
+                    <option value="line_manager" ${m.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
+                    <option value="team_lead" ${m.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
+                  </select>
+                  <button class="btn btn-danger btn-sm" onclick="removeMember('${teamId}', '${m.id}', '${escapeHtml(m.name || m.email)}')">Remove</button>
+                </div>
+              </div>
+            `).join('') : '<p style="color: var(--muted); padding: 12px 0;">No members yet</p>'}
+          </div>
+          <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line);">
+            <h3 style="font-size: 16px; margin-bottom: 16px; color: #f8fafc;">Add Member</h3>
+            <form id="addMemberForm" onsubmit="event.preventDefault(); addMember('${teamId}');">
+              <div class="form-group">
+                <label for="newMemberId">Select Member</label>
+                <select id="newMemberId" required style="margin-bottom: 12px;">
+                  <option value="">Choose a member...</option>
+                  ${availableMembers.map(m => `
+                    <option value="${m.id}">${escapeHtml(m.name || m.email)} (${m.email})</option>
+                  `).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="newMemberRole">Role</label>
+                <select id="newMemberRole" required>
+                  <option value="member">Member</option>
+                  <option value="line_manager">Line Manager</option>
+                  <option value="team_lead">Team Lead</option>
+                </select>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Add Member</button>
+              </div>
+            </form>
+          </div>
+        `;
+      } catch (error) {
+        console.error('Failed to load team:', error);
+        document.getElementById('membersModalContent').innerHTML = `
+          <div class="alert alert-error">Failed to load team members</div>
+        `;
+      }
+    }
+
+    function hideMembersModal() {
+      document.getElementById('membersModal').classList.remove('active');
+    }
+
+    async function addMember(teamId) {
+      const memberId = document.getElementById('newMemberId').value;
+      const role = document.getElementById('newMemberRole').value;
+
+      if (!memberId) {
+        alert('Please select a member');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountId: memberId, role })
+        });
+
+        if (response.ok) {
+          const team = teams.find(t => t.id === teamId);
+          manageMembers(teamId, team ? team.name : 'Team');
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to add member');
+        }
+      } catch (error) {
+        console.error('Add member error:', error);
+        alert('Failed to add member');
+      }
+    }
+
+    async function removeMember(teamId, memberId, memberName) {
+      if (!confirm(`Remove ${memberName} from this team?`)) return;
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          const team = teams.find(t => t.id === teamId);
+          manageMembers(teamId, team ? team.name : 'Team');
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to remove member');
+        }
+      } catch (error) {
+        console.error('Remove member error:', error);
+        alert('Failed to remove member');
+      }
+    }
+
+    async function updateMemberRole(teamId, memberId, newRole) {
+      try {
+        const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: newRole })
+        });
+
+        if (response.ok) {
+          const team = teams.find(t => t.id === teamId);
+          manageMembers(teamId, team ? team.name : 'Team');
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to update role');
+        }
+      } catch (error) {
+        console.error('Update role error:', error);
+        alert('Failed to update role');
+      }
+    }
+
+    async function setManager(teamId, teamName) {
+      document.getElementById('managerModalTitle').textContent = `Set Manager - ${teamName}`;
+      document.getElementById('managerModalContent').innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+          <div class="spinner" style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
+        </div>
+      `;
+      document.getElementById('managerModal').classList.add('active');
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}`);
+        const team = await response.json();
+
+        // Only show members with line_manager role
+        const lineManagers = team.members.filter(m => m.role === 'line_manager');
+
+        document.getElementById('managerModalContent').innerHTML = `
+          <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
+            Only members with <strong>line_manager</strong> role can be set as team manager.
+            ${team.manager ? `Current manager: <strong>${team.manager.name || team.manager.email}</strong>` : 'No manager currently assigned.'}
+          </p>
+          ${lineManagers.length > 0 ? `
+            <form id="setManagerForm" onsubmit="event.preventDefault(); doSetManager('${teamId}');">
+              <div class="form-group">
+                <label for="managerAccountId">Select Manager</label>
+                <select id="managerAccountId">
+                  <option value="">Clear manager (no manager)</option>
+                  ${lineManagers.map(m => `
+                    <option value="${m.id}" ${team.manager && team.manager.id === m.id ? 'selected' : ''}>
+                      ${escapeHtml(m.name || m.email)} (${m.email})
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Set Manager</button>
+              </div>
+            </form>
+          ` : `
+            <div class="alert alert-error">
+              No members with line_manager role found. Assign line_manager role to a team member first.
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Close</button>
+              <button type="button" class="btn btn-primary" onclick="hideManagerModal(); manageMembers('${teamId}', '${teamName}');">Manage Members</button>
+            </div>
+          `}
+        `;
+      } catch (error) {
+        console.error('Failed to load team:', error);
+        document.getElementById('managerModalContent').innerHTML = `
+          <div class="alert alert-error">Failed to load team</div>
+        `;
+      }
+    }
+
+    function hideManagerModal() {
+      document.getElementById('managerModal').classList.remove('active');
+    }
+
+    async function doSetManager(teamId) {
+      const accountId = document.getElementById('managerAccountId').value;
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}/manager`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountId: accountId || null })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to set manager');
+        }
+      } catch (error) {
+        console.error('Set manager error:', error);
+        alert('Failed to set manager');
+      }
+    }
+
+    document.getElementById('createForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('teamName').value;
+      const description = document.getElementById('teamDescription').value;
+      const parentTeamId = document.getElementById('parentTeam').value || null;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/teams`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, parentTeamId })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to create team');
+        }
+      } catch (error) {
+        alert('Failed to create team');
+      }
+    });
+
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const teamId = document.getElementById('editTeamId').value;
+      const name = document.getElementById('editTeamName').value;
+      const description = document.getElementById('editTeamDescription').value;
+      const parentTeamId = document.getElementById('editParentTeam').value || null;
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, parentTeamId })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to update team');
+        }
+      } catch (error) {
+        alert('Failed to update team');
+      }
+    });
+
+    async function deleteTeam(teamId, name) {
+      if (!confirm(`Delete team "${name}"? This cannot be undone.`)) return;
+
+      try {
+        const response = await fetch(`/api/teams/${teamId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to delete team');
+        }
+      } catch (error) {
+        alert('Failed to delete team');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Close modals on outside click
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal')) {
+          modal.classList.remove('active');
+        }
+      });
+    });
+  </script>
+  <style>
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</body>
+
+</html>

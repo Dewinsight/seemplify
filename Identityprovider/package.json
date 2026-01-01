@@ -1,0 +1,29 @@
+{
+  "name": "aiin-identity-provider",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "express-session": "^1.18.0",
+    "ejs": "^3.1.10",
+    "jose": "^5.9.0",
+    "mongoose": "^8.15.1",
+    "oidc-provider": "^8.4.2",
+    "pino": "^9.4.0",
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

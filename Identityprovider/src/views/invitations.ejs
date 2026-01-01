@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Invitations - <%= organization.name %> - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --brand: #60a5fa;
+      --brand-2: #a855f7;
+      --surface: #0b1224;
+      --surface-2: #0f172a;
+      --surface-3: #1e293b;
+      --line: #1f2a44;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
+      min-height: 100vh;
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    .header-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--surface-3);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .card {
+      background: linear-gradient(160deg, rgba(16, 24, 40, 0.88), rgba(11, 18, 36, 0.92));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .invite-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .invite-info {
+      flex: 1;
+    }
+
+    .invite-email {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .invite-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .invite-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .role-admin {
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
+    }
+
+    .role-hr_manager {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .role-recruiter {
+      background: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+    }
+
+    .role-interviewer {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    .status-pending {
+      color: var(--warning);
+    }
+
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .back-link:hover {
+      color: var(--text);
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      margin: 16px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 20px;
+      color: #f8fafc;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .empty-state h3 {
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    /* Top Navigation */
+    .top-nav {
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      margin: -24px -24px 24px -24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .top-nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .top-nav-brand svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .top-nav-brand span {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .top-nav-links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .top-nav-link {
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .top-nav-link:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-link.active {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-user {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .top-nav-user-info {
+      text-align: right;
+    }
+
+    .top-nav-user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .top-nav-user-email {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .top-nav-logout {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .top-nav-logout:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    @media (max-width: 768px) {
+      .top-nav {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .top-nav-user-info {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="/" class="top-nav-brand">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 17L12 22L22 17" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 12L12 17L22 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <defs>
+          <linearGradient id="grad1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#60a5fa" />
+            <stop offset="1" stop-color="#a855f7" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>AIIN Identity</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/organizations" class="top-nav-link active">Organizations</a>
+      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+    <div class="top-nav-user">
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name">
+          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+        </div>
+        <div class="top-nav-user-email">
+          <%= user.email %>
+        </div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <a href="/organizations/<%= organization._id %>/members" class="back-link">← Back to Members</a>
+
+    <div class="header">
+      <div>
+        <h1>Pending Invitations</h1>
+        <div class="header-subtitle">
+          <%= organization.name %>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="showInviteModal()">
+          + Invite Member
+        </button>
+      </div>
+    </div>
+
+    <% if (typeof error !=='undefined' && error) { %>
+      <div class="alert alert-error">
+        <%= error %>
+      </div>
+      <% } %>
+
+        <% if (typeof success !=='undefined' && success) { %>
+          <div class="alert alert-success">
+            <%= success %>
+          </div>
+          <% } %>
+
+            <% if (invitations && invitations.length> 0) { %>
+              <% invitations.forEach(invite=> { %>
+                <div class="card invite-card">
+                  <div class="invite-info">
+                    <div class="invite-email">
+                      <%= invite.email %>
+                    </div>
+                    <div class="invite-meta">
+                      <span class="role-badge role-<%= invite.role %>">
+                        <%= invite.role %>
+                      </span>
+                      <span class="status-pending">Pending</span>
+                      <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
+                      <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
+                    </div>
+                  </div>
+                  <div class="invite-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">
+                      Resend
+                    </button>
+                    <button class="btn btn-danger btn-sm"
+                      onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+                <% }) %>
+                  <% } else { %>
+                    <div class="card empty-state">
+                      <h3>No pending invitations</h3>
+                      <p>Invite members to join your organization.</p>
+                      <button class="btn btn-primary" onclick="showInviteModal()">
+                        + Invite Member
+                      </button>
+                    </div>
+                    <% } %>
+  </div>
+
+  <!-- Invite Modal -->
+  <div class="modal" id="inviteModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Invite Member</h2>
+        <button class="modal-close" onclick="hideInviteModal()">&times;</button>
+      </div>
+      <form id="inviteForm">
+        <div class="form-group">
+          <label for="email">Email Address *</label>
+          <input type="email" id="email" name="email" required placeholder="colleague@company.com">
+        </div>
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role" name="role">
+            <option value="admin">Admin</option>
+            <option value="hr_manager">HR Manager</option>
+            <option value="recruiter" selected>Recruiter</option>
+            <option value="interviewer">Interviewer</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideInviteModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send Invitation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const orgId = '<%= organization._id %>';
+
+    function showInviteModal() {
+      document.getElementById('inviteModal').classList.add('active');
+    }
+
+    function hideInviteModal() {
+      document.getElementById('inviteModal').classList.remove('active');
+      document.getElementById('inviteForm').reset();
+    }
+
+    document.getElementById('inviteForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const role = document.getElementById('role').value;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/invitations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, role })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to send invitation');
+        }
+      } catch (error) {
+        alert('Failed to send invitation');
+      }
+    });
+
+    async function resendInvite(inviteId) {
+      if (!confirm('Resend invitation?')) return;
+
+      try {
+        const response = await fetch(`/api/invitations/${inviteId}/resend`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          alert('Invitation resent successfully');
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to resend invitation');
+        }
+      } catch (error) {
+        alert('Failed to resend invitation');
+      }
+    }
+
+    async function cancelInvite(inviteId, email) {
+      if (!confirm(`Cancel invitation for ${email}?`)) return;
+
+      try {
+        const response = await fetch(`/api/invitations/${inviteId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to cancel invitation');
+        }
+      } catch (error) {
+        alert('Failed to cancel invitation');
+      }
+    }
+
+    // Close modal on outside click
+    document.getElementById('inviteModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        hideInviteModal();
+      }
+    });
+  </script>
+</body>
+
+</html>

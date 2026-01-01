@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Members - <%= organization.name %> - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --brand: #60a5fa;
+      --brand-2: #a855f7;
+      --surface: #0b1224;
+      --surface-2: #0f172a;
+      --surface-3: #1e293b;
+      --line: #1f2a44;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
+      min-height: 100vh;
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    .header-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: white;
+    }
+
+    .btn-secondary {
+      background: var(--surface-3);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .card {
+      background: linear-gradient(160deg, rgba(16, 24, 40, 0.88), rgba(11, 18, 36, 0.92));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .member-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .member-info {
+      flex: 1;
+    }
+
+    .member-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .member-email {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .member-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .member-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .role-owner {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+    }
+
+    .role-admin {
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
+    }
+
+    .role-hr_manager {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .role-recruiter {
+      background: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+    }
+
+    .role-interviewer {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    .role-select {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .back-link:hover {
+      color: var(--text);
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      margin: 16px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 20px;
+      color: #f8fafc;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .form-group select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      background: var(--surface-3);
+      padding: 16px 24px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Top Navigation */
+    .top-nav {
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      margin: -24px -24px 24px -24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .top-nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .top-nav-brand svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .top-nav-brand span {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .top-nav-links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .top-nav-link {
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .top-nav-link:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-link.active {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-user {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .top-nav-user-info {
+      text-align: right;
+    }
+
+    .top-nav-user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .top-nav-user-email {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .top-nav-logout {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .top-nav-logout:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    @media (max-width: 768px) {
+      .top-nav {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .top-nav-user-info {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="/" class="top-nav-brand">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 17L12 22L22 17" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 12L12 17L22 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <defs>
+          <linearGradient id="grad1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#60a5fa" />
+            <stop offset="1" stop-color="#a855f7" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>AIIN Identity</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/organizations" class="top-nav-link active">Organizations</a>
+      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+    <div class="top-nav-user">
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name">
+          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+        </div>
+        <div class="top-nav-user-email">
+          <%= user.email %>
+        </div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <a href="/organizations" class="back-link">← Back to Organizations</a>
+
+    <div class="header">
+      <div>
+        <h1>Members</h1>
+        <div class="header-subtitle">
+          <%= organization.name %>
+        </div>
+      </div>
+      <div class="header-actions">
+        <% if (['owner', 'admin' ].includes(yourRole)) { %>
+          <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">
+            + Invite Member
+          </a>
+          <% } %>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value">
+          <%= members.length %>
+        </div>
+        <div class="stat-label">Total Members</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">
+          <%= ownerCount %>
+        </div>
+        <div class="stat-label">Owners</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value role-badge role-<%= yourRole %>">
+          <%= yourRole %>
+        </div>
+        <div class="stat-label">Your Role</div>
+      </div>
+    </div>
+
+    <% if (typeof error !=='undefined' && error) { %>
+      <div class="alert alert-error">
+        <%= error %>
+      </div>
+      <% } %>
+
+        <% if (typeof success !=='undefined' && success) { %>
+          <div class="alert alert-success">
+            <%= success %>
+          </div>
+          <% } %>
+
+            <% members.forEach(member=> { %>
+              <div class="card member-card">
+                <div class="member-info">
+                  <div class="member-name">
+                    <%= member.name || 'No name' %>
+                      <% if (member.isOwner) { %>
+                        <span style="color: var(--brand-2); font-size: 12px;">(Primary Owner)</span>
+                        <% } %>
+                  </div>
+                  <div class="member-email">
+                    <%= member.email %>
+                  </div>
+                  <div class="member-meta">
+                    <span class="role-badge role-<%= member.role %>">
+                      <%= member.role %>
+                    </span>
+                    <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
+                  </div>
+                </div>
+                <div class="member-actions">
+                  <% if (['owner', 'admin' ].includes(yourRole) && member.id.toString() !==user._id.toString()) { %>
+                    <select class="role-select" onchange="updateRole('<%= member.id %>', this.value)"
+                      <%=member.role==='owner' && yourRole !=='owner' ? 'disabled' : '' %>>
+                      <option value="owner" <%=member.role==='owner' ? 'selected' : '' %>
+                        <%= yourRole !=='owner' ? 'disabled' : '' %>>Owner
+                      </option>
+                      <option value="admin" <%=member.role==='admin' ? 'selected' : '' %>>Admin</option>
+                      <option value="hr_manager" <%=member.role==='hr_manager' ? 'selected' : '' %>>HR Manager</option>
+                      <option value="recruiter" <%=member.role==='recruiter' ? 'selected' : '' %>>Recruiter</option>
+                      <option value="interviewer" <%=member.role==='interviewer' ? 'selected' : '' %>>Interviewer
+                      </option>
+                    </select>
+                    <button class="btn btn-danger btn-sm"
+                      onclick="removeMember('<%= member.id %>', '<%= member.email %>')">
+                      Remove
+                    </button>
+                    <% } else if (member.id.toString()===user._id.toString()) { %>
+                      <span style="color: var(--muted); font-size: 13px;">(You)</span>
+                      <% } %>
+                </div>
+              </div>
+              <% }) %>
+
+                <% if (yourRole==='owner' ) { %>
+                  <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                      <button class="btn btn-primary" onclick="showTransferModal()">
+                        Transfer Ownership
+                      </button>
+                      <% if (ownerCount> 1) { %>
+                        <button class="btn btn-danger" onclick="leaveOrganization()">
+                          Leave Organization
+                        </button>
+                        <% } %>
+                    </div>
+                  </div>
+                  <% } else if (yourRole !=='owner' ) { %>
+                    <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
+                      <button class="btn btn-danger" onclick="leaveOrganization()">
+                        Leave Organization
+                      </button>
+                    </div>
+                    <% } %>
+  </div>
+
+  <!-- Transfer Ownership Modal -->
+  <div class="modal" id="transferModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Transfer Ownership</h2>
+        <button class="modal-close" onclick="hideTransferModal()">&times;</button>
+      </div>
+      <p style="color: var(--muted); margin-bottom: 16px;">
+        Select a member to transfer ownership to. You will become an admin after transfer.
+      </p>
+      <div class="form-group">
+        <label for="newOwner">New Owner</label>
+        <select id="newOwner">
+          <% members.filter(m=> m.role !== 'owner').forEach(member => { %>
+            <option value="<%= member.id %>">
+              <%= member.name || member.email %>
+            </option>
+            <% }) %>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="hideTransferModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmTransfer()">Transfer Ownership</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const orgId = '<%= organization._id %>';
+
+    async function updateRole(memberId, newRole) {
+      if (!confirm(`Change role to ${newRole}?`)) {
+        window.location.reload();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: newRole })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to update role');
+          window.location.reload();
+        }
+      } catch (error) {
+        alert('Failed to update role');
+        window.location.reload();
+      }
+    }
+
+    async function removeMember(memberId, email) {
+      if (!confirm(`Remove ${email} from this organization?`)) return;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to remove member');
+        }
+      } catch (error) {
+        alert('Failed to remove member');
+      }
+    }
+
+    async function leaveOrganization() {
+      if (!confirm('Are you sure you want to leave this organization?')) return;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/leave`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          window.location.href = '/organizations';
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to leave organization');
+        }
+      } catch (error) {
+        alert('Failed to leave organization');
+      }
+    }
+
+    function showTransferModal() {
+      document.getElementById('transferModal').classList.add('active');
+    }
+
+    function hideTransferModal() {
+      document.getElementById('transferModal').classList.remove('active');
+    }
+
+    async function confirmTransfer() {
+      const newOwnerId = document.getElementById('newOwner').value;
+      if (!newOwnerId) {
+        alert('Please select a new owner');
+        return;
+      }
+
+      if (!confirm('Are you sure you want to transfer ownership? This cannot be undone.')) return;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/transfer-ownership`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newOwnerId })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to transfer ownership');
+        }
+      } catch (error) {
+        alert('Failed to transfer ownership');
+      }
+    }
+  </script>
+</body>
+
+</html>

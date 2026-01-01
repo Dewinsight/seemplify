@@ -1,0 +1,17 @@
+[build]
+  command = "npm install --legacy-peer-deps && npm run build"
+  publish = ".next"
+  base = "performance-management/frontend"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+  # Disable pnpm detection - force npm
+  NETLIFY_USE_PNPM = "false"
+  NEXT_PUBLIC_API_URL = "https://performance-backend.azurewebsites.net/api"
+  NEXTAUTH_URL = "https://smarthr-performance.netlify.app"
+  OIDC_ISSUER = "https://smarthr-identity.azurewebsites.net"
+  OIDC_CLIENT_ID = "performance-management"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

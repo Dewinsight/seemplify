@@ -1,0 +1,89 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+.env.local
+.env.production
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Upload directories (user files - should not be deployed)
+/uploads/*
+/optimized_cvs/*
+/generated_cvs/*
+
+# Keep directory structure but ignore contents
+!uploads/.gitkeep
+!optimized_cvs/.gitkeep
+!generated_cvs/.gitkeep
+
+# Frontend folder (should not be in backend)
+/frontend/
+
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Temporary folders
+temp/
+tmp/
+
+# Large files that shouldn't be deployed
+package-lock.json
+*.tsbuildinfo
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Memory storage (if it contains large files)
+/memory/*
+!memory/.gitkeep
+
+# Documentation files (keep local only - except important docs)
+# *.md
+# !README.md
+

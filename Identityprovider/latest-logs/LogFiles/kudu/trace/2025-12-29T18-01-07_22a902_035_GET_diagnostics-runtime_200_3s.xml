@@ -1,0 +1,7 @@
+<step title="Incoming Request" date="2025-12-29T18:01:07.186" instance="22a902" url="/diagnostics/runtime" method="GET" type="request" pid="843,1,87" Host="smarthr-identity.scm.azurewebsites.net" User-Agent="GITHUBACTIONS_DeployWebAppToAzure_0595eca4481c4da5a6886b0543c1213ae2596c27e462449a1cc777eb06398f8b" Authorization="Bas..." Content-Type="application/json; charset=utf-8" Content-Length="0" X-ARR-LOG-ID="606e2b77-0dde-4ad0-947c-1753c71c92a5" CLIENT-IP="20.169.72.162:42000" X-SITE-DEPLOYMENT-ID="smarthr-identity" WAS-DEFAULT-HOSTNAME="smarthr-identity.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/diagnostics/runtime" X-Client-IP="20.169.72.162" X-Client-Port="42000" >
+  <step title="Cleanup Xml Logs" date="2025-12-29T18:01:07.295" >
+    <step title="Cleanup Infos" date="2025-12-29T18:01:07.913" totalFiles="227" totalCleanup="67" /><!-- duration: 57ms -->
+  </step><!-- duration: 730ms -->
+  <step title="RuntimeController.GetRuntimeVersions" date="2025-12-29T18:01:09.423" /><!-- duration: 230ms -->
+  <step title="Outgoing response" date="2025-12-29T18:01:09.940" type="response" statusCode="200" statusText="OK" /><!-- duration: 74ms -->
+</step><!-- duration: 2959ms -->

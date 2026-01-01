@@ -1,0 +1,170 @@
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  organizations: Organization[];
+  teams: Team[];
+  currentOrganization?: Organization;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  role: string;
+  permissions?: string[];
+  appPermissions?: Record<string, string[]>;
+  teamPermissions?: string[];
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  organizationId: string;
+  organizationName: string;
+  parentTeamId?: string;
+  parentTeamName?: string;
+  hierarchyPath: string[];
+  role: string;
+  isManager: boolean;
+  managerId?: string;
+  directReports?: string[];
+}
+
+export interface LeaveRequest {
+  _id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  organizationId: string;
+  organizationName: string;
+  teamId?: string;
+  teamName?: string;
+  teamHierarchyPath?: string[];
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  numberOfDays: number;
+  reason?: string;
+  timezone: string;
+  status: LeaveStatus;
+  assignedApprover?: {
+    userId: string;
+    userName: string;
+    userEmail?: string;
+    teamId?: string;
+    assignedAt: string;
+    assignmentType: string;
+  };
+  approvedBy?: {
+    userId: string;
+    userName: string;
+    userEmail?: string;
+    approvedAt: string;
+    comment?: string;
+    approvalType: string;
+  };
+  rejectedBy?: {
+    userId: string;
+    userName: string;
+    userEmail?: string;
+    rejectedAt: string;
+    rejectionReason: string;
+  };
+  cancelledBy?: {
+    userId: string;
+    userName: string;
+    cancelledAt: string;
+    cancellationReason?: string;
+  };
+  auditLog: AuditLogEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLogEntry {
+  action: string;
+  performedBy: string;
+  performedByName?: string;
+  performedAt: string;
+  details?: string;
+}
+
+export type LeaveType = 'annual' | 'sick' | 'personal' | 'maternity' | 'paternity' | 'unpaid';
+
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface LeaveBalance {
+  _id: string;
+  userId: string;
+  userEmail: string;
+  userName?: string;
+  organizationId: string;
+  year: number;
+  annual: BalanceType;
+  sick: BalanceType;
+  personal: BalanceType;
+  maternity: BalanceType;
+  paternity: BalanceType;
+  unpaid: BalanceType;
+  timezone: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BalanceType {
+  total: number;
+  used: number;
+  remaining: number;
+  pending: number;
+}
+
+export interface LeavePolicy {
+  _id: string;
+  organizationId: string;
+  organizationName?: string;
+  annualLeaveDays: number;
+  sickLeaveDays: number;
+  personalLeaveDays: number;
+  maternityLeaveDays: number;
+  paternityLeaveDays: number;
+  unpaidLeaveDays: number;
+  requiresApproval: boolean;
+  approvalRoles: string[];
+  autoApproveTypes: string[];
+  maxConsecutiveDays: number;
+  advanceNoticeDays: number;
+  minLeaveDays: number;
+  carryOverAllowed: boolean;
+  maxCarryOverDays: number;
+  timezone: string;
+  workingDays: number[];
+  holidays: Holiday[];
+  accrualMethod: string;
+  accrualDay: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Holiday {
+  date: string;
+  name: string;
+  isRecurring: boolean;
+}
+
+export interface ApiResponse<T> {
+  success?: boolean;
+  error?: string;
+  code?: string;
+  data?: T;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}

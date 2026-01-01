@@ -1,0 +1,605 @@
+import express from 'express'
+import { Team } from '../models/Team.js'
+import { Organization } from '../models/Organization.js'
+import { Account } from '../models/Account.js'
+import {
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationAdmin,
+  requireTeamMember,
+  requireTeamAdminOrManager
+} from '../middleware/permissions.js'
+import webhookService from '../services/webhookService.js'
+
+const router = express.Router()
+
+/**
+ * Get teams for an organization
+ * GET /api/organizations/:orgId/teams
+ */
+router.get('/organizations/:orgId/teams',
+  requireAuth,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      const { tree } = req.query
+
+      if (tree === 'true') {
+        // Return tree structure
+        const teamTree = await Team.buildTeamTree(req.params.orgId)
+        return res.json(teamTree)
+      }
+
+      // Return flat list
+      const teams = await Team.find({ organization: req.params.orgId })
+        .populate('manager', 'email profile.name')
+        .populate('members.account', 'email profile.name')
+        .populate('parentTeam', 'name')
+        .sort({ name: 1 })
+
+      res.json(teams.map(team => ({
+        id: team._id,
+        name: team.name,
+        description: team.description,
+        parentTeam: team.parentTeam ? {
+          id: team.parentTeam._id,
+          name: team.parentTeam.name
+        } : null,
+        manager: team.manager ? {
+          id: team.manager._id,
+          email: team.manager.email,
+          name: team.manager.profile?.name
+        } : null,
+        memberCount: team.memberCount,
+        createdAt: team.createdAt
+      })))
+    } catch (error) {
+      console.error('Get teams error:', error)
+      res.status(500).json({ error: 'Failed to get teams' })
+    }
+  }
+)
+
+/**
+ * Create team
+ * POST /api/organizations/:orgId/teams
+ * Requires admin or owner role
+ */
+router.post('/organizations/:orgId/teams',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationAdmin,
+  async (req, res) => {
+    try {
+      const { name, description, parentTeamId, managerId } = req.body
+
+      if (!name || name.trim().length === 0) {
+        return res.status(400).json({ error: 'Team name is required' })
+      }
+
+      if (name.length > 100) {
+        return res.status(400).json({ error: 'Team name must be 100 characters or less' })
+      }
+
+      // Verify parent team belongs to same organization
+      if (parentTeamId) {
+        const parentTeam = await Team.findById(parentTeamId)
+        if (!parentTeam || parentTeam.organization.toString() !== req.params.orgId) {
+          return res.status(400).json({ error: 'Invalid parent team' })
+        }
+      }
+
+      const team = await Team.create({
+        organization: req.params.orgId,
+        name: name.trim(),
+        description: description?.trim(),
+        parentTeam: parentTeamId || null,
+        manager: null, // Manager must be set separately with line_manager role
+        members: []
+      })
+
+      console.log('✅ Team created:', team.name, 'in', req.organization.name, 'by', req.user.email)
+
+      res.status(201).json({
+        id: team._id,
+        name: team.name,
+        description: team.description,
+        parentTeamId: team.parentTeam,
+        message: 'Team created successfully'
+      })
+    } catch (error) {
+      console.error('Create team error:', error)
+      res.status(500).json({ error: 'Failed to create team' })
+    }
+  }
+)
+
+/**
+ * Get team details
+ * GET /api/teams/:teamId
+ */
+router.get('/:teamId',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const team = await Team.findById(req.params.teamId)
+        .populate('organization', 'name')
+        .populate('manager', 'email profile.name')
+        .populate('members.account', 'email profile.name')
+        .populate('parentTeam', 'name')
+
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' })
+      }
+
+      // Verify user is member of organization
+      const organization = await Organization.findById(team.organization._id)
+      if (!organization.isMember(req.user._id)) {
+        return res.status(403).json({ error: 'Not a member of this organization' })
+      }
+
+      // Get hierarchy path
+      const hierarchyPath = await team.getHierarchyPath()
+
+      // Get sub-teams
+      const subTeams = await Team.find({ parentTeam: team._id })
+        .select('name memberCount')
+
+      res.json({
+        id: team._id,
+        name: team.name,
+        description: team.description,
+        organization: {
+          id: team.organization._id,
+          name: team.organization.name
+        },
+        parentTeam: team.parentTeam ? {
+          id: team.parentTeam._id,
+          name: team.parentTeam.name
+        } : null,
+        hierarchyPath,
+        manager: team.manager ? {
+          id: team.manager._id,
+          email: team.manager.email,
+          name: team.manager.profile?.name
+        } : null,
+        members: team.members
+          .filter(m => m.status === 'active')
+          .map(m => ({
+            id: m.account._id,
+            email: m.account.email,
+            name: m.account.profile?.name,
+            role: m.role,
+            joinedAt: m.joinedAt,
+            isManager: team.manager?.toString() === m.account._id.toString()
+          })),
+        subTeams: subTeams.map(st => ({
+          id: st._id,
+          name: st.name,
+          memberCount: st.memberCount
+        })),
+        memberCount: team.memberCount,
+        createdAt: team.createdAt
+      })
+    } catch (error) {
+      console.error('Get team error:', error)
+      res.status(500).json({ error: 'Failed to get team' })
+    }
+  }
+)
+
+/**
+ * Update team
+ * PUT /api/teams/:teamId
+ * Requires org admin or team manager (with line_manager role)
+ */
+router.put('/:teamId',
+  requireAuth,
+  requireTeamAdminOrManager,
+  async (req, res) => {
+    try {
+      const { name, description, parentTeamId } = req.body
+
+      const updates = {}
+      if (name !== undefined) {
+        if (name.trim().length === 0) {
+          return res.status(400).json({ error: 'Team name cannot be empty' })
+        }
+        if (name.length > 100) {
+          return res.status(400).json({ error: 'Team name must be 100 characters or less' })
+        }
+        updates.name = name.trim()
+      }
+      if (description !== undefined) {
+        updates.description = description?.trim()
+      }
+      if (parentTeamId !== undefined) {
+        // Verify parent team belongs to same organization
+        if (parentTeamId) {
+          const parentTeam = await Team.findById(parentTeamId)
+          if (!parentTeam || parentTeam.organization.toString() !== req.team.organization.toString()) {
+            return res.status(400).json({ error: 'Invalid parent team' })
+          }
+          // Prevent circular reference
+          if (parentTeamId === req.team._id.toString()) {
+            return res.status(400).json({ error: 'Team cannot be its own parent' })
+          }
+        }
+        updates.parentTeam = parentTeamId || null
+      }
+
+      const team = await Team.findByIdAndUpdate(
+        req.params.teamId,
+        { $set: updates },
+        { new: true }
+      )
+
+      console.log('✅ Team updated:', team.name, 'by', req.user.email)
+
+      res.json({
+        id: team._id,
+        name: team.name,
+        description: team.description,
+        parentTeamId: team.parentTeam
+      })
+    } catch (error) {
+      console.error('Update team error:', error)
+      res.status(500).json({ error: 'Failed to update team' })
+    }
+  }
+)
+
+/**
+ * Delete team
+ * DELETE /api/teams/:teamId
+ * Requires org admin
+ */
+router.delete('/:teamId',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const team = await Team.findById(req.params.teamId)
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' })
+      }
+
+      // Verify org admin
+      const organization = await Organization.findById(team.organization)
+      const member = organization.members.find(
+        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
+      )
+
+      if (!member || !['owner', 'admin'].includes(member.role)) {
+        return res.status(403).json({ error: 'Organization admin or owner role required' })
+      }
+
+      // Check for sub-teams
+      const subTeams = await Team.find({ parentTeam: team._id })
+      if (subTeams.length > 0) {
+        return res.status(400).json({
+          error: 'Cannot delete team with sub-teams. Delete or reassign sub-teams first.'
+        })
+      }
+
+      // Remove team from all members' accounts
+      const memberIds = team.members.map(m => m.account)
+      await Account.updateMany(
+        { _id: { $in: memberIds } },
+        { $pull: { teams: { team: team._id } } }
+      )
+
+      await Team.findByIdAndDelete(req.params.teamId)
+
+      console.log('✅ Team deleted:', team.name, 'by', req.user.email)
+
+      res.json({ message: 'Team deleted successfully' })
+    } catch (error) {
+      console.error('Delete team error:', error)
+      res.status(500).json({ error: 'Failed to delete team' })
+    }
+  }
+)
+
+/**
+ * Add member to team
+ * POST /api/teams/:teamId/members
+ * Requires org admin or team manager
+ */
+router.post('/:teamId/members',
+  requireAuth,
+  requireTeamAdminOrManager,
+  async (req, res) => {
+    try {
+      const { accountId, role = 'member' } = req.body
+
+      if (!accountId) {
+        return res.status(400).json({ error: 'Account ID is required' })
+      }
+
+      // Validate role
+      const validRoles = ['member', 'line_manager', 'team_lead']
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      }
+
+      // Verify account exists and is member of organization
+      const account = await Account.findById(accountId)
+      if (!account) {
+        return res.status(404).json({ error: 'Account not found' })
+      }
+
+      if (!req.organization.isMember(accountId)) {
+        return res.status(400).json({ error: 'Account must be a member of the organization' })
+      }
+
+      await req.team.addMember(accountId, role)
+
+      console.log('✅ Member added to team:', req.team.name, 'by', req.user.email)
+
+      // Send webhook notification for team member addition
+      const teamData = {
+        id: req.team._id.toString(),
+        name: req.team.name,
+        role: role
+      }
+      webhookService.notifyTeamMemberAdded(
+        accountId,
+        req.team._id.toString(),
+        teamData,
+        req.team.organization.toString()
+      ).catch(err => console.error('Webhook notification failed:', err))
+
+      res.status(201).json({
+        message: 'Member added to team successfully',
+        memberId: accountId,
+        role
+      })
+    } catch (error) {
+      console.error('Add team member error:', error)
+      res.status(500).json({ error: 'Failed to add member to team' })
+    }
+  }
+)
+
+/**
+ * Remove member from team
+ * DELETE /api/teams/:teamId/members/:memberId
+ * Requires org admin or team manager
+ */
+router.delete('/:teamId/members/:memberId',
+  requireAuth,
+  requireTeamAdminOrManager,
+  async (req, res) => {
+    try {
+      const { memberId } = req.params
+
+      if (!req.team.isMember(memberId)) {
+        return res.status(404).json({ error: 'Member not found in team' })
+      }
+
+      await req.team.removeMember(memberId)
+
+      console.log('✅ Member removed from team:', req.team.name, 'by', req.user.email)
+
+      // Send webhook notification for team member removal
+      webhookService.notifyTeamMemberRemoved(
+        memberId,
+        req.team._id.toString(),
+        req.team.organization.toString()
+      ).catch(err => console.error('Webhook notification failed:', err))
+
+      res.json({
+        message: 'Member removed from team successfully',
+        memberId
+      })
+    } catch (error) {
+      console.error('Remove team member error:', error)
+      res.status(500).json({ error: 'Failed to remove member from team' })
+    }
+  }
+)
+
+/**
+ * Update team member role
+ * PUT /api/teams/:teamId/members/:memberId
+ * Requires org admin or team manager
+ */
+router.put('/:teamId/members/:memberId',
+  requireAuth,
+  requireTeamAdminOrManager,
+  async (req, res) => {
+    try {
+      const { memberId } = req.params
+      const { role } = req.body
+
+      if (!role) {
+        return res.status(400).json({ error: 'Role is required' })
+      }
+
+      const validRoles = ['member', 'line_manager', 'team_lead']
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      }
+
+      if (!req.team.isMember(memberId)) {
+        return res.status(404).json({ error: 'Member not found in team' })
+      }
+
+      // Get old role before updating
+      const member = req.team.members.find(m => m.account.toString() === memberId)
+      const oldRole = member?.role || 'member'
+
+      await req.team.updateMemberRole(memberId, role)
+
+      console.log('✅ Team member role updated to', role, 'in', req.team.name, 'by', req.user.email)
+
+      // Send webhook notification for role change
+      webhookService.notifyTeamRoleChanged(
+        memberId,
+        req.team._id.toString(),
+        oldRole,
+        role,
+        req.team.organization.toString()
+      ).catch(err => console.error('Webhook notification failed:', err))
+
+      res.json({
+        message: 'Team member role updated successfully',
+        memberId,
+        newRole: role
+      })
+    } catch (error) {
+      console.error('Update team member role error:', error)
+      res.status(500).json({ error: 'Failed to update team member role' })
+    }
+  }
+)
+
+/**
+ * Set team manager
+ * POST /api/teams/:teamId/manager
+ * CRITICAL: Account must have line_manager role in team
+ * Requires org admin
+ */
+router.post('/:teamId/manager',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { accountId } = req.body
+      const team = await Team.findById(req.params.teamId)
+
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' })
+      }
+
+      // Verify org admin
+      const organization = await Organization.findById(team.organization)
+      const member = organization.members.find(
+        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
+      )
+
+      if (!member || !['owner', 'admin'].includes(member.role)) {
+        return res.status(403).json({ error: 'Organization admin or owner role required' })
+      }
+
+      // Clear manager if accountId is null
+      if (accountId === null) {
+        team.manager = null
+        await team.save()
+        return res.json({ message: 'Team manager cleared' })
+      }
+
+      try {
+        await team.setManager(accountId)
+      } catch (err) {
+        return res.status(400).json({ error: err.message })
+      }
+
+      console.log('✅ Team manager set for', team.name, 'by', req.user.email)
+
+      res.json({
+        message: 'Team manager set successfully',
+        managerId: accountId
+      })
+    } catch (error) {
+      console.error('Set team manager error:', error)
+      res.status(500).json({ error: 'Failed to set team manager' })
+    }
+  }
+)
+
+/**
+ * Get team hierarchy (all sub-teams)
+ * GET /api/teams/:teamId/hierarchy
+ */
+router.get('/:teamId/hierarchy',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const team = await Team.findById(req.params.teamId)
+        .populate('organization', 'name')
+
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' })
+      }
+
+      // Verify org membership
+      const organization = await Organization.findById(team.organization._id)
+      if (!organization.isMember(req.user._id)) {
+        return res.status(403).json({ error: 'Not a member of this organization' })
+      }
+
+      const descendants = await team.getAllDescendantTeams()
+      const hierarchyPath = await team.getHierarchyPath()
+
+      res.json({
+        team: {
+          id: team._id,
+          name: team.name,
+          hierarchyPath
+        },
+        subTeams: descendants.map(t => ({
+          id: t._id,
+          name: t.name,
+          parentTeamId: t.parentTeam,
+          memberCount: t.memberCount
+        }))
+      })
+    } catch (error) {
+      console.error('Get team hierarchy error:', error)
+      res.status(500).json({ error: 'Failed to get team hierarchy' })
+    }
+  }
+)
+
+/**
+ * Get direct reports (team members + sub-team members)
+ * GET /api/teams/:teamId/reports
+ * Requires team manager (with line_manager role)
+ */
+router.get('/:teamId/reports',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const team = await Team.findById(req.params.teamId)
+        .populate('organization', 'name')
+
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' })
+      }
+
+      // Verify user is team manager with line_manager role
+      if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ error: 'Only team manager can view direct reports' })
+      }
+
+      const teamMember = team.members.find(
+        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
+      )
+
+      if (!teamMember || teamMember.role !== 'line_manager') {
+        return res.status(403).json({ error: 'Line manager role required' })
+      }
+
+      const reportIds = await team.getDirectReports()
+      const reports = await Account.find({
+        _id: { $in: reportIds }
+      }).select('email profile.name')
+
+      res.json({
+        teamId: team._id,
+        teamName: team.name,
+        directReports: reports.map(r => ({
+          id: r._id,
+          email: r.email,
+          name: r.profile?.name
+        })),
+        totalReports: reports.length
+      })
+    } catch (error) {
+      console.error('Get direct reports error:', error)
+      res.status(500).json({ error: 'Failed to get direct reports' })
+    }
+  }
+)
+
+export default router

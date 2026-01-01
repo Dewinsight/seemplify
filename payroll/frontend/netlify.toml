@@ -1,0 +1,29 @@
+[build]
+  command = "cd payroll/frontend && npm install --legacy-peer-deps && npm run build"
+  # Publish directory handled by @netlify/plugin-nextjs
+  base = "payroll/frontend"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+  # Disable pnpm detection - force npm
+  NETLIFY_USE_PNPM = "false"
+  NEXT_PUBLIC_API_URL = "https://payroll-backend-smarthr.azurewebsites.net/api"
+  NEXT_PUBLIC_IDP_URL = "https://smarthr-identity.azurewebsites.net"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+  [plugins.inputs]
+    # Let plugin handle publish directory automatically
+
+# Handle Next.js API routes and auth callbacks
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/___netlify-handler"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"

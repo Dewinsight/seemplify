@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Organizations - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --brand: #60a5fa;
+      --brand-2: #a855f7;
+      --surface: #0b1224;
+      --surface-2: #0f172a;
+      --surface-3: #1e293b;
+      --line: #1f2a44;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
+      min-height: 100vh;
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .notification-badge {
+      position: relative;
+      display: inline-block;
+    }
+
+    .notification-icon {
+      position: relative;
+      padding: 10px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+      background: var(--surface-3);
+      border: 1px solid var(--line);
+    }
+
+    .notification-icon:hover {
+      background: var(--line);
+    }
+
+    .badge-count {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: linear-gradient(135deg, var(--error), #dc2626);
+      color: white;
+      border-radius: 12px;
+      min-width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 0 6px;
+      border: 2px solid var(--surface-2);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.1);
+      }
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--surface-3);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn-secondary:hover {
+      background: var(--line);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
+
+    .card {
+      background: linear-gradient(160deg, rgba(16, 24, 40, 0.88), rgba(11, 18, 36, 0.92));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .org-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .org-info {
+      flex: 1;
+    }
+
+    .org-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .org-description {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .org-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .org-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .role-owner {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+    }
+
+    .role-admin {
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
+    }
+
+    .role-hr_manager {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .role-recruiter {
+      background: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+    }
+
+    .role-interviewer {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    .current-badge {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .empty-state h3 {
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      margin: 16px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 20px;
+      color: #f8fafc;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .back-link:hover {
+      color: var(--text);
+    }
+
+    @media (max-width: 640px) {
+      .org-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .org-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+    }
+
+    /* Top Navigation */
+    .top-nav {
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      margin: -24px -24px 24px -24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .top-nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .top-nav-brand svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .top-nav-brand span {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .top-nav-links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .top-nav-link {
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .top-nav-link:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-link.active {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .top-nav-user {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .top-nav-user-info {
+      text-align: right;
+    }
+
+    .top-nav-user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .top-nav-user-email {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .top-nav-logout {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .top-nav-logout:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    @media (max-width: 768px) {
+      .top-nav {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .top-nav-user-info {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="/" class="top-nav-brand">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 17L12 22L22 17" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <path d="M2 12L12 17L22 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <defs>
+          <linearGradient id="grad1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#60a5fa" />
+            <stop offset="1" stop-color="#a855f7" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>AIIN Identity</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/organizations" class="top-nav-link active">Organizations</a>
+      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+    <div class="top-nav-user">
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name">
+          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+        </div>
+        <div class="top-nav-user-email">
+          <%= user.email %>
+        </div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <div class="header">
+      <h1>Organizations</h1>
+      <div class="header-actions">
+        <% if (typeof pendingInvitationsCount !=='undefined' && pendingInvitationsCount> 0) { %>
+          <div class="notification-badge">
+            <div class="notification-icon" onclick="showInvitationsPopup()"
+              title="You have <%= pendingInvitationsCount %> pending invitation<%= pendingInvitationsCount !== 1 ? 's' : '' %>">
+              🔔
+              <span class="badge-count">
+                <%= pendingInvitationsCount %>
+              </span>
+            </div>
+          </div>
+          <% } %>
+            <a href="/invitations/pending" class="btn btn-secondary">
+              📧 My Invitations<% if (typeof pendingInvitationsCount !=='undefined' && pendingInvitationsCount> 0) { %>
+                (<%= pendingInvitationsCount %>)<% } %>
+            </a>
+            <button class="btn btn-primary" onclick="showCreateModal()">
+              + Create Organization
+            </button>
+      </div>
+    </div>
+
+    <% if (typeof error !=='undefined' && error) { %>
+      <div class="alert alert-error">
+        <%= error %>
+      </div>
+      <% } %>
+
+        <% if (typeof success !=='undefined' && success) { %>
+          <div class="alert alert-success">
+            <%= success %>
+          </div>
+          <% } %>
+
+            <% if (organizations && organizations.length> 0) { %>
+              <% organizations.forEach(org=> { %>
+                <div class="card org-card">
+                  <div class="org-info">
+                    <div class="org-name">
+                      <%= org.name %>
+                        <% if (org.isCurrentOrganization) { %>
+                          <span class="current-badge">Current</span>
+                          <% } %>
+                    </div>
+                    <% if (org.description) { %>
+                      <div class="org-description">
+                        <%= org.description %>
+                      </div>
+                      <% } %>
+                        <div class="org-meta">
+                          <span class="role-badge role-<%= org.role %>">
+                            <%= org.role %>
+                          </span>
+                          <span>
+                            <%= org.memberCount %> member<%= org.memberCount !==1 ? 's' : '' %>
+                          </span>
+                        </div>
+                  </div>
+                  <div class="org-actions">
+                    <% if (!org.isCurrentOrganization) { %>
+                      <form action="/organizations/<%= org.id %>/switch" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-secondary">Switch</button>
+                      </form>
+                      <% } %>
+                        <a href="/organizations/<%= org.id %>/members" class="btn btn-secondary">Members</a>
+                        <a href="/organizations/<%= org.id %>/teams" class="btn btn-secondary">Teams</a>
+                        <% if (['owner', 'admin' ].includes(org.role)) { %>
+                          <a href="/organizations/<%= org.id %>/invitations" class="btn btn-secondary">Invitations</a>
+                          <% } %>
+                            <% if (org.role==='owner' ) { %>
+                              <button class="btn btn-danger"
+                                onclick="deleteOrganization('<%= org.id %>', '<%= org.name.replace(/'/g, " \\'") %>')">
+                                🗑️ Delete
+                              </button>
+                              <% } %>
+                  </div>
+                </div>
+                <% }) %>
+                  <% } else { %>
+                    <div class="card empty-state">
+                      <h3>No organizations yet</h3>
+                      <p>Create your first organization to get started.</p>
+                      <button class="btn btn-primary" onclick="showCreateModal()">
+                        + Create Organization
+                      </button>
+                    </div>
+                    <% } %>
+  </div>
+
+  <!-- Pending Invitations Popup -->
+  <div class="modal" id="invitationsPopup">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h2>📧 You have pending invitations!</h2>
+        <button class="modal-close" onclick="hideInvitationsPopup()">&times;</button>
+      </div>
+      <div id="invitationsList" style="max-height: 400px; overflow-y: auto;">
+        <div style="text-align: center; padding: 20px;">
+          <div class="spinner"
+            style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;">
+          </div>
+          <p style="margin-top: 12px; color: var(--muted);">Loading invitations...</p>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="hideInvitationsPopup()">Close</button>
+        <a href="/invitations/pending" class="btn btn-primary">View All Invitations</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Organization Modal -->
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Organization</h2>
+        <button class="modal-close" onclick="hideCreateModal()">&times;</button>
+      </div>
+      <form action="/api/organizations" method="POST" id="createForm">
+        <div class="form-group">
+          <label for="name">Organization Name *</label>
+          <input type="text" id="name" name="name" required maxlength="100" placeholder="Enter organization name">
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" maxlength="500"
+            placeholder="Brief description (optional)"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Track if we've already shown the popup this session
+    const pendingInvitationsCount = <%= typeof pendingInvitationsCount !== 'undefined' ? pendingInvitationsCount : 0 %>;
+    const popupShownKey = 'invitationsPopupShown_' + new Date().toDateString();
+
+    function showCreateModal() {
+      document.getElementById('createModal').classList.add('active');
+    }
+
+    function hideCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+    }
+
+    function showInvitationsPopup() {
+      document.getElementById('invitationsPopup').classList.add('active');
+      loadInvitations();
+      // Mark as shown for today
+      sessionStorage.setItem(popupShownKey, 'true');
+    }
+
+    function hideInvitationsPopup() {
+      document.getElementById('invitationsPopup').classList.remove('active');
+    }
+
+    async function loadInvitations() {
+      const listContainer = document.getElementById('invitationsList');
+
+      try {
+        const response = await fetch('/api/invitations/pending');
+        if (!response.ok) throw new Error('Failed to load invitations');
+
+        const invitations = await response.json();
+
+        if (invitations.length === 0) {
+          listContainer.innerHTML = `
+            <div style="text-align: center; padding: 40px 20px;">
+              <div style="font-size: 48px; margin-bottom: 12px;">✨</div>
+              <h3 style="color: var(--text); margin-bottom: 8px;">All caught up!</h3>
+              <p style="color: var(--muted);">You don't have any pending invitations.</p>
+            </div>
+          `;
+          return;
+        }
+
+        listContainer.innerHTML = invitations.map(invite => `
+          <div class="card" style="margin-bottom: 12px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+              <div style="flex: 1;">
+                <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px;">
+                  ${invite.organization.name}
+                </div>
+                ${invite.organization.description ? `<div style="color: var(--muted); font-size: 14px; margin-bottom: 8px;">${invite.organization.description}</div>` : ''}
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                  <span class="role-badge role-${invite.role}">${invite.role}</span>
+                  <span style="color: var(--muted); font-size: 13px;">
+                    Invited by ${invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown'}
+                  </span>
+                  <span style="color: var(--muted); font-size: 13px;">
+                    Expires ${new Date(invite.expiresAt).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                <button class="btn btn-primary btn-sm" onclick="acceptInvite('${invite.id}')">
+                  Accept
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="declineInvite('${invite.id}')">
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading invitations:', error);
+        listContainer.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: var(--error);">
+            Failed to load invitations. Please try again.
+          </div>
+        `;
+      }
+    }
+
+    async function acceptInvite(inviteId) {
+      try {
+        const response = await fetch(`/api/invitations/accept/${inviteId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Redirect to the organization's members page
+          window.location.href = `/organizations/${data.organization.id}/members?success=Welcome to ${encodeURIComponent(data.organization.name)}!`;
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Failed to accept invitation');
+        }
+      } catch (error) {
+        console.error('Error accepting invitation:', error);
+        alert('Failed to accept invitation');
+      }
+    }
+
+    async function declineInvite(inviteId) {
+      if (!confirm('Are you sure you want to decline this invitation?')) return;
+
+      try {
+        const response = await fetch(`/api/invitations/${inviteId}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          // Reload invitations
+          loadInvitations();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Failed to decline invitation');
+        }
+      } catch (error) {
+        console.error('Error declining invitation:', error);
+        alert('Failed to decline invitation');
+      }
+    }
+
+    // Delete organization function
+    async function deleteOrganization(orgId, orgName) {
+      if (!confirm(`Delete organization "${orgName}"? This action cannot be undone and will remove all members.`)) return;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to delete organization');
+        }
+      } catch (error) {
+        console.error('Delete organization error:', error);
+        alert('Failed to delete organization');
+      }
+    }
+
+    // Handle form submission
+    document.getElementById('createForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch('/api/organizations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formData.get('name'),
+            description: formData.get('description')
+          })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to create organization');
+        }
+      } catch (error) {
+        alert('Failed to create organization');
+      }
+    });
+
+    // Close modal on outside click
+    document.getElementById('createModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        hideCreateModal();
+      }
+    });
+
+    // Close invitations popup on outside click
+    document.getElementById('invitationsPopup').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        hideInvitationsPopup();
+      }
+    });
+
+    // Auto-show invitations popup if there are pending invitations and we haven't shown it today
+    document.addEventListener('DOMContentLoaded', () => {
+      if (pendingInvitationsCount > 0 && !sessionStorage.getItem(popupShownKey)) {
+        // Small delay to let the page render first
+        setTimeout(() => {
+          showInvitationsPopup();
+        }, 500);
+      }
+    });
+  </script>
+</body>
+
+</html>

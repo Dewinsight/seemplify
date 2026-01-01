@@ -1,0 +1,4 @@
+<step title="Incoming Request" date="2025-12-18T16:36:00.358" instance="a822bc" url="/dump" method="GET" type="request" pid="831,1,72" Host="smarthr-identity.scm.azurewebsites.net" User-Agent="AZURECLI/2.65.0 (MSI)" Accept-Encoding="identity" Authorization="Bas..." x-ms-client-request-id="9dcef7eb-dc2f-11f0-a70e-8cf8c5144c26" X-ARR-LOG-ID="9dcef7eb-dc2f-11f0-a70e-8cf8c5144c26" CLIENT-IP="81.111.2.5:50370" X-SITE-DEPLOYMENT-ID="smarthr-identity" WAS-DEFAULT-HOSTNAME="smarthr-identity.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/dump" X-Client-IP="81.111.2.5" X-Client-Port="50370" >
+  <step title="Cleanup Xml Logs" date="2025-12-18T16:36:00.462" /><!-- duration: 450ms -->
+  <step title="Outgoing response" date="2025-12-18T16:36:09.560" type="response" statusCode="200" statusText="OK" /><!-- duration: 3ms -->
+</step><!-- duration: 9210ms -->
