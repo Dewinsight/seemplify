@@ -43,7 +43,7 @@ jobs:
       - name: Deploy ${{ matrix.name }}
         uses: benbristow/dokploy-deploy-action@0.0.1
         with:
-          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          auth_token: ${{ secrets.DOKPLOY_TOKEN }}
           application_id: ${{ secrets[matrix.app_id_secret] }}
           dokploy_url: ${{ secrets.DOKPLOY_URL }}
       
@@ -70,7 +70,7 @@ jobs:
       - name: Deploy ${{ matrix.name }}
         uses: benbristow/dokploy-deploy-action@0.0.1
         with:
-          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          auth_token: ${{ secrets.DOKPLOY_TOKEN }}
           application_id: ${{ secrets[matrix.app_id_secret] }}
           dokploy_url: ${{ secrets.DOKPLOY_URL }}
       

@@ -25,7 +25,7 @@ jobs:
       - name: Trigger Dokploy Deployment
         uses: benbristow/dokploy-deploy-action@0.0.1
         with:
-          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          auth_token: ${{ secrets.DOKPLOY_TOKEN }}
           application_id: ${{ secrets.PERFORMANCE_FRONTEND_APP_ID }}
           dokploy_url: ${{ secrets.DOKPLOY_URL }}
 
