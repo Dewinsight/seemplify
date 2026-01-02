@@ -99,7 +99,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
             {filteredTranscript.length > 0 ? (
               filteredTranscript.map((segment: any, index: number) => (
                 <div key={index} className="group">
-                  <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/30 transition-colors">
                     <div className="flex-shrink-0">
                       <Badge 
                         variant="outline" 
@@ -125,7 +125,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
                         )}
                       </p>
                       {segment.timestamp && (
-                        <p className="text-xs text-gray-500 mt-1">{segment.timestamp}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{segment.timestamp}</p>
                       )}
                     </div>
                   </div>
@@ -135,7 +135,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
                 </div>
               ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No transcript segments found matching your search.</p>
               </div>
@@ -241,7 +241,7 @@ function SummaryContent({
             )}
             
             {(!transcript.summary && (!transcript.keyPoints || transcript.keyPoints.length === 0)) && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>Summary information not available for this transcript.</p>
               </div>
@@ -269,7 +269,7 @@ function SummaryContent({
                   {reportData.percentage}%
                 </span>
               </h2>
-              <p className="text-lg text-gray-600 mb-4">
+              <p className="text-lg text-muted-foreground mb-4">
                 {reportData.finalScore} / {reportData.maxScore} points
               </p>
               <Badge className="text-lg px-4 py-2" variant={
@@ -286,7 +286,7 @@ function SummaryContent({
               <h3 className="text-lg font-semibold mb-4">Score Breakdown</h3>
               <div className="space-y-3">
                 {reportData.scoreComponents.map((component: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div key={index} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                     <div className="flex items-center gap-3">
                       <span className="font-medium">{component.category}</span>
                       {!component.available && (
@@ -297,7 +297,7 @@ function SummaryContent({
                       <span className={`font-semibold ${component.available ? 'text-blue-600' : 'text-gray-400'}`}>
                         {component.score} / {component.maxScore}
                       </span>
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-muted-foreground">
                         ({Math.round((component.score / component.maxScore) * 100)}%)
                       </span>
                     </div>
@@ -315,7 +315,7 @@ function SummaryContent({
                 <div className={`p-3 rounded-lg text-center ${
                   reportData.dataAvailability.hasAIInsights 
                     ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
+                    : 'bg-muted/30 border border-gray-200'
                 }`}>
                   {reportData.dataAvailability.hasAIInsights ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
@@ -327,7 +327,7 @@ function SummaryContent({
                 <div className={`p-3 rounded-lg text-center ${
                   reportData.dataAvailability.hasTeamComments 
                     ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
+                    : 'bg-muted/30 border border-gray-200'
                 }`}>
                   {reportData.dataAvailability.hasTeamComments ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
@@ -339,7 +339,7 @@ function SummaryContent({
                 <div className={`p-3 rounded-lg text-center ${
                   reportData.dataAvailability.hasTeamAnalysis 
                     ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
+                    : 'bg-muted/30 border border-gray-200'
                 }`}>
                   {reportData.dataAvailability.hasTeamAnalysis ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
@@ -434,7 +434,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
                   <div className="space-y-3">
                     <div>
                       <h3 className="font-semibold text-lg">{participant.name}</h3>
-                      <p className="text-sm text-gray-600">{participant.email}</p>
+                      <p className="text-sm text-muted-foreground">{participant.email}</p>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Speaking Time</span>
@@ -461,7 +461,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
                   <div className="space-y-3">
                     <div>
                       <h3 className="font-semibold text-lg">{speaker}</h3>
-                      <p className="text-sm text-gray-600">Detected from transcript</p>
+                      <p className="text-sm text-muted-foreground">Detected from transcript</p>
                     </div>
                     <Badge variant="outline" className={getSpeakerColor(speaker)}>
                       Speaker {index + 1}
@@ -471,7 +471,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
               </Card>
             ))
           ) : (
-            <div className="col-span-2 text-center py-8 text-gray-500">
+            <div className="col-span-2 text-center py-8 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No participant information available.</p>
             </div>
@@ -885,8 +885,8 @@ export default function TranscriptPage() {
       case 'enabled': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case 'recording': return 'bg-red-100 text-red-800 border-red-200';
       case 'failed': return 'bg-red-100 text-red-800 border-red-200';
-      case 'deleted': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'deleted': return 'bg-muted/50 text-gray-800 border-gray-200';
+      default: return 'bg-muted/50 text-gray-800 border-gray-200';
     }
   };
 
@@ -992,7 +992,7 @@ export default function TranscriptPage() {
       return {
         status: 'ended',
         text: `Ended ${minutesSinceEnd} minutes ago`,
-        color: 'text-gray-600'
+        color: 'text-muted-foreground'
       };
     }
   };
@@ -1052,7 +1052,7 @@ export default function TranscriptPage() {
         hasTranscript: false,
         title: 'Waiting to Start',
         description: 'AI notetaker will join at the scheduled meeting time',
-        color: 'bg-gray-100 text-gray-800 border-gray-200',
+        color: 'bg-muted/50 text-gray-800 border-gray-200',
         icon: Clock3
       };
     }
@@ -1078,7 +1078,7 @@ export default function TranscriptPage() {
         hasTranscript: false,
         title: 'Recording Unavailable',
         description: 'Recording was not completed or has expired',
-        color: 'bg-gray-100 text-gray-600 border-gray-200',
+        color: 'bg-muted/50 text-muted-foreground border-gray-200',
         icon: XCircle
       };
     }
@@ -1090,7 +1090,7 @@ export default function TranscriptPage() {
       hasTranscript: false,
       title: 'Status Unknown',
       description: 'Unable to determine recording status',
-      color: 'bg-gray-100 text-gray-500 border-gray-200',
+      color: 'bg-muted/50 text-muted-foreground border-gray-200',
       icon: AlertCircle
     };
   };
@@ -1112,7 +1112,7 @@ export default function TranscriptPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-muted/30">
         <div className="container mx-auto p-6 max-w-7xl">
           <div className="mb-8">
             <Skeleton className="h-8 w-48 mb-4" />
@@ -1156,7 +1156,7 @@ export default function TranscriptPage() {
   const timeStatus = getMeetingTimeStatus();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted/30">
       <div className="container mx-auto p-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
@@ -1172,7 +1172,7 @@ export default function TranscriptPage() {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
               <h1 className="text-4xl font-bold text-gray-900 mb-2">Interview Transcript</h1>
-              <p className="text-lg text-gray-600">
+              <p className="text-lg text-muted-foreground">
                 AI-powered recording and analysis for your interview
               </p>
             </div>
@@ -1202,7 +1202,7 @@ export default function TranscriptPage() {
                   size="sm"
                   onClick={fetchCompletedTranscript}
                   disabled={loadingTranscript}
-                  className="bg-white hover:bg-gray-50"
+                  className="bg-white hover:bg-muted/30"
                 >
                   {loadingTranscript ? (
                     <>
@@ -1359,7 +1359,7 @@ export default function TranscriptPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">Candidate</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {interview.candidateId?.firstName} {interview.candidateId?.lastName}
                       </p>
                     </div>
@@ -1371,7 +1371,7 @@ export default function TranscriptPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">Scheduled</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleDateString('en-US', {
                           weekday: 'short',
                           year: 'numeric',
@@ -1379,7 +1379,7 @@ export default function TranscriptPage() {
                           day: 'numeric'
                         }) : 'Date not available'}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit'
@@ -1394,7 +1394,7 @@ export default function TranscriptPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">Duration</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {formatDuration(interview.duration)}
                       </p>
                     </div>
@@ -1445,9 +1445,9 @@ export default function TranscriptPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-gray-600" />
+                    <FileText className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium text-gray-900">Summary</span>
                   </div>
                   <Badge variant={aiSummary ? "default" : "secondary"} className="text-xs">
@@ -1455,9 +1455,9 @@ export default function TranscriptPage() {
                   </Badge>
                 </div>
                 
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-gray-600" />
+                    <Users className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium text-gray-900">Team Feedback</span>
                   </div>
                   <Badge variant={teamAnalysis ? "default" : "secondary"} className="text-xs">
@@ -1466,7 +1466,7 @@ export default function TranscriptPage() {
                 </div>
                 
                 {(!aiSummary && !teamAnalysis) && (
-                  <p className="text-xs text-gray-500 mt-3">
+                  <p className="text-xs text-muted-foreground mt-3">
                     AI analysis will be available after the interview transcript is complete.
                   </p>
                 )}
@@ -1541,7 +1541,7 @@ export default function TranscriptPage() {
                   {loadingTranscript && (
                     <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
                       <CardContent className="pt-6">
-                        <div className="flex items-center gap-3 text-gray-600">
+                        <div className="flex items-center gap-3 text-muted-foreground">
                           <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
                           <span className="font-medium">Checking for completed transcript...</span>
                         </div>
@@ -1718,7 +1718,7 @@ export default function TranscriptPage() {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMeetingLink(e.target.value)}
                   className="mt-2"
                 />
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-sm text-muted-foreground mt-2">
                   Enter the Google Meet, Zoom, or Teams link for this interview.
                 </p>
               </div>

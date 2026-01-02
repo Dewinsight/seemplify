@@ -26,44 +26,76 @@ class WeaviateService {
   }
 
   /**
-   * Store candidate embedding in Weaviate
+   * Store candidate embedding in Weaviate (with upsert support)
    */
   async storeCandidateEmbedding(candidateId, embedding, metadata) {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
+    const uuid = this._toUuid(candidateId);
+    const properties = {
+      candidateId: candidateId, // Keep original MongoDB ID for reference
+      organizationId: metadata.organizationId || '',
+      firstName: metadata.firstName || '',
+      lastName: metadata.lastName || '',
+      email: metadata.email || '',
+      position: metadata.position || '',
+      resumeText: (metadata.resumeText || '').substring(0, 50000), // Limit to 50k chars
+      coverLetter: (metadata.coverLetter || '').substring(0, 10000),
+      skills: Array.isArray(metadata.skills) ? metadata.skills : [],
+      totalYearsExperience: metadata.totalYearsExperience || 0,
+      jobHistory: JSON.stringify(metadata.jobHistory || []),
+      education: JSON.stringify(metadata.education || []),
+      aiSummary: metadata.aiSummary || '',
+      strengths: Array.isArray(metadata.strengths) ? metadata.strengths : [],
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+      fullMetadata: JSON.stringify(metadata), // NO SIZE LIMIT!
+    };
+    
     try {
-      const uuid = this._toUuid(candidateId);
-      
+      // Try to create first
       await this.client.data
         .creator()
         .withClassName('Candidate')
         .withId(uuid)
         .withVector(embedding)
         .withProperties({
-          candidateId: candidateId, // Keep original MongoDB ID for reference
-          organizationId: metadata.organizationId || '',
-          firstName: metadata.firstName || '',
-          lastName: metadata.lastName || '',
-          email: metadata.email || '',
-          position: metadata.position || '',
-          resumeText: (metadata.resumeText || '').substring(0, 50000), // Limit to 50k chars
-          coverLetter: (metadata.coverLetter || '').substring(0, 10000),
-          skills: Array.isArray(metadata.skills) ? metadata.skills : [],
-          totalYearsExperience: metadata.totalYearsExperience || 0,
-          jobHistory: JSON.stringify(metadata.jobHistory || []),
-          education: JSON.stringify(metadata.education || []),
-          aiSummary: metadata.aiSummary || '',
-          strengths: Array.isArray(metadata.strengths) ? metadata.strengths : [],
+          ...properties,
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isActive: true,
-          fullMetadata: JSON.stringify(metadata), // NO SIZE LIMIT!
         })
         .do();
       
-      console.log(`✅ Stored candidate ${candidateId} in Weaviate`);
+      console.log(`✅ Stored candidate ${candidateId} in Weaviate (created)`);
       return true;
     } catch (error) {
+      // If already exists, update instead
+      if (error.message && error.message.includes('already exists')) {
+        try {
+          // Delete and recreate (Weaviate doesn't support true upsert with vector update)
+          await this.client.data
+            .deleter()
+            .withClassName('Candidate')
+            .withId(uuid)
+            .do();
+          
+          await this.client.data
+            .creator()
+            .withClassName('Candidate')
+            .withId(uuid)
+            .withVector(embedding)
+            .withProperties({
+              ...properties,
+              createdAt: new Date().toISOString(),
+            })
+            .do();
+          
+          console.log(`✅ Stored candidate ${candidateId} in Weaviate (updated)`);
+          return true;
+        } catch (updateError) {
+          console.error(`❌ Error updating candidate ${candidateId} in Weaviate:`, updateError.message);
+          throw updateError;
+        }
+      }
       console.error(`❌ Error storing candidate ${candidateId} in Weaviate:`, error.message);
       throw error;
     }
@@ -149,10 +181,11 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(candidateId);
       const result = await this.client.data
         .getterById()
         .withClassName('Candidate')
-        .withId(candidateId)
+        .withId(uuid)
         .do();
       
       return !!result;
@@ -172,61 +205,100 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(candidateId);
+      
       await this.client.data
         .deleter()
         .withClassName('Candidate')
-        .withId(candidateId)
+        .withId(uuid)
         .do();
       
       console.log(`✅ Deleted candidate ${candidateId} from Weaviate`);
       return true;
     } catch (error) {
+      // Don't throw if not found - just log
+      if (error.message && error.message.includes('not found')) {
+        console.log(`ℹ️ Candidate ${candidateId} not found in Weaviate (already deleted)`);
+        return true;
+      }
       console.error(`❌ Error deleting candidate from Weaviate: ${error.message}`);
       throw error;
     }
   }
 
   /**
-   * Store job embedding in Weaviate
+   * Store job embedding in Weaviate (with upsert support)
    */
   async storeJobEmbedding(jobId, embedding, metadata) {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
+    const uuid = this._toUuid(jobId);
+    const properties = {
+      jobId: jobId, // Keep original MongoDB ID for reference
+      organizationId: metadata.organizationId || '',
+      title: metadata.title || '',
+      department: metadata.department || '',
+      location: metadata.location || '',
+      type: metadata.type || '',
+      level: metadata.level || '',
+      description: (metadata.description || '').substring(0, 20000),
+      requirements: (metadata.requirements || '').substring(0, 10000),
+      responsibilities: (metadata.responsibilities || '').substring(0, 10000),
+      requiredSkills: Array.isArray(metadata.requiredSkills) ? metadata.requiredSkills : [],
+      preferredSkills: Array.isArray(metadata.preferredSkills) ? metadata.preferredSkills : [],
+      salaryMin: metadata.salaryMin || 0,
+      salaryMax: metadata.salaryMax || 0,
+      salaryCurrency: metadata.salaryCurrency || 'USD',
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+      status: metadata.status || 'active',
+      fullMetadata: JSON.stringify(metadata),
+    };
+    
     try {
-      const uuid = this._toUuid(jobId);
-      
+      // Try to create first
       await this.client.data
         .creator()
         .withClassName('Job')
         .withId(uuid)
         .withVector(embedding)
         .withProperties({
-          jobId: jobId, // Keep original MongoDB ID for reference
-          organizationId: metadata.organizationId || '',
-          title: metadata.title || '',
-          department: metadata.department || '',
-          location: metadata.location || '',
-          type: metadata.type || '',
-          level: metadata.level || '',
-          description: (metadata.description || '').substring(0, 20000),
-          requirements: (metadata.requirements || '').substring(0, 10000),
-          responsibilities: (metadata.responsibilities || '').substring(0, 10000),
-          requiredSkills: Array.isArray(metadata.requiredSkills) ? metadata.requiredSkills : [],
-          preferredSkills: Array.isArray(metadata.preferredSkills) ? metadata.preferredSkills : [],
-          salaryMin: metadata.salaryMin || 0,
-          salaryMax: metadata.salaryMax || 0,
-          salaryCurrency: metadata.salaryCurrency || 'USD',
+          ...properties,
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isActive: true,
-          status: metadata.status || 'active',
-          fullMetadata: JSON.stringify(metadata),
         })
         .do();
       
-      console.log(`✅ Stored job ${jobId} in Weaviate`);
+      console.log(`✅ Stored job ${jobId} in Weaviate (created)`);
       return true;
     } catch (error) {
+      // If already exists, update instead
+      if (error.message && error.message.includes('already exists')) {
+        try {
+          // Delete and recreate (Weaviate doesn't support true upsert with vector update)
+          await this.client.data
+            .deleter()
+            .withClassName('Job')
+            .withId(uuid)
+            .do();
+          
+          await this.client.data
+            .creator()
+            .withClassName('Job')
+            .withId(uuid)
+            .withVector(embedding)
+            .withProperties({
+              ...properties,
+              createdAt: new Date().toISOString(),
+            })
+            .do();
+          
+          console.log(`✅ Stored job ${jobId} in Weaviate (updated)`);
+          return true;
+        } catch (updateError) {
+          console.error(`❌ Error updating job ${jobId} in Weaviate:`, updateError.message);
+          throw updateError;
+        }
+      }
       console.error(`❌ Error storing job ${jobId} in Weaviate:`, error.message);
       throw error;
     }
@@ -273,10 +345,11 @@ class WeaviateService {
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     try {
+      const uuid = this._toUuid(jobId);
       const result = await this.client.data
         .getterById()
         .withClassName('Job')
-        .withId(jobId)
+        .withId(uuid)
         .do();
       
       return !!result;

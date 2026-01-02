@@ -155,7 +155,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
               className="absolute left-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-700/80 shadow-md backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity"
               aria-label="Previous tab"
             >
-              <ChevronLeft className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+              <ChevronLeft className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
             </button>
           )}
           {currentIndex < tabs.length - 1 && (
@@ -164,7 +164,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
               className="absolute right-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-700/80 shadow-md backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity"
               aria-label="Next tab"
             >
-              <ChevronRight className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground dark:text-gray-300" />
             </button>
           )}
 
@@ -189,12 +189,12 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                       "border-2",
                       isActive
                         ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30 border-blue-500 scale-105"
-                        : "bg-white/80 dark:bg-slate-700/80 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border-transparent hover:border-gray-200 dark:hover:border-slate-500"
+                        : "bg-white/80 dark:bg-slate-700/80 text-muted-foreground dark:text-gray-300 hover:bg-muted/30 dark:hover:bg-slate-600 border-transparent hover:border-gray-200 dark:hover:border-slate-500"
                     )}
                   >
                     <div className={cn(
                       "transition-colors duration-200",
-                      isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
+                      isActive ? "text-white" : "text-muted-foreground dark:text-muted-foreground/70"
                     )}>
                       {React.cloneElement(tab.icon as React.ReactElement, {
                         className: "h-5 w-5"
@@ -235,7 +235,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                   "h-2 rounded-full transition-all duration-300 ease-out",
                   activeTab === tab.id
                     ? "bg-blue-600 w-6"
-                    : "bg-gray-300 dark:bg-gray-600 w-2 hover:bg-gray-400 dark:hover:bg-gray-500"
+                    : "bg-gray-300 dark:bg-gray-600 w-2 hover:bg-gray-400 dark:hover:bg-muted/300"
                 )}
                 aria-label={`Go to ${tab.label} tab`}
               />
@@ -243,7 +243,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
           </div>
 
           {/* Swipe Hint - shows briefly on mount */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 dark:text-gray-500 pointer-events-none opacity-50">
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground/70 dark:text-muted-foreground pointer-events-none opacity-50">
             ← swipe to navigate →
           </div>
         </div>

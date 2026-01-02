@@ -199,7 +199,7 @@ export default function OrganizationSetupPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Loading...</p>
+          <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -285,7 +285,7 @@ export default function OrganizationSetupPage() {
                 {loadingInvites ? (
                   <div className="text-center py-12">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-gray-500">
+                    <p className="text-muted-foreground">
                       {loadingState === 'retrying' 
                         ? `Loading invitations... (Retry ${retryCount}/1)`
                         : 'Loading invitations...'}
@@ -300,7 +300,7 @@ export default function OrganizationSetupPage() {
                   <div className="text-center py-12 px-4">
                     <div className="text-red-500 text-5xl mb-4">⚠️</div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to Load Invitations</h3>
-                    <p className="text-gray-500 mb-4">We couldn't load your invitations after multiple attempts.</p>
+                    <p className="text-muted-foreground mb-4">We couldn't load your invitations after multiple attempts.</p>
                     <Button 
                       variant="outline"
                       onClick={loadPendingInvitations}
@@ -314,7 +314,7 @@ export default function OrganizationSetupPage() {
                   <div className="text-center py-12 px-4">
                     <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Invitations</h3>
-                    <p className="text-gray-500 mb-2">You don't have any pending organization invitations at the moment.</p>
+                    <p className="text-muted-foreground mb-2">You don't have any pending organization invitations at the moment.</p>
                     <p className="text-sm text-gray-400">
                       Ask your team leader to send you an invitation, or switch to the "Create Organization" tab to create your own.
                     </p>
@@ -419,7 +419,7 @@ export default function OrganizationSetupPage() {
         </Card>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Need help? Contact our support team at{' '}
             <a href="mailto:support@smarthr.com" className="text-blue-600 hover:underline">
               support@smarthr.com

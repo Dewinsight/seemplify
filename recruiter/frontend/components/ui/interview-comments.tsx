@@ -545,7 +545,7 @@ export function InterviewComments({ interviewId, teamAnalysis, onAnalysisGenerat
                   {teamAnalysis.finalRecommendation.keyFactors.length > 0 && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Key Supporting Factors:</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
+                      <ul className="text-sm text-muted-foreground space-y-1">
                         {teamAnalysis.finalRecommendation.keyFactors.map((factor, index) => (
                           <li key={index} className="flex items-start gap-2">
                             <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
@@ -559,7 +559,7 @@ export function InterviewComments({ interviewId, teamAnalysis, onAnalysisGenerat
                   {teamAnalysis.finalRecommendation.riskFactors.length > 0 && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Risk Factors:</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
+                      <ul className="text-sm text-muted-foreground space-y-1">
                         {teamAnalysis.finalRecommendation.riskFactors.map((risk, index) => (
                           <li key={index} className="flex items-start gap-2">
                             <AlertTriangle className="h-3 w-3 text-orange-500 mt-0.5 flex-shrink-0" />

@@ -203,7 +203,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container bg-background">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container">
       <ProfileCompletionModal 
         open={showProfileModal} 
         onOpenChange={handleProfileModalClose} 
@@ -255,16 +255,16 @@ export default function Dashboard() {
 
         {/* Profile Completion Alert */}
         {!profileComplete && suggestions.length > 0 && (
-          <Alert className="border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="flex items-center justify-between">
+          <Alert className="border-amber-500/30 bg-gradient-to-r from-amber-950/30 to-amber-900/20 backdrop-blur-sm">
+            <AlertCircle className="h-4 w-4 text-amber-400" />
+            <AlertDescription className="flex items-center justify-between text-amber-100/90">
               <div>
-                <strong>Complete your profile</strong> to get the most out of Seemplify Recruiter
-                <Badge variant="secondary" className="ml-2">
+                <strong className="text-amber-200">Complete your profile</strong> to get the most out of Seemplify Recruiter
+                <Badge variant="secondary" className="ml-2 bg-amber-900/50 text-amber-200 border-amber-700/50">
                   {user?.profileCompletion.percentage}% complete
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" asChild className="border-amber-600/50 text-amber-200 hover:bg-amber-900/30 hover:text-amber-100">
                 <Link href="/settings">
                   <Settings className="mr-2 h-3.5 w-3.5" />
                   Complete Profile

@@ -74,8 +74,8 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
 
   return (
     <Card className={cn(
-      "overflow-hidden bg-gradient-to-br from-card to-muted/30",
-      "border-border/50 shadow-lg hover:shadow-xl transition-all duration-300",
+      "overflow-hidden glass-card",
+      "border-white/[0.06] shadow-lg hover:shadow-xl transition-all duration-300",
       className
     )} data-tutorial="dashboard-profile-card-inner">
       {/* Modern header with gradient */}

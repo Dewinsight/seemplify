@@ -460,9 +460,9 @@ export default function CalendarPage({}: CalendarPageProps) {
       case 'scheduled': return 'bg-blue-100 text-blue-800';
       case 'confirmed': return 'bg-green-100 text-green-800';
       case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-gray-100 text-gray-800';
+      case 'completed': return 'bg-muted/50 text-gray-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      default: return 'bg-muted/50 text-gray-800';
     }
   };
 
@@ -520,8 +520,8 @@ export default function CalendarPage({}: CalendarPageProps) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex flex-col items-center justify-center h-64 space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">Authentication Required</h2>
-          <p className="text-gray-600">Please log in to access the calendar.</p>
+          <h2 className="text-xl font-semibold text-foreground">Authentication Required</h2>
+          <p className="text-muted-foreground">Please log in to access the calendar.</p>
           <Button onClick={() => window.location.href = '/login'}>
             Go to Login
           </Button>
@@ -546,8 +546,8 @@ export default function CalendarPage({}: CalendarPageProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Calendar</h1>
-          <p className="text-gray-600">Manage your interview schedule</p>
+          <h1 className="text-3xl font-bold text-foreground">Calendar</h1>
+          <p className="text-muted-foreground">Manage your interview schedule</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -570,7 +570,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             <div className="flex items-center gap-2">
               <Calendar className="h-5 w-5 text-blue-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Interviews</p>
+                <p className="text-sm font-medium text-muted-foreground">Total Interviews</p>
                 <p className="text-2xl font-bold">{interviews.length}</p>
               </div>
             </div>
@@ -582,7 +582,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-green-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Today</p>
+                <p className="text-sm font-medium text-muted-foreground">Today</p>
                 <p className="text-2xl font-bold">{todayInterviews.length}</p>
               </div>
             </div>
@@ -594,7 +594,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-purple-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Upcoming</p>
+                <p className="text-sm font-medium text-muted-foreground">Upcoming</p>
                 <p className="text-2xl font-bold">{upcomingInterviews.length}</p>
               </div>
             </div>
@@ -606,7 +606,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-green-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Completed</p>
+                <p className="text-sm font-medium text-muted-foreground">Completed</p>
                 <p className="text-2xl font-bold">{completedInterviews.length}</p>
               </div>
             </div>
@@ -616,9 +616,9 @@ export default function CalendarPage({}: CalendarPageProps) {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-gray-600" />
+              <Settings className="h-5 w-5 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Calendar</p>
+                <p className="text-sm font-medium text-muted-foreground">Calendar</p>
                 <p className="text-sm font-bold">
                   {calendarStatus.connected ? (
                     <span className="text-green-600">Connected</span>
@@ -646,9 +646,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           {upcomingInterviews.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No upcoming interviews</h3>
-                <p className="text-gray-600">Schedule your first interview to get started.</p>
+                <Calendar className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No upcoming interviews</h3>
+                <p className="text-muted-foreground">Schedule your first interview to get started.</p>
               </CardContent>
             </Card>
           ) : (
@@ -669,9 +669,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           {todayInterviews.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No interviews today</h3>
-                <p className="text-gray-600">Your schedule is clear for today.</p>
+                <Clock className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No interviews today</h3>
+                <p className="text-muted-foreground">Your schedule is clear for today.</p>
               </CardContent>
             </Card>
           ) : (
@@ -692,9 +692,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           {completedInterviews.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No completed interviews</h3>
-                <p className="text-gray-600">Completed interviews will appear here after they finish.</p>
+                <FileText className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No completed interviews</h3>
+                <p className="text-muted-foreground">Completed interviews will appear here after they finish.</p>
               </CardContent>
             </Card>
           ) : (
@@ -715,9 +715,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           {recentInterviews.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No recent interviews</h3>
-                <p className="text-gray-600">Interviews from the past week will appear here.</p>
+                <Clock className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No recent interviews</h3>
+                <p className="text-muted-foreground">Interviews from the past week will appear here.</p>
               </CardContent>
             </Card>
           ) : (
@@ -738,9 +738,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           {interviews.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No interviews scheduled</h3>
-                <p className="text-gray-600">Start by scheduling interviews from the candidate pipeline.</p>
+                <Users className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No interviews scheduled</h3>
+                <p className="text-muted-foreground">Start by scheduling interviews from the candidate pipeline.</p>
               </CardContent>
             </Card>
           ) : (
@@ -786,14 +786,14 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Time & Duration */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Date & Time</Label>
+                  <Label className="text-sm font-medium text-foreground">Date & Time</Label>
                   <div className="flex items-center gap-2 mt-1">
                     <Calendar className="h-4 w-4 text-gray-500" />
                     <span>{formatDateTime(selectedInterview.scheduledAt).date} at {formatDateTime(selectedInterview.scheduledAt).time}</span>
                   </div>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Duration</Label>
+                  <Label className="text-sm font-medium text-foreground">Duration</Label>
                   <div className="flex items-center gap-2 mt-1">
                     <Clock className="h-4 w-4 text-gray-500" />
                     <span>{selectedInterview.duration} minutes</span>
@@ -804,7 +804,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Type & Location */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Type</Label>
+                  <Label className="text-sm font-medium text-foreground">Type</Label>
                   <div className="flex items-center gap-2 mt-1">
                     {getTypeIcon(selectedInterview.type)}
                     <span className="capitalize">{selectedInterview.type}</span>
@@ -812,7 +812,7 @@ export default function CalendarPage({}: CalendarPageProps) {
                 </div>
                 {selectedInterview.location && (
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Location</Label>
+                    <Label className="text-sm font-medium text-foreground">Location</Label>
                     <div className="flex items-center gap-2 mt-1">
                       <MapPin className="h-4 w-4 text-gray-500" />
                       <span>{selectedInterview.location}</span>
@@ -824,17 +824,17 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Candidate Info */}
               {selectedInterview.candidateId && (
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Candidate</Label>
+                  <Label className="text-sm font-medium text-foreground">Candidate</Label>
                   <div className="mt-1 p-3 bg-gray-50 rounded-lg">
                     {typeof selectedInterview.candidateId === 'object' ? (
                       <div>
                         <div className="font-medium">
                           {selectedInterview.candidateId.firstName} {selectedInterview.candidateId.lastName}
                         </div>
-                        <div className="text-sm text-gray-600">{selectedInterview.candidateId.email}</div>
+                        <div className="text-sm text-muted-foreground">{selectedInterview.candidateId.email}</div>
                       </div>
                     ) : (
-                      <div className="text-sm text-gray-600">Candidate ID: {selectedInterview.candidateId}</div>
+                      <div className="text-sm text-muted-foreground">Candidate ID: {selectedInterview.candidateId}</div>
                     )}
                   </div>
                 </div>
@@ -843,17 +843,17 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Job Info */}
               {selectedInterview.jobId && (
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Job</Label>
+                  <Label className="text-sm font-medium text-foreground">Job</Label>
                   <div className="mt-1 p-3 bg-gray-50 rounded-lg">
                     {typeof selectedInterview.jobId === 'object' ? (
                       <div>
                         <div className="font-medium">{selectedInterview.jobId.title}</div>
                         {selectedInterview.jobId.company && (
-                          <div className="text-sm text-gray-600">{selectedInterview.jobId.company}</div>
+                          <div className="text-sm text-muted-foreground">{selectedInterview.jobId.company}</div>
                         )}
                       </div>
                     ) : (
-                      <div className="text-sm text-gray-600">Job ID: {selectedInterview.jobId}</div>
+                      <div className="text-sm text-muted-foreground">Job ID: {selectedInterview.jobId}</div>
                     )}
                   </div>
                 </div>
@@ -862,7 +862,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Meeting Link */}
               {selectedInterview.conferencing?.details?.url && (
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Meeting Link</Label>
+                  <Label className="text-sm font-medium text-foreground">Meeting Link</Label>
                   <div className="mt-1">
                     <Button asChild variant="outline" className="w-full">
                       <a href={selectedInterview.conferencing.details.url} target="_blank" rel="noopener noreferrer">
@@ -877,7 +877,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Description */}
               {selectedInterview.description && (
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Description</Label>
+                  <Label className="text-sm font-medium text-foreground">Description</Label>
                   <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm">
                     {selectedInterview.description}
                   </div>
@@ -887,13 +887,13 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Participants */}
               {selectedInterview.participants && selectedInterview.participants.length > 0 && (
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Participants</Label>
+                  <Label className="text-sm font-medium text-foreground">Participants</Label>
                   <div className="mt-1 space-y-2">
                     {selectedInterview.participants.map((participant, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                         <div>
                           <div className="font-medium">{participant.name}</div>
-                          <div className="text-sm text-gray-600">{participant.email}</div>
+                          <div className="text-sm text-muted-foreground">{participant.email}</div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-xs">
@@ -912,7 +912,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {/* Notetaker Status */}
               <div>
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium text-gray-700">AI Notetaker</Label>
+                  <Label className="text-sm font-medium text-foreground">AI Notetaker</Label>
                   {selectedInterview.notetakerEnabled && (
                     <Button 
                       variant="ghost" 
@@ -1008,7 +1008,7 @@ export default function CalendarPage({}: CalendarPageProps) {
                     </>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         No AI notetaker enabled for this interview.
                       </p>
                       <Button
@@ -1180,9 +1180,9 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
       case 'scheduled': return 'bg-blue-100 text-blue-800';
       case 'confirmed': return 'bg-green-100 text-green-800';
       case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-gray-100 text-gray-800';
+      case 'completed': return 'bg-muted/50 text-gray-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      default: return 'bg-muted/50 text-gray-800';
     }
   };
 
@@ -1201,7 +1201,7 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
-              <h3 className="font-semibold text-gray-900">{interview.title}</h3>
+              <h3 className="font-semibold text-foreground">{interview.title}</h3>
               <Badge className={getStatusColor(interview.status)}>
                 {interview.status}
               </Badge>
@@ -1219,7 +1219,7 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
               )}
             </div>
             
-            <div className="space-y-2 text-sm text-gray-600">
+            <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
                 <span>{date} at {time}</span>

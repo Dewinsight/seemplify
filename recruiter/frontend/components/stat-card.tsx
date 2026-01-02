@@ -80,7 +80,7 @@ export function StatCard({ title, value, icon, trend, variant = "default", class
               {title}
             </p>
             {description && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block leading-relaxed">{description}</p>
+              <p className="text-xs text-muted-foreground dark:text-gray-400 hidden sm:block leading-relaxed">{description}</p>
             )}
           </div>
 
@@ -115,7 +115,7 @@ export function StatCard({ title, value, icon, trend, variant = "default", class
               )}>
                 {currentTrend.icon}
                 <span>{Math.abs(trend.value)}%</span>
-                <span className="hidden sm:inline text-gray-500 dark:text-gray-400">{trend.label}</span>
+                <span className="hidden sm:inline text-muted-foreground dark:text-gray-400">{trend.label}</span>
               </div>
               
               {/* Trend Visualization - Hidden on mobile */}

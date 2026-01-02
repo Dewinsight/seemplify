@@ -188,7 +188,7 @@ export function QuestionQualityDisplay({
                   value={(1 - metrics.biasScore) * 100} 
                   className="h-2"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Higher is better (100% = bias-free)
                 </p>
               </div>
@@ -213,7 +213,7 @@ export function QuestionQualityDisplay({
                   value={metrics.biasScore * 100} 
                   className="h-2"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Raw bias score: {(metrics.biasScore * 100).toFixed(1)}%
                 </p>
               </div>
@@ -410,7 +410,7 @@ export function QuestionQualityDisplay({
 
             {/* AI Generation Metadata */}
             {question.isAIGenerated && question.aiGenerationMetadata && (
-              <div className="text-xs text-gray-500 pt-2 border-t">
+              <div className="text-xs text-muted-foreground pt-2 border-t">
                 <div className="flex justify-between">
                   <span>Model: {question.aiGenerationMetadata.model}</span>
                   <span>Confidence: {Math.round(question.aiGenerationMetadata.confidence * 100)}%</span>
@@ -422,8 +422,8 @@ export function QuestionQualityDisplay({
             )}
           </>
         ) : (
-          <div className="text-center py-4 text-gray-500">
-            <Shield className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+          <div className="text-center py-4 text-muted-foreground">
+            <Shield className="h-8 w-8 mx-auto mb-2 text-muted-foreground/70" />
             <p className="text-sm">No quality analysis available</p>
             <p className="text-xs mt-1">Click "Analyze" to generate quality metrics</p>
           </div>

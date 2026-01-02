@@ -1065,14 +1065,14 @@ export default function SettingsPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-4 bg-muted/30 rounded-lg">
                   <h4 className="font-medium mb-2">What are AI Embeddings?</h4>
                   <p className="text-sm text-muted-foreground">
                     Vector representations of job descriptions and candidate profiles that enable 
                     intelligent matching, semantic search, and AI-powered recommendations.
                   </p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-4 bg-muted/30 rounded-lg">
                   <h4 className="font-medium mb-2">Why Manage Embeddings?</h4>
                   <p className="text-sm text-muted-foreground">
                     Regular maintenance ensures accurate matching results, fixes parsing issues, 

@@ -672,7 +672,7 @@ Best regards,
             {/* Technical details (if available) */}
             {errorDetails?.details && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-gray-600 uppercase">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">
                   Technical Details
                 </Label>
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
@@ -686,7 +686,7 @@ Best regards,
             {/* Suggestions */}
             {errorDetails?.suggestions && errorDetails.suggestions.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-gray-600 uppercase">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">
                   Suggested Actions
                 </Label>
                 <ul className="space-y-2">

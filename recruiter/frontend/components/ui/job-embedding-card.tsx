@@ -309,7 +309,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     return (
       <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
+          <CardTitle className="flex items-center gap-2 text-foreground dark:text-gray-100">
             <HRLogo size="sm" />
             AI Matching
           </CardTitle>
@@ -353,10 +353,10 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
               <XCircle className="h-5 w-5 text-red-600" />
             )}
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">
+              <p className="font-medium text-foreground dark:text-gray-100">
                 {embeddingStatus?.isEmbedded ? 'AI Embedding Active' : 'AI Embedding Not Created'}
               </p>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
+              <p className="text-sm text-muted-foreground dark:text-gray-300">
                 {embeddingStatus?.isEmbedded 
                   ? `Created ${embeddingStatus.embeddingCreatedAt ? new Date(embeddingStatus.embeddingCreatedAt).toLocaleDateString() : 'recently'}`
                   : 'Create an embedding to enable AI matching'
@@ -420,7 +420,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-purple-600" />
-              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Top Matching Candidates</h3>
+              <h3 className="font-semibold text-lg text-foreground dark:text-gray-100">Top Matching Candidates</h3>
               <Badge variant="secondary">{matchingCandidates.length} found</Badge>
             </div>
             
@@ -455,7 +455,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-center gap-2 mb-1">
-                                <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate hover:text-purple-600 transition-colors">
+                                <h4 className="font-medium text-foreground dark:text-gray-100 truncate hover:text-purple-600 transition-colors">
                                   {match.candidate.name}
                                 </h4>
                                 <Badge 
@@ -485,7 +485,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 )}
                               </div>
                               
-                              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2 line-clamp-1">{match.candidate.position}</p>
+                              <p className="text-sm text-muted-foreground dark:text-gray-300 mb-2 line-clamp-1">{match.candidate.position}</p>
                               
                               <div className="flex flex-wrap gap-1 mb-2 overflow-hidden">
                                 {match.candidate.skills && (
@@ -513,7 +513,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 )}
                               </div>
                               
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground dark:text-gray-400">
                                 <div className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden">
                                   <MapPin className="h-3 w-3 flex-shrink-0" />
                                   <span className="truncate">{match.candidate.location}</span>
@@ -561,7 +561,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 <Button
                                   size="sm"
                                   disabled
-                                  className="h-8 px-2 text-xs bg-gray-400 text-gray-600 cursor-not-allowed"
+                                  className="h-8 px-2 text-xs bg-gray-400 text-muted-foreground cursor-not-allowed"
                                 >
                                   <CheckCircle className="h-3 w-3 mr-1" />
                                   <span className="sm:inline hidden">{isAlreadyInShortlist ? "In Shortlist" : "In Pipeline"}</span>
@@ -619,7 +619,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                       {/* Expanded explanation */}
                       {isExpanded && explanation && (
-                        <div className="border-t border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 p-4 space-y-4">
+                        <div className="border-t border-gray-200 dark:border-slate-600 bg-muted/30 dark:bg-slate-700 p-4 space-y-4">
                           {/* Enhanced Reasons */}
                           {explanation.reasons && explanation.reasons.length > 0 && (
                             <div>
@@ -647,7 +647,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             
                             {explanation.skillsMatch.matchedSkills.length > 0 && (
                               <div>
-                                <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Matched Skills:</p>
+                                <p className="text-xs text-muted-foreground dark:text-gray-300 mb-1">Matched Skills:</p>
                                 <div className="flex flex-wrap gap-1">
                                   {explanation.skillsMatch.matchedSkills.map((skill, idx) => (
                                     <Badge key={idx} className="text-xs bg-green-100 text-green-800 border-green-200">
@@ -660,7 +660,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             
                             {explanation.skillsMatch.bonusSkills.length > 0 && (
                               <div>
-                                <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Additional Skills:</p>
+                                <p className="text-xs text-muted-foreground dark:text-gray-300 mb-1">Additional Skills:</p>
                                 <div className="flex flex-wrap gap-1">
                                   {explanation.skillsMatch.bonusSkills.map((skill, idx) => (
                                     <Badge key={idx} variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
@@ -673,7 +673,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             
                             {explanation.skillsMatch.missingSkills.length > 0 && (
                               <div>
-                                <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Missing Skills:</p>
+                                <p className="text-xs text-muted-foreground dark:text-gray-300 mb-1">Missing Skills:</p>
                                 <div className="flex flex-wrap gap-1">
                                   {explanation.skillsMatch.missingSkills.map((skill, idx) => (
                                     <Badge key={idx} variant="destructive" className="text-xs">
@@ -695,19 +695,19 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div className="grid grid-cols-2 gap-2 text-xs">
                                 <div className="bg-purple-50 dark:bg-purple-900/20 p-2 rounded border border-purple-200 dark:border-purple-700">
                                   <span className="text-purple-600 dark:text-purple-400 font-medium">{explanation.careerFit.totalYearsExp} years</span>
-                                  <p className="text-gray-600 dark:text-gray-300 text-[10px] sm:text-xs">Total Experience</p>
+                                  <p className="text-muted-foreground dark:text-gray-300 text-[10px] sm:text-xs">Total Experience</p>
                                 </div>
                                 <div className="bg-purple-50 dark:bg-purple-900/20 p-2 rounded border border-purple-200 dark:border-purple-700">
                                   <span className="text-purple-600 dark:text-purple-400 font-medium">{explanation.careerFit.companiesWorkedAt}</span>
-                                  <p className="text-gray-600 dark:text-gray-300 text-[10px] sm:text-xs">Companies</p>
+                                  <p className="text-muted-foreground dark:text-gray-300 text-[10px] sm:text-xs">Companies</p>
                                 </div>
                                 <div className="bg-purple-50 dark:bg-purple-900/20 p-2 rounded border border-purple-200 dark:border-purple-700">
                                   <span className="text-purple-600 dark:text-purple-400 font-medium">{explanation.careerFit.avgTenureYears}y avg</span>
-                                  <p className="text-gray-600 dark:text-gray-300 text-[10px] sm:text-xs">Tenure</p>
+                                  <p className="text-muted-foreground dark:text-gray-300 text-[10px] sm:text-xs">Tenure</p>
                                 </div>
                                 <div className="bg-purple-50 dark:bg-purple-900/20 p-2 rounded border border-purple-200 dark:border-purple-700">
                                   <span className="text-purple-600 dark:text-purple-400 font-medium">{explanation.careerFit.stabilityScore}</span>
-                                  <p className="text-gray-600 dark:text-gray-300 text-[10px] sm:text-xs">Stability</p>
+                                  <p className="text-muted-foreground dark:text-gray-300 text-[10px] sm:text-xs">Stability</p>
                                 </div>
                               </div>
                               
@@ -737,7 +737,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               
                               {explanation.aiInsights.strengths.length > 0 && (
                                 <div>
-                                  <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">AI-Identified Strengths:</p>
+                                  <p className="text-xs text-muted-foreground dark:text-gray-300 mb-1">AI-Identified Strengths:</p>
                                   <div className="space-y-1">
                                     {explanation.aiInsights.strengths.slice(0, 3).map((strength, idx) => (
                                       <div key={idx} className="flex items-start gap-2 text-xs">
@@ -798,7 +798,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 </div>
                                 <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{explanation.dataQuality.completeness}%</span>
                               </div>
-                              <div className="flex gap-3 mt-2 text-xs text-gray-600 dark:text-gray-300">
+                              <div className="flex gap-3 mt-2 text-xs text-muted-foreground dark:text-gray-300">
                                 {explanation.dataQuality.hasDetailedHistory && (
                                   <span className="flex items-center gap-1">
                                     <CheckCircle className="h-3 w-3 text-green-600" />
@@ -950,8 +950,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                 })}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                <Users className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+              <div className="text-center py-8 text-muted-foreground dark:text-gray-400">
+                <Users className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-muted-foreground" />
                 <p>No matching candidates found</p>
                 <p className="text-sm">Try creating more candidate embeddings</p>
               </div>

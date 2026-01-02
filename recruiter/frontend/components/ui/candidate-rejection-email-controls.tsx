@@ -224,7 +224,7 @@ function BulkEmailDialog({
                   />
                   <label htmlFor={candidate._id} className="flex-1 text-sm cursor-pointer">
                     <span className="font-medium">{candidate.firstName} {candidate.lastName}</span>
-                    <span className="text-gray-500 ml-2">({candidate.email})</span>
+                    <span className="text-muted-foreground ml-2">({candidate.email})</span>
                     {candidate.currentStage?.stageName && (
                       <Badge variant="outline" className="ml-2 text-xs">
                         {candidate.currentStage.stageName}
@@ -245,7 +245,7 @@ function BulkEmailDialog({
               onChange={(e) => setReason(e.target.value)}
               rows={4}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               This message will be included in the email as feedback. Customize or clear it before sending.
             </p>
           </div>
@@ -439,7 +439,7 @@ function SingleEmailDialog({
               onChange={(e) => setReason(e.target.value)}
               rows={4}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               This message will be included in the email as feedback. Customize or clear it before sending.
             </p>
           </div>

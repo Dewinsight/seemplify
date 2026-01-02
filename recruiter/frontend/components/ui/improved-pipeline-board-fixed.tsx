@@ -463,7 +463,7 @@ export function ImprovedPipelineBoard({
             <AlertTriangle className="h-10 w-10 text-blue-600" />
           </div>
           <h3 className="text-xl font-semibold mb-2 text-blue-700">No Interview Stages Configured</h3>
-          <p className="text-gray-600 mb-6">
+          <p className="text-muted-foreground mb-6">
             You need to set up interview stages before you can use the pipeline.
           </p>
           <Button 
@@ -602,18 +602,18 @@ export function ImprovedPipelineBoard({
               </CardHeader>
               <CardContent className="px-3 sm:px-4 pb-3 sm:pb-4">
                 <div className="space-y-1 sm:space-y-2">
-                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground dark:text-gray-300">
                     <span>Health Score</span>
                     <div className="flex items-center gap-1 sm:gap-2">
                       <Progress value={column.analytics.healthScore} className="w-8 sm:w-12 h-1 sm:h-2" />
                       <span className="font-medium text-xs">{column.analytics.healthScore}%</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground dark:text-gray-300">
                     <span>New this week</span>
                     <span className="font-medium">{column.analytics.newThisWeek > 0 && '+'}{column.analytics.newThisWeek}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground dark:text-gray-300">
                     <span>Avg. time</span>
                     <span className="font-medium">{column.analytics.averageTimeInStage}d</span>
                   </div>
@@ -709,7 +709,7 @@ export function ImprovedPipelineBoard({
                   </div>
 
                   {/* Candidates Area */}
-                  <div className="min-h-[400px] sm:min-h-[500px] space-y-3 p-2 rounded-lg bg-gray-50/50 dark:bg-slate-800/30 border-2 border-transparent">
+                  <div className="min-h-[400px] sm:min-h-[500px] space-y-3 p-2 rounded-lg bg-muted/30/50 dark:bg-slate-800/30 border-2 border-transparent">
                     {column.candidates.map((candidate) => {
                       const isMoving = movingCandidate.has(candidate._id)
                       const isSelected = selectedCandidates.has(candidate._id)

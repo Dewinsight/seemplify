@@ -886,7 +886,7 @@ function JobDetailInnerPage() {
 
   return (
     <div className={cn(
-      "min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-900 dark:to-gray-900",
+      "min-h-screen dark:bg-transparent",
       isMobile && "pb-20" // Add bottom padding on mobile for the bottom action bar
     )}>
       <JobSetupWizard isOpen={showSetupWizard} onClose={() => setShowSetupWizard(false)} />
@@ -949,14 +949,14 @@ function JobDetailInnerPage() {
                             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-green-600 to-green-700 flex items-center justify-center">
                               <Globe className="h-4 w-4 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Public Applications</h3>
+                            <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Public Applications</h3>
                           </div>
                           <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-gradient-to-br from-green-50/50 to-green-100/50 border border-green-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                             {/* Mobile-Responsive Toggle Section */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
                               <div className="flex-1">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-                                  <p className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  <p className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100">
                                     Enable Public Applications
                                   </p>
                                 <Badge
@@ -1042,7 +1042,7 @@ function JobDetailInnerPage() {
                                           }}
                                         />
                                       </div>
-                                      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                                      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-muted-foreground/70">
                                         <span>
                                           {jobData.candidateApplyLimit - (jobData?.publicApplicationCount || 0)} slots remaining
                                         </span>
@@ -1093,14 +1093,14 @@ function JobDetailInnerPage() {
                             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 flex items-center justify-center">
                               <Building className="h-4 w-4 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Internal Recruitment</h3>
+                            <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Internal Recruitment</h3>
                           </div>
                           <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-gradient-to-br from-purple-50/50 to-purple-100/50 border border-purple-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                             {/* Toggle Section */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
                               <div className="flex-1">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-                                  <p className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  <p className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100">
                                     Enable Internal Applications
                                   </p>
                                   <Badge
@@ -1192,7 +1192,7 @@ function JobDetailInnerPage() {
                                           }}
                                         />
                                       </div>
-                                      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                                      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-muted-foreground/70">
                                         <span>
                                           {jobData.internalCandidateApplyLimit - (jobData?.internalApplicationCount || 0)} slots remaining
                                         </span>
@@ -1233,7 +1233,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Department</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{typeof jobData?.department === 'object' ? (jobData?.department as any)?.name : jobData?.department}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{typeof jobData?.department === 'object' ? (jobData?.department as any)?.name : jobData?.department}</p>
                             </div>
                           </div>
                         </div>
@@ -1245,7 +1245,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Location</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.location}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.location}</p>
                             </div>
                           </div>
                         </div>
@@ -1257,7 +1257,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Job Type</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.type}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.type}</p>
                             </div>
                           </div>
                         </div>
@@ -1269,7 +1269,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Salary</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{formatSalaryDisplay(jobData?.salary)}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{formatSalaryDisplay(jobData?.salary)}</p>
                             </div>
                           </div>
                         </div>
@@ -1281,7 +1281,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-purple-700 dark:text-purple-300 uppercase tracking-wide">Posted</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.createdAt ? new Date(jobData?.createdAt).toLocaleDateString() : 'Not specified'}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.createdAt ? new Date(jobData?.createdAt).toLocaleDateString() : 'Not specified'}</p>
                             </div>
                           </div>
                         </div>
@@ -1293,7 +1293,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-orange-700 dark:text-orange-300 uppercase tracking-wide">Deadline</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.applicationDeadline ? new Date(jobData?.applicationDeadline).toLocaleDateString() : 'Open'}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.applicationDeadline ? new Date(jobData?.applicationDeadline).toLocaleDateString() : 'Open'}</p>
                             </div>
                           </div>
                         </div>
@@ -1311,7 +1311,7 @@ function JobDetailInnerPage() {
                             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0">
                               <FileText className="h-4 w-4 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100">Description</h3>
+                            <h3 className="text-base sm:text-lg lg:text-xl font-bold text-foreground dark:text-gray-100">Description</h3>
                           </div>
                           <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-gradient-to-br from-blue-50/50 to-blue-100/50 border border-blue-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                             <div className="prose prose-sm sm:prose max-w-none dark:prose-invert">
@@ -1329,7 +1329,7 @@ function JobDetailInnerPage() {
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-green-600 to-green-700 flex items-center justify-center">
                                 <CheckCircle className="h-4 w-4 text-white" />
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Requirements</h3>
+                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Requirements</h3>
                             </div>
                             <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-green-50/50 to-green-100/50 border border-green-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                               {jobData?.requirements ? (
@@ -1339,7 +1339,7 @@ function JobDetailInnerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-gray-500 dark:text-gray-400 italic text-sm">No requirements specified.</p>
+                                <p className="text-gray-500 dark:text-muted-foreground/70 italic text-sm">No requirements specified.</p>
                               )}
                             </div>
                           </div>
@@ -1349,7 +1349,7 @@ function JobDetailInnerPage() {
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 flex items-center justify-center">
                                 <Star className="h-4 w-4 text-white" />
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Responsibilities</h3>
+                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Responsibilities</h3>
                             </div>
                             <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-purple-50/50 to-purple-100/50 border border-purple-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                               {jobData?.responsibilities ? (
@@ -1359,7 +1359,7 @@ function JobDetailInnerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-gray-500 dark:text-gray-400 italic text-sm">No responsibilities specified.</p>
+                                <p className="text-gray-500 dark:text-muted-foreground/70 italic text-sm">No responsibilities specified.</p>
                               )}
                             </div>
                           </div>
@@ -1374,7 +1374,7 @@ function JobDetailInnerPage() {
                                 <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-orange-600 to-orange-700 flex items-center justify-center">
                                   <Star className="h-4 w-4 text-white" />
                                 </div>
-                                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Required Skills</h3>
+                                <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Required Skills</h3>
                               </div>
                               <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-orange-50/50 to-orange-100/50 border border-orange-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -1392,7 +1392,7 @@ function JobDetailInnerPage() {
                                 <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 flex items-center justify-center">
                                   <Star className="h-4 w-4 text-white" />
                                 </div>
-                                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Benefits</h3>
+                                <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Benefits</h3>
                               </div>
                               <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-emerald-50/50 to-emerald-100/50 border border-emerald-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -1566,8 +1566,8 @@ function JobDetailInnerPage() {
                           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center mb-6 mx-auto dark:from-purple-900/30 dark:to-purple-800/30">
                             <HelpCircle className="h-12 w-12 text-purple-600 dark:text-purple-400" />
                           </div>
-                          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">🎯 Ready to interview?</h3>
-                          <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+                          <h3 className="text-2xl font-bold text-foreground dark:text-gray-100 mb-2">🎯 Ready to interview?</h3>
+                          <p className="text-lg text-gray-600 dark:text-muted-foreground/70 mb-6">
                             Create interview questions to help evaluate candidates for this position.
                           </p>
                           <div className="flex flex-wrap justify-center gap-3">
@@ -1592,7 +1592,7 @@ function JobDetailInnerPage() {
                         <div className="space-y-4">
                           {/* Action Buttons Row */}
                           <div className="flex items-center justify-between gap-3 pb-4 border-b">
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                            <div className="text-sm text-gray-600 dark:text-muted-foreground/70">
                               Showing {interviewQuestions.length} question{interviewQuestions.length !== 1 ? 's' : ''}
                             </div>
                             <div className="flex items-center gap-2">
@@ -1663,17 +1663,17 @@ function JobDetailInnerPage() {
                                         </Badge>
                                       )}
                                     </div>
-                                    <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 text-lg">
+                                    <h4 className="font-semibold text-foreground dark:text-gray-100 mb-2 text-lg">
                                       {question.question}
                                     </h4>
                                     {question.expectedAnswer && (
                                       <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
                                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expected Answer:</p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">{question.expectedAnswer}</p>
+                                        <p className="text-sm text-gray-600 dark:text-muted-foreground/70">{question.expectedAnswer}</p>
                                       </div>
                                     )}
                                     {question.category && (
-                                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Category: {question.category}</p>
+                                      <p className="text-sm text-gray-500 dark:text-muted-foreground/70 mt-2">Category: {question.category}</p>
                                     )}
                                     
                                     {/* Quality Metrics Display */}
@@ -1745,7 +1745,7 @@ function JobDetailInnerPage() {
                              <div>
                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
                                <select 
-                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                                  value={editingQuestion?.type}
                                  onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, type: e.target.value as any } : null)}
                                >
@@ -1761,7 +1761,7 @@ function JobDetailInnerPage() {
                              <div>
                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
                                <select 
-                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                                  value={editingQuestion?.difficulty}
                                  onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, difficulty: e.target.value as any } : null)}
                                >
@@ -1774,7 +1774,7 @@ function JobDetailInnerPage() {
                            <div>
                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
                              <select 
-                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                                value={editingQuestion?.interviewStage}
                                onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, interviewStage: e.target.value as any } : null)}
                              >
@@ -1846,7 +1846,7 @@ function JobDetailInnerPage() {
                            <div>
                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
                              <select 
-                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                                value={newQuestion.type}
                                onChange={(e) => setNewQuestionForm(prev => ({ ...prev, type: e.target.value as any }))}
                              >
@@ -1862,7 +1862,7 @@ function JobDetailInnerPage() {
                            <div>
                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
                              <select 
-                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                                value={newQuestion.difficulty}
                                onChange={(e) => setNewQuestionForm(prev => ({ ...prev, difficulty: e.target.value as any }))}
                              >
@@ -1875,7 +1875,7 @@ function JobDetailInnerPage() {
                          <div>
                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
                            <select 
-                             className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                             className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
                              value={newQuestion.interviewStage}
                              onChange={(e) => setNewQuestionForm(prev => ({ ...prev, interviewStage: e.target.value as any }))}
                            >
@@ -2100,8 +2100,8 @@ function JobDetailInnerPage() {
                           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center mb-6 mx-auto dark:from-emerald-900/30 dark:to-emerald-800/30">
                             <Calendar className="h-12 w-12 text-emerald-600 dark:text-emerald-400" />
                           </div>
-                          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">No interviews yet</h3>
-                          <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+                          <h3 className="text-2xl font-bold text-foreground dark:text-gray-100 mb-2">No interviews yet</h3>
+                          <p className="text-lg text-gray-600 dark:text-muted-foreground/70 mb-6">
                             Schedule your first interview to get started.
                           </p>
                           <Button 
@@ -2115,7 +2115,7 @@ function JobDetailInnerPage() {
                       ) : (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between mb-4">
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                            <div className="text-sm text-gray-600 dark:text-muted-foreground/70">
                               Showing {jobInterviews.length} interview{jobInterviews.length !== 1 ? 's' : ''}
                             </div>
                             <Button 
@@ -2131,7 +2131,7 @@ function JobDetailInnerPage() {
 
                           {/* Interview History */}
                           <div className="space-y-3">
-                            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                            <h4 className="text-lg font-semibold text-foreground dark:text-gray-100 mb-4">
                               Interview History
                             </h4>
                             {jobInterviews
@@ -2158,7 +2158,7 @@ function JobDetailInnerPage() {
                                                       ? 'bg-red-500'
                                                       : 'bg-gray-400'
                                               }`} />
-                                              <h5 className="font-medium text-gray-900 dark:text-gray-100">
+                                              <h5 className="font-medium text-foreground dark:text-gray-100">
                                                 {interview.title || `Interview - ${candidateName}`}
                                               </h5>
                                             </div>
@@ -2166,7 +2166,7 @@ function JobDetailInnerPage() {
                                               {interview.status}
                                             </Badge>
                                           </div>
-                                          <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                                          <div className="text-sm text-gray-600 dark:text-muted-foreground/70 space-y-1">
                                             <div className="flex items-center gap-4">
                                               <span className="flex items-center gap-1">
                                                 <Users className="h-4 w-4" />
@@ -2316,38 +2316,38 @@ function JobDetailInnerPage() {
                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
                               <Users className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Application Rate</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Application Rate</h3>
                             <p className="text-2xl sm:text-3xl font-bold text-blue-600 mb-1">
                               {jobData?.createdAt ? 
                                 Math.round((jobData?.applicantCount || 0) / Math.max(1, Math.ceil((new Date().getTime() - new Date(jobData?.createdAt).getTime()) / (1000 * 60 * 60 * 24)))) 
                                 : 0}
                             </p>
-                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">applications per day</p>
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">applications per day</p>
                           </div>
                           
                           <div className="text-center p-4 sm:p-6 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
                               <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Job Readiness</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Job Readiness</h3>
                             <p className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">
                               {Math.round(((jobData?.description ? 25 : 0) + 
                                          (jobData?.requirements ? 25 : 0) + 
                                          (jobData?.responsibilities ? 25 : 0) + 
                                          (interviewQuestions.length > 0 ? 25 : 0)))}%
                             </p>
-                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">completeness score</p>
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">completeness score</p>
                           </div>
                           
                           <div className="text-center p-4 sm:p-6 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
                               <Star className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Position Demand</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Position Demand</h3>
                             <p className="text-2xl sm:text-3xl font-bold text-purple-600 mb-1">
                               {jobData?.openings > 1 ? 'High' : 'Standard'}
                             </p>
-                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">
                               {jobData?.openings} position{jobData?.openings > 1 ? 's' : ''} available
                             </p>
                           </div>

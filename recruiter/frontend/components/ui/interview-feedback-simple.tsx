@@ -562,7 +562,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
       case 'maybe': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
       case 'no_hire': return 'text-red-600 bg-red-50 border-red-200';
       case 'strong_no_hire': return 'text-red-700 bg-red-100 border-red-300';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      default: return 'text-muted-foreground bg-gray-50 border-gray-200';
     }
   };
 
@@ -909,7 +909,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                       <div className="flex-shrink-0">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
                           index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                          index === 1 ? 'bg-gray-400 text-gray-900' :
+                          index === 1 ? 'bg-gray-400 text-foreground' :
                           'bg-orange-400 text-orange-900'
                         }`}>
                           {index + 1}

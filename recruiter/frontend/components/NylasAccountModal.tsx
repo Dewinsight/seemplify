@@ -131,10 +131,10 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
       <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white z-10">
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="text-2xl font-bold text-foreground">
             {account ? 'Edit' : 'Add'} Nylas Account
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -153,7 +153,7 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
             />
-            <p className="text-xs text-gray-500 mt-1">Friendly name to identify this account</p>
+            <p className="text-xs text-muted-foreground mt-1">Friendly name to identify this account</p>
           </div>
 
           {/* Client ID */}
@@ -188,12 +188,12 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
                 onChange={(e) => setFormData({...formData, apiKey: e.target.value})}
               />
               {account && (
-                <p className="text-xs text-gray-500 mt-1">Leave blank to keep existing API Key</p>
+                <p className="text-xs text-muted-foreground mt-1">Leave blank to keep existing API Key</p>
               )}
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-muted-foreground transition-colors"
               >
                 {showApiKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
@@ -214,12 +214,12 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
                 onChange={(e) => setFormData({...formData, clientSecret: e.target.value})}
               />
               {account && (
-                <p className="text-xs text-gray-500 mt-1">Leave blank to keep existing Client Secret</p>
+                <p className="text-xs text-muted-foreground mt-1">Leave blank to keep existing Client Secret</p>
               )}
               <button
                 type="button"
                 onClick={() => setShowSecret(!showSecret)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-muted-foreground transition-colors"
               >
                 {showSecret ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
@@ -255,7 +255,7 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
                 value={formData.maxGrants}
                 onChange={(e) => setFormData({...formData, maxGrants: parseInt(e.target.value) || 5})}
               />
-              <p className="text-xs text-gray-500 mt-1">Nylas free tier: 5, Paid: up to 100</p>
+              <p className="text-xs text-muted-foreground mt-1">Nylas free tier: 5, Paid: up to 100</p>
             </div>
           </div>
 
@@ -287,7 +287,7 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
                 value={formData.priority}
                 onChange={(e) => setFormData({...formData, priority: parseInt(e.target.value) || 0})}
               />
-              <p className="text-xs text-gray-500 mt-1">Higher = preferred (0-100)</p>
+              <p className="text-xs text-muted-foreground mt-1">Higher = preferred (0-100)</p>
             </div>
           </div>
 
@@ -343,7 +343,7 @@ export function NylasAccountModal({ account, onClose, onSave }: NylasAccountModa
           </Button>
           
           <div className="flex gap-3">
-            <Button variant="outline" onClick={onClose} className="hover:bg-gray-100">
+            <Button variant="outline" onClick={onClose} className="hover:bg-muted/50">
               Cancel
             </Button>
             <Button 

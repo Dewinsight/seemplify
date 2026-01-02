@@ -195,7 +195,7 @@ export function AdvancedQuestionGenerator({
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {stageDescriptions[standardOptions.stage || 'first_round']}
                     </p>
                   </div>
@@ -251,7 +251,7 @@ export function AdvancedQuestionGenerator({
                           <label htmlFor={type} className="text-sm font-medium cursor-pointer">
                             {type.replace('_', ' ').toUpperCase()}
                           </label>
-                          <p className="text-xs text-gray-500 mt-1">{description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{description}</p>
                         </div>
                       </div>
                     ))}
@@ -297,7 +297,7 @@ export function AdvancedQuestionGenerator({
                   <div className="flex items-center justify-between">
                     <div>
                       <label className="text-sm font-medium">Ensure Diversity</label>
-                      <p className="text-xs text-gray-500">Optimize for question variety and coverage</p>
+                      <p className="text-xs text-muted-foreground">Optimize for question variety and coverage</p>
                     </div>
                     <Switch
                       checked={standardOptions.ensureDiversity}
@@ -321,15 +321,15 @@ export function AdvancedQuestionGenerator({
                       step={0.1}
                       className="w-full"
                     />
-                    <div className="flex justify-between text-xs text-gray-500">
+                    <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Strict (0.0)</span>
                       <span>Balanced (0.3)</span>
                       <span>Relaxed (1.0)</span>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       This sets the highest <i>analyzed bias score</i> you'll accept for generated questions. Questions exceeding this will be filtered out. The 'Bias Score' on each generated question is its individual analysis result from the backend.
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       (0.0 = Strict Filter • 0.3 = Balanced Filter • 1.0 = Relaxed Filter)
                     </p>
                   </div>
@@ -366,7 +366,7 @@ export function AdvancedQuestionGenerator({
                         totalQuestions: parseInt(e.target.value) 
                       }))}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Questions will be distributed across selected stages
                     </p>
                   </div>
@@ -375,7 +375,7 @@ export function AdvancedQuestionGenerator({
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Ensure Diversity</label>
-                        <p className="text-xs text-gray-500">AI optimization for variety</p>
+                        <p className="text-xs text-muted-foreground">AI optimization for variety</p>
                       </div>
                       <Switch
                         checked={optimizedOptions.ensureDiversity}
@@ -407,7 +407,7 @@ export function AdvancedQuestionGenerator({
                           <label htmlFor={`stage-${stage}`} className="text-sm font-medium cursor-pointer">
                             {stage.replace('_', ' ').toUpperCase()}
                           </label>
-                          <p className="text-xs text-gray-500 mt-1">{description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{description}</p>
                         </div>
                       </div>
                     ))}
@@ -437,15 +437,15 @@ export function AdvancedQuestionGenerator({
                         step={0.1}
                         className="w-full"
                       />
-                      <div className="flex justify-between text-xs text-gray-500">
+                      <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Strict (0.0)</span>
                         <span>Balanced (0.3)</span>
                         <span>Relaxed (1.0)</span>
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         This sets the highest <i>analyzed bias score</i> you'll accept for generated questions. Questions exceeding this will be filtered out. The 'Bias Score' on each generated question is its individual analysis result from the backend.
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         (0.0 = Strict Filter • 0.3 = Balanced Filter • 1.0 = Relaxed Filter)
                       </p>
                     </div>
@@ -463,11 +463,11 @@ export function AdvancedQuestionGenerator({
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="text-gray-600">Selected Stages:</span>
+                        <span className="text-muted-foreground">Selected Stages:</span>
                         <span className="ml-2 font-medium">{optimizedOptions.stages?.length || 0}</span>
                       </div>
                       <div>
-                        <span className="text-gray-600">Questions per Stage:</span>
+                        <span className="text-muted-foreground">Questions per Stage:</span>
                         <span className="ml-2 font-medium">
                           ~{Math.floor((optimizedOptions.totalQuestions || 15) / (optimizedOptions.stages?.length || 1))}
                         </span>
@@ -481,7 +481,7 @@ export function AdvancedQuestionGenerator({
         </Tabs>
 
         <DialogFooter className="flex justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Info className="h-4 w-4" />
             <span>AI-powered with bias detection and quality optimization</span>
           </div>

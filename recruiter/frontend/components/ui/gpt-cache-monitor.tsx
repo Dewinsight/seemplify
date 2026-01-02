@@ -128,7 +128,7 @@ export function GPTCacheMonitor() {
                     value={stats.hitRate} 
                     className="h-2"
                   />
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-muted-foreground">
                     Target: >70%
                   </p>
                 </div>
@@ -143,7 +143,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-purple-600">
                   {stats.totalRequests.toLocaleString()}
                 </div>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Analysis requests
                 </p>
               </div>
@@ -157,7 +157,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-blue-600">
                   {stats.cacheSize.toLocaleString()}
                 </div>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Stored analyses
                 </p>
               </div>
@@ -171,7 +171,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-indigo-600">
                   {stats.candidatesTracked.toLocaleString()}
                 </div>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   For cache invalidation
                 </p>
               </div>
@@ -191,7 +191,7 @@ export function GPTCacheMonitor() {
                     }`}></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Cache Efficiency</h4>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {stats.hitRate >= 80 ? 
                           "🟢 Excellent cache performance! Most requests are served instantly from cache." :
                           stats.hitRate >= 60 ?
@@ -209,7 +209,7 @@ export function GPTCacheMonitor() {
                     <div className="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Usage Volume</h4>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {stats.totalRequests > 1000 ?
                           `High usage system with ${stats.totalRequests.toLocaleString()} total analysis requests.` :
                           stats.totalRequests > 100 ?
@@ -227,7 +227,7 @@ export function GPTCacheMonitor() {
                     <div className="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Cache Management</h4>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {stats.candidatesTracked > 0 ?
                           `Tracking ${stats.candidatesTracked.toLocaleString()} candidates for smart cache invalidation.` :
                           "No candidates being tracked for cache invalidation yet."
@@ -247,7 +247,7 @@ export function GPTCacheMonitor() {
                   <Badge variant={stats.hitRate >= 70 ? "default" : "secondary"} className="text-xs">
                     Cache Hit Rate: >70%
                   </Badge>
-                  <span className={stats.hitRate >= 70 ? "text-green-600" : "text-gray-500"}>
+                  <span className={stats.hitRate >= 70 ? "text-green-600" : "text-muted-foreground"}>
                     {stats.hitRate >= 70 ? "✓" : "○"}
                   </span>
                 </div>
@@ -267,14 +267,14 @@ export function GPTCacheMonitor() {
             </div>
 
             {/* Last Updated */}
-            <div className="text-xs text-gray-500 text-center border-t pt-3">
+            <div className="text-xs text-muted-foreground text-center border-t pt-3">
               Last updated: {new Date(stats.timestamp).toLocaleString()}
               <br />
               Auto-refreshes every 30 seconds
             </div>
           </>
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             <BarChart3 className="h-12 w-12 mx-auto mb-3 text-gray-300" />
             <p>No cache statistics available</p>
             <p className="text-sm">GPT analysis may not be enabled</p>

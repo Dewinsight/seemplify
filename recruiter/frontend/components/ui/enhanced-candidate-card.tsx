@@ -120,7 +120,7 @@ const getAIRecommendationConfig = (action?: string) => {
     case 'reject':
       return { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/30', label: 'Reject' }
     default:
-      return { color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-50 dark:bg-gray-950/30', label: 'Pending' }
+      return { color: 'text-muted-foreground dark:text-muted-foreground/70', bg: 'bg-muted/30 dark:bg-gray-950/30', label: 'Pending' }
   }
 }
 
@@ -190,8 +190,8 @@ export function EnhancedCandidateCard({
                 <TooltipTrigger asChild>
                   <h3 className={`font-semibold truncate cursor-help text-base ${
                     isRejected 
-                      ? 'text-gray-600 dark:text-gray-400 line-through' 
-                      : 'text-gray-900 dark:text-gray-100'
+                      ? 'text-muted-foreground dark:text-muted-foreground/70 line-through' 
+                      : 'text-foreground dark:text-gray-100'
                   }`}>
                     {candidate.firstName} {candidate.lastName}
                   </h3>
@@ -243,7 +243,7 @@ export function EnhancedCandidateCard({
             {candidate.position && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <p className="font-semibold text-gray-900 dark:text-gray-100 text-base sm:text-sm truncate cursor-help">
+                  <p className="font-semibold text-foreground dark:text-gray-100 text-base sm:text-sm truncate cursor-help">
                     {candidate.position}
                   </p>
                 </TooltipTrigger>
@@ -280,7 +280,7 @@ export function EnhancedCandidateCard({
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
                 <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">AI Score</span>
+                <span className="text-sm font-medium text-foreground dark:text-gray-100">AI Score</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Star className="h-4 w-4 text-yellow-500" />
@@ -346,7 +346,7 @@ export function EnhancedCandidateCard({
         {candidate.tags.length > 0 && (
           <div className="hidden sm:flex flex-wrap gap-1">
             {candidate.tags.slice(0, 2).map((tag, index) => (
-              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-muted/30 text-muted-foreground dark:bg-gray-800 dark:text-muted-foreground/70">
                 {tag}
               </Badge>
             ))}

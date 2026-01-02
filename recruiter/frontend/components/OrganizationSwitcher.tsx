@@ -67,7 +67,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
   };
 
   const getCreditsColor = () => {
-    if (!credits) return 'text-gray-500';
+    if (!credits) return 'text-muted-foreground';
     if (credits.percentageUsed >= 80) return 'text-red-500';
     if (credits.percentageUsed >= 50) return 'text-yellow-500';
     return 'text-green-500';
@@ -144,8 +144,8 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
   if (!currentOrganization) {
     return (
       <div className={`flex items-center space-x-2 ${className}`}>
-        <Building2 className="w-5 h-5 text-gray-400" />
-        <span className="text-sm text-gray-500">No organization</span>
+        <Building2 className="w-5 h-5 text-muted-foreground/70" />
+        <span className="text-sm text-muted-foreground">No organization</span>
       </div>
     );
   }
@@ -176,7 +176,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
               {getRoleLabel(currentOrganization.userRole)}
             </Badge>
           </div>
-          <ChevronDown className="w-4 h-4 text-gray-400" />
+          <ChevronDown className="w-4 h-4 text-muted-foreground/70" />
         </Button>
       </DropdownMenuTrigger>
       
@@ -276,7 +276,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
                   {getRoleLabel(org.userRole)}
                 </Badge>
                 {org.memberCount && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     {org.memberCount} member{org.memberCount !== 1 ? 's' : ''}
                   </span>
                 )}
@@ -287,7 +287,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
         
         {organizations.length === 0 && (
           <DropdownMenuItem disabled>
-            <span className="text-gray-500">No organizations found</span>
+            <span className="text-muted-foreground">No organizations found</span>
           </DropdownMenuItem>
         )}
         

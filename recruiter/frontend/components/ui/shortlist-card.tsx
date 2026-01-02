@@ -615,7 +615,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
     return (
       <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
         <CardHeader>
-          <CardTitle className="text-gray-900 dark:text-gray-100">Shortlisted Candidates</CardTitle>
+          <CardTitle className="text-foreground dark:text-gray-100">Shortlisted Candidates</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
@@ -769,7 +769,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                 onClick={handleClearRanking}
                 disabled={clearingRanking}
                 variant="outline"
-                className="bg-white/90 text-gray-600 hover:bg-white border-white/50 text-sm"
+                className="bg-white/90 text-muted-foreground hover:bg-white border-white/50 text-sm"
                 size="sm"
               >
                 {clearingRanking ? (
@@ -938,13 +938,13 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                     <div className="flex-1 min-w-0">
                       <h3 className={`text-base sm:text-lg font-bold mb-1 transition-colors truncate ${
                         match.status === 'rejected'
-                          ? 'text-gray-600 dark:text-gray-400 line-through'
-                          : 'text-gray-900 dark:text-gray-100 group-hover:text-blue-700 dark:group-hover:text-blue-300'
+                          ? 'text-muted-foreground dark:text-gray-400 line-through'
+                          : 'text-foreground dark:text-gray-100 group-hover:text-blue-700 dark:group-hover:text-blue-300'
                       }`}>
                         {getCandidateName(match)}
                       </h3>
                       <div className="flex items-center gap-2 mb-2">
-                        <Briefcase className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500 flex-shrink-0" />
+                        <Briefcase className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
                         <p className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{getCandidatePosition(match)}</p>
                       </div>
                     </div>
@@ -978,21 +978,21 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                   {/* Contact Information - responsive grid on mobile */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {match.candidate?.email && (
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400 min-w-0">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400 min-w-0">
                         <Mail className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500 flex-shrink-0" />
                         <span className="font-medium truncate">{match.candidate.email}</span>
                       </div>
                     )}
 
                     {match.candidate?.phone && (
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
                         <Phone className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 flex-shrink-0" />
                         <span>{match.candidate.phone}</span>
                       </div>
                     )}
 
                     {match.candidate?.location && (
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
                         <MapPin className="h-3 w-3 sm:h-4 sm:w-4 text-red-500 flex-shrink-0" />
                         <span className="truncate">{match.candidate.location}</span>
                       </div>
@@ -1000,7 +1000,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
 
                     {/* Experience */}
                     {match.candidate?.experience && (
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
                         <GraduationCap className="h-3 w-3 sm:h-4 sm:w-4 text-orange-500 flex-shrink-0" />
                         <span className="truncate"><strong>Exp:</strong> {match.candidate.experience}</span>
                       </div>
@@ -1031,7 +1031,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                           ? match.candidate.skills.split(',')
                           : match.candidate.skills
                         ).length > 3 && (
-                          <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 text-gray-500">
+                          <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 text-muted-foreground">
                             +{(typeof match.candidate.skills === 'string'
                               ? match.candidate.skills.split(',')
                               : match.candidate.skills
@@ -1058,7 +1058,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                             ? 'bg-green-100 text-green-800 border-green-300'
                             : match.relevanceScore >= 0.6
                             ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
-                            : 'bg-gray-100 text-gray-800 border-gray-300'
+                            : 'bg-muted/50 text-gray-800 border-gray-300'
                         }`}
                       >
                         {Math.round(match.relevanceScore * 100)}% Match
@@ -1072,7 +1072,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                       className="h-2 sm:h-3 bg-gray-200 dark:bg-gray-700"
                     />
                   ) : (
-                    <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 italic">
+                    <div className="flex items-center gap-2 text-[10px] sm:text-xs text-muted-foreground italic">
                       <AlertTriangle className="h-3 w-3 flex-shrink-0" />
                       <span>Not ranked yet - tap "Rank" button above</span>
                     </div>
@@ -1086,7 +1086,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                     size="sm"
                     variant="outline"
                     onClick={() => router.push(`/candidates/${getCandidateId(match)}?from=job-shortlist&jobId=${jobId}`)}
-                    className="h-8 sm:h-9 px-3 bg-white hover:bg-gray-50 border-gray-300 text-gray-700 hover:text-gray-900 text-xs sm:text-sm w-full sm:w-auto"
+                    className="h-8 sm:h-9 px-3 bg-white hover:bg-muted/30 border-gray-300 text-gray-700 hover:text-foreground text-xs sm:text-sm w-full sm:w-auto"
                   >
                     <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     View Profile
@@ -1171,7 +1171,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
 
                       {/* Show message if candidate is in pipeline */}
                       {pipelineCandidateIds.has(getCandidateId(match)) && match.status !== 'rejected' && (
-                        <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 italic text-right">
+                        <div className="text-[10px] sm:text-xs text-muted-foreground dark:text-gray-400 italic text-right">
                           In pipeline
                         </div>
                       )}
@@ -1185,7 +1185,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                           Selected
                         </Badge>
                       ) : (
-                        <span className="text-[10px] sm:text-xs text-gray-500 italic">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground italic">
                           Tap to select
                         </span>
                       )}
@@ -1197,8 +1197,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
             )
           })
         ) : (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <Users className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+          <div className="text-center py-12 text-muted-foreground dark:text-gray-400">
+            <Users className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-muted-foreground" />
             <p className="text-base">No candidates have been shortlisted yet.</p>
             <p className="text-sm text-gray-400 mt-2">Use "Add Candidates" to start building your shortlist.</p>
           </div>
@@ -1209,7 +1209,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       <Dialog open={showAddCandidateDialog} onOpenChange={setShowAddCandidateDialog}>
         <DialogContent className="w-[95vw] max-w-4xl max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-800 border-0 dark:border-slate-700 p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="text-lg sm:text-2xl font-bold flex items-center gap-2 sm:gap-3 text-gray-900 dark:text-gray-100">
+            <DialogTitle className="text-lg sm:text-2xl font-bold flex items-center gap-2 sm:gap-3 text-foreground dark:text-gray-100">
               <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
                 <UserPlus className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
@@ -1261,9 +1261,9 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                             </Avatar>
                             <div className="min-w-0 flex-1">
                               <h4 className="font-medium text-sm sm:text-base truncate">{candidateName}</h4>
-                              <p className="text-xs sm:text-sm text-gray-600 truncate">{candidate.position || 'Position not specified'}</p>
+                              <p className="text-xs sm:text-sm text-muted-foreground truncate">{candidate.position || 'Position not specified'}</p>
                               {candidate.location && (
-                                <p className="text-[10px] sm:text-xs text-gray-500 truncate">{candidate.location}</p>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{candidate.location}</p>
                               )}
                             </div>
                           </div>
@@ -1305,10 +1305,10 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                 <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
               </div>
               <div>
-                <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                <DialogTitle className="text-lg font-semibold text-foreground dark:text-gray-100">
                   Pipeline Stages Required
                 </DialogTitle>
-                <DialogDescription className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                <DialogDescription className="text-sm text-muted-foreground dark:text-gray-300 mt-1">
                   You need to set up pipeline stages first
                 </DialogDescription>
               </div>

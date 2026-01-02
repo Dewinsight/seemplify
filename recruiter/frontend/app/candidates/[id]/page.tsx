@@ -456,7 +456,7 @@ function CandidateDetailInnerPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-blue-700">Email</p>
-                      <p className="text-gray-900">{candidate.email}</p>
+                      <p className="text-foreground">{candidate.email}</p>
                     </div>
                   </div>
                 </div>
@@ -468,7 +468,7 @@ function CandidateDetailInnerPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-700">Phone</p>
-                      <p className="text-gray-900">{candidate.phone || "Not provided"}</p>
+                      <p className="text-foreground">{candidate.phone || "Not provided"}</p>
                     </div>
                   </div>
                 </div>
@@ -480,7 +480,7 @@ function CandidateDetailInnerPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-blue-700">Applied</p>
-                      <p className="text-gray-900">{candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : "N/A"}</p>
+                      <p className="text-foreground">{candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : "N/A"}</p>
                     </div>
                   </div>
                 </div>
@@ -655,22 +655,22 @@ function CandidateDetailInnerPage() {
                   {/* Tab Description */}
                   <div className="mt-4 text-center">
                     {activeTab === "overview" && (
-                      <p className="text-sm text-gray-600 animate-in fade-in duration-300">
+                      <p className="text-sm text-muted-foreground animate-in fade-in duration-300">
                         <span className="font-medium">Professional Background</span> • Experience, education, and career progression
                       </p>
                     )}
                     {activeTab === "ai-insights" && (
-                      <p className="text-sm text-gray-600 animate-in fade-in duration-300">
+                      <p className="text-sm text-muted-foreground animate-in fade-in duration-300">
                         <span className="font-medium">AI-Powered Analysis</span> • Strengths, concerns, and intelligent recommendations
                       </p>
                     )}
                     {activeTab === "cv" && (
-                      <p className="text-sm text-gray-600 animate-in fade-in duration-300">
+                      <p className="text-sm text-muted-foreground animate-in fade-in duration-300">
                         <span className="font-medium">Curriculum Vitae</span> • Candidate's resume and professional profile
                       </p>
                     )}
                     {activeTab === "feedback" && (
-                      <p className="text-sm text-gray-600 animate-in fade-in duration-300">
+                      <p className="text-sm text-muted-foreground animate-in fade-in duration-300">
                         <span className="font-medium">Interview Feedback</span> • Team evaluations and interview insights
                       </p>
                     )}
@@ -917,15 +917,15 @@ function CandidateDetailInnerPage() {
                   <CardContent className="pt-6 space-y-4">
                     {candidate.educationHistory.map((edu: any, index: number) => (
                       <div key={index} className="border-l-4 border-emerald-500 pl-4 py-2">
-                        <h4 className="font-semibold text-gray-900">
+                        <h4 className="font-semibold text-foreground">
                           {edu.degree} {edu.fieldOfStudy && `in ${edu.fieldOfStudy}`}
                         </h4>
                         <p className="text-gray-700">{edu.institution}</p>
-                        {edu.location && <p className="text-sm text-gray-600">{edu.location}</p>}
-                        {edu.graduationYear && <p className="text-sm text-gray-600">Graduated: {edu.graduationYear}</p>}
-                        {edu.gpa && <p className="text-sm text-gray-600">GPA: {edu.gpa}</p>}
+                        {edu.location && <p className="text-sm text-muted-foreground">{edu.location}</p>}
+                        {edu.graduationYear && <p className="text-sm text-muted-foreground">Graduated: {edu.graduationYear}</p>}
+                        {edu.gpa && <p className="text-sm text-muted-foreground">GPA: {edu.gpa}</p>}
                         {edu.honors && <p className="text-sm text-emerald-600 font-medium">{edu.honors}</p>}
-                        {edu.description && <p className="text-sm text-gray-600 mt-1">{edu.description}</p>}
+                        {edu.description && <p className="text-sm text-muted-foreground mt-1">{edu.description}</p>}
                       </div>
                     ))}
                   </CardContent>
@@ -945,14 +945,14 @@ function CandidateDetailInnerPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {candidate.certifications.map((cert: any, index: number) => (
                         <div key={index} className="border border-amber-200 rounded-lg p-4 bg-amber-50/50">
-                          <h4 className="font-semibold text-gray-900">{cert.name}</h4>
+                          <h4 className="font-semibold text-foreground">{cert.name}</h4>
                           {cert.issuingOrganization && <p className="text-sm text-gray-700">{cert.issuingOrganization}</p>}
                           <div className="mt-2 space-y-1">
-                            {cert.issueDate && <p className="text-xs text-gray-600">Issued: {cert.issueDate}</p>}
-                            {cert.expiryDate && <p className="text-xs text-gray-600">Expires: {cert.expiryDate}</p>}
-                            {cert.credentialId && <p className="text-xs text-gray-600">ID: {cert.credentialId}</p>}
+                            {cert.issueDate && <p className="text-xs text-muted-foreground">Issued: {cert.issueDate}</p>}
+                            {cert.expiryDate && <p className="text-xs text-muted-foreground">Expires: {cert.expiryDate}</p>}
+                            {cert.credentialId && <p className="text-xs text-muted-foreground">ID: {cert.credentialId}</p>}
                           </div>
-                          {cert.description && <p className="text-sm text-gray-600 mt-2">{cert.description}</p>}
+                          {cert.description && <p className="text-sm text-muted-foreground mt-2">{cert.description}</p>}
                           {cert.credentialUrl && (
                             <a href={cert.credentialUrl} target="_blank" rel="noopener noreferrer" 
                                className="text-xs text-blue-600 hover:underline mt-2 inline-block">
@@ -1003,10 +1003,10 @@ function CandidateDetailInnerPage() {
                       <div key={index} className="flex items-start gap-3 p-3 bg-yellow-50 rounded-lg">
                         <Trophy className="h-5 w-5 text-yellow-600 mt-1 flex-shrink-0" />
                         <div>
-                          <h4 className="font-semibold text-gray-900">{award.title}</h4>
+                          <h4 className="font-semibold text-foreground">{award.title}</h4>
                           {award.issuer && <p className="text-sm text-gray-700">{award.issuer}</p>}
-                          {award.date && <p className="text-xs text-gray-600">{award.date}</p>}
-                          {award.description && <p className="text-sm text-gray-600 mt-1">{award.description}</p>}
+                          {award.date && <p className="text-xs text-muted-foreground">{award.date}</p>}
+                          {award.description && <p className="text-sm text-muted-foreground mt-1">{award.description}</p>}
                         </div>
                       </div>
                     ))}
@@ -1027,7 +1027,7 @@ function CandidateDetailInnerPage() {
                     {candidate.projects.map((project: any, index: number) => (
                       <div key={index} className="border border-indigo-200 rounded-lg p-4">
                         <div className="flex justify-between items-start">
-                          <h4 className="font-semibold text-gray-900">{project.title}</h4>
+                          <h4 className="font-semibold text-foreground">{project.title}</h4>
                           {project.url && (
                             <a href={project.url} target="_blank" rel="noopener noreferrer"
                                className="text-indigo-600 hover:underline text-sm">
@@ -1036,7 +1036,7 @@ function CandidateDetailInnerPage() {
                           )}
                         </div>
                         {project.role && <p className="text-sm text-gray-700 mt-1">Role: {project.role}</p>}
-                        {project.description && <p className="text-sm text-gray-600 mt-2">{project.description}</p>}
+                        {project.description && <p className="text-sm text-muted-foreground mt-2">{project.description}</p>}
                         {project.technologies && project.technologies.length > 0 && (
                           <div className="flex flex-wrap gap-2 mt-3">
                             {project.technologies.map((tech: string, techIndex: number) => (
@@ -1049,7 +1049,7 @@ function CandidateDetailInnerPage() {
                         {project.highlights && project.highlights.length > 0 && (
                           <ul className="mt-3 space-y-1">
                             {project.highlights.map((highlight: string, hIndex: number) => (
-                              <li key={hIndex} className="text-sm text-gray-600 flex items-start">
+                              <li key={hIndex} className="text-sm text-muted-foreground flex items-start">
                                 <span className="text-indigo-600 mr-2">•</span>
                                 {highlight}
                               </li>
@@ -1079,13 +1079,13 @@ function CandidateDetailInnerPage() {
                   <CardContent className="pt-6 space-y-4">
                     {candidate.publications.map((pub: any, index: number) => (
                       <div key={index} className="border-l-4 border-rose-500 pl-4 py-2">
-                        <h4 className="font-semibold text-gray-900">{pub.title}</h4>
+                        <h4 className="font-semibold text-foreground">{pub.title}</h4>
                         {pub.publication && <p className="text-sm text-gray-700 italic">{pub.publication}</p>}
                         {pub.authors && pub.authors.length > 0 && (
-                          <p className="text-sm text-gray-600">Authors: {pub.authors.join(', ')}</p>
+                          <p className="text-sm text-muted-foreground">Authors: {pub.authors.join(', ')}</p>
                         )}
-                        {pub.publishDate && <p className="text-xs text-gray-600">{pub.publishDate}</p>}
-                        {pub.description && <p className="text-sm text-gray-600 mt-2">{pub.description}</p>}
+                        {pub.publishDate && <p className="text-xs text-muted-foreground">{pub.publishDate}</p>}
+                        {pub.description && <p className="text-sm text-muted-foreground mt-2">{pub.description}</p>}
                         {pub.url && (
                           <a href={pub.url} target="_blank" rel="noopener noreferrer"
                              className="text-sm text-rose-600 hover:underline mt-2 inline-block">
@@ -1110,12 +1110,12 @@ function CandidateDetailInnerPage() {
                   <CardContent className="pt-6 space-y-4">
                     {candidate.volunteerWork.map((vol: any, index: number) => (
                       <div key={index} className="border border-green-200 rounded-lg p-4 bg-green-50/50">
-                        <h4 className="font-semibold text-gray-900">{vol.role || 'Volunteer'}</h4>
+                        <h4 className="font-semibold text-foreground">{vol.role || 'Volunteer'}</h4>
                         {vol.organization && <p className="text-gray-700">{vol.organization}</p>}
                         {(vol.startDate || vol.endDate) && (
-                          <p className="text-sm text-gray-600">{vol.startDate} - {vol.endDate || 'Present'}</p>
+                          <p className="text-sm text-muted-foreground">{vol.startDate} - {vol.endDate || 'Present'}</p>
                         )}
-                        {vol.description && <p className="text-sm text-gray-600 mt-2">{vol.description}</p>}
+                        {vol.description && <p className="text-sm text-muted-foreground mt-2">{vol.description}</p>}
                         {vol.impact && (
                           <p className="text-sm text-green-700 mt-2 font-medium">Impact: {vol.impact}</p>
                         )}
@@ -1140,8 +1140,8 @@ function CandidateDetailInnerPage() {
                         <div key={index} className="flex items-start gap-2 p-3 border border-gray-200 rounded-lg">
                           <Users className="h-4 w-4 text-slate-600 mt-1" />
                           <div>
-                            <h4 className="font-medium text-gray-900">{mem.organization}</h4>
-                            {mem.role && <p className="text-sm text-gray-600">{mem.role}</p>}
+                            <h4 className="font-medium text-foreground">{mem.organization}</h4>
+                            {mem.role && <p className="text-sm text-muted-foreground">{mem.role}</p>}
                             {mem.description && <p className="text-xs text-gray-500 mt-1">{mem.description}</p>}
                           </div>
                         </div>
@@ -1164,42 +1164,42 @@ function CandidateDetailInnerPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {candidate.portfolioLinks.github && (
                         <a href={candidate.portfolioLinks.github} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <Github className="h-5 w-5 text-gray-700" />
                           <span className="text-sm text-gray-700">GitHub Profile</span>
                         </a>
                       )}
                       {candidate.portfolioLinks.linkedin && (
                         <a href={candidate.portfolioLinks.linkedin} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <Linkedin className="h-5 w-5 text-blue-600" />
                           <span className="text-sm text-gray-700">LinkedIn</span>
                         </a>
                       )}
                       {candidate.portfolioLinks.personalWebsite && (
                         <a href={candidate.portfolioLinks.personalWebsite} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <Globe className="h-5 w-5 text-green-600" />
                           <span className="text-sm text-gray-700">Personal Website</span>
                         </a>
                       )}
                       {candidate.portfolioLinks.portfolio && (
                         <a href={candidate.portfolioLinks.portfolio} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <Briefcase className="h-5 w-5 text-purple-600" />
                           <span className="text-sm text-gray-700">Portfolio</span>
                         </a>
                       )}
                       {candidate.portfolioLinks.stackoverflow && (
                         <a href={candidate.portfolioLinks.stackoverflow} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <Code className="h-5 w-5 text-orange-600" />
                           <span className="text-sm text-gray-700">Stack Overflow</span>
                         </a>
                       )}
                       {candidate.portfolioLinks.medium && (
                         <a href={candidate.portfolioLinks.medium} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                           className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-muted/30 transition">
                           <BookOpen className="h-5 w-5 text-gray-700" />
                           <span className="text-sm text-gray-700">Blog/Medium</span>
                         </a>
@@ -1221,7 +1221,7 @@ function CandidateDetailInnerPage() {
                   <CardContent className="pt-6 space-y-4">
                     {Object.entries(candidate.additionalSections).map(([sectionName, sectionContent]: [string, any], index: number) => (
                       <div key={index} className="border-l-4 border-violet-500 pl-4 py-2">
-                        <h4 className="font-semibold text-gray-900 mb-2">{sectionName}</h4>
+                        <h4 className="font-semibold text-foreground mb-2">{sectionName}</h4>
                         <p className="text-sm text-gray-700 whitespace-pre-wrap">{sectionContent}</p>
                       </div>
                     ))}

@@ -238,7 +238,7 @@ export function PipelineBoard({
       case 'rescheduled':
         return 'bg-red-100 text-red-800 border-red-200'
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-muted/50 text-gray-800 border-gray-200'
     }
   }
 
@@ -465,12 +465,12 @@ export function PipelineBoard({
         {filteredApplicants.length === 0 ? (
           <Card className="p-8 text-center">
             <div className="flex flex-col items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
                 <User className="h-8 w-8 text-gray-400" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">No candidates found</h3>
-                <p className="text-gray-500">
+                <p className="text-muted-foreground">
                   {statusFilter && statusFilter !== 'all' 
                     ? `No candidates with status "${PIPELINE_STAGES.find(s => s.id === statusFilter)?.title}"`
                     : "Add some candidates to get started"
@@ -503,7 +503,7 @@ export function PipelineBoard({
                           <p className="font-bold text-lg text-gray-900 truncate">
                             {applicant?.candidate?.firstName || 'N/A'}
                           </p>
-                          <p className="text-sm text-gray-600 truncate">
+                          <p className="text-sm text-muted-foreground truncate">
                             {applicant?.candidate?.lastName || 'N/A'}
                           </p>
                         </div>
@@ -512,7 +512,7 @@ export function PipelineBoard({
                             {applicant.candidate.position || 'No position specified'}
                           </p>
                           {applicant.candidate.location && (
-                            <p className="text-xs text-gray-500 flex items-center justify-center gap-1 mt-1">
+                            <p className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
                               <MapPin className="h-3 w-3" />
                               {applicant.candidate.location}
                             </p>
@@ -545,7 +545,7 @@ export function PipelineBoard({
                           <span className="text-sm font-medium">{applicant.score}%</span>
                         </div>
                       )}
-                      <div className="text-xs text-gray-500 text-center">
+                      <div className="text-xs text-muted-foreground text-center">
                         <Clock className="h-3 w-3 inline mr-1" />
                         {getTimeInStage(applicant)}
                                   </div>
@@ -706,12 +706,12 @@ export function PipelineBoard({
                     {candidateInterviews[applicant.candidate._id] && candidateInterviews[applicant.candidate._id].length > 0 && (
                       <div className="mt-4 pt-4 border-t border-gray-100">
                         <div className="flex items-center gap-2 mb-3">
-                          <Calendar className="h-4 w-4 text-gray-500" />
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm font-medium text-gray-700">Interviews ({candidateInterviews[applicant.candidate._id].length})</span>
                         </div>
                         <div className="space-y-2">
                           {candidateInterviews[applicant.candidate._id].slice(0, 2).map((interview) => (
-                            <div key={interview._id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                            <div key={interview._id} className="flex items-center justify-between bg-muted/30 rounded-lg p-3">
                               <div className="flex items-center gap-3">
                                 <div className="flex-shrink-0">
                                   {interview.type === 'video' ? (
@@ -724,7 +724,7 @@ export function PipelineBoard({
                                 </div>
                                 <div>
                                   <p className="text-sm font-medium text-gray-900">{interview.title}</p>
-                                  <p className="text-xs text-gray-500">{formatInterviewDateTime(interview.scheduledAt)}</p>
+                                  <p className="text-xs text-muted-foreground">{formatInterviewDateTime(interview.scheduledAt)}</p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
@@ -758,7 +758,7 @@ export function PipelineBoard({
                             </div>
                           ))}
                           {candidateInterviews[applicant.candidate._id].length > 2 && (
-                            <p className="text-xs text-gray-500 text-center mt-2">
+                            <p className="text-xs text-muted-foreground text-center mt-2">
                               +{candidateInterviews[applicant.candidate._id].length - 2} more interview{candidateInterviews[applicant.candidate._id].length - 2 > 1 ? 's' : ''}
                             </p>
                           )}
@@ -771,7 +771,7 @@ export function PipelineBoard({
                       <div className="mt-4 pt-4 border-t border-gray-100">
                         <div className="flex items-center gap-2">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                          <span className="text-sm text-gray-500">Loading interviews...</span>
+                          <span className="text-sm text-muted-foreground">Loading interviews...</span>
                         </div>
                       </div>
                     )}
@@ -912,7 +912,7 @@ export function PipelineBoard({
                               <span className="font-medium">
                                 {candidate.firstName || 'N/A'} {candidate.lastName || 'N/A'}
                               </span>
-                              <span className="text-sm text-gray-500">
+                              <span className="text-sm text-muted-foreground">
                                 {candidate.position || 'No position'} • {candidate.email || 'No email'}
                               </span>
                             </div>
@@ -999,7 +999,7 @@ export function PipelineBoard({
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-6">
             <DialogTitle className="text-2xl font-bold text-gray-800">Candidate Profile</DialogTitle>
-            <DialogDescription className="text-gray-600">
+            <DialogDescription className="text-muted-foreground">
               Complete overview of candidate information and pipeline status
             </DialogDescription>
           </DialogHeader>
@@ -1021,7 +1021,7 @@ export function PipelineBoard({
                     </h2>
                     <p className="text-xl text-blue-600 font-semibold mb-3">{selectedApplicant.candidate.position}</p>
                     {selectedApplicant.candidate.location && (
-                      <div className="flex items-center justify-center md:justify-start gap-2 text-gray-600 mb-4">
+                      <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground mb-4">
                         <MapPin className="h-5 w-5" />
                         <span className="text-lg">{selectedApplicant.candidate.location}</span>
                       </div>
@@ -1114,9 +1114,9 @@ export function PipelineBoard({
                         </div>
                       </div>
                     )}
-                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="p-3 bg-muted/30 rounded-lg border border-gray-100">
                       <p className="text-sm font-medium text-gray-800 mb-1">Time in Current Stage</p>
-                      <div className="flex items-center gap-2 text-gray-600">
+                      <div className="flex items-center gap-2 text-muted-foreground">
                         <Clock className="h-4 w-4" />
                         <span>{getTimeInStage(selectedApplicant)}</span>
                       </div>
@@ -1151,15 +1151,15 @@ export function PipelineBoard({
                                 <h4 className="font-semibold text-gray-900">{interview.title}</h4>
                               </div>
                               <div className="space-y-1">
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-muted-foreground">
                                   <Clock className="h-3 w-3 inline mr-1" />
                                   {formatInterviewDateTime(interview.scheduledAt)}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-muted-foreground">
                                   Duration: {interview.duration} minutes
                                 </p>
                                 {interview.location && (
-                                  <p className="text-sm text-gray-600">
+                                  <p className="text-sm text-muted-foreground">
                                     <MapPin className="h-3 w-3 inline mr-1" />
                                     {interview.location}
                                   </p>
@@ -1189,7 +1189,7 @@ export function PipelineBoard({
                                       Processing
                                     </Badge>
                                   ) : (
-                                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-700 border-gray-200">
+                                    <Badge variant="outline" className="text-xs bg-muted/30 text-gray-700 border-gray-200">
                                       <Mic className="h-3 w-3 mr-1" />
                                       AI Notetaker
                                     </Badge>
@@ -1298,15 +1298,15 @@ export function PipelineBoard({
                               <Badge variant="outline" className="text-xs">
                                 {history.status}
                               </Badge>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-muted-foreground">
                                 {formatDate(history.changedAt)}
                               </span>
                             </div>
                             {history.notes && (
-                              <p className="text-sm text-gray-600">{history.notes}</p>
+                              <p className="text-sm text-muted-foreground">{history.notes}</p>
                             )}
                             {history.previousStatus && (
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-muted-foreground mt-1">
                                 From: {history.previousStatus}
                               </p>
                             )}

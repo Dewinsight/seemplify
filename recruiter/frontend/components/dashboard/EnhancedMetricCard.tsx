@@ -31,20 +31,24 @@ interface EnhancedMetricCardProps {
 
 const variantStyles = {
   default: {
-    icon: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-    border: 'hover:border-gray-300 dark:hover:border-gray-600',
+    icon: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400',
+    border: 'hover:border-zinc-300 dark:hover:border-zinc-600',
+    card: 'dark:bg-zinc-900/40 dark:border-zinc-800/50',
   },
   primary: {
     icon: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
-    border: 'hover:border-indigo-300 dark:hover:border-indigo-600',
+    border: 'hover:border-indigo-400 dark:hover:border-indigo-500',
+    card: 'dark:bg-indigo-950/20 dark:border-indigo-900/30',
   },
   success: {
     icon: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',
-    border: 'hover:border-teal-300 dark:hover:border-teal-600',
+    border: 'hover:border-teal-400 dark:hover:border-teal-500',
+    card: 'dark:bg-teal-950/20 dark:border-teal-900/30',
   },
   warning: {
     icon: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
-    border: 'hover:border-amber-300 dark:hover:border-amber-600',
+    border: 'hover:border-amber-400 dark:hover:border-amber-500',
+    card: 'dark:bg-amber-950/20 dark:border-amber-900/30',
   },
 };
 
@@ -107,9 +111,11 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
     return (
       <motion.div
         className={cn(
-          'relative rounded-xl border bg-card p-6 transition-all cursor-pointer',
-          'hover:shadow-lg',
-          styles.border
+          'relative rounded-xl border p-6 transition-all cursor-pointer',
+          'bg-card dark:glass-card',
+          'hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-black/20',
+          styles.border,
+          styles.card
         )}
         whileHover={{ y: -2 }}
         onHoverStart={() => setIsHovered(true)}

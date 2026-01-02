@@ -152,7 +152,7 @@ const EnhancedTabTrigger: React.FC<EnhancedTabTriggerProps> = ({
       case 'active': return 'text-blue-600'
       case 'warning': return 'text-yellow-600'
       case 'error': return 'text-red-600'
-      default: return 'text-gray-600'
+      default: return 'text-muted-foreground'
     }
   }
   

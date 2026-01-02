@@ -76,9 +76,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <ProtectedRoute>
         {isAuthenticated ? (
-          <div className="relative flex min-h-screen flex-col">
+          <div className="relative flex min-h-screen flex-col bg-[rgb(var(--background-start-rgb))]">
+            {/* Background Noise Texture */}
+            <div className="bg-noise" />
             <TopNavbar />
-            <main className="flex-1  lg:pt-0">{children}</main>
+            <main className="flex-1 lg:pt-0">{children}</main>
           </div>
         ) : (
           children

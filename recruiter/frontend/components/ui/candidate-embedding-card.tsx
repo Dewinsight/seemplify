@@ -86,7 +86,7 @@ export function CandidateEmbeddingCard({
                   : "Not Embedded"}
               </p>
               {embeddingStatus.embeddingCreatedAt && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Created: {new Date(embeddingStatus.embeddingCreatedAt).toLocaleDateString()}
                 </p>
               )}
@@ -178,7 +178,7 @@ export function CandidateEmbeddingCard({
           </div>
         )}
         
-        <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+        <div className="text-xs text-muted-foreground bg-gray-50 p-3 rounded-lg">
           <p className="mb-1"><strong>Database:</strong> {embeddingStatus.isEmbedded ? "✓ Flagged" : "✗ Not flagged"}</p>
           <p><strong>Pinecone:</strong> {embeddingStatus.existsInPinecone ? "✓ Stored" : "✗ Not stored"}</p>
         </div>
@@ -212,7 +212,7 @@ export function CandidateEmbeddingCard({
         )}
       </Button>
       
-      <p className="text-xs text-gray-500 bg-amber-50 p-3 rounded-lg border border-amber-200">
+      <p className="text-xs text-muted-foreground bg-amber-50 p-3 rounded-lg border border-amber-200">
         ⚠️ Status check failed, but you can still try to create the embedding. This will work if the candidate has sufficient data.
       </p>
     </div>

@@ -151,14 +151,14 @@ export function ShortlistEmailControls({
                     {availableCandidates.length} candidates
                   </Badge>
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                <p className="text-sm text-muted-foreground dark:text-muted-foreground/70 mt-1">
                   Send personalized rejection emails to shortlisted candidates for <span className="font-medium">{jobTitle}</span>
                 </p>
               </div>
             </div>
             
             <div className="flex items-center space-x-3">
-              <div className="hidden sm:flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
+              <div className="hidden sm:flex items-center space-x-4 text-sm text-muted-foreground dark:text-muted-foreground/70">
                 <div className="flex items-center gap-1">
                   <Target className="h-4 w-4 text-blue-500" />
                   <span>Targeted</span>
@@ -233,7 +233,7 @@ export function ShortlistEmailControls({
                           <span className="font-medium text-gray-900 dark:text-gray-100">
                             {candidate.firstName} {candidate.lastName}
                           </span>
-                          <span className="text-gray-500 text-sm ml-2">({candidate.email})</span>
+                          <span className="text-muted-foreground text-sm ml-2">({candidate.email})</span>
                         </div>
                         <Badge variant="outline" className="text-xs">
                           Shortlisted
@@ -259,7 +259,7 @@ export function ShortlistEmailControls({
                 rows={4}
                 className="resize-none"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Leave empty to use the default rejection message template.
               </p>
             </div>
