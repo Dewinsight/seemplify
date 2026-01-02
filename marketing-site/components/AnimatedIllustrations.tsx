@@ -2,264 +2,136 @@
 
 import { motion } from 'framer-motion'
 
-// Smooth easing curve for all animations
-const smoothEase = [0.16, 1, 0.3, 1]
+// Premium "fluid" easing
+const fluidEase = [0.25, 0.46, 0.45, 0.94]
 
-// Animated Team Illustration
+// Abstract Node/Network Illustration (Replacing Team)
 export function TeamIllustration() {
   return (
-    <div className="relative w-64 h-64">
-      <svg viewBox="0 0 200 200" className="w-full h-full">
-        <defs>
-          <radialGradient id="teamGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="personGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="100%" stopColor="#818cf8" />
-          </linearGradient>
-          <linearGradient id="personGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#a78bfa" />
-          </linearGradient>
-          <linearGradient id="personGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#c084fc" />
-          </linearGradient>
-        </defs>
+    <div className="relative w-full h-64 flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-radial from-violet-500/10 to-transparent opacity-50" />
 
-        <circle cx="100" cy="100" r="80" fill="url(#teamGlow)" />
+      {/* Central Hub */}
+      <motion.div
+        className="relative z-10 w-24 h-24 rounded-full border border-violet-500/30 bg-violet-900/10 backdrop-blur-sm flex items-center justify-center"
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 1.5, ease: fluidEase }}
+      >
+        <div className="w-16 h-16 rounded-full border border-violet-400/50 bg-violet-500/10 animate-pulse-subtle" />
+      </motion.div>
 
-        {/* Person 1 - Left */}
-        <motion.g
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2, ease: smoothEase }}
+      {/* Orbiting Nodes */}
+      {[0, 1, 2, 3].map((i) => (
+        <motion.div
+          key={i}
+          className="absolute w-full h-full"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 20 + i * 5, ease: "linear", repeat: Infinity, delay: i * -5 }}
         >
-          <circle cx="55" cy="85" r="18" fill="url(#personGrad1)" />
-          <rect x="40" y="108" width="30" height="45" rx="8" fill="url(#personGrad1)" />
-        </motion.g>
-
-        {/* Person 2 - Center (larger) */}
-        <motion.g
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3, ease: smoothEase }}
-        >
-          <circle cx="100" cy="70" r="22" fill="url(#personGrad2)" />
-          <rect x="80" y="98" width="40" height="55" rx="10" fill="url(#personGrad2)" />
-        </motion.g>
-
-        {/* Person 3 - Right */}
-        <motion.g
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.4, ease: smoothEase }}
-        >
-          <circle cx="145" cy="85" r="18" fill="url(#personGrad3)" />
-          <rect x="130" y="108" width="30" height="45" rx="8" fill="url(#personGrad3)" />
-        </motion.g>
-
-        {/* Subtle connection lines */}
-        <motion.path
-          d="M 55 100 Q 78 70 100 92"
-          stroke="white"
-          strokeWidth="1"
-          fill="none"
-          opacity="0.15"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ delay: 0.6, duration: 0.8, ease: smoothEase }}
-        />
-        <motion.path
-          d="M 100 92 Q 122 70 145 100"
-          stroke="white"
-          strokeWidth="1"
-          fill="none"
-          opacity="0.15"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ delay: 0.8, duration: 0.8, ease: smoothEase }}
-        />
-      </svg>
+          <motion.div
+            className="absolute top-1/2 left-1/2 w-3 h-3 -ml-1.5 -mt-1.5 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.5)]"
+            style={{ transform: `translateX(${80 + i * 25}px)` }}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.5 + i * 0.2, duration: 0.8 }}
+          />
+          {/* Connecting Lines */}
+          <motion.div
+            className="absolute top-1/2 left-1/2 h-[1px] bg-gradient-to-r from-violet-500/0 via-violet-500/20 to-violet-500/0"
+            style={{
+              width: `${80 + i * 25}px`,
+              transformOrigin: "left center",
+              transform: "rotate(0deg)"
+            }}
+          />
+        </motion.div>
+      ))}
     </div>
   )
 }
 
-// Animated Calendar Illustration
+// Abstract Timeline/Grid Illustration (Replacing Calendar)
 export function CalendarIllustration() {
   return (
-    <div className="relative w-64 h-64">
-      <svg viewBox="0 0 200 200" className="w-full h-full">
-        <defs>
-          <linearGradient id="calGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#34d399" />
-          </linearGradient>
-        </defs>
+    <div className="relative w-full h-64 flex items-center justify-center overflow-hidden">
+      {/* Perspective Grid */}
+      <div className="absolute inset-x-0 bottom-0 h-full bg-[linear-gradient(transparent_0%,rgba(16,185,129,0.05)_100%)]" />
 
-        {/* Calendar base */}
-        <motion.rect
-          x="30"
-          y="40"
-          width="140"
-          height="130"
-          rx="12"
-          fill="#18181b"
-          stroke="#27272a"
-          strokeWidth="1"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, ease: smoothEase }}
-        />
-
-        {/* Calendar header */}
-        <motion.rect
-          x="30"
-          y="40"
-          width="140"
-          height="35"
-          rx="12"
-          fill="url(#calGrad)"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1, duration: 0.5, ease: smoothEase }}
-        />
-
-        {/* Header text */}
-        <text x="100" y="63" textAnchor="middle" fill="white" fontSize="13" fontWeight="500">
-          January 2025
-        </text>
-
-        {/* Calendar grid - simplified */}
-        {[0, 1, 2, 3, 4].map((row) => (
-          [0, 1, 2, 3, 4, 5, 6].map((col) => {
-            const day = row * 7 + col + 1
-            if (day > 31) return null
-            const isHighlighted = [8, 9, 10, 15, 22].includes(day)
-            return (
-              <motion.g key={`${row}-${col}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.15 + (row * 7 + col) * 0.015, duration: 0.4, ease: smoothEase }}
-              >
-                <rect
-                  x={38 + col * 18}
-                  y={85 + row * 17}
-                  width="14"
-                  height="14"
-                  rx="3"
-                  fill={isHighlighted ? '#10b981' : 'transparent'}
-                  opacity={isHighlighted ? 0.2 : 1}
-                />
-                <text
-                  x={45 + col * 18}
-                  y={95 + row * 17}
-                  textAnchor="middle"
-                  fill={isHighlighted ? '#34d399' : '#52525b'}
-                  fontSize="8"
-                >
-                  {day <= 31 ? day : ''}
-                </text>
-              </motion.g>
-            )
-          })
+      <div className="flex gap-2 items-end h-32">
+        {[...Array(7)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="w-8 rounded-t-sm bg-gradient-to-t from-emerald-900/40 to-emerald-500/10 border-x border-t border-emerald-500/20 backdrop-blur-sm relative overflow-hidden"
+            initial={{ height: "20%" }}
+            animate={{ height: ["20%", "60%", "40%", "80%", "30%"][i % 5] }}
+            transition={{
+              duration: 4,
+              repeat: Infinity,
+              repeatType: "reverse",
+              ease: "easeInOut",
+              delay: i * 0.2
+            }}
+          >
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-emerald-400/30" />
+            <motion.div
+              className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-emerald-400/10 to-transparent"
+              animate={{ opacity: [0, 0.5, 0] }}
+              transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+            />
+          </motion.div>
         ))}
-
-        {/* Floating badge */}
-        <motion.g
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.6, duration: 0.5, ease: smoothEase }}
-        >
-          <rect x="130" y="25" width="50" height="24" rx="12" fill="#10b981" />
-          <text x="155" y="41" textAnchor="middle" fill="white" fontSize="10" fontWeight="500">
-            3 days
-          </text>
-        </motion.g>
-      </svg>
+      </div>
     </div>
   )
 }
 
-// Animated Chart Illustration
+// Technical Chart Illustration
 export function ChartIllustration() {
-  const bars = [40, 65, 45, 80, 55, 90, 70]
-
   return (
-    <div className="relative w-64 h-64">
-      <svg viewBox="0 0 200 200" className="w-full h-full">
+    <div className="relative w-full h-64 flex items-center justify-center">
+      <svg className="w-full h-full max-w-[300px]" viewBox="0 0 300 150">
         <defs>
-          <linearGradient id="chartGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.6" />
-          </linearGradient>
-          <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#c084fc" />
+          <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#a855f7" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
           </linearGradient>
         </defs>
 
-        {/* Grid lines - subtle */}
-        {[0, 1, 2, 3, 4].map((i) => (
-          <line
-            key={i}
-            x1="30"
-            y1={40 + i * 35}
-            x2="180"
-            y2={40 + i * 35}
-            stroke="#27272a"
-            strokeWidth="1"
-          />
+        {/* Grid Lines */}
+        {[1, 2, 3].map(i => (
+          <line key={i} x1="0" y1={i * 37.5} x2="300" y2={i * 37.5} stroke="#ffffff" strokeOpacity="0.05" strokeWidth="1" strokeDasharray="4 4" />
         ))}
 
-        {/* Bars */}
-        {bars.map((height, i) => (
-          <motion.rect
-            key={i}
-            x={35 + i * 22}
-            width="16"
-            rx="4"
-            fill="url(#chartGrad)"
-            initial={{ y: 175, height: 0 }}
-            animate={{ y: 175 - height, height: height }}
-            transition={{ delay: 0.08 * i, duration: 0.6, ease: smoothEase }}
-          />
-        ))}
-
-        {/* Trend line */}
+        {/* Data Line */}
         <motion.path
-          d="M 43 140 L 65 110 L 87 125 L 109 85 L 131 105 L 153 65 L 175 90"
-          stroke="url(#lineGrad)"
-          strokeWidth="2"
+          d="M0,100 C50,100 50,40 100,40 C150,40 150,80 200,80 C250,80 250,20 300,20 L300,150 L0,150 Z"
+          fill="url(#chartFill)"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1 }}
+        />
+        <motion.path
+          d="M0,100 C50,100 50,40 100,40 C150,40 150,80 200,80 C250,80 250,20 300,20"
           fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          stroke="#c084fc"
+          strokeWidth="2"
           initial={{ pathLength: 0 }}
           animate={{ pathLength: 1 }}
-          transition={{ delay: 0.4, duration: 0.8, ease: smoothEase }}
+          transition={{ duration: 2.5, ease: fluidEase }}
         />
 
-        {/* Dots on trend line */}
-        {[
-          { x: 43, y: 140 },
-          { x: 65, y: 110 },
-          { x: 87, y: 125 },
-          { x: 109, y: 85 },
-          { x: 131, y: 105 },
-          { x: 153, y: 65 },
-          { x: 175, y: 90 },
-        ].map((pos, i) => (
+        {/* Data Points */}
+        {[0.33, 0.66, 1].map((p, i) => (
           <motion.circle
             key={i}
-            cx={pos.x}
-            cy={pos.y}
+            cx={p * 300}
+            cy={p === 0.33 ? 40 : p === 0.66 ? 80 : 20}
             r="3"
-            fill="#a855f7"
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.5 + i * 0.08, duration: 0.4, ease: smoothEase }}
+            fill="#ffffff"
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 1 + i * 0.5, duration: 0.5 }}
           />
         ))}
       </svg>
@@ -267,117 +139,44 @@ export function ChartIllustration() {
   )
 }
 
-// Animated Money/Payroll Illustration
+// Abstract Data Flow (Replacing Payroll)
 export function PayrollIllustration() {
   return (
-    <div className="relative w-64 h-64">
-      <svg viewBox="0 0 200 200" className="w-full h-full">
-        <defs>
-          <linearGradient id="moneyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#fbbf24" />
-          </linearGradient>
-          <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#18181b" />
-            <stop offset="100%" stopColor="#09090b" />
-          </linearGradient>
-        </defs>
+    <div className="relative w-full h-64 flex items-center justify-center overflow-hidden">
+      <div className="absolute w-[200px] h-[1px] bg-gradient-to-r from-transparent via-amber-500/20 to-transparent" />
 
-        {/* Card background */}
-        <motion.rect
-          x="25"
-          y="50"
-          width="150"
-          height="100"
-          rx="12"
-          fill="url(#cardGrad)"
-          stroke="#27272a"
-          strokeWidth="1"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, ease: smoothEase }}
+      {/* flowing bits */}
+      {[...Array(5)].map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute h-[1px] w-12 bg-gradient-to-r from-transparent via-amber-400 to-transparent"
+          style={{ top: "50%", left: "0%" }}
+          animate={{
+            x: [0, 300],
+            opacity: [0, 1, 0]
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            delay: i * 0.4,
+            ease: "easeInOut"
+          }}
         />
+      ))}
 
-        {/* Card chip */}
-        <motion.rect
-          x="40"
-          y="70"
-          width="30"
-          height="22"
-          rx="4"
-          fill="#f59e0b"
-          opacity="0.7"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.7 }}
-          transition={{ delay: 0.2, duration: 0.4, ease: smoothEase }}
+      {/* Central Processor */}
+      <div className="relative z-10 w-32 h-20 border border-amber-500/20 bg-amber-900/10 backdrop-blur-md rounded flex items-center justify-center">
+        <div className="text-amber-400 font-mono text-xs tracking-widest">PROCESSING</div>
+        <motion.div
+          className="absolute inset-0 border border-amber-400/30 rounded"
+          animate={{ opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 2, repeat: Infinity }}
         />
-
-        {/* Card number */}
-        <motion.g
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.4, ease: smoothEase }}
-        >
-          <text x="40" y="115" fill="#52525b" fontSize="10" fontFamily="monospace">
-            •••• •••• •••• 4521
-          </text>
-        </motion.g>
-
-        {/* Amount */}
-        <motion.text
-          x="40"
-          y="138"
-          fill="#34d399"
-          fontSize="18"
-          fontWeight="600"
-          initial={{ opacity: 0, x: -8 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4, duration: 0.5, ease: smoothEase }}
-        >
-          $12,450.00
-        </motion.text>
-
-        {/* Floating coins - subtle */}
-        {[
-          { x: 160, y: 40, delay: 0.5 },
-          { x: 175, y: 55, delay: 0.6 },
-          { x: 150, y: 25, delay: 0.7 },
-        ].map((coin, i) => (
-          <motion.g
-            key={i}
-            initial={{ y: coin.y + 12, opacity: 0 }}
-            animate={{ y: coin.y, opacity: 1 }}
-            transition={{ delay: coin.delay, duration: 0.5, ease: smoothEase }}
-          >
-            <circle cx={coin.x} cy={coin.y} r="12" fill="url(#moneyGrad)" />
-            <text x={coin.x} y={coin.y + 4} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="600">
-              $
-            </text>
-          </motion.g>
-        ))}
-
-        {/* Success checkmark */}
-        <motion.g
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.4, ease: smoothEase }}
-        >
-          <circle cx="160" cy="120" r="15" fill="#10b981" />
-          <path
-            d="M 152 120 L 157 125 L 168 114"
-            stroke="white"
-            strokeWidth="2.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </motion.g>
-      </svg>
+      </div>
     </div>
   )
 }
 
-// Simplified Workflow Connector - no longer used but kept for compatibility
-export function WorkflowConnector({ direction = 'right' }: { direction?: 'right' | 'down' }) {
-  return null // Removed as it was too playful
+export function WorkflowConnector() {
+  return null;
 }

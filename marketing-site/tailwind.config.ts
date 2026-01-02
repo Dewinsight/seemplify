@@ -14,10 +14,8 @@ const config: Config = {
       animation: {
         'gradient': 'gradient 20s ease infinite',
         'float': 'float 8s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-        'pulse-slow': 'pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-        'fade-in': 'fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-        'glow': 'glow 4s ease-in-out infinite alternate',
+        'pulse-subtle': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'glow-pulse': 'glowPulse 4s ease-in-out infinite alternate',
       },
       keyframes: {
         gradient: {
@@ -25,29 +23,28 @@ const config: Config = {
           '50%': { backgroundPosition: '100% 50%' },
         },
         float: {
-          '0%, 100%': { transform: 'translateY(0) rotate(0deg)' },
-          '50%': { transform: 'translateY(-8px) rotate(1deg)' },
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-10px)' },
         },
-        slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(16px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        glow: {
-          '0%': { opacity: '0.4' },
-          '100%': { opacity: '0.6' },
+        glowPulse: {
+          '0%': { opacity: '0.3', filter: 'blur(10px)' },
+          '100%': { opacity: '0.6', filter: 'blur(15px)' },
         },
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
       transitionTimingFunction: {
-        'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
-        'out-quint': 'cubic-bezier(0.22, 1, 0.36, 1)',
+        'fluid': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+        'snappy': 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
+      colors: {
+        zinc: {
+          850: '#1f1f22',
+          950: '#0a0a0c',
+        }
+      }
     },
   },
   plugins: [],
