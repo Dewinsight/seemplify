@@ -41,14 +41,20 @@ jobs:
     
     steps:
       - name: Deploy ${{ matrix.name }}
-        uses: benbristow/dokploy-deploy-action@0.0.1
-        with:
-          auth_token: ${{ secrets.DOKPLOY_TOKEN }}
-          application_id: ${{ secrets[matrix.app_id_secret] }}
-          dokploy_url: ${{ secrets.DOKPLOY_URL }}
-      
-      - name: Deployment Status
-        run: echo "✅ ${{ matrix.name }} deployment triggered"
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/response-${{ matrix.name }}.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets[matrix.app_id_secret] }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ matrix.name }} deployment triggered successfully (HTTP $response)"
+          else
+            echo "❌ ${{ matrix.name }} deployment failed with HTTP status code: $response"
+            cat /tmp/response-${{ matrix.name }}.txt 2>/dev/null || true
+            exit 1
+          fi
 
   deploy-frontends:
     name: Deploy All Frontends
@@ -68,14 +74,20 @@ jobs:
     
     steps:
       - name: Deploy ${{ matrix.name }}
-        uses: benbristow/dokploy-deploy-action@0.0.1
-        with:
-          auth_token: ${{ secrets.DOKPLOY_TOKEN }}
-          application_id: ${{ secrets[matrix.app_id_secret] }}
-          dokploy_url: ${{ secrets.DOKPLOY_URL }}
-      
-      - name: Deployment Status
-        run: echo "✅ ${{ matrix.name }} deployment triggered"
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/response-${{ matrix.name }}.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets[matrix.app_id_secret] }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ matrix.name }} deployment triggered successfully (HTTP $response)"
+          else
+            echo "❌ ${{ matrix.name }} deployment failed with HTTP status code: $response"
+            cat /tmp/response-${{ matrix.name }}.txt 2>/dev/null || true
+            exit 1
+          fi
 
   summary:
     name: Deployment Summary
