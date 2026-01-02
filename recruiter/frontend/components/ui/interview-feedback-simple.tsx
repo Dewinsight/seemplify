@@ -8,9 +8,9 @@ import { Alert, AlertDescription } from './alert';
 import { Avatar, AvatarFallback } from './avatar';
 import { Progress } from './progress';
 import { Separator } from './separator';
-import { 
-  MessageSquare, 
-  User, 
+import {
+  MessageSquare,
+  User,
   Globe,
   Star,
   RefreshCw,
@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiRequest } from '@/services/apiConfig';
-import { 
+import {
   calculateValidAverage,
   calculateOverallRating,
   getRecommendationFromRating,
@@ -156,7 +156,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/questions`);
       if (!response.ok) throw new Error('Failed to fetch questions');
-      
+
       const data = await response.json();
       setQuestions(data.questions || []);
       setCandidateInfo(data.candidateInfo);
@@ -173,14 +173,14 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
       const response = await apiRequest(`/api/interviews/${interviewId}/comments`, {
         method: 'GET'
       });
-      
+
       if (!response.ok) throw new Error('Failed to fetch feedback');
-      
+
       const data = await response.json();
       // Filter only feedback comments
       const feedbackComments = (data.comments || []).filter((c: any) => c.commentType === 'feedback');
       setFeedback(feedbackComments);
-      
+
       // Fetch comprehensive analytics after feedback is loaded
       if (feedbackComments.length > 0) {
         fetchComprehensiveAnalytics();
@@ -195,11 +195,11 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
     try {
       setAnalyticsLoading(true);
       const response = await apiRequest(`/api/interviews/${interviewId}/comprehensive-analytics`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch comprehensive analytics');
       }
-      
+
       const data = await response.json();
       setComprehensiveAnalytics(data);
       console.log('📊 Comprehensive analytics loaded:', data);
@@ -228,13 +228,13 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
       const assessorFeedback = Object.keys(userFeedback).map((userKey) => {
         const userData = userFeedback[userKey];
         const userRatings: number[] = [];
-        
+
         [...userData.general, ...Object.values(userData.questions).flat()].forEach(item => {
           if (item.rating?.overall) userRatings.push(item.rating.overall);
         });
-        
-        const avgScore = userRatings.length > 0 
-          ? userRatings.reduce((a, b) => a + b, 0) / userRatings.length 
+
+        const avgScore = userRatings.length > 0
+          ? userRatings.reduce((a, b) => a + b, 0) / userRatings.length
           : 0;
 
         return {
@@ -293,16 +293,18 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
 
   // Group feedback by user/assessor
   const groupFeedbackByUser = () => {
-    const grouped: { [key: string]: { 
-      user: { name: string; email?: string; role: string };
-      general: FeedbackItem[];
-      questions: { [questionId: string]: FeedbackItem[] };
-    } } = {};
+    const grouped: {
+      [key: string]: {
+        user: { name: string; email?: string; role: string };
+        general: FeedbackItem[];
+        questions: { [questionId: string]: FeedbackItem[] };
+      }
+    } = {};
 
     feedback.forEach(item => {
       // Create unique key for each assessor
       const userKey = item.publicFeedback?.email || item.authorName || 'unknown';
-      
+
       if (!grouped[userKey]) {
         grouped[userKey] = {
           user: {
@@ -320,10 +322,10 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
         grouped[userKey].general.push(item);
       } else {
         // Question-specific feedback
-        const questionId = typeof item.questionId === 'string' 
-          ? item.questionId 
+        const questionId = typeof item.questionId === 'string'
+          ? item.questionId
           : item.questionId._id;
-          
+
         if (!grouped[userKey].questions[questionId]) {
           grouped[userKey].questions[questionId] = [];
         }
@@ -342,7 +344,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
   const calculateAnalytics = (): AnalyticsData => {
     const userFeedback = groupFeedbackByUser();
     const userKeys = Object.keys(userFeedback);
-    
+
     if (userKeys.length === 0) {
       return {
         totalAssessors: 0,
@@ -375,7 +377,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           if (rating !== undefined && rating !== null) {
             ratings[key as keyof typeof ratings].push(rating);
             allScores.push(rating);
-            
+
             // Track question-specific scores
             if (item.questionId) {
               const questionId = typeof item.questionId === 'string' ? item.questionId : item.questionId._id;
@@ -398,20 +400,20 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
     };
 
     // Calculate question-specific average using our utility
-    const questionAverages = Object.values(questionScores).map(scores => 
+    const questionAverages = Object.values(questionScores).map(scores =>
       calculateValidAverage(scores) || 0
     );
-    
+
     const questionAverage = questionAverages.length > 0
       ? calculateValidAverage(questionAverages) || 0
       : 0;
-    
+
     scoreBreakdown.questionSpecific = questionAverage;
 
     // The overall rating is already the average across the board from assessors
     // This is our base final score
     let averageScore = scoreBreakdown.overall;
-    
+
     // If we have question-specific ratings, include them in the final score
     // Use weighted average: 70% overall rating + 30% question-specific ratings
     if (questionAverage > 0 && scoreBreakdown.overall > 0) {
@@ -420,7 +422,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
       // If we only have question ratings, use those
       averageScore = questionAverage;
     }
-    
+
     // Round to 2 decimal places
     averageScore = Math.round(averageScore * 100) / 100;
 
@@ -504,18 +506,18 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
             </>
           )}
         </div>
-        
+
         {item.rating?.overall && (
           <div className="text-right">
             {formatRating(item.rating.overall)}
           </div>
         )}
       </div>
-      
+
       <div className="text-sm leading-relaxed">
         {item.content}
       </div>
-      
+
       {item.rating && Object.keys(item.rating).length > 1 && (
         <div className="flex gap-4 text-sm">
           {item.rating.technical && (
@@ -557,21 +559,21 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
 
   const getRecommendationColor = (rec: string) => {
     switch (rec) {
-      case 'strong_hire': return 'text-green-600 bg-green-50 border-green-200';
-      case 'hire': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'maybe': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'no_hire': return 'text-red-600 bg-red-50 border-red-200';
-      case 'strong_no_hire': return 'text-red-700 bg-red-100 border-red-300';
-      default: return 'text-muted-foreground bg-gray-50 border-gray-200';
+      case 'strong_hire': return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+      case 'hire': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800';
+      case 'maybe': return 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
+      case 'no_hire': return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+      case 'strong_no_hire': return 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-800';
+      default: return 'text-muted-foreground bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700';
     }
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 4.5) return 'text-green-600';
-    if (score >= 4.0) return 'text-emerald-600';
-    if (score >= 3.5) return 'text-yellow-600';
-    if (score >= 3.0) return 'text-orange-600';
-    return 'text-red-600';
+    if (score >= 4.5) return 'text-green-600 dark:text-green-400';
+    if (score >= 4.0) return 'text-emerald-600 dark:text-emerald-400';
+    if (score >= 3.5) return 'text-yellow-600 dark:text-yellow-400';
+    if (score >= 3.0) return 'text-orange-600 dark:text-orange-400';
+    return 'text-red-600 dark:text-red-400';
   };
 
   // Use the imported getProgressColorClass
@@ -594,16 +596,16 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
               )}
               {interviewInfo?.stageName && (
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge variant="outline" className="text-xs font-medium bg-indigo-50 text-indigo-700 border-indigo-200">
+                  <Badge variant="outline" className="text-xs font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800">
                     {interviewInfo.stageOrder && `Round ${interviewInfo.stageOrder}: `}
                     {interviewInfo.stageName}
                   </Badge>
                   {interviewInfo.scheduledAt && (
                     <span className="text-xs text-muted-foreground">
-                      • {new Date(interviewInfo.scheduledAt).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
+                      • {new Date(interviewInfo.scheduledAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
                       })}
                     </span>
                   )}
@@ -617,7 +619,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
             variant="outline"
             size="sm"
             onClick={loadData}
-            className="hover:bg-blue-50"
+            className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
@@ -628,7 +630,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                 variant="outline"
                 size="sm"
                 onClick={() => saveAnalyticsScore(analytics)}
-                className="hover:bg-green-50 border-green-200 text-green-700"
+                className="hover:bg-green-50 dark:hover:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400"
               >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Save Analytics
@@ -638,7 +640,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                 size="sm"
                 onClick={handleGeneratePDF}
                 disabled={isGeneratingPDF}
-                className="hover:bg-indigo-50 border-indigo-200 text-indigo-700"
+                className="hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400"
               >
                 {isGeneratingPDF ? (
                   <>
@@ -671,7 +673,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           {/* Key Metrics Overview */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Overall Score */}
-            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border-blue-200 dark:border-blue-900">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -682,17 +684,17 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                     <p className="text-xs text-muted-foreground">out of 5.0</p>
                     {analytics.scoreBreakdown.questionSpecific > 0 && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Overall: {analytics.scoreBreakdown.overall.toFixed(1)} • 
+                        Overall: {analytics.scoreBreakdown.overall.toFixed(1)} •
                         Questions: {analytics.scoreBreakdown.questionSpecific.toFixed(1)}
                       </p>
                     )}
                   </div>
-                  <div className="p-3 bg-blue-100 rounded-full">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/40 rounded-full">
                     <Target className="h-6 w-6 text-blue-600" />
                   </div>
                 </div>
-                <Progress 
-                  value={(analytics.averageScore / 5) * 100} 
+                <Progress
+                  value={(analytics.averageScore / 5) * 100}
                   className={`mt-3 ${getProgressColorClass(analytics.averageScore)}`}
                 />
               </CardContent>
@@ -709,8 +711,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                     </p>
                   </div>
                   <div className="p-3 rounded-full opacity-75">
-                    {analytics.recommendation.includes('hire') ? 
-                      <ThumbsUp className="h-6 w-6" /> : 
+                    {analytics.recommendation.includes('hire') ?
+                      <ThumbsUp className="h-6 w-6" /> :
                       <AlertCircle className="h-6 w-6" />
                     }
                   </div>
@@ -719,7 +721,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
             </Card>
 
             {/* Assessors */}
-            <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200">
+            <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/40 dark:to-green-950/40 border-emerald-200 dark:border-emerald-900">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -727,7 +729,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                     <p className="text-3xl font-bold text-emerald-700">{analytics.totalAssessors}</p>
                     <p className="text-xs text-muted-foreground">{analytics.totalFeedback} responses</p>
                   </div>
-                  <div className="p-3 bg-emerald-100 rounded-full">
+                  <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 rounded-full">
                     <Users className="h-6 w-6 text-emerald-600" />
                   </div>
                 </div>
@@ -759,7 +761,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {Object.entries(comprehensiveAnalytics.breakdown.systemFields).map(([label, data]) => (
-                          <div key={label} className="bg-muted/30 rounded-lg p-4 space-y-2">
+                          <div key={label} className="bg-muted/30 dark:bg-white/5 rounded-lg p-4 space-y-2">
                             <p className="text-xs font-medium text-muted-foreground uppercase">{label}</p>
                             <p className={`text-2xl font-bold ${getScoreColor(data.average)}`}>
                               {data.average.toFixed(2)}
@@ -786,20 +788,17 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                         {Object.entries(comprehensiveAnalytics.breakdown.customFields).map(([label, data]: [string, any]) => {
                           const hasResponses = data.hasResponses !== false; // Backward compatible - assume true if not specified
                           return (
-                            <div key={label} className={`rounded-lg p-4 space-y-2 border ${
-                              hasResponses
+                            <div key={label} className={`rounded-lg p-4 space-y-2 border ${hasResponses
                                 ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800'
                                 : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
-                            }`}>
-                              <p className={`text-xs font-medium uppercase ${
-                                hasResponses ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400'
                               }`}>
+                              <p className={`text-xs font-medium uppercase ${hasResponses ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400'
+                                }`}>
                                 {label}
                               </p>
                               <div className="flex items-baseline gap-2">
-                                <p className={`text-2xl font-bold ${
-                                  hasResponses ? getScoreColor(data.average) : 'text-slate-400 dark:text-slate-500'
-                                }`}>
+                                <p className={`text-2xl font-bold ${hasResponses ? getScoreColor(data.average) : 'text-slate-400 dark:text-slate-500'
+                                  }`}>
                                   {data.average.toFixed(2)}
                                 </p>
                                 {!hasResponses && (
@@ -810,9 +809,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                                 <span>Weight: {(data.weight * 100).toFixed(0)}%</span>
                                 <span className="font-medium">+{data.contribution.toFixed(2)}</span>
                               </div>
-                              <Progress value={(data.average / 5) * 100} className={`h-2 ${
-                                hasResponses ? '' : 'opacity-40'
-                              }`} />
+                              <Progress value={(data.average / 5) * 100} className={`h-2 ${hasResponses ? '' : 'opacity-40'
+                                }`} />
                             </div>
                           );
                         })}
@@ -877,8 +875,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                           <p className={`text-2xl font-bold ${getScoreColor(score)}`}>
                             {score.toFixed(1)}
                           </p>
-                          <Progress 
-                            value={(score / 5) * 100} 
+                          <Progress
+                            value={(score / 5) * 100}
                             className="mt-2"
                           />
                         </div>
@@ -907,11 +905,10 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                   {analytics.topPerformingQuestions.map((q, index) => (
                     <div key={q.questionId} className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
                       <div className="flex-shrink-0">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                          index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                          index === 1 ? 'bg-gray-400 text-foreground' :
-                          'bg-orange-400 text-orange-900'
-                        }`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${index === 0 ? 'bg-yellow-400 text-yellow-900' :
+                            index === 1 ? 'bg-gray-400 text-foreground' :
+                              'bg-orange-400 text-orange-900'
+                          }`}>
                           {index + 1}
                         </div>
                       </div>
@@ -925,9 +922,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                             {[1, 2, 3, 4, 5].map((star) => (
                               <Star
                                 key={star}
-                                className={`h-4 w-4 ${
-                                  star <= q.score ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
-                                }`}
+                                className={`h-4 w-4 ${star <= q.score ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+                                  }`}
                               />
                             ))}
                           </div>
@@ -948,18 +944,18 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           <Sparkles className="h-5 w-5 text-blue-600" />
           <h2 className="text-xl font-semibold">Individual Assessor Feedback</h2>
         </div>
-        
+
         {userKeys.map((userKey) => {
           const userData = userFeedback[userKey];
           const questionKeys = Object.keys(userData.questions);
-          
+
           // Calculate user's average score
           const userRatings: number[] = [];
           [...userData.general, ...Object.values(userData.questions).flat()].forEach(item => {
             if (item.rating?.overall) userRatings.push(item.rating.overall);
           });
           const userAverage = userRatings.length > 0 ? userRatings.reduce((a, b) => a + b, 0) / userRatings.length : 0;
-          
+
           return (
             <Card key={userKey} className="overflow-hidden border-l-4 border-l-blue-500">
               {/* Enhanced User Header */}
@@ -978,8 +974,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                     <div className="flex-1">
                       <div className="font-bold text-xl">{userData.user.name}</div>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                        <Badge 
-                          variant={userData.user.role === 'public' ? 'secondary' : 'outline'} 
+                        <Badge
+                          variant={userData.user.role === 'public' ? 'secondary' : 'outline'}
                           className="text-xs font-medium"
                         >
                           {userData.user.role === 'public' ? 'External Assessor' : userData.user.role.replace('_', ' ')}
@@ -997,7 +993,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                       </div>
                     </div>
                   </div>
-                  
+
                   {userAverage > 0 && (
                     <div className="text-right">
                       <div className={`text-2xl font-bold ${getScoreColor(userAverage)}`}>
@@ -1008,9 +1004,8 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                         {[1, 2, 3, 4, 5].map((star) => (
                           <Star
                             key={star}
-                            className={`h-3 w-3 ${
-                              star <= userAverage ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
-                            }`}
+                            className={`h-3 w-3 ${star <= userAverage ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+                              }`}
                           />
                         ))}
                       </div>
@@ -1047,9 +1042,9 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                       {questionKeys.map((questionId) => {
                         const question = getQuestionById(questionId);
                         const questionFeedback = userData.questions[questionId];
-                        
+
                         if (!question) return null;
-                        
+
                         return (
                           <div key={questionId} className="border-2 border-dashed border-gray-200 rounded-lg p-4 bg-gradient-to-r from-gray-50 to-gray-100">
                             {/* Enhanced Question Header */}
@@ -1080,7 +1075,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                                 {question.question}
                               </div>
                             </div>
-                            
+
                             {/* Enhanced Question Feedback */}
                             <div className="space-y-3">
                               {questionFeedback.map((item) => (
@@ -1093,11 +1088,11 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
                                       {new Date(item.createdAt).toLocaleTimeString()}
                                     </div>
                                   </div>
-                                  
+
                                   <div className="text-sm leading-relaxed mb-3 p-3 bg-gray-50 rounded">
                                     {item.content}
                                   </div>
-                                  
+
                                   {item.rating && Object.keys(item.rating).length > 1 && (
                                     <div className="flex gap-4 text-sm border-t pt-3">
                                       {Object.entries(item.rating).map(([key, value]) => (
@@ -1144,7 +1139,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
             <p className="text-muted-foreground mb-6 max-w-md mx-auto">
               Be the first to provide comprehensive feedback for this interview. Your assessment will help make better hiring decisions.
             </p>
-            <Button 
+            <Button
               onClick={() => window.open(getPublicFeedbackUrl(), '_blank')}
               size="lg"
               className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"

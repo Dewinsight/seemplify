@@ -1229,7 +1229,7 @@ function JobDetailInnerPage() {
                       </div>
                       {/* Mobile-First Stats Grid */}
                       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
                               <Building className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1241,7 +1241,7 @@ function JobDetailInnerPage() {
                           </div>
                         </div>
 
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gray-600 flex items-center justify-center flex-shrink-0">
                               <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1253,7 +1253,7 @@ function JobDetailInnerPage() {
                           </div>
                         </div>
 
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
                               <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1265,7 +1265,7 @@ function JobDetailInnerPage() {
                           </div>
                         </div>
 
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
                               <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1277,7 +1277,7 @@ function JobDetailInnerPage() {
                           </div>
                         </div>
 
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-purple-600 flex items-center justify-center flex-shrink-0">
                               <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1289,7 +1289,7 @@ function JobDetailInnerPage() {
                           </div>
                         </div>
 
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-card/30 hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-orange-600 flex items-center justify-center flex-shrink-0">
                               <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -1316,7 +1316,7 @@ function JobDetailInnerPage() {
                             </div>
                             <h3 className="text-base sm:text-lg lg:text-xl font-bold text-foreground dark:text-gray-100">Description</h3>
                           </div>
-                          <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-card/30 border border-white/5">
+                          <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
                             <div className="prose prose-sm sm:prose max-w-none dark:prose-invert">
                               <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words text-sm sm:text-base">
                                 {jobData?.description || 'No description available.'}
@@ -1334,7 +1334,7 @@ function JobDetailInnerPage() {
                               </div>
                               <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Requirements</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-card/30 border border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
                               {jobData?.requirements ? (
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
                                   <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
@@ -1354,7 +1354,7 @@ function JobDetailInnerPage() {
                               </div>
                               <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Responsibilities</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-card/30 border border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
                               {jobData?.responsibilities ? (
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
                                   <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
@@ -1379,7 +1379,7 @@ function JobDetailInnerPage() {
                               </div>
                               <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Required Skills</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-card/30 border border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
                               <div className="prose prose-sm max-w-none dark:prose-invert">
                                 <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm sm:text-base">
                                   {jobData?.skills}
@@ -1397,7 +1397,7 @@ function JobDetailInnerPage() {
                               </div>
                               <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Benefits</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-card/30 border border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
                               <div className="prose prose-sm max-w-none dark:prose-invert">
                                 <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
                                   {jobData?.benefits}
@@ -1442,7 +1442,7 @@ function JobDetailInnerPage() {
                         </Button>
                       </div>
                     ) : (
-                      <TabsList className="grid w-full grid-cols-2 bg-card/30 border border-white/5 p-2 rounded-xl h-auto sm:h-12 gap-1">
+                      <TabsList className="grid w-full grid-cols-2 bg-gray-100/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 p-2 rounded-xl h-auto sm:h-12 gap-1">
                         <TabsTrigger
                           value="ai-matches"
                           className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg rounded-lg font-medium transition-all duration-200 text-gray-700 dark:text-slate-300 dark:data-[state=active]:text-white hover:bg-white/50 dark:hover:bg-slate-600/50 text-sm sm:text-base min-h-[44px] px-3 py-2"
@@ -1487,15 +1487,15 @@ function JobDetailInnerPage() {
               </TabsContent>
 
               <TabsContent value="questions" className="space-y-3 sm:space-y-4">
-                <Card className="glass-card border-0 shadow-lg">
-                  <CardHeader className="bg-gradient-to-r from-purple-950/40 to-indigo-950/40 text-purple-100 rounded-t-lg border-b border-white/5">
+                <Card className="glass-card border-0 shadow-lg ring-1 ring-gray-200 dark:ring-0">
+                  <CardHeader className="bg-gradient-to-r from-purple-100 to-indigo-100 dark:from-purple-950/40 dark:to-indigo-950/40 text-purple-900 dark:text-purple-100 rounded-t-lg border-b border-gray-200 dark:border-white/5">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
                           <HelpCircle className="h-5 w-5 flex-shrink-0" />
                           <span className="truncate">Interview Questions</span>
                         </CardTitle>
-                        <CardDescription className="text-purple-100 text-sm">
+                        <CardDescription className="text-purple-700 dark:text-purple-100 text-sm">
                           Manage interview questions for this position
                         </CardDescription>
                       </div>
@@ -1503,7 +1503,7 @@ function JobDetailInnerPage() {
                   </CardHeader>
                   <CardContent className="p-6">
                     {/* Filters */}
-                    <div className="mb-6 p-4 bg-card/30 border border-white/5 rounded-lg">
+                    <div className="mb-6 p-4 bg-gray-50/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 rounded-lg">
                       <div className="flex items-center gap-2 mb-3">
                         <Filter className="h-4 w-4 text-purple-600 flex-shrink-0" />
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters:</span>
@@ -1939,7 +1939,7 @@ function JobDetailInnerPage() {
 
               <TabsContent value="hiring-pipeline" className="space-y-3 sm:space-y-4">
                 <Tabs value={hiringPipelineTab} onValueChange={setHiringPipelineTab} className="hiring-pipeline-tabs">
-                  <TabsList className="flex w-full bg-card/30 border border-white/5 p-1 rounded-xl shadow-lg gap-1 mb-6" data-tutorial="pipeline-tabs">
+                  <TabsList className="flex w-full bg-gray-100/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 p-1 rounded-xl shadow-lg gap-1 mb-6" data-tutorial="pipeline-tabs">
                     <TabsTrigger
                       value="board"
                       className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
@@ -1992,8 +1992,8 @@ function JobDetailInnerPage() {
                   </TabsContent>
 
                   <TabsContent value="configuration" className="mt-0">
-                    <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-indigo-950/40 to-blue-950/40 text-blue-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5" data-tutorial="job-settings">
+                    <Card className="glass-card border-0 shadow-lg ring-1 ring-gray-200 dark:ring-0">
+                      <CardHeader className="bg-gradient-to-r from-indigo-100 to-blue-100 dark:from-indigo-950/40 dark:to-blue-950/40 text-blue-900 dark:text-blue-100 rounded-t-lg px-4 sm:px-6 border-b border-gray-200 dark:border-white/5" data-tutorial="job-settings">
                         <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
                           <Settings className="h-5 w-5 flex-shrink-0" />
                           <span className="truncate">Stage Configuration</span>

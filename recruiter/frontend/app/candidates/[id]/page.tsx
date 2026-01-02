@@ -1,4 +1,5 @@
 "use client"
+// Test deployment - checking Dokploy integration
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
@@ -593,7 +594,7 @@ function CandidateDetailInnerPage() {
                         </Select>
                       ) : (
                         /* Desktop Tab List Container */
-                        <TabsList className="relative grid w-full grid-cols-3 gap-1 sm:gap-2 bg-slate-100/80 dark:glass p-1 sm:p-2 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 h-auto">
+                        <TabsList className="relative grid w-full grid-cols-3 gap-1 sm:gap-2 bg-slate-100/80 dark:bg-white/5 p-1 sm:p-2 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 h-auto">
                           {/* Overview Tab */}
                           <TabsTrigger
                             value="overview"

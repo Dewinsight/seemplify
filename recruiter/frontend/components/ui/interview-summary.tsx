@@ -28,35 +28,35 @@ interface InterviewSummaryProps {
 }
 
 const recommendationConfig = {
-  strong_yes: { 
-    label: 'Strong Yes', 
-    color: 'bg-green-600', 
-    icon: CheckCircle, 
-    description: 'Highly recommended for hire' 
+  strong_yes: {
+    label: 'Strong Yes',
+    color: 'bg-green-600',
+    icon: CheckCircle,
+    description: 'Highly recommended for hire'
   },
-  yes: { 
-    label: 'Yes', 
-    color: 'bg-green-500', 
-    icon: CheckCircle, 
-    description: 'Recommended for hire' 
+  yes: {
+    label: 'Yes',
+    color: 'bg-green-500',
+    icon: CheckCircle,
+    description: 'Recommended for hire'
   },
-  maybe: { 
-    label: 'Maybe', 
-    color: 'bg-yellow-500', 
-    icon: AlertCircle, 
-    description: 'Requires further evaluation' 
+  maybe: {
+    label: 'Maybe',
+    color: 'bg-yellow-500',
+    icon: AlertCircle,
+    description: 'Requires further evaluation'
   },
-  no: { 
-    label: 'No', 
-    color: 'bg-red-500', 
-    icon: AlertTriangle, 
-    description: 'Not recommended for hire' 
+  no: {
+    label: 'No',
+    color: 'bg-red-500',
+    icon: AlertTriangle,
+    description: 'Not recommended for hire'
   },
-  strong_no: { 
-    label: 'Strong No', 
-    color: 'bg-red-600', 
-    icon: AlertTriangle, 
-    description: 'Strongly not recommended for hire' 
+  strong_no: {
+    label: 'Strong No',
+    color: 'bg-red-600',
+    icon: AlertTriangle,
+    description: 'Strongly not recommended for hire'
   }
 };
 
@@ -77,7 +77,7 @@ export function InterviewSummary({
     setGenerating(true);
     try {
       const result = await interviewService.generateAISummary(interviewId);
-      
+
       if (result.success) {
         toast.success('AI summary generated successfully!');
         onSummaryGenerated?.(result.summary);
@@ -137,10 +137,10 @@ export function InterviewSummary({
             <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Ready to Generate AI Summary</h3>
             <p className="text-muted-foreground mb-4">
-              Our AI will analyze the interview transcript to provide comprehensive insights, 
+              Our AI will analyze the interview transcript to provide comprehensive insights,
               candidate assessment, and hiring recommendations.
             </p>
-            <Button 
+            <Button
               onClick={handleGenerateSummary}
               disabled={generating || !hasTranscript}
               size="lg"
@@ -159,7 +159,7 @@ export function InterviewSummary({
               )}
             </Button>
           </div>
-          
+
           {!hasTranscript && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
@@ -189,13 +189,13 @@ export function InterviewSummary({
               Generated on {new Date(summary.generatedAt).toLocaleString()}
             </CardDescription>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="gap-1">
               <TrendingUp className="h-3 w-3" />
               {summary.confidence}% Confidence
             </Badge>
-            
+
             <Button
               variant="outline"
               size="sm"
@@ -217,12 +217,12 @@ export function InterviewSummary({
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         {/* Main Summary */}
         <div>
           <h3 className="text-lg font-semibold mb-3">Summary</h3>
-          <p className="text-gray-700 leading-relaxed">{summary.content}</p>
+          <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{summary.content}</p>
         </div>
 
         <Separator />
@@ -230,7 +230,7 @@ export function InterviewSummary({
         {/* Recommendation */}
         <div>
           <h3 className="text-lg font-semibold mb-3">AI Recommendation</h3>
-          <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 dark:border-border bg-gray-50 dark:bg-muted/30">
             <div className={`p-2 rounded-full ${config.color}`}>
               <RecommendationIcon className="h-5 w-5 text-white" />
             </div>
@@ -254,7 +254,7 @@ export function InterviewSummary({
               {summary.keyInsights.map((insight, index) => (
                 <li key={index} className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-gray-700">{insight}</span>
+                  <span className="text-gray-700 dark:text-gray-300">{insight}</span>
                 </li>
               ))}
             </ul>
@@ -276,7 +276,7 @@ export function InterviewSummary({
                 {summary.candidateStrengths.map((strength, index) => (
                   <li key={index} className="flex items-start gap-2">
                     <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span className="text-gray-700">{strength}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{strength}</span>
                   </li>
                 ))}
               </ul>
@@ -294,7 +294,7 @@ export function InterviewSummary({
                 {summary.candidateConcerns.map((concern, index) => (
                   <li key={index} className="flex items-start gap-2">
                     <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                    <span className="text-gray-700">{concern}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{concern}</span>
                   </li>
                 ))}
               </ul>
