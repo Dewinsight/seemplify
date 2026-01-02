@@ -177,16 +177,16 @@ export default function AdminPage() {
 
         {/* Filters */}
         {showFilters && (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-slate-200/50 p-5">
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl rounded-xl shadow-lg border border-zinc-700/50 p-5">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Status
                 </label>
                 <select
                   value={filters.status}
                   onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                 >
                   <option value="">All Statuses</option>
                   <option value="pending">Pending</option>
@@ -196,13 +196,13 @@ export default function AdminPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Leave Type
                 </label>
                 <select
                   value={filters.leaveType}
                   onChange={(e) => setFilters({ ...filters, leaveType: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                 >
                   <option value="">All Types</option>
                   <option value="annual">Annual</option>
@@ -214,32 +214,32 @@ export default function AdminPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Start Date
                 </label>
                 <input
                   type="date"
                   value={filters.startDate}
                   onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
                   End Date
                 </label>
                 <input
                   type="date"
                   value={filters.endDate}
                   onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                 />
               </div>
               <div className="flex items-end">
                 <Button
                   variant="outline"
                   onClick={clearFilters}
-                  className="rounded-xl"
+                  className="rounded-lg border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800 hover:text-white"
                 >
                   Clear Filters
                 </Button>
@@ -293,17 +293,17 @@ export default function AdminPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-zinc-700 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-800/70 bg-zinc-900/60 text-zinc-200 transition-all"
                 >
                   Previous
                 </button>
-                <span className="px-4 py-2 text-sm">
+                <span className="px-4 py-2 text-sm text-zinc-300">
                   Page {page} of {totalPages}
                 </span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-zinc-700 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-800/70 bg-zinc-900/60 text-zinc-200 transition-all"
                 >
                   Next
                 </button>
