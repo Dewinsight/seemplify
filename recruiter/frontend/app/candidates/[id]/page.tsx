@@ -1,5 +1,4 @@
 "use client"
-// Test deployment - checking Dokploy integration
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
