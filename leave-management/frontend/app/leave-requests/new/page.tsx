@@ -110,7 +110,7 @@ export default function NewLeaveRequestPage() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
         </div>
       </Layout>
     );
@@ -120,15 +120,15 @@ export default function NewLeaveRequestPage() {
     return (
       <Layout>
         <div className="w-full">
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-8 text-center shadow-lg">
-            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-emerald-900 mb-2">
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 border border-green-500/30 rounded-2xl p-8 text-center shadow-2xl shadow-green-500/10">
+            <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-zinc-100 mb-2">
               Leave Request Submitted
             </h2>
-            <p className="text-emerald-800">
+            <p className="text-green-400">
               Your leave request has been submitted for approval.
             </p>
-            <p className="text-sm text-emerald-700 mt-2">
+            <p className="text-sm text-zinc-400 mt-2">
               Redirecting to your requests...
             </p>
           </div>
@@ -142,24 +142,24 @@ export default function NewLeaveRequestPage() {
       <div className="w-full space-y-6">
         {/* Header */}
         <div className="mb-2 relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 p-6 shadow-lg">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-6 shadow-2xl shadow-purple-500/10">
             <Link
               href="/leave-requests"
-              className="inline-flex items-center text-sm text-slate-600 hover:text-slate-900 mb-4 font-medium"
+              className="inline-flex items-center text-sm text-zinc-400 hover:text-zinc-200 mb-4 font-medium transition-colors"
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to Requests
             </Link>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
                   Request Leave
                 </h1>
-                <p className="text-slate-600 mt-2">Fill out the form below to submit a leave request</p>
+                <p className="text-zinc-400 mt-2">Fill out the form below to submit a leave request</p>
               </div>
               {userTeams.length > 0 && (
-                <Badge variant="secondary" className="bg-slate-100 border-slate-200 text-slate-700">
+                <Badge variant="secondary" className="bg-indigo-500/20 border-indigo-500/30 text-indigo-300">
                   {userTeams.length} team{userTeams.length === 1 ? '' : 's'} linked
                 </Badge>
               )}
@@ -294,54 +294,56 @@ export default function NewLeaveRequestPage() {
 
           {/* Side panel (desktop) */}
           <div className="space-y-6">
-            <Card className="rounded-2xl border-slate-200/50 bg-white/80 backdrop-blur-sm shadow-lg">
+            <Card className="rounded-xl border-zinc-700/50 bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl shadow-lg">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Balance</CardTitle>
+                <CardTitle className="text-base text-zinc-100">Balance</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-slate-700 space-y-3">
+              <CardContent className="text-sm text-zinc-300 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600">Selected type</span>
-                  <Badge variant="secondary" className="bg-slate-100 border-slate-200 text-slate-700">
+                  <span className="text-zinc-400">Selected type</span>
+                  <Badge variant="secondary" className="bg-purple-500/20 border-purple-500/30 text-purple-300">
                     {getLeaveTypeLabel(leaveType)}
                   </Badge>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-slate-600">Available</div>
-                  <div className="text-2xl font-bold text-slate-900">{getAvailableBalance(leaveType)} days</div>
+                  <div className="text-zinc-400">Available</div>
+                  <div className="text-2xl font-bold text-zinc-100">{getAvailableBalance(leaveType)} days</div>
                 </div>
                 {!balance && (
-                  <p className="text-xs text-slate-500">Balance info unavailable.</p>
+                  <p className="text-xs text-zinc-500">Balance info unavailable.</p>
                 )}
               </CardContent>
             </Card>
 
             {policy && (
-              <Card className="rounded-2xl border-slate-200/50 bg-white/80 backdrop-blur-sm shadow-lg">
+              <Card className="rounded-xl border-zinc-700/50 bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl shadow-lg">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Leave Policy</CardTitle>
+                  <CardTitle className="text-base text-zinc-100">Leave Policy</CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm text-slate-700">
+                <CardContent className="text-sm text-zinc-300">
                   <ul className="space-y-2">
                     {policy.advanceNoticeDays > 0 && (
                       <li>
-                        <span className="font-semibold text-slate-800">Advance notice:</span>{' '}
-                        {policy.advanceNoticeDays} day(s)
+                        <span className="font-semibold text-zinc-200">Advance notice:</span>{' '}
+                        <span className="text-zinc-400">{policy.advanceNoticeDays} day(s)</span>
                       </li>
                     )}
                     {policy.maxConsecutiveDays && (
                       <li>
-                        <span className="font-semibold text-slate-800">Max consecutive:</span>{' '}
-                        {policy.maxConsecutiveDays} day(s)
+                        <span className="font-semibold text-zinc-200">Max consecutive:</span>{' '}
+                        <span className="text-zinc-400">{policy.maxConsecutiveDays} day(s)</span>
                       </li>
                     )}
                     {policy.requiresApproval && (
                       <li>
-                        <span className="font-semibold text-slate-800">Approval:</span> Manager required
+                        <span className="font-semibold text-zinc-200">Approval:</span>{' '}
+                        <span className="text-zinc-400">Manager required</span>
                       </li>
                     )}
                     {policy.advanceNoticeDays === 0 && (
                       <li>
-                        <span className="font-semibold text-slate-800">Advance notice:</span> None
+                        <span className="font-semibold text-zinc-200">Advance notice:</span>{' '}
+                        <span className="text-zinc-400">None</span>
                       </li>
                     )}
                   </ul>

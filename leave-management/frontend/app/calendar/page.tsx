@@ -104,7 +104,7 @@ export default function CalendarPage() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
         </div>
       </Layout>
     );
@@ -115,12 +115,12 @@ export default function CalendarPage() {
       <div className="space-y-8">
         {/* Header */}
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-blue-500/10 to-emerald-500/10 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 p-6 shadow-lg">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
+          <div className="absolute inset-0 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-indigo-500/20 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-8 shadow-2xl shadow-pink-500/10">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
               Leave Calendar
             </h1>
-            <p className="text-slate-600 mt-2">View approved leaves for your organization</p>
+            <p className="text-zinc-400 mt-2">View approved leaves for your organization</p>
           </div>
         </div>
 
@@ -130,26 +130,26 @@ export default function CalendarPage() {
         )}
 
         {/* Calendar */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 overflow-hidden">
+        <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-zinc-700/50 overflow-hidden">
           {/* Month navigation */}
-          <div className="flex items-center justify-between p-4 border-b border-slate-200/50 bg-white/60">
+          <div className="flex items-center justify-between p-4 border-b border-zinc-700/50 bg-zinc-900/60">
             <button
               onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-              className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+              className="p-2 hover:bg-zinc-800/70 rounded-lg transition-colors text-zinc-300"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-zinc-100">
                 {format(currentMonth, 'MMMM yyyy')}
               </h2>
-              <Badge variant="outline" className="bg-white/60">
+              <Badge variant="outline" className="bg-pink-500/20 border-pink-500/30 text-pink-300">
                 {leaves.length} leave(s)
               </Badge>
             </div>
             <button
               onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+              className="p-2 hover:bg-zinc-800/70 rounded-lg transition-colors text-zinc-300"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -158,14 +158,14 @@ export default function CalendarPage() {
           {/* Loading state */}
           {loading ? (
             <div className="flex items-center justify-center h-96">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
             </div>
           ) : (
             <>
               {/* Day headers */}
-              <div className="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200/50">
+              <div className="grid grid-cols-7 bg-zinc-800/60 border-b border-zinc-700/50">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="p-2 text-center text-sm font-semibold text-slate-600">
+                  <div key={day} className="p-2 text-center text-sm font-semibold text-zinc-400">
                     {day}
                   </div>
                 ))}
@@ -175,7 +175,7 @@ export default function CalendarPage() {
               <div className="grid grid-cols-7">
                 {paddedDays.map((day, index) => {
                   if (!day) {
-                    return <div key={`empty-${index}`} className="h-24 border-b border-r bg-gray-50" />;
+                    return <div key={`empty-${index}`} className="h-24 border-b border-r border-zinc-800/50 bg-zinc-900/40" />;
                   }
 
                   const dayLeaves = getLeavesForDay(day);
@@ -188,25 +188,26 @@ export default function CalendarPage() {
                       key={day.toISOString()}
                       onClick={() => setSelectedDay(day)}
                       className={cn(
-                        'h-24 border-b border-r border-slate-200/50 p-2 cursor-pointer hover:bg-slate-50/70 transition-colors',
-                        weekend && 'bg-slate-50/60',
-                        holiday && 'bg-red-50/60',
-                        isToday && 'ring-2 ring-inset ring-primary/30'
+                        'h-24 border-b border-r border-zinc-800/50 p-2 cursor-pointer hover:bg-zinc-800/40 transition-colors',
+                        weekend && 'bg-zinc-800/30',
+                        holiday && 'bg-red-500/10',
+                        isToday && 'ring-2 ring-inset ring-purple-500/50'
                       )}
                     >
                       <div className="flex justify-between items-start">
                         <span
                           className={cn(
                             'text-sm font-semibold',
-                            !isSameMonth(day, currentMonth) && 'text-slate-400',
-                            isToday && 'text-primary',
-                            weekend && 'text-slate-500'
+                            !isSameMonth(day, currentMonth) && 'text-zinc-600',
+                            isToday && 'text-purple-400',
+                            weekend && 'text-zinc-500',
+                            isSameMonth(day, currentMonth) && !isToday && !weekend && 'text-zinc-300'
                           )}
                         >
                           {format(day, 'd')}
                         </span>
                         {holiday && (
-                          <span className="text-xs text-red-700 font-semibold" title={holiday.name}>
+                          <span className="text-xs text-red-400 font-semibold bg-red-500/20 px-1 rounded" title={holiday.name}>
                             H
                           </span>
                         )}
@@ -227,7 +228,7 @@ export default function CalendarPage() {
                           </div>
                         ))}
                         {dayLeaves.length > 2 && (
-                          <div className="text-xs text-slate-500 px-1">
+                          <div className="text-xs text-zinc-500 px-1">
                             +{dayLeaves.length - 2} more
                           </div>
                         )}
@@ -293,8 +294,8 @@ export default function CalendarPage() {
         )}
 
         {/* Legend */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-slate-200/50 p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Legend</h3>
+        <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl rounded-xl shadow-lg border border-zinc-700/50 p-4">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-3">Legend</h3>
           <div className="flex flex-wrap gap-4">
             {['annual', 'sick', 'personal', 'maternity', 'paternity', 'unpaid'].map(type => (
               <div key={type} className="flex items-center gap-2">
@@ -304,12 +305,12 @@ export default function CalendarPage() {
                     getLeaveTypeColor(type).replace('text-', 'bg-').split(' ')[0]
                   )}
                 />
-                <span className="text-sm text-slate-600">{getLeaveTypeLabel(type)}</span>
+                <span className="text-sm text-zinc-400">{getLeaveTypeLabel(type)}</span>
               </div>
             ))}
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded bg-red-200" />
-              <span className="text-sm text-slate-600">Holiday</span>
+              <span className="w-3 h-3 rounded bg-red-500/40" />
+              <span className="text-sm text-zinc-400">Holiday</span>
             </div>
           </div>
         </div>

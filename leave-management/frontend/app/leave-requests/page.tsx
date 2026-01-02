@@ -70,7 +70,7 @@ export default function LeaveRequestsPage() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
         </div>
       </Layout>
     );
@@ -81,17 +81,17 @@ export default function LeaveRequestsPage() {
       <div className="space-y-8">
         {/* Header */}
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 p-6 shadow-lg flex items-center justify-between flex-wrap gap-4">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-8 shadow-2xl shadow-purple-500/10 flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
                 My Leave Requests
               </h1>
-              <p className="text-slate-600 mt-2">View and manage your leave requests</p>
+              <p className="text-zinc-400 mt-2">View and manage your leave requests</p>
             </div>
             <Link href="/leave-requests/new">
               <Button
-                className="rounded-xl h-11 px-5 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-md shadow-blue-500/20"
+                className="rounded-lg h-11 px-5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all"
               >
                 <Plus className="h-4 w-4" />
                 New Request
@@ -101,13 +101,13 @@ export default function LeaveRequestsPage() {
         </div>
 
         {/* Filters */}
-        <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50 rounded-2xl shadow-md">
+        <Card className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl border-zinc-700/50 rounded-xl shadow-lg">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2 text-slate-900">
-              <Filter className="h-4 w-4 text-slate-500" />
+            <CardTitle className="text-base flex items-center gap-2 text-zinc-100">
+              <Filter className="h-4 w-4 text-zinc-500" />
               Filters
               {(statusFilter || typeFilter) && (
-                <Badge variant="secondary" className="ml-2 bg-slate-100 border-slate-200 text-slate-700">
+                <Badge variant="secondary" className="ml-2 bg-purple-500/20 border-purple-500/30 text-purple-300">
                   Active
                 </Badge>
               )}
@@ -120,7 +120,7 @@ export default function LeaveRequestsPage() {
                 setStatusFilter(e.target.value as LeaveStatus | '');
                 setPage(1);
               }}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
             >
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
@@ -134,7 +134,7 @@ export default function LeaveRequestsPage() {
                 setTypeFilter(e.target.value as LeaveType | '');
                 setPage(1);
               }}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
             >
               <option value="">All Types</option>
               <option value="annual">Annual Leave</option>
@@ -149,7 +149,7 @@ export default function LeaveRequestsPage() {
 
         {/* Error message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
             {error}
           </div>
         )}
@@ -157,13 +157,13 @@ export default function LeaveRequestsPage() {
         {/* Loading state */}
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-12 text-center">
-            <p className="text-slate-600 mb-5">No leave requests found</p>
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-zinc-700/50 p-12 text-center">
+            <p className="text-zinc-400 mb-5">No leave requests found</p>
             <Link href="/leave-requests/new">
-              <Button className="rounded-xl h-11 px-5 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-md shadow-blue-500/20">
+              <Button className="rounded-lg h-11 px-5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-500/20">
                 <Plus className="h-4 w-4" />
                 Create Your First Request
               </Button>

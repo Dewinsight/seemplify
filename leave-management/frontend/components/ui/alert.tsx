@@ -10,12 +10,12 @@ export function Alert({ className, variant = "default", ...props }: AlertProps) 
     <div
       role="alert"
       className={cn(
-        "relative w-full rounded-xl border p-4",
+        "relative w-full rounded-lg border p-4",
         {
-          "bg-card text-card-foreground border-border": variant === "default",
-          "bg-red-500/10 text-red-700 border-red-500/20": variant === "danger",
-          "bg-amber-500/10 text-amber-700 border-amber-500/20": variant === "warning",
-          "bg-emerald-500/10 text-emerald-700 border-emerald-500/20": variant === "success",
+          "bg-zinc-900/90 text-zinc-300 border-zinc-700/50": variant === "default",
+          "bg-red-500/10 text-red-400 border-red-500/20": variant === "danger",
+          "bg-amber-500/10 text-amber-400 border-amber-500/20": variant === "warning",
+          "bg-emerald-500/10 text-emerald-400 border-emerald-500/20": variant === "success",
         },
         className
       )}
