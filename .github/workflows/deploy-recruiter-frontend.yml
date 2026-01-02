@@ -24,17 +24,23 @@ jobs:
 
       - name: Trigger Dokploy Deployment
         run: |
+          echo "Deploying ${{ env.APP_NAME }}..."
+          echo "Dokploy URL: ${{ secrets.DOKPLOY_URL }}"
+          echo "App ID: ${{ secrets.RECRUITER_FRONTEND_APP_ID }}"
+          
           response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
             -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -H "accept: application/json" \
             -d '{"applicationId": "${{ secrets.RECRUITER_FRONTEND_APP_ID }}"}')
           
-          if [ "$response" -eq 200 ]; then
-            echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
-            cat /tmp/response.txt 2>/dev/null || true
+          echo "HTTP Response Code: $response"
+          echo "Response Body:"
+          cat /tmp/response.txt 2>/dev/null || echo "No response body"
+          
+          if [ "$response" -eq 200 ] || [ "$response" -eq 201 ]; then
+            echo "✅ Deployment triggered successfully"
           else
-            echo "❌ Deployment failed with HTTP status code: $response"
-            cat /tmp/response.txt 2>/dev/null || true
+            echo "❌ Deployment failed"
             exit 1
           fi
