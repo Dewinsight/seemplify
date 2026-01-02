@@ -126,7 +126,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         className="fixed inset-0 z-40"
                         onClick={() => setOrgDropdownOpen(false)}
                       />
-                      <div className="absolute right-0 top-12 w-64 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                      <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
                         {orgs.map((org) => (
                           <button
                             key={org.id}
@@ -176,7 +176,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className="fixed inset-0 z-40"
                       onClick={() => setUserDropdownOpen(false)}
                     />
-                    <div className="absolute right-0 top-14 w-56 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                        <div className="absolute right-0 top-14 w-56 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
                       <div className="p-3 border-b border-zinc-800/60">
                         <div className="text-sm font-medium text-white truncate">{user?.name || 'User'}</div>
                         <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
@@ -247,10 +247,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Mobile Organization Switcher */}
               {showOrgSwitcher && (
-                <div className="mb-6">
-                  <button
-                    onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm"
+                    <div className="mb-6">
+                      <button
+                        onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                        className="w-full flex items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />

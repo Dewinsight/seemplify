@@ -144,7 +144,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         className="fixed inset-0 z-40"
                         onClick={() => setOrgDropdownOpen(false)}
                       />
-                      <div className="absolute right-0 top-12 w-64 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                      <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
                         {orgs.map((org: any) => (
                           <button
                             key={org.id}
@@ -186,7 +186,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className="fixed inset-0 z-40"
                       onClick={() => setUserDropdownOpen(false)}
                     />
-                    <div className="absolute right-0 top-14 w-56 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                        <div className="absolute right-0 top-14 w-56 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
                       <div className="p-3 border-b border-zinc-800/60">
                         <div className="text-sm font-medium text-white truncate">{user?.name || 'User'}</div>
                         <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
@@ -282,7 +282,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <ChevronDown className="h-4 w-4 text-zinc-500" />
                   </button>
                   {orgDropdownOpen && (
-                    <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/30 overflow-hidden">
+                        <div className="mt-2 rounded-lg border border-white/[0.08] bg-[#0a0a0c] overflow-hidden">
                       {orgs.map((org: any) => (
                         <button
                           key={org.id}
