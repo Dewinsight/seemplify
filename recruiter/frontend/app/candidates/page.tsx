@@ -132,35 +132,35 @@ function Pagination({
 
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-      <div className="text-sm text-gray-700 dark:text-gray-300">
+      <div className="text-sm text-muted-foreground">
         Showing {startItem} to {endItem} of {totalItems} candidates
       </div>
-      
+
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
-          className="border-gray-200 dark:border-gray-700"
+          className="border-border"
         >
           <ChevronLeft className="h-4 w-4" />
           Previous
         </Button>
-        
+
         <div className="flex items-center gap-1">
           {getPageNumbers().map((page, index) => (
             page === '...' ? (
-              <span key={index} className="px-3 py-2 text-gray-500">...</span>
+              <span key={index} className="px-3 py-2 text-muted-foreground">...</span>
             ) : (
               <Button
                 key={index}
                 variant={currentPage === page ? "default" : "outline"}
                 size="sm"
                 onClick={() => onPageChange(page as number)}
-                className={currentPage === page 
-                  ? "bg-blue-600 hover:bg-blue-700 text-white" 
-                  : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                className={currentPage === page
+                  ? ""
+                  : "border-border hover:bg-accent"
                 }
               >
                 {page}
@@ -168,13 +168,13 @@ function Pagination({
             )
           ))}
         </div>
-        
+
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="border-gray-200 dark:border-gray-700"
+          className="border-border"
         >
           Next
           <ChevronRight className="h-4 w-4" />
@@ -524,33 +524,33 @@ export default function CandidatesPage() {
 
     if (loading) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 flex items-center justify-center">
+        <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-              <Users className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-pulse" />
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
+              <Users className="h-8 w-8 text-blue-400 animate-pulse" />
             </div>
-            <p className="text-lg font-medium text-gray-600 dark:text-gray-400">Loading candidates...</p>
+            <p className="text-lg font-medium text-muted-foreground">Loading candidates...</p>
           </div>
         </div>
       )
     }
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 p-4 lg:p-8 candidates-container">
+      <div className="min-h-screen bg-background p-4 lg:p-8 candidates-container">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent candidate-page-title">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground candidate-page-title">
                 Candidate Management
               </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400 mt-2 candidate-page-description">
+              <p className="text-muted-foreground mt-1 candidate-page-description">
                 Discover and manage top talent for your organization
               </p>
             </div>
             <div className="flex items-center gap-3">
               <StartTourButton />
-              <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
+              <Button asChild variant="outline" className="border-border hover:bg-accent" data-tutorial="add-candidate-btn">
                 <Link href="/bulk-upload">
                   <Upload className="h-4 w-4 mr-2" />
                   Add Candidates
@@ -560,12 +560,12 @@ export default function CandidatesPage() {
           </div>
 
           {/* Search and Filters */}
-          <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg" data-tutorial="filter-section">
+          <Card className="bg-card/50 backdrop-blur-xl border-border/50" data-tutorial="filter-section">
             <CardHeader className="pb-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  <Users className="h-6 w-6 text-blue-400" />
+                  <CardTitle className="text-xl font-semibold">
                     Candidates Overview
                   </CardTitle>
                   {hasActiveFilters && (
@@ -577,15 +577,15 @@ export default function CandidatesPage() {
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     {isSearching ? (
-                      <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-500 animate-spin" />
+                      <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-400 animate-spin" />
                     ) : (
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     )}
                     <Input
                       placeholder="Search candidates by name, position, skills..."
                       value={searchInput}
                       onChange={(e) => handleSearchChange(e.target.value)}
-                      className="pl-10 w-80 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                      className="pl-10 w-80 bg-background border-border"
                       data-tutorial="search-input"
                     />
                     {searchInput && (
@@ -596,7 +596,7 @@ export default function CandidatesPage() {
                           setSearchInput("")
                           setSearchTerm("")
                         }}
-                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-accent"
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -608,7 +608,7 @@ export default function CandidatesPage() {
                       variant="outline"
                       size="sm"
                       onClick={clearFilters}
-                      className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      className="border-border hover:bg-accent"
                     >
                       <X className="h-4 w-4 mr-1" />
                       Clear
@@ -622,19 +622,19 @@ export default function CandidatesPage() {
 
               {/* Bulk Actions */}
               {selectedCandidates.length > 0 && (
-                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    <span className="text-sm font-medium text-blue-300">
                       {selectedCandidates.length} candidate(s) selected
                     </span>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50">
+                      <Button size="sm" variant="outline" className="border-border hover:bg-accent">
                         Export Selected
                       </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
+                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist
                       </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 disabled:opacity-50" onClick={handleBulkDelete}>
+                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-50" onClick={handleBulkDelete}>
                         Delete Selected
                       </Button>
                     </div>
@@ -645,15 +645,15 @@ export default function CandidatesPage() {
           </Card>
 
           {/* Candidates Table */}
-          <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg" data-tutorial="candidates-table">
+          <Card className="bg-card/50 backdrop-blur-xl border-border/50" data-tutorial="candidates-table">
             <CardHeader className="pb-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <CardTitle className="text-lg font-semibold">
                     Candidates ({totalCandidates})
                   </CardTitle>
-                  <CardDescription className="text-gray-600 dark:text-gray-400">
-                    {searchInput 
+                  <CardDescription>
+                    {searchInput
                       ? `Filtered results showing ${totalCandidates} candidates`
                       : `Showing ${totalCandidates} candidates with ${itemsPerPage} per page`
                     }
@@ -684,7 +684,7 @@ export default function CandidatesPage() {
                     return (
                       <Card
                         key={candidate._id}
-                        className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg"
+                        className="bg-card/50 backdrop-blur-xl border-border/50"
                         onClick={() => router.push(`/candidates/${candidate._id}`)}
                       >
                         <CardContent className="p-4">
@@ -695,7 +695,7 @@ export default function CandidatesPage() {
                               aria-label={`Select ${candidate.firstName} ${candidate.lastName}`}
                               onClick={(e) => e.stopPropagation()}
                             />
-                            <Avatar className="h-12 w-12 ring-2 ring-gray-200 dark:ring-gray-700">
+                            <Avatar className="h-12 w-12 ring-2 ring-border">
                               <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                                 {candidate.firstName?.charAt(0) || ""}
                                 {candidate.lastName?.charAt(0) || ""}
@@ -703,7 +703,7 @@ export default function CandidatesPage() {
                             </Avatar>
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
-                                <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">{candidate.firstName} {candidate.lastName}</h3>
+                                <h3 className="font-bold text-lg text-foreground">{candidate.firstName} {candidate.lastName}</h3>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
@@ -718,13 +718,13 @@ export default function CandidatesPage() {
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">{candidate.email}</p>
-                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{candidate.position}</p>
+                              <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                              <p className="text-sm text-foreground/80 mt-1">{candidate.position}</p>
                             </div>
                           </div>
                           <div className="mt-4 space-y-3">
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600 dark:text-gray-400">Date Added</span>
+                              <span className="text-muted-foreground">Date Added</span>
                               <span>{formatDate(candidate.createdAt || new Date().toISOString())}</span>
                             </div>
                           </div>
@@ -736,7 +736,7 @@ export default function CandidatesPage() {
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-gray-200 dark:border-gray-700">
+                    <TableRow className="border-border">
                       <TableHead className="w-12">
                         <Checkbox
                           checked={selectedCandidates.length === candidates.length && candidates.length > 0}
@@ -747,7 +747,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-blue-400 transition-colors"
                           onClick={() => requestSort("name")}
                         >
                           Candidate
@@ -756,7 +756,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-blue-400 transition-colors"
                           onClick={() => requestSort("position")}
                         >
                           Position
@@ -765,7 +765,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-blue-400 transition-colors"
                           onClick={() => requestSort("experience")}
                         >
                           Experience
@@ -775,7 +775,7 @@ export default function CandidatesPage() {
 
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-blue-400 transition-colors"
                           onClick={() => requestSort("createdAt")}
                         >
                           Added
@@ -790,7 +790,7 @@ export default function CandidatesPage() {
                       return (
                         <TableRow
                           key={candidate._id}
-                          className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
+                          className="border-border hover:bg-accent/50 transition-colors cursor-pointer"
                           onClick={() => router.push(`/candidates/${candidate._id}`)}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -802,17 +802,17 @@ export default function CandidatesPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center space-x-3">
-                              <Avatar className="h-10 w-10 ring-2 ring-gray-200 dark:ring-gray-700">
+                              <Avatar className="h-10 w-10 ring-2 ring-border">
                                 <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                                   {candidate.firstName?.charAt(0) || ""}
                                   {candidate.lastName?.charAt(0) || ""}
                                 </AvatarFallback>
                               </Avatar>
                               <div>
-                                <div className="font-medium text-gray-900 dark:text-gray-100 candidate-name">
+                                <div className="font-medium candidate-name">
                                   {candidate?.firstName || ''} {candidate?.lastName || ''}
                                 </div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400 candidate-details">{candidate.email}</div>
+                                <div className="text-sm text-muted-foreground candidate-details">{candidate.email}</div>
                                 
                                 {/* Status indicators */}
                                 <div className="flex flex-wrap gap-1 mt-1">
@@ -853,19 +853,19 @@ export default function CandidatesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <div className="text-gray-900 dark:text-gray-100 font-medium">
+                            <div className="font-medium">
                               {candidate.position || "Not specified"}
                             </div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                            <div className="text-sm text-muted-foreground">
                               {candidate.skills
                                 ? candidate.skills.split(',').slice(0, 2).map(skill => skill.trim()).join(', ')
                                 : "No skills listed"}
                             </div>
                           </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400">
+                          <TableCell className="text-muted-foreground">
                             {candidate.experience || "Not specified"}
                           </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400">
+                          <TableCell className="text-muted-foreground">
                             {formatDate(candidate.createdAt || new Date().toISOString())}
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -874,37 +874,37 @@ export default function CandidatesPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  className="hover:bg-accent"
                                   data-tutorial="candidate-actions"
                                 >
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                <DropdownMenuLabel className="text-gray-900 dark:text-gray-100">Actions</DropdownMenuLabel>
-                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
+                              <DropdownMenuContent align="end" className="bg-popover border-border">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-border" />
                                 <DropdownMenuItem
                                   onClick={() => router.push(`/candidates/${candidate._id}`)}
-                                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer"
+                                  className="cursor-pointer"
                                 >
                                   View Profile
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => router.push(`/candidates/${candidate._id}/edit`)}
-                                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer"
+                                  className="cursor-pointer"
                                 >
                                   Edit Candidate
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={(e) => handleOpenAddToShortlist(candidate, e)}
-                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer"
+                                  className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 cursor-pointer"
                                 >
                                   Add to Shortlist
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
+                                <DropdownMenuSeparator className="bg-border" />
                                 <DropdownMenuItem
                                   onClick={(e) => handleDeleteCandidate(candidate._id, e)}
-                                  className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer"
+                                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
                                 >
                                   Delete
                                 </DropdownMenuItem>
@@ -920,7 +920,7 @@ export default function CandidatesPage() {
 
               {/* Pagination */}
               {candidates.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700" data-tutorial="pagination">
+                <div className="mt-6 pt-6 border-t border-border" data-tutorial="pagination">
                   <Pagination
                     currentPage={currentPage}
                     totalPages={totalPages}
@@ -934,20 +934,20 @@ export default function CandidatesPage() {
               {/* Empty State */}
               {candidates.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-                    <Users className="h-8 w-8 text-blue-500 dark:text-blue-400" />
+                  <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
+                    <Users className="h-8 w-8 text-blue-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  <h3 className="text-lg font-semibold mb-2">
                     No candidates found
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-muted-foreground mb-6">
                     {searchTerm
-                      ? "Try adjusting your search criteria to find candidates" 
+                      ? "Try adjusting your search criteria to find candidates"
                       : "Start building your talent pool by adding candidates"
                     }
                   </p>
                   {!searchTerm && (
-                    <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                    <Button asChild>
                       <Link href="/candidates/new">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Your First Candidate
@@ -955,10 +955,10 @@ export default function CandidatesPage() {
                     </Button>
                   )}
                   {searchTerm && (
-                    <Button 
+                    <Button
                       onClick={clearFilters}
                       variant="outline"
-                      className="border-gray-200 dark:border-gray-700"
+                      className="border-border"
                     >
                       <X className="h-4 w-4 mr-2" />
                       Clear Filters

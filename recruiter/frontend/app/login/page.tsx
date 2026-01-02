@@ -157,7 +157,7 @@ export default function LoginPage() {
             className="mb-12"
           >
             <div className="mb-8">
-              <SeemplifyRecruiterLogo size="lg" animated={false} />
+              <SeemplifyRecruiterLogo size="lg" />
             </div>
 
             <div className="max-w-lg">
@@ -228,7 +228,7 @@ export default function LoginPage() {
               animate={{ opacity: 1, y: 0 }}
               className="lg:hidden flex justify-center mb-10"
             >
-              <SeemplifyRecruiterLogo size="md" animated={false} />
+              <SeemplifyRecruiterLogo size="md" />
             </motion.div>
 
             {/* Login Card - Glass Card Style */}

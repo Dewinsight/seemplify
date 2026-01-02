@@ -6,7 +6,9 @@
       "Bash(timeout 10 npm run dev:*)",
       "Bash(npx tsc:*)",
       "Bash(find:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(dir /s /b \"C:\\Users\\Michael\\Documents\\GitHub\\seemplify\\recruiter\\frontend\\app\")",
+      "Bash(findstr:*)"
     ]
   }
 }

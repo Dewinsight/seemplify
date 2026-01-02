@@ -259,7 +259,7 @@ export default function Dashboard() {
             <AlertCircle className="h-4 w-4 text-amber-600" />
             <AlertDescription className="flex items-center justify-between">
               <div>
-                <strong>Complete your profile</strong> to get the most out of SmartHR
+                <strong>Complete your profile</strong> to get the most out of Seemplify Recruiter
                 <Badge variant="secondary" className="ml-2">
                   {user?.profileCompletion.percentage}% complete
                 </Badge>

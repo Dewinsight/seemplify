@@ -7,7 +7,6 @@ import {
   Home,
   Users,
   Briefcase,
-  Upload,
   Calendar,
   Settings,
   Menu,
@@ -17,7 +16,7 @@ import {
   Sun,
   Moon,
   Shield,
-  GraduationCap,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,6 +47,7 @@ import {
 import OrganizationSwitcher from "@/components/OrganizationSwitcher";
 import { Logo } from "@/components/ui/Logo";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import SeemplifyLogo from "@/components/SeemplifyLogo";
 
 const navigationItems = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
@@ -57,7 +57,6 @@ const navigationItems = [
   { title: "AI Assistant", href: "/assistant", icon: MessageSquare },
 ];
 
-// Directly use the Settings component for the icon
 const settingsNavigation = { title: "Settings", href: "/settings", icon: Settings };
 
 interface NavLinkProps {
@@ -71,24 +70,35 @@ interface NavLinkProps {
   onClick?: () => void;
 }
 
-const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) => (
-  <Link
-    href={item.href}
-    onClick={onClick}
-    className={cn(
-      "flex items-center gap-2 transition-colors duration-200 ease-in-out",
-      isMobile
-        ? "text-lg font-medium p-3 rounded-lg"
-        : "text-sm font-medium px-3 py-2 rounded-md",
-      pathname?.startsWith(item.href)
-        ? "bg-primary/10 text-primary"
-        : "text-foreground/70 hover:text-foreground hover:bg-accent"
-    )}
-  >
-    <item.icon className="h-5 w-5" />
-    <span>{item.title}</span>
-  </Link>
-);
+const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) => {
+  const isActive = pathname?.startsWith(item.href);
+
+  return (
+    <Link
+      href={item.href}
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 transition-all duration-200",
+        isMobile
+          ? "text-base font-medium p-3 rounded-xl"
+          : "text-sm font-medium px-3 py-2 rounded-lg",
+        isActive
+          ? isMobile
+            ? "bg-white/10 text-white"
+            : "bg-white/10 text-foreground"
+          : isMobile
+            ? "text-zinc-400 hover:text-white hover:bg-white/5"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+      )}
+    >
+      <item.icon className={cn("h-4 w-4", isActive && "text-blue-400")} />
+      <span>{item.title}</span>
+      {isActive && !isMobile && (
+        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-400" />
+      )}
+    </Link>
+  );
+};
 
 const TopNavbar = () => {
   const pathname = usePathname();
@@ -98,77 +108,127 @@ const TopNavbar = () => {
   const { user } = state;
   const { currentOrganization } = useOrganization();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  
-  // Get available theme options from environment configuration
+
   const availableThemes = getAvailableThemeOptions();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" data-tutorial="app-navbar">
-      <div className="container flex h-20 items-center justify-between max-w-screen-2xl">
+    <header
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60"
+      data-tutorial="app-navbar"
+    >
+      <div className="container flex h-16 items-center justify-between max-w-screen-2xl px-4 lg:px-6">
         {/* Left Section - Logo and Mobile Menu */}
         <div className="flex items-center gap-4">
-          <div className="md:hidden">
+          {/* Mobile Menu Button */}
+          <div className="lg:hidden">
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-6 w-6" />
+                <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Menu className="h-5 w-5" />
                   <span className="sr-only">Open menu</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] sm:w-[340px]">
-                <SheetHeader className="mb-8">
-                  <SheetTitle>
-                    <Logo size="sm" />
-                  </SheetTitle>
-                </SheetHeader>
-                <nav className="flex flex-col gap-4">
-                  {[...navigationItems, settingsNavigation].map((item) => (
-                    <NavLink
-                      key={item.title}
-                      item={item}
-                      isMobile={true}
-                      onClick={() => setIsSheetOpen(false)}
-                      pathname={pathname}
-                    />
-                  ))}
-                </nav>
+              <SheetContent
+                side="left"
+                className="w-[300px] bg-[#0a0a0c] border-white/[0.08] p-0"
+              >
+                <div className="flex flex-col h-full">
+                  <SheetHeader className="p-6 border-b border-white/[0.08]">
+                    <SheetTitle className="flex items-center gap-2.5">
+                      <SeemplifyLogo size="md" />
+                      <div className="flex items-baseline">
+                        <span className="font-semibold tracking-tight text-white">Seemplify</span>
+                        <span className="ml-1.5 font-light text-blue-400">Recruiter</span>
+                      </div>
+                    </SheetTitle>
+                  </SheetHeader>
+
+                  <nav className="flex-1 p-4 space-y-1">
+                    {[...navigationItems, settingsNavigation].map((item) => (
+                      <NavLink
+                        key={item.title}
+                        item={item}
+                        isMobile={true}
+                        onClick={() => setIsSheetOpen(false)}
+                        pathname={pathname}
+                      />
+                    ))}
+                  </nav>
+
+                  <div className="p-4 border-t border-white/[0.08]">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                      <Avatar className="h-10 w-10 border border-white/10">
+                        <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
+                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                          {user?.profile?.firstName?.[0] || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">{getUserDisplayName()}</p>
+                        <p className="text-xs text-zinc-500 truncate">{user?.email}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </SheetContent>
             </Sheet>
           </div>
-          <div className="hidden md:block">
+
+          {/* Desktop Logo */}
+          <div className="hidden lg:block">
             <Logo size="sm" />
           </div>
         </div>
 
         {/* Center Section - Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-2">
+        <nav className="hidden lg:flex items-center gap-1">
           {navigationItems.map((item) => (
-            <NavLink key={item.title} item={item} pathname={pathname} />
+            <div key={item.title} className="relative">
+              <NavLink item={item} pathname={pathname} />
+            </div>
           ))}
         </nav>
 
         {/* Right Section - Actions */}
-        <div className="flex items-center gap-4">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
+        <div className="flex items-center gap-3">
+          {/* Organization Switcher */}
+          <div className="hidden sm:block">
             {currentOrganization && <OrganizationSwitcher showCreateOption={true} />}
           </div>
+
+          {/* Notifications */}
           <NotificationDropdown />
+
+          {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                <Avatar className="h-10 w-10 border-2 border-transparent group-hover:border-primary transition-colors">
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
+                <Avatar className="h-9 w-9 border border-border/50 transition-all hover:border-primary/50">
                   <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
-                  <AvatarFallback>{user?.profile?.firstName?.[0] || 'U'}</AvatarFallback>
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-sm">
+                    {user?.profile?.firstName?.[0] || 'U'}
+                  </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                <span>Profile</span>
+            <DropdownMenuContent
+              className="w-56 bg-popover/95 backdrop-blur-xl border-border/50"
+              align="end"
+              forceMount
+            >
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium">{getUserDisplayName()}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={settingsNavigation.href}>
+                <Link href={settingsNavigation.href} className="cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" />
                   <span>{settingsNavigation.title}</span>
                 </Link>
@@ -176,16 +236,17 @@ const TopNavbar = () => {
               <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                  <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                  <span className="ml-2">Toggle Theme</span>
+                  <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                  <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                  <span className="ml-2">Theme</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
+                  <DropdownMenuSubContent className="bg-popover/95 backdrop-blur-xl border-border/50">
                     {availableThemes.map((themeOption) => (
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         key={themeOption.value}
                         onClick={() => setTheme(themeOption.value)}
+                        className="cursor-pointer"
                       >
                         {themeOption.label}
                       </DropdownMenuItem>
@@ -197,7 +258,7 @@ const TopNavbar = () => {
               {user?.email === 'michael.egbo@aiinnigeria.com' && (
                 <>
                   <DropdownMenuItem asChild>
-                    <Link href="/admin/dashboard" target="_blank">
+                    <Link href="/admin/dashboard" target="_blank" className="cursor-pointer">
                       <Shield className="mr-2 h-4 w-4" />
                       <span>Admin Portal</span>
                     </Link>
@@ -205,7 +266,10 @@ const TopNavbar = () => {
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem onClick={() => logout()}>
+              <DropdownMenuItem
+                onClick={() => logout()}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Log out</span>
               </DropdownMenuItem>

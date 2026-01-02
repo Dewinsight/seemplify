@@ -2,62 +2,34 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useBrandConfig } from "@/context/BrandContext";
+import SeemplifyLogo from "@/components/SeemplifyLogo";
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  showText?: boolean;
 }
 
-export const Logo = ({ size = 'md', className }: LogoProps) => {
-  const brand = useBrandConfig();
-
-  const sizeClasses = {
-    sm: {
-      container: "w-8 h-8",
-      icon: "w-4 h-4",
-      pulse: "w-2.5 h-2.5",
-      text: "text-lg",
-    },
-    md: {
-      container: "w-10 h-10",
-      icon: "w-5 h-5",
-      pulse: "w-3 h-3",
-      text: "text-xl",
-    },
-    lg: {
-      container: "w-12 h-12",
-      icon: "w-6 h-6",
-      pulse: "w-3.5 h-3.5",
-      text: "text-2xl",
-    },
+export const Logo = ({ size = 'md', className, showText = true }: LogoProps) => {
+  const textSizes = {
+    sm: 'text-base',
+    md: 'text-lg',
+    lg: 'text-xl',
   };
 
-  const selectedSize = sizeClasses[size];
-
   return (
-    <Link href="/dashboard" className={cn("flex items-center space-x-2", className)}>
-      <div className="relative">
-        <div
-          className={cn(
-            `bg-gradient-to-br ${brand.gradient} rounded-lg flex items-center justify-center shadow-lg transition-all duration-300`,
-            selectedSize.container
-          )}
-        >
-          <div className="flex items-center justify-center font-extrabold text-white">
-            <span className={cn("tracking-tighter font-heading", selectedSize.icon === "w-4 h-4" ? "text-xs" : selectedSize.icon === "w-5 h-5" ? "text-sm" : "text-base")}>
-              {brand.shortName}
-            </span>
-          </div>
+    <Link href="/dashboard" className={cn("flex items-center gap-2.5", className)}>
+      <SeemplifyLogo size={size} />
+      {showText && (
+        <div className="flex items-baseline">
+          <span className={cn("font-semibold tracking-tight text-foreground", textSizes[size])}>
+            Seemplify
+          </span>
+          <span className={cn("ml-1.5 font-light text-blue-400", textSizes[size])}>
+            Recruiter
+          </span>
         </div>
-        <div
-          className={cn(
-            `absolute -top-1 -right-1 ${brand.colors.pulse} rounded-full border-2 border-background animate-pulse`,
-            selectedSize.pulse
-          )}
-        ></div>
-      </div>
-      <span className={cn("font-heading font-bold", selectedSize.text)}>{brand.name}</span>
+      )}
     </Link>
   );
 };
