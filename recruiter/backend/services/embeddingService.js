@@ -1037,30 +1037,38 @@ class EmbeddingService {
       console.log(`🔍 Found ${matches.length} matching candidates for job ${job._id}`);
       
       // Format results with similarity scores and full metadata
+      // Handle both Weaviate format (direct properties) and legacy Pinecone format (metadata object)
       const formattedMatches = matches.map((match, index) => {
-        console.log(`Match ${index + 1}: Candidate ${match.metadata.candidateId} with score ${match.score}`);
+        // Weaviate returns properties directly, Pinecone uses metadata object
+        const isWeaviateFormat = match.candidateId !== undefined || match.firstName !== undefined;
+        const data = isWeaviateFormat ? match : (match.metadata || match);
+        
+        // Get score from Weaviate's _additional or Pinecone's score
+        const score = match._additional?.score ?? match._additional?.certainty ?? 
+                      (1 - (match._additional?.distance || 0)) ?? match.score ?? 0;
+        
+        console.log(`Match ${index + 1}: Candidate ${data.candidateId} with score ${score}`);
         console.log(`Metadata available:`, {
-          totalYearsExp: match.metadata.totalYearsExp,
-          companiesCount: match.metadata.companiesWorkedAt?.length || 0,
-          hasAIAnalysis: match.metadata.hasAIAnalysis,
-          dataCompleteness: match.metadata.dataCompleteness
+          totalYearsExp: data.totalYearsExperience || data.totalYearsExp,
+          skills: data.skills?.length || 0,
+          position: data.position
         });
         
         return {
-        candidateId: match.metadata.candidateId,
-        similarity: match.score,
+          candidateId: data.candidateId,
+          similarity: score,
           // Include full metadata for explanation generation
-          metadata: match.metadata,
+          metadata: data,
           // Keep candidate info for backward compatibility
-        candidate: {
-          name: `${match.metadata.firstName} ${match.metadata.lastName}`.trim(),
-          position: match.metadata.position,
-          experience: match.metadata.experience,
-          skills: match.metadata.skills,
-          location: match.metadata.location,
-          email: match.metadata.email,
-          phone: match.metadata.phone
-        }
+          candidate: {
+            name: `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.name,
+            position: data.position,
+            experience: data.totalYearsExperience || data.experience,
+            skills: data.skills,
+            location: data.location,
+            email: data.email,
+            phone: data.phone
+          }
         };
       });
 
