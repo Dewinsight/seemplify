@@ -132,7 +132,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <html lang="en">
-      <body className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950">
+      <body className="bg-[rgb(var(--background-start-rgb))]">
+        {/* Background Noise */}
+        <div className="bg-noise" />
+        
         <div className="min-h-screen">
           {/* Top Navbar */}
           <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">

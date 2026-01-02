@@ -79,9 +79,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const showOrgSwitcher = orgs.length > 1;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950">
+    <div className="min-h-screen bg-[rgb(var(--background-start-rgb))]">
+      {/* Background Noise */}
+      <div className="bg-noise" />
+      
       {/* Top Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
