@@ -66,10 +66,10 @@ export function SeemplifyRecruiterLogo({ size = 'md' }: SeemplifyLogoProps) {
       <SeemplifyLogo size={size} />
       <div className="flex flex-col justify-center">
         <div className={`font-semibold tracking-tight leading-none ${text.main}`}>
-          <span className="text-white">Seemplify</span>
-          <span className="ml-1.5 font-light text-blue-400">Recruiter</span>
+          <span className="text-slate-900 dark:text-white transition-colors duration-300">Seemplify</span>
+          <span className="ml-1.5 font-light text-blue-600 dark:text-blue-400">Recruiter</span>
         </div>
-        <p className={`text-zinc-500 leading-none mt-1 ${text.sub}`}>AI-Powered Hiring</p>
+        <p className={`text-slate-500 dark:text-zinc-500 leading-none mt-1 ${text.sub}`}>AI-Powered Hiring</p>
       </div>
     </div>
   )

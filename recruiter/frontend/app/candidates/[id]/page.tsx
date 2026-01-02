@@ -593,7 +593,7 @@ function CandidateDetailInnerPage() {
                         </Select>
                       ) : (
                         /* Desktop Tab List Container */
-                        <TabsList className="relative grid w-full grid-cols-3 gap-1 sm:gap-2 glass p-1 sm:p-2 rounded-2xl shadow-lg border border-white/5 h-auto">
+                        <TabsList className="relative grid w-full grid-cols-3 gap-1 sm:gap-2 bg-slate-100/80 dark:glass p-1 sm:p-2 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 h-auto">
                           {/* Overview Tab */}
                           <TabsTrigger
                             value="overview"
@@ -601,9 +601,9 @@ function CandidateDetailInnerPage() {
                           >
                             <div className="relative">
                               <div className="absolute inset-0 bg-blue-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
-                              <User className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-blue-600 group-data-[state=active]:text-white transition-colors" />
+                              <User className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-blue-600 dark:text-blue-400 group-data-[state=active]:text-white transition-colors" />
                             </div>
-                            <span className="text-[10px] sm:text-xs font-semibold">Overview</span>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 group-data-[state=active]:text-white transition-colors">Overview</span>
                             {candidate.workExperience && (
                               <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-green-500 ring-1 sm:ring-2 ring-white" />
                             )}
@@ -617,7 +617,7 @@ function CandidateDetailInnerPage() {
                             <div className="relative">
                               <div className="absolute inset-0 bg-purple-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
                               <div className="relative flex items-center justify-center">
-                                <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-purple-600 group-data-[state=active]:text-white transition-colors" />
+                                <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-purple-600 dark:text-purple-400 group-data-[state=active]:text-white transition-colors" />
                                 {candidate.aiAnalysis && (
                                   <div className="absolute -top-1 -right-1">
                                     <span className="relative flex h-1.5 w-1.5 sm:h-2 sm:w-2">
@@ -628,7 +628,7 @@ function CandidateDetailInnerPage() {
                                 )}
                               </div>
                             </div>
-                            <span className="text-[10px] sm:text-xs font-semibold">AI Insights</span>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 group-data-[state=active]:text-white transition-colors">AI Insights</span>
                           </TabsTrigger>
 
                           {/* CV Tab */}
@@ -638,9 +638,9 @@ function CandidateDetailInnerPage() {
                           >
                             <div className="relative">
                               <div className="absolute inset-0 bg-emerald-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
-                              <FileText className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-emerald-600 group-data-[state=active]:text-white transition-colors" />
+                              <FileText className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-emerald-600 dark:text-emerald-400 group-data-[state=active]:text-white transition-colors" />
                             </div>
-                            <span className="text-[10px] sm:text-xs font-semibold">CV</span>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 group-data-[state=active]:text-white transition-colors">CV</span>
                             {candidate.resumeUrl && (
                               <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-500 ring-1 sm:ring-2 ring-white" />
                             )}
@@ -1235,45 +1235,45 @@ function CandidateDetailInnerPage() {
                     {candidate.aiAnalysis && (
                       <>
                         <Card className="glass-card border-0 shadow-lg">
-                          <CardHeader className="bg-gradient-to-r from-purple-950/40 to-indigo-950/40 rounded-t-lg border-b border-white/5">
-                            <CardTitle className="flex items-center gap-2 text-purple-100">
-                              <Brain className="h-5 w-5 text-purple-400" />
+                          <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 rounded-t-lg border-b border-purple-100 dark:border-white/5">
+                            <CardTitle className="flex items-center gap-2 text-purple-900 dark:text-purple-100">
+                              <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                               AI Analysis Summary
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="pt-6">
                             <div className="prose prose-sm max-w-none">
-                              <p className="text-gray-300 leading-relaxed">{candidate.aiAnalysis.summary}</p>
+                              <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{candidate.aiAnalysis.summary}</p>
                             </div>
                           </CardContent>
                         </Card>
 
                         <Card className="glass-card border-0 shadow-lg">
-                          <CardHeader className="bg-gradient-to-r from-blue-950/40 to-purple-950/40 rounded-t-lg border-b border-white/5">
-                            <CardTitle className="flex items-center gap-2 text-blue-100">
-                              <BarChart3 className="h-5 w-5 text-blue-400" />
+                          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/40 dark:to-purple-950/40 rounded-t-lg border-b border-blue-100 dark:border-white/5">
+                            <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                              <BarChart3 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                               Strengths & Areas of Concern
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="pt-6">
                             <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2">
-                              <div className="space-y-2 sm:space-y-3 rounded-xl bg-gradient-to-br from-green-950/20 to-emerald-950/20 p-3 sm:p-5 border border-green-500/10">
-                                <h3 className="font-semibold text-green-400 flex items-center gap-2">
+                              <div className="space-y-2 sm:space-y-3 rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 p-3 sm:p-5 border border-green-200 dark:border-green-500/10">
+                                <h3 className="font-semibold text-green-800 dark:text-green-400 flex items-center gap-2">
                                   <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                                   Key Strengths
                                 </h3>
-                                <ul className="ml-4 sm:ml-6 list-disc space-y-1 sm:space-y-2 text-sm text-green-300/90">
+                                <ul className="ml-4 sm:ml-6 list-disc space-y-1 sm:space-y-2 text-sm text-green-700 dark:text-green-300/90">
                                   {candidate.aiAnalysis.strengths?.map((item, index) => (
                                     <li key={index} className="break-words">{item}</li>
                                   )) || <li>No strengths identified</li>}
                                 </ul>
                               </div>
-                              <div className="space-y-2 sm:space-y-3 rounded-xl bg-gradient-to-br from-amber-950/20 to-orange-950/20 p-3 sm:p-5 border border-amber-500/10">
-                                <h3 className="font-semibold text-amber-400 flex items-center gap-2">
+                              <div className="space-y-2 sm:space-y-3 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3 sm:p-5 border border-amber-200 dark:border-amber-500/10">
+                                <h3 className="font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-2">
                                   <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                                   Areas to Consider
                                 </h3>
-                                <ul className="ml-4 sm:ml-6 list-disc space-y-1 sm:space-y-2 text-sm text-amber-300/90">
+                                <ul className="ml-4 sm:ml-6 list-disc space-y-1 sm:space-y-2 text-sm text-amber-700 dark:text-amber-300/90">
                                   {candidate.aiAnalysis.potentialFlags?.map((item, index) => (
                                     <li key={index} className="break-words">{item}</li>
                                   )) || <li>No concerns identified</li>}
@@ -1289,12 +1289,12 @@ function CandidateDetailInnerPage() {
                   {/* CV Tab */}
                   <TabsContent value="cv" className="space-y-6 animate-in fade-in-50 duration-500" >
                     <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-emerald-950/40 to-teal-950/40 rounded-t-lg border-b border-white/5">
-                        <CardTitle className="flex items-center gap-2 text-emerald-100">
-                          <FileText className="h-5 w-5 text-emerald-400" />
+                      <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 rounded-t-lg border-b border-emerald-100 dark:border-white/5">
+                        <CardTitle className="flex items-center gap-2 text-emerald-900 dark:text-emerald-100">
+                          <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                           Curriculum Vitae
                         </CardTitle>
-                        <CardDescription className="text-gray-400">
+                        <CardDescription className="text-gray-500 dark:text-gray-400">
                           View and download the candidate's CV/Resume
                         </CardDescription>
                       </CardHeader>
@@ -1306,14 +1306,14 @@ function CandidateDetailInnerPage() {
                             const isLoadingPdfUrls = isPdf && loadingUrls && !accessibleUrls
 
                             return (
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-md border border-white/10 p-3 sm:p-4 gap-3 sm:gap-4 bg-white/5">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-md border border-gray-200 dark:border-white/10 p-3 sm:p-4 gap-3 sm:gap-4 bg-white dark:bg-white/5">
                                 <div className="flex items-center gap-3">
-                                  <div className="rounded-md bg-white/10 p-2">
-                                    <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400" />
+                                  <div className="rounded-md bg-emerald-50 dark:bg-white/10 p-2">
+                                    <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600 dark:text-emerald-400" />
                                   </div>
                                   <div>
-                                    <h3 className="font-medium text-gray-200">CV Document {isPdf && "(PDF)"}</h3>
-                                    <p className="text-sm text-gray-400">
+                                    <h3 className="font-medium text-gray-900 dark:text-gray-200">CV Document {isPdf && "(PDF)"}</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
                                       Submitted on {candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : "N/A"}
                                     </p>
                                     {isPdf && !resumeUrls?.hasAccessibleUrls && !isLoadingPdfUrls && (

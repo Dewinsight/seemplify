@@ -33,12 +33,12 @@ const variantStyles = {
   default: {
     icon: 'bg-secondary text-secondary-foreground',
     border: 'hover:border-border',
-    card: 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-300 dark:glass-card dark:border-white/5',
+    card: 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-300 dark:bg-none dark:glass-card dark:border-white/5',
   },
   primary: {
     icon: 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',
     border: 'hover:border-blue-300 dark:hover:border-blue-500/50',
-    card: 'bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 dark:bg-blue-500/5 dark:border-blue-500/20',
+    card: 'bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 dark:bg-none dark:bg-blue-500/5 dark:border-blue-500/20',
   },
   success: {
     icon: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
@@ -181,7 +181,8 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
       }
       detail={<div>Full details would go here</div>}
       onDetailClick={handleClick}
-      className={styles.border}
+      className={cn(styles.border, styles.card)}
+      iconClassName={styles.icon}
     />
   );
 });
