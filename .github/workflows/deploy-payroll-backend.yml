@@ -23,14 +23,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Trigger Dokploy Deployment
-        run: |
-          # Use tRPC API format for Dokploy
-          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy?batch=1" \
-            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"0":{"json":{"applicationId":"${{ secrets.PAYROLL_BACKEND_APP_ID }}"}}}'
-          
-          echo "Deployment triggered for ${{ env.APP_NAME }}"
+        uses: benbristow/dokploy-deploy-action@0.0.1
+        with:
+          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          application_id: ${{ secrets.PAYROLL_BACKEND_APP_ID }}
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
 
       - name: Deployment Status
         if: success()

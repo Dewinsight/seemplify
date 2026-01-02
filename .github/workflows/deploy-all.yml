@@ -41,14 +41,14 @@ jobs:
     
     steps:
       - name: Deploy ${{ matrix.name }}
-        run: |
-          echo "Deploying ${{ matrix.name }}..."
-          # Use tRPC API format for Dokploy
-          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy?batch=1" \
-            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"0":{"json":{"applicationId":"${{ secrets[matrix.app_id_secret] }}"}}}'
-          echo "✅ ${{ matrix.name }} deployment triggered"
+        uses: benbristow/dokploy-deploy-action@0.0.1
+        with:
+          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          application_id: ${{ secrets[matrix.app_id_secret] }}
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
+      
+      - name: Deployment Status
+        run: echo "✅ ${{ matrix.name }} deployment triggered"
 
   deploy-frontends:
     name: Deploy All Frontends
@@ -68,14 +68,14 @@ jobs:
     
     steps:
       - name: Deploy ${{ matrix.name }}
-        run: |
-          echo "Deploying ${{ matrix.name }}..."
-          # Use tRPC API format for Dokploy
-          curl -X POST "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy?batch=1" \
-            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"0":{"json":{"applicationId":"${{ secrets[matrix.app_id_secret] }}"}}}'
-          echo "✅ ${{ matrix.name }} deployment triggered"
+        uses: benbristow/dokploy-deploy-action@0.0.1
+        with:
+          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          application_id: ${{ secrets[matrix.app_id_secret] }}
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
+      
+      - name: Deployment Status
+        run: echo "✅ ${{ matrix.name }} deployment triggered"
 
   summary:
     name: Deployment Summary
