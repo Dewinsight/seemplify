@@ -6,13 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { 
-  Calendar, 
-  Clock, 
-  Star, 
-  Phone, 
-  Mail, 
-  MapPin, 
+import {
+  Calendar,
+  Clock,
+  Star,
+  Phone,
+  Mail,
+  MapPin,
   TrendingUp,
   AlertTriangle,
   CheckCircle,
@@ -81,29 +81,29 @@ const getPriorityConfig = (priority: string) => {
     case 'high':
       return {
         borderClass: 'border-l-red-500',
-        bgClass: 'bg-gradient-to-r from-red-50 via-white to-white dark:from-red-950/30 dark:via-slate-800 dark:to-slate-800',
-        badgeClass: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
+        bgClass: 'bg-gradient-to-br from-red-950/40 via-red-900/20 to-red-950/10 dark:from-red-950/40 dark:via-red-900/20 dark:to-red-950/10 backdrop-blur-sm',
+        badgeClass: 'bg-red-500/10 text-red-400 border border-red-500/20',
         icon: <AlertTriangle className="h-3 w-3" />
       }
     case 'medium':
       return {
         borderClass: 'border-l-yellow-500',
-        bgClass: 'bg-gradient-to-r from-yellow-50 via-white to-white dark:from-yellow-950/30 dark:via-slate-800 dark:to-slate-800',
-        badgeClass: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
+        bgClass: 'bg-gradient-to-br from-yellow-950/40 via-yellow-900/20 to-yellow-950/10 dark:from-yellow-950/40 dark:via-yellow-900/20 dark:to-yellow-950/10 backdrop-blur-sm',
+        badgeClass: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20',
         icon: <Timer className="h-3 w-3" />
       }
     case 'low':
       return {
         borderClass: 'border-l-green-500',
-        bgClass: 'bg-gradient-to-r from-green-50 via-white to-white dark:from-green-950/30 dark:via-slate-800 dark:to-slate-800',
-        badgeClass: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+        bgClass: 'bg-gradient-to-br from-green-950/40 via-green-900/20 to-green-950/10 dark:from-green-950/40 dark:via-green-900/20 dark:to-green-950/10 backdrop-blur-sm',
+        badgeClass: 'bg-green-500/10 text-green-400 border border-green-500/20',
         icon: <CheckCircle className="h-3 w-3" />
       }
     default:
       return {
-        borderClass: 'border-l-gray-300',
-        bgClass: 'bg-white dark:bg-slate-800',
-        badgeClass: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+        borderClass: 'border-l-gray-500',
+        bgClass: 'glass-card hover:bg-white/5 transition-colors',
+        badgeClass: 'bg-white/10 text-gray-300 border border-white/10',
         icon: <Clock className="h-3 w-3" />
       }
   }
@@ -143,7 +143,7 @@ export function EnhancedCandidateCard({
   const isOverdue = daysInStage > 7 // Consider 7+ days as overdue
   const aiRecommendation = getAIRecommendationConfig(candidate.aiInsights?.recommendedAction)
   const isRejected = candidate.status === 'rejected'
-  
+
   // Get current stage interviews
   const stageInterviews = candidate.interviews.filter(i => i.stageId === stageId)
   const upcomingInterview = stageInterviews.find(i => i.status === 'scheduled' || i.status === 'confirmed')
@@ -152,10 +152,10 @@ export function EnhancedCandidateCard({
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-all duration-300 group relative border-l-4 transform-gpu",
-        isRejected 
-          ? "bg-red-50/60 dark:bg-red-950/20 border-l-red-400 border-red-200 dark:border-red-700 opacity-80 hover:shadow-md hover:shadow-red-500/10"
-          : "hover:shadow-xl hover:scale-[1.02] " + priorityConfig.borderClass + " " + priorityConfig.bgClass,
+        "cursor-pointer transition-all duration-300 group relative border-l-[3px] transform-gpu border-0 shadow-lg",
+        isRejected
+          ? "bg-red-950/10 border-l-red-500/50 border-white/5 opacity-60 hover:opacity-90 hover:shadow-red-900/10"
+          : "hover:shadow-xl hover:scale-[1.02] border-white/5 ring-1 ring-white/5 " + priorityConfig.borderClass + " " + priorityConfig.bgClass,
         isMoving && "opacity-50 scale-95"
       )}
       onClick={onClick}
@@ -173,9 +173,9 @@ export function EnhancedCandidateCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3 min-w-0 flex-1">
             <div className="relative">
-              <Avatar className="h-12 w-12 ring-2 ring-white shadow-md dark:ring-slate-700">
+              <Avatar className="h-12 w-12 ring-2 ring-white/10 shadow-lg bg-black/40">
                 <AvatarImage src={candidate.avatar} alt={`${candidate.firstName} ${candidate.lastName}`} />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-700 text-white font-semibold text-sm">
                   {getInitials(candidate)}
                 </AvatarFallback>
               </Avatar>
@@ -184,15 +184,14 @@ export function EnhancedCandidateCard({
                 <div className="w-2 h-2 bg-white rounded-full"></div>
               </div>
             </div>
-            
+
             <div className="min-w-0 flex-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <h3 className={`font-semibold truncate cursor-help text-base ${
-                    isRejected 
-                      ? 'text-muted-foreground dark:text-muted-foreground/70 line-through' 
-                      : 'text-foreground dark:text-gray-100'
-                  }`}>
+                  <h3 className={`font-semibold truncate cursor-help text-base ${isRejected
+                      ? 'text-gray-500 line-through'
+                      : 'text-white group-hover:text-blue-200 transition-colors'
+                    }`}>
                     {candidate.firstName} {candidate.lastName}
                   </h3>
                 </TooltipTrigger>
@@ -200,12 +199,12 @@ export function EnhancedCandidateCard({
                   <p>{candidate.firstName} {candidate.lastName}</p>
                 </TooltipContent>
               </Tooltip>
-              
+
               <div className="hidden sm:flex items-center space-x-1 mt-1">
-                <Mail className="h-3 w-3 text-muted-foreground" />
+                <Mail className="h-3 w-3 text-gray-400" />
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <p className="text-sm text-muted-foreground truncate cursor-help max-w-[160px]">
+                    <p className="text-sm text-gray-400 truncate cursor-help max-w-[160px]">
                       {candidate.email}
                     </p>
                   </TooltipTrigger>
@@ -214,21 +213,21 @@ export function EnhancedCandidateCard({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              
+
               {candidate.location && (
                 <div className="hidden sm:flex items-center space-x-1 mt-1">
-                  <MapPin className="h-3 w-3 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground truncate">
+                  <MapPin className="h-3 w-3 text-gray-400" />
+                  <p className="text-xs text-gray-400 truncate">
                     {candidate.location}
                   </p>
                 </div>
               )}
             </div>
           </div>
-          
+
           {/* Priority Badge - Mobile Optimized */}
           <Badge className={cn(
-            "text-xs font-medium flex items-center space-x-1 px-2 py-0.5 shadow-sm", 
+            "text-xs font-medium flex items-center space-x-1 px-2 py-0.5 shadow-sm",
             priorityConfig.badgeClass
           )}>
             {priorityConfig.icon}
@@ -243,7 +242,7 @@ export function EnhancedCandidateCard({
             {candidate.position && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <p className="font-semibold text-foreground dark:text-gray-100 text-base sm:text-sm truncate cursor-help">
+                  <p className="font-semibold text-gray-200 text-base sm:text-sm truncate cursor-help">
                     {candidate.position}
                   </p>
                 </TooltipTrigger>
@@ -253,7 +252,7 @@ export function EnhancedCandidateCard({
               </Tooltip>
             )}
             {candidate.experience && (
-              <p className="hidden sm:block text-xs text-muted-foreground truncate">{candidate.experience}</p>
+              <p className="hidden sm:block text-xs text-gray-400 truncate">{candidate.experience}</p>
             )}
           </div>
         )}
@@ -262,7 +261,7 @@ export function EnhancedCandidateCard({
         {candidate.skills && (
           <div className="flex flex-wrap gap-1">
             {candidate.skills.split(',').slice(0, 3).map((skill, index) => (
-              <Badge key={index} variant="secondary" className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              <Badge key={index} variant="secondary" className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20">
                 {skill.trim()}
               </Badge>
             ))}
@@ -276,11 +275,11 @@ export function EnhancedCandidateCard({
 
         {/* AI Insights */}
         {candidate.aiInsights && (
-          <div className={cn("hidden sm:block p-3 rounded-lg border", aiRecommendation.bg)}>
+          <div className={cn("hidden sm:block p-3 rounded-lg border border-white/5", aiRecommendation.bg)}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-foreground dark:text-gray-100">AI Score</span>
+                <TrendingUp className="h-4 w-4 text-blue-400" />
+                <span className="text-sm font-medium text-gray-200">AI Score</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Star className="h-4 w-4 text-yellow-500" />
@@ -288,8 +287,8 @@ export function EnhancedCandidateCard({
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Recommendation:</span>
-              <Badge variant="outline" className={cn("text-xs capitalize", aiRecommendation.color)}>
+              <span className="text-xs text-gray-400">Recommendation:</span>
+              <Badge variant="outline" className={cn("text-xs capitalize border-0", aiRecommendation.color)}>
                 {aiRecommendation.label}
               </Badge>
             </div>
@@ -299,22 +298,22 @@ export function EnhancedCandidateCard({
         {/* Interview Status */}
         <div className="space-y-2">
           {upcomingInterview && (
-            <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
+            <div className="flex items-center justify-between p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
               <div className="flex items-center space-x-2">
-                <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <Calendar className="h-4 w-4 text-blue-400" />
                 <div>
-                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Next Interview</p>
-                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                  <p className="text-sm font-medium text-blue-100">Next Interview</p>
+                  <p className="text-xs text-blue-300">
                     {new Date(upcomingInterview.scheduledAt).toLocaleDateString()}
                   </p>
                 </div>
               </div>
-              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 text-xs">
+              <Badge className="bg-blue-500/20 text-blue-200 border-0 text-xs">
                 {upcomingInterview.status}
               </Badge>
             </div>
           )}
-          
+
           {completedInterviews.length > 0 && (
             <div className="hidden sm:flex items-center justify-between text-xs text-muted-foreground">
               <span>Completed interviews: {completedInterviews.length}</span>
@@ -326,15 +325,15 @@ export function EnhancedCandidateCard({
         </div>
 
         {/* Time in Stage & Status */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between pt-2 border-t border-white/5">
           <div className="flex items-center gap-1.5">
-            <Clock className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isOverdue ? "text-red-500" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", isOverdue ? "text-red-600" : "text-muted-foreground")}>
+            <Clock className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isOverdue ? "text-red-400" : "text-gray-500")} />
+            <span className={cn("text-xs font-medium", isOverdue ? "text-red-400" : "text-gray-500")}>
               <span className="sm:hidden">{daysInStage}d</span>
               <span className="hidden sm:inline">{daysInStage} day{daysInStage !== 1 ? 's' : ''} in stage</span>
             </span>
           </div>
-          
+
           <div className="hidden sm:flex items-center space-x-1">
             <div className="text-xs text-muted-foreground">
               from {candidate.source}
@@ -346,7 +345,7 @@ export function EnhancedCandidateCard({
         {candidate.tags.length > 0 && (
           <div className="hidden sm:flex flex-wrap gap-1">
             {candidate.tags.slice(0, 2).map((tag, index) => (
-              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-muted/30 text-muted-foreground dark:bg-gray-800 dark:text-muted-foreground/70">
+              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-white/5 text-gray-400 border-white/10">
                 {tag}
               </Badge>
             ))}
@@ -367,8 +366,8 @@ export function EnhancedCandidateCard({
 
         {/* Stage Movement Controls */}
         {onMoveStage && stages.length > 1 && (
-          <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
-            <span className="text-xs text-muted-foreground font-medium hidden sm:inline">Quick Move:</span>
+          <div className="flex items-center justify-between pt-3 border-t border-white/5">
+            <span className="text-xs text-gray-500 font-medium hidden sm:inline">Quick Move:</span>
             <span className="text-xs text-muted-foreground font-medium sm:hidden">Move:</span>
             <div className="flex items-center space-x-2">
               {/* Move to Previous Stage */}
@@ -378,13 +377,13 @@ export function EnhancedCandidateCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-blue-50 hover:border-blue-300 dark:hover:bg-blue-950 touch-manipulation"
+                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-blue-500/20 hover:border-blue-500/50 border-white/10 bg-transparent touch-manipulation text-gray-400 hover:text-blue-400"
                       onClick={(e) => {
                         e.stopPropagation()
                         onMoveStage(candidate._id, 'previous')
                       }}
                     >
-                      <ChevronLeft className="h-4 w-4 sm:h-3 sm:w-3 text-blue-600" />
+                      <ChevronLeft className="h-4 w-4 sm:h-3 sm:w-3" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -392,12 +391,12 @@ export function EnhancedCandidateCard({
                   </TooltipContent>
                 </Tooltip>
               )}
-              
+
               {/* Stage Indicator */}
-              <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-xs font-medium">
+              <div className="px-2 py-1 bg-white/5 rounded text-xs font-medium text-gray-400">
                 {currentStageOrder + 1}/{stages.length}
               </div>
-              
+
               {/* Move to Next Stage */}
               {currentStageOrder < stages.length - 1 && (
                 <Tooltip>
@@ -405,13 +404,13 @@ export function EnhancedCandidateCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-green-50 hover:border-green-300 dark:hover:bg-green-950 touch-manipulation"
+                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-green-500/20 hover:border-green-500/50 border-white/10 bg-transparent touch-manipulation text-gray-400 hover:text-green-400"
                       onClick={(e) => {
                         e.stopPropagation()
                         onMoveStage(candidate._id, 'next')
                       }}
                     >
-                      <ChevronRight className="h-4 w-4 sm:h-3 sm:w-3 text-green-600" />
+                      <ChevronRight className="h-4 w-4 sm:h-3 sm:w-3" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -419,27 +418,27 @@ export function EnhancedCandidateCard({
                   </TooltipContent>
                 </Tooltip>
               )}
-              
-        {/* Rejection Button - Only show if not already rejected */}
-        {jobId && !isRejected && (
-          <div className="ml-2">
-            <CandidateRejectionButton
-              candidate={{
-                _id: candidate._id,
-                firstName: candidate.firstName,
-                lastName: candidate.lastName,
-                email: candidate.email,
-                currentStage: candidate.currentStage,
-                status: 'interviewing'
-              }}
-              jobId={jobId}
-              onEmailSent={onEmailSent}
-              isShortlistRejection={false}
-              size="sm"
-              variant="ghost"
-            />
-          </div>
-        )}
+
+              {/* Rejection Button - Only show if not already rejected */}
+              {jobId && !isRejected && (
+                <div className="ml-2">
+                  <CandidateRejectionButton
+                    candidate={{
+                      _id: candidate._id,
+                      firstName: candidate.firstName,
+                      lastName: candidate.lastName,
+                      email: candidate.email,
+                      currentStage: candidate.currentStage,
+                      status: 'interviewing'
+                    }}
+                    jobId={jobId}
+                    onEmailSent={onEmailSent}
+                    isShortlistRejection={false}
+                    size="sm"
+                    variant="ghost"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -452,7 +451,7 @@ export function EnhancedCandidateCard({
               <X className="h-2.5 w-2.5 mr-1" />
               Rejected
             </Badge>
-            
+
             {/* Desktop: Compact status */}
             <div className="hidden sm:flex items-center text-red-600 dark:text-red-400 text-sm">
               <XCircle className="h-3.5 w-3.5 mr-1.5" />

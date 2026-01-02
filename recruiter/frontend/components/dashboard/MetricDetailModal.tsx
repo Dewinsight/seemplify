@@ -12,16 +12,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  LineChart, 
-  Line, 
-  AreaChart, 
+import {
+  LineChart,
+  Line,
+  AreaChart,
   Area,
   BarChart,
   Bar,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
+  XAxis,
+  YAxis,
+  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   Legend
@@ -61,7 +61,7 @@ export function MetricDetailModal({
   const historicalData = metricData.historicalData || [];
 
   // Calculate trend
-  const trend = historicalData.length > 1 
+  const trend = historicalData.length > 1
     ? ((historicalData[historicalData.length - 1].value - historicalData[0].value) / historicalData[0].value) * 100
     : 0;
 
@@ -131,13 +131,13 @@ export function MetricDetailModal({
                         <AreaChart data={historicalData}>
                           <defs>
                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                          <XAxis 
-                            dataKey="date" 
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis
+                            dataKey="date"
                             tickFormatter={(value) => new Date(value).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
                             className="text-xs"
                           />
@@ -150,12 +150,12 @@ export function MetricDetailModal({
                             }}
                             labelFormatter={(value) => new Date(value).toLocaleDateString()}
                           />
-                          <Area 
-                            type="monotone" 
-                            dataKey="value" 
-                            stroke="#6366f1" 
-                            fillOpacity={1} 
-                            fill="url(#colorValue)" 
+                          <Area
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#6366f1"
+                            fillOpacity={1}
+                            fill="url(#colorValue)"
                           />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -225,7 +225,7 @@ export function MetricDetailModal({
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={metricData.breakdown}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                           <XAxis dataKey="category" className="text-xs" />
                           <YAxis className="text-xs" />
                           <Tooltip

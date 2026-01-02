@@ -25,11 +25,11 @@ export function GPTCacheMonitor() {
     try {
       setRefreshing(true)
       const response = await fetch('/api/candidates/cache/stats')
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch cache statistics')
       }
-      
+
       const data = await response.json()
       setStats(data.stats)
     } catch (error: any) {
@@ -108,7 +108,7 @@ export function GPTCacheMonitor() {
           Real-time monitoring of GPT-4.1 analysis caching performance
         </CardDescription>
       </CardHeader>
-      
+
       <CardContent className="p-6 space-y-6">
         {stats ? (
           <>
@@ -124,8 +124,8 @@ export function GPTCacheMonitor() {
                   <div className={`text-2xl font-bold ${getHitRateColor(stats.hitRate)}`}>
                     {stats.hitRate.toFixed(1)}%
                   </div>
-                  <Progress 
-                    value={stats.hitRate} 
+                  <Progress
+                    value={stats.hitRate}
                     className="h-2"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -180,23 +180,22 @@ export function GPTCacheMonitor() {
             {/* Performance Insights */}
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Performance Insights</h3>
-              
+
               <div className="grid gap-3">
                 {/* Hit Rate Analysis */}
                 <div className="p-3 rounded border bg-gray-50">
                   <div className="flex items-start gap-3">
-                    <div className={`w-2 h-2 rounded-full mt-2 ${
-                      stats.hitRate >= 80 ? 'bg-green-500' : 
-                      stats.hitRate >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                    }`}></div>
+                    <div className={`w-2 h-2 rounded-full mt-2 ${stats.hitRate >= 80 ? 'bg-green-500' :
+                        stats.hitRate >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Cache Efficiency</h4>
                       <p className="text-sm text-muted-foreground">
-                        {stats.hitRate >= 80 ? 
+                        {stats.hitRate >= 80 ?
                           "🟢 Excellent cache performance! Most requests are served instantly from cache." :
                           stats.hitRate >= 60 ?
-                          "🟡 Good cache performance, but there's room for improvement." :
-                          "🔴 Cache hit rate is below target. Consider optimizing cache strategies."
+                            "🟡 Good cache performance, but there's room for improvement." :
+                            "🔴 Cache hit rate is below target. Consider optimizing cache strategies."
                         }
                       </p>
                     </div>
@@ -213,8 +212,8 @@ export function GPTCacheMonitor() {
                         {stats.totalRequests > 1000 ?
                           `High usage system with ${stats.totalRequests.toLocaleString()} total analysis requests.` :
                           stats.totalRequests > 100 ?
-                          `Moderate usage with ${stats.totalRequests.toLocaleString()} analysis requests.` :
-                          `Early stage usage with ${stats.totalRequests.toLocaleString()} analysis requests.`
+                            `Moderate usage with ${stats.totalRequests.toLocaleString()} analysis requests.` :
+                            `Early stage usage with ${stats.totalRequests.toLocaleString()} analysis requests.`
                         }
                       </p>
                     </div>
@@ -259,7 +258,7 @@ export function GPTCacheMonitor() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
-                    API Cost: <$0.01/match
+                    API Cost: &lt;$0.01/match
                   </Badge>
                   <span className="text-green-600">✓</span>
                 </div>

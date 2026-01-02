@@ -40,8 +40,8 @@ export function AreaChartEnhanced({
   stacked = false,
   className
 }: AreaChartEnhancedProps) {
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === 'dark'
 
   const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
   const textColor = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
@@ -53,8 +53,8 @@ export function AreaChartEnhanced({
           <p className="font-medium mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
             <div key={index} className="flex items-center gap-2 text-sm">
-              <div 
-                className="w-3 h-3 rounded-full" 
+              <div
+                className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: entry.color }}
               />
               <span className="font-medium">{entry.name}:</span>
@@ -83,15 +83,15 @@ export function AreaChartEnhanced({
             <CardTitle className="text-lg font-semibold">{title}</CardTitle>
             {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
           </div>
-          
+
           {/* Trend indicators */}
           <div className="flex gap-2">
             {series.slice(0, 2).map(serie => {
               const trend = calculateTrend(serie.dataKey)
               const isPositive = trend > 0
-              
+
               return (
-                <Badge 
+                <Badge
                   key={serie.dataKey}
                   variant={isPositive ? "default" : "destructive"}
                   className="text-xs"
@@ -107,24 +107,24 @@ export function AreaChartEnhanced({
         <ResponsiveContainer width="100%" height={height}>
           <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
-            
-            <XAxis 
-              dataKey="name" 
+
+            <XAxis
+              dataKey="name"
               tick={{ fill: textColor, fontSize: 12 }}
               tickLine={{ stroke: gridColor }}
               axisLine={{ stroke: gridColor }}
             />
-            
-            <YAxis 
+
+            <YAxis
               tick={{ fill: textColor, fontSize: 12 }}
               tickLine={{ stroke: gridColor }}
               axisLine={{ stroke: gridColor }}
             />
-            
+
             <Tooltip content={<CustomTooltip />} />
-            
+
             {showLegend && <Legend />}
-            
+
             {series.map((serie, index) => (
               <Area
                 key={serie.dataKey}

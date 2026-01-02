@@ -61,7 +61,7 @@ const config = {
       },
       screens: {
         '1440': '1440px',
-        'max-1440': {'max': '1440px'},
+        'max-1440': { 'max': '1440px' },
       },
       colors: {
         border: "hsl(var(--border))",

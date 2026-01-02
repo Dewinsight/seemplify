@@ -34,7 +34,7 @@ export default function Dashboard() {
   const { user, analytics, suggestions, isLoading } = state
   const { viewMode, setViewMode, sections } = useDashboardState()
   const [showProfileModal, setShowProfileModal] = useState(false)
-  
+
   // State for metric detail modal
   const [selectedMetric, setSelectedMetric] = useState<{
     id: string;
@@ -48,10 +48,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (user) {
       loadAnalytics()
-      
+
       const lastShown = localStorage.getItem('profileModalLastShown')
       const daysSinceLastShown = lastShown ? (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24) : 999
-      
+
       if (!isProfileComplete() && daysSinceLastShown > 1) {
         setTimeout(() => setShowProfileModal(true), 2000)
       }
@@ -69,7 +69,7 @@ export default function Dashboard() {
   const handleMetricClick = (metricId: string, title: string, currentValue: number) => {
     // Use REAL timeline data based on metric type
     let timelineData: any[] = [];
-    
+
     if (metricId === 'totalCandidates' || metricId === 'candidatesInReview') {
       // For candidate-related metrics, use candidates timeline
       timelineData = currentAnalytics.timeline?.candidates || [];
@@ -77,61 +77,61 @@ export default function Dashboard() {
       // For job-related metrics, use jobs timeline
       timelineData = currentAnalytics.timeline?.jobs || [];
     }
-    
+
     // Map to historical data format (REAL data only)
-    const historicalData = timelineData.length > 0 
+    const historicalData = timelineData.length > 0
       ? timelineData.map((item: any) => ({
-          date: item.date,
-          value: item.count || 0
-        }))
+        date: item.date,
+        value: item.count || 0
+      }))
       : undefined;
 
     // Use REAL breakdown data from backend distributions
     // ✅ FIXED: Backend returns 'name' and 'value', not 'status' and 'count'
     let breakdown: Array<{ category: string; value: number }> | undefined;
-    
+
     if (metricId === 'totalCandidates' || metricId === 'candidatesInReview') {
       // Real candidate status distribution
       const statusData = currentAnalytics.distributions?.candidatesByStatus || [];
-      breakdown = statusData.length > 0 
+      breakdown = statusData.length > 0
         ? statusData.map((item: any) => ({
-            category: item.name,  // ✅ Use 'name' from backend
-            value: item.value     // ✅ Use 'value' from backend
-          }))
+          category: item.name,  // ✅ Use 'name' from backend
+          value: item.value     // ✅ Use 'value' from backend
+        }))
         : undefined;
     } else if (metricId === 'activeJobs' || metricId === 'totalJobs') {
       // Real job status distribution
       const statusData = currentAnalytics.distributions?.jobsByStatus || [];
       breakdown = statusData.length > 0
         ? statusData.map((item: any) => ({
-            category: item.name,  // ✅ Use 'name' from backend
-            value: item.value     // ✅ Use 'value' from backend
-          }))
+          category: item.name,  // ✅ Use 'name' from backend
+          value: item.value     // ✅ Use 'value' from backend
+        }))
         : undefined;
     }
 
     // Generate insights ONLY from real data
     const insights: string[] = [];
-    
+
     if (historicalData && historicalData.length > 1) {
       const firstValue = historicalData[0].value;
       const lastValue = historicalData[historicalData.length - 1].value;
-      
+
       if (firstValue > 0) {
         const change = ((lastValue - firstValue) / firstValue) * 100;
         insights.push(`This metric has ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change).toFixed(1)}% over the tracked period.`);
       }
-      
+
       // Add date range insight
       const firstDate = new Date(historicalData[0].date).toLocaleDateString();
       const lastDate = new Date(historicalData[historicalData.length - 1].date).toLocaleDateString();
       insights.push(`Data tracked from ${firstDate} to ${lastDate} (${historicalData.length} data points).`);
     }
-    
+
     if (breakdown && breakdown.length > 0) {
       const topCategory = breakdown.reduce((max, item) => item.value > max.value ? item : max);
       insights.push(`${topCategory.category} represents the largest segment with ${topCategory.value} items.`);
-      
+
       // Add total count insight
       const total = breakdown.reduce((sum, item) => sum + item.value, 0);
       insights.push(`Total of ${total} items distributed across ${breakdown.length} categories.`);
@@ -191,7 +191,7 @@ export default function Dashboard() {
               <Skeleton className="h-10 w-32" />
             </div>
           </div>
-          
+
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-32" />
@@ -203,30 +203,31 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container">
-      <ProfileCompletionModal 
-        open={showProfileModal} 
-        onOpenChange={handleProfileModalClose} 
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container relative z-10">
+      <div className="bg-noise" />
+      <ProfileCompletionModal
+        open={showProfileModal}
+        onOpenChange={handleProfileModalClose}
       />
-      
+
       <div className="space-y-8">
         {/* Simplified Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">
+            <h1 className="text-3xl font-bold tracking-tight gradient-text-primary">
               Welcome back, {displayName}
             </h1>
             <p className="text-muted-foreground">
               Here's your recruitment overview
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             {/* Identity Hub Link */}
             <Button
               size="sm"
               asChild
-              className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
+              className="bg-secondary/80 text-secondary-foreground hover:bg-secondary/60 shadow-sm transition-colors"
             >
               <a
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
@@ -247,7 +248,7 @@ export default function Dashboard() {
               {viewMode === 'simple' ? <Maximize2 className="h-4 w-4 mr-2" /> : <Minimize2 className="h-4 w-4 mr-2" />}
               {viewMode === 'simple' ? 'Detailed View' : 'Simple View'}
             </Button>
-            
+
             {/* Settings */}
             <DashboardSettings />
           </div>
@@ -255,16 +256,16 @@ export default function Dashboard() {
 
         {/* Profile Completion Alert */}
         {!profileComplete && suggestions.length > 0 && (
-          <Alert className="border-amber-500/30 bg-gradient-to-r from-amber-950/30 to-amber-900/20 backdrop-blur-sm">
-            <AlertCircle className="h-4 w-4 text-amber-400" />
-            <AlertDescription className="flex items-center justify-between text-amber-100/90">
+          <Alert className="border-amber-500/50 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 backdrop-blur-sm">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertDescription className="flex items-center justify-between text-amber-900/90 dark:text-amber-100/90">
               <div>
-                <strong className="text-amber-200">Complete your profile</strong> to get the most out of Seemplify Recruiter
-                <Badge variant="secondary" className="ml-2 bg-amber-900/50 text-amber-200 border-amber-700/50">
+                <strong className="text-amber-700 dark:text-amber-200">Complete your profile</strong> to get the most out of Seemplify Recruiter
+                <Badge variant="secondary" className="ml-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-200 border-amber-200 dark:border-amber-700/50">
                   {user?.profileCompletion.percentage}% complete
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" asChild className="border-amber-600/50 text-amber-200 hover:bg-amber-900/30 hover:text-amber-100">
+              <Button variant="outline" size="sm" asChild className="border-amber-600/30 dark:border-amber-600/50 text-amber-700 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-900 dark:hover:text-amber-100">
                 <Link href="/settings">
                   <Settings className="mr-2 h-3.5 w-3.5" />
                   Complete Profile

@@ -61,12 +61,12 @@ const getDepartmentName = (department: string | { _id: string; name: string }): 
 }
 
 // Job card component with stunning design
-function JobCard({ 
-  job, 
-  onStatusChange, 
-  onDelete 
-}: { 
-  job: JobData; 
+function JobCard({
+  job,
+  onStatusChange,
+  onDelete
+}: {
+  job: JobData;
   onStatusChange?: (jobId: string, newStatus: any) => void;
   onDelete?: (jobId: string) => void;
 }) {
@@ -74,7 +74,7 @@ function JobCard({
 
   const handleDelete = async () => {
     if (!onDelete) return
-    
+
     setIsDeleting(true)
     try {
       await deleteJob(job._id)
@@ -127,7 +127,7 @@ function JobCard({
 
   return (
     <Link href={`/jobs/${job._id}`} className="block group">
-      <Card className="relative overflow-hidden transition-all duration-300 hover:border-border hover:-translate-y-1 border border-border/50 bg-card/50 backdrop-blur-xl cursor-pointer active:scale-[0.98]">
+      <Card className="glass-card relative overflow-hidden transition-all duration-300 hover:border-blue-500/30 hover:-translate-y-1 bg-white/5 cursor-pointer active:scale-[0.98] border-0 shadow-lg">
         {/* Status Indicator Bar */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${getStatusColor(job.status)}`} />
 
@@ -135,7 +135,7 @@ function JobCard({
         <div className="p-5 space-y-4">
           {/* Header: Icon + Title + Menu */}
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-bold text-lg shadow-md flex-shrink-0">
               {job.title.charAt(0).toUpperCase()}
             </div>
 
@@ -144,7 +144,7 @@ function JobCard({
                 {job.title}
               </h3>
               <div className="flex items-center gap-2">
-                <Badge className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 border-0">
+                <Badge className="text-xs px-2 py-0.5 bg-primary/10 text-primary border-0">
                   {getDepartmentName(job.department)}
                 </Badge>
                 <span className="text-xs text-muted-foreground">•</span>
@@ -187,7 +187,7 @@ function JobCard({
           {/* Location + Applicants */}
           <div className="flex items-center gap-4 py-2.5 px-3 bg-muted/50 rounded-lg">
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <MapPin className="h-4 w-4 text-blue-400" />
+              <MapPin className="h-4 w-4 text-primary" />
               <span className="text-sm text-muted-foreground truncate">{job.location}</span>
             </div>
             <div className="w-px h-4 bg-border"></div>
@@ -216,13 +216,12 @@ function JobCard({
           {/* Footer: Status + Date */}
           <div className="flex items-center justify-between pt-2 border-t border-border/50">
             <Badge
-              className={`text-xs font-medium px-2.5 py-1 ${
-                job.status === 'active'
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : job.status === 'draft'
+              className={`text-xs font-medium px-2.5 py-1 ${job.status === 'active'
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : job.status === 'draft'
                   ? 'bg-amber-500/20 text-amber-400'
                   : 'bg-muted text-muted-foreground'
-              }`}
+                }`}
             >
               {job.status}
             </Badge>
@@ -231,8 +230,8 @@ function JobCard({
               <span>{job.createdAt ? new Date(job.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Unknown'}</span>
             </div>
           </div>
-      </div>
-    </Card>
+        </div>
+      </Card>
     </Link>
   )
 }
@@ -255,13 +254,13 @@ function JobsInnerPage() {
           >Prev</button>
           <div className="flex items-center gap-1">
             {Array.from({ length: total }).map((_, i) => (
-              <span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-blue-600' : 'bg-muted'}`}></span>
+              <span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-primary' : 'bg-muted'}`}></span>
             ))}
           </div>
           <div className="flex items-center gap-2">
             <button className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => setIsOpen(false)}>Skip</button>
             <button
-              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+              className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
               onClick={() => {
                 if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false)
               }}
@@ -271,7 +270,7 @@ function JobsInnerPage() {
       </div>
     )
   }
-  
+
   const [jobs, setJobs] = useState<JobData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -282,40 +281,40 @@ function JobsInnerPage() {
   const [selectedType, setSelectedType] = useState("all")
   const [view, setView] = useState<"grid" | "table">("table")
   const [windowWidth, setWindowWidth] = useState<number>(0)
-  
+
   // Handle responsiveness
   useEffect(() => {
     // Set initial window width
     setWindowWidth(window.innerWidth)
-    
+
     // Set initial view based on screen size
     if (window.innerWidth < 768) {
       setView("grid")
     } else {
       setView("table")
     }
-    
+
     // Update window width on resize
     const handleResize = () => {
       setWindowWidth(window.innerWidth)
     }
-    
+
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
   const [selectedJobs, setSelectedJobs] = useState<string[]>([])
   const [deletingJobs, setDeletingJobs] = useState<Set<string>>(new Set())
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
-  
+
   // Delete confirmation modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [jobToDelete, setJobToDelete] = useState<JobData | null>(null)
 
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
-  
+
   // Get tour controls at the top level (not inside render)
   const { setCurrentStep, setIsOpen } = useTour()
-  
+
   const handleBulkDeleteJobs = async () => {
     if (selectedJobs.length === 0) return
     const confirmed = window.confirm(`Delete ${selectedJobs.length} selected job(s)? This action cannot be undone.`)
@@ -379,7 +378,7 @@ function JobsInnerPage() {
     // Search filter
     const searchLower = searchQuery.toLowerCase()
     const departmentName = getDepartmentName(job.department)
-    const matchesSearch = !searchQuery || 
+    const matchesSearch = !searchQuery ||
       job.title.toLowerCase().includes(searchLower) ||
       departmentName?.toLowerCase().includes(searchLower) ||
       job.location.toLowerCase().includes(searchLower) ||
@@ -429,8 +428,8 @@ function JobsInnerPage() {
 
   // Handle status change for jobs
   const handleStatusChange = (jobId: string, newStatus: any) => {
-    setJobs(prevJobs => 
-      prevJobs.map(job => 
+    setJobs(prevJobs =>
+      prevJobs.map(job =>
         job._id === jobId ? { ...job, status: newStatus } : job
       )
     )
@@ -442,17 +441,17 @@ function JobsInnerPage() {
     // Also remove from selected jobs if it was selected
     setSelectedJobs(prev => prev.filter(id => id !== jobId))
   }
-  
+
   // Handle delete confirmation
   const handleDeleteClick = (job: JobData) => {
     setJobToDelete(job)
     setDeleteModalOpen(true)
   }
-  
+
   // Handle delete confirmation submit
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return
-    
+
     try {
       await deleteJob(jobToDelete._id)
       toast({
@@ -476,8 +475,9 @@ function JobsInnerPage() {
   }
 
   return (
-    <div className="min-h-screen p-3 sm:p-4 lg:p-8 jobs-container">
-      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
+    <div className="min-h-screen bg-background relative z-10 p-3 sm:p-4 lg:p-8 jobs-container">
+      <div className="bg-noise" />
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8 relative z-20">
         {/* Header - Mobile Optimized */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6">
           <div>
@@ -504,10 +504,10 @@ function JobsInnerPage() {
 
         {/* Analytics Stats Cards - Mobile Optimized 2x2 Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-card/50 backdrop-blur-xl rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50">
+          <div className="glass-card rounded-lg sm:rounded-xl p-3 sm:p-4 border-0 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-blue-400" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               </div>
               <div>
                 <p className="text-xs sm:text-sm font-medium text-muted-foreground">Total Jobs</p>
@@ -515,56 +515,56 @@ function JobsInnerPage() {
               </div>
             </div>
           </div>
-          <div className="bg-card/50 backdrop-blur-xl rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50">
+          <div className="glass-card rounded-lg sm:rounded-xl p-3 sm:p-4 border-0 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
                 <Users className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
               </div>
               <div>
                 <p className="text-xs sm:text-sm font-medium text-muted-foreground">Active</p>
-                <p className="text-xl sm:text-2xl font-bold">{jobs.filter(j => j.status === 'active').length}</p>
+                <p className="text-xl sm:text-2xl font-bold text-emerald-400">{jobs.filter(j => j.status === 'active').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-card/50 backdrop-blur-xl rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50">
+          <div className="glass-card rounded-lg sm:rounded-xl p-3 sm:p-4 border-0 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
                 <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-amber-400" />
               </div>
               <div>
                 <p className="text-xs sm:text-sm font-medium text-muted-foreground">Drafts</p>
-                <p className="text-xl sm:text-2xl font-bold">{jobs.filter(j => j.status === 'draft').length}</p>
+                <p className="text-xl sm:text-2xl font-bold text-amber-400">{jobs.filter(j => j.status === 'draft').length}</p>
               </div>
             </div>
           </div>
-          <div className="bg-card/50 backdrop-blur-xl rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50">
+          <div className="glass-card rounded-lg sm:rounded-xl p-3 sm:p-4 border-0 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
                 <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-purple-400" />
               </div>
               <div>
                 <p className="text-xs sm:text-sm font-medium text-muted-foreground">Applications</p>
-                <p className="text-xl sm:text-2xl font-bold">{jobs.reduce((acc, job) => acc + (job.applicantCount || 0), 0)}</p>
+                <p className="text-xl sm:text-2xl font-bold text-purple-400">{jobs.reduce((acc, job) => acc + (job.applicantCount || 0), 0)}</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Search and Filters Card */}
-        <Card className="bg-card/50 backdrop-blur-xl border-border/50" data-tutorial="search-filter-section">
+        <Card className="glass-card border-0 shadow-lg" data-tutorial="search-filter-section">
           <CardHeader className="p-4 sm:p-6">
             <div className="space-y-4">
 
               {/* Search Bar - Full Width on Mobile */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search jobs..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search jobs..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 pr-10 w-full bg-background border-border"
-                    data-tutorial="search-jobs"
-                  />
+                  data-tutorial="search-jobs"
+                />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
@@ -573,7 +573,7 @@ function JobsInnerPage() {
                     <X className="h-4 w-4" />
                   </button>
                 )}
-                </div>
+              </div>
 
               {/* Filters - Horizontal Scroll on Mobile */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible">
@@ -629,23 +629,23 @@ function JobsInnerPage() {
           <CardContent className="p-4 sm:p-6">
             {/* View Toggle - Hidden on Mobile */}
             {windowWidth >= 768 && (
-            <Tabs value={view} onValueChange={(value: any) => setView(value)} className="mb-6">
-              <TabsList className="bg-muted border border-border">
-                <TabsTrigger value="grid" className="data-[state=active]:bg-background">
-                  Grid View
-                </TabsTrigger>
-                <TabsTrigger value="table" className="data-[state=active]:bg-background">
-                  Table View
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+              <Tabs value={view} onValueChange={(value: any) => setView(value)} className="mb-6">
+                <TabsList className="bg-muted border border-border">
+                  <TabsTrigger value="grid" className="data-[state=active]:bg-background">
+                    Grid View
+                  </TabsTrigger>
+                  <TabsTrigger value="table" className="data-[state=active]:bg-background">
+                    Table View
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
 
             {/* Bulk Actions - Mobile Optimized */}
             {selectedJobs.length > 0 && (
-              <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-primary/10 border border-primary/20 rounded-lg">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <span className="text-sm font-medium text-blue-300">
+                  <span className="text-sm font-medium text-primary">
                     {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''} selected
                   </span>
                   <div className="flex items-center gap-2">
@@ -703,110 +703,110 @@ function JobsInnerPage() {
         ) : (
           <>
             {/* Desktop Table View (hidden on small screens) */}
-          <Card className="bg-card/50 backdrop-blur-xl border-border/50">
-            <Table data-tutorial="jobs-table">
-              <TableHeader>
-                <TableRow className="border-border">
-                  <TableHead className="w-12">
-                    <Checkbox
-                        checked={selectedJobs.length === filteredJobs.length && filteredJobs.length > 0}
-                      onCheckedChange={handleSelectAll}
-                      aria-label="Select all jobs"
-                    />
-                  </TableHead>
-                  <TableHead className="font-semibold">Job Title</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="font-semibold">Applications</TableHead>
-                  <TableHead className="font-semibold">Created</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredJobs.map((job) => (
-                  <TableRow
-                    key={job._id}
-                    className="border-border hover:bg-accent/50 transition-colors"
-                  >
-                    <TableCell>
+            <Card className="glass-card border-0 shadow-lg">
+              <Table data-tutorial="jobs-table">
+                <TableHeader>
+                  <TableRow className="border-border">
+                    <TableHead className="w-12">
                       <Checkbox
-                        checked={selectedJobs.includes(job._id)}
-                        onCheckedChange={() => handleSelectJob(job._id)}
-                        aria-label={`Select ${job.title}`}
+                        checked={selectedJobs.length === filteredJobs.length && filteredJobs.length > 0}
+                        onCheckedChange={handleSelectAll}
+                        aria-label="Select all jobs"
                       />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-semibold">
-                          {job.title.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <Link
-                            href={`/jobs/${job._id}`}
-                            className="font-medium hover:text-blue-400 transition-colors"
-                          >
-                            {job.title}
-                          </Link>
-                          <p className="text-sm text-muted-foreground">{job.location}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <StatusToggle
-                        jobId={job._id}
-                        currentStatus={job.status}
-                        onStatusChange={(newStatus) => handleStatusChange(job._id, newStatus)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground" data-tutorial="applications-count">
-                      {job.applicantCount || 0}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {job.createdAt ? new Date(job.createdAt).toLocaleDateString() : 'Unknown'}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="hover:bg-accent" data-tutorial="job-actions">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-popover border-border">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator className="bg-border" />
-                          <DropdownMenuItem asChild>
+                    </TableHead>
+                    <TableHead className="font-semibold">Job Title</TableHead>
+                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold">Applications</TableHead>
+                    <TableHead className="font-semibold">Created</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredJobs.map((job) => (
+                    <TableRow
+                      key={job._id}
+                      className="border-border hover:bg-accent/50 transition-colors"
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedJobs.includes(job._id)}
+                          onCheckedChange={() => handleSelectJob(job._id)}
+                          aria-label={`Select ${job.title}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground text-sm font-semibold">
+                            {job.title.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
                             <Link
                               href={`/jobs/${job._id}`}
-                              className="flex items-center gap-2 cursor-pointer"
+                              className="font-medium hover:text-primary transition-colors"
                             >
-                              <Eye className="h-4 w-4" />
-                              View Details
+                              {job.title}
                             </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href={`/jobs/${job._id}/edit`}
-                              className="flex items-center gap-2 cursor-pointer"
+                            <p className="text-sm text-muted-foreground">{job.location}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusToggle
+                          jobId={job._id}
+                          currentStatus={job.status}
+                          onStatusChange={(newStatus) => handleStatusChange(job._id, newStatus)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground" data-tutorial="applications-count">
+                        {job.applicantCount || 0}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {job.createdAt ? new Date(job.createdAt).toLocaleDateString() : 'Unknown'}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="hover:bg-accent" data-tutorial="job-actions">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-popover border-border">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator className="bg-border" />
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/jobs/${job._id}`}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <Eye className="h-4 w-4" />
+                                View Details
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/jobs/${job._id}/edit`}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit Job
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="bg-border" />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteClick(job)}
+                              className="flex items-center gap-2 cursor-pointer text-red-400 hover:text-red-300 hover:bg-red-500/10"
                             >
-                              <Edit className="h-4 w-4" />
-                              Edit Job
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator className="bg-border" />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteClick(job)}
-                            className="flex items-center gap-2 cursor-pointer text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete Job
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+                              <Trash2 className="h-4 w-4" />
+                              Delete Job
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
           </>
         )}
 
@@ -838,7 +838,7 @@ function JobsInnerPage() {
           </Card>
         )}
       </div>
-      
+
       {/* Delete Confirmation Modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent className="sm:max-w-[500px] bg-card border-border">
@@ -909,7 +909,7 @@ function JobsInnerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
     </div>
   )
 }
@@ -923,11 +923,11 @@ export default function JobsPage() {
     { selector: "[data-tutorial='job-actions']", content: "Open the actions menu to view details, edit or share the job. More options appear based on status.", position: 'left' },
   ]
   return (
-    <TourProvider 
-      steps={steps} 
-      scrollSmooth 
-      onClickMask={() => {}}
-      styles={{ 
+    <TourProvider
+      steps={steps}
+      scrollSmooth
+      onClickMask={() => { }}
+      styles={{
         popover: (base) => ({ ...base, zIndex: 2147483000, pointerEvents: 'auto', maxWidth: 420 }),
         maskWrapper: (base) => ({ ...base, zIndex: 2147482000 }),
         maskArea: (base) => ({ ...base, pointerEvents: 'none' }),

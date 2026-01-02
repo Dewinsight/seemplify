@@ -9,12 +9,12 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
-import { 
-  Mail, 
-  Users, 
-  Loader2, 
-  AlertCircle, 
-  Send, 
+import {
+  Mail,
+  Users,
+  Loader2,
+  AlertCircle,
+  Send,
   X,
   CheckCircle2,
   Settings
@@ -53,11 +53,11 @@ interface BulkEmailDialogProps {
   isShortlistRejection?: boolean
 }
 
-function BulkEmailDialog({ 
-  candidates, 
-  jobId, 
-  isOpen, 
-  onOpenChange, 
+function BulkEmailDialog({
+  candidates,
+  jobId,
+  isOpen,
+  onOpenChange,
   onEmailSent,
   isShortlistRejection = false
 }: BulkEmailDialogProps) {
@@ -78,15 +78,15 @@ function BulkEmailDialog({
   }, [isOpen, defaultReason, candidates])
 
   const toggleCandidate = (candidateId: string) => {
-    setSelectedCandidates(prev => 
-      prev.includes(candidateId) 
+    setSelectedCandidates(prev =>
+      prev.includes(candidateId)
         ? prev.filter(id => id !== candidateId)
         : [...prev, candidateId]
     )
   }
 
   const toggleAll = () => {
-    setSelectedCandidates(prev => 
+    setSelectedCandidates(prev =>
       prev.length === candidates.length ? [] : candidates.map(c => c._id)
     )
   }
@@ -103,7 +103,7 @@ function BulkEmailDialog({
 
     try {
       setSending(true)
-      
+
       const emailData: CandidateEmailData[] = selectedCandidates.map(candidateId => {
         const candidate = candidates.find(c => c._id === candidateId)!
         return {
@@ -115,7 +115,7 @@ function BulkEmailDialog({
 
       const trimmedReason = reason.trim()
       const result = await candidateEmailService.sendBulkRejectionEmails(
-        emailData, 
+        emailData,
         trimmedReason.length > 0 ? trimmedReason : undefined,
         isShortlistRejection
       )
@@ -128,7 +128,7 @@ function BulkEmailDialog({
 
       onOpenChange(false)
       onEmailSent?.()
-      
+
       // Reset form
       setReason(defaultReason)
       setSelectedCandidates(candidates.map(c => c._id))
@@ -147,13 +147,13 @@ function BulkEmailDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl max-h-[80vh] overflow-y-auto"
+        className="max-w-2xl max-h-[80vh] overflow-y-auto bg-[#0A0A0A] border-white/10"
         onPointerDownCapture={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-white">
               <Mail className="h-5 w-5" />
               Send {isShortlistRejection ? 'Shortlist' : 'Pipeline'} Rejection Emails
             </DialogTitle>
@@ -164,35 +164,35 @@ function BulkEmailDialog({
                 window.dispatchEvent(new Event('openEmailSettings'))
                 onOpenChange(false)
               }}
-              className="h-8"
+              className="h-8 border-white/10 text-gray-300 hover:text-white hover:bg-white/5"
             >
               <Settings className="h-4 w-4 mr-1" />
               Email Settings
             </Button>
           </div>
-          <DialogDescription>
-            Send professional rejection emails to selected candidates. 
+          <DialogDescription className="text-gray-400">
+            Send professional rejection emails to selected candidates.
             {isShortlistRejection ? ' These candidates will be notified they were not selected from the shortlist.' : ' These candidates will be notified they did not advance in the hiring process.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Email Template Info */}
-          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
             <div className="flex items-start gap-2 text-sm">
-              <Mail className="h-4 w-4 text-blue-600 mt-0.5" />
+              <Mail className="h-4 w-4 text-blue-400 mt-0.5" />
               <div>
-                <div className="font-medium text-blue-900 dark:text-blue-200">
+                <div className="font-medium text-blue-200">
                   Using {isShortlistRejection ? 'Shortlist Rejection' : 'Pipeline Rejection'} Template
                 </div>
-                <div className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                  Your custom message will be included in the email. 
+                <div className="text-xs text-blue-300 mt-1">
+                  Your custom message will be included in the email.
                   <button
                     onClick={() => {
                       window.dispatchEvent(new Event('openEmailSettings'))
                       onOpenChange(false)
                     }}
-                    className="underline ml-1 hover:text-blue-900"
+                    className="underline ml-1 hover:text-blue-100"
                   >
                     Edit full template
                   </button>
@@ -204,29 +204,31 @@ function BulkEmailDialog({
           {/* Candidate Selection */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Select Candidates ({selectedCandidates.length}/{candidates.length})</Label>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Label className="text-sm font-medium text-gray-300">Select Candidates ({selectedCandidates.length}/{candidates.length})</Label>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={toggleAll}
+                className="border-white/10 text-gray-300 hover:text-white hover:bg-white/5"
               >
                 {selectedCandidates.length === candidates.length ? 'Deselect All' : 'Select All'}
               </Button>
             </div>
-            
-            <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+
+            <div className="border border-white/10 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto bg-white/5">
               {candidates.map((candidate) => (
                 <div key={candidate._id} className="flex items-center space-x-2">
                   <Checkbox
                     id={candidate._id}
                     checked={selectedCandidates.includes(candidate._id)}
                     onCheckedChange={() => toggleCandidate(candidate._id)}
+                    className="border-white/20 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                   />
                   <label htmlFor={candidate._id} className="flex-1 text-sm cursor-pointer">
-                    <span className="font-medium">{candidate.firstName} {candidate.lastName}</span>
-                    <span className="text-muted-foreground ml-2">({candidate.email})</span>
+                    <span className="font-medium text-white">{candidate.firstName} {candidate.lastName}</span>
+                    <span className="text-gray-400 ml-2">({candidate.email})</span>
                     {candidate.currentStage?.stageName && (
-                      <Badge variant="outline" className="ml-2 text-xs">
+                      <Badge variant="outline" className="ml-2 text-xs border-white/10 text-gray-400">
                         {candidate.currentStage.stageName}
                       </Badge>
                     )}
@@ -238,25 +240,26 @@ function BulkEmailDialog({
 
           {/* Rejection Reason */}
           <div className="space-y-2">
-            <Label htmlFor="reason">Rejection Reason (Optional)</Label>
+            <Label htmlFor="reason" className="text-gray-300">Rejection Reason (Optional)</Label>
             <Textarea
               id="reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={4}
+              className="bg-white/5 border-white/10 text-white placeholder-gray-500"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               This message will be included in the email as feedback. Customize or clear it before sending.
             </p>
           </div>
 
           {/* Warning */}
-          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+            <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-amber-800">This action cannot be undone</p>
-              <p className="text-amber-700">
-                Rejection emails will be sent immediately to {selectedCandidates.length} candidate(s). 
+              <p className="font-medium text-amber-200">This action cannot be undone</p>
+              <p className="text-amber-300/80">
+                Rejection emails will be sent immediately to {selectedCandidates.length} candidate(s).
                 Make sure you've reviewed the recipient list and message carefully.
               </p>
             </div>
@@ -264,7 +267,7 @@ function BulkEmailDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
             Cancel
           </Button>
           <Button onClick={sendBulkEmails} disabled={sending || selectedCandidates.length === 0}>
@@ -295,11 +298,11 @@ interface SingleEmailDialogProps {
   isShortlistRejection?: boolean
 }
 
-function SingleEmailDialog({ 
-  candidate, 
-  jobId, 
-  isOpen, 
-  onOpenChange, 
+function SingleEmailDialog({
+  candidate,
+  jobId,
+  isOpen,
+  onOpenChange,
   onEmailSent,
   isShortlistRejection = false
 }: SingleEmailDialogProps) {
@@ -320,9 +323,9 @@ function SingleEmailDialog({
   const sendEmail = async () => {
     try {
       setSending(true)
-      
+
       const trimmedReason = reason.trim()
-      
+
       console.log('🔍 FRONTEND - Sending rejection email:', {
         candidateId: candidate._id,
         candidateEmail: candidate.email,
@@ -332,7 +335,7 @@ function SingleEmailDialog({
         isShortlistRejection,
         stage: candidate.currentStage?.stageName || 'Application Review'
       })
-      
+
       await candidateEmailService.sendRejectionEmail(
         candidate._id,
         jobId,
@@ -365,12 +368,13 @@ function SingleEmailDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
+        className="bg-[#0A0A0A] border-white/10"
         onPointerDownCapture={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-white">
               <Mail className="h-5 w-5" />
               Send Rejection Email
             </DialogTitle>
@@ -381,34 +385,34 @@ function SingleEmailDialog({
                 window.dispatchEvent(new Event('openEmailSettings'))
                 onOpenChange(false)
               }}
-              className="h-8"
+              className="h-8 border-white/10 text-gray-300 hover:text-white hover:bg-white/5"
             >
               <Settings className="h-4 w-4 mr-1" />
               Email Settings
             </Button>
           </div>
-          <DialogDescription>
+          <DialogDescription className="text-gray-400">
             Send a rejection email to {candidate.firstName} {candidate.lastName} ({candidate.email})
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Email Template Info */}
-          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
             <div className="flex items-start gap-2 text-sm">
-              <Mail className="h-4 w-4 text-blue-600 mt-0.5" />
+              <Mail className="h-4 w-4 text-blue-400 mt-0.5" />
               <div>
-                <div className="font-medium text-blue-900 dark:text-blue-200">
+                <div className="font-medium text-blue-200">
                   Using {isShortlistRejection ? 'Shortlist Rejection' : 'Pipeline Rejection'} Template
                 </div>
-                <div className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                  Your custom message will be included in the email. 
+                <div className="text-xs text-blue-300 mt-1">
+                  Your custom message will be included in the email.
                   <button
                     onClick={() => {
                       window.dispatchEvent(new Event('openEmailSettings'))
                       onOpenChange(false)
                     }}
-                    className="underline ml-1 hover:text-blue-900"
+                    className="underline ml-1 hover:text-blue-100"
                   >
                     Edit full template
                   </button>
@@ -417,36 +421,37 @@ function SingleEmailDialog({
             </div>
           </div>
 
-          <div className="p-3 bg-gray-50 rounded-lg">
+          <div className="p-3 bg-white/5 rounded-lg border border-white/10">
             <p className="text-sm">
-              <span className="font-medium">Candidate:</span> {candidate.firstName} {candidate.lastName}
+              <span className="font-medium text-gray-300">Candidate:</span> <span className="text-white">{candidate.firstName} {candidate.lastName}</span>
             </p>
             <p className="text-sm">
-              <span className="font-medium">Email:</span> {candidate.email}
+              <span className="font-medium text-gray-300">Email:</span> <span className="text-white">{candidate.email}</span>
             </p>
             {candidate.currentStage?.stageName && (
               <p className="text-sm">
-                <span className="font-medium">Current Stage:</span> {candidate.currentStage.stageName}
+                <span className="font-medium text-gray-300">Current Stage:</span> <span className="text-white">{candidate.currentStage.stageName}</span>
               </p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="single-reason">Rejection Reason (Optional)</Label>
+            <Label htmlFor="single-reason" className="text-gray-300">Rejection Reason (Optional)</Label>
             <Textarea
               id="single-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={4}
+              className="bg-white/5 border-white/10 text-white placeholder-gray-500"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               This message will be included in the email as feedback. Customize or clear it before sending.
             </p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
             Cancel
           </Button>
           <Button onClick={sendEmail} disabled={sending}>
@@ -468,10 +473,10 @@ function SingleEmailDialog({
   )
 }
 
-export function CandidateRejectionEmailControls({ 
-  candidates, 
-  jobId, 
-  onEmailSent 
+export function CandidateRejectionEmailControls({
+  candidates,
+  jobId,
+  onEmailSent
 }: CandidateRejectionEmailControlsProps) {
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
   const [shortlistBulkDialogOpen, setShortlistBulkDialogOpen] = useState(false)
@@ -485,13 +490,13 @@ export function CandidateRejectionEmailControls({
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className="glass-card border-white/5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Mail className="h-5 w-5" />
             Manual Email Controls
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-400">
             Send rejection emails to candidates manually with personalized messages
           </CardDescription>
         </CardHeader>
@@ -500,13 +505,13 @@ export function CandidateRejectionEmailControls({
             {/* Pipeline Rejections */}
             {pipelineCandidates.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium flex items-center gap-2">
+                <h4 className="text-sm font-medium flex items-center gap-2 text-gray-300">
                   Pipeline Candidates
-                  <Badge variant="secondary">{pipelineCandidates.length}</Badge>
+                  <Badge variant="secondary" className="bg-white/10 text-gray-300 border-0">{pipelineCandidates.length}</Badge>
                 </h4>
-                <Button 
-                  variant="outline" 
-                  className="w-full"
+                <Button
+                  variant="outline"
+                  className="w-full border-white/10 text-gray-300 hover:text-white hover:bg-white/5"
                   onClick={() => setBulkDialogOpen(true)}
                 >
                   <Users className="h-4 w-4 mr-2" />
@@ -518,13 +523,13 @@ export function CandidateRejectionEmailControls({
             {/* Shortlist Rejections */}
             {shortlistedCandidates.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium flex items-center gap-2">
+                <h4 className="text-sm font-medium flex items-center gap-2 text-gray-300">
                   Shortlisted Candidates
-                  <Badge variant="secondary">{shortlistedCandidates.length}</Badge>
+                  <Badge variant="secondary" className="bg-white/10 text-gray-300 border-0">{shortlistedCandidates.length}</Badge>
                 </h4>
-                <Button 
-                  variant="outline" 
-                  className="w-full"
+                <Button
+                  variant="outline"
+                  className="w-full border-white/10 text-gray-300 hover:text-white hover:bg-white/5"
                   onClick={() => setShortlistBulkDialogOpen(true)}
                 >
                   <Users className="h-4 w-4 mr-2" />
@@ -534,9 +539,9 @@ export function CandidateRejectionEmailControls({
             )}
           </div>
 
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700">
-              <strong>Note:</strong> These controls allow you to manually send rejection emails with custom messages. 
+          <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-sm text-blue-200">
+              <strong className="text-blue-100">Note:</strong> These controls allow you to manually send rejection emails with custom messages.
               Automatic rejection emails are also sent when candidates are rejected through the normal pipeline flow.
             </p>
           </div>
@@ -575,9 +580,9 @@ interface CandidateRejectionButtonProps {
   variant?: 'outline' | 'ghost'
 }
 
-export function CandidateRejectionButton({ 
-  candidate, 
-  jobId, 
+export function CandidateRejectionButton({
+  candidate,
+  jobId,
   onEmailSent,
   isShortlistRejection = false,
   size = 'sm',
@@ -587,7 +592,7 @@ export function CandidateRejectionButton({
 
   return (
     <>
-      <Button 
+      <Button
         variant={variant}
         size={size}
         onClick={() => setDialogOpen(true)}

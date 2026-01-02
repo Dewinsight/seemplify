@@ -24,9 +24,9 @@ import { useUser } from '@/context/UserContext';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 
-interface CalendarPageProps {}
+interface CalendarPageProps { }
 
-export default function CalendarPage({}: CalendarPageProps) {
+export default function CalendarPage({ }: CalendarPageProps) {
   const { state, login } = useUser();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -52,7 +52,7 @@ export default function CalendarPage({}: CalendarPageProps) {
     verified: false,
     error: ''
   });
-  
+
   // Manual notetaker state
   const [showNotetakerDialog, setShowNotetakerDialog] = useState(false);
   const [meetingLink, setMeetingLink] = useState('');
@@ -73,7 +73,7 @@ export default function CalendarPage({}: CalendarPageProps) {
         try {
           const decodedToken = decodeURIComponent(token);
           console.log('JWT token received from OAuth callback, updating authentication state');
-          
+
           // Use the UserContext login method to properly update all authentication state
           login(decodedToken).then(() => {
             console.log('✅ Authentication state updated successfully');
@@ -87,7 +87,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             console.error('❌ Failed to update authentication state:', error);
             toast.error('Authentication update failed');
           });
-          
+
         } catch (err) {
           console.error('Failed to process JWT token:', err);
           toast.error('Failed to process authentication token');
@@ -123,19 +123,19 @@ export default function CalendarPage({}: CalendarPageProps) {
       loadData();
     }
   }, [state.user?._id]);
-  
+
   // Polling mechanism for active interviews with notetakers
   useEffect(() => {
     // Only run polling if there are interviews with active notetakers
-    const activeInterviews = interviews.filter(interview => 
-      interview.notetakerEnabled && 
+    const activeInterviews = interviews.filter(interview =>
+      interview.notetakerEnabled &&
       interview.status !== 'completed' &&
       interview.status !== 'cancelled' &&
       ['scheduled', 'pending', 'enabled', 'joined', 'joining', 'recording'].includes(interview.notetakerStatus || '')
     );
-    
+
     if (activeInterviews.length === 0) return;
-    
+
     // Initial immediate check
     activeInterviews.forEach(interview => {
       if (interview._id) {
@@ -144,15 +144,15 @@ export default function CalendarPage({}: CalendarPageProps) {
             if (result.success && result.status) {
               if (result.status !== interview.notetakerStatus) {
                 console.log(`Interview ${interview._id} status changed: ${interview.notetakerStatus} → ${result.status}`);
-                
-                setInterviews(prevInterviews => 
-                  prevInterviews.map(i => 
-                    i._id === interview._id 
-                      ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] } 
+
+                setInterviews(prevInterviews =>
+                  prevInterviews.map(i =>
+                    i._id === interview._id
+                      ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] }
                       : i
                   )
                 );
-                
+
                 if (selectedInterview && selectedInterview._id === interview._id) {
                   setSelectedInterview(prev => prev ? { ...prev, notetakerStatus: result.status as Interview['notetakerStatus'] } : null);
                 }
@@ -164,11 +164,11 @@ export default function CalendarPage({}: CalendarPageProps) {
           });
       }
     });
-    
+
     // Set up polling interval (every 15 seconds for more responsive updates)
     const pollInterval = setInterval(() => {
       console.log('Polling for notetaker status updates...');
-      
+
       // Check status for each active interview
       activeInterviews.forEach(interview => {
         if (interview._id) {
@@ -178,15 +178,15 @@ export default function CalendarPage({}: CalendarPageProps) {
                 // Update the interview in the interviews array if status changed
                 if (result.status !== interview.notetakerStatus) {
                   console.log(`Interview ${interview._id} status changed: ${interview.notetakerStatus} → ${result.status}`);
-                  
-                  setInterviews(prevInterviews => 
-                    prevInterviews.map(i => 
-                      i._id === interview._id 
-                        ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] } 
+
+                  setInterviews(prevInterviews =>
+                    prevInterviews.map(i =>
+                      i._id === interview._id
+                        ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] }
                         : i
                     )
                   );
-                  
+
                   // Also update the selected interview if it's the same one
                   if (selectedInterview && selectedInterview._id === interview._id) {
                     setSelectedInterview(prev => prev ? { ...prev, notetakerStatus: result.status as Interview['notetakerStatus'] } : null);
@@ -200,7 +200,7 @@ export default function CalendarPage({}: CalendarPageProps) {
         }
       });
     }, 15000); // Poll every 15 seconds for faster status updates
-    
+
     // Clean up interval on unmount
     return () => clearInterval(pollInterval);
   }, [interviews, selectedInterview]);
@@ -225,7 +225,7 @@ export default function CalendarPage({}: CalendarPageProps) {
       // Load interviews from 30 days ago to 30 days in the future to include completed interviews
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days ago
       const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // Next 30 days
-      
+
       const data = await interviewService.getInterviews({
         startDate,
         endDate
@@ -245,17 +245,17 @@ export default function CalendarPage({}: CalendarPageProps) {
       console.log('🔍 Checking calendar status for user:', state.user._id);
       console.log('📧 User email:', state.user.email);
       console.log('🔑 Full user object:', JSON.stringify(state.user, null, 2));
-      
+
       const status = await interviewService.getCalendarStatus(state.user._id);
       console.log('📅 Calendar status response:', status);
-      
+
       // Also log what we're setting
       console.log('🎯 Setting calendar status to:', {
         connected: status.connected,
         provider: status.provider,
         verified: status.verified
       });
-      
+
       setCalendarStatus(status);
     } catch (error) {
       console.error('Failed to check calendar status:', error);
@@ -270,7 +270,7 @@ export default function CalendarPage({}: CalendarPageProps) {
         toast.error('User not authenticated');
         return;
       }
-      
+
       const { authUrl } = await interviewService.connectCalendar('google');
       // Redirect to OAuth URL instead of opening popup
       window.location.href = authUrl;
@@ -299,18 +299,18 @@ export default function CalendarPage({}: CalendarPageProps) {
 
   const handleCancelInterview = async () => {
     if (!selectedInterview) return;
-    
+
     setCancelling(true);
     try {
       await interviewService.cancelInterview(
-        selectedInterview._id, 
+        selectedInterview._id,
         cancelReason || 'Cancelled by user',
         true
       );
-      
+
       // Refresh interviews list
       await loadInterviews();
-      
+
       toast.success('Interview cancelled successfully');
       setShowCancelDialog(false);
       setShowDetailsDialog(false);
@@ -328,29 +328,29 @@ export default function CalendarPage({}: CalendarPageProps) {
     setSelectedInterview(interview);
     setShowCancelDialog(true);
   };
-  
+
   const refreshNotetakerStatus = async (interview: Interview) => {
     if (!interview._id || !interview.notetakerEnabled) return;
-    
+
     setRefreshingStatus(true);
     try {
       const result = await interviewService.checkNotetakerStatus(interview._id);
-      
+
       if (result.success && result.status) {
         // Update the interview in the interviews array
-        setInterviews(prevInterviews => 
-          prevInterviews.map(i => 
-            i._id === interview._id 
-              ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] } 
+        setInterviews(prevInterviews =>
+          prevInterviews.map(i =>
+            i._id === interview._id
+              ? { ...i, notetakerStatus: result.status as Interview['notetakerStatus'] }
               : i
           )
         );
-        
+
         // Also update the selected interview if it's the same one
         if (selectedInterview && selectedInterview._id === interview._id) {
           setSelectedInterview(prev => prev ? { ...prev, notetakerStatus: result.status as Interview['notetakerStatus'] } : null);
         }
-        
+
         toast.success(`Notetaker status updated: ${result.status}`);
       } else {
         toast.error('Failed to update notetaker status');
@@ -366,16 +366,16 @@ export default function CalendarPage({}: CalendarPageProps) {
   // Manual notetaker functions
   const handleEnableNotetaker = async () => {
     if (!selectedInterview || !meetingLink) return;
-    
+
     try {
       setEnablingNotetaker(true);
       const result = await interviewService.enableNotetaker(selectedInterview._id, meetingLink);
-      
+
       if (result.success) {
         toast.success('Notetaker enabled successfully');
         // Update the interview in the list
-        setInterviews(prev => prev.map(i => 
-          i._id === selectedInterview._id 
+        setInterviews(prev => prev.map(i =>
+          i._id === selectedInterview._id
             ? { ...i, notetakerEnabled: true, notetakerId: result.notetakerId, notetakerStatus: 'enabled' }
             : i
         ));
@@ -399,15 +399,15 @@ export default function CalendarPage({}: CalendarPageProps) {
 
   const handleCancelNotetaker = async () => {
     if (!selectedInterview?.notetakerId) return;
-    
+
     try {
       const result = await interviewService.cancelNotetaker(selectedInterview._id);
-      
+
       if (result.success) {
         toast.success('Notetaker cancelled successfully');
         // Update the interview in the list
-        setInterviews(prev => prev.map(i => 
-          i._id === selectedInterview._id 
+        setInterviews(prev => prev.map(i =>
+          i._id === selectedInterview._id
             ? { ...i, notetakerStatus: 'cancelled' }
             : i
         ));
@@ -425,19 +425,19 @@ export default function CalendarPage({}: CalendarPageProps) {
 
   const handleJoinMeetingNow = async () => {
     if (!selectedInterview) return;
-    
+
     setJoiningMeeting(true);
     try {
       const result = await interviewService.joinMeetingNow(
         selectedInterview._id,
         selectedInterview.conferencing?.details?.url
       );
-      
+
       toast.success(result.message || 'Notetaker is joining the meeting now');
-      
+
       // Update the interview in the list
-      setInterviews(prev => prev.map(i => 
-        i._id === selectedInterview._id 
+      setInterviews(prev => prev.map(i =>
+        i._id === selectedInterview._id
           ? { ...i, notetakerStatus: 'joined', notetakerId: result.notetakerId }
           : i
       ));
@@ -457,12 +457,12 @@ export default function CalendarPage({}: CalendarPageProps) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'scheduled': return 'bg-blue-100 text-blue-800';
-      case 'confirmed': return 'bg-green-100 text-green-800';
-      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-muted/50 text-gray-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-muted/50 text-gray-800';
+      case 'scheduled': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
+      case 'confirmed': return 'bg-green-100 text-green-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+      case 'in_progress': return 'bg-yellow-100 text-yellow-800 dark:bg-amber-900/40 dark:text-amber-200';
+      case 'completed': return 'bg-muted/50 text-muted-foreground';
+      case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
+      default: return 'bg-muted/50 text-muted-foreground';
     }
   };
 
@@ -483,8 +483,8 @@ export default function CalendarPage({}: CalendarPageProps) {
     };
   };
 
-  const upcomingInterviews = interviews.filter(interview => 
-    new Date(interview.scheduledAt) > new Date() && 
+  const upcomingInterviews = interviews.filter(interview =>
+    new Date(interview.scheduledAt) > new Date() &&
     ['scheduled', 'confirmed'].includes(interview.status)
   );
 
@@ -494,7 +494,7 @@ export default function CalendarPage({}: CalendarPageProps) {
     return interviewDate.toDateString() === today.toDateString();
   });
 
-  const completedInterviews = interviews.filter(interview => 
+  const completedInterviews = interviews.filter(interview =>
     interview.status === 'completed'
   ).sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()); // Sort by most recent first
 
@@ -576,11 +576,11 @@ export default function CalendarPage({}: CalendarPageProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-green-600" />
+              <Clock className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Today</p>
                 <p className="text-2xl font-bold">{todayInterviews.length}</p>
@@ -588,7 +588,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -600,11 +600,11 @@ export default function CalendarPage({}: CalendarPageProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-green-600" />
+              <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Completed</p>
                 <p className="text-2xl font-bold">{completedInterviews.length}</p>
@@ -612,7 +612,7 @@ export default function CalendarPage({}: CalendarPageProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -654,9 +654,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           ) : (
             <div className="grid gap-4">
               {upcomingInterviews.map((interview) => (
-                <InterviewCard 
-                  key={interview._id} 
-                  interview={interview} 
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
                   onViewDetails={handleViewDetails}
                   onCancelInterview={handleShowCancelDialog}
                 />
@@ -677,9 +677,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           ) : (
             <div className="grid gap-4">
               {todayInterviews.map((interview) => (
-                <InterviewCard 
-                  key={interview._id} 
-                  interview={interview} 
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
                   onViewDetails={handleViewDetails}
                   onCancelInterview={handleShowCancelDialog}
                 />
@@ -700,9 +700,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           ) : (
             <div className="grid gap-4">
               {completedInterviews.map((interview) => (
-                <InterviewCard 
-                  key={interview._id} 
-                  interview={interview} 
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
                   onViewDetails={handleViewDetails}
                   onCancelInterview={handleShowCancelDialog}
                 />
@@ -723,9 +723,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           ) : (
             <div className="grid gap-4">
               {recentInterviews.map((interview) => (
-                <InterviewCard 
-                  key={interview._id} 
-                  interview={interview} 
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
                   onViewDetails={handleViewDetails}
                   onCancelInterview={handleShowCancelDialog}
                 />
@@ -746,9 +746,9 @@ export default function CalendarPage({}: CalendarPageProps) {
           ) : (
             <div className="grid gap-4">
               {interviews.map((interview) => (
-                <InterviewCard 
-                  key={interview._id} 
-                  interview={interview} 
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
                   onViewDetails={handleViewDetails}
                   onCancelInterview={handleShowCancelDialog}
                 />
@@ -767,7 +767,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               View and manage interview information
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedInterview && (
             <div className="space-y-6">
               {/* Header Info */}
@@ -825,7 +825,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {selectedInterview.candidateId && (
                 <div>
                   <Label className="text-sm font-medium text-foreground">Candidate</Label>
-                  <div className="mt-1 p-3 bg-gray-50 rounded-lg">
+                  <div className="mt-1 p-3 bg-muted/30 rounded-lg">
                     {typeof selectedInterview.candidateId === 'object' ? (
                       <div>
                         <div className="font-medium">
@@ -844,7 +844,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {selectedInterview.jobId && (
                 <div>
                   <Label className="text-sm font-medium text-foreground">Job</Label>
-                  <div className="mt-1 p-3 bg-gray-50 rounded-lg">
+                  <div className="mt-1 p-3 bg-muted/30 rounded-lg">
                     {typeof selectedInterview.jobId === 'object' ? (
                       <div>
                         <div className="font-medium">{selectedInterview.jobId.title}</div>
@@ -878,7 +878,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               {selectedInterview.description && (
                 <div>
                   <Label className="text-sm font-medium text-foreground">Description</Label>
-                  <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm">
+                  <div className="mt-1 p-3 bg-muted/30 rounded-lg text-sm">
                     {selectedInterview.description}
                   </div>
                 </div>
@@ -914,9 +914,9 @@ export default function CalendarPage({}: CalendarPageProps) {
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium text-foreground">AI Notetaker</Label>
                   {selectedInterview.notetakerEnabled && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="h-7 px-2"
                       onClick={() => refreshNotetakerStatus(selectedInterview)}
                       disabled={refreshingStatus}
@@ -927,7 +927,7 @@ export default function CalendarPage({}: CalendarPageProps) {
                     </Button>
                   )}
                 </div>
-                <div className="mt-1 p-3 bg-gray-50 rounded-lg">
+                <div className="mt-1 p-3 bg-muted/30 rounded-lg">
                   {selectedInterview.notetakerEnabled ? (
                     <>
                       <div className="flex items-center justify-between">
@@ -939,12 +939,12 @@ export default function CalendarPage({}: CalendarPageProps) {
                           {selectedInterview.notetakerStatus || 'pending'}
                         </Badge>
                       </div>
-                      
+
                       <div className="mt-3 space-y-2">
                         {selectedInterview.notetakerStatus === 'completed' && (
-                          <Button 
-                            size="sm" 
-                            variant="default" 
+                          <Button
+                            size="sm"
+                            variant="default"
                             className="w-full bg-green-600 hover:bg-green-700"
                             onClick={() => {
                               window.location.href = `/interviews/${selectedInterview._id}/transcript?from=calendar`;
@@ -954,11 +954,11 @@ export default function CalendarPage({}: CalendarPageProps) {
                             View Completed Transcript
                           </Button>
                         )}
-                        
+
                         {selectedInterview.status === 'completed' && selectedInterview.recordingUrl && (
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
+                          <Button
+                            size="sm"
+                            variant="outline"
                             className="w-full"
                             asChild
                           >
@@ -968,7 +968,7 @@ export default function CalendarPage({}: CalendarPageProps) {
                             </a>
                           </Button>
                         )}
-                        
+
                         {selectedInterview.notetakerStatus === 'enabled' && (
                           <Button
                             size="sm"
@@ -990,20 +990,20 @@ export default function CalendarPage({}: CalendarPageProps) {
                             )}
                           </Button>
                         )}
-                        
-                        {(selectedInterview.notetakerStatus === 'enabled' || 
+
+                        {(selectedInterview.notetakerStatus === 'enabled' ||
                           selectedInterview.notetakerStatus === 'joined' ||
                           selectedInterview.notetakerStatus === 'recording') && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full"
-                            onClick={handleCancelNotetaker}
-                          >
-                            <X className="h-4 w-4 mr-2" />
-                            Cancel Notetaker
-                          </Button>
-                        )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={handleCancelNotetaker}
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Cancel Notetaker
+                            </Button>
+                          )}
                       </div>
                     </>
                   ) : (
@@ -1061,7 +1061,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               Add an AI notetaker to record and transcribe this interview. The bot will join the meeting automatically.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <Label htmlFor="meetingLink">Meeting Link</Label>
@@ -1119,7 +1119,7 @@ export default function CalendarPage({}: CalendarPageProps) {
               Are you sure you want to cancel this interview? This action cannot be undone and will notify all participants.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <Label htmlFor="cancelReason">Reason for cancellation (optional)</Label>
@@ -1158,31 +1158,31 @@ export default function CalendarPage({}: CalendarPageProps) {
   );
 }
 
-function InterviewCard({ interview, onViewDetails, onCancelInterview }: { 
-  interview: Interview, 
+function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
+  interview: Interview,
   onViewDetails: (interview: Interview) => void,
-  onCancelInterview: (interview: Interview) => void 
+  onCancelInterview: (interview: Interview) => void
 }) {
   const router = useRouter();
   const { date, time } = formatDateTime(interview.scheduledAt);
-  
+
   // Check if interview can be cancelled (not completed, cancelled, or past)
   const canBeCancelled = () => {
     const interviewTime = new Date(interview.scheduledAt);
     const now = new Date();
-    return interview.status !== 'completed' && 
-           interview.status !== 'cancelled' && 
-           interviewTime > now;
+    return interview.status !== 'completed' &&
+      interview.status !== 'cancelled' &&
+      interviewTime > now;
   };
-  
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'scheduled': return 'bg-blue-100 text-blue-800';
-      case 'confirmed': return 'bg-green-100 text-green-800';
-      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-muted/50 text-gray-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-muted/50 text-gray-800';
+      case 'scheduled': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
+      case 'confirmed': return 'bg-green-100 text-green-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+      case 'in_progress': return 'bg-yellow-100 text-yellow-800 dark:bg-amber-900/40 dark:text-amber-200';
+      case 'completed': return 'bg-muted/50 text-muted-foreground';
+      case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
+      default: return 'bg-muted/50 text-muted-foreground';
     }
   };
 
@@ -1218,13 +1218,13 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
                 </Badge>
               )}
             </div>
-            
+
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
                 <span>{date} at {time}</span>
               </div>
-              
+
               <div className="flex items-center gap-2">
                 {getTypeIcon(interview.type)}
                 <span className="capitalize">{interview.type}</span>
@@ -1232,14 +1232,14 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
                   <span>• {interview.duration} minutes</span>
                 )}
               </div>
-              
+
               {interview.location && (
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
                   <span>{interview.location}</span>
                 </div>
               )}
-              
+
               {interview.participants && interview.participants.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
@@ -1248,7 +1248,7 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
               )}
             </div>
           </div>
-          
+
           <div className="flex gap-2">
             {interview.conferencing?.details?.url && (
               <Button size="sm" variant="outline" asChild>
@@ -1259,8 +1259,8 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
               </Button>
             )}
             {interview.notetakerEnabled && (
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant={interview.status === 'completed' && interview.transcript ? "default" : "outline"}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1273,8 +1273,8 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
               </Button>
             )}
             {!interview.notetakerEnabled && interview.conferencing?.details?.url && (
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1287,9 +1287,9 @@ function InterviewCard({ interview, onViewDetails, onCancelInterview }: {
               </Button>
             )}
             {canBeCancelled() && (
-              <Button 
-                size="sm" 
-                variant="outline" 
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={(e) => {
                   e.stopPropagation();
                   onCancelInterview(interview);

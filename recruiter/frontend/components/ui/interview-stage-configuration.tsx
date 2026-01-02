@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,13 +22,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel
 } from '@/components/ui/dropdown-menu'
-import { 
-  Plus, 
-  Trash2, 
-  Settings, 
-  Wand2, 
-  Users, 
-  Clock, 
+import {
+  Plus,
+  Trash2,
+  Settings,
+  Wand2,
+  Users,
+  Clock,
   Edit,
   Eye,
   EyeOff,
@@ -42,9 +42,9 @@ import {
   MoreHorizontal
 } from 'lucide-react'
 import { toast } from 'sonner'
-import interviewStageService, { 
-  InterviewStage, 
-  StageTemplate, 
+import interviewStageService, {
+  InterviewStage,
+  StageTemplate,
   EvaluationCriterion,
   AIQuestionConfig,
   ProgressionRules
@@ -63,9 +63,9 @@ interface StageEditData extends Partial<InterviewStage> {
   isNew?: boolean
 }
 
-export function InterviewStageConfiguration({ 
-  jobId, 
-  onStagesUpdate 
+export function InterviewStageConfiguration({
+  jobId,
+  onStagesUpdate
 }: InterviewStageConfigurationProps) {
   const { state: userState } = useUser()
   const [stages, setStages] = useState<InterviewStage[]>([])
@@ -121,13 +121,13 @@ export function InterviewStageConfiguration({
   const fetchCustomTemplates = async () => {
     console.log('[Custom Templates] fetchCustomTemplates called')
     console.log('[Custom Templates] Current state - customTemplatesLoading:', customTemplatesLoading)
-    
+
     // Prevent duplicate calls
     if (customTemplatesLoading) {
       console.log('[Custom Templates] Already loading, skipping duplicate call')
       return
     }
-    
+
     setCustomTemplatesLoading(true)
     try {
       const orgId = userState.user?.currentOrganization
@@ -137,13 +137,13 @@ export function InterviewStageConfiguration({
         currentOrg: userState.user?.currentOrganization,
         userName: userState.user?.profile?.displayName || `${userState.user?.profile?.firstName || ''} ${userState.user?.profile?.lastName || ''}`.trim() || 'Unknown'
       })
-      
+
       if (!orgId) {
         console.warn('[Custom Templates] ❌ No organization ID found - cannot fetch templates')
         setCustomTemplates([])
         return
       }
-      
+
       console.log('[Custom Templates] ✅ Making API call to /api/organizations/' + orgId + '/stage-templates')
       const data = await stageTemplateService.getTemplates(orgId)
       console.log('[Custom Templates] ✅ Successfully loaded:', data.length, 'templates')
@@ -183,7 +183,7 @@ export function InterviewStageConfiguration({
     try {
       setLoading(true)
       console.log('Applying custom template:', templateId, 'to job:', jobId)
-      
+
       await stageTemplateService.applyTemplateToJob(jobId, templateId)
       await fetchStages()
       setShowTemplateDialog(false)
@@ -208,7 +208,7 @@ export function InterviewStageConfiguration({
     if (!stage) return
 
     setMovingStage(stageId)
-    
+
     try {
       // Create new array with updated positions
       const updatedStages = [...stages]
@@ -244,20 +244,20 @@ export function InterviewStageConfiguration({
 
     try {
       console.log('🗑️ Deleting stage:', { stageId, stageName })
-      
+
       // Show loading toast
       const loadingToast = toast.loading('Deleting stage...')
-      
+
       // Call the service to delete the stage
       await interviewStageService.deleteStage(stageId)
-      
+
       // Update local state
       setStages(prevStages => prevStages.filter(s => s._id !== stageId))
-      
+
       // Dismiss loading toast and show success
       toast.dismiss(loadingToast)
       toast.success(`Stage "${stageName}" deleted successfully`)
-      
+
       // Notify parent component
       onStagesUpdate?.()
     } catch (error: any) {
@@ -278,10 +278,10 @@ export function InterviewStageConfiguration({
 
   const handleEditStage = (stage?: InterviewStage) => {
     console.log('🎯 handleEditStage called', { stage })
-    
+
     // First set showStageEditor to false to ensure React registers the state change
     setShowStageEditor(false)
-    
+
     // Use setTimeout to ensure React processes the state update before opening the dialog
     setTimeout(() => {
       if (stage) {
@@ -370,17 +370,17 @@ export function InterviewStageConfiguration({
 
     try {
       setIsDeletingTemplate(true)
-      
+
       await stageTemplateService.deleteTemplate(
         userState.user.currentOrganization,
         deletingTemplate._id
       )
 
       toast.success(`Template "${deletingTemplate.name}" deleted successfully`)
-      
+
       // Refresh the custom templates list
       await fetchCustomTemplates()
-      
+
       // Close dialog and reset state
       setShowDeleteConfirmDialog(false)
       setDeletingTemplate(null)
@@ -440,9 +440,9 @@ export function InterviewStageConfiguration({
 
   if (stages.length === 0) {
     return (
-      <Card>
+      <Card className="glass-card border-white/5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Settings className="h-5 w-5" />
             Configure Interview Stages
           </CardTitle>
@@ -450,9 +450,9 @@ export function InterviewStageConfiguration({
         <CardContent>
           <div className="text-center py-8">
             <div className="mb-6">
-              <Wand2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Interview Stages Configured</h3>
-              <p className="text-muted-foreground mb-6">
+              <Wand2 className="h-12 w-12 text-purple-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2 text-white">No Interview Stages Configured</h3>
+              <p className="text-gray-400 mb-6">
                 Get started by choosing a template for your hiring process. Templates provide a structured interview pipeline with predefined stages.
               </p>
             </div>
@@ -460,19 +460,19 @@ export function InterviewStageConfiguration({
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
                 <DialogTrigger asChild>
-                  <Button>
+                  <Button className="bg-purple-600 hover:bg-purple-700 text-white border-0">
                     <Wand2 className="h-4 w-4 mr-2" />
                     Use Template
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-[#0A0A0A] border-white/10">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl">Choose Interview Pipeline Template</DialogTitle>
+                    <DialogTitle className="text-2xl text-white">Choose Interview Pipeline Template</DialogTitle>
                   </DialogHeader>
-                  
-                  <Alert className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-                    <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    <AlertDescription className="text-blue-900 dark:text-blue-100">
+
+                  <Alert className="bg-blue-500/10 border-blue-500/20">
+                    <AlertTriangle className="h-4 w-4 text-blue-400" />
+                    <AlertDescription className="text-blue-200">
                       Applying a template will create interview stages for this job.
                     </AlertDescription>
                   </Alert>
@@ -508,49 +508,47 @@ export function InterviewStageConfiguration({
                         </h3>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           {Object.entries(templates)
-                            .filter(([key, template]) => 
-                              !templateSearchQuery || 
+                            .filter(([key, template]) =>
+                              !templateSearchQuery ||
                               template.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
                               template.description.toLowerCase().includes(templateSearchQuery.toLowerCase())
                             )
                             .map(([key, template]) => (
-                            <Card 
-                              key={key}
-                              className={`cursor-pointer transition-all duration-200 hover:shadow-lg group ${
-                                selectedTemplate === key 
-                                  ? 'border-2 border-blue-500 bg-blue-50 dark:bg-blue-950/20 shadow-md' 
-                                  : 'border hover:border-blue-300 dark:hover:border-blue-700'
-                              }`}
-                              onClick={() => setSelectedTemplate(key)}
-                            >
-                              <CardContent className="p-4">
-                                <div className="flex items-start gap-3 mb-2">
-                                  <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
-                                    selectedTemplate === key 
-                                      ? 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900' 
+                              <Card
+                                key={key}
+                                className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group glass-card ${selectedTemplate === key
+                                  ? 'border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-900/10'
+                                  : 'border border-white/10 hover:border-blue-500/30'
+                                  }`}
+                                onClick={() => setSelectedTemplate(key)}
+                              >
+                                <CardContent className="p-4">
+                                  <div className="flex items-start gap-3 mb-2">
+                                    <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${selectedTemplate === key
+                                      ? 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900'
                                       : 'bg-muted group-hover:bg-blue-200 dark:group-hover:bg-blue-900'
-                                  }`}>
-                                    {selectedTemplate === key && <CheckCircle className="w-3 h-3 text-white" />}
+                                      }`}>
+                                      {selectedTemplate === key && <CheckCircle className="w-3 h-3 text-white" />}
+                                    </div>
+                                    <div className="flex-1">
+                                      <h4 className="font-semibold text-base mb-1">{template.name}</h4>
+                                      <p className="text-xs text-muted-foreground line-clamp-2">
+                                        {template.description}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="flex-1">
-                                    <h4 className="font-semibold text-base mb-1">{template.name}</h4>
-                                    <p className="text-xs text-muted-foreground line-clamp-2">
-                                      {template.description}
-                                    </p>
+                                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
+                                    <Badge variant="outline" className="text-xs">
+                                      {template.stages} stages
+                                    </Badge>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      ~{template.estimatedDays} days
+                                    </span>
                                   </div>
-                                </div>
-                                <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
-                                  <Badge variant="outline" className="text-xs">
-                                    {template.stages} stages
-                                  </Badge>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    ~{template.estimatedDays} days
-                                  </span>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
+                                </CardContent>
+                              </Card>
+                            ))}
                         </div>
                       </div>
                     )}
@@ -570,68 +568,66 @@ export function InterviewStageConfiguration({
                         ) : customTemplates.length > 0 ? (
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             {customTemplates
-                              .filter(template => 
-                                !templateSearchQuery || 
+                              .filter(template =>
+                                !templateSearchQuery ||
                                 template.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
                                 (template.description && template.description.toLowerCase().includes(templateSearchQuery.toLowerCase()))
                               )
                               .map((template) => (
-                              <Card 
-                                key={template._id}
-                                className={`cursor-pointer transition-all duration-200 hover:shadow-lg group relative ${
-                                  selectedTemplate === template._id 
-                                    ? 'border-2 border-purple-600 bg-purple-50 dark:bg-purple-950/20 shadow-md' 
-                                    : 'border hover:border-purple-400 dark:hover:border-purple-700'
-                                }`}
-                                onClick={() => setSelectedTemplate(template._id)}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start gap-3 mb-2">
-                                    <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
-                                      selectedTemplate === template._id 
-                                        ? 'bg-purple-600 ring-4 ring-purple-100 dark:ring-purple-900' 
+                                <Card
+                                  key={template._id}
+                                  className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group relative glass-card ${selectedTemplate === template._id
+                                    ? 'border-2 border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-900/10'
+                                    : 'border border-white/10 hover:border-purple-500/30'
+                                    }`}
+                                  onClick={() => setSelectedTemplate(template._id)}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start gap-3 mb-2">
+                                      <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${selectedTemplate === template._id
+                                        ? 'bg-purple-600 ring-4 ring-purple-100 dark:ring-purple-900'
                                         : 'bg-muted group-hover:bg-purple-200 dark:group-hover:bg-purple-900'
-                                    }`}>
-                                      {selectedTemplate === template._id && <CheckCircle className="w-3 h-3 text-white" />}
+                                        }`}>
+                                        {selectedTemplate === template._id && <CheckCircle className="w-3 h-3 text-white" />}
+                                      </div>
+                                      <div className="flex-1">
+                                        <h4 className="font-semibold text-base mb-1 text-white">{template.name}</h4>
+                                        <p className="text-xs text-gray-400 line-clamp-2">
+                                          {template.description || 'No description'}
+                                        </p>
+                                      </div>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteTemplateClick(template)
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
                                     </div>
-                                    <div className="flex-1">
-                                      <h4 className="font-semibold text-base mb-1">{template.name}</h4>
-                                      <p className="text-xs text-muted-foreground line-clamp-2">
-                                        {template.description || 'No description'}
-                                      </p>
+                                    <div className="flex items-center justify-between text-xs text-gray-400 mt-3 pt-3 border-t border-white/10">
+                                      <Badge variant="outline" className="text-xs bg-purple-500/10 border-purple-500/30 text-purple-300">
+                                        {template.stages.length} stages
+                                      </Badge>
+                                      <span className="flex items-center gap-1">
+                                        <Users className="h-3 w-3" />
+                                        Used {template.usageCount}x
+                                      </span>
                                     </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleDeleteTemplateClick(template)
-                                      }}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
-                                    <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700">
-                                      {template.stages.length} stages
-                                    </Badge>
-                                    <span className="flex items-center gap-1">
-                                      <Users className="h-3 w-3" />
-                                      Used {template.usageCount}x
-                                    </span>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
+                                  </CardContent>
+                                </Card>
+                              ))}
                           </div>
                         ) : (
-                          <div className="text-center py-12 border-2 border-dashed border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50/30 dark:bg-purple-950/10">
-                            <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center mx-auto mb-3">
-                              <Bookmark className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                          <div className="text-center py-12 border-2 border-dashed border-white/10 rounded-lg bg-white/5">
+                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-3 border border-purple-500/20">
+                              <Bookmark className="h-6 w-6 text-purple-400" />
                             </div>
-                            <p className="text-sm font-medium text-muted-foreground mb-1">No custom templates yet</p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-sm font-medium text-gray-300 mb-1">No custom templates yet</p>
+                            <p className="text-xs text-gray-500">
                               Save your first template by clicking "Save as Template" on a job with stages
                             </p>
                           </div>
@@ -654,7 +650,7 @@ export function InterviewStageConfiguration({
                       <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>
                         Cancel
                       </Button>
-                      <Button 
+                      <Button
                         onClick={() => {
                           const customTemplate = customTemplates.find(t => t._id === selectedTemplate)
                           if (customTemplate) {
@@ -677,13 +673,13 @@ export function InterviewStageConfiguration({
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card >
     )
   }
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="glass-card border-white/5">
         <CardHeader className="pb-3 sm:pb-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -719,14 +715,14 @@ export function InterviewStageConfiguration({
                     <Alert variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>
-                        This job already has {stages.length} stage(s). You can only apply templates to jobs without stages. 
+                        This job already has {stages.length} stage(s). You can only apply templates to jobs without stages.
                         Please delete all stages first if you want to use a template.
                       </AlertDescription>
                     </Alert>
                   ) : (
-                    <Alert className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-                      <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      <AlertDescription className="text-blue-900 dark:text-blue-100">
+                    <Alert className="bg-blue-500/10 border-blue-500/20">
+                      <AlertTriangle className="h-4 w-4 text-blue-400" />
+                      <AlertDescription className="text-blue-200">
                         Applying a template will create interview stages for this job.
                       </AlertDescription>
                     </Alert>
@@ -763,49 +759,47 @@ export function InterviewStageConfiguration({
                         </h3>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           {Object.entries(templates)
-                            .filter(([key, template]) => 
-                              !templateSearchQuery || 
+                            .filter(([key, template]) =>
+                              !templateSearchQuery ||
                               template.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
                               template.description.toLowerCase().includes(templateSearchQuery.toLowerCase())
                             )
                             .map(([key, template]) => (
-                            <Card 
-                              key={key}
-                              className={`cursor-pointer transition-all duration-200 hover:shadow-lg group ${
-                                selectedTemplate === key 
-                                  ? 'border-2 border-blue-500 bg-blue-50 dark:bg-blue-950/20 shadow-md' 
-                                  : 'border hover:border-blue-300 dark:hover:border-blue-700'
-                              }`}
-                              onClick={() => setSelectedTemplate(key)}
-                            >
-                              <CardContent className="p-4">
-                                <div className="flex items-start gap-3 mb-2">
-                                  <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
-                                    selectedTemplate === key 
-                                      ? 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900' 
+                              <Card
+                                key={key}
+                                className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group glass-card ${selectedTemplate === key
+                                  ? 'border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-900/10'
+                                  : 'border border-white/10 hover:border-blue-500/30'
+                                  }`}
+                                onClick={() => setSelectedTemplate(key)}
+                              >
+                                <CardContent className="p-4">
+                                  <div className="flex items-start gap-3 mb-2">
+                                    <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${selectedTemplate === key
+                                      ? 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900'
                                       : 'bg-muted group-hover:bg-blue-200 dark:group-hover:bg-blue-900'
-                                  }`}>
-                                    {selectedTemplate === key && <CheckCircle className="w-3 h-3 text-white" />}
+                                      }`}>
+                                      {selectedTemplate === key && <CheckCircle className="w-3 h-3 text-white" />}
+                                    </div>
+                                    <div className="flex-1">
+                                      <h4 className="font-semibold text-base mb-1">{template.name}</h4>
+                                      <p className="text-xs text-muted-foreground line-clamp-2">
+                                        {template.description}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="flex-1">
-                                    <h4 className="font-semibold text-base mb-1">{template.name}</h4>
-                                    <p className="text-xs text-muted-foreground line-clamp-2">
-                                      {template.description}
-                                    </p>
+                                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
+                                    <Badge variant="outline" className="text-xs">
+                                      {template.stages} stages
+                                    </Badge>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      ~{template.estimatedDays} days
+                                    </span>
                                   </div>
-                                </div>
-                                <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
-                                  <Badge variant="outline" className="text-xs">
-                                    {template.stages} stages
-                                  </Badge>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    ~{template.estimatedDays} days
-                                  </span>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
+                                </CardContent>
+                              </Card>
+                            ))}
                         </div>
                       </div>
                     )}
@@ -825,60 +819,58 @@ export function InterviewStageConfiguration({
                         ) : customTemplates.length > 0 ? (
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             {customTemplates
-                              .filter(template => 
-                                !templateSearchQuery || 
+                              .filter(template =>
+                                !templateSearchQuery ||
                                 template.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
                                 (template.description && template.description.toLowerCase().includes(templateSearchQuery.toLowerCase()))
                               )
                               .map((template) => (
-                              <Card 
-                                key={template._id}
-                                className={`cursor-pointer transition-all duration-200 hover:shadow-lg group relative ${
-                                  selectedTemplate === template._id 
-                                    ? 'border-2 border-purple-600 bg-purple-50 dark:bg-purple-950/20 shadow-md' 
+                                <Card
+                                  key={template._id}
+                                  className={`cursor-pointer transition-all duration-200 hover:shadow-lg group relative ${selectedTemplate === template._id
+                                    ? 'border-2 border-purple-600 bg-purple-50 dark:bg-purple-950/20 shadow-md'
                                     : 'border hover:border-purple-400 dark:hover:border-purple-700'
-                                }`}
-                                onClick={() => setSelectedTemplate(template._id)}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start gap-3 mb-2">
-                                    <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
-                                      selectedTemplate === template._id 
-                                        ? 'bg-purple-600 ring-4 ring-purple-100 dark:ring-purple-900' 
+                                    }`}
+                                  onClick={() => setSelectedTemplate(template._id)}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start gap-3 mb-2">
+                                      <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${selectedTemplate === template._id
+                                        ? 'bg-purple-600 ring-4 ring-purple-100 dark:ring-purple-900'
                                         : 'bg-muted group-hover:bg-purple-200 dark:group-hover:bg-purple-900'
-                                    }`}>
-                                      {selectedTemplate === template._id && <CheckCircle className="w-3 h-3 text-white" />}
+                                        }`}>
+                                        {selectedTemplate === template._id && <CheckCircle className="w-3 h-3 text-white" />}
+                                      </div>
+                                      <div className="flex-1">
+                                        <h4 className="font-semibold text-base mb-1">{template.name}</h4>
+                                        <p className="text-xs text-muted-foreground line-clamp-2">
+                                          {template.description || 'No description'}
+                                        </p>
+                                      </div>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteTemplateClick(template)
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
                                     </div>
-                                    <div className="flex-1">
-                                      <h4 className="font-semibold text-base mb-1">{template.name}</h4>
-                                      <p className="text-xs text-muted-foreground line-clamp-2">
-                                        {template.description || 'No description'}
-                                      </p>
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
+                                      <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700">
+                                        {template.stages.length} stages
+                                      </Badge>
+                                      <span className="flex items-center gap-1">
+                                        <Users className="h-3 w-3" />
+                                        Used {template.usageCount}x
+                                      </span>
                                     </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleDeleteTemplateClick(template)
-                                      }}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
-                                    <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700">
-                                      {template.stages.length} stages
-                                    </Badge>
-                                    <span className="flex items-center gap-1">
-                                      <Users className="h-3 w-3" />
-                                      Used {template.usageCount}x
-                                    </span>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
+                                  </CardContent>
+                                </Card>
+                              ))}
                           </div>
                         ) : (
                           <div className="text-center py-12 border-2 border-dashed border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50/30 dark:bg-purple-950/10">
@@ -909,7 +901,7 @@ export function InterviewStageConfiguration({
                       <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>
                         Cancel
                       </Button>
-                      <Button 
+                      <Button
                         onClick={() => {
                           const customTemplate = customTemplates.find(t => t._id === selectedTemplate)
                           if (customTemplate) {
@@ -930,7 +922,7 @@ export function InterviewStageConfiguration({
                   </div>
                 </DialogContent>
               </Dialog>
-              
+
               <Button
                 size="sm"
                 onClick={() => handleEditStage()}
@@ -946,24 +938,24 @@ export function InterviewStageConfiguration({
         <CardContent>
           <div className="space-y-4">
             {stages.map((stage, index) => (
-              <Card key={stage._id} className="transition-all duration-200 hover:shadow-md border-l-4 border-l-blue-500 hover:border-l-blue-600">
+              <Card key={stage._id} className="transition-all duration-200 hover:bg-white/5 border-0 border-l-[3px] border-l-blue-500 glass-card">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex flex-col gap-3">
                     {/* Mobile Header Row */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Badge variant="outline" className="text-xs px-2 py-1 flex-shrink-0">
+                        <Badge variant="outline" className="text-xs px-2 py-1 flex-shrink-0 bg-white/5 border-white/10 text-gray-400">
                           #{stage.order}
                         </Badge>
-                        <h3 className="font-semibold text-sm sm:text-base truncate">{stage.name}</h3>
+                        <h3 className="font-semibold text-sm sm:text-base truncate text-white">{stage.name}</h3>
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="sm"
                             disabled={movingStage === stage._id}
-                            className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-800 flex-shrink-0"
+                            className="h-8 w-8 p-0 hover:bg-white/10 text-gray-400 hover:text-white flex-shrink-0"
                           >
                             {movingStage === stage._id ? (
                               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -972,35 +964,37 @@ export function InterviewStageConfiguration({
                             )}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuLabel>Move Stage</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          
+                        <DropdownMenuContent align="start" className="bg-[#1A1A1A] border-white/10 text-gray-300">
+                          <DropdownMenuLabel className="text-gray-400">Move Stage</DropdownMenuLabel>
+                          <DropdownMenuSeparator className="bg-white/10" />
+
                           {index > 0 && (
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => handleMoveStage(stage._id, index - 1)}
                               disabled={movingStage === stage._id}
+                              className="focus:bg-white/10 focus:text-white"
                             >
                               <ChevronUp className="h-4 w-4 mr-2" />
                               Move Up
                             </DropdownMenuItem>
                           )}
-                          
+
                           {index < stages.length - 1 && (
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => handleMoveStage(stage._id, index + 1)}
                               disabled={movingStage === stage._id}
+                              className="focus:bg-white/10 focus:text-white"
                             >
                               <ChevronDown className="h-4 w-4 mr-2" />
                               Move Down
                             </DropdownMenuItem>
                           )}
-                          
+
                           {stages.length > 2 && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuLabel>Move to Position</DropdownMenuLabel>
-                              
+
                               {stages.map((targetStage, targetIndex) => {
                                 if (targetIndex === index) return null
                                 return (
@@ -1019,24 +1013,24 @@ export function InterviewStageConfiguration({
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                    
+
                     {/* Stage Details */}
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="secondary" className="capitalize text-xs">
+                        <Badge variant="secondary" className="capitalize text-xs bg-blue-500/10 text-blue-300 border border-blue-500/20">
                           {stage.type.replace('_', ' ')}
                         </Badge>
                         {!stage.isActive && (
-                          <Badge variant="destructive" className="text-xs">Inactive</Badge>
+                          <Badge variant="destructive" className="text-xs bg-red-500/10 text-red-300 border border-red-500/20">Inactive</Badge>
                         )}
                         {(stage.interviewCount || 0) > 0 && (
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-xs border-white/10 text-gray-400">
                             {stage.interviewCount} interview{stage.interviewCount !== 1 ? 's' : ''}
                           </Badge>
                         )}
                       </div>
-                      
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-4 text-xs sm:text-sm text-muted-foreground">
+
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-4 text-xs sm:text-sm text-gray-400">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {stage.defaultDuration} min
@@ -1052,14 +1046,14 @@ export function InterviewStageConfiguration({
                           </span>
                         )}
                       </div>
-                      
+
                       {stage.description && (
-                        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
+                        <p className="text-xs sm:text-sm text-gray-500 line-clamp-2">
                           {stage.description}
                         </p>
                       )}
                     </div>
-                    
+
                     {/* Action Buttons */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
                       <div className="flex items-center gap-1">
@@ -1076,24 +1070,24 @@ export function InterviewStageConfiguration({
                             <EyeOff className="h-3 w-3 sm:h-4 sm:w-4" />
                           )}
                         </Button>
-                        
+
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleEditStage(stage)}
                           title="Edit stage"
-                          className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="h-8 w-8 p-0 hover:bg-white/10 text-gray-400 hover:text-white"
                         >
                           <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
-                        
+
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteStage(stage._id, stage.name)}
                           disabled={Boolean(stage.interviewCount && stage.interviewCount > 0)}
-                          title={stage.interviewCount && stage.interviewCount > 0 
-                            ? 'Cannot delete stage with existing interviews' 
+                          title={stage.interviewCount && stage.interviewCount > 0
+                            ? 'Cannot delete stage with existing interviews'
                             : 'Delete stage'
                           }
                           className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950"
@@ -1101,7 +1095,7 @@ export function InterviewStageConfiguration({
                           <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
                       </div>
-                      
+
                       {/* Mobile stage counter */}
                       <div className="text-xs text-muted-foreground sm:hidden">
                         {stage.order} of {stages.length}
@@ -1123,7 +1117,7 @@ export function InterviewStageConfiguration({
               {editingStage?.isNew ? 'Create New Stage' : 'Edit Stage'}
             </DialogTitle>
           </DialogHeader>
-          
+
           {validationErrors.length > 0 && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -1157,7 +1151,7 @@ export function InterviewStageConfiguration({
                   <span className="sm:hidden">Rules</span>
                 </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="basic" className="space-y-3 sm:space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
@@ -1170,13 +1164,13 @@ export function InterviewStageConfiguration({
                       className="h-10"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="stage-type" className="text-sm font-medium">Stage Type *</Label>
                     <Select
                       value={editingStage.type || 'custom'}
                       onValueChange={(value) => {
-                        updateEditingStage({ 
+                        updateEditingStage({
                           type: value as any,
                           evaluationCriteria: interviewStageService.getDefaultEvaluationCriteria(value)
                         })
@@ -1225,7 +1219,7 @@ export function InterviewStageConfiguration({
                       className="w-full"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="required-interviewers" className="text-sm font-medium">
                       Required Interviewers: {editingStage.requiredInterviewers || 1}
@@ -1256,14 +1250,14 @@ export function InterviewStageConfiguration({
                             if (e.target.checked) {
                               updateEditingStage({ interviewerRoles: [...currentRoles, role.value] })
                             } else {
-                              updateEditingStage({ 
-                                interviewerRoles: currentRoles.filter(r => r !== role.value) 
+                              updateEditingStage({
+                                interviewerRoles: currentRoles.filter(r => r !== role.value)
                               })
                             }
                           }}
                           className="rounded border-gray-300"
                         />
-                        <Label 
+                        <Label
                           htmlFor={`role-${role.value}`}
                           className="text-sm font-normal cursor-pointer"
                         >
@@ -1274,7 +1268,7 @@ export function InterviewStageConfiguration({
                   </div>
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="criteria" className="space-y-4">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1312,7 +1306,7 @@ export function InterviewStageConfiguration({
                                 placeholder="e.g., Technical Skills"
                               />
                             </div>
-                            
+
                             <div>
                               <Label className="text-xs">Type</Label>
                               <Select
@@ -1331,7 +1325,7 @@ export function InterviewStageConfiguration({
                                 </SelectContent>
                               </Select>
                             </div>
-                            
+
                             <div className="flex items-end gap-2">
                               <div className="flex-1">
                                 <Label className="text-xs">Weight (%)</Label>
@@ -1340,8 +1334,8 @@ export function InterviewStageConfiguration({
                                   min="0"
                                   max="100"
                                   value={criterion.weight || 0}
-                                  onChange={(e) => updateEvaluationCriterion(index, { 
-                                    weight: parseInt(e.target.value) || 0 
+                                  onChange={(e) => updateEvaluationCriterion(index, {
+                                    weight: parseInt(e.target.value) || 0
                                   })}
                                 />
                               </div>
@@ -1355,7 +1349,7 @@ export function InterviewStageConfiguration({
                               </Button>
                             </div>
                           </div>
-                          
+
                           <div className="mt-3">
                             <Label className="text-xs">Description</Label>
                             <Textarea
@@ -1371,7 +1365,7 @@ export function InterviewStageConfiguration({
                   </div>
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="ai" className="space-y-4">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1400,21 +1394,21 @@ export function InterviewStageConfiguration({
                             step={5}
                             value={[editingStage.aiQuestionGeneration.questionCount || 10]}
                             onValueChange={([value]) => updateEditingStage({
-                              aiQuestionGeneration: { 
-                                ...editingStage.aiQuestionGeneration!, 
-                                questionCount: value 
+                              aiQuestionGeneration: {
+                                ...editingStage.aiQuestionGeneration!,
+                                questionCount: value
                               }
                             })}
                           />
                         </div>
-                        
+
                         <div className="space-y-2">
                           <Label>Difficulty Level</Label>
                           <Select
                             value={editingStage.aiQuestionGeneration.difficulty || 'medium'}
                             onValueChange={(value) => updateEditingStage({
-                              aiQuestionGeneration: { 
-                                ...editingStage.aiQuestionGeneration!, 
+                              aiQuestionGeneration: {
+                                ...editingStage.aiQuestionGeneration!,
                                 difficulty: value as any
                               }
                             })}
@@ -1461,7 +1455,7 @@ export function InterviewStageConfiguration({
                                 }}
                                 className="rounded border-gray-300"
                               />
-                              <Label 
+                              <Label
                                 htmlFor={`qtype-${type.value}`}
                                 className="text-sm font-normal cursor-pointer"
                               >
@@ -1490,7 +1484,7 @@ export function InterviewStageConfiguration({
                   )}
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="rules" className="space-y-4">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1525,7 +1519,7 @@ export function InterviewStageConfiguration({
                         placeholder="70"
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label>Required Approvals</Label>
                       <Input
@@ -1593,33 +1587,33 @@ export function InterviewStageConfiguration({
               Delete Template
             </DialogTitle>
           </DialogHeader>
-          
+
           {deletingTemplate && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Are you sure you want to <span className="font-semibold text-red-600">permanently delete</span> the template <span className="font-semibold">&quot;{deletingTemplate.name}&quot;</span>?
               </p>
-              
+
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   This action cannot be undone. The template will be permanently removed from the database.
                   {deletingTemplate.usageCount > 0 && (
                     <span className="block mt-2">
-                      This template has been used {deletingTemplate.usageCount} time{deletingTemplate.usageCount !== 1 ? 's' : ''}. 
+                      This template has been used {deletingTemplate.usageCount} time{deletingTemplate.usageCount !== 1 ? 's' : ''}.
                       Existing jobs using this template will not be affected.
                     </span>
                   )}
                 </AlertDescription>
               </Alert>
-              
+
               <div className="bg-muted p-3 rounded-md space-y-1">
                 <p className="text-sm"><span className="font-medium">Stages:</span> {deletingTemplate.stages.length}</p>
                 {deletingTemplate.description && (
                   <p className="text-sm"><span className="font-medium">Description:</span> {deletingTemplate.description}</p>
                 )}
               </div>
-              
+
               <div className="flex justify-end gap-2 pt-4">
                 <Button
                   variant="outline"

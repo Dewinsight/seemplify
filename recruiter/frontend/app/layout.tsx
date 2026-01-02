@@ -25,7 +25,7 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata = {
   title: "SMART HR",
   description: "Intelligent HR Management System",
-    generator: 'v0.dev'
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -40,7 +40,10 @@ export default function RootLayout({
         <Script src="/__runtime_config__.js" strategy="beforeInteractive" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-[rgb(var(--background-start-rgb))] relative`}>
+        {/* Ambient Backgorund Gradient */}
+        <div className="fixed inset-0 bg-gradient-to-br from-indigo-100/40 via-purple-100/40 to-pink-100/40 dark:from-indigo-900/10 dark:via-purple-900/10 dark:to-pink-900/10 blur-3xl pointer-events-none -z-10" />
+
         <ErrorBoundary>
           <ConfigThemeProvider attribute="class" enableSystem disableTransitionOnChange>
             <MaintenanceMode />

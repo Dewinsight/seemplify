@@ -5,7 +5,7 @@
  * through lazy loading, intersection observers, and memoization.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 /**
  * Hook to detect if an element is visible in viewport
@@ -126,8 +126,8 @@ interface LazyLoadProps {
   rootMargin?: string;
 }
 
-export function LazyLoad({ 
-  children, 
+export function LazyLoad({
+  children,
   fallback = null,
   threshold = 0.1,
   rootMargin = '50px'
@@ -135,8 +135,8 @@ export function LazyLoad({
   const [ref, isVisible] = useIntersectionObserver({ threshold, rootMargin });
 
   return (
-    <div ref={ref}>
-      {isVisible ? children : fallback}
+    <div ref= { ref } >
+    { isVisible? children: fallback }
     </div>
   );
 }

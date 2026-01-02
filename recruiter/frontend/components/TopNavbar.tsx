@@ -13,8 +13,6 @@ import {
   MessageSquare,
   LogOut,
   User,
-  Sun,
-  Moon,
   Shield,
   X,
 } from "lucide-react";
@@ -22,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
-import { getAvailableThemeOptions } from "@/utils/themeConfig";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useUser } from "@/context/UserContext";
 import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
@@ -32,10 +30,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -78,23 +72,23 @@ const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) =>
       href={item.href}
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 transition-all duration-200",
+        "flex items-center gap-2 transition-all duration-300 relative group",
         isMobile
           ? "text-base font-medium p-3 rounded-xl"
           : "text-sm font-medium px-3 py-2 rounded-lg",
         isActive
           ? isMobile
-            ? "bg-white/10 text-white"
-            : "bg-white/10 text-foreground"
+            ? "bg-primary/10 text-primary shadow-lg"
+            : "text-foreground bg-primary/10 shadow-lg shadow-primary/5 backdrop-blur-md border border-primary/10"
           : isMobile
-            ? "text-zinc-400 hover:text-white hover:bg-white/5"
-            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            ? "text-muted-foreground hover:text-foreground hover:bg-muted"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
       )}
     >
-      <item.icon className={cn("h-4 w-4", isActive && "text-blue-400")} />
+      <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
       <span>{item.title}</span>
       {isActive && !isMobile && (
-        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-400" />
+        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.6)]" />
       )}
     </Link>
   );
@@ -109,11 +103,11 @@ const TopNavbar = () => {
   const { currentOrganization } = useOrganization();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const availableThemes = getAvailableThemeOptions();
+
 
   return (
     <header
-      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60"
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 dark:bg-black/5 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60"
       data-tutorial="app-navbar"
     >
       <div className="container flex h-16 items-center justify-between max-w-screen-2xl px-4 lg:px-6">
@@ -130,15 +124,15 @@ const TopNavbar = () => {
               </SheetTrigger>
               <SheetContent
                 side="left"
-                className="w-[300px] bg-[#0a0a0c] border-white/[0.08] p-0"
+                className="w-[300px] bg-background border-border p-0"
               >
                 <div className="flex flex-col h-full">
-                  <SheetHeader className="p-6 border-b border-white/[0.08]">
+                  <SheetHeader className="p-6 border-b border-border">
                     <SheetTitle className="flex items-center gap-2.5">
                       <SeemplifyLogo size="md" />
                       <div className="flex items-baseline">
-                        <span className="font-semibold tracking-tight text-white">Seemplify</span>
-                        <span className="ml-1.5 font-light text-blue-400">Recruiter</span>
+                        <span className="font-semibold tracking-tight text-foreground">Seemplify</span>
+                        <span className="ml-1.5 font-light text-primary">Recruiter</span>
                       </div>
                     </SheetTitle>
                   </SheetHeader>
@@ -155,17 +149,17 @@ const TopNavbar = () => {
                     ))}
                   </nav>
 
-                  <div className="p-4 border-t border-white/[0.08]">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
-                      <Avatar className="h-10 w-10 border border-white/10">
+                  <div className="p-4 border-t border-border">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
+                      <Avatar className="h-10 w-10 border border-border">
                         <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
                         <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
                           {user?.profile?.firstName?.[0] || 'U'}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{getUserDisplayName()}</p>
-                        <p className="text-xs text-zinc-500 truncate">{user?.email}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{getUserDisplayName()}</p>
+                        <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                       </div>
                     </div>
                   </div>
@@ -196,6 +190,8 @@ const TopNavbar = () => {
             {currentOrganization && <OrganizationSwitcher showCreateOption={true} />}
           </div>
 
+          <ThemeToggle />
+
           {/* Notifications */}
           <NotificationDropdown />
 
@@ -212,7 +208,7 @@ const TopNavbar = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-56 bg-popover/95 backdrop-blur-xl border-border/50"
+              className="w-56 glass-card border-border/20 text-foreground bg-white/80 dark:bg-black/50"
               align="end"
               forceMount
             >
@@ -233,27 +229,6 @@ const TopNavbar = () => {
                   <span>{settingsNavigation.title}</span>
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                  <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                  <span className="ml-2">Theme</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="bg-popover/95 backdrop-blur-xl border-border/50">
-                    {availableThemes.map((themeOption) => (
-                      <DropdownMenuItem
-                        key={themeOption.value}
-                        onClick={() => setTheme(themeOption.value)}
-                        className="cursor-pointer"
-                      >
-                        {themeOption.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
               <DropdownMenuSeparator />
               {user?.email === 'michael.egbo@aiinnigeria.com' && (
                 <>
