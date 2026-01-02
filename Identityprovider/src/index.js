@@ -115,6 +115,23 @@ dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+// Shared UI theme for IdP pages (marketing-site aesthetic)
+const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
+const seemplifyMarkSvg = `
+  <svg viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#3b82f6" />
+        <stop offset="50%" stop-color="#8b5cf6" />
+        <stop offset="100%" stop-color="#ec4899" />
+      </linearGradient>
+    </defs>
+    <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75" stroke="url(#seemplifyGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="65" cy="25" r="6" fill="#fff" />
+    <circle cx="50" cy="50" r="6" fill="#fff" />
+    <circle cx="35" cy="75" r="6" fill="#fff" />
+  </svg>
+`
 
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production'
@@ -362,6 +379,11 @@ app.use((req, res, next) => {
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
+
+// Static assets (shared theme, icons)
+app.use(express.static(join(__dirname, 'public'), {
+  maxAge: isProduction ? '7d' : 0
+}))
 
 // Session middleware for organization management routes
 app.use(session({
@@ -789,14 +811,9 @@ app.get('/interaction/:uid', async (req, res) => {
 
           <div class="card">
             <div class="brand">
-              <div class="brand-mark">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
-                </svg>
-              </div>
+            <div class="brand-mark">
+              ${seemplifyMarkSvg}
+            </div>
               <div>
                 <h2>Sign in</h2>
                 <div class="muted">Use your AIIN credentials to continue</div>
@@ -3786,7 +3803,7 @@ app.get('/debug/smarthr', async (req, res) => {
 // Hub Page Renderer
 function renderHubPage(account, apps) {
   const appCards = apps.map(app => `
-    <a href="/launch/${app.appId}" class="app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
+    <a href="/launch/${app.appId}" class="card app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
       <div class="app-card__icon">${getAppIcon(app.icon)}</div>
       <div class="app-card__body">
         <div class="app-card__title">${app.name}</div>
@@ -3811,203 +3828,28 @@ function renderHubPage(account, apps) {
       <title>AIIN Hub - Your Apps</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        * { box-sizing: border-box; }
-        body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.14), transparent 30%), radial-gradient(circle at 80% 0%, rgba(56,189,248,0.18), transparent 28%), linear-gradient(135deg, #0b1221 0%, #0f172a 50%, #0b1021 100%);
-          color: #e5e7eb;
-          min-height: 100vh;
-        }
-        .shell {
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 28px 20px 48px;
-        }
-        .header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.15);
-          border-radius: 14px;
-          padding: 12px 16px;
-          position: sticky;
-          top: 12px;
-          z-index: 2;
-          box-shadow: 0 12px 36px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .nav-links {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-        }
-        .nav-link {
-          padding: 8px 14px;
-          border-radius: 8px;
-          color: #94a3b8;
-          text-decoration: none;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        .nav-link:hover {
-          color: #e2e8f0;
-          background: rgba(255,255,255,0.08);
-        }
-        @media (max-width: 768px) {
-          .nav-links {
-            display: none;
-          }
-        }
-        .logo {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-          color: inherit;
-        }
-        .logo-mark {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
+        ${themeCss}
+        /* Hub-specific tune-ups: reduce noise + keep clean backdrop */
+        body { padding: 28px 18px 48px; background: #050505; }
+        body::before { opacity: 0.12; }
+        body::after { display: none; }
+        .hub-content { margin-top: 8px; }
+        .hub-hero {
           display: grid;
-          place-items: center;
-          color: #fff;
-        }
-        .logo-text { display: flex; flex-direction: column; gap: 2px; }
-        .logo-text strong { font-size: 17px; letter-spacing: -0.02em; }
-        .logo-text span { color: #cbd5e1; font-size: 13px; }
-        .user-menu { display: flex; align-items: center; gap: 10px; }
-        .user-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-        .user-meta strong { font-size: 14px; }
-        .user-meta span { color: #6b7280; font-size: 12px; }
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
-          display: grid;
-          place-items: center;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          color: #fff;
-          font-weight: 700;
-        }
-        .ghost-btn {
-          padding: 10px 12px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.2);
-          background: rgba(255,255,255,0.1);
-          color: #e5e7eb;
-          text-decoration: none;
-          font-weight: 600;
-          transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
-        }
-        .ghost-btn:hover {
-          background: rgba(255,255,255,0.18);
-          border-color: rgba(255,255,255,0.35);
-          box-shadow: 0 10px 28px rgba(0,0,0,0.32);
-          color: #fff;
-        }
-
-        .welcome {
-          display: grid;
-          grid-template-columns: 1.3fr 1fr;
+          grid-template-columns: 1.2fr 0.8fr;
           gap: 14px;
-          margin: 16px 0 18px;
+          margin: 14px 0 20px;
         }
-        .welcome-card {
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          background: rgba(255,255,255,0.07);
-          padding: 18px 18px;
-          box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-          position: relative;
-          overflow: hidden;
-          backdrop-filter: blur(16px);
-        }
-        .welcome-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: 16px;
-          padding: 1px;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          opacity: 0.12;
-          pointer-events: none;
-        }
-        .welcome-card > * { position: relative; z-index: 1; }
-        .welcome h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: #f8fafc; }
-        .welcome p { margin: 0; color: #cbd5e1; font-size: 15px; }
-        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 10px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.08);
-          color: #e0e7ff;
-          border: 1px solid rgba(255,255,255,0.18);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .chip.secondary { background: #f5f3ff; color: #6d28d9; border-color: #ede9fe; }
-        .stat {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-top: 12px;
-          color: #e2e8f0;
-          font-weight: 600;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: #22c55e;
-          box-shadow: 0 0 0 6px rgba(34,197,94,0.14);
-        }
+        .hub-card { position: relative; }
+        .hub-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: #fff; }
+        .hub-card p { margin: 0; color: var(--muted); font-size: 15px; }
+        .hub-card .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .hub-card .chip { background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
+        .hub-card .chip.secondary { color: #e9d5ff; }
+        .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: #e2e8f0; font-weight: 600; }
+        .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
 
-        .app-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-          gap: 14px;
-        }
-        .manage-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-          gap: 12px;
-          margin-top: 10px;
-        }
-        .manage-card {
-          border: 1px solid rgba(255,255,255,0.16);
-          border-radius: 12px;
-          padding: 12px 14px;
-          background: rgba(255,255,255,0.06);
-          color: inherit;
-          text-decoration: none;
-          display: grid;
-          gap: 6px;
-          transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
-        }
-        .manage-card:hover {
-          border-color: rgba(96,165,250,0.65);
-          background: rgba(255,255,255,0.10);
-          transform: translateY(-2px);
-        }
-        .manage-card__title {
-          font-weight: 700;
-          font-size: 15px;
-          letter-spacing: -0.01em;
-          color: #f8fafc;
-        }
-        .manage-card__desc {
-          font-size: 13px;
-          color: #cbd5e1;
-        }
+        .apps { width: 100%; display: block; margin-top: 18px; }
         .section-title {
           margin: 22px 0 10px;
           color: #e2e8f0;
@@ -4017,42 +3859,35 @@ function renderHubPage(account, apps) {
           align-items: center;
           gap: 10px;
         }
-        .section-title::after {
-          content: '';
-          flex: 1;
-          height: 1px;
-          background: rgba(255,255,255,0.12);
+        .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+        .ghost-btn {
+          padding: 8px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: rgba(255,255,255,0.06);
+          color: #e5e7eb;
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 13px;
         }
+        .ghost-btn:hover { background: rgba(255,255,255,0.1); }
+
+        .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
         .app-card {
-          border: 1px solid rgba(255,255,255,0.16);
-          border-radius: 14px;
-          background: rgba(255,255,255,0.08);
           text-decoration: none;
           color: inherit;
           display: grid;
           grid-template-columns: auto 1fr auto;
           align-items: center;
           gap: 12px;
-          padding: 14px;
-          transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+          padding: 16px;
           cursor: pointer;
+          transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
         }
-        .app-card:hover {
-          box-shadow: 0 18px 36px rgba(0,0,0,0.35);
-          transform: translateY(-3px);
-          border-color: rgba(255,255,255,0.35);
-          background: rgba(255,255,255,0.12);
-        }
-        .app-card--primary {
-          border: 1px solid rgba(96,165,250,0.65);
-          background: linear-gradient(140deg, rgba(59,130,246,0.16), rgba(168,85,247,0.14)), rgba(255,255,255,0.08);
-          box-shadow: 0 18px 42px rgba(59,130,246,0.28), 0 0 0 1px rgba(255,255,255,0.06) inset;
-        }
-        .app-card--primary:hover {
-          box-shadow: 0 22px 46px rgba(59,130,246,0.35);
-          background: linear-gradient(140deg, rgba(59,130,246,0.22), rgba(168,85,247,0.18)), rgba(255,255,255,0.12);
-          border-color: rgba(96,165,250,0.85);
-        }
+        .app-card:hover { box-shadow: 0 18px 36px rgba(0,0,0,0.35); transform: translateY(-3px); }
+        .app-card--primary { border-color: rgba(129,140,248,0.65); box-shadow: 0 18px 42px rgba(59,130,246,0.22); }
+        .app-card--primary:hover { border-color: rgba(129,140,248,0.8); box-shadow: 0 22px 46px rgba(59,130,246,0.32); }
         .app-card__icon {
           width: 46px;
           height: 46px;
@@ -4061,86 +3896,57 @@ function renderHubPage(account, apps) {
           display: grid;
           place-items: center;
           color: #0f172a;
-          border: 1px solid rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.18);
         }
         .app-card__icon svg { width: 24px; height: 24px; }
         .app-card__body { display: grid; gap: 6px; }
-        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: #f8fafc; }
-        .app-card__desc { color: #cbd5e1; font-size: 13px; }
+        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: #fff; }
+        .app-card__desc { color: var(--muted); font-size: 13px; }
         .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 8px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.08);
-          color: #e0e7ff;
-          border: 1px solid rgba(255,255,255,0.18);
-          font-weight: 600;
-          font-size: 12px;
-        }
-        .pill--soft {
-          background: rgba(255,255,255,0.06);
-          color: #e2e8f0;
-          border-color: rgba(255,255,255,0.12);
-        }
+        .pill { background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: #e0e7ff; }
+        .pill--soft { background: rgba(255,255,255,0.05); color: #e2e8f0; border-color: rgba(255,255,255,0.12); }
         .app-card__arrow { color: #cbd5e1; }
 
         .empty {
           margin-top: 12px;
           padding: 48px 16px;
           text-align: center;
-          color: #cbd5e1;
-          border: 1px dashed rgba(255,255,255,0.3);
+          color: var(--muted);
+          border: 1px dashed var(--border);
           border-radius: 14px;
-          background: rgba(255,255,255,0.06);
+          background: rgba(255,255,255,0.04);
         }
         @media (max-width: 720px) {
-          .header { position: static; }
-          .welcome { grid-template-columns: 1fr; }
+          .hub-hero { grid-template-columns: 1fr; }
           .app-card { grid-template-columns: 1fr auto; }
           .app-card__icon { justify-self: flex-start; }
         }
       </style>
     </head>
     <body>
-      <div class="shell">
-        <header class="header">
-          <a href="/" class="logo">
-            <div class="logo-mark">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
-            </div>
-            <div class="logo-text">
-              <strong>AIIN Hub</strong>
-              <span>Identity provider</span>
-            </div>
-          </a>
-          <div class="nav-links">
-            <a href="/" class="nav-link">Home</a>
-            <a href="/organizations" class="nav-link">Organizations</a>
-            <a href="/invitations/pending" class="nav-link">Invitations</a>
-            <a href="/profile" class="nav-link">Profile</a>
-          </div>
-      <div class="user-menu">
-        <div class="user-meta">
-          <strong>${account.profile?.name || account.email.split('@')[0]}</strong>
-          <span>${account.email}</span>
+      <nav class="top-nav">
+        <a href="/" class="top-nav-brand">
+          ${seemplifyMarkSvg}
+          <span>Seemplify</span>
+        </a>
+        <div class="top-nav-links">
+          <a href="/" class="top-nav-link">Home</a>
+          <a href="/organizations" class="top-nav-link">Organizations</a>
+          <a href="/invitations/pending" class="top-nav-link">Invitations</a>
+          <a href="/profile" class="top-nav-link">Profile</a>
         </div>
-            <div class="avatar">${(account.profile?.name || account.email)[0].toUpperCase()}</div>
-            <div style="display: flex; gap: 8px;">
-              <a href="/logout" class="ghost-btn">Sign out</a>
-            </div>
+        <div class="top-nav-user">
+          <div class="top-nav-user-info">
+            <div class="top-nav-user-name">${account.profile?.name || account.email.split('@')[0]}</div>
+            <div class="top-nav-user-email">${account.email}</div>
           </div>
-        </header>
+          <a href="/logout" class="top-nav-logout">Sign out</a>
+        </div>
+      </nav>
 
-        <section class="welcome">
-          <div class="welcome-card">
+      <div class="container hub-content">
+        <section class="hub-hero">
+          <div class="card hub-card">
             <h1>Your AIIN apps</h1>
             <p>Launch SmartHR and connected tools from one place.</p>
             <div class="chips">
@@ -4148,53 +3954,53 @@ function renderHubPage(account, apps) {
               <span class="chip secondary">Smart launch</span>
             </div>
           </div>
-          <div class="welcome-card">
+          <div class="card hub-card">
             <div class="stat"><span class="dot"></span>Signed in as ${account.email}</div>
             <div class="stat"><span class="dot" style="background:#2563eb; box-shadow:0 0 0 6px rgba(37,99,235,0.12);"></span>${apps.length} active app${apps.length === 1 ? '' : 's'}</div>
           </div>
-      </section>
+        </section>
 
-      <section class="apps">
-        <div class="section-title">Manage identity & access</div>
-        <div class="welcome-card" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: grid; place-items: center;">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
+        <section class="apps">
+          <div class="section-title">Manage identity & access</div>
+          <div class="card hub-card" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: grid; place-items: center;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </div>
+              <div>
+                <div style="font-weight: 700; font-size: 15px; color: #f8fafc;">Organization Settings</div>
+                <div style="font-size: 13px; color: #94a3b8;">Manage your organization structure and team access</div>
+              </div>
             </div>
-            <div>
-              <div style="font-weight: 700; font-size: 15px; color: #f8fafc;">Organization Settings</div>
-              <div style="font-size: 13px; color: #94a3b8;">Manage your organization structure and team access</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="/profile" class="ghost-btn">Profile</a>
+              <a href="/organizations" class="ghost-btn">Organizations</a>
+              <a href="/invitations/pending" class="ghost-btn">Invitations</a>
             </div>
           </div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <a href="/profile" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Profile</a>
-            <a href="/organizations" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Organizations</a>
-            <a href="/invitations/pending" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Invitations</a>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="apps">
-        <div class="section-title">Choose an app to launch with single sign-on</div>
-        ${apps.length > 0 ? `
-          <div class="app-grid">
-            ${appCards}
-          </div>
-        ` : `
-          <div class="empty">
-            <div style="margin-bottom:8px;font-weight:700;">No apps available yet</div>
-            Add an app to launch it from the hub.
-          </div>
-        `}
-      </section>
-    </div>
-  </body>
-  </html>
+        <section class="apps">
+          <div class="section-title">Choose an app to launch with single sign-on</div>
+          ${apps.length > 0 ? `
+            <div class="app-grid">
+              ${appCards}
+            </div>
+          ` : `
+            <div class="empty">
+              <div style="margin-bottom:8px;font-weight:700;">No apps available yet</div>
+              Add an app to launch it from the hub.
+            </div>
+          `}
+        </section>
+      </div>
+    </body>
+    </html>
   `
 }
 
@@ -4244,43 +4050,15 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
       <title>AIIN Hub - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        :root {
-          --brand: #2563eb;
-          --accent: #7c3aed;
-          --bg: #0c1224;
-          --panel: rgba(255, 255, 255, 0.06);
-          --panel-strong: rgba(255, 255, 255, 0.1);
-          --border: rgba(255, 255, 255, 0.14);
-          --text: #e5e7eb;
-          --muted: #cbd5e1;
-        }
-        * { box-sizing: border-box; }
+        ${themeCss}
+        /* Page-specific tweaks */
         body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          color: var(--text);
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at 18% 18%, rgba(59,130,246,0.24), transparent 32%),
-            radial-gradient(circle at 80% 8%, rgba(124,58,237,0.20), transparent 36%),
-            linear-gradient(135deg, #0b1021 0%, #0f172a 55%, #0b1021 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 36px 18px;
+          padding: 32px 18px;
           position: relative;
-          overflow: hidden;
         }
-        .halo {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(60px);
-          opacity: 0.8;
-          z-index: 0;
-        }
-        .halo.one { width: 540px; height: 540px; background: rgba(59,130,246,0.25); top: -120px; left: -60px; }
-        .halo.two { width: 420px; height: 420px; background: rgba(124,58,237,0.2); bottom: -80px; right: -120px; }
-        .halo.three { width: 280px; height: 280px; background: rgba(45,212,191,0.14); top: 30%; right: 22%; }
         .auth-shell {
           position: relative;
           z-index: 1;
@@ -4290,246 +4068,12 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           gap: 22px;
           align-items: stretch;
         }
-        .card {
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 18px;
-          padding: 28px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .intro {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.08);
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .title h1 {
-          margin: 6px 0 8px;
-          font-size: 32px;
-          line-height: 1.2;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .title p {
-          margin: 0;
-          color: var(--muted);
-          line-height: 1.6;
-          max-width: 520px;
-        }
-        .chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin: 6px 0 2px;
-        }
-        .chip {
-          padding: 8px 12px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.07);
-          border: 1px solid var(--panel-strong);
-          color: #e0f2fe;
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .chip.secondary { color: #e9d5ff; }
-        .surface {
-          margin-top: 10px;
-          padding: 16px;
-          border-radius: 14px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.05);
-        }
-        .surface-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-        .label { color: var(--muted); font-size: 13px; }
-        .value { color: #e2e8f0; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-        .badge {
-          padding: 6px 10px;
-          border-radius: 10px;
-          font-size: 12px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.02em;
-        }
-        .badge.success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4); color: #bbf7d0; }
-        .surface-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 10px;
-        }
-        .stat {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #a5b4fc;
-          box-shadow: 0 0 0 8px rgba(99,102,241,0.08);
-        }
-        .dot.online {
-          background: #22c55e;
-          box-shadow: 0 0 0 8px rgba(34,197,94,0.12);
-        }
-        .form-card {
-          background: linear-gradient(180deg, rgba(15,23,42,0.8), rgba(12,18,33,0.92));
-        }
-        .form-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 14px;
-        }
-        .eyebrow {
-          display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: rgba(59,130,246,0.12);
-          border: 1px solid rgba(59,130,246,0.25);
-          color: #bfdbfe;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-        }
-        .form-title {
-          margin: 0;
-          font-size: 24px;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .hint { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          display: grid;
-          place-items: center;
-          color: #fff;
-          box-shadow: 0 10px 26px rgba(37,99,235,0.35);
-        }
-        .form-group { margin-bottom: 14px; }
-        label {
-          display: block;
-          margin-bottom: 6px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        input[type="email"],
-        input[type="password"] {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: rgba(255,255,255,0.06);
-          color: #e5e7eb;
-          font-size: 15px;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-        }
-        input::placeholder { color: rgba(255,255,255,0.55); }
-        input:focus {
-          outline: none;
-          border-color: rgba(59,130,246,0.6);
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-          background: rgba(255,255,255,0.09);
-        }
-        .muted-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin: 6px 0 10px;
-          color: var(--muted);
-          font-size: 14px;
-        }
-        .muted-row label {
-          margin: 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: #d1d5db;
-          cursor: pointer;
-          font-weight: 600;
-        }
-        .muted-row input[type="checkbox"] { width: auto; }
-        .link {
-          color: #93c5fd;
-          text-decoration: none;
-          font-weight: 700;
-        }
-        .link:hover { text-decoration: underline; }
-        .btn {
-          width: 100%;
-          padding: 14px;
-          border: none;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          color: #fff;
-          font-weight: 700;
-          font-size: 16px;
-          cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.2s ease;
-          margin-top: 6px;
-        }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(37,99,235,0.35); }
-        .btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-        .error {
-          background: rgba(239,68,68,0.14);
-          border: 1px solid rgba(239,68,68,0.45);
-          color: #fecaca;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 14px;
-          margin-bottom: 12px;
-        }
-        .meta-footer {
-          text-align: center;
-          margin-top: 14px;
-          color: var(--muted);
-          font-size: 14px;
-        }
-        .spinner {
-          border: 2px solid rgba(255, 255, 255, 0.28);
-          border-top: 2px solid #fff;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .card { padding: 28px; }
+        .btn { width: 100%; margin-top: 6px; }
         @media (max-width: 1024px) {
           .auth-shell { grid-template-columns: 1fr; }
         }
         @media (max-width: 640px) {
-          body { padding: 24px 14px; }
           .card { padding: 22px; }
           .title h1 { font-size: 26px; }
         }
@@ -4576,12 +4120,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
               <p class="hint">Access SmartHR, dashboards, and connected tools.</p>
             </div>
             <div class="brand-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+              ${seemplifyMarkSvg}
             </div>
           </div>
 
@@ -4644,43 +4183,14 @@ function renderHubSignupPage(errorMsg) {
       <title>AIIN Hub - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        :root {
-          --brand: #2563eb;
-          --accent: #7c3aed;
-          --bg: #0c1224;
-          --panel: rgba(255, 255, 255, 0.06);
-          --panel-strong: rgba(255, 255, 255, 0.12);
-          --border: rgba(255, 255, 255, 0.14);
-          --text: #e5e7eb;
-          --muted: #cbd5e1;
-        }
-        * { box-sizing: border-box; }
+        ${themeCss}
         body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          color: var(--text);
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at 18% 18%, rgba(59,130,246,0.24), transparent 32%),
-            radial-gradient(circle at 80% 8%, rgba(124,58,237,0.20), transparent 36%),
-            linear-gradient(135deg, #0b1021 0%, #0f172a 55%, #0b1021 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 36px 18px;
+          padding: 32px 18px;
           position: relative;
-          overflow: hidden;
         }
-        .halo {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(60px);
-          opacity: 0.8;
-          z-index: 0;
-        }
-        .halo.one { width: 520px; height: 520px; background: rgba(59,130,246,0.25); top: -120px; left: -60px; }
-        .halo.two { width: 420px; height: 420px; background: rgba(124,58,237,0.2); bottom: -90px; right: -120px; }
-        .halo.three { width: 280px; height: 280px; background: rgba(45,212,191,0.14); top: 32%; right: 24%; }
         .shell {
           position: relative;
           z-index: 1;
@@ -4690,202 +4200,10 @@ function renderHubSignupPage(errorMsg) {
           gap: 20px;
           align-items: stretch;
         }
-        .card {
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 18px;
-          padding: 28px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .intro h1 {
-          margin: 0 0 10px;
-          font-size: 30px;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .intro p {
-          margin: 0 0 14px;
-          color: var(--muted);
-          line-height: 1.6;
-        }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.08);
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .list {
-          display: grid;
-          gap: 10px;
-          margin-top: 10px;
-        }
-        .list-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 12px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid var(--panel-strong);
-          color: #e2e8f0;
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 0 8px rgba(34,197,94,0.12);
-        }
-        .form-card { background: linear-gradient(180deg, rgba(15,23,42,0.82), rgba(12,18,33,0.95)); }
-        .form-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 12px;
-        }
-        .eyebrow {
-          display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: rgba(124,58,237,0.12);
-          border: 1px solid rgba(124,58,237,0.25);
-          color: #e9d5ff;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-        }
-        .form-title {
-          margin: 4px 0 0;
-          font-size: 24px;
-          color: #f8fafc;
-          letter-spacing: -0.02em;
-        }
-        .hint { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          display: grid;
-          place-items: center;
-          color: #fff;
-          box-shadow: 0 10px 26px rgba(37,99,235,0.35);
-        }
-        .form-group { margin-bottom: 14px; }
-        label {
-          display: block;
-          margin-bottom: 6px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        input[type="email"],
-        input[type="password"],
-        input[type="text"] {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: rgba(255,255,255,0.06);
-          color: #e5e7eb;
-          font-size: 15px;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-        }
-        input::placeholder { color: rgba(255,255,255,0.55); }
-        input:focus {
-          outline: none;
-          border-color: rgba(59,130,246,0.6);
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-          background: rgba(255,255,255,0.09);
-        }
-        .password-strength {
-          height: 5px;
-          border-radius: 3px;
-          background: rgba(255,255,255,0.08);
-          margin-top: 10px;
-          overflow: hidden;
-          border: 1px solid var(--panel-strong);
-        }
-        .password-strength-bar {
-          height: 100%;
-          width: 0%;
-          transition: all 0.3s ease;
-          border-radius: 3px;
-        }
-        .strength-weak { width: 33%; background: #f87171; }
-        .strength-medium { width: 66%; background: #fbbf24; }
-        .strength-strong { width: 100%; background: #34d399; }
-        .password-hint {
-          font-size: 12px;
-          color: var(--muted);
-          margin-top: 6px;
-        }
-        .error {
-          background: rgba(239,68,68,0.14);
-          border: 1px solid rgba(239,68,68,0.45);
-          color: #fecaca;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 14px;
-          margin-bottom: 12px;
-        }
-        .btn {
-          width: 100%;
-          padding: 14px;
-          border: none;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          color: #fff;
-          font-weight: 700;
-          font-size: 16px;
-          cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.2s ease;
-          margin-top: 6px;
-        }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(37,99,235,0.35); }
-        .btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-        .divider {
-          margin: 22px 0 12px;
-          height: 1px;
-          background: var(--panel-strong);
-          border: none;
-        }
-        .login-link {
-          text-align: center;
-          font-size: 14px;
-          color: var(--muted);
-        }
-        .login-link a {
-          color: #93c5fd;
-          font-weight: 700;
-          text-decoration: none;
-        }
-        .login-link a:hover { text-decoration: underline; }
-        .spinner {
-          border: 2px solid rgba(255, 255, 255, 0.28);
-          border-top: 2px solid #fff;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .card { padding: 28px; }
+        .btn { width: 100%; margin-top: 6px; }
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
-        @media (max-width: 640px) { body { padding: 24px 14px; } .card { padding: 22px; } }
+        @media (max-width: 640px) { .card { padding: 22px; } }
       </style>
     </head>
     <body>
@@ -4913,12 +4231,7 @@ function renderHubSignupPage(errorMsg) {
               <p class="hint">One account for the hub and all connected apps.</p>
             </div>
             <div class="brand-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+              ${seemplifyMarkSvg}
             </div>
           </div>
 

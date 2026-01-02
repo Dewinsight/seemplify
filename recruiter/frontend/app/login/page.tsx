@@ -5,14 +5,6 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { useUser } from "@/context/UserContext";
@@ -20,29 +12,18 @@ import {
   ArrowRight,
   Zap,
   Shield,
-  Sparkles,
-  LayoutGrid,
   Users,
-  BarChart3
+  BarChart3,
+  LayoutGrid
 } from "lucide-react";
+import SeemplifyLogo, { SeemplifyIcon, SeemplifyRecruiterLogo } from "@/components/SeemplifyLogo";
 
 export default function LoginPage() {
   const { toast } = useToast();
   const auth = useAuth();
   const user = useUser();
   const [isLoading, setIsLoading] = useState(false);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
-
-  // Mouse tracking for interactive background
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
 
   useEffect(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
@@ -51,20 +32,20 @@ export default function LoginPage() {
       hashContent: hash ? hash.substring(0, 50) + '...' : 'none',
       hasToken: hash.includes('token=')
     })
-    
+
     if (hash && hash.includes('token=')) {
       setIsProcessingOIDC(true)
       const params = new URLSearchParams(hash.replace('#', ''))
       const token = params.get('token') || ''
       const refreshToken = params.get('refreshToken') || ''
       const expiresIn = params.get('expiresIn') || '10m'
-      
+
       console.log('🎯 Processing OIDC login:', {
         hasToken: !!token,
         hasRefreshToken: !!refreshToken,
         expiresIn: expiresIn
       })
-      
+
       if (token && refreshToken) {
         ;(async () => {
           try {
@@ -91,21 +72,25 @@ export default function LoginPage() {
   }, [])
 
 
-  // Show OIDC processing loader
+  // Show OIDC processing loader - Marketing Site Style
   if (isProcessingOIDC) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000 pointer-events-none"></div>
+      <div className="min-h-screen bg-[#050505] text-white relative overflow-hidden flex items-center justify-center">
+        <div className="bg-noise" />
+
+        {/* Ambient Lighting */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-[-20%] left-[-10%] w-[1000px] h-[1000px] bg-indigo-900/20 rounded-full blur-[120px] opacity-20" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[800px] h-[800px] bg-violet-900/20 rounded-full blur-[120px] opacity-20" />
+        </div>
 
         <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="relative z-10 text-center"
         >
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl p-12 shadow-2xl">
+          <div className="glass-card rounded-2xl p-12 border border-white/[0.08]">
             <motion.div
               animate={{
                 rotate: 360,
@@ -115,17 +100,17 @@ export default function LoginPage() {
                 repeat: Infinity,
                 ease: "linear"
               }}
-              className="w-24 h-24 mx-auto mb-6 relative"
+              className="w-20 h-20 mx-auto mb-8 relative"
             >
-              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full opacity-20 blur-xl"></div>
-              <div className="absolute inset-2 border-4 border-transparent border-t-blue-400 border-r-purple-400 rounded-full"></div>
+              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full opacity-20 blur-xl"></div>
+              <div className="absolute inset-2 border-2 border-transparent border-t-indigo-400 border-r-purple-400 rounded-full"></div>
             </motion.div>
 
             <motion.h2
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="text-2xl font-bold text-white mb-3"
+              className="text-2xl font-bold gradient-text mb-3 tracking-tight"
             >
               Completing Sign In
             </motion.h2>
@@ -134,16 +119,16 @@ export default function LoginPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="text-slate-300 text-sm"
+              className="text-zinc-400 text-sm"
             >
-              Securely logging you into SmartHR...
+              Securely logging you into Seemplify Recruiter...
             </motion.p>
 
             <motion.div
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
               transition={{ delay: 0.6, duration: 1.5 }}
-              className="mt-6 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full origin-left"
+              className="mt-8 h-[2px] bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full origin-left"
             ></motion.div>
           </div>
         </motion.div>
@@ -152,341 +137,205 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div 
-        className="absolute inset-0 opacity-30"
-        style={{
-          background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
-        }}
-      />
-      
-      {/* Floating Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      <div className="absolute top-3/4 left-1/3 w-64 h-64 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-2000"></div>
+    <div className="min-h-screen bg-[#050505] text-white selection:bg-indigo-500/30 relative overflow-hidden">
+      <div className="bg-noise" />
 
-      {/* Grid Pattern Overlay */}
-      <div 
-        className="absolute inset-0 opacity-10"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px)
-          `,
-          backgroundSize: '50px 50px'
-        }}
-      />
+      {/* Ambient Lighting */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[1000px] h-[1000px] bg-indigo-900/20 rounded-full blur-[120px] opacity-20" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[800px] h-[800px] bg-violet-900/20 rounded-full blur-[120px] opacity-20" />
+      </div>
 
-      <div className="relative z-10 flex h-screen">
+      <div className="relative z-10 flex min-h-screen">
         {/* Left Side - Brand & Features */}
-        <div className="hidden lg:flex lg:w-1/2 flex-col justify-center p-6 lg:p-8 xl:p-12 2xl:p-16">
+        <div className="hidden lg:flex lg:w-1/2 flex-col justify-center px-12 xl:px-20 2xl:px-24">
           {/* Logo and Brand */}
-          <div className="mb-6 lg:mb-8 xl:mb-12">
-            <div className="flex items-center mb-6">
-              <div className="relative">
-                <div className="w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center shadow-2xl">
-                  <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">HR</span>
-                </div>
-                <div className="absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse"></div>
-              </div>
-              <div className="ml-3 lg:ml-4">
-                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">SmartHR</h1>
-                <p className="text-slate-300 text-xs lg:text-sm">AI-Powered Recruitment</p>
-              </div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="mb-12"
+          >
+            <div className="mb-8">
+              <SeemplifyRecruiterLogo size="lg" animated={false} />
             </div>
-            
-            <div className="max-w-md">
-              <h2 className="text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold text-white mb-3 lg:mb-4 leading-tight">
-                Transform your
-                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  hiring process
-                </span>
+
+            <div className="max-w-lg">
+              <h2 className="text-4xl xl:text-5xl font-bold tracking-tighter mb-6 bg-gradient-to-br from-white via-white to-zinc-500 bg-clip-text text-transparent">
+                Transform your<br />hiring process.
               </h2>
-              <p className="text-slate-300 text-sm lg:text-base xl:text-lg leading-relaxed">
+              <p className="text-lg text-zinc-400 leading-relaxed font-light">
                 Leverage AI-driven insights to find the perfect candidates faster than ever before.
               </p>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Feature Cards */}
-          <div className="space-y-2 lg:space-y-3 xl:space-y-4">
+          {/* Feature Cards - Marketing Site Style */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="space-y-3"
+          >
             {[
               {
                 icon: <Zap className="w-5 h-5" />,
                 title: "AI-Powered Matching",
-                description: "Intelligent candidate-job matching with 95% accuracy"
+                description: "95% accuracy candidate matching",
+                color: "text-blue-400"
               },
               {
                 icon: <BarChart3 className="w-5 h-5" />,
                 title: "Smart Analytics",
-                description: "Real-time insights and performance metrics"
+                description: "Real-time insights and metrics",
+                color: "text-purple-400"
               },
               {
                 icon: <Users className="w-5 h-5" />,
                 title: "Team Collaboration",
-                description: "Seamless workflow for hiring teams"
+                description: "Seamless hiring workflow",
+                color: "text-emerald-400"
               }
             ].map((feature, index) => (
-              <div 
-                key={index} 
-                className="flex items-center p-2 lg:p-3 xl:p-4 bg-white/5 backdrop-blur-sm rounded-lg lg:rounded-xl border border-white/10 hover:bg-white/10 transition-all duration-300 group"
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 + (index * 0.1), duration: 0.5 }}
+                className="group flex items-center p-4 glass-card rounded-xl border border-white/[0.06] hover:border-white/[0.1] transition-all duration-300"
               >
-                <div className="flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300">
+                <div className={`flex-shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center ${feature.color} group-hover:bg-white/10 transition-colors`}>
                   {feature.icon}
                 </div>
-                <div className="ml-2 lg:ml-3 xl:ml-4">
-                  <h3 className="text-white font-semibold text-sm lg:text-base">{feature.title}</h3>
-                  <p className="text-slate-300 text-xs lg:text-sm">{feature.description}</p>
+                <div className="ml-4">
+                  <h3 className="text-white font-medium text-sm">{feature.title}</h3>
+                  <p className="text-zinc-500 text-xs">{feature.description}</p>
                 </div>
-              </div>
+                <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="w-1 h-1 rounded-full bg-indigo-500" />
+                </div>
+              </motion.div>
             ))}
-          </div>
-
-
+          </motion.div>
         </div>
 
         {/* Right Side - Login Form */}
         <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
           <div className="w-full max-w-md">
             {/* Mobile Logo */}
-            <div className="lg:hidden flex justify-center mb-8">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center shadow-2xl">
-                <span className="font-extrabold text-white text-xl tracking-tighter">HR</span>
-              </div>
-            </div>
-
-            {/* Floating Particles */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              {Array.from({ length: 20 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="absolute w-1 h-1 bg-blue-400/30 rounded-full"
-                  initial={{ 
-                    x: Math.random() * 400, 
-                    y: Math.random() * 600,
-                    scale: 0
-                  }}
-                  animate={{
-                    y: [Math.random() * 600, Math.random() * 600 - 100],
-                    scale: [0, 1, 0],
-                    opacity: [0, 1, 0]
-                  }}
-                  transition={{
-                    duration: 3 + Math.random() * 2,
-                    repeat: Infinity,
-                    delay: Math.random() * 2
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Enhanced Login Card */}
             <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.5, type: "spring", stiffness: 100 }}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="lg:hidden flex justify-center mb-10"
             >
-              <Card className="bg-white/15 backdrop-blur-2xl border-white/30 shadow-2xl overflow-hidden relative">
-                {/* Subtle Animated Border */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-lg animate-pulse opacity-30"></div>
-                
-                <CardHeader className="space-y-1 text-center pb-6 relative z-10">
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.5 }}
-                  >
-                    <CardTitle className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-                      Welcome back
-                      <motion.div
-                        animate={{ rotate: [0, 10, 0] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                      >
-                        <Sparkles className="w-5 h-5 text-yellow-400" />
-                      </motion.div>
-                    </CardTitle>
-                  </motion.div>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.4, duration: 0.5 }}
-                  >
-                    <CardDescription className="text-slate-300 text-base">
-                      Sign in to your SmartHR account
-                    </CardDescription>
-                  </motion.div>
-                </CardHeader>
-
-                <div className="relative z-10">
-                  <CardContent className="space-y-6 px-6">
-                    {/* IDP Login Description */}
-                    <motion.div
-                      className="text-center space-y-3"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.6, duration: 0.5 }}
-                    >
-                      <p className="text-slate-300 text-sm">
-                        Sign in securely using your {oidcConfig.providerName} account
-                      </p>
-                    </motion.div>
-                  </CardContent>
-
-                  <CardFooter className="px-6 pb-6 pt-4">
-                    {oidcConfig.enabled && (
-                      <motion.div
-                        className="w-full"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.8, duration: 0.5 }}
-                      >
-                        <motion.div
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          transition={{ type: "spring", stiffness: 400 }}
-                        >
-                          <Button
-                            type="button"
-                            size="lg"
-                            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold h-12 rounded-xl transition-all duration-300 shadow-lg hover:shadow-2xl border-0 focus:ring-2 focus:ring-blue-400/50 focus:outline-none"
-                            onClick={() => {
-                              const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
-                              const returnTo = encodeURIComponent(window.location.href)
-                              window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
-                            }}
-                            disabled={isLoading}
-                          >
-                            <div className="flex items-center justify-center space-x-3">
-                              <span>{oidcConfig.buttonText}</span>
-                              <motion.div
-                                animate={{ x: [0, 4, 0] }}
-                                transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 1 }}
-                              >
-                                <ArrowRight className="w-5 h-5" />
-                              </motion.div>
-                            </div>
-                          </Button>
-                        </motion.div>
-                      </motion.div>
-                    )}
-                  </CardFooter>
-              </div>
-            </Card>
+              <SeemplifyRecruiterLogo size="md" animated={false} />
             </motion.div>
 
-            {/* Signup Section Below Card */}
-            <motion.div 
-              className="mt-4 sm:mt-6 lg:mt-8 text-center"
+            {/* Login Card - Glass Card Style */}
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.4, duration: 0.5 }}
+              transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
-              <motion.div 
-                className="bg-white/5 backdrop-blur-sm rounded-xl lg:rounded-2xl border border-white/10 p-3 sm:p-4 lg:p-6 relative overflow-hidden group"
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 400 }}
-              >
-                {/* Animated background gradient */}
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                  animate={{
-                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-                  }}
-                  transition={{ duration: 4, repeat: Infinity }}
-                />
-                
-                <div className="relative z-10">
-                  <motion.p 
-                    className="text-slate-300 text-sm sm:text-base mb-3 sm:mb-4"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 1.6, duration: 0.5 }}
-                  >
-                    Don't have an account?
-                  </motion.p>
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 400 }}
-                  >
-                    <Link
-                      href="/signup"
-                      className="inline-flex items-center justify-center space-x-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-4 sm:px-6 lg:px-8 py-2 sm:py-2.5 lg:py-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-white/20 hover:border-white/30 group/signup text-sm sm:text-base relative overflow-hidden"
-                    >
-                      {/* Button shine effect */}
-                      <motion.div
-                        className="absolute inset-0 -top-1 -left-1 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12 group-hover/signup:animate-pulse"
-                        animate={{
-                          x: ['-100%', '100%'],
-                        }}
-                        transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                      />
-                      
-                      <span className="relative z-10">Sign up for free</span>
-                      <motion.div
-                        animate={{ x: [0, 3, 0] }}
-                        transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 2 }}
-                        className="relative z-10"
-                      >
-                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </motion.div>
-                    </Link>
-                  </motion.div>
+              <div className="glass-card rounded-2xl p-8 border border-white/[0.08]">
+                <div className="text-center mb-8">
+                  <h2 className="text-2xl font-bold gradient-text tracking-tight mb-2">
+                    Welcome back
+                  </h2>
+                  <p className="text-zinc-400 text-sm">
+                    Sign in to Seemplify Recruiter
+                  </p>
                 </div>
-              </motion.div>
+
+                <div className="space-y-6">
+                  {/* IDP Login Description */}
+                  <div className="text-center">
+                    <p className="text-zinc-500 text-sm">
+                      Sign in securely using your {oidcConfig.providerName} account
+                    </p>
+                  </div>
+
+                  {/* Login Button */}
+                  {oidcConfig.enabled && (
+                    <motion.div
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                    >
+                      <Button
+                        type="button"
+                        className="w-full h-12 bg-white text-black rounded-lg font-medium hover:bg-zinc-200 transition-all duration-300"
+                        onClick={() => {
+                          const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+                          const returnTo = encodeURIComponent(window.location.href)
+                          window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
+                        }}
+                        disabled={isLoading}
+                      >
+                        <div className="flex items-center justify-center space-x-2">
+                          <span>{oidcConfig.buttonText}</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </div>
+                      </Button>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
             </motion.div>
 
-            {/* App Hub (View All Apps) */}
+            {/* Signup Section */}
             <motion.div
-              className="mt-4 sm:mt-5 lg:mt-7"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.35, duration: 0.5 }}
+              transition={{ delay: 0.3, duration: 0.6 }}
+              className="mt-6"
             >
-              <motion.a
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
+              <div className="glass-card rounded-xl p-6 border border-white/[0.06] text-center">
+                <p className="text-zinc-400 text-sm mb-4">
+                  Don't have an account?
+                </p>
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center justify-center px-6 py-2.5 border border-zinc-800 rounded-lg font-medium text-zinc-300 hover:text-white hover:bg-white/5 transition-all duration-300 text-sm"
+                >
+                  Sign up for free
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
+              </div>
+            </motion.div>
+
+            {/* App Hub */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+              className="mt-4"
+            >
+              <a
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex w-full items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-left text-white shadow-lg shadow-black/10 transition-all hover:border-white/30 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                className="group flex w-full items-center gap-3 rounded-xl border border-white/[0.06] glass-card px-4 py-3 text-left transition-all hover:border-white/[0.1]"
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-500/30 ring-1 ring-white/15">
-                  <LayoutGrid className="h-5 w-5 text-white" />
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5">
+                  <LayoutGrid className="h-5 w-5 text-zinc-400" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold leading-5">Open App Hub</span>
-                  <span className="block truncate text-xs text-slate-300">View all SmartHR apps and tools</span>
+                  <span className="block text-sm font-medium text-zinc-200">Open App Hub</span>
+                  <span className="block truncate text-xs text-zinc-500">View all Seemplify apps</span>
                 </span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-white" />
-              </motion.a>
+                <ArrowRight className="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-white" />
+              </a>
             </motion.div>
 
             {/* Security Notice */}
-            <motion.div 
-              className="mt-3 sm:mt-4 lg:mt-6 flex items-center justify-center space-x-2 text-slate-400 text-xs"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.6, duration: 0.5 }}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+              className="mt-6 flex items-center justify-center space-x-2 text-zinc-500 text-xs"
             >
-              <motion.div
-                animate={{ 
-                  scale: [1, 1.1, 1],
-                  rotate: [0, 5, 0]
-                }}
-                transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-              >
-                <Shield className="w-3 h-3 sm:w-4 sm:h-4" />
-              </motion.div>
-              <motion.span 
-                className="text-center"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.8, duration: 0.5 }}
-              >
-                Your data is protected with enterprise-grade security
-              </motion.span>
+              <Shield className="w-3.5 h-3.5" />
+              <span>Enterprise-grade security</span>
             </motion.div>
           </div>
         </div>

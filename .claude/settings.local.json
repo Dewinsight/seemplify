@@ -4,7 +4,9 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc --noEmit)",
       "Bash(timeout 10 npm run dev:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)"
     ]
   }
 }
