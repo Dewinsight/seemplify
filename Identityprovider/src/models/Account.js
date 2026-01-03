@@ -43,7 +43,7 @@ const AccountSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer']
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
     },
     joinedAt: {
       type: Date,

@@ -134,6 +134,8 @@
                       <option value="recruiter" <%=member.role==='recruiter' ? 'selected' : '' %>>Recruiter</option>
                       <option value="interviewer" <%=member.role==='interviewer' ? 'selected' : '' %>>Interviewer
                       </option>
+                      <option value="staff" <%=member.role==='staff' ? 'selected' : '' %>>Staff
+                      </option>
                     </select>
                     <button class="btn btn-danger btn-sm"
                       onclick="removeMember('<%= member.id %>', '<%= member.email %>')">

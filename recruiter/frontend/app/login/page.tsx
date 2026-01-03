@@ -14,11 +14,23 @@ import {
   Shield,
   Users,
   BarChart3,
-  LayoutGrid
+  LayoutGrid,
+  AlertTriangle,
+  Building2,
+  LogIn,
+  X
 } from "lucide-react";
 import SeemplifyLogo, { SeemplifyIcon, SeemplifyRecruiterLogo } from "@/components/SeemplifyLogo";
 
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+
+// Staff role access denied error state
+interface StaffRoleError {
+  type: 'staff_role_denied';
+  orgName: string;
+  hubUrl: string;
+  hasOtherOrgs: boolean;
+}
 
 export default function LoginPage() {
   const { toast } = useToast();
@@ -26,6 +38,65 @@ export default function LoginPage() {
   const user = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [staffError, setStaffError] = useState<StaffRoleError | null>(null);
+
+  // Check for error parameters in URL and display appropriate message
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = window.location.search;
+      console.log('🔍 Login page - checking for error params:', searchParams);
+      
+      const params = new URLSearchParams(searchParams);
+      const errorType = params.get('error');
+      
+      console.log('🔍 Error type:', errorType);
+      
+      if (errorType === 'staff_role_denied') {
+        // Handle staff role denial with structured data
+        const orgName = params.get('orgName') || 'your current organization';
+        const hubUrl = params.get('hubUrl') || process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+        const hasOtherOrgs = params.get('hasOtherOrgs') === 'true';
+        
+        console.log('🚫 Staff role denied:', { orgName, hubUrl, hasOtherOrgs });
+        
+        setStaffError({
+          type: 'staff_role_denied',
+          orgName,
+          hubUrl,
+          hasOtherOrgs
+        });
+        
+        // Show toast notification
+        toast({
+          title: "Access Restricted",
+          description: `Your role in "${orgName}" is Staff, which does not have access to Recruiter.`,
+          variant: "destructive",
+          duration: 10000,
+        });
+        
+        // Clean up URL (delay slightly to ensure state is set)
+        setTimeout(() => {
+          window.history.replaceState({}, '', window.location.pathname);
+        }, 100);
+      } else if (errorType) {
+        // Handle generic errors
+        console.log('❌ Generic error:', errorType);
+        setErrorMessage(errorType);
+        toast({
+          title: "Access Denied",
+          description: errorType,
+          variant: "destructive",
+          duration: 10000,
+        });
+        
+        // Clean up URL
+        const url = new URL(window.location.href);
+        url.searchParams.delete('error');
+        window.history.replaceState({}, '', url.pathname);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
@@ -261,6 +332,92 @@ export default function LoginPage() {
                 </div>
 
                 <div className="space-y-6">
+                  {/* Staff Role Access Denied Alert */}
+                  {staffError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                            Access Restricted
+                          </h3>
+                          <p className="text-sm text-amber-700 dark:text-amber-400 mb-3">
+                            Your role in <strong className="font-semibold">{staffError.orgName}</strong> is <span className="font-medium">Staff</span>, which does not have access to Recruiter.
+                          </p>
+                          
+                          {staffError.hasOtherOrgs ? (
+                            <p className="text-xs text-amber-600 dark:text-amber-500 mb-4">
+                              You have other organizations with Recruiter access. Switch to a different organization in the Hub to continue.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-amber-600 dark:text-amber-500 mb-4">
+                              Contact your organization administrator to request Recruiter access, or sign in with a different account.
+                            </p>
+                          )}
+                          
+                          {/* Action Buttons */}
+                          <div className="flex flex-wrap gap-2">
+                            {staffError.hasOtherOrgs && (
+                              <a
+                                href={`${staffError.hubUrl}/organizations`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors"
+                              >
+                                <Building2 className="w-3.5 h-3.5" />
+                                Switch Organization
+                              </a>
+                            )}
+                            <a
+                              href={staffError.hubUrl}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 dark:hover:bg-amber-800/50 text-amber-700 dark:text-amber-300 text-xs font-medium rounded-lg transition-colors"
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                              Go to Hub
+                            </a>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setStaffError(null)}
+                          className="flex-shrink-0 text-amber-400 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-300 transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Generic Error Alert */}
+                  {errorMessage && !staffError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-lg"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-sm font-semibold text-red-800 dark:text-red-300 mb-1">Access Denied</h3>
+                          <p className="text-sm text-red-700 dark:text-red-400">{errorMessage}</p>
+                        </div>
+                        <button
+                          onClick={() => setErrorMessage(null)}
+                          className="flex-shrink-0 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-300 transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
                   {/* IDP Login Description */}
                   <div className="text-center">
                     <p className="text-muted-foreground text-sm">

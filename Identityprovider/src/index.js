@@ -30,11 +30,19 @@ const CLAIMS_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Get cached claims or build new ones
- * Cache key includes account ID and updatedAt timestamp for invalidation
+ * Cache key includes:
+ *   - account ID (sub)
+ *   - updatedAt timestamp for data change invalidation
+ *   - currentOrganization ID to invalidate on org switch
+ *
+ * IMPORTANT: Including currentOrganization in the cache key ensures that
+ * switching organizations in the Hub immediately gives the user fresh claims
+ * reflecting their new current organization context.
  */
 async function getCachedClaims(acc) {
   const startTime = Date.now()
-  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}`
+  const currentOrgId = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString() || 'none'
+  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}:${currentOrgId}`
   const cached = claimsCache.get(cacheKey)
 
   if (cached && (Date.now() - cached.timestamp) < CLAIMS_CACHE_TTL) {
@@ -2742,18 +2750,43 @@ async function getSessionFromCookies(req) {
 app.get('/', async (req, res) => {
   try {
     // Check for authenticated session
-    const account = await getSessionFromCookies(req)
+    const sessionAccount = await getSessionFromCookies(req)
 
-    if (!account) {
+    if (!sessionAccount) {
       // Not logged in - redirect to login
       return res.redirect('/login')
     }
+
+    // Get full account with populated organizations
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    // Get user's organizations with their roles
+    const userOrganizations = await Organization.find({
+      'members.account': account._id,
+      'members.status': 'active'
+    }).lean()
+
+    const organizations = userOrganizations.map(org => {
+      const member = org.members.find(m => m.account.toString() === account._id.toString())
+      return {
+        id: org._id.toString(),
+        name: org.name,
+        role: member?.role || 'member',
+        isCurrent: account.currentOrganization?._id?.toString() === org._id.toString()
+      }
+    })
 
     // Get all active apps
     const apps = getHubApps()
 
     // Render the hub homepage
-    res.send(renderHubPage(account, apps))
+    res.send(renderHubPage(account, apps, organizations))
   } catch (err) {
     console.error('Hub error:', err)
     res.status(500).send('Internal server error')
@@ -2951,7 +2984,7 @@ app.get('/launch/:appId', async (req, res) => {
   const launchStartTime = Date.now()
   try {
     const { appId } = req.params
-    
+
     const sessionStart = Date.now()
     const account = await getSessionFromCookies(req)
     console.log(`⏱️ Hub session lookup took ${Date.now() - sessionStart}ms`)
@@ -3003,7 +3036,7 @@ app.get('/launch/:appId', async (req, res) => {
       case 'payroll-management':
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
         break;
-      // Fallback to smarthr API URL for unknown apps
+        // Fallback to smarthr API URL for unknown apps
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
     }
 
@@ -3241,13 +3274,34 @@ app.get('/organizations', getSessionUser, async (req, res) => {
 
 app.post('/organizations/:orgId/switch', getSessionUser, async (req, res) => {
   try {
+    // Update currentOrganization and updatedAt to ensure claims cache is invalidated
     await Account.updateOne(
       { _id: req.user._id },
-      { $set: { currentOrganization: req.params.orgId } }
+      {
+        $set: {
+          currentOrganization: req.params.orgId,
+          updatedAt: new Date() // Explicitly update timestamp for cache invalidation
+        }
+      }
     )
-    res.redirect('/organizations?success=Switched organization')
+
+    // Invalidate claims cache for this user
+    invalidateClaimsCache(req.user.sub)
+
+    console.log(`🔄 User ${req.user.email} switched to organization ${req.params.orgId}`)
+
+    // Redirect back to where the user came from (e.g. Hub or specific page)
+    const referer = req.get('Referer') || '/'
+    const returnUrl = new URL(referer, `http://${req.headers.host}`)
+    returnUrl.searchParams.set('success', 'Switched organization')
+
+    res.redirect(returnUrl.pathname + returnUrl.search)
   } catch (error) {
-    res.redirect('/organizations?error=Failed to switch organization')
+    console.error('Organization switch error:', error)
+    const referer = req.get('Referer') || '/'
+    const returnUrl = new URL(referer, `http://${req.headers.host}`)
+    returnUrl.searchParams.set('error', 'Failed to switch organization')
+    res.redirect(returnUrl.pathname + returnUrl.search)
   }
 })
 
@@ -3801,7 +3855,8 @@ app.get('/debug/smarthr', async (req, res) => {
 })
 
 // Hub Page Renderer
-function renderHubPage(account, apps) {
+function renderHubPage(account, apps, organizations = []) {
+  const currentOrg = organizations.find(o => o.isCurrent)
   const appCards = apps.map(app => `
     <a href="/launch/${app.appId}" class="card app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
       <div class="app-card__icon">${getAppIcon(app.icon)}</div>
@@ -3829,6 +3884,10 @@ function renderHubPage(account, apps) {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         ${themeCss}
+        /* Modal Styles */
+        /* Modal Styles (Native Dialog) */
+
+
         /* Hub-specific tune-ups: reduce noise + keep clean backdrop */
         body { padding: 28px 18px 48px; background: #050505; }
         body::before { opacity: 0.12; }
@@ -3945,44 +4004,75 @@ function renderHubPage(account, apps) {
       </nav>
 
       <div class="container hub-content">
-        <section class="hub-hero">
-          <div class="card hub-card">
-            <h1>Your AIIN apps</h1>
-            <p>Launch SmartHR and connected tools from one place.</p>
-            <div class="chips">
-              <span class="chip">SSO ready</span>
-              <span class="chip secondary">Smart launch</span>
-            </div>
-          </div>
-          <div class="card hub-card">
-            <div class="stat"><span class="dot"></span>Signed in as ${account.email}</div>
-            <div class="stat"><span class="dot" style="background:#2563eb; box-shadow:0 0 0 6px rgba(37,99,235,0.12);"></span>${apps.length} active app${apps.length === 1 ? '' : 's'}</div>
-          </div>
-        </section>
+
 
         <section class="apps">
           <div class="section-title">Manage identity & access</div>
-          <div class="card hub-card" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <div style="width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: grid; place-items: center;">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
+          
+          <!-- Unified Organization Card -->
+          ${organizations.length > 0 ? `
+          <div class="card hub-card" style="padding: 0; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; gap: 0;">
+            <!-- Top Strip: Current Org & Switcher -->
+            <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: grid; place-items: center;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                    <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 4px;">Current Organization</div>
+                  <div style="font-size: 18px; font-weight: 700; color: #fff;">${currentOrg?.name || 'Select Organization'}</div>
+                </div>
               </div>
-              <div>
-                <div style="font-weight: 700; font-size: 15px; color: #f8fafc;">Organization Settings</div>
-                <div style="font-size: 13px; color: #94a3b8;">Manage your organization structure and team access</div>
+              
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <button onclick="openOrgModal()" style="
+                  display: flex; align-items: center; gap: 10px; padding: 10px 16px; 
+                  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); 
+                  border-radius: 8px; color: #e2e8f0; font-weight: 500; font-size: 14px; cursor: pointer;
+                  transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                  <span>Switch organization...</span>
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <div style="padding: 10px 14px; background: rgba(30, 41, 59, 0.5); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  <span style="font-size: 13px; font-weight: 600; color: #e2e8f0;">${organizations.length} Org${organizations.length === 1 ? '' : 's'}</span>
+                </div>
               </div>
             </div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <a href="/profile" class="ghost-btn">Profile</a>
-              <a href="/organizations" class="ghost-btn">Organizations</a>
-              <a href="/invitations/pending" class="ghost-btn">Invitations</a>
+
+            <!-- Bottom Strip: Settings & Actions -->
+            <div style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.3);">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(96, 165, 250, 0.1); display: grid; place-items: center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-weight: 600; color: #f1f5f9; font-size: 15px;">Organization Settings</div>
+                  <div style="font-size: 13px; color: #64748b;">Manage your organization structure and team access</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; gap: 8px;">
+                <a href="/profile" class="ghost-btn">Profile</a>
+                <a href="/organizations" class="ghost-btn">Organizations</a>
+                <a href="/invitations/pending" class="ghost-btn">Invitations</a>
+              </div>
             </div>
           </div>
+          ` : ''}
         </section>
 
         <section class="apps">
@@ -3999,6 +4089,184 @@ function renderHubPage(account, apps) {
           `}
         </section>
       </div>
+      
+      <!-- Custom Premium Modal -->
+      <style>
+        .custom-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(8px);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .custom-modal-overlay.active {
+          opacity: 1;
+          visibility: visible;
+        }
+        .custom-modal {
+          background: #1e293b;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 24px;
+          width: 90%;
+          max-width: 440px;
+          box-shadow: 
+            0 0 0 1px rgba(0,0,0,0.2), 
+            0 20px 60px -10px rgba(0,0,0,0.6);
+          transform: scale(0.92) translateY(8px);
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          opacity: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .custom-modal-overlay.active .custom-modal {
+          transform: scale(1) translateY(0);
+          opacity: 1;
+        }
+        .custom-modal-header {
+          padding: 24px 24px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .custom-modal-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #f8fafc;
+          letter-spacing: -0.01em;
+        }
+        .custom-modal-close {
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          padding: 8px;
+          margin: -8px -8px -8px 0;
+          border-radius: 99px;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .custom-modal-close:hover {
+          background: rgba(255,255,255,0.08);
+          color: #fff;
+        }
+        .custom-modal-body {
+          padding: 8px 16px 24px;
+          max-height: 60vh;
+          overflow-y: auto;
+        }
+        .org-option-item {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          padding: 12px 16px;
+          margin-bottom: 4px;
+          gap: 14px;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          text-align: left;
+          position: relative;
+        }
+        .org-option-item:hover {
+          background: rgba(255,255,255,0.04);
+        }
+        .org-option-item.active {
+          background: rgba(59,130,246,0.1);
+          border-color: rgba(59,130,246,0.2);
+        }
+        .org-option-avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: #334155;
+          display: grid;
+          place-items: center;
+          font-weight: 700;
+          color: #cbd5e1;
+          font-size: 14px;
+          flex-shrink: 0;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .org-option-item.active .org-option-avatar {
+          background: linear-gradient(135deg, #3b82f6, #60a5fa);
+          color: #fff;
+          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .org-option-info { flex: 1; min-width: 0; }
+        .org-option-name { font-weight: 600; color: #e2e8f0; font-size: 15px; margin-bottom: 2px; }
+        .org-option-role { font-size: 13px; color: #94a3b8; text-transform: capitalize; }
+      </style>
+
+      <div id="customOrgModal" class="custom-modal-overlay">
+        <div class="custom-modal" onclick="event.stopPropagation()">
+          <div class="custom-modal-header">
+            <div class="custom-modal-title">Switch Organization</div>
+            <button class="custom-modal-close" onclick="closeCustomOrgModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="custom-modal-body">
+            ${organizations.map(org => `
+              <button onclick="switchOrganization('${org.id}')" class="org-option-item ${org.isCurrent ? 'active' : ''}">
+                <div class="org-option-avatar">${org.name.substring(0, 2).toUpperCase()}</div>
+                <div class="org-option-info">
+                  <div class="org-option-name">${org.name}</div>
+                  <div class="org-option-role">${org.role}</div>
+                </div>
+                ${org.isCurrent ? `
+                  <div style="color: #60a5fa;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                  </div>
+                ` : ''}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+      <form id="org-switch-form" method="POST" style="display: none;"></form>
+
+      <script>
+        function openOrgModal() {
+          const modal = document.getElementById('customOrgModal');
+          const modalContent = modal.querySelector('.custom-modal');
+          modal.classList.add('active');
+          
+          // Animate backdrop click
+          modal.onclick = (e) => {
+            if (e.target === modal) closeCustomOrgModal();
+          };
+          
+          document.onkeydown = (e) => {
+            if (e.key === 'Escape') closeCustomOrgModal();
+          };
+        }
+
+        function closeCustomOrgModal() {
+          const modal = document.getElementById('customOrgModal');
+          modal.classList.remove('active');
+          document.onkeydown = null;
+        }
+
+        function switchOrganization(orgId) {
+          const form = document.getElementById('org-switch-form');
+          form.action = '/organizations/' + orgId + '/switch';
+          form.submit();
+        }
+      </script>
     </body>
     </html>
   `

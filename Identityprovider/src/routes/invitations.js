@@ -393,7 +393,7 @@ router.post('/:orgId/invitations',
       const normalizedEmail = email.toLowerCase().trim()
 
       // Validate role
-      const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer']
+      const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
       }

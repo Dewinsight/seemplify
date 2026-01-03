@@ -25,7 +25,7 @@ const OrganizationSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer'],
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
       default: 'recruiter'
     },
     joinedAt: {
@@ -343,7 +343,8 @@ OrganizationSchema.methods.hasPermission = function(accountId, permission) {
     interviewer: [
       'view_candidates',
       'view_jobs'
-    ]
+    ],
+    staff: [] // Staff role has no permissions by default
   }
 
   const permissions = rolePermissions[member.role] || []
