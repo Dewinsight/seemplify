@@ -19,6 +19,7 @@ import ConditionalProviders from "@/components/ConditionalProviders"; // Import 
 import MaintenanceMode from "@/components/MaintenanceMode";
 import { ChristmasPopup } from "@/components/ChristmasPopup";
 import Script from 'next/script'
+import { themeInitScript } from '@/lib/theme-sync'
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -38,6 +39,8 @@ export default function RootLayout({
       <head>
         {/* Load runtime configuration before any other scripts */}
         <Script src="/__runtime_config__.js" strategy="beforeInteractive" />
+        {/* Theme sync script - reads from shared cookie before hydration */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
       </head>
       <body className={`${inter.className} bg-[rgb(var(--background-start-rgb))] relative`}>

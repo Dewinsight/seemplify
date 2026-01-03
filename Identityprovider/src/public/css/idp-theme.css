@@ -1,5 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+/* Enable View Transitions for smoother navigation */
+@view-transition {
+  navigation: auto;
+}
+
 :root {
   /* Default Dark Mode */
   --bg: #050505;
@@ -21,6 +26,20 @@
   --input-bg: rgba(255, 255, 255, 0.05);
   --hover-bg: rgba(255, 255, 255, 0.04);
   --card-bg: linear-gradient(175deg, rgba(18, 18, 22, 0.82), rgba(15, 15, 20, 0.68));
+
+  /* Badge Colors (Dark Mode Defaults) */
+  --badge-owner-bg: rgba(192, 132, 252, 0.18);
+  --badge-owner-text: #e9d5ff;
+  --badge-admin-bg: rgba(129, 140, 248, 0.18);
+  --badge-admin-text: #c7d2fe;
+  --badge-success-bg: rgba(34, 197, 94, 0.16);
+  --badge-success-text: #bbf7d0;
+  --badge-warning-bg: rgba(245, 158, 11, 0.16);
+  --badge-warning-text: #fed7aa;
+  --badge-neutral-bg: rgba(148, 163, 184, 0.16);
+  --badge-neutral-text: #e5e7eb;
+  --badge-error-bg: rgba(239, 68, 68, 0.14);
+  --badge-error-text: #fecaca;
 }
 
 [data-theme="light"] {
@@ -43,6 +62,20 @@
   --input-bg: rgba(255, 255, 255, 0.8);
   --hover-bg: rgba(0, 0, 0, 0.04);
   --card-bg: #ffffff;
+
+  /* Badge Colors */
+  --badge-owner-bg: rgba(168, 85, 247, 0.12);
+  --badge-owner-text: #7e22ce;
+  --badge-admin-bg: rgba(99, 102, 241, 0.12);
+  --badge-admin-text: #4338ca;
+  --badge-success-bg: rgba(22, 163, 74, 0.12);
+  --badge-success-text: #15803d;
+  --badge-warning-bg: rgba(217, 119, 6, 0.12);
+  --badge-warning-text: #b45309;
+  --badge-neutral-bg: rgba(148, 163, 184, 0.12);
+  --badge-neutral-text: #475569;
+  --badge-error-bg: rgba(220, 38, 38, 0.12);
+  --badge-error-text: #b91c1c;
 }
 
 /* Light mode specific overrides */
@@ -579,8 +612,8 @@ p {
 }
 
 .is-manager {
-  background: rgba(192, 132, 252, 0.18);
-  color: #e9d5ff;
+  background: var(--badge-owner-bg);
+  color: var(--badge-owner-text);
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 11px;
@@ -594,49 +627,49 @@ p {
 }
 
 .role-owner {
-  background: rgba(192, 132, 252, 0.18);
-  color: #e9d5ff;
+  background: var(--badge-owner-bg);
+  color: var(--badge-owner-text);
 }
 
 .role-admin {
-  background: rgba(129, 140, 248, 0.18);
-  color: #c7d2fe;
+  background: var(--badge-admin-bg);
+  color: var(--badge-admin-text);
 }
 
 .role-hr_manager {
-  background: rgba(34, 197, 94, 0.16);
-  color: #bbf7d0;
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
 }
 
 .role-recruiter {
-  background: rgba(245, 158, 11, 0.16);
-  color: #fed7aa;
+  background: var(--badge-warning-bg);
+  color: var(--badge-warning-text);
 }
 
 .role-interviewer {
-  background: rgba(148, 163, 184, 0.16);
-  color: #e5e7eb;
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
 }
 
 .role-member {
-  background: rgba(148, 163, 184, 0.16);
-  color: #e5e7eb;
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
 }
 
 .role-line_manager {
-  background: rgba(129, 140, 248, 0.16);
-  color: #c7d2fe;
+  background: var(--badge-admin-bg);
+  color: var(--badge-admin-text);
 }
 
 .role-team_lead {
-  background: rgba(192, 132, 252, 0.16);
-  color: #e9d5ff;
+  background: var(--badge-owner-bg);
+  color: var(--badge-owner-text);
 }
 
 .manager-badge,
 .current-badge {
-  background: rgba(34, 197, 94, 0.16);
-  color: #bbf7d0;
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
   padding: 4px 10px;
   border-radius: 999px;
   font-weight: 700;
@@ -692,15 +725,15 @@ p {
 }
 
 .alert-error {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.32);
-  color: #fecaca;
+  background: var(--badge-error-bg);
+  border-color: var(--badge-error-bg);
+  color: var(--badge-error-text);
 }
 
 .alert-success {
-  background: rgba(34, 197, 94, 0.14);
-  border-color: rgba(34, 197, 94, 0.32);
-  color: #bbf7d0;
+  background: var(--badge-success-bg);
+  border-color: var(--badge-success-bg);
+  color: var(--badge-success-text);
 }
 
 .notification-badge {
@@ -720,6 +753,26 @@ p {
 .notification-icon:hover {
   border-color: rgba(255, 255, 255, 0.16);
   background: var(--hover-bg);
+}
+
+.brand-mark {
+  background: var(--brand);
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.logo-dot {
+  fill: #fff;
+}
+
+[data-theme="light"] .logo-dot {
+  fill: var(--text);
 }
 
 .badge-count {

@@ -3982,7 +3982,7 @@ function renderHubPage(account, apps, organizations = []) {
           .app-card__icon { justify-self: flex-start; }
         }
       </style>
-      <script src="/js/theme.js?v=2" defer></script>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
       <nav class="top-nav">
@@ -4368,7 +4368,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           .title h1 { font-size: 26px; }
         }
       </style>
-      <script src="/js/theme.js?v=2" defer></script>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
       <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
@@ -4518,7 +4518,7 @@ function renderHubSignupPage(errorMsg) {
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .card { padding: 22px; } }
       </style>
-      <script src="/js/theme.js?v=2" defer></script>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
       <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">

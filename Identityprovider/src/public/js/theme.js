@@ -1,19 +1,46 @@
 /**
  * Theme Manager for Identity Provider
- * Handles persistence to localStorage, system preference syncing,
+ * Handles persistence to localStorage/Cookies, system preference syncing,
  * and cross-tab synchronization.
  */
 (function () {
-    console.log("Theme Manager script starting...");
     const STORAGE_KEY = 'theme'; // Matches Next.js next-themes key
 
-    function getTheme() {
-        // 1. Check local storage
-        const local = localStorage.getItem(STORAGE_KEY);
-        if (local && ['light', 'dark', 'system'].includes(local)) {
-            return local;
+    function getCookie(name) {
+        const nameEQ = name + "=";
+        const ca = document.cookie.split(';');
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
         }
-        // 2. Default to system
+        return null;
+    }
+
+    function setCookie(name, value, days) {
+        let expires = "";
+        if (days) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = "; expires=" + date.toUTCString();
+        }
+        document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+    }
+
+    function getTheme() {
+        // 1. Check cookie (shared preference)
+        const cookieTheme = getCookie(STORAGE_KEY);
+        if (cookieTheme && ['light', 'dark', 'system'].includes(cookieTheme)) {
+            return cookieTheme;
+        }
+        // 2. Check local storage (fallback)
+        try {
+            const local = localStorage.getItem(STORAGE_KEY);
+            if (local && ['light', 'dark', 'system'].includes(local)) {
+                return local;
+            }
+        } catch (e) { }
+        // 3. Default to system
         return 'system';
     }
 
@@ -26,29 +53,77 @@
         const resolvedTheme = theme === 'system' ? getSystemTheme() : theme;
 
         // Apply data attribute for CSS
-        root.setAttribute('data-theme', resolvedTheme);
-
-        // Also toggle a class if needed (optional, using data-theme mainly)
-        if (resolvedTheme === 'light') {
-            document.body.classList.add('light');
-            document.body.classList.remove('dark');
-        } else {
-            document.body.classList.add('dark');
-            document.body.classList.remove('light');
+        if (root.getAttribute('data-theme') !== resolvedTheme) {
+            root.setAttribute('data-theme', resolvedTheme);
         }
 
-        // Update active state in UI if it exists
-        updateToggleUI(theme);
+        // Also toggle a class if needed (optional, using data-theme mainly)
+        if (document.body) {
+            if (resolvedTheme === 'light') {
+                document.body.classList.add('light');
+                document.body.classList.remove('dark');
+            } else {
+                document.body.classList.add('dark');
+                document.body.classList.remove('light');
+            }
+        }
+
+        // Dispatch event for other listeners
+        window.dispatchEvent(new CustomEvent('theme-change', { detail: resolvedTheme }));
     }
 
-    function setTheme(theme) {
-        localStorage.setItem(STORAGE_KEY, theme);
-        applyTheme(theme);
-        closeDropdown();
+    // Run immediately to prevent flash
+    const current = getTheme();
+    applyTheme(current);
+
+    // Initialize UI when DOM is ready
+    function initUI() {
+        applyTheme(current); // Ensure body classes are set once DOM is waiting
+        updateToggleUI(current);
+
+        // Setup dropdown listeners
+        document.addEventListener('click', (e) => {
+            const dropdown = document.querySelector('.theme-dropdown');
+            if (dropdown && !dropdown.contains(e.target)) {
+                const menu = document.getElementById('theme-menu');
+                if (menu) menu.classList.remove('show');
+            }
+        });
+
+        // Listen for View Transitions (smooth nav)
+        if (document.startViewTransition) {
+            // This is handled by the browser for MPA if we opt-in via CSS or meta
+        }
     }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initUI);
+    } else {
+        initUI();
+    }
+
+    // Public API
+    window.ThemeManager = {
+        setTheme: function (theme) {
+            setCookie(STORAGE_KEY, theme, 365);
+            localStorage.setItem(STORAGE_KEY, theme);
+            applyTheme(theme);
+            updateToggleUI(theme);
+            const menu = document.getElementById('theme-menu');
+            if (menu) menu.classList.remove('show');
+        },
+        toggleDropdown: function (event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            const menu = document.getElementById('theme-menu');
+            if (menu) menu.classList.toggle('show');
+        },
+        getTheme: getTheme
+    };
 
     function updateToggleUI(currentTheme) {
-        // Update active state in dropdown
         const activeItems = document.querySelectorAll('.theme-option');
         activeItems.forEach(item => {
             if (item.dataset.value === currentTheme) {
@@ -58,11 +133,8 @@
             }
         });
 
-        // Update toggle icon visibility (Sun/Moon)
         const lightIcon = document.querySelector('.theme-toggle-icon-light');
         const darkIcon = document.querySelector('.theme-toggle-icon-dark');
-
-        // Resolve system to actual preference for the icon
         const resolved = currentTheme === 'system' ? getSystemTheme() : currentTheme;
 
         if (lightIcon && darkIcon) {
@@ -75,70 +147,4 @@
             }
         }
     }
-
-    function toggleDropdown(event) {
-        if (event) {
-            event.stopPropagation();
-            event.preventDefault();
-        }
-        console.log('Theme toggle clicked');
-
-        // Use relative lookup to avoid ID issues
-        const button = event.currentTarget;
-        const dropdown = button.closest('.theme-dropdown');
-        const menu = dropdown ? dropdown.querySelector('.theme-menu') : document.getElementById('theme-menu');
-
-        if (menu) {
-            console.log('Menu found, toggling show class');
-            menu.classList.toggle('show');
-        } else {
-            console.error('Theme menu not found');
-        }
-    }
-
-    function closeDropdown() {
-        const menu = document.getElementById('theme-menu');
-        if (menu) {
-            menu.classList.remove('show');
-        }
-    }
-
-    // Initial load
-    const current = getTheme();
-    applyTheme(current);
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-        const dropdown = document.querySelector('.theme-dropdown');
-        if (dropdown && !dropdown.contains(e.target)) {
-            closeDropdown();
-        }
-    });
-
-    // Expose to window for UI interactions
-    window.ThemeManager = {
-        setTheme,
-        getTheme,
-        toggleDropdown,
-        closeDropdown,
-        toggle: () => {
-            const now = getTheme();
-            const next = now === 'dark' ? 'light' : 'dark';
-            setTheme(next);
-        }
-    };
-
-    // Listen for system changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (getTheme() === 'system') {
-            applyTheme('system');
-        }
-    });
-
-    // Listen for storage changes (other tabs/apps)
-    window.addEventListener('storage', (e) => {
-        if (e.key === STORAGE_KEY) {
-            applyTheme(getTheme());
-        }
-    });
 })();

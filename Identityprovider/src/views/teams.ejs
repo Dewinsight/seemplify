@@ -9,7 +9,7 @@
     <%- include('../public/css/idp-theme.css') %>
   </style>
   <link rel="stylesheet" href="/css/main.css">
-  <script src="/js/theme.js?v=2" defer></script>
+  <script src="/js/theme.js?v=2"></script>
 </head>
 
 <body>
@@ -27,9 +27,9 @@
         <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
           stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
           stroke-linejoin="round" />
-        <circle cx="65" cy="25" r="6" fill="#fff" />
-        <circle cx="50" cy="50" r="6" fill="#fff" />
-        <circle cx="35" cy="75" r="6" fill="#fff" />
+        <circle cx="65" cy="25" r="6" class="logo-dot" />
+        <circle cx="50" cy="50" r="6" class="logo-dot" />
+        <circle cx="35" cy="75" r="6" class="logo-dot" />
       </svg>
       <span>Seemplify</span>
     </a>
@@ -368,7 +368,7 @@
 
         document.getElementById('membersModalContent').innerHTML = `
           <div class="members-list">
-            <h3 style="font-size: 16px; margin-bottom: 16px; color: #f8fafc;">Current Members (${team.members.length})</h3>
+            <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--text);">Current Members (${team.members.length})</h3>
             ${team.members.length > 0 ? team.members.map(m => `
               <div class="member-item">
                 <div class="member-info">
@@ -390,7 +390,7 @@
             `).join('') : '<p style="color: var(--muted); padding: 12px 0;">No members yet</p>'}
           </div>
           <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line);">
-            <h3 style="font-size: 16px; margin-bottom: 16px; color: #f8fafc;">Add Member</h3>
+            <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--text);">Add Member</h3>
             <form id="addMemberForm" onsubmit="event.preventDefault(); addMember('${teamId}');">
               <div class="form-group">
                 <label for="newMemberId">Select Member</label>

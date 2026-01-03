@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "./globals.css";
 import ThemeRegistry from "./ThemeRegistry";
 import Providers from "./Providers";
 import ConditionalLayout from "@/components/ConditionalLayout";
@@ -18,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Providers>
           <ThemeRegistry>
             <ConditionalLayout>{children}</ConditionalLayout>
