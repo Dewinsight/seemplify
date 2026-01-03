@@ -22,6 +22,9 @@ import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
 // =============================================================================
 // CLAIMS CACHING - Performance optimization for repeated claims building
 // =============================================================================
@@ -121,8 +124,6 @@ import teamsRouter from './routes/teams.js'
 
 dotenv.config()
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
 // Shared UI theme for IdP pages (marketing-site aesthetic)
 const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
 const seemplifyMarkSvg = `
@@ -3889,8 +3890,8 @@ function renderHubPage(account, apps, organizations = []) {
 
 
         /* Hub-specific tune-ups: reduce noise + keep clean backdrop */
-        body { padding: 28px 18px 48px; background: #050505; }
-        body::before { opacity: 0.12; }
+        body { padding: 28px 18px 48px; }
+        body::before { opacity: var(--halo-opacity); }
         body::after { display: none; }
         .hub-content { margin-top: 8px; }
         .hub-hero {
@@ -3900,18 +3901,18 @@ function renderHubPage(account, apps, organizations = []) {
           margin: 14px 0 20px;
         }
         .hub-card { position: relative; }
-        .hub-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: #fff; }
+        .hub-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: var(--text); }
         .hub-card p { margin: 0; color: var(--muted); font-size: 15px; }
         .hub-card .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .hub-card .chip { background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
-        .hub-card .chip.secondary { color: #e9d5ff; }
-        .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: #e2e8f0; font-weight: 600; }
+        .hub-card .chip { background: var(--panel-strong); border: 1px solid var(--border); }
+        .hub-card .chip.secondary { color: var(--brand-2); }
+        .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text); font-weight: 600; }
         .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
 
         .apps { width: 100%; display: block; margin-top: 18px; }
         .section-title {
           margin: 22px 0 10px;
-          color: #e2e8f0;
+          color: var(--text);
           font-weight: 700;
           letter-spacing: -0.01em;
           display: flex;
@@ -3924,13 +3925,13 @@ function renderHubPage(account, apps, organizations = []) {
           padding: 8px 12px;
           border-radius: 10px;
           border: 1px solid var(--border);
-          background: rgba(255,255,255,0.06);
-          color: #e5e7eb;
+          background: var(--panel-strong);
+          color: var(--text);
           text-decoration: none;
           font-weight: 600;
           font-size: 13px;
         }
-        .ghost-btn:hover { background: rgba(255,255,255,0.1); }
+        .ghost-btn:hover { background: var(--hover-bg); }
 
         .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
         .app-card {
@@ -3959,12 +3960,12 @@ function renderHubPage(account, apps, organizations = []) {
         }
         .app-card__icon svg { width: 24px; height: 24px; }
         .app-card__body { display: grid; gap: 6px; }
-        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: #fff; }
+        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); }
         .app-card__desc { color: var(--muted); font-size: 13px; }
         .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
-        .pill { background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: #e0e7ff; }
-        .pill--soft { background: rgba(255,255,255,0.05); color: #e2e8f0; border-color: rgba(255,255,255,0.12); }
-        .app-card__arrow { color: #cbd5e1; }
+        .pill { background: var(--panel-strong); border: 1px solid var(--border); color: var(--text-secondary); }
+        .pill--soft { background: var(--hover-bg); color: var(--muted); border-color: var(--border); }
+        .app-card__arrow { color: var(--muted); }
 
         .empty {
           margin-top: 12px;
@@ -3973,7 +3974,7 @@ function renderHubPage(account, apps, organizations = []) {
           color: var(--muted);
           border: 1px dashed var(--border);
           border-radius: 14px;
-          background: rgba(255,255,255,0.04);
+          background: var(--hover-bg);
         }
         @media (max-width: 720px) {
           .hub-hero { grid-template-columns: 1fr; }
@@ -3981,6 +3982,7 @@ function renderHubPage(account, apps, organizations = []) {
           .app-card__icon { justify-self: flex-start; }
         }
       </style>
+      <script src="/js/theme.js?v=2" defer></script>
     </head>
     <body>
       <nav class="top-nav">
@@ -3995,6 +3997,26 @@ function renderHubPage(account, apps, organizations = []) {
           <a href="/profile" class="top-nav-link">Profile</a>
         </div>
         <div class="top-nav-user">
+      <div class="theme-dropdown">
+        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            Light
+          </button>
+          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            Dark
+          </button>
+          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            System
+          </button>
+        </div>
+      </div>
           <div class="top-nav-user-info">
             <div class="top-nav-user-name">${account.profile?.name || account.email.split('@')[0]}</div>
             <div class="top-nav-user-email">${account.email}</div>
@@ -4013,7 +4035,7 @@ function renderHubPage(account, apps, organizations = []) {
           ${organizations.length > 0 ? `
           <div class="card hub-card" style="padding: 0; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; gap: 0;">
             <!-- Top Strip: Current Org & Switcher -->
-            <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);">
+            <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--hover-bg);">
               <div style="display: flex; align-items: center; gap: 16px;">
                 <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: grid; place-items: center;">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
@@ -4021,35 +4043,35 @@ function renderHubPage(account, apps, organizations = []) {
                   </svg>
                 </div>
                 <div>
-                  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 4px;">Current Organization</div>
-                  <div style="font-size: 18px; font-weight: 700; color: #fff;">${currentOrg?.name || 'Select Organization'}</div>
+                  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px;">Current Organization</div>
+                  <div style="font-size: 18px; font-weight: 700; color: var(--text);">${currentOrg?.name || 'Select Organization'}</div>
                 </div>
               </div>
               
               <div style="display: flex; align-items: center; gap: 12px;">
                 <button onclick="openOrgModal()" style="
                   display: flex; align-items: center; gap: 10px; padding: 10px 16px; 
-                  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); 
-                  border-radius: 8px; color: #e2e8f0; font-weight: 500; font-size: 14px; cursor: pointer;
+                  background: var(--panel-strong); border: 1px solid var(--border); 
+                  border-radius: 8px; color: var(--text); font-weight: 500; font-size: 14px; cursor: pointer;
                   transition: all 0.2s;
-                " onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                " class="org-switch-btn">
                   <span>Switch organization...</span>
                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
-                <div style="padding: 10px 14px; background: rgba(30, 41, 59, 0.5); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2">
+                <div style="padding: 10px 14px; background: var(--panel-strong); border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                     <circle cx="9" cy="7" r="4"></circle>
                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                     <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                   </svg>
-                  <span style="font-size: 13px; font-weight: 600; color: #e2e8f0;">${organizations.length} Org${organizations.length === 1 ? '' : 's'}</span>
+                  <span style="font-size: 13px; font-weight: 600; color: var(--text);">${organizations.length} Org${organizations.length === 1 ? '' : 's'}</span>
                 </div>
               </div>
             </div>
 
             <!-- Bottom Strip: Settings & Actions -->
-            <div style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.3);">
+            <div style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; background: var(--panel);">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(96, 165, 250, 0.1); display: grid; place-items: center;">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5">
@@ -4060,8 +4082,8 @@ function renderHubPage(account, apps, organizations = []) {
                   </svg>
                 </div>
                 <div>
-                  <div style="font-weight: 600; color: #f1f5f9; font-size: 15px;">Organization Settings</div>
-                  <div style="font-size: 13px; color: #64748b;">Manage your organization structure and team access</div>
+                  <div style="font-weight: 600; color: var(--text); font-size: 15px;">Organization Settings</div>
+                  <div style="font-size: 13px; color: var(--muted);">Manage your organization structure and team access</div>
                 </div>
               </div>
               
@@ -4346,8 +4368,31 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           .title h1 { font-size: 26px; }
         }
       </style>
+      <script src="/js/theme.js?v=2" defer></script>
     </head>
     <body>
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+        <div class="theme-dropdown">
+          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu">
+            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              Light
+            </button>
+            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Dark
+            </button>
+            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              System
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="halo one"></div>
       <div class="halo two"></div>
       <div class="halo three"></div>
@@ -4473,8 +4518,31 @@ function renderHubSignupPage(errorMsg) {
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .card { padding: 22px; } }
       </style>
+      <script src="/js/theme.js?v=2" defer></script>
     </head>
     <body>
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+        <div class="theme-dropdown">
+          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu">
+            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              Light
+            </button>
+            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Dark
+            </button>
+            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              System
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="halo one"></div>
       <div class="halo two"></div>
       <div class="halo three"></div>
