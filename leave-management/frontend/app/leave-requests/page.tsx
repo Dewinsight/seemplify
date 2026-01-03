@@ -82,12 +82,12 @@ export default function LeaveRequestsPage() {
         {/* Header */}
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-8 shadow-2xl shadow-purple-500/10 flex items-center justify-between flex-wrap gap-4">
+          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-8 shadow-2xl shadow-purple-500/10 flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent">
                 My Leave Requests
               </h1>
-              <p className="text-zinc-400 mt-2">View and manage your leave requests</p>
+              <p className="text-muted-foreground mt-2">View and manage your leave requests</p>
             </div>
             <Link href="/leave-requests/new">
               <Button
@@ -101,13 +101,13 @@ export default function LeaveRequestsPage() {
         </div>
 
         {/* Filters */}
-        <Card className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl border-zinc-700/50 rounded-xl shadow-lg">
+        <Card className="bg-card dark:bg-zinc-900/90 backdrop-blur-xl border-border dark:border-zinc-700/50 rounded-xl shadow-lg">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2 text-zinc-100">
-              <Filter className="h-4 w-4 text-zinc-500" />
+            <CardTitle className="text-base flex items-center gap-2 text-foreground dark:text-zinc-100">
+              <Filter className="h-4 w-4 text-muted-foreground dark:text-zinc-500" />
               Filters
               {(statusFilter || typeFilter) && (
-                <Badge variant="secondary" className="ml-2 bg-purple-500/20 border-purple-500/30 text-purple-300">
+                <Badge variant="secondary" className="ml-2 bg-purple-500/20 border-purple-500/30 text-purple-600 dark:text-purple-300">
                   Active
                 </Badge>
               )}
@@ -120,7 +120,7 @@ export default function LeaveRequestsPage() {
                 setStatusFilter(e.target.value as LeaveStatus | '');
                 setPage(1);
               }}
-              className="px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              className="px-3 py-2.5 border border-input dark:border-zinc-700 rounded-lg text-sm bg-background dark:bg-zinc-800/60 text-foreground dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
             >
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
@@ -134,7 +134,7 @@ export default function LeaveRequestsPage() {
                 setTypeFilter(e.target.value as LeaveType | '');
                 setPage(1);
               }}
-              className="px-3 py-2.5 border border-zinc-700 rounded-lg text-sm bg-zinc-800/60 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              className="px-3 py-2.5 border border-input dark:border-zinc-700 rounded-lg text-sm bg-background dark:bg-zinc-800/60 text-foreground dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
             >
               <option value="">All Types</option>
               <option value="annual">Annual Leave</option>
@@ -160,8 +160,8 @@ export default function LeaveRequestsPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-zinc-700/50 p-12 text-center">
-            <p className="text-zinc-400 mb-5">No leave requests found</p>
+          <div className="bg-card dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-border dark:border-zinc-700/50 p-12 text-center">
+            <p className="text-muted-foreground mt-2 mb-5">No leave requests found</p>
             <Link href="/leave-requests/new">
               <Button className="rounded-lg h-11 px-5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-500/20">
                 <Plus className="h-4 w-4" />
@@ -187,7 +187,7 @@ export default function LeaveRequestsPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-border rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent bg-card text-foreground"
                 >
                   Previous
                 </button>
@@ -197,7 +197,7 @@ export default function LeaveRequestsPage() {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-border rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent bg-card text-foreground"
                 >
                   Next
                 </button>

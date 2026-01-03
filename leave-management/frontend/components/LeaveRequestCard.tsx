@@ -30,7 +30,7 @@ export default function LeaveRequestCard({
   onReject,
 }: LeaveRequestCardProps) {
   return (
-    <div className="group bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-700/50 p-5 hover:shadow-xl hover:border-purple-500/30 hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden">
+    <div className="group bg-card dark:bg-gradient-to-br dark:from-zinc-900/80 dark:to-zinc-800/80 backdrop-blur-sm rounded-xl shadow-lg border border-border dark:border-zinc-700/50 p-5 hover:shadow-xl hover:border-purple-500/30 hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-purple-500/0 to-pink-500/0 group-hover:from-indigo-500/5 group-hover:via-purple-500/5 group-hover:to-pink-500/5 transition-all" />
       <div className="flex justify-between items-start">
         <div className="flex-1 relative">
@@ -40,8 +40,8 @@ export default function LeaveRequestCard({
                 <User className="h-4 w-4 text-white" />
               </div>
               <div className="ml-2">
-                <p className="text-sm font-semibold text-zinc-100">{request.userName}</p>
-                <p className="text-xs text-zinc-500">{request.userEmail}</p>
+                <p className="text-sm font-semibold text-foreground dark:text-zinc-100">{request.userName}</p>
+                <p className="text-xs text-muted-foreground">{request.userEmail}</p>
               </div>
             </div>
           )}
@@ -55,23 +55,23 @@ export default function LeaveRequestCard({
             </span>
           </div>
 
-          <div className="flex items-center text-sm text-zinc-300 mb-2">
-            <Calendar className="h-4 w-4 mr-1.5 text-zinc-500" />
+          <div className="flex items-center text-sm text-muted-foreground mb-2">
+            <Calendar className="h-4 w-4 mr-1.5 text-muted-foreground" />
             {formatDateRange(request.startDate, request.endDate)}
           </div>
 
-          <div className="flex items-center text-sm text-zinc-400">
-            <Clock className="h-4 w-4 mr-1.5 text-zinc-500" />
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Clock className="h-4 w-4 mr-1.5 text-muted-foreground" />
             {request.numberOfDays} {pluralize(request.numberOfDays, 'day')}
           </div>
 
           {request.reason && (
-            <p className="mt-3 text-sm text-zinc-400 line-clamp-2 bg-zinc-800/40 p-2 rounded-lg border border-zinc-700/30">{request.reason}</p>
+            <p className="mt-3 text-sm text-muted-foreground line-clamp-2 bg-muted dark:bg-zinc-800/40 p-2 rounded-lg border border-border dark:border-zinc-700/30">{request.reason}</p>
           )}
 
           {request.teamName && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="bg-zinc-800/60 text-zinc-300 border-zinc-700">
+              <Badge variant="secondary" className="bg-secondary dark:bg-zinc-800/60 text-secondary-foreground dark:text-zinc-300 border-border dark:border-zinc-700">
                 <UsersIcon className="h-3 w-3 mr-1" />
                 {request.teamHierarchyPath && request.teamHierarchyPath.length > 0
                   ? request.teamHierarchyPath.join(' → ')
@@ -80,13 +80,13 @@ export default function LeaveRequestCard({
             </div>
           )}
           {request.assignedApprover && (
-            <div className="mt-2 text-xs text-zinc-500">
+            <div className="mt-2 text-xs text-muted-foreground">
               Assigned to{' '}
-              <span className="font-semibold text-zinc-300">
+              <span className="font-semibold text-foreground dark:text-zinc-300">
                 {request.assignedApprover.userName || request.assignedApprover.userEmail}
               </span>
               {request.assignedApprover.assignmentType && (
-                <span className="ml-2 inline-flex items-center rounded-lg bg-zinc-800/60 px-2 py-0.5 text-zinc-400 border border-zinc-700">
+                <span className="ml-2 inline-flex items-center rounded-lg bg-muted dark:bg-zinc-800/60 px-2 py-0.5 text-muted-foreground dark:text-zinc-400 border border-border dark:border-zinc-700">
                   {request.assignedApprover.assignmentType === 'line_manager'
                     ? 'Line Manager'
                     : request.assignedApprover.assignmentType === 'team_lead'
