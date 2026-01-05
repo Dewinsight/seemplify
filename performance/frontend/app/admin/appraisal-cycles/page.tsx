@@ -638,7 +638,7 @@ export default function AppraisalCyclesAdminPage() {
         </DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
-            Select the employees to include in this appraisal cycle. An appraisal will be created for each selected employee.
+            Select the employees to include in this appraisal cycle. Managers will be auto-assigned from IdP reporting lines if not listed.
           </Alert>
 
           {loadingEmployees ? (
@@ -705,7 +705,7 @@ export default function AppraisalCyclesAdminPage() {
                           </Box>
                         </TableCell>
                         <TableCell>{employee.department || '-'}</TableCell>
-                        <TableCell>{employee.managerName || '-'}</TableCell>
+                        <TableCell>{employee.managerName || <Chip label="Auto-assign" size="small" variant="outlined" />}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

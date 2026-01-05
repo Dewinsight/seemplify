@@ -126,16 +126,18 @@ function getUserRole(user) {
 
   // Check organization role for HR admin
   const orgRole = user.organizationRole || user.userinfo?.organizations?.[0]?.role;
-  if (orgRole === 'hr_manager' || orgRole === 'admin' || orgRole === 'owner') {
+  // HR Admin = all org roles EXCEPT 'staff'
+  const hrAdminRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer'];
+  if (hrAdminRoles.includes(orgRole)) {
     return 'hr_admin';
   }
 
   // Check team roles from IdP claims
   const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
-  
+
   // Check if user is a line manager in any team
-  const isLineManager = teams.some(t => 
-    t.role === 'line_manager' || 
+  const isLineManager = teams.some(t =>
+    t.role === 'line_manager' ||
     (t.isManager && t.role === 'line_manager')
   );
   if (isLineManager) return 'line_manager';
@@ -156,7 +158,7 @@ function getDirectReports(user) {
 
   const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
   const teamPermissions = user.idpTeamPermissions || user.userinfo?.team_permissions || [];
-  
+
   const directReportIds = new Set();
 
   // Get from teams where user is line_manager
@@ -183,9 +185,9 @@ function getManagedTeams(user) {
   if (!user) return [];
 
   const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
-  
-  return teams.filter(t => 
-    t.role === 'line_manager' || 
+
+  return teams.filter(t =>
+    t.role === 'line_manager' ||
     t.role === 'team_lead' ||
     t.isManager
   );
@@ -197,9 +199,9 @@ function getManagedTeams(user) {
 function getCurrentOrganization(user) {
   if (!user) return null;
 
-  return user.currentOrganization || 
-         user.userinfo?.current_organization ||
-         (user.organizations && user.organizations[0]);
+  return user.currentOrganization ||
+    user.userinfo?.current_organization ||
+    (user.organizations && user.organizations[0]);
 }
 
 /**
@@ -216,21 +218,21 @@ function hasPermission(role, permission) {
  */
 function canAccessUserData(requestingUser, targetUserId) {
   const role = getUserRole(requestingUser);
-  
+
   // HR Admin can access all
   if (role === 'hr_admin') return true;
-  
+
   // Can always access own data
   if (requestingUser.id === targetUserId || requestingUser.sub === targetUserId) {
     return true;
   }
-  
+
   // Line managers can access direct reports
   if (role === 'line_manager') {
     const directReports = getDirectReports(requestingUser);
     return directReports.includes(targetUserId);
   }
-  
+
   return false;
 }
 
@@ -319,7 +321,7 @@ const requirePermission = (permission) => {
     }
 
     const role = getUserRole(req.session.user);
-    
+
     if (!hasPermission(role, permission)) {
       return res.status(403).json({
         success: false,
@@ -334,7 +336,7 @@ const requirePermission = (permission) => {
     req.directReports = getDirectReports(req.session.user);
     req.managedTeams = getManagedTeams(req.session.user);
     req.currentOrganization = getCurrentOrganization(req.session.user);
-    
+
     next();
   };
 };
@@ -354,7 +356,7 @@ const requireAnyPermission = (...permissions) => {
 
     const role = getUserRole(req.session.user);
     const hasAny = permissions.some(p => hasPermission(role, p));
-    
+
     if (!hasAny) {
       return res.status(403).json({
         success: false,
@@ -369,7 +371,7 @@ const requireAnyPermission = (...permissions) => {
     req.directReports = getDirectReports(req.session.user);
     req.managedTeams = getManagedTeams(req.session.user);
     req.currentOrganization = getCurrentOrganization(req.session.user);
-    
+
     next();
   };
 };
@@ -387,8 +389,8 @@ const requireUserAccess = (getUserId) => {
       });
     }
 
-    const targetUserId = typeof getUserId === 'function' 
-      ? getUserId(req) 
+    const targetUserId = typeof getUserId === 'function'
+      ? getUserId(req)
       : req.params[getUserId] || req.params.userId;
 
     if (!canAccessUserData(req.session.user, targetUserId)) {
@@ -402,7 +404,7 @@ const requireUserAccess = (getUserId) => {
     req.userRole = getUserRole(req.session.user);
     req.directReports = getDirectReports(req.session.user);
     req.targetUserId = targetUserId;
-    
+
     next();
   };
 };
@@ -420,7 +422,7 @@ const requireHRAdmin = (req, res, next) => {
   }
 
   const role = getUserRole(req.session.user);
-  
+
   if (role !== 'hr_admin') {
     return res.status(403).json({
       success: false,
@@ -447,7 +449,7 @@ const requireManager = (req, res, next) => {
   }
 
   const role = getUserRole(req.session.user);
-  
+
   if (role !== 'line_manager' && role !== 'hr_admin') {
     return res.status(403).json({
       success: false,
@@ -460,8 +462,43 @@ const requireManager = (req, res, next) => {
   req.userRole = role;
   req.directReports = getDirectReports(req.session.user);
   req.managedTeams = getManagedTeams(req.session.user);
-  
+
   next();
+};
+
+/**
+ * Middleware to verify the target user is a direct report of the current user
+ */
+const requireDirectReportAccess = (getTargetUserId) => {
+  return (req, res, next) => {
+    if (!req.session?.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const role = getUserRole(req.session.user);
+
+    // HR Admin can access all
+    if (role === 'hr_admin') {
+      return next();
+    }
+
+    const targetUserId = typeof getTargetUserId === 'function'
+      ? getTargetUserId(req)
+      : req.params[getTargetUserId] || req.params.userId;
+
+    const directReports = getDirectReports(req.session.user);
+
+    if (!directReports.includes(targetUserId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: not your direct report',
+        code: 'NOT_DIRECT_REPORT'
+      });
+    }
+
+    req.targetUserId = targetUserId;
+    next();
+  };
 };
 
 module.exports = {
@@ -477,7 +514,8 @@ module.exports = {
   requireAnyPermission,
   requireUserAccess,
   requireHRAdmin,
-  requireManager
+  requireManager,
+  requireDirectReportAccess
 };
 
 

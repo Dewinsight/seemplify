@@ -4049,6 +4049,14 @@ function renderHubPage(account, apps, organizations = []) {
               </div>
               
               <div style="display: flex; align-items: center; gap: 12px;">
+                ${currentOrg ? `
+                  <a href="/organizations/${currentOrg.id}/members" class="ghost-btn">Members</a>
+                  <a href="/organizations/${currentOrg.id}/teams" class="ghost-btn">Teams</a>
+                  ${['owner', 'admin'].includes(currentOrg.role) ? `
+                    <a href="/organizations/${currentOrg.id}/invitations" class="ghost-btn">Invites</a>
+                  ` : ''}
+                  <div style="width: 1px; height: 24px; background: var(--border); margin: 0 4px;"></div>
+                ` : ''}
                 <button onclick="openOrgModal()" style="
                   display: flex; align-items: center; gap: 10px; padding: 10px 16px; 
                   background: var(--panel-strong); border: 1px solid var(--border); 
