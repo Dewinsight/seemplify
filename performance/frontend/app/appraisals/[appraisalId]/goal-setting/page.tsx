@@ -11,8 +11,8 @@ import {
     Select, MenuItem, FormControl, InputLabel, Snackbar
 } from '@mui/material';
 import {
-    ArrowBack, Save, Send, Add, Target, TrendingUp,
-    CheckCircle, Flag, CalendarToday
+    ArrowBack, Save, Send, Add, TrackChanges, TrendingUp,
+    CheckCircle, Flag, CalendarToday, Cancel, ThumbUp, ThumbDown
 } from '@mui/icons-material';
 
 interface OKR {
@@ -53,6 +53,13 @@ export default function GoalSettingPage() {
         type: 'individual',
         description: ''
     });
+
+    const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+    const [rejectComments, setRejectComments] = useState('');
+
+    const isAssignedManager = appraisal && user && (appraisal.manager?.userId === user.id);
+    const isGoalApprovalPending = appraisal?.status === 'goal_approval_pending';
+    const isGoalSetting = appraisal?.status === 'goal_setting';
 
     useEffect(() => {
         if (user) {
@@ -100,11 +107,37 @@ export default function GoalSettingPage() {
         try {
             await api.post(`/appraisals/${appraisalId}/submit-goals`);
             mutate();
-            setSnackbar({ open: true, message: 'Goals submitted successfully!', severity: 'success' });
-            setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
+            setSnackbar({ open: true, message: 'Goals submitted for approval!', severity: 'success' });
         } catch (error) {
             console.error('Submit error:', error);
             setSnackbar({ open: true, message: 'Failed to submit goals', severity: 'error' });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleApproveGoals = async () => {
+        setSubmitting(true);
+        try {
+            await api.post(`/appraisals/${appraisalId}/approve-goals`);
+            mutate();
+            setSnackbar({ open: true, message: 'Goals approved successfully!', severity: 'success' });
+        } catch (error) {
+            setSnackbar({ open: true, message: 'Failed to approve goals', severity: 'error' });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRejectGoals = async () => {
+        setSubmitting(true);
+        try {
+            await api.post(`/appraisals/${appraisalId}/reject-goals`, { comments: rejectComments });
+            mutate();
+            setSnackbar({ open: true, message: 'Goals returned for revision', severity: 'success' });
+            setRejectDialogOpen(false);
+        } catch (error) {
+            setSnackbar({ open: true, message: 'Failed to reject goals', severity: 'error' });
         } finally {
             setSubmitting(false);
         }
@@ -171,7 +204,7 @@ export default function GoalSettingPage() {
 
             {okrs.length === 0 ? (
                 <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'grey.50', mb: 4 }}>
-                    <Target sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
+                    <TrackChanges sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
                     <Typography variant="h6" color="text.secondary">No Goals Set Yet</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                         Start by adding your first objective for this period.
@@ -183,7 +216,7 @@ export default function GoalSettingPage() {
             ) : (
                 <Grid container spacing={3} sx={{ mb: 4 }}>
                     {okrs.map((okr) => (
-                        <Grid item xs={12} key={okr._id}>
+                        <Grid size={{ xs: 12 }} key={okr._id}>
                             <Card variant="outlined">
                                 <CardContent>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -215,26 +248,92 @@ export default function GoalSettingPage() {
             )}
 
             {/* Submission Footer */}
-            <Paper sx={{ p: 3, bgcolor: 'primary.lighter', borderTop: 1, borderColor: 'primary.main' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box>
-                        <Typography variant="subtitle1" fontWeight={600}>Ready to Proceed?</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Once you have defined all your goals, click Submit to move to the next phase.
-                        </Typography>
-                    </Box>
-                    <Button
-                        variant="contained"
-                        color="success"
-                        size="large"
-                        startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircle />}
-                        disabled={submitting || okrs.length === 0}
-                        onClick={handleSubmitGoals}
-                    >
-                        Submit Goals
-                    </Button>
-                </Box>
+            {/* Submission / Approval Footer */}
+            <Paper sx={{ p: 3, bgcolor: 'primary.lighter', borderTop: 1, borderColor: 'primary.main', position: 'sticky', bottom: 0, zIndex: 10 }}>
+                {isGoalApprovalPending ? (
+                    isAssignedManager ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Box>
+                                <Typography variant="subtitle1" fontWeight={600}>Manager Action Required</Typography>
+                                <Typography variant="body2" color="text.secondary">Review the employee's goals. Approve to proceed or Reject to request changes.</Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<ThumbDown />}
+                                    onClick={() => setRejectDialogOpen(true)}
+                                    disabled={submitting}
+                                >
+                                    Reject & Feedback
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    color="success"
+                                    startIcon={<ThumbUp />}
+                                    onClick={handleApproveGoals}
+                                    disabled={submitting}
+                                >
+                                    Approve Goals
+                                </Button>
+                            </Box>
+                        </Box>
+                    ) : (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <CircularProgress size={24} color="warning" />
+                            <Box>
+                                <Typography variant="subtitle1" fontWeight={600}>Waiting for Approval</Typography>
+                                <Typography variant="body2" color="text.secondary">Your goals have been submitted. Waiting for manager approval.</Typography>
+                            </Box>
+                        </Box>
+                    )
+                ) : (
+                    /* Standard Submission Flow (Only for Employee in Goal Setting Phase) */
+                    isGoalSetting && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Box>
+                                <Typography variant="subtitle1" fontWeight={600}>Ready to Proceed?</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Once you have defined all your goals, click Submit to send them for manager approval.
+                                </Typography>
+                            </Box>
+                            <Button
+                                variant="contained"
+                                color="success"
+                                size="large"
+                                startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircle />}
+                                disabled={submitting || okrs.length === 0}
+                                onClick={handleSubmitGoals}
+                            >
+                                Submit Goals
+                            </Button>
+                        </Box>
+                    )
+                )}
             </Paper>
+
+            {/* Reject Dialog */}
+            <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)}>
+                <DialogTitle>Reject Goals & Request Changes</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        Please provide feedback on why these goals need revision. The employee will be notified.
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={4}
+                        label="Manager Comments"
+                        value={rejectComments}
+                        onChange={(e) => setRejectComments(e.target.value)}
+                        placeholder="e.g. Ensure goals are measurable..."
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" color="error" onClick={handleRejectGoals}>Return to Employee</Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Create Dialog */}
             <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>

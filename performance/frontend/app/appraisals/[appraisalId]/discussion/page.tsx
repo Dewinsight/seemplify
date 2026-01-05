@@ -55,6 +55,20 @@ export default function DiscussionPage() {
         }
     }, [appraisal]);
 
+    const handleAcknowledge = async () => {
+        setSaving(true);
+        try {
+            await api.post(`/appraisals/${appraisalId}/acknowledge`);
+            mutate();
+            setSnackbar({ open: true, message: 'Discussion acknowledged!', severity: 'success' });
+            setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
+        } catch (error) {
+            setSnackbar({ open: true, message: 'Failed to acknowledge', severity: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSave = async (markCompleted = false) => {
         setSaving(true);
         try {
@@ -125,6 +139,17 @@ export default function DiscussionPage() {
                         </Button>
                     </Box>
                 )}
+                {!isManager && appraisal.status === 'discussion_completed' && !appraisal.discussion?.employeeAcknowledged && (
+                    <Button
+                        variant="contained"
+                        color="success"
+                        startIcon={saving ? <CircularProgress size={16} /> : <CheckCircle />}
+                        onClick={handleAcknowledge}
+                        disabled={saving}
+                    >
+                        Acknowledge & Sign Off
+                    </Button>
+                )}
             </Box>
 
             {/* Meeting Logistics */}
@@ -134,7 +159,7 @@ export default function DiscussionPage() {
                     <Typography variant="h6">Meeting Details</Typography>
                 </Box>
                 <Grid container spacing={3}>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                         <TextField
                             fullWidth
                             type="datetime-local"
@@ -145,7 +170,7 @@ export default function DiscussionPage() {
                             disabled={readOnly || !isManager}
                         />
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                         <TextField
                             fullWidth
                             label="Location"
@@ -156,7 +181,7 @@ export default function DiscussionPage() {
                             InputProps={{ startAdornment: <LocationOn color="action" sx={{ mr: 1 }} /> }}
                         />
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                         <TextField
                             fullWidth
                             label="Meeting Link"
@@ -183,7 +208,7 @@ export default function DiscussionPage() {
                     </Alert>
 
                     <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -195,7 +220,7 @@ export default function DiscussionPage() {
                                 placeholder="List the key strengths agreed upon..."
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -207,7 +232,7 @@ export default function DiscussionPage() {
                                 placeholder="List the areas for improvement..."
                             />
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={{ xs: 12 }}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -219,7 +244,7 @@ export default function DiscussionPage() {
                                 helperText="Provide detailed actions for development."
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                             <TextField
                                 fullWidth
                                 multiline
@@ -230,7 +255,7 @@ export default function DiscussionPage() {
                                 disabled={readOnly || !isManager}
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                             <TextField
                                 fullWidth
                                 multiline

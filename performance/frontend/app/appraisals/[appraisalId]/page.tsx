@@ -12,7 +12,7 @@ import {
 import {
   ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
   ExpandMore, Star, Assignment, TrendingUp, Chat, Description,
-  Psychology, Flag, Warning, GroupsPerson
+  Psychology, Flag, Warning, Groups
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -107,6 +107,7 @@ export default function AppraisalDetailPage() {
     if (status === 'completed' || status === 'employee_acknowledged') return 6;
     return 5;
   };
+  const activeStep = getActiveStep();
 
   const selfAssessment = appraisal.selfAssessment;
   const managerReview = appraisal.managerReview;

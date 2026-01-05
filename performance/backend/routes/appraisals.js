@@ -11,6 +11,7 @@ const OKR = require('../models/OKR');
 const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
+const notificationService = require('../services/notificationService');
 const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
 
@@ -538,13 +539,88 @@ router.post('/:appraisalId/submit-goals', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    appraisal.status = 'self_assessment_pending';
+    // appraisal.status = 'self_assessment_pending';
+    // CHANGE: Move to goal_approval_pending instead of self_assessment_pending
+    appraisal.status = 'goal_approval_pending';
+
     appraisal.addAuditLog('goals_submitted', req.session.user, {});
     await appraisal.save();
+
+    // Notify Manager
+    try {
+      if (appraisal.manager && appraisal.manager.email) {
+        await notificationService.notifyGoalsSubmitted(appraisal.manager, appraisal.employee);
+      }
+    } catch (notifyErr) { console.error('Notification error:', notifyErr); }
+
     res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Submit goals error:', error);
     res.status(500).json({ success: false, error: 'Failed to submit goals' });
+  }
+});
+
+// Approve goals (Manager)
+router.post('/:appraisalId/approve-goals', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    // Check permission
+    const userId = req.session?.user?.id;
+    if (appraisal.manager.userId !== userId && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    appraisal.status = 'self_assessment_pending';
+    appraisal.addAuditLog('goals_approved', req.session.user, {});
+    await appraisal.save();
+
+    // Notify Employee
+    try {
+      await notificationService.notifyGoalsApproved(appraisal.employee, appraisal.manager);
+    } catch (e) { console.error(e); }
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to approve goals' });
+  }
+});
+
+// Reject goals (Manager)
+router.post('/:appraisalId/reject-goals', requireAuth, requireManager, async (req, res) => {
+  try {
+    const { comments } = req.body;
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    if (appraisal.manager.userId !== req.session.user.id && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    appraisal.status = 'goal_setting'; // Revert to goal setting
+    // Add rejection comment to audit or discussion notes?
+    // Usually we add to audit log or a specific rejectionReason field.
+    // For simplicity, add to audit log and send email.
+
+    appraisal.addAuditLog('goals_rejected', req.session.user, { comments });
+
+    // Optionally store rejection comment in a temp field if UI needs to show it.
+    // We can use `goalRejectionReason` field if we add it to schema, or just rely on email/audit.
+    // I'll add it to `notes` in `discussion` temporarily or just trust email.
+    // Better: Add to `feedbacks` via feedback service? No.
+    // Let's just rely on Email + Audit Log for now. The status reversion is key.
+
+    await appraisal.save();
+
+    // Notify Employee
+    try {
+      await notificationService.notifyGoalsRejected(appraisal.employee, appraisal.manager, comments);
+    } catch (e) { console.error(e); }
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to reject goals' });
   }
 });
 
