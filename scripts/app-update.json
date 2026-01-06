@@ -1,0 +1,13 @@
+{
+  "signInAudience": "AzureADandPersonalMicrosoftAccount",
+  "api": {
+    "requestedAccessTokenVersion": 2
+  },
+  "info": {
+    "privacyStatementUrl": "https://seemplifyai.com/privacy-policy",
+    "termsOfServiceUrl": "https://seemplifyai.com/terms"
+  },
+  "web": {
+    "homePageUrl": "https://seemplifyai.com"
+  }
+}
