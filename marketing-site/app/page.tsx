@@ -402,7 +402,7 @@ export default function HomePage() {
           </p>
           <div className="flex justify-center gap-8 text-sm text-zinc-400">
             <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy</Link>
-            <Link href="#" className="hover:text-white transition-colors">Terms</Link>
+            <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="mailto:hello@seemplifyai.com" className="hover:text-white transition-colors">Contact</Link>
           </div>
         </div>
