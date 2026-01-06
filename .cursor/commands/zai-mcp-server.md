@@ -1,1 +1,1 @@
-zai-mcp-server, analyse the image or video atached, please not glm4.7 cannot analyse image so use this mcp server too
+zai-mcp-server, analyse the image or video atached
