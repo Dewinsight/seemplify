@@ -5,7 +5,8 @@
       "client_secret": "openwebui-seemplify-secret-2026",
       "redirect_uri_patterns": [
         "https://ai.seemplifyai.com/oauth/oidc/callback",
-        "http://localhost:8080/oauth/oidc/callback"
+        "http://localhost:8080/oauth/oidc/callback",
+        "https://auth.seemplifyai.com"
       ],
       "allowed_origins": [
         "https://ai.seemplifyai.com",
@@ -21,7 +22,8 @@
       "client_secret": "outline-seemplify-secret-2026",
       "redirect_uri_patterns": [
         "https://docs.seemplifyai.com/auth/oidc.callback",
-        "http://localhost:3000/auth/oidc.callback"
+        "http://localhost:3000/auth/oidc.callback",
+        "https://auth.seemplifyai.com"
       ],
       "allowed_origins": [
         "https://docs.seemplifyai.com",
