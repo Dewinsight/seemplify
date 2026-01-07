@@ -3078,8 +3078,8 @@ app.get('/launch/:appId', async (req, res) => {
 
     // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
     if (app.appId === 'openwebui') {
-      // Open WebUI handles OIDC at /oauth/oidc - redirect there directly
-      const openwebuiAuthUrl = `${app.url}/oauth/oidc`
+      // Open WebUI handles OIDC at /oauth/oidc/login - redirect there directly
+      const openwebuiAuthUrl = `${app.url}/oauth/oidc/login`
       console.log('  📍 OPEN WEBUI OIDC REDIRECT TO:', openwebuiAuthUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(openwebuiAuthUrl)
