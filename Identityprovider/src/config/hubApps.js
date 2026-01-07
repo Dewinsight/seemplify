@@ -63,21 +63,6 @@ const developmentApps = [
     isPublic: true,
     category: 'hr',
     order: 4
-  },
-  {
-    appId: 'appflowy',
-    name: 'AppFlowy',
-    description: 'AI-powered workspace and knowledge management',
-    icon: 'cube',
-    color: '#a78bfa',
-    url: process.env.APPFLOWY_URL || 'http://localhost:8000',
-    apiUrl: process.env.APPFLOWY_URL || 'http://localhost:8000',
-    authType: 'saml',
-    clientId: 'appflowy',
-    isActive: true,
-    isPublic: true,
-    category: 'productivity',
-    order: 5
   }
 ]
 
@@ -138,21 +123,6 @@ const productionApps = [
     isPublic: true,
     category: 'hr',
     order: 4
-  },
-  {
-    appId: 'appflowy',
-    name: 'AppFlowy',
-    description: 'AI-powered workspace and knowledge management',
-    icon: 'cube',
-    color: '#a78bfa',
-    url: process.env.APPFLOWY_URL || 'https://docs.seemplifyai.com',
-    apiUrl: process.env.APPFLOWY_URL || 'https://docs.seemplifyai.com',
-    authType: 'saml',
-    clientId: 'appflowy',
-    isActive: true,
-    isPublic: true,
-    category: 'productivity',
-    order: 5
   }
 ]
 

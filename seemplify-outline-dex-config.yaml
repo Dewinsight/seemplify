@@ -1,0 +1,35 @@
+issuer: https://docs.seemplifyai.com
+
+web:
+  http: 0.0.0.0:5556
+
+storage:
+  type: memory
+
+enablePasswordDB: true
+
+frontend:
+   issuer: Outline
+
+logger:
+  level: debug
+
+staticPasswords:
+  - email: "admin@example.com"
+    # bcrypt hash of string "password": $(echo password | htpasswd -BinC 10 admin | cut -d: -f2)
+    hash: "$2y$10$jsRWHw54uxTUIfhjgUrB9u8HSzPk7TUuQri9sXZrKzRXcScvwYor."
+    username: "admin"
+    userID: "1"
+
+
+oauth2:
+  skipApprovalScreen: true
+  alwaysShowLoginScreen: false
+  passwordConnector: local
+
+staticClients:
+  - id: "outline"
+    redirectURIs:
+      - http://docs.seemplifyai.com/auth/oidc.callback
+    name: "Outline"
+    secret: "E7XBIK79uGq/deY/GqaBIEnzTddg37JpURLqJKWpQd4="
