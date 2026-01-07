@@ -178,7 +178,7 @@ async function handleSamlAssertion(req, res, spId, relayState) {
     <p>Signing you in...</p>
   </div>
   <form id="saml-form" method="POST" action="${entityEndpoint}">
-    <input type="hidden" name="SAMLResponse" value="${Buffer.from(context).toString('base64')}" />
+    <input type="hidden" name="SAMLResponse" value="${context}" />
     ${relayState ? `<input type="hidden" name="RelayState" value="${relayState}" />` : ''}
   </form>
   <script>document.getElementById('saml-form').submit();</script>
