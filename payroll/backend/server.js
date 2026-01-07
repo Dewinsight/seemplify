@@ -84,6 +84,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/payroll-m
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/compensation', require('./routes/compensation'));
+app.use('/api/payroll/reports', require('./routes/reports'));
 app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
 app.use('/api/webhooks', webhooksRouter);
 

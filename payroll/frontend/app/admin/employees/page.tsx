@@ -12,7 +12,9 @@ import {
     ChevronRight,
     Filter,
     ArrowLeft,
-    Loader2
+    Loader2,
+    UserPlus,
+    AlertCircle
 } from 'lucide-react';
 
 export default function EmployeesPage() {
@@ -109,60 +111,84 @@ export default function EmployeesPage() {
 
             {/* Employees Grid */}
             <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredEmployees.map((employee) => (
-                    <Link
-                        href={`/admin/employees/${employee.userId}`}
-                        key={employee._id}
-                        className="group bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 hover:bg-zinc-900 hover:border-amber-500/30 transition-all hover:scale-[1.01]"
-                    >
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/20 group-hover:border-amber-500/40">
-                                    <span className="font-semibold text-amber-500">
-                                        {employee.employeeInfo?.name?.charAt(0) || 'U'}
+                {filteredEmployees.map((employee) => {
+                    const needsOnboarding = !employee.basicSalary || employee.basicSalary === 0;
+
+                    return (
+                        <div
+                            key={employee._id}
+                            className="group bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 hover:bg-zinc-900 hover:border-amber-500/30 transition-all"
+                        >
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/20 group-hover:border-amber-500/40">
+                                        <span className="font-semibold text-amber-500">
+                                            {employee.employeeInfo?.name?.charAt(0) || 'U'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-zinc-200 group-hover:text-amber-400 transition-colors">
+                                            {employee.employeeInfo?.name || 'Unknown'}
+                                        </h3>
+                                        <p className="text-xs text-zinc-500">{employee.employeeInfo?.designation || 'No Designation'}</p>
+                                    </div>
+                                </div>
+                                {needsOnboarding && (
+                                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                                        <AlertCircle className="w-3 h-3" />
+                                        Needs Setup
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="space-y-2.5">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-zinc-500 flex items-center gap-1.5">
+                                        <Briefcase className="w-3.5 h-3.5" /> Department
+                                    </span>
+                                    <span className="text-zinc-300">{employee.employeeInfo?.department || '--'}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-zinc-500 flex items-center gap-1.5">
+                                        <DollarSign className="w-3.5 h-3.5" /> Basic Salary
+                                    </span>
+                                    <span className={`font-mono font-medium ${needsOnboarding ? 'text-zinc-500' : 'text-emerald-400'}`}>
+                                        {needsOnboarding ? 'Not Set' : `${employee.currency || '$'}${employee.basicSalary?.toLocaleString()}`}
                                     </span>
                                 </div>
-                                <div>
-                                    <h3 className="font-semibold text-zinc-200 group-hover:text-amber-400 transition-colors">
-                                        {employee.employeeInfo?.name || 'Unknown'}
-                                    </h3>
-                                    <p className="text-xs text-zinc-500">{employee.employeeInfo?.designation || 'No Designation'}</p>
+
+                                <div className="pt-3 mt-3 border-t border-zinc-800/50 flex items-center justify-between">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${employee.isActive
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                        : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                                        }`}>
+                                        {employee.isActive ? 'Active' : 'Inactive'}
+                                    </span>
+                                    <div className="flex gap-2">
+                                        {needsOnboarding ? (
+                                            <Link
+                                                href={`/admin/employees/onboard/${employee.userId}`}
+                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+                                            >
+                                                <UserPlus className="w-3.5 h-3.5" />
+                                                Onboard
+                                            </Link>
+                                        ) : (
+                                            <Link
+                                                href={`/admin/employees/${employee.userId}`}
+                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                                            >
+                                                View
+                                                <ChevronRight className="w-3.5 h-3.5" />
+                                            </Link>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-amber-500 transition-colors" />
                         </div>
-
-                        <div className="space-y-2.5">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-zinc-500 flex items-center gap-1.5">
-                                    <Briefcase className="w-3.5 h-3.5" /> Department
-                                </span>
-                                <span className="text-zinc-300">{employee.employeeInfo?.department || '--'}</span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-zinc-500 flex items-center gap-1.5">
-                                    <DollarSign className="w-3.5 h-3.5" /> Basic Salary
-                                </span>
-                                <span className="font-mono font-medium text-emerald-400">
-                                    {employee.currency || '$'}{employee.basicSalary?.toLocaleString() || '0'}
-                                </span>
-                            </div>
-
-                            <div className="pt-3 mt-3 border-t border-zinc-800/50 flex items-center justify-between">
-                                <span className={`text-xs px-2 py-0.5 rounded-full border ${employee.isActive
-                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                    : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
-                                    }`}>
-                                    {employee.isActive ? 'Active' : 'Inactive'}
-                                </span>
-                                <span className="text-xs text-zinc-600">
-                                    ID: {employee.employeeInfo?.employeeId || '--'}
-                                </span>
-                            </div>
-                        </div>
-                    </Link>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
