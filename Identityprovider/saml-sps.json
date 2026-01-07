@@ -42,7 +42,7 @@
             "enabled": true,
             "entityId": "https://docs.seemplifyai.com/gotrue/sso/saml/metadata",
             "acsUrl": "https://docs.seemplifyai.com/gotrue/sso/saml/acs",
-            "defaultRelayState": "/auth/callback",
+            "defaultRelayState": "/app",
             "description": "AI-powered workspace and knowledge management",
             "nameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
             "signatureAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
