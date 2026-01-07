@@ -22,6 +22,10 @@ import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 
+// SAML 2.0 Support
+import samlRoutes, { setClaimsFunction } from './routes/samlRoutes.js'
+import { samlIdPService as samlService } from './services/samlService.js'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
@@ -104,6 +108,44 @@ async function getCachedClaims(acc) {
 
   return claims
 }
+
+// =============================================================================
+// SAML 2.0 SETUP - Share getCachedClaims with SAML routes
+// =============================================================================
+setClaimsFunction(getCachedClaims)
+
+// Initialize SAML Identity Provider and load Service Providers
+const initializeSamlIdP = () => {
+  try {
+    // Initialize the SAML IdP service
+    samlService.initialize()
+
+    if (!samlService.isReady()) {
+      console.log('ℹ️ SAML IdP not configured (missing certificates)')
+      return
+    }
+
+    // Load Service Provider configurations
+    const spsConfigPath = join(__dirname, '../saml-sps.json')
+    const spsData = JSON.parse(readFileSync(spsConfigPath, 'utf-8'))
+
+    let enabledCount = 0
+    for (const sp of spsData.serviceProviders) {
+      if (sp.enabled !== false) {
+        samlService.registerServiceProvider(sp.id, sp)
+        enabledCount++
+      }
+    }
+
+    if (enabledCount > 0) {
+      console.log(`✅ SAML IdP ready with ${enabledCount} Service Provider(s)`)
+    }
+  } catch (error) {
+    console.log('ℹ️ SAML IdP not configured:', error.message)
+  }
+}
+
+initializeSamlIdP()
 
 /**
  * Invalidate claims cache for a specific account
@@ -3127,6 +3169,9 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+
+// SAML 2.0 Identity Provider Routes
+app.use('/saml', samlRoutes)
 
 // Profile API Routes - MUST come BEFORE teams router to avoid route conflicts
 /**

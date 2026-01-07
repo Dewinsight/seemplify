@@ -1,0 +1,51 @@
+{
+    "serviceProviders": [
+        {
+            "id": "smarthr",
+            "name": "SmartHR",
+            "enabled": true,
+            "entityId": "smarthr-app",
+            "acsUrl": "https://smarthr.seemplifyai.com/api/auth/saml/callback",
+            "defaultRelayState": "/dashboard",
+            "description": "HR Management Application"
+        },
+        {
+            "id": "leave-management",
+            "name": "Leave Management",
+            "enabled": true,
+            "entityId": "leave-management-app",
+            "acsUrl": "https://leave.seemplifyai.com/api/auth/saml/callback",
+            "defaultRelayState": "/",
+            "description": "Employee Leave Tracking"
+        },
+        {
+            "id": "payroll",
+            "name": "Payroll",
+            "enabled": true,
+            "entityId": "payroll-app",
+            "acsUrl": "https://payroll.seemplifyai.com/api/auth/saml/callback",
+            "defaultRelayState": "/dashboard",
+            "description": "Payroll Management"
+        },
+        {
+            "id": "performance",
+            "name": "Performance",
+            "enabled": true,
+            "entityId": "performance-app",
+            "acsUrl": "https://performance.seemplifyai.com/api/auth/saml/callback",
+            "defaultRelayState": "/dashboard",
+            "description": "Performance Management"
+        },
+        {
+            "id": "appflowy",
+            "name": "AppFlowy",
+            "enabled": true,
+            "entityId": "https://docs.seemplifyai.com",
+            "acsUrl": "https://docs.seemplifyai.com/gotrue/sso/saml/acs",
+            "defaultRelayState": "/app",
+            "description": "AI-powered workspace and knowledge management",
+            "nameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            "signatureAlgorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+        }
+    ]
+}
