@@ -1,0 +1,88 @@
+services:
+  outline:
+    image: outlinewiki/outline:0.82.0
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+      - dex
+    ports:
+      - 3000
+    environment:
+      NODE_ENV: production
+      URL: ${URL}
+      FORCE_HTTPS: "false"
+      SECRET_KEY: ${SECRET_KEY}
+      UTILS_SECRET: ${UTILS_SECRET}
+      DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD}@postgres:5432/outline
+      PGSSLMODE: disable
+      REDIS_URL: redis://redis:6379
+      OIDC_CLIENT_ID: outline
+      OIDC_CLIENT_SECRET: ${CLIENT_SECRET}
+      OIDC_AUTH_URI: ${DEX_URL}/auth
+      OIDC_TOKEN_URI: ${DEX_URL}/token
+      OIDC_USERINFO_URI: ${DEX_URL}/userinfo
+    networks:
+      - seemplify-outline-mrgajc
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.seemplify-outline-mrgajc-13-web.rule=Host(`docs.seemplifyai.com`)
+      - traefik.http.routers.seemplify-outline-mrgajc-13-web.entrypoints=web
+      - traefik.http.routers.seemplify-outline-mrgajc-13-web.middlewares=redirect-to-https
+      - traefik.http.services.seemplify-outline-mrgajc-13-web.loadbalancer.server.port=3000
+      - traefik.http.routers.seemplify-outline-mrgajc-13-web.service=seemplify-outline-mrgajc-13-web
+      - traefik.http.routers.seemplify-outline-mrgajc-13-websecure.rule=Host(`docs.seemplifyai.com`)
+      - traefik.http.routers.seemplify-outline-mrgajc-13-websecure.entrypoints=websecure
+      - traefik.http.routers.seemplify-outline-mrgajc-13-websecure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-outline-mrgajc-13-websecure.loadbalancer.server.port=3000
+      - traefik.http.routers.seemplify-outline-mrgajc-13-websecure.service=seemplify-outline-mrgajc-13-web
+  dex:
+    image: ghcr.io/dexidp/dex:v2.37.0
+    restart: always
+    volumes:
+      - ../files/etc/dex/config.yaml:/etc/dex/config.yaml
+    command:
+      - dex
+      - serve
+      - /etc/dex/config.yaml
+    ports:
+      - 5556
+    networks:
+      - seemplify-outline-mrgajc
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.seemplify-outline-mrgajc-14-web.rule=Host(`docs.seemplifyai.com`)
+      - traefik.http.routers.seemplify-outline-mrgajc-14-web.entrypoints=web
+      - traefik.http.services.seemplify-outline-mrgajc-14-web.loadbalancer.server.port=5556
+      - traefik.http.routers.seemplify-outline-mrgajc-14-web.service=seemplify-outline-mrgajc-14-web
+      - traefik.http.routers.seemplify-outline-mrgajc-14-websecure.rule=Host(`docs.seemplifyai.com`)
+      - traefik.http.routers.seemplify-outline-mrgajc-14-websecure.entrypoints=websecure
+      - traefik.http.routers.seemplify-outline-mrgajc-14-websecure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-outline-mrgajc-14-websecure.loadbalancer.server.port=5556
+      - traefik.http.routers.seemplify-outline-mrgajc-14-websecure.service=seemplify-outline-mrgajc-14-web
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: outline
+      POSTGRES_USER: outline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data-test-outline-khufpx:/var/lib/postgresql/data
+    networks:
+      - seemplify-outline-mrgajc
+  redis:
+    image: redis:latest
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data-test-outline-khufpx:/data
+    networks:
+      - seemplify-outline-mrgajc
+volumes:
+  postgres_data-test-outline-khufpx: null
+  redis_data-test-outline-khufpx: null
+networks:
+  seemplify-outline-mrgajc:
+    name: seemplify-outline-mrgajc
+    external: true

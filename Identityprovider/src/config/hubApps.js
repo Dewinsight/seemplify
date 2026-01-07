@@ -9,6 +9,20 @@ const isProduction = process.env.NODE_ENV === 'production'
 // Development apps configuration
 const developmentApps = [
   {
+    appId: 'outline',
+    name: 'Outline Docs',
+    description: 'Team knowledge base and documentation',
+    icon: 'document-text',
+    color: '#0366d6',
+    url: process.env.OUTLINE_URL || 'http://localhost:3000',
+    apiUrl: process.env.OUTLINE_URL || 'http://localhost:3000',
+    clientId: 'outline',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 5
+  },
+  {
     appId: 'smarthr',
     name: 'SmartHR',
     description: 'AI-powered recruitment and HR management',
@@ -68,6 +82,20 @@ const developmentApps = [
 
 // Production apps configuration
 const productionApps = [
+  {
+    appId: 'outline',
+    name: 'Outline Docs',
+    description: 'Team knowledge base and documentation',
+    icon: 'document-text',
+    color: '#0366d6',
+    url: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
+    apiUrl: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
+    clientId: 'outline',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 5
+  },
   {
     appId: 'smarthr',
     name: 'SmartHR',
