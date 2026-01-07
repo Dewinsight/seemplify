@@ -284,6 +284,14 @@ const config = {
     introspection: { enabled: true },
     userinfo: { enabled: true }
   },
+  // Make PKCE optional for clients that don't support it (like Outline)
+  pkce: {
+    required: (ctx, client) => {
+      // List of clients that don't support PKCE
+      const noPkceClients = ['outline'];
+      return !noPkceClients.includes(client.clientId);
+    }
+  },
   interactions: {
     url(ctx, interaction) {
       return `/interaction/${interaction.uid}`;
