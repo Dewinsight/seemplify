@@ -104,22 +104,18 @@ class MonthlyPayrollScheduler {
         includeOvertime: true
       });
 
-      // Create payslip records
-      const payslips = [];
-      for (const payslipData of payrollResult.payslips) {
-        const payslip = new Payslip({
-          ...payslipData,
-          payrollRunId: payrollRun._id
-        });
-        await payslip.save();
-        payslips.push(payslip);
+      // Payslips are already created by processPayrollRun -> calculateRun
+      // Just update the payroll run status
+      const updatedRun = await PayrollRun.findOne({
+        organizationId,
+        month,
+        year
+      });
+      
+      if (updatedRun) {
+        updatedRun.status = 'approval_pending';
+        await updatedRun.save();
       }
-
-      // Update payroll run with results
-      payrollRun.totalEmployees = payrollResult.totalEmployees;
-      payrollRun.totalPayrollCost = payrollResult.totalPayrollCost;
-      payrollRun.status = 'approval_pending';
-      await payrollRun.save();
 
       console.log(`Payroll processed for organization ${organizationId}: ${payslips.length} employees, total cost: ${payrollRun.totalPayrollCost}`);
 

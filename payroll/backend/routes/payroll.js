@@ -4,7 +4,8 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
-const payrollEngineService = require('../services/PayrollEngineService');
+const PayrollEngineService = require('../services/PayrollEngineService');
+const payrollEngineService = new PayrollEngineService();
 
 // Import RBAC middleware
 const { requireAuth, requireHRAdmin, requireManager, requirePermission } = require('../middleware/rbac');

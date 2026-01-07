@@ -17,6 +17,62 @@ const leaveService = new LeaveIntegrationService();
 class PayrollEngineService {
 
   /**
+   * Process a payroll run for an organization (used by scheduler)
+   * @param {string} organizationId - Organization ID
+   * @param {Object} options - { month, year, includeBonuses, includeOvertime }
+   * @returns {Object} result - { payslips, totalEmployees, totalPayrollCost }
+   */
+  async processPayrollRun(organizationId, options) {
+    const { month, year, includeBonuses, includeOvertime } = options;
+    
+    // Find or create the payroll run
+    let run = await PayrollRun.findOne({
+      organizationId,
+      month,
+      year,
+      status: { $in: ['processing', 'draft'] }
+    });
+
+    if (!run) {
+      // Create new run
+      run = new PayrollRun({
+        organizationId,
+        month,
+        year,
+        status: 'processing',
+        processedBy: 'system-scheduler',
+        settings: {
+          includeBonuses: includeBonuses !== false,
+          includeOvertime: includeOvertime !== false,
+          includeAllowances: true,
+          processStatutoryDeductions: true,
+          calculateTax: true
+        },
+        payPeriod: {
+          month,
+          year,
+          startDate: new Date(year, month - 1, 1),
+          endDate: new Date(year, month, 0),
+          paymentDate: new Date(year, month, 25)
+        }
+      });
+      await run.save();
+    }
+
+    // Calculate the run
+    const result = await this.calculateRun(run._id, organizationId);
+
+    // Return in the format expected by scheduler
+    const payslips = await Payslip.find({ payrollRunId: run._id });
+    
+    return {
+      payslips: payslips.map(p => p.toObject()),
+      totalEmployees: result.summary.totalEmployees,
+      totalPayrollCost: result.summary.totalNetPayroll
+    };
+  }
+
+  /**
    * Calculate a full Payroll Run
    * @param {string} runId - ID of the PayrollRun to calculate
    * @param {string} organizationId - Organization ID
@@ -269,4 +325,4 @@ class PayrollEngineService {
   }
 }
 
-module.exports = new PayrollEngineService();
+module.exports = PayrollEngineService;
