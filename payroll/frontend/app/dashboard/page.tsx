@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Calendar,
   CheckCircle,
+  Clock,
   Building2
 } from 'lucide-react';
 
@@ -118,6 +119,28 @@ export default function Dashboard() {
               </p>
               <div className="flex items-center text-amber-400 font-medium text-sm group-hover:text-amber-300">
                 <span>View Payslips</span>
+                <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </Link>
+
+        {/* My Requests Card - ESS Feature */}
+        <Link href="/requests" className="group">
+          <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 hover:border-purple-500/30 p-6 transition-all duration-300 hover:scale-105 hover:shadow-purple-500/10">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-violet-500/0 group-hover:from-purple-500/5 group-hover:to-violet-500/5 transition-all" />
+            <div className="relative">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:scale-110 transition-transform mb-4">
+                <Clock className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="font-semibold text-zinc-100 text-lg mb-2">My Requests</h3>
+              <p className="text-zinc-400 text-sm mb-4 leading-relaxed">
+                Submit overtime claims, view status of reimbursement requests, and more.
+              </p>
+              <div className="flex items-center text-purple-400 font-medium text-sm group-hover:text-purple-300">
+                <span>View Requests</span>
                 <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>

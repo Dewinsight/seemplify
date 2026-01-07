@@ -4,6 +4,7 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
+const payrollEngineService = require('../services/PayrollEngineService');
 
 // Import RBAC middleware
 const { requireAuth, requireHRAdmin, requireManager, requirePermission } = require('../middleware/rbac');
@@ -27,9 +28,9 @@ const getUserInfo = (req) => ({
 router.get('/profile/me', requireAuth, async (req, res) => {
   try {
     const { userId, organizationId } = getUserInfo(req);
-    
+
     let profile = await PayrollProfile.findOne({ userId, organizationId });
-    
+
     if (!profile) {
       // Create a basic profile if none exists
       profile = new PayrollProfile({
@@ -44,7 +45,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
       });
       await profile.save();
     }
-    
+
     // Return limited info for employees
     const response = {
       id: profile._id,
@@ -60,7 +61,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
       totalAllowances: profile.totalAllowances,
       totalRecurringDeductions: profile.totalRecurringDeductions
     };
-    
+
     res.json(response);
   } catch (err) {
     console.error('Get Profile Error:', err);
@@ -76,19 +77,19 @@ router.get('/profiles', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { status, teamId, department, limit = 50, skip = 0 } = req.query;
-    
+
     const query = { organizationId };
     if (status) query.status = status;
     if (teamId) query['employeeInfo.teamId'] = teamId;
     if (department) query['employeeInfo.department'] = department;
-    
+
     const profiles = await PayrollProfile.find(query)
       .sort({ 'employeeInfo.name': 1 })
       .skip(parseInt(skip))
       .limit(parseInt(limit));
-    
+
     const total = await PayrollProfile.countDocuments(query);
-    
+
     res.json({
       profiles,
       total,
@@ -108,16 +109,16 @@ router.get('/profiles', requireHRAdmin, async (req, res) => {
 router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    
+
     const profile = await PayrollProfile.findOne({
       userId: req.params.userId,
       organizationId
     }).populate('salaryGrade.gradeId');
-    
+
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
     }
-    
+
     res.json(profile);
   } catch (err) {
     console.error('Get Profile Error:', err);
@@ -133,21 +134,21 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
     const { basicSalary, currency, allowances, recurringDeductions, benefits, taxConfig, status } = req.body;
-    
+
     let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
       organizationId
     });
-    
+
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
     }
-    
+
     // Track salary changes
     if (basicSalary !== undefined && basicSalary !== profile.basicSalary) {
       profile.recordSalaryChange(basicSalary, 'market_adjustment', adminId, adminName, 'Updated by HR');
     }
-    
+
     // Update other fields
     if (currency) profile.currency = currency;
     if (allowances) profile.allowances = allowances;
@@ -155,10 +156,10 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (benefits) profile.benefits = benefits;
     if (taxConfig) profile.taxConfig = taxConfig;
     if (status) profile.status = status;
-    
+
     profile.lastModifiedBy = adminId;
     await profile.save();
-    
+
     res.json({ success: true, profile });
   } catch (err) {
     console.error('Update Profile Error:', err);
@@ -174,13 +175,13 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId } = getUserInfo(req);
     const { userId, basicSalary, currency, employeeInfo, allowances } = req.body;
-    
+
     // Check if profile already exists
     const existing = await PayrollProfile.findOne({ userId, organizationId });
     if (existing) {
       return res.status(400).json({ error: 'Profile already exists for this user' });
     }
-    
+
     const profile = new PayrollProfile({
       userId,
       organizationId,
@@ -190,7 +191,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       allowances: allowances || [],
       createdBy: adminId
     });
-    
+
     // Record initial salary
     if (basicSalary > 0) {
       profile.salaryHistory.push({
@@ -200,7 +201,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
         approvedBy: adminId
       });
     }
-    
+
     await profile.save();
     res.status(201).json({ success: true, profile });
   } catch (err) {
@@ -221,15 +222,15 @@ router.get('/my-payslips', requireAuth, async (req, res) => {
   try {
     const { userId, organizationId } = getUserInfo(req);
     const { year, limit = 12 } = req.query;
-    
+
     const query = { userId, organizationId };
     if (year) query['payPeriod.year'] = parseInt(year);
-    
+
     const payslips = await Payslip.find(query)
       .populate('payrollRunId', 'runNumber payPeriod status')
       .sort({ 'payPeriod.year': -1, 'payPeriod.month': -1 })
       .limit(parseInt(limit));
-    
+
     res.json(payslips);
   } catch (err) {
     console.error('Get My Payslips Error:', err);
@@ -244,17 +245,17 @@ router.get('/my-payslips', requireAuth, async (req, res) => {
 router.get('/my-payslips/:id', requireAuth, async (req, res) => {
   try {
     const { userId, organizationId } = getUserInfo(req);
-    
+
     const payslip = await Payslip.findOne({
       _id: req.params.id,
       userId,
       organizationId
     }).populate('payrollRunId');
-    
+
     if (!payslip) {
       return res.status(404).json({ error: 'Payslip not found' });
     }
-    
+
     res.json(payslip);
   } catch (err) {
     console.error('Get Payslip Error:', err);
@@ -270,21 +271,21 @@ router.get('/payslips', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { year, month, payrollRunId, status, limit = 50, skip = 0 } = req.query;
-    
+
     const query = { organizationId };
     if (year) query['payPeriod.year'] = parseInt(year);
     if (month) query['payPeriod.month'] = parseInt(month);
     if (payrollRunId) query.payrollRunId = payrollRunId;
     if (status) query.status = status;
-    
+
     const payslips = await Payslip.find(query)
       .populate('payrollRunId', 'runNumber status')
       .sort({ 'employeeSnapshot.name': 1 })
       .skip(parseInt(skip))
       .limit(parseInt(limit));
-    
+
     const total = await Payslip.countDocuments(query);
-    
+
     res.json({
       payslips,
       total,
@@ -304,16 +305,16 @@ router.get('/payslips', requireHRAdmin, async (req, res) => {
 router.get('/payslips/:id', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    
+
     const payslip = await Payslip.findOne({
       _id: req.params.id,
       organizationId
     }).populate('payrollRunId');
-    
+
     if (!payslip) {
       return res.status(404).json({ error: 'Payslip not found' });
     }
-    
+
     res.json(payslip);
   } catch (err) {
     console.error('Get Payslip Error:', err);
@@ -333,13 +334,13 @@ router.get('/runs', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { year, status, limit = 12 } = req.query;
-    
+
     const runs = await PayrollRun.getByOrganization(organizationId, {
       year: year ? parseInt(year) : undefined,
       status,
       limit: parseInt(limit)
     });
-    
+
     res.json(runs);
   } catch (err) {
     console.error('Get Runs Error:', err);
@@ -354,16 +355,16 @@ router.get('/runs', requireHRAdmin, async (req, res) => {
 router.get('/runs/:id', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    
+
     const run = await PayrollRun.findOne({
       _id: req.params.id,
       organizationId
     });
-    
+
     if (!run) {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
-    
+
     res.json(run);
   } catch (err) {
     console.error('Get Run Error:', err);
@@ -379,26 +380,26 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
     const { month, year, settings = {}, paymentDate } = req.body;
-    
+
     // Validate month/year
     if (!month || !year) {
       return res.status(400).json({ error: 'Month and year are required' });
     }
-    
+
     // Check if run already exists
     const exists = await PayrollRun.existsForPeriod(organizationId, year, month);
     if (exists) {
       return res.status(400).json({ error: 'Payroll run for this period already exists' });
     }
-    
+
     // Generate run number
     const runNumber = await PayrollRun.generateRunNumber(organizationId, year, month);
-    
+
     // Calculate pay period dates
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0); // Last day of month
     const defaultPaymentDate = paymentDate ? new Date(paymentDate) : endDate;
-    
+
     // Create Run Record
     const run = new PayrollRun({
       runNumber,
@@ -424,173 +425,20 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
       createdBy: adminId,
       createdByName: adminName
     });
-    
+
     await run.save();
-    
+
     // =====================================================
-    // PAYROLL CALCULATION ENGINE
+    // DELEGATE TO PAYROLL ENGINE SERVICE
     // =====================================================
-    
-    // 1. Fetch all active profiles
-    const profiles = await PayrollProfile.find({
-      organizationId,
-      isActive: true,
-      'payrollFlags.includeInNextRun': true
-    });
-    
-    // Initialize run summary
-    run.initializeSummary(profiles.length, 'USD');
-    
-    const payslips = [];
-    const errors = [];
-    
-    for (const profile of profiles) {
-      try {
-        // Generate payslip number
-        const payslipNumber = await Payslip.generatePayslipNumber(organizationId, year, month);
-        
-        // Create base payslip
-        const payslip = new Payslip({
-          payslipNumber,
-          payrollRunId: run._id,
-          userId: profile.userId,
-          organizationId,
-          payPeriod: {
-            type: 'monthly',
-            month,
-            year,
-            startDate,
-            endDate,
-            paymentDate: defaultPaymentDate
-          },
-          employeeSnapshot: {
-            name: profile.employeeInfo?.name || 'Employee',
-            email: profile.employeeInfo?.email,
-            employeeId: profile.employeeInfo?.employeeId,
-            designation: profile.employeeInfo?.designation,
-            department: profile.employeeInfo?.department,
-            teamName: profile.employeeInfo?.teamName,
-            managerName: profile.employeeInfo?.managerName,
-            employmentType: profile.employeeInfo?.employmentType
-          },
-          salaryGrade: profile.salaryGrade,
-          currency: profile.currency || 'USD',
-          status: 'draft',
-          createdBy: adminId
-        });
-        
-        // Add basic salary
-        payslip.addEarning('basic', 'Basic Salary', profile.basicSalary);
-        
-        // Add allowances
-        if (run.settings.includeAllowances && profile.allowances) {
-          profile.allowances.forEach(allowance => {
-            if (allowance.isActive) {
-              payslip.addEarning(allowance.type, allowance.name, allowance.amount, {
-                taxable: allowance.isTaxable
-              });
-            }
-          });
-        }
-        
-        // Fetch and add approved bonuses
-        if (run.settings.includeBonuses) {
-          const bonuses = await CompensationRequest.find({
-            userId: profile.userId,
-            organizationId,
-            status: 'processed',
-            effectiveDate: { $gte: startDate, $lte: endDate }
-          });
-          
-          bonuses.forEach(bonus => {
-            payslip.addEarning('bonus', bonus.reason || 'Bonus', bonus.amount, {
-              linkedRequestId: bonus._id.toString(),
-              isRecurring: false
-            });
-          });
-        }
-        
-        // Add statutory deductions
-        if (run.settings.processStatutoryDeductions) {
-          // Tax (simplified calculation)
-          if (run.settings.calculateTax) {
-            const grossPay = payslip.earningsSummary?.grossPay || 0;
-            const taxAmount = grossPay * 0.10; // 10% flat tax for MVP
-            payslip.addDeduction('income_tax', 'Income Tax', taxAmount, { isPreTax: false });
-            
-            // Update tax breakdown
-            payslip.taxBreakdown = {
-              grossTaxableIncome: grossPay,
-              netTaxableIncome: grossPay,
-              taxRate: 10,
-              taxAmount
-            };
-          }
-          
-          // Social Security (5%)
-          const grossPay = payslip.earningsSummary?.grossPay || 0;
-          const socialSecurity = grossPay * 0.05;
-          payslip.addDeduction('social_security', 'Social Security', socialSecurity);
-        }
-        
-        // Add recurring deductions from profile
-        if (profile.recurringDeductions) {
-          profile.recurringDeductions.forEach(deduction => {
-            if (deduction.isActive) {
-              const amount = deduction.isPercentage
-                ? (payslip.earningsSummary?.grossPay || 0) * (deduction.percentage / 100)
-                : deduction.amount;
-              payslip.addDeduction(deduction.type, deduction.name, amount, {
-                isPreTax: deduction.isPreTax
-              });
-            }
-          });
-        }
-        
-        // Calculate final totals
-        payslip.calculateTotals();
-        
-        // Add to run employees
-        run.addEmployee(profile.userId, profile.employeeInfo?.name || 'Employee');
-        
-        payslips.push(payslip);
-      } catch (profileError) {
-        console.error(`Error processing profile ${profile.userId}:`, profileError);
-        errors.push({
-          userId: profile.userId,
-          employeeName: profile.employeeInfo?.name,
-          errorType: 'processing_error',
-          errorMessage: profileError.message
-        });
-        run.logError(profile.userId, profile.employeeInfo?.name, 'processing_error', profileError.message);
-      }
-    }
-    
-    // Save all payslips
-    if (payslips.length > 0) {
-      await Payslip.insertMany(payslips);
-    }
-    
-    // Update run with totals
-    run.updateTotalsFromPayslips(payslips);
-    run.calculatedAt = new Date();
-    run.status = errors.length > 0 ? 'pending_review' : 'calculated';
-    run.processedBy = adminId;
-    run.processedByName = adminName;
-    
-    await run.save();
-    
+
+    const result = await payrollEngineService.calculateRun(run._id, organizationId);
+
     res.status(201).json({
       success: true,
-      run,
-      summary: {
-        totalEmployees: profiles.length,
-        processed: payslips.length,
-        errors: errors.length,
-        totalGrossPayroll: run.summary.totalGrossPayroll,
-        totalNetPayroll: run.summary.totalNetPayroll
-      },
-      errors: errors.length > 0 ? errors : undefined
+      run: result.run,
+      summary: result.summary,
+      errors: result.errors
     });
   } catch (err) {
     console.error('Create Payroll Run Error:', err);
@@ -605,30 +453,30 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
 router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
-    
+
     const run = await PayrollRun.findOne({
       _id: req.params.id,
       organizationId
     });
-    
+
     if (!run) {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
-    
+
     if (!['calculated', 'pending_review'].includes(run.status)) {
       return res.status(400).json({ error: `Cannot submit run with status: ${run.status}` });
     }
-    
+
     run.addApproval('submitted', adminId, adminName, 'hr_admin', req.body.comments);
     run.status = 'pending_approval';
     await run.save();
-    
+
     // Update all payslips status
     await Payslip.updateMany(
       { payrollRunId: run._id },
       { status: 'pending_approval' }
     );
-    
+
     res.json({ success: true, run });
   } catch (err) {
     console.error('Submit Run Error:', err);
@@ -643,23 +491,23 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
 router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
-    
+
     const run = await PayrollRun.findOne({
       _id: req.params.id,
       organizationId
     });
-    
+
     if (!run) {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
-    
+
     if (run.status !== 'pending_approval') {
       return res.status(400).json({ error: `Cannot approve run with status: ${run.status}` });
     }
-    
+
     run.addApproval('approved', adminId, adminName, role, req.body.comments);
     await run.save();
-    
+
     // Update payslips status if run is fully approved
     if (run.status === 'approved') {
       await Payslip.updateMany(
@@ -667,7 +515,7 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
         { status: 'approved' }
       );
     }
-    
+
     res.json({ success: true, run });
   } catch (err) {
     console.error('Approve Run Error:', err);
@@ -683,20 +531,20 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId } = getUserInfo(req);
     const { bankReference, transactionId } = req.body;
-    
+
     const run = await PayrollRun.findOne({
       _id: req.params.id,
       organizationId
     });
-    
+
     if (!run) {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
-    
+
     if (run.status !== 'approved') {
       return res.status(400).json({ error: `Cannot process payment for run with status: ${run.status}` });
     }
-    
+
     run.status = 'paid';
     run.paidAt = new Date();
     run.paymentBatch = {
@@ -704,9 +552,56 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
       processedAt: new Date(),
       status: 'completed'
     };
-    
+
     await run.save();
-    
+
+    // =====================================================
+    // UPDATE LOAN BALANCES & RECURRING DEDUCTIONS
+    // =====================================================
+    // Find all employees in this run who had a 'loan_repayment' deduction
+    // Decrease their remainingAmount in PayrollProfile
+
+    // We get the list of deductions from the stored payslips for this run
+    const payslips = await Payslip.find({ payrollRunId: run._id });
+
+    for (const payslip of payslips) {
+      if (!payslip.deductions || payslip.deductions.length === 0) continue;
+
+      // Find loan repayment deductions
+      const loanDeductions = payslip.deductions.filter(d => d.type === 'loan_repayment');
+
+      if (loanDeductions.length > 0) {
+        const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
+
+        if (profile && profile.recurringDeductions) {
+          let modified = false;
+
+          loanDeductions.forEach(deduction => {
+            // Match the deduction in the profile (by name or type)
+            // Note: Ideally we'd link by ID, but for now we match by name/type
+            const profileDeduction = profile.recurringDeductions.find(pd =>
+              pd.type === 'loan_repayment' && pd.name === deduction.name
+            );
+
+            if (profileDeduction && profileDeduction.remainingAmount > 0) {
+              profileDeduction.remainingAmount -= deduction.amount;
+              if (profileDeduction.remainingAmount < 0) profileDeduction.remainingAmount = 0;
+
+              // Auto-deactivate if paid off
+              if (profileDeduction.remainingAmount === 0) {
+                profileDeduction.isActive = false;
+                profileDeduction.notes = (profileDeduction.notes || '') + ' [Paid Off via Run ' + run.runNumber + ']';
+              }
+
+              modified = true;
+            }
+          });
+
+          if (modified) await profile.save();
+        }
+      }
+    }
+
     // Update payslips status
     await Payslip.updateMany(
       { payrollRunId: run._id },
@@ -718,7 +613,7 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
         'paymentDetails.bankReference': bankReference
       }
     );
-    
+
     res.json({ success: true, run });
   } catch (err) {
     console.error('Process Payment Error:', err);
@@ -738,14 +633,14 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
-    
+
     // Get all runs for the year
     const runs = await PayrollRun.find({
       organizationId,
       'payPeriod.year': parseInt(year),
       status: { $in: ['calculated', 'approved', 'paid'] }
     }).sort({ 'payPeriod.month': 1 });
-    
+
     // Calculate yearly totals
     const summary = {
       year: parseInt(year),
@@ -756,13 +651,13 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
       totalTaxWithheld: 0,
       monthlyBreakdown: []
     };
-    
+
     runs.forEach(run => {
       summary.totalEmployeesPaid += run.summary?.processedCount || 0;
       summary.totalGrossPayroll += run.summary?.totalGrossPayroll || 0;
       summary.totalNetPayroll += run.summary?.totalNetPayroll || 0;
       summary.totalTaxWithheld += run.summary?.totalTaxWithheld || 0;
-      
+
       summary.monthlyBreakdown.push({
         month: run.payPeriod.month,
         year: run.payPeriod.year,
@@ -772,15 +667,15 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
         status: run.status
       });
     });
-    
+
     // Get active employee count
     const activeProfiles = await PayrollProfile.countDocuments({
       organizationId,
       isActive: true
     });
-    
+
     summary.activeEmployees = activeProfiles;
-    
+
     res.json(summary);
   } catch (err) {
     console.error('Analytics Summary Error:', err);
@@ -796,14 +691,14 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
-    
+
     const payslips = await Payslip.find({
       userId: req.params.userId,
       organizationId,
       'payPeriod.year': parseInt(year),
       status: { $in: ['approved', 'paid'] }
     });
-    
+
     const ytd = {
       year: parseInt(year),
       userId: req.params.userId,
@@ -814,13 +709,13 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
       totalNetPay: 0,
       breakdown: []
     };
-    
+
     payslips.forEach(payslip => {
       ytd.totalGrossEarnings += payslip.earningsSummary?.grossPay || 0;
       ytd.totalDeductions += payslip.deductionsSummary?.totalDeductions || 0;
       ytd.totalTax += payslip.taxBreakdown?.taxAmount || 0;
       ytd.totalNetPay += payslip.netPay || 0;
-      
+
       ytd.breakdown.push({
         month: payslip.payPeriod.month,
         grossPay: payslip.earningsSummary?.grossPay || 0,
@@ -828,7 +723,7 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
         netPay: payslip.netPay
       });
     });
-    
+
     res.json(ytd);
   } catch (err) {
     console.error('YTD Analytics Error:', err);
@@ -844,14 +739,14 @@ router.get('/my-ytd', requireAuth, async (req, res) => {
   try {
     const { userId, organizationId } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
-    
+
     const payslips = await Payslip.find({
       userId,
       organizationId,
       'payPeriod.year': parseInt(year),
       status: { $in: ['approved', 'paid'] }
     });
-    
+
     const ytd = {
       year: parseInt(year),
       totalPayslips: payslips.length,
@@ -861,13 +756,13 @@ router.get('/my-ytd', requireAuth, async (req, res) => {
       totalNetPay: 0,
       breakdown: []
     };
-    
+
     payslips.forEach(payslip => {
       ytd.totalGrossEarnings += payslip.earningsSummary?.grossPay || 0;
       ytd.totalDeductions += payslip.deductionsSummary?.totalDeductions || 0;
       ytd.totalTax += payslip.taxBreakdown?.taxAmount || 0;
       ytd.totalNetPay += payslip.netPay || 0;
-      
+
       ytd.breakdown.push({
         month: payslip.payPeriod.month,
         periodDisplay: payslip.periodDisplay,
@@ -876,7 +771,7 @@ router.get('/my-ytd', requireAuth, async (req, res) => {
         netPay: payslip.netPay
       });
     });
-    
+
     res.json(ytd);
   } catch (err) {
     console.error('My YTD Error:', err);
