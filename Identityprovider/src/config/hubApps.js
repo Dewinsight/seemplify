@@ -9,6 +9,20 @@ const isProduction = process.env.NODE_ENV === 'production'
 // Development apps configuration
 const developmentApps = [
   {
+    appId: 'openwebui',
+    name: 'Open WebUI',
+    description: 'AI chat interface with multiple model support',
+    icon: 'chat',
+    color: '#7c3aed',
+    url: process.env.OPENWEBUI_URL || 'http://localhost:8080',
+    apiUrl: process.env.OPENWEBUI_URL || 'http://localhost:8080',
+    clientId: 'openwebui',
+    isActive: true,
+    isPublic: true,
+    category: 'ai',
+    order: 6
+  },
+  {
     appId: 'outline',
     name: 'Outline Docs',
     description: 'Team knowledge base and documentation',
@@ -82,6 +96,20 @@ const developmentApps = [
 
 // Production apps configuration
 const productionApps = [
+  {
+    appId: 'openwebui',
+    name: 'Open WebUI',
+    description: 'AI chat interface with multiple model support',
+    icon: 'chat',
+    color: '#7c3aed',
+    url: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
+    apiUrl: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
+    clientId: 'openwebui',
+    isActive: true,
+    isPublic: true,
+    category: 'ai',
+    order: 6
+  },
   {
     appId: 'outline',
     name: 'Outline Docs',

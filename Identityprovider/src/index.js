@@ -288,7 +288,7 @@ const config = {
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline'];
+      const noPkceClients = ['outline', 'openwebui'];
       return !noPkceClients.includes(client.clientId);
     }
   },
@@ -3074,6 +3074,15 @@ app.get('/launch/:appId', async (req, res) => {
       console.log('  📍 OUTLINE OIDC REDIRECT TO:', outlineAuthUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(outlineAuthUrl)
+    }
+
+    // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
+    if (app.appId === 'openwebui') {
+      // Open WebUI handles OIDC at /oauth/oidc - redirect there directly
+      const openwebuiAuthUrl = `${app.url}/oauth/oidc`
+      console.log('  📍 OPEN WEBUI OIDC REDIRECT TO:', openwebuiAuthUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(openwebuiAuthUrl)
     }
 
     // For OIDC apps, generate SSO token and redirect to backend OIDC start

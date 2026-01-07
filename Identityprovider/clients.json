@@ -1,6 +1,22 @@
 {
   "clients": [
     {
+      "client_id": "openwebui",
+      "client_secret": "openwebui-seemplify-secret-2026",
+      "redirect_uri_patterns": [
+        "https://ai.seemplifyai.com/oauth/oidc/callback",
+        "http://localhost:8080/oauth/oidc/callback"
+      ],
+      "allowed_origins": [
+        "https://ai.seemplifyai.com",
+        "http://localhost:8080",
+        "https://auth.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_post"
+    },
+    {
       "client_id": "outline",
       "client_secret": "outline-seemplify-secret-2026",
       "redirect_uri_patterns": [
