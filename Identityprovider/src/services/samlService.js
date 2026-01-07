@@ -120,19 +120,29 @@ class SAMLIdPService {
      * Register a Service Provider (application)
      */
     registerServiceProvider(spId, config) {
-        const sp = samlify.ServiceProvider({
+        // Build SP configuration - only include signingCert if provided
+        const spConfig = {
             entityID: config.entityId,
             assertionConsumerService: [{
                 Binding: samlify.Constants.namespace.binding.post,
                 Location: config.acsUrl
-            }],
-            singleLogoutService: config.sloUrl ? [{
+            }]
+        };
+
+        // Only add singleLogoutService if sloUrl is provided
+        if (config.sloUrl) {
+            spConfig.singleLogoutService = [{
                 Binding: samlify.Constants.namespace.binding.redirect,
                 Location: config.sloUrl
-            }] : [],
-            // Optional: SP's signing certificate for signed AuthnRequests
-            signingCert: config.certificate || null
-        });
+            }];
+        }
+
+        // Only add signingCert if certificate is provided (samlify doesn't like null)
+        if (config.certificate) {
+            spConfig.signingCert = config.certificate;
+        }
+
+        const sp = samlify.ServiceProvider(spConfig);
 
         this.serviceProviders.set(spId, {
             ...config,
