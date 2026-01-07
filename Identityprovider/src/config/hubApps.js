@@ -10,7 +10,7 @@ const isProduction = process.env.NODE_ENV === 'production'
 const developmentApps = [
   {
     appId: 'openwebui',
-    name: 'Open WebUI',
+    name: 'AI Assistant',
     description: 'AI chat interface with multiple model support',
     icon: 'chat',
     color: '#7c3aed',
@@ -98,7 +98,7 @@ const developmentApps = [
 const productionApps = [
   {
     appId: 'openwebui',
-    name: 'Open WebUI',
+    name: 'AI Assistant',
     description: 'AI chat interface with multiple model support',
     icon: 'chat',
     color: '#7c3aed',
