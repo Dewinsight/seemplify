@@ -4,10 +4,11 @@ import { Account } from '../models/Account.js';
 
 const router = express.Router();
 
-// Import getCachedClaims - THIS IS THE KEY INTEGRATION POINT
-// It reuses ALL existing organization, team, and permission logic
+// Import getCachedClaims and getSessionFromCookies functions
 let getCachedClaims;
+let getSessionFromCookies;
 export const setClaimsFunction = (fn) => { getCachedClaims = fn; };
+export const setSessionFunction = (fn) => { getSessionFromCookies = fn; };
 
 /**
  * IdP Metadata endpoint
@@ -65,8 +66,19 @@ router.get('/sso', async (req, res) => {
             return res.status(400).json({ error: `Unknown Service Provider: ${sp}` });
         }
 
-        // Check if user is already logged in (via OIDC session)
-        const sessionAccountId = req.session?.accountId;
+        // Check if user is already logged in
+        // First check Express session
+        let sessionAccountId = req.session?.accountId;
+        
+        // If no Express session, check for OIDC cookie session (from hub login)
+        if (!sessionAccountId && getSessionFromCookies) {
+            const cookieAccount = await getSessionFromCookies(req);
+            if (cookieAccount) {
+                sessionAccountId = cookieAccount.sub;
+                // Also set it in Express session for future requests
+                req.session.accountId = cookieAccount.sub;
+            }
+        }
 
         if (!sessionAccountId) {
             // Store SAML context and redirect to login
@@ -80,6 +92,8 @@ router.get('/sso', async (req, res) => {
             return res.redirect(`/login?return_to=${encodeURIComponent('/saml/sso/complete')}`);
         }
 
+        console.log(`✅ SAML SSO: User session found (${sessionAccountId}), generating assertion for SP: ${sp}`);
+        
         // User is logged in - generate assertion
         await handleSamlAssertion(req, res, sp, RelayState);
 

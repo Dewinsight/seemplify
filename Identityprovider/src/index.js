@@ -23,7 +23,7 @@ import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 
 // SAML 2.0 Support
-import samlRoutes, { setClaimsFunction } from './routes/samlRoutes.js'
+import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
 import { samlIdPService as samlService } from './services/samlService.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -110,9 +110,10 @@ async function getCachedClaims(acc) {
 }
 
 // =============================================================================
-// SAML 2.0 SETUP - Share getCachedClaims with SAML routes
+// SAML 2.0 SETUP - Share getCachedClaims and getSessionFromCookies with SAML routes
 // =============================================================================
 setClaimsFunction(getCachedClaims)
+setSessionFunction(getSessionFromCookies)
 
 // Initialize SAML Identity Provider and load Service Providers
 const initializeSamlIdP = () => {
