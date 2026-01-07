@@ -3022,7 +3022,8 @@ app.get('/logout', async (req, res) => {
 })
 
 
-// Hub App Launch - Creates SSO token and redirects to app's OIDC start endpoint
+// Hub App Launch - Creates SSO token and redirects to app's auth endpoint
+// Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
   const launchStartTime = Date.now()
   try {
@@ -3044,10 +3045,20 @@ app.get('/launch/:appId', async (req, res) => {
     console.log('🚀 Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
+    console.log('  Auth Type:', app.authType || 'oidc')
     console.log('  User:', account.email)
 
-    // Generate a signed SSO token that proves the user is authenticated at the hub
-    // This token will be passed to the backend, which will pass it to the IdP
+    // Check if app uses SAML authentication
+    if (app.authType === 'saml') {
+      // For SAML apps, redirect directly to the SAML SSO endpoint
+      // The user is already authenticated (we have their session), so SAML will generate assertion
+      const samlSsoUrl = `/saml/sso?sp=${app.appId}`
+      console.log('  📍 SAML SSO REDIRECT TO:', samlSsoUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(samlSsoUrl)
+    }
+
+    // For OIDC apps, generate SSO token and redirect to backend OIDC start
     const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
     const secretKey = new TextEncoder().encode(ssoSecret)
 
@@ -3063,7 +3074,6 @@ app.get('/launch/:appId', async (req, res) => {
       .sign(secretKey)
 
     // Build the redirect URL to the app's backend OIDC start
-    // The backend will redirect to the IdP with this token
     // Use app-specific API URL based on appId
     let apiUrl;
     switch (app.appId) {
@@ -3079,6 +3089,7 @@ app.get('/launch/:appId', async (req, res) => {
       case 'payroll-management':
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
         break;
+      default:
         // Fallback to smarthr API URL for unknown apps
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
     }
@@ -3092,7 +3103,7 @@ app.get('/launch/:appId', async (req, res) => {
       returnTo: frontendUrl
     }).toString()
 
-    console.log('  📍 REDIRECTING TO:', redirectUrl)
+    console.log('  📍 OIDC REDIRECT TO:', redirectUrl)
     console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
 
     res.redirect(redirectUrl)
