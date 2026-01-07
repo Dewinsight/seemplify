@@ -255,6 +255,7 @@ const config = {
     client_id: client.client_id,
     client_secret: client.client_secret,
     redirect_uris: client.redirect_uri_patterns,
+    post_logout_redirect_uris: client.redirect_uri_patterns,
     response_types: client.response_types,
     grant_types: client.grant_types,
     token_endpoint_auth_method: client.token_endpoint_auth_method
