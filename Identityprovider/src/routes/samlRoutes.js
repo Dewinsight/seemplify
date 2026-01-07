@@ -95,7 +95,10 @@ router.get('/sso', async (req, res) => {
         console.log(`✅ SAML SSO: User session found (${sessionAccountId}), generating assertion for SP: ${sp}`);
         
         // User is logged in - generate assertion
-        await handleSamlAssertion(req, res, sp, RelayState);
+        // Use explicit relay state or fall back to SP's default
+        const relayState = RelayState || spConfig.defaultRelayState || '/auth/callback';
+        console.log(`📍 SAML RelayState: ${relayState}`);
+        await handleSamlAssertion(req, res, sp, relayState);
 
     } catch (error) {
         console.error('SAML SSO error:', error);
