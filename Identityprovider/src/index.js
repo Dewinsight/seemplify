@@ -3067,6 +3067,15 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(samlSsoUrl)
     }
 
+    // Special handling for Outline - it uses direct OIDC, not backend-initiated
+    if (app.appId === 'outline') {
+      // Outline handles OIDC at /auth/oidc - redirect there directly
+      const outlineAuthUrl = `${app.url}/auth/oidc`
+      console.log('  📍 OUTLINE OIDC REDIRECT TO:', outlineAuthUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(outlineAuthUrl)
+    }
+
     // For OIDC apps, generate SSO token and redirect to backend OIDC start
     const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
     const secretKey = new TextEncoder().encode(ssoSecret)
