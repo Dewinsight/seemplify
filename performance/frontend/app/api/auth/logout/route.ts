@@ -10,6 +10,10 @@ export async function POST() {
     path: '/',
   });
   
+  // Redirect to login page after logout
+  response.headers.set('Location', '/login');
+  response.status = 302;
+  
   return response;
 }
 

@@ -570,7 +570,13 @@ app.post('/api/auth/logout', (req, res) => {
   res.clearCookie('oidc_state');
 
   console.log('✅ User logged out successfully');
-  res.json({ success: true, message: 'Logged out successfully' });
+  
+  // Return success and redirect info
+  res.json({ 
+    success: true, 
+    message: 'Logged out successfully',
+    redirectUrl: '/login'
+  });
 });
 
 // Error handling middleware
