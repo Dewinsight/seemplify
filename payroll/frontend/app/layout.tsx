@@ -121,9 +121,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   ];
 
   const adminNavItems: NavItem[] = [
+    { name: 'Employees', href: '/admin/employees', icon: Users, section: 'admin' },
     { name: 'Run Payroll', href: '/admin/run', icon: Calculator, section: 'admin' },
+    { name: 'History', href: '/admin/runs', icon: FileText, section: 'admin' },
     { name: 'Approvals', href: '/admin/approvals', icon: CheckCircle, section: 'admin' },
     { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'admin' },
+    { name: 'Currencies', href: '/admin/currencies', icon: Calculator, section: 'admin' },
   ];
 
   const navigation = isHRAdmin ? [...mainNavItems, ...adminNavItems] : mainNavItems;
@@ -135,7 +138,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <body className="bg-[rgb(var(--background-start-rgb))]">
         {/* Background Noise */}
         <div className="bg-noise" />
-        
+
         <div className="min-h-screen">
           {/* Top Navbar */}
           <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
@@ -189,7 +192,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       </button>
                       {orgMenuOpen && (
                         <>
-                          <div 
+                          <div
                             className="fixed inset-0 z-40"
                             onClick={() => setOrgMenuOpen(false)}
                           />
@@ -233,7 +236,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     </button>
                     {userMenuOpen && (
                       <>
-                        <div 
+                        <div
                           className="fixed inset-0 z-40"
                           onClick={() => setUserMenuOpen(false)}
                         />
@@ -282,7 +285,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Mobile Slide-out Menu */}
           {mobileOpen && (
             <>
-              <div 
+              <div
                 className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
                 onClick={() => setMobileOpen(false)}
               />

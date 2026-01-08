@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentOrg, setCurrentOrg] = useState<any>(null);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
 
   useEffect(() => {
     handleAuthCallback();
@@ -47,6 +48,14 @@ export default function Dashboard() {
         }
 
         setLoading(false);
+
+        // Fetch dashboard stats
+        try {
+          const statsRes = await api.get('/payroll/dashboard-stats');
+          setDashboardStats(statsRes.data);
+        } catch (statsErr) {
+          console.log('Could not fetch dashboard stats:', statsErr);
+        }
       } catch (error: any) {
         console.error('Failed to fetch user:', error);
         if (error.response?.status === 401) {
@@ -208,15 +217,21 @@ export default function Dashboard() {
             <div className="space-y-3">
               <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                 <span className="text-zinc-400 text-sm">Gross Earnings</span>
-                <span className="font-semibold text-zinc-200">$0.00</span>
+                <span className="font-semibold text-zinc-200">
+                  ${dashboardStats?.ytd?.grossEarnings?.toLocaleString() || '0.00'}
+                </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                 <span className="text-zinc-400 text-sm">Total Tax</span>
-                <span className="font-semibold text-zinc-200">$0.00</span>
+                <span className="font-semibold text-zinc-200">
+                  ${dashboardStats?.ytd?.totalTax?.toLocaleString() || '0.00'}
+                </span>
               </div>
               <div className="flex justify-between items-center py-2 bg-emerald-500/10 -mx-2 px-2 rounded-lg border border-emerald-500/20">
                 <span className="text-emerald-400 font-medium text-sm">Net Pay</span>
-                <span className="font-bold text-lg text-emerald-300">$0.00</span>
+                <span className="font-bold text-lg text-emerald-300">
+                  ${dashboardStats?.ytd?.netPay?.toLocaleString() || '0.00'}
+                </span>
               </div>
             </div>
           </div>
@@ -232,8 +247,14 @@ export default function Dashboard() {
             </div>
             <span className="text-sm font-medium text-zinc-300">Next Payday</span>
           </div>
-          <p className="text-2xl font-bold text-amber-300">--</p>
-          <p className="text-xs text-zinc-500 mt-1">No scheduled payroll</p>
+          <p className="text-2xl font-bold text-amber-300">
+            {dashboardStats?.nextPayday
+              ? new Date(dashboardStats.nextPayday).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              : '--'}
+          </p>
+          <p className="text-xs text-zinc-500 mt-1">
+            {dashboardStats?.nextPayday ? 'Scheduled' : 'No scheduled payroll'}
+          </p>
         </div>
 
         <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-blue-500/20 p-5">
@@ -243,7 +264,7 @@ export default function Dashboard() {
             </div>
             <span className="text-sm font-medium text-zinc-300">Total Payslips</span>
           </div>
-          <p className="text-2xl font-bold text-blue-300">0</p>
+          <p className="text-2xl font-bold text-blue-300">{dashboardStats?.totalPayslips || 0}</p>
           <p className="text-xs text-zinc-500 mt-1">This year</p>
         </div>
 

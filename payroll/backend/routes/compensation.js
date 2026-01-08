@@ -156,6 +156,34 @@ router.post('/:id/action', requireAuth, async (req, res) => {
         }
 
         await request.save();
+
+        // Send email notification to requester (async, non-blocking)
+        (async () => {
+            try {
+                const { emailService } = require('../services/emailService');
+                // Try to get user email from PayrollProfile
+                const PayrollProfile = require('../models/PayrollProfile');
+                const profile = await PayrollProfile.findOne({
+                    userId: request.userId,
+                    organizationId: request.organizationId
+                });
+
+                if (profile?.employeeInfo?.email) {
+                    await emailService.sendApprovalNotification(
+                        profile.employeeInfo.email,
+                        request.userName || profile.employeeInfo.name,
+                        request.type,
+                        request.amount,
+                        request.currency || 'USD',
+                        request.status,
+                        comment || ''
+                    );
+                }
+            } catch (emailErr) {
+                console.error('📧 Email notification error:', emailErr.message);
+            }
+        })();
+
         res.json(request);
 
     } catch (err) {

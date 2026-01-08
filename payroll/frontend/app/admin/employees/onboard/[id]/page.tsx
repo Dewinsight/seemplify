@@ -55,6 +55,7 @@ export default function OnboardPage() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
     const [salaryGrades, setSalaryGrades] = useState<SalaryGrade[]>([]);
+    const [currencies, setCurrencies] = useState<{ code: string; name: string; symbol: string }[]>([]);
     const [existingProfile, setExistingProfile] = useState<any>(null);
 
     const [formData, setFormData] = useState<OnboardingData>({
@@ -98,6 +99,13 @@ export default function OnboardPage() {
             if (gradesRes.ok) {
                 const grades = await gradesRes.json();
                 setSalaryGrades(grades);
+            }
+
+            // Fetch currencies
+            const currenciesRes = await fetch('/api/payroll/currencies', { credentials: 'include' });
+            if (currenciesRes.ok) {
+                const data = await currenciesRes.json();
+                setCurrencies(data.currencies || []);
             }
 
             // Check if profile already exists
@@ -367,10 +375,20 @@ export default function OnboardPage() {
                                 }))}
                                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
                             >
-                                <option value="USD">USD - US Dollar</option>
-                                <option value="EUR">EUR - Euro</option>
-                                <option value="GBP">GBP - British Pound</option>
-                                <option value="NGN">NGN - Nigerian Naira</option>
+                                {currencies.length > 0 ? (
+                                    currencies.map(c => (
+                                        <option key={c.code} value={c.code}>
+                                            {c.code} - {c.name} ({c.symbol})
+                                        </option>
+                                    ))
+                                ) : (
+                                    <>
+                                        <option value="USD">USD - US Dollar</option>
+                                        <option value="EUR">EUR - Euro</option>
+                                        <option value="GBP">GBP - British Pound</option>
+                                        <option value="NGN">NGN - Nigerian Naira</option>
+                                    </>
+                                )}
                             </select>
                         </div>
                     </div>

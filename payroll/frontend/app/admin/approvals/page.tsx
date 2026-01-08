@@ -71,7 +71,8 @@ export default function ApprovalsPage() {
             const res = await fetch('/api/compensation/approvals', { credentials: 'include' });
             if (!res.ok) throw new Error('Failed to fetch approvals');
             const data = await res.json();
-            setRequests(data.requests || []);
+            // Backend returns array directly, not { requests: [] }
+            setRequests(Array.isArray(data) ? data : data.requests || []);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -82,11 +83,11 @@ export default function ApprovalsPage() {
     const handleApprove = async (requestId: string) => {
         setProcessingId(requestId);
         try {
-            const res = await fetch(`/api/compensation/requests/${requestId}/approve`, {
+            const res = await fetch(`/api/compensation/${requestId}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ status: 'approved', notes: 'Approved by HR Admin' })
+                body: JSON.stringify({ action: 'approve', comment: 'Approved by HR Admin' })
             });
             if (!res.ok) throw new Error('Failed to approve');
             await fetchApprovals();
@@ -103,11 +104,11 @@ export default function ApprovalsPage() {
 
         setProcessingId(requestId);
         try {
-            const res = await fetch(`/api/compensation/requests/${requestId}/approve`, {
+            const res = await fetch(`/api/compensation/${requestId}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ status: 'rejected', notes })
+                body: JSON.stringify({ action: 'reject', comment: notes })
             });
             if (!res.ok) throw new Error('Failed to reject');
             await fetchApprovals();
@@ -157,8 +158,8 @@ export default function ApprovalsPage() {
                         key={tab}
                         onClick={() => setFilter(tab)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === tab
-                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                             }`}
                     >
                         {tab.charAt(0).toUpperCase() + tab.slice(1)}

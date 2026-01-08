@@ -10,6 +10,9 @@ const payrollEngineService = new PayrollEngineService();
 // Import RBAC middleware
 const { requireAuth, requireHRAdmin, requireManager, requirePermission } = require('../middleware/rbac');
 
+// Import email service for notifications
+const { emailService } = require('../services/emailService');
+
 // Helper to get user info from session
 const getUserInfo = (req) => ({
   userId: req.session?.user?.sub || req.session?.user?.id,
@@ -67,6 +70,73 @@ router.get('/profile/me', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Get Profile Error:', err);
     res.status(500).json({ error: 'Failed to fetch payroll profile' });
+  }
+});
+
+/**
+ * GET /api/payroll/dashboard-stats
+ * Get current user's dashboard statistics (YTD, next payday, etc.)
+ */
+router.get('/dashboard-stats', requireAuth, async (req, res) => {
+  try {
+    const { userId, organizationId } = getUserInfo(req);
+    const currentYear = new Date().getFullYear();
+
+    // Get profile for salary info
+    const profile = await PayrollProfile.findOne({ userId, organizationId });
+
+    // Get payslips for YTD calculations
+    const payslips = await Payslip.find({
+      userId,
+      organizationId,
+      'payPeriod.year': currentYear,
+      status: { $in: ['approved', 'processed', 'paid'] }
+    }).sort({ 'payPeriod.month': -1 });
+
+    // Calculate YTD
+    let ytdGrossEarnings = 0;
+    let ytdTotalTax = 0;
+    let ytdNetPay = 0;
+
+    for (const slip of payslips) {
+      ytdGrossEarnings += slip.earnings?.totalGross || 0;
+      ytdTotalTax += slip.deductions?.income_tax || 0;
+      ytdNetPay += slip.netPay || 0;
+    }
+
+    // Get next payday from latest payroll run
+    const nextRun = await PayrollRun.findOne({
+      organizationId,
+      status: { $in: ['pending_approval', 'approved', 'processing'] },
+      'payPeriod.paymentDate': { $gte: new Date() }
+    }).sort({ 'payPeriod.paymentDate': 1 });
+
+    // Calculate next scheduled payday (default: end of next month)
+    let nextPayday = null;
+    if (nextRun) {
+      nextPayday = nextRun.payPeriod.paymentDate;
+    } else {
+      // Default: last day of current/next month
+      const today = new Date();
+      const currentMonth = today.getDate() > 25 ? today.getMonth() + 1 : today.getMonth();
+      nextPayday = new Date(today.getFullYear(), currentMonth + 1, 0);
+    }
+
+    res.json({
+      ytd: {
+        grossEarnings: ytdGrossEarnings,
+        totalTax: ytdTotalTax,
+        netPay: ytdNetPay
+      },
+      totalPayslips: payslips.length,
+      nextPayday: nextPayday?.toISOString().split('T')[0] || null,
+      currency: profile?.currency || 'USD',
+      profileStatus: profile?.status || 'pending_setup',
+      hasProfile: !!profile && profile.basicSalary > 0
+    });
+  } catch (err) {
+    console.error('Get Dashboard Stats Error:', err);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
   }
 });
 
@@ -434,6 +504,41 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
     // =====================================================
 
     const result = await payrollEngineService.calculateRun(run._id, organizationId);
+
+    // =====================================================
+    // SEND EMAIL NOTIFICATIONS (async, don't block response)
+    // =====================================================
+    (async () => {
+      try {
+        // Notify HR Admin that payroll is complete
+        if (req.session?.user?.email) {
+          await emailService.sendPayrollCompleteNotification(
+            req.session.user.email,
+            adminName,
+            { month, year },
+            result.run?.totalEmployees || 0,
+            result.run?.totalGrossPayroll || 0,
+            'USD'
+          );
+        }
+
+        // Send payslip notifications to all employees
+        const payslips = await Payslip.find({ payrollRunId: run._id }).populate('userId');
+        for (const slip of payslips) {
+          if (slip.employeeInfo?.email) {
+            await emailService.sendPayslipNotification(
+              slip.employeeInfo.email,
+              slip.employeeInfo.name,
+              { month, year },
+              slip.netPay,
+              slip.currency || 'USD'
+            );
+          }
+        }
+      } catch (emailErr) {
+        console.error('📧 Email notification error (non-blocking):', emailErr.message);
+      }
+    })();
 
     res.status(201).json({
       success: true,
