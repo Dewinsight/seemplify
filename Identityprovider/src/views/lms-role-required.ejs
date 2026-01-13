@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>LMS Access - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .role-selection {
+      max-width: 600px;
+      margin: 60px auto;
+      padding: 0 20px;
+    }
+
+    .role-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .role-header h1 {
+      font-size: 28px;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .role-header p {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .role-cards {
+      display: grid;
+      gap: 16px;
+    }
+
+    .role-card {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .role-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    .role-card.selected {
+      border-color: var(--primary);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .role-card-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .role-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .role-icon.instructor {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    }
+
+    .role-icon.student {
+      background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%);
+    }
+
+    .role-card h3 {
+      font-size: 18px;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .role-card p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    .role-permissions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .permission-badge {
+      background: var(--bg);
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .action-buttons {
+      margin-top: 32px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg);
+    }
+
+    .request-form {
+      margin-top: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .form-group textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 14px;
+      resize: vertical;
+    }
+
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .success-message {
+      text-align: center;
+      padding: 40px;
+    }
+
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+    }
+
+    .success-icon svg {
+      width: 40px;
+      height: 40px;
+      color: white;
+    }
+
+    .pending-message {
+      text-align: center;
+      padding: 40px;
+    }
+
+    .pending-icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+    }
+
+    .alert {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .alert.show {
+      display: block;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--error);
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--success);
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="https://seemplifyai.com" class="top-nav-brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3b82f6" />
+            <stop offset="50%" stop-color="#8b5cf6" />
+            <stop offset="100%" stop-color="#ec4899" />
+          </linearGradient>
+        </defs>
+        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
+          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <circle cx="65" cy="25" r="6" class="logo-dot" />
+        <circle cx="50" cy="50" r="6" class="logo-dot" />
+        <circle cx="35" cy="75" r="6" class="logo-dot" />
+      </svg>
+      <span>Seemplify</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+  </nav>
+
+  <div class="role-selection">
+    <div class="role-header">
+      <h1>🎓 Seemplify LMS Access</h1>
+      <% if (isAdmin) { %>
+        <p>Select your role to access the Learning Management System</p>
+      <% } else { %>
+        <p>Request access to the Learning Management System</p>
+      <% } %>
+    </div>
+
+    <div id="alertSuccess" class="alert alert-success"></div>
+    <div id="alertError" class="alert alert-error"></div>
+
+    <% if (hasPendingRequest) { %>
+      <!-- Pending Request Message -->
+      <div class="card pending-message">
+        <div class="pending-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <h2>Request Pending</h2>
+        <p>Your access request is awaiting admin approval.</p>
+        <p style="color: var(--muted); margin-top: 12px;">You requested: <strong><%= pendingRole %></strong> role</p>
+        <div class="action-buttons">
+          <a href="/" class="btn btn-secondary">Back to Hub</a>
+        </div>
+      </div>
+    <% } else { %>
+      <!-- Role Selection Cards -->
+      <div id="roleSelection">
+        <div class="role-cards">
+          <div class="role-card" data-role="instructor" onclick="selectRole('instructor')">
+            <div class="role-card-header">
+              <div class="role-icon instructor">👨‍🏫</div>
+              <h3>Instructor</h3>
+            </div>
+            <p>Create courses, manage batches, and grade student assignments. Ideal for teachers, trainers, and content creators.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Create Courses</span>
+              <span class="permission-badge">Manage Batches</span>
+              <span class="permission-badge">Grade Work</span>
+              <span class="permission-badge">View Analytics</span>
+            </div>
+          </div>
+
+          <div class="role-card" data-role="student" onclick="selectRole('student')">
+            <div class="role-card-header">
+              <div class="role-icon student">🎓</div>
+              <h3>Student</h3>
+            </div>
+            <p>Enroll in courses, submit assignments, and earn certificates. Perfect for learners and trainees.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Enroll in Courses</span>
+              <span class="permission-badge">Submit Work</span>
+              <span class="permission-badge">Take Quizzes</span>
+              <span class="permission-badge">Earn Certificates</span>
+            </div>
+          </div>
+        </div>
+
+        <% if (!isAdmin) { %>
+          <!-- Access Request Form -->
+          <div class="request-form" id="requestForm" style="display: none;">
+            <div class="form-group">
+              <label for="reason">Why do you need this role? (Optional)</label>
+              <textarea id="reason" placeholder="Describe your learning goals or what you plan to teach..."></textarea>
+            </div>
+          </div>
+        <% } %>
+
+        <div class="action-buttons">
+          <a href="/" class="btn btn-secondary">Cancel</a>
+          <% if (isAdmin) { %>
+            <button class="btn btn-primary" id="submitBtn" disabled onclick="assignRole()">
+              <span id="btnText">Select a Role</span>
+              <span id="btnSpinner" style="display: none;">Processing...</span>
+            </button>
+          <% } else { %>
+            <button class="btn btn-primary" id="submitBtn" disabled onclick="submitRequest()">
+              <span id="btnText">Request Access</span>
+              <span id="btnSpinner" style="display: none;">Submitting...</span>
+            </button>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- Success Message (hidden by default) -->
+      <div id="successMessage" style="display: none;">
+        <div class="card success-message">
+          <div class="success-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2 id="successTitle">Success!</h2>
+          <p id="successText">Your role has been assigned.</p>
+          <div class="action-buttons">
+            <a href="/launch/lms" class="btn btn-primary">Launch LMS →</a>
+          </div>
+        </div>
+      </div>
+    <% } %>
+  </div>
+
+  <script>
+    const organizationId = '<%= organizationId %>';
+    const isAdmin = <%= isAdmin %>;
+    let selectedRole = null;
+
+    function selectRole(role) {
+      selectedRole = role;
+      
+      // Update UI
+      document.querySelectorAll('.role-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      document.querySelector(`[data-role="${role}"]`).classList.add('selected');
+      
+      // Enable submit button
+      const submitBtn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      submitBtn.disabled = false;
+      
+      if (isAdmin) {
+        btnText.textContent = `Assign ${role.charAt(0).toUpperCase() + role.slice(1)} Role`;
+      } else {
+        btnText.textContent = `Request ${role.charAt(0).toUpperCase() + role.slice(1)} Access`;
+        document.getElementById('requestForm').style.display = 'block';
+      }
+    }
+
+    async function assignRole() {
+      if (!selectedRole) return;
+      
+      const submitBtn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      const btnSpinner = document.getElementById('btnSpinner');
+      
+      submitBtn.disabled = true;
+      btnText.style.display = 'none';
+      btnSpinner.style.display = 'inline';
+
+      try {
+        const response = await fetch(`/api/lms/roles/${organizationId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: selectedRole })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          document.getElementById('roleSelection').style.display = 'none';
+          document.getElementById('successMessage').style.display = 'block';
+          document.getElementById('successTitle').textContent = 'Role Assigned!';
+          document.getElementById('successText').textContent = `You've been assigned the ${selectedRole} role.`;
+        } else {
+          throw new Error(data.error || 'Failed to assign role');
+        }
+      } catch (error) {
+        const alertError = document.getElementById('alertError');
+        alertError.textContent = error.message;
+        alertError.classList.add('show');
+        
+        submitBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.style.display = 'none';
+      }
+    }
+
+    async function submitRequest() {
+      if (!selectedRole) return;
+      
+      const submitBtn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      const btnSpinner = document.getElementById('btnSpinner');
+      const reason = document.getElementById('reason')?.value || '';
+      
+      submitBtn.disabled = true;
+      btnText.style.display = 'none';
+      btnSpinner.style.display = 'inline';
+
+      try {
+        const response = await fetch(`/api/lms/access-requests/${organizationId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: selectedRole, reason })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          document.getElementById('roleSelection').style.display = 'none';
+          document.getElementById('successMessage').style.display = 'block';
+          document.getElementById('successTitle').textContent = 'Request Submitted!';
+          document.getElementById('successText').textContent = 'Your access request has been submitted. An admin will review it shortly.';
+          
+          // Update the launch button to go back to hub
+          const launchBtn = document.querySelector('#successMessage .btn-primary');
+          launchBtn.href = '/';
+          launchBtn.textContent = 'Back to Hub';
+        } else {
+          throw new Error(data.error || 'Failed to submit request');
+        }
+      } catch (error) {
+        const alertError = document.getElementById('alertError');
+        alertError.textContent = error.message;
+        alertError.classList.add('show');
+        
+        submitBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+
+</html>

@@ -26,6 +26,10 @@ import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
 import { samlIdPService as samlService } from './services/samlService.js'
 
+// LMS Role Support
+import lmsRolesRouter from './routes/lmsRoles.js'
+import { LmsRole, LMS_ROLE_PERMISSIONS } from './models/LmsRole.js'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
@@ -60,9 +64,11 @@ async function getCachedClaims(acc) {
   console.log(`🔨 [PERF] Building claims for ${acc.email}...`)
 
   // Build claims in PARALLEL for performance
-  const [organizationClaims, teamClaims] = await Promise.all([
+  const currentOrgIdForLms = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString()
+  const [organizationClaims, teamClaims, lmsRoleClaim] = await Promise.all([
     buildOrganizationClaims(acc),
-    getTeamClaims(acc)
+    getTeamClaims(acc),
+    currentOrgIdForLms ? LmsRole.getUserRole(acc._id, currentOrgIdForLms) : Promise.resolve(null)
   ])
 
   const claims = {
@@ -88,7 +94,13 @@ async function getCachedClaims(acc) {
         organization_id: t.organizationId,
         direct_reports: t.directReports,
         permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
-      }))
+      })),
+    // LMS role claim for current organization
+    lms_role: lmsRoleClaim ? {
+      role: lmsRoleClaim.role,
+      permissions: LMS_ROLE_PERMISSIONS[lmsRoleClaim.role] || [],
+      organization_id: currentOrgIdForLms
+    } : null
   }
 
   // Cache the claims
@@ -3032,6 +3044,39 @@ app.get('/logout', async (req, res) => {
 })
 
 
+// LMS Role Required Page - shown when user tries to access LMS without a role
+app.get('/hub/lms-role-required', async (req, res) => {
+  try {
+    const account = await getSessionFromCookies(req)
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    const { admin, org } = req.query
+    const isAdmin = admin === 'true'
+    const organizationId = org
+
+    // Check if user already has a pending request
+    const { LmsAccessRequest } = await import('./models/LmsAccessRequest.js')
+    const pendingRequest = await LmsAccessRequest.findOne({
+      requestedBy: account._id,
+      organization: organizationId,
+      status: 'pending'
+    })
+
+    res.render('lms-role-required', {
+      user: account,
+      isAdmin,
+      organizationId,
+      hasPendingRequest: !!pendingRequest,
+      pendingRole: pendingRequest?.requestedRole || null
+    })
+  } catch (error) {
+    console.error('LMS role required page error:', error)
+    res.redirect('/')
+  }
+})
+
 // Hub App Launch - Creates SSO token and redirects to app's auth endpoint
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
@@ -3074,6 +3119,28 @@ app.get('/launch/:appId', async (req, res) => {
       console.log('  📍 DIRECT REDIRECT TO:', app.url)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(app.url)
+    }
+
+    // Special handling for LMS - check for LMS role
+    if (app.requiresLmsRole && account.currentOrganization) {
+      const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
+      const lmsRole = await LmsRole.getUserRole(account._id, orgId)
+      
+      if (!lmsRole) {
+        // User doesn't have an LMS role - redirect to role selection
+        const orgMembership = account.organizations.find(
+          o => o.organization.toString() === orgId && o.isActive
+        )
+        const isOrgAdmin = orgMembership && ['owner', 'admin'].includes(orgMembership.role)
+        
+        console.log('  ⚠️ LMS role required but not found')
+        console.log('  Is admin:', isOrgAdmin)
+        
+        // Redirect to role selection/request page
+        return res.redirect(`/hub/lms-role-required?admin=${isOrgAdmin}&org=${orgId}`)
+      }
+      
+      console.log('  ✅ LMS role found:', lmsRole.role)
     }
 
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
@@ -3219,6 +3286,9 @@ app.use('/api/organizations', membersRouter)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
+
+// LMS Role Management Routes
+app.use('/api/lms', lmsRolesRouter)
 
 // Profile API Routes - MUST come BEFORE teams router to avoid route conflicts
 /**

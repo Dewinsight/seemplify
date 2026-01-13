@@ -1,0 +1,457 @@
+import express from 'express'
+import { LmsRole, LMS_ROLE_PERMISSIONS } from '../models/LmsRole.js'
+import { LmsAccessRequest } from '../models/LmsAccessRequest.js'
+import { Account } from '../models/Account.js'
+
+const router = express.Router()
+
+/**
+ * Middleware to check if user is authenticated
+ */
+const requireAuth = (req, res, next) => {
+  if (!req.session?.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  next()
+}
+
+/**
+ * Middleware to check if user is org admin/owner
+ */
+const requireOrgAdmin = async (req, res, next) => {
+  const { organizationId } = req.params
+  const userId = req.session.user.sub
+  
+  try {
+    const account = await Account.findOne({ sub: userId })
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' })
+    }
+    
+    const orgMembership = account.organizations.find(
+      o => o.organization.toString() === organizationId && o.isActive
+    )
+    
+    if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
+      return res.status(403).json({ error: 'Admin privileges required' })
+    }
+    
+    req.account = account
+    req.orgMembership = orgMembership
+    next()
+  } catch (error) {
+    console.error('Admin check error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+// ============================================================================
+// LMS Role Endpoints
+// ============================================================================
+
+/**
+ * GET /api/lms/roles/:organizationId/my-role
+ * Get current user's LMS role for an organization
+ */
+router.get('/roles/:organizationId/my-role', requireAuth, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    const userId = req.session.user.sub
+    
+    const account = await Account.findOne({ sub: userId })
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' })
+    }
+    
+    const lmsRole = await LmsRole.getUserRole(account._id, organizationId)
+    
+    if (!lmsRole) {
+      return res.json({ 
+        hasRole: false,
+        role: null,
+        permissions: []
+      })
+    }
+    
+    res.json({
+      hasRole: true,
+      role: lmsRole.role,
+      permissions: LMS_ROLE_PERMISSIONS[lmsRole.role] || [],
+      assignedAt: lmsRole.assignedAt
+    })
+  } catch (error) {
+    console.error('Get my LMS role error:', error)
+    res.status(500).json({ error: 'Failed to get LMS role' })
+  }
+})
+
+/**
+ * GET /api/lms/roles/:organizationId
+ * Get all LMS roles for an organization (admin only)
+ */
+router.get('/roles/:organizationId', requireAuth, requireOrgAdmin, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    
+    const roles = await LmsRole.find({
+      organization: organizationId,
+      isActive: true
+    }).populate('account', 'email profile.name')
+      .populate('assignedBy', 'email profile.name')
+    
+    res.json({
+      roles: roles.map(r => ({
+        id: r._id,
+        user: {
+          id: r.account._id,
+          email: r.account.email,
+          name: r.account.profile?.name
+        },
+        role: r.role,
+        permissions: LMS_ROLE_PERMISSIONS[r.role],
+        assignedBy: r.assignedBy ? {
+          id: r.assignedBy._id,
+          email: r.assignedBy.email,
+          name: r.assignedBy.profile?.name
+        } : null,
+        assignedAt: r.assignedAt
+      }))
+    })
+  } catch (error) {
+    console.error('Get LMS roles error:', error)
+    res.status(500).json({ error: 'Failed to get LMS roles' })
+  }
+})
+
+/**
+ * POST /api/lms/roles/:organizationId
+ * Assign LMS role to a user (admin only or self-assign for admins)
+ */
+router.post('/roles/:organizationId', requireAuth, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    const { userId, role } = req.body
+    const currentUserId = req.session.user.sub
+    
+    // Validate role
+    if (!['instructor', 'student', 'course_creator', 'moderator'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' })
+    }
+    
+    const currentAccount = await Account.findOne({ sub: currentUserId })
+    if (!currentAccount) {
+      return res.status(404).json({ error: 'Current account not found' })
+    }
+    
+    // Check if user is org admin/owner
+    const orgMembership = currentAccount.organizations.find(
+      o => o.organization.toString() === organizationId && o.isActive
+    )
+    
+    const isAdmin = orgMembership && ['owner', 'admin'].includes(orgMembership.role)
+    
+    // Determine target user
+    let targetAccount
+    if (userId && userId !== currentAccount._id.toString()) {
+      // Assigning to another user - must be admin
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Admin privileges required to assign roles to others' })
+      }
+      targetAccount = await Account.findById(userId)
+    } else {
+      // Self-assignment - must be admin
+      if (!isAdmin) {
+        return res.status(403).json({ 
+          error: 'You do not have permission to self-assign roles. Please submit an access request.',
+          requiresAccessRequest: true
+        })
+      }
+      targetAccount = currentAccount
+    }
+    
+    if (!targetAccount) {
+      return res.status(404).json({ error: 'Target user not found' })
+    }
+    
+    // Assign the role
+    const lmsRole = await LmsRole.assignRole(
+      targetAccount._id,
+      organizationId,
+      role,
+      currentAccount._id
+    )
+    
+    console.log(`✅ LMS role assigned: ${targetAccount.email} -> ${role} in org ${organizationId}`)
+    
+    res.json({
+      success: true,
+      role: {
+        id: lmsRole._id,
+        role: lmsRole.role,
+        permissions: LMS_ROLE_PERMISSIONS[lmsRole.role],
+        assignedAt: lmsRole.assignedAt
+      }
+    })
+  } catch (error) {
+    console.error('Assign LMS role error:', error)
+    res.status(500).json({ error: 'Failed to assign LMS role' })
+  }
+})
+
+/**
+ * DELETE /api/lms/roles/:organizationId/:roleId
+ * Remove LMS role (admin only)
+ */
+router.delete('/roles/:organizationId/:roleId', requireAuth, requireOrgAdmin, async (req, res) => {
+  try {
+    const { roleId } = req.params
+    
+    const role = await LmsRole.findByIdAndUpdate(
+      roleId,
+      { isActive: false },
+      { new: true }
+    )
+    
+    if (!role) {
+      return res.status(404).json({ error: 'Role not found' })
+    }
+    
+    console.log(`✅ LMS role removed: ${roleId}`)
+    
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Remove LMS role error:', error)
+    res.status(500).json({ error: 'Failed to remove LMS role' })
+  }
+})
+
+// ============================================================================
+// Access Request Endpoints
+// ============================================================================
+
+/**
+ * POST /api/lms/access-requests/:organizationId
+ * Submit access request (non-admins)
+ */
+router.post('/access-requests/:organizationId', requireAuth, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    const { role, reason } = req.body
+    const userId = req.session.user.sub
+    
+    // Validate role
+    if (!['instructor', 'student'].includes(role)) {
+      return res.status(400).json({ error: 'Can only request instructor or student roles' })
+    }
+    
+    const account = await Account.findOne({ sub: userId })
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' })
+    }
+    
+    // Check if already has a role
+    const existingRole = await LmsRole.getUserRole(account._id, organizationId)
+    if (existingRole) {
+      return res.status(400).json({ error: 'You already have an LMS role' })
+    }
+    
+    // Create access request
+    const request = await LmsAccessRequest.createRequest(
+      account._id,
+      organizationId,
+      role,
+      reason || ''
+    )
+    
+    console.log(`📝 LMS access request created: ${account.email} -> ${role}`)
+    
+    res.json({
+      success: true,
+      request: {
+        id: request._id,
+        requestedRole: request.requestedRole,
+        status: request.status,
+        createdAt: request.createdAt
+      }
+    })
+  } catch (error) {
+    console.error('Create access request error:', error)
+    if (error.message.includes('already have a pending')) {
+      return res.status(400).json({ error: error.message })
+    }
+    res.status(500).json({ error: 'Failed to create access request' })
+  }
+})
+
+/**
+ * GET /api/lms/access-requests/:organizationId
+ * Get pending access requests (admin only)
+ */
+router.get('/access-requests/:organizationId', requireAuth, requireOrgAdmin, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    
+    const requests = await LmsAccessRequest.getPendingRequests(organizationId)
+    
+    res.json({
+      requests: requests.map(r => ({
+        id: r._id,
+        user: {
+          id: r.requestedBy._id,
+          email: r.requestedBy.email,
+          name: r.requestedBy.profile?.name
+        },
+        requestedRole: r.requestedRole,
+        reason: r.requestReason,
+        status: r.status,
+        createdAt: r.createdAt,
+        expiresAt: r.expiresAt
+      }))
+    })
+  } catch (error) {
+    console.error('Get access requests error:', error)
+    res.status(500).json({ error: 'Failed to get access requests' })
+  }
+})
+
+/**
+ * GET /api/lms/access-requests/my
+ * Get current user's access request status
+ */
+router.get('/access-requests/my/:organizationId', requireAuth, async (req, res) => {
+  try {
+    const { organizationId } = req.params
+    const userId = req.session.user.sub
+    
+    const account = await Account.findOne({ sub: userId })
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' })
+    }
+    
+    const request = await LmsAccessRequest.findOne({
+      requestedBy: account._id,
+      organization: organizationId,
+      status: 'pending'
+    })
+    
+    if (!request) {
+      return res.json({ hasPendingRequest: false })
+    }
+    
+    res.json({
+      hasPendingRequest: true,
+      request: {
+        id: request._id,
+        requestedRole: request.requestedRole,
+        status: request.status,
+        createdAt: request.createdAt
+      }
+    })
+  } catch (error) {
+    console.error('Get my access request error:', error)
+    res.status(500).json({ error: 'Failed to get access request' })
+  }
+})
+
+/**
+ * PUT /api/lms/access-requests/:organizationId/:requestId/approve
+ * Approve access request (admin only)
+ */
+router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, requireOrgAdmin, async (req, res) => {
+  try {
+    const { requestId } = req.params
+    const { notes } = req.body
+    
+    const request = await LmsAccessRequest.approveRequest(
+      requestId,
+      req.account._id,
+      notes || ''
+    )
+    
+    console.log(`✅ LMS access request approved: ${requestId}`)
+    
+    res.json({
+      success: true,
+      request: {
+        id: request._id,
+        status: request.status,
+        reviewedAt: request.reviewedAt
+      }
+    })
+  } catch (error) {
+    console.error('Approve access request error:', error)
+    res.status(500).json({ error: error.message || 'Failed to approve request' })
+  }
+})
+
+/**
+ * PUT /api/lms/access-requests/:organizationId/:requestId/deny
+ * Deny access request (admin only)
+ */
+router.put('/access-requests/:organizationId/:requestId/deny', requireAuth, requireOrgAdmin, async (req, res) => {
+  try {
+    const { requestId } = req.params
+    const { notes } = req.body
+    
+    const request = await LmsAccessRequest.denyRequest(
+      requestId,
+      req.account._id,
+      notes || ''
+    )
+    
+    console.log(`❌ LMS access request denied: ${requestId}`)
+    
+    res.json({
+      success: true,
+      request: {
+        id: request._id,
+        status: request.status,
+        reviewedAt: request.reviewedAt
+      }
+    })
+  } catch (error) {
+    console.error('Deny access request error:', error)
+    res.status(500).json({ error: error.message || 'Failed to deny request' })
+  }
+})
+
+// ============================================================================
+// Utility Endpoints
+// ============================================================================
+
+/**
+ * GET /api/lms/role-options
+ * Get available LMS roles and their descriptions
+ */
+router.get('/role-options', (req, res) => {
+  res.json({
+    roles: [
+      {
+        id: 'instructor',
+        name: 'Instructor',
+        description: 'Create courses, manage batches, and grade student work',
+        permissions: LMS_ROLE_PERMISSIONS.instructor
+      },
+      {
+        id: 'student',
+        name: 'Student',
+        description: 'Enroll in courses, submit assignments, and earn certificates',
+        permissions: LMS_ROLE_PERMISSIONS.student
+      },
+      {
+        id: 'course_creator',
+        name: 'Course Creator',
+        description: 'Create and manage course content across the platform',
+        permissions: LMS_ROLE_PERMISSIONS.course_creator
+      },
+      {
+        id: 'moderator',
+        name: 'Moderator',
+        description: 'Moderate discussions and manage user enrollments',
+        permissions: LMS_ROLE_PERMISSIONS.moderator
+      }
+    ]
+  })
+})
+
+export default router

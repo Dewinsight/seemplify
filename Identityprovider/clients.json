@@ -128,6 +128,25 @@
       "response_types": ["code"],
       "grant_types": ["authorization_code", "refresh_token"],
       "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
+      "client_id": "lms",
+      "client_secret": "lms-seemplify-secret-2026",
+      "redirect_uri_patterns": [
+        "https://lms.seemplifyai.com/api/method/frappe.integrations.oauth2_logins.custom",
+        "https://lms.seemplifyai.com/api/method/frappe.integrations.oauth2_logins.login_via_oauth2",
+        "http://localhost:8000/api/method/frappe.integrations.oauth2_logins.custom",
+        "http://localhost:8000/api/method/frappe.integrations.oauth2_logins.login_via_oauth2",
+        "https://auth.seemplifyai.com"
+      ],
+      "allowed_origins": [
+        "https://lms.seemplifyai.com",
+        "http://localhost:8000",
+        "https://auth.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_post"
     }
   ]
 }

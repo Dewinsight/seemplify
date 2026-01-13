@@ -55,6 +55,46 @@ const appPermissions = {
     // Team-based permissions (separate from organization role)
     line_manager: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves'],
     team_lead: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
+  },
+
+  // LMS permissions (role-based, not org-role based)
+  lms: {
+    instructor: [
+      'view_courses',
+      'create_courses',
+      'edit_own_courses',
+      'manage_batches',
+      'grade_assignments',
+      'view_student_progress',
+      'create_quizzes',
+      'send_announcements',
+      'view_analytics'
+    ],
+    student: [
+      'view_courses',
+      'enroll_courses',
+      'submit_assignments',
+      'take_quizzes',
+      'view_certificates',
+      'view_own_progress',
+      'participate_discussions'
+    ],
+    course_creator: [
+      'view_courses',
+      'create_courses',
+      'edit_any_course',
+      'manage_course_content',
+      'create_quizzes',
+      'manage_certifications',
+      'view_analytics'
+    ],
+    moderator: [
+      'view_courses',
+      'moderate_discussions',
+      'manage_user_enrollments',
+      'view_reports',
+      'handle_support_tickets'
+    ]
   }
 }
 
