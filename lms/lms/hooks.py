@@ -47,6 +47,11 @@ web_include_js = [
 # application home page (will override Website Settings)
 # home_page = "login"
 
+# Custom branded login page for LMS
+website_route_rules = [
+    {"from_route": "/lms-login", "to_route": "lms-login"},
+]
+
 # website user home page (by Role)
 # role_home_page = {
 # 	"Role": "home_page"
