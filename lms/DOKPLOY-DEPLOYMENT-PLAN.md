@@ -1,5 +1,8 @@
 # Frappe LMS Deployment to Dokploy
 
+**Last Deployed:** January 13, 2026  
+**CI/CD:** GitHub Actions Auto-Deploy Enabled
+
 Deploy Frappe LMS as a Docker Compose application in Dokploy with Traefik reverse proxy and Cloudflare DNS configuration.
 
 ## Prerequisites

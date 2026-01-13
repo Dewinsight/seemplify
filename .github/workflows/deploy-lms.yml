@@ -1,0 +1,53 @@
+# Deploy Frappe LMS to Dokploy Server
+name: Deploy LMS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lms/**'
+      - '.github/workflows/deploy-lms.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: lms
+  APP_PATH: lms
+
+jobs:
+  deploy:
+    name: Deploy LMS to Server
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
+
+      - name: Deploy LMS Stack
+        run: |
+          echo "🚀 Deploying LMS..."
+          
+          # Pull latest code on server
+          ssh seemplify@4.180.153.209 "cd ~/lms-deploy && git fetch origin main && git reset --hard origin/main"
+          
+          # Update the stack (this will pull new images if needed and restart services)
+          ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
+          
+          echo "✅ LMS deployment triggered!"
+          
+          # Wait for services to stabilize
+          sleep 10
+          
+          # Check service status
+          ssh seemplify@4.180.153.209 "docker service ls | grep lms"
+          
+          echo "✅ LMS deployment complete!"
