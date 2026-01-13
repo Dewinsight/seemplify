@@ -4,6 +4,7 @@
 import frappe
 
 no_cache = 1
+base_template_path = None  # Don't use base template - standalone page
 
 def get_context(context):
     """

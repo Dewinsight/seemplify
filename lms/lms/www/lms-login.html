@@ -1,6 +1,12 @@
-{% extends "templates/web.html" %}
-
-{% block page_content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Seemplify LMS</title>
+  <link rel="icon" href="/assets/lms/images/lms-logo.png" type="image/png">
+</head>
+<body>
 <style>
   /* Hide default Frappe elements */
   .page-header, .breadcrumb-container, footer, .navbar {
@@ -681,4 +687,5 @@ function loginWithSeemplify() {
   window.location.href = authUrl;
 }
 </script>
-{% endblock %}
+</body>
+</html>
