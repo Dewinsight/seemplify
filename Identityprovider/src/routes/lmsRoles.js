@@ -2,7 +2,7 @@ import express from 'express'
 import { LmsRole, LMS_ROLE_PERMISSIONS } from '../models/LmsRole.js'
 import { LmsAccessRequest } from '../models/LmsAccessRequest.js'
 import { Account } from '../models/Account.js'
-import MongoAdapter from '../adapter/mongoAdapter.js'
+import { MongoAdapter } from '../adapter/mongoAdapter.js'
 
 const router = express.Router()
 
