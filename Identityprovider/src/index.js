@@ -396,6 +396,36 @@ provider.on('interaction.ended', (ctx) => {
   console.log('✅ Interaction ended for:', ctx.oidc.interaction?.uid)
 })
 
+// Token endpoint events
+provider.on('grant.success', (ctx) => {
+  console.log('✅ Grant success:', {
+    client_id: ctx.oidc.client?.clientId,
+    grant_type: ctx.oidc.params?.grant_type,
+    accountId: ctx.oidc.session?.accountId
+  })
+})
+
+provider.on('grant.error', (ctx, err) => {
+  console.error('❌ Grant error:', {
+    client_id: ctx.oidc.client?.clientId,
+    grant_type: ctx.oidc.params?.grant_type,
+    error: err.error,
+    error_description: err.error_description,
+    message: err.message
+  })
+  console.error('Grant error details:', err)
+})
+
+provider.on('grant.revoked', (ctx, grantId) => {
+  console.log('🗑️ Grant revoked:', grantId)
+})
+
+// Server errors
+provider.on('server_error', (ctx, err) => {
+  console.error('💥 Server error:', err.message)
+  console.error('Server error stack:', err.stack)
+})
+
 const app = express()
 
 // Trust proxy for Azure (required for secure cookies behind load balancer)
@@ -454,6 +484,17 @@ app.use(cookieParser())
 // IMPORTANT: Skip body parsing for OIDC endpoints to avoid conflicts with oidc-provider
 // oidc-provider needs to parse the body itself for token requests
 const skipBodyParsingRoutes = ['/token', '/introspect', '/revocation']
+
+// Debug middleware to log token requests (headers only, don't consume body)
+app.use((req, res, next) => {
+  if (req.path === '/token' && req.method === 'POST') {
+    console.log('🔍 TOKEN REQUEST RECEIVED:')
+    console.log('  Content-Type:', req.headers['content-type'])
+    console.log('  Authorization header:', req.headers['authorization'] ? 'PRESENT (Basic)' : 'MISSING')
+    console.log('  Expecting: client_secret_post (credentials in body)')
+  }
+  next()
+})
 
 app.use((req, res, next) => {
   // Skip body parsing for OIDC token-related endpoints
