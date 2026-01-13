@@ -35,6 +35,12 @@ bench new-site lms.seemplifyai.com \
 
 bench --site lms.seemplifyai.com install-app lms
 bench --site lms.seemplifyai.com set-config developer_mode 1
+
+# Set branding to "Seemplify Learning"
+bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('Website Settings', 'app_name', 'Seemplify Learning')"
+bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('System Settings', 'app_name', 'Seemplify Learning')"
+bench --site lms.seemplifyai.com execute "frappe.db.commit()"
+
 bench --site lms.seemplifyai.com clear-cache
 bench use lms.seemplifyai.com
 
