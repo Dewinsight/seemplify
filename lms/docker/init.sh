@@ -36,10 +36,13 @@ bench new-site lms.seemplifyai.com \
 bench --site lms.seemplifyai.com install-app lms
 bench --site lms.seemplifyai.com set-config developer_mode 1
 
-# Set branding to "Seemplify Learning"
-bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('Website Settings', 'app_name', 'Seemplify Learning')"
-bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('System Settings', 'app_name', 'Seemplify Learning')"
+# Set branding to "Seemplify LMS"
+bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('Website Settings', 'app_name', 'Seemplify LMS')"
+bench --site lms.seemplifyai.com execute "frappe.db.set_single_value('System Settings', 'app_name', 'Seemplify LMS')"
 bench --site lms.seemplifyai.com execute "frappe.db.commit()"
+
+# Update site_config.json with app_name
+python3 -c "import json; f='/home/frappe/frappe-bench/sites/lms.seemplifyai.com/site_config.json'; d=json.load(open(f)); d['app_name']='Seemplify LMS'; json.dump(d, open(f, 'w'), indent=1)"
 
 bench --site lms.seemplifyai.com clear-cache
 bench use lms.seemplifyai.com

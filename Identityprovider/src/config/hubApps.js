@@ -94,7 +94,7 @@ const developmentApps = [
   },
   {
     appId: 'lms',
-    name: 'Learning',
+    name: 'Seemplify LMS',
     description: 'Online courses, training, and certifications',
     icon: 'academic-cap',
     color: '#06b6d4',
@@ -195,7 +195,7 @@ const productionApps = [
   },
   {
     appId: 'lms',
-    name: 'Learning',
+    name: 'Seemplify LMS',
     description: 'Online courses, training, and certifications',
     icon: 'academic-cap',
     color: '#06b6d4',

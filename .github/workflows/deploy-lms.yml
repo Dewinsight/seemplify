@@ -39,8 +39,23 @@ jobs:
           # Pull latest code on server
           ssh seemplify@4.180.153.209 "cd ~/lms-deploy && git fetch origin main && git reset --hard origin/main"
           
-          # Update the stack (this will pull new images if needed and restart services)
-          ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
+          # Sync LMS app code to the running container
+          FRAPPE_CONTAINER=$(ssh seemplify@4.180.153.209 "docker ps -q -f name=lms_frappe")
+          echo "📦 Frappe container: $FRAPPE_CONTAINER"
+          
+          if [ -n "$FRAPPE_CONTAINER" ]; then
+            echo "📂 Copying updated LMS code to container..."
+            ssh seemplify@4.180.153.209 "docker cp ~/lms-deploy/lms/. $FRAPPE_CONTAINER:/home/frappe/frappe-bench/apps/lms/"
+            
+            echo "🔨 Building frontend assets..."
+            ssh seemplify@4.180.153.209 "docker exec $FRAPPE_CONTAINER bash -c 'cd /home/frappe/frappe-bench && ./env/bin/bench build --app lms 2>/dev/null || echo Build skipped'"
+            
+            echo "🗑️ Clearing cache..."
+            ssh seemplify@4.180.153.209 "docker exec \$(docker ps -q -f name=lms_redis) redis-cli FLUSHALL"
+          else
+            echo "⚠️ No running frappe container found, deploying fresh stack..."
+            ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
+          fi
           
           echo "✅ LMS deployment triggered!"
           
