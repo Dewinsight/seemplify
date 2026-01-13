@@ -53,7 +53,7 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lms.rule=Host(`lms.seemplify.com`)"
+      - "traefik.http.routers.lms.rule=Host(`lms.seemplifyai.com`)"
       - "traefik.http.routers.lms.entrypoints=websecure"
       - "traefik.http.routers.lms.tls.certresolver=letsencrypt"
       - "traefik.http.services.lms.loadbalancer.server.port=8000"
@@ -114,20 +114,20 @@ After deployment, SSH into the server and run:
 docker exec -it lms-frappe-1 bash
 
 # Create the site
-bench new-site lms.seemplify.com --mariadb-root-password $MYSQL_ROOT_PASSWORD --admin-password admin123
+bench new-site lms.seemplifyai.com --mariadb-root-password $MYSQL_ROOT_PASSWORD --admin-password admin123
 
 # Install LMS app
-bench --site lms.seemplify.com install-app lms
+bench --site lms.seemplifyai.com install-app lms
 
 # Enable developer mode (optional)
-bench --site lms.seemplify.com set-config developer_mode 1
+bench --site lms.seemplifyai.com set-config developer_mode 1
 ```
 
 ---
 
 ## Verification
 
-1. Visit `https://lms.seemplify.com/lms` in browser
+1. Visit `https://lms.seemplifyai.com/lms` in browser
 2. Login with `Administrator` / `admin123`
 3. Verify LMS dashboard loads correctly
 
@@ -143,4 +143,4 @@ bench --site lms.seemplify.com set-config developer_mode 1
 | **Reverse Proxy** | Traefik (via Dokploy) |
 | **SSL** | Let's Encrypt (auto via Traefik) |
 | **DNS** | Cloudflare (proxied) |
-| **Domain** | `lms.seemplify.com` |
+| **Domain** | `lms.seemplifyai.com` |

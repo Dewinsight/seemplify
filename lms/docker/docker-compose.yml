@@ -1,5 +1,5 @@
 version: "3.7"
-name: lms
+# Deployed as stack: lms
 services:
   mariadb:
     image: mariadb:10.8
@@ -46,6 +46,6 @@ volumes:
 
 networks:
   lms-network:
-    driver: bridge
+    driver: overlay
   dokploy-network:
     external: true
