@@ -141,7 +141,7 @@ export default function DashboardPage() {
                 </p>
               </div>
               <a
-                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
