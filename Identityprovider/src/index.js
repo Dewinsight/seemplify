@@ -3165,6 +3165,21 @@ app.get('/launch/:appId', async (req, res) => {
     // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
     // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify
     if (app.appId === 'lms') {
+      // Generate SSO token to enable auto-login from hub session
+      const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
+      const secretKey = new TextEncoder().encode(ssoSecret)
+      
+      const hubToken = await new SignJWT({
+        sub: account.sub,
+        email: account.email,
+        name: account.profile?.name,
+        purpose: 'hub_sso'
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('5m') // Short-lived token
+        .sign(secretKey)
+      
       // Build the OAuth authorization URL with proper parameters
       const state = Buffer.from(JSON.stringify({
         site: app.url,
@@ -3178,11 +3193,13 @@ app.get('/launch/:appId', async (req, res) => {
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: 'openid email profile',
-        state: state
+        state: state,
+        hub_token: hubToken // Include SSO token for auto-login
       })
       
-      const lmsAuthUrl = `https://auth.seemplifyai.com/auth?${authParams.toString()}`
+      const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
       console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
+      console.log('  🔑 Hub SSO token included for auto-login')
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(lmsAuthUrl)
     }
