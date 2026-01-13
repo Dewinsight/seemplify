@@ -379,8 +379,13 @@ provider.on('authorization.accepted', (ctx) => {
   console.log('✅ Authorization accepted:', {
     client_id: ctx.oidc.client?.clientId,
     redirect_uri: ctx.oidc.params?.redirect_uri,
-    response_type: ctx.oidc.params?.response_type
+    response_type: ctx.oidc.params?.response_type,
+    code_issued: ctx.oidc.authorization?.code ? 'yes' : 'no'
   })
+  // Store this for comparison later
+  if (ctx.oidc.client?.clientId === 'lms') {
+    console.log('📝 LMS Authorization redirect_uri:', ctx.oidc.params?.redirect_uri)
+  }
 })
 
 provider.on('authorization.error', (ctx, err) => {
@@ -411,8 +416,11 @@ provider.on('grant.error', (ctx, err) => {
     grant_type: ctx.oidc.params?.grant_type,
     error: err.error,
     error_description: err.error_description,
+    error_detail: err.error_detail,
     message: err.message
   })
+  // Log redirect_uri comparison
+  console.error('🔍 Token request redirect_uri:', ctx.oidc.params?.redirect_uri)
   console.error('Grant error details:', err)
 })
 
