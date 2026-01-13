@@ -1,4 +1,5 @@
-#!bin/bash
+#!/bin/bash
+# LMS Auto-deployment v1.0 - Last updated: 2026-01-13
 
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
