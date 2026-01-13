@@ -3612,6 +3612,55 @@ app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
   }
 })
 
+// LMS Roles management page
+app.get('/organizations/:orgId/lms-roles', getSessionUser, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'email profile.name')
+    
+    if (!organization) {
+      return res.redirect('/organizations?error=Organization not found')
+    }
+
+    const member = organization.members.find(
+      m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
+    )
+
+    if (!member || !['owner', 'admin'].includes(member.role)) {
+      return res.redirect('/organizations?error=Admin or owner role required')
+    }
+
+    // Get all LMS roles for this organization
+    const lmsRoles = await LmsRole.find({ organization: req.params.orgId })
+    
+    // Get all pending access requests for this organization
+    const { LmsAccessRequest } = await import('./models/LmsAccessRequest.js')
+    const accessRequests = await LmsAccessRequest.find({
+      organization: req.params.orgId,
+      status: 'pending'
+    }).populate('requestedBy', 'email profile.name')
+
+    const activeMembers = organization.members.filter(m => m.status === 'active')
+
+    res.render('lms-roles', {
+      organization: {
+        _id: organization._id,
+        name: organization.name
+      },
+      members: activeMembers,
+      lmsRoles,
+      accessRequests,
+      yourRole: member.role,
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('LMS Roles page error:', error)
+    res.redirect('/organizations?error=Failed to load LMS roles')
+  }
+})
+
 // User's pending invitations page
 app.get('/invitations/pending', getSessionUser, async (req, res) => {
   try {

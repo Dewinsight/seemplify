@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>LMS Roles - <%= organization.name %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .member-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .member-row:last-child {
+      border-bottom: none;
+    }
+
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .member-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .member-name {
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .member-email {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .member-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .role-select {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 14px;
+      min-width: 140px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .role-badge.instructor {
+      background: rgba(139, 92, 246, 0.15);
+      color: #8b5cf6;
+    }
+
+    .role-badge.student {
+      background: rgba(6, 182, 212, 0.15);
+      color: #06b6d4;
+    }
+
+    .role-badge.none {
+      background: rgba(100, 116, 139, 0.15);
+      color: #64748b;
+    }
+
+    .requests-section {
+      margin-top: 32px;
+    }
+
+    .request-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      background: var(--card);
+    }
+
+    .request-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .request-details {
+      flex: 1;
+    }
+
+    .request-reason {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    .request-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-approve {
+      background: #10b981;
+      color: white;
+      border: none;
+    }
+
+    .btn-approve:hover {
+      background: #059669;
+    }
+
+    .btn-reject {
+      background: #ef4444;
+      color: white;
+      border: none;
+    }
+
+    .btn-reject:hover {
+      background: #dc2626;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--muted);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 12px 20px;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.2s ease;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .pending-badge {
+      background: #f59e0b;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="https://seemplifyai.com" class="top-nav-brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3b82f6" />
+            <stop offset="50%" stop-color="#8b5cf6" />
+            <stop offset="100%" stop-color="#ec4899" />
+          </linearGradient>
+        </defs>
+        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
+          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <circle cx="65" cy="25" r="6" class="logo-dot" />
+        <circle cx="50" cy="50" r="6" class="logo-dot" />
+        <circle cx="35" cy="75" r="6" class="logo-dot" />
+      </svg>
+      <span>Seemplify</span>
+    </a>
+    <div class="top-nav-links">
+      <a href="/" class="top-nav-link">Home</a>
+      <a href="/organizations" class="top-nav-link">Organizations</a>
+      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
+      <a href="/profile" class="top-nav-link">Profile</a>
+      <a href="/logout" class="top-nav-link">Logout</a>
+    </div>
+    <div class="top-nav-user">
+      <div class="theme-dropdown">
+        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+            Light
+          </button>
+          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            Dark
+          </button>
+          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            System
+          </button>
+        </div>
+      </div>
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name">
+          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+        </div>
+        <div class="top-nav-user-email">
+          <%= user.email %>
+        </div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="header">
+      <div>
+        <a href="/organizations" class="btn btn-secondary" style="margin-bottom: 12px;">← Back to Organizations</a>
+        <h1>🎓 LMS Roles - <%= organization.name %></h1>
+        <p style="color: var(--muted); margin-top: 8px;">Manage who can access the Learning Management System and their roles</p>
+      </div>
+    </div>
+
+    <div id="alertSuccess" class="alert alert-success" style="display: none;"></div>
+    <div id="alertError" class="alert alert-error" style="display: none;"></div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="totalMembers"><%= members.length %></div>
+        <div class="stat-label">Total Members</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="instructorCount"><%= lmsRoles.filter(r => r.role === 'instructor').length %></div>
+        <div class="stat-label">Instructors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="studentCount"><%= lmsRoles.filter(r => r.role === 'student').length %></div>
+        <div class="stat-label">Students</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="pendingCount"><%= accessRequests.length %></div>
+        <div class="stat-label">Pending Requests</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('members')">
+        All Members
+      </button>
+      <button class="tab" onclick="showTab('requests')">
+        Access Requests
+        <% if (accessRequests.length > 0) { %>
+          <span class="pending-badge"><%= accessRequests.length %></span>
+        <% } %>
+      </button>
+    </div>
+
+    <!-- Members Tab -->
+    <div class="tab-content active" id="members-tab">
+      <div class="card">
+        <% if (members.length === 0) { %>
+          <div class="empty-state">
+            <p>No members in this organization yet.</p>
+          </div>
+        <% } else { %>
+          <% members.forEach(member => { 
+            const lmsRole = lmsRoles.find(r => r.userId.toString() === member.account._id.toString());
+          %>
+            <div class="member-row">
+              <div class="member-info">
+                <div class="member-avatar">
+                  <%= (member.account.profile?.name || member.account.email)[0].toUpperCase() %>
+                </div>
+                <div>
+                  <div class="member-name"><%= member.account.profile?.name || member.account.email %></div>
+                  <div class="member-email"><%= member.account.email %></div>
+                </div>
+              </div>
+              <div class="member-actions">
+                <span class="role-badge <%= lmsRole ? lmsRole.role : 'none' %>">
+                  <%= lmsRole ? (lmsRole.role === 'instructor' ? '👨‍🏫 Instructor' : '🎓 Student') : 'No LMS Role' %>
+                </span>
+                <select class="role-select" onchange="updateRole('<%= member.account._id %>', this.value)" data-user-id="<%= member.account._id %>">
+                  <option value="">No LMS Access</option>
+                  <option value="student" <%= lmsRole?.role === 'student' ? 'selected' : '' %>>🎓 Student</option>
+                  <option value="instructor" <%= lmsRole?.role === 'instructor' ? 'selected' : '' %>>👨‍🏫 Instructor</option>
+                </select>
+              </div>
+            </div>
+          <% }) %>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Access Requests Tab -->
+    <div class="tab-content" id="requests-tab">
+      <% if (accessRequests.length === 0) { %>
+        <div class="card empty-state">
+          <p>No pending access requests.</p>
+        </div>
+      <% } else { %>
+        <% accessRequests.forEach(request => { %>
+          <div class="request-card" id="request-<%= request._id %>">
+            <div class="request-info">
+              <div class="member-avatar">
+                <%= (request.requestedBy?.profile?.name || request.requestedBy?.email || '?')[0].toUpperCase() %>
+              </div>
+              <div class="request-details">
+                <div class="member-name"><%= request.requestedBy?.profile?.name || request.requestedBy?.email || 'Unknown User' %></div>
+                <div class="member-email">
+                  Requested: <span class="role-badge <%= request.requestedRole %>">
+                    <%= request.requestedRole === 'instructor' ? '👨‍🏫 Instructor' : '🎓 Student' %>
+                  </span>
+                  • <%= new Date(request.createdAt).toLocaleDateString() %>
+                </div>
+                <% if (request.reason) { %>
+                  <div class="request-reason">"<%= request.reason %>"</div>
+                <% } %>
+              </div>
+            </div>
+            <div class="request-actions">
+              <button class="btn btn-approve" onclick="approveRequest('<%= request._id %>')">
+                ✓ Approve
+              </button>
+              <button class="btn btn-reject" onclick="rejectRequest('<%= request._id %>')">
+                ✕ Reject
+              </button>
+            </div>
+          </div>
+        <% }) %>
+      <% } %>
+    </div>
+  </div>
+
+  <script>
+    const organizationId = '<%= organization._id %>';
+
+    function showTab(tabName) {
+      // Update tab buttons
+      document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // Update tab content
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      document.getElementById(`${tabName}-tab`).classList.add('active');
+    }
+
+    function showAlert(type, message) {
+      const alertEl = document.getElementById(type === 'success' ? 'alertSuccess' : 'alertError');
+      alertEl.textContent = message;
+      alertEl.style.display = 'block';
+      setTimeout(() => alertEl.style.display = 'none', 5000);
+    }
+
+    async function updateRole(userId, role) {
+      try {
+        const response = await fetch(`/api/lms/roles/${organizationId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, role: role || null })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showAlert('success', role ? `LMS role updated to ${role}` : 'LMS role removed');
+          // Update the badge
+          const row = document.querySelector(`[data-user-id="${userId}"]`).closest('.member-row');
+          const badge = row.querySelector('.role-badge');
+          badge.className = `role-badge ${role || 'none'}`;
+          badge.textContent = role === 'instructor' ? '👨‍🏫 Instructor' : (role === 'student' ? '🎓 Student' : 'No LMS Role');
+
+          // Update stats
+          updateStats();
+        } else {
+          throw new Error(data.error || 'Failed to update role');
+        }
+      } catch (error) {
+        showAlert('error', error.message);
+        // Revert the select
+        location.reload();
+      }
+    }
+
+    async function approveRequest(requestId) {
+      try {
+        const response = await fetch(`/api/lms/access-requests/${requestId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showAlert('success', 'Access request approved');
+          document.getElementById(`request-${requestId}`).remove();
+          updateStats();
+          // Reload to show updated member list
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          throw new Error(data.error || 'Failed to approve request');
+        }
+      } catch (error) {
+        showAlert('error', error.message);
+      }
+    }
+
+    async function rejectRequest(requestId) {
+      if (!confirm('Are you sure you want to reject this access request?')) return;
+
+      try {
+        const response = await fetch(`/api/lms/access-requests/${requestId}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showAlert('success', 'Access request rejected');
+          document.getElementById(`request-${requestId}`).remove();
+          updateStats();
+        } else {
+          throw new Error(data.error || 'Failed to reject request');
+        }
+      } catch (error) {
+        showAlert('error', error.message);
+      }
+    }
+
+    function updateStats() {
+      // Re-count from the DOM
+      const instructors = document.querySelectorAll('.role-badge.instructor').length;
+      const students = document.querySelectorAll('.role-badge.student').length;
+      const pending = document.querySelectorAll('.request-card').length;
+
+      document.getElementById('instructorCount').textContent = instructors;
+      document.getElementById('studentCount').textContent = students;
+      document.getElementById('pendingCount').textContent = pending;
+
+      // Update tab badge
+      const badge = document.querySelector('.pending-badge');
+      if (badge) {
+        if (pending > 0) {
+          badge.textContent = pending;
+        } else {
+          badge.remove();
+        }
+      }
+    }
+  </script>
+</body>
+
+</html>

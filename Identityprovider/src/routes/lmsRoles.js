@@ -125,7 +125,7 @@ router.get('/roles/:organizationId', requireAuth, requireOrgAdmin, async (req, r
 
 /**
  * POST /api/lms/roles/:organizationId
- * Assign LMS role to a user (admin only or self-assign for admins)
+ * Assign or remove LMS role to a user (admin only or self-assign for admins)
  */
 router.post('/roles/:organizationId', requireAuth, async (req, res) => {
   try {
@@ -133,8 +133,8 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
     const { userId, role } = req.body
     const currentUserId = req.session.user.sub
     
-    // Validate role
-    if (!['instructor', 'student', 'course_creator', 'moderator'].includes(role)) {
+    // Validate role (can be null/empty to remove)
+    if (role && !['instructor', 'student', 'course_creator', 'moderator'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
     
@@ -171,6 +171,16 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
     
     if (!targetAccount) {
       return res.status(404).json({ error: 'Target user not found' })
+    }
+    
+    // If role is empty/null, remove the role
+    if (!role) {
+      await LmsRole.findOneAndUpdate(
+        { account: targetAccount._id, organization: organizationId },
+        { isActive: false }
+      )
+      console.log(`✅ LMS role removed: ${targetAccount.email} in org ${organizationId}`)
+      return res.json({ success: true, removed: true })
     }
     
     // Assign the role
@@ -381,6 +391,100 @@ router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, r
   } catch (error) {
     console.error('Approve access request error:', error)
     res.status(500).json({ error: error.message || 'Failed to approve request' })
+  }
+})
+
+/**
+ * POST /api/lms/access-requests/:requestId/approve
+ * Approve access request (admin only) - simplified route for UI
+ */
+router.post('/access-requests/:requestId/approve', requireAuth, async (req, res) => {
+  try {
+    const { requestId } = req.params
+    const userId = req.session.user.sub
+    
+    // Get the request to find the organization
+    const existingRequest = await LmsAccessRequest.findById(requestId)
+    if (!existingRequest) {
+      return res.status(404).json({ error: 'Request not found' })
+    }
+    
+    // Check if user is admin for this organization
+    const account = await Account.findOne({ sub: userId })
+    const orgMembership = account?.organizations.find(
+      o => o.organization.toString() === existingRequest.organization.toString() && o.isActive
+    )
+    
+    if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
+      return res.status(403).json({ error: 'Admin privileges required' })
+    }
+    
+    const request = await LmsAccessRequest.approveRequest(
+      requestId,
+      account._id,
+      ''
+    )
+    
+    console.log(`✅ LMS access request approved: ${requestId}`)
+    
+    res.json({
+      success: true,
+      request: {
+        id: request._id,
+        status: request.status,
+        reviewedAt: request.reviewedAt
+      }
+    })
+  } catch (error) {
+    console.error('Approve access request error:', error)
+    res.status(500).json({ error: error.message || 'Failed to approve request' })
+  }
+})
+
+/**
+ * POST /api/lms/access-requests/:requestId/reject
+ * Reject access request (admin only) - simplified route for UI
+ */
+router.post('/access-requests/:requestId/reject', requireAuth, async (req, res) => {
+  try {
+    const { requestId } = req.params
+    const userId = req.session.user.sub
+    
+    // Get the request to find the organization
+    const existingRequest = await LmsAccessRequest.findById(requestId)
+    if (!existingRequest) {
+      return res.status(404).json({ error: 'Request not found' })
+    }
+    
+    // Check if user is admin for this organization
+    const account = await Account.findOne({ sub: userId })
+    const orgMembership = account?.organizations.find(
+      o => o.organization.toString() === existingRequest.organization.toString() && o.isActive
+    )
+    
+    if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
+      return res.status(403).json({ error: 'Admin privileges required' })
+    }
+    
+    const request = await LmsAccessRequest.denyRequest(
+      requestId,
+      account._id,
+      ''
+    )
+    
+    console.log(`❌ LMS access request rejected: ${requestId}`)
+    
+    res.json({
+      success: true,
+      request: {
+        id: request._id,
+        status: request.status,
+        reviewedAt: request.reviewedAt
+      }
+    })
+  } catch (error) {
+    console.error('Reject access request error:', error)
+    res.status(500).json({ error: error.message || 'Failed to reject request' })
   }
 })
 
