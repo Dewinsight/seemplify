@@ -669,19 +669,19 @@
 function loginWithSeemplify() {
   const btn = document.querySelector('.login-btn');
   const btnText = btn.querySelector('span');
-  const originalText = btnText.textContent;
   
   // Show loading state
   btn.style.pointerEvents = 'none';
   btn.style.opacity = '0.8';
   btnText.textContent = 'Redirecting...';
   
-  // Redirect to Seemplify OAuth
-  const authUrl = 'https://auth.seemplifyai.com/oidc/auth?' + new URLSearchParams({
+  // Redirect to Seemplify OAuth - correct endpoint is /auth not /oidc/auth
+  const authUrl = 'https://auth.seemplifyai.com/auth?' + new URLSearchParams({
     client_id: 'lms',
     redirect_uri: window.location.origin + '/api/method/frappe.integrations.oauth2_logins.login_via_oauth2',
     response_type: 'code',
-    scope: 'openid email profile'
+    scope: 'openid email profile',
+    state: btoa(JSON.stringify({ redirect_to: '/lms' }))
   }).toString();
   
   window.location.href = authUrl;

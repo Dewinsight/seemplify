@@ -33,12 +33,12 @@ frappe.ready(function() {
  * Initiate OAuth2 login with Seemplify
  */
 window.loginWithSeemplify = function() {
-  // Build OAuth URL for Seemplify IDP
+  // Build OAuth URL for Seemplify IDP - correct endpoint is /auth not /oidc/auth
   const idpUrl = 'https://auth.seemplifyai.com';
   const clientId = 'lms';
   const redirectUri = window.location.origin + '/api/method/frappe.integrations.oauth2_logins.login_via_oauth2';
   
-  const authUrl = idpUrl + '/oidc/auth?' + new URLSearchParams({
+  const authUrl = idpUrl + '/auth?' + new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
