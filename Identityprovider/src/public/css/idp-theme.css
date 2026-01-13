@@ -7,6 +7,7 @@
 
 :root {
   /* Default Dark Mode */
+  color-scheme: dark;
   --bg: #050505;
   --panel: rgba(18, 18, 22, 0.78);
   --panel-strong: rgba(255, 255, 255, 0.08);
@@ -43,6 +44,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f8fafc;
   --panel: rgba(255, 255, 255, 0.9);
   --panel-strong: rgba(0, 0, 0, 0.06);
