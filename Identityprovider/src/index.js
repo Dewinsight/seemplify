@@ -3162,12 +3162,27 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
-    // Redirect to Frappe's custom social login endpoint which initiates OAuth with our IDP
+    // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
+    // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify
     if (app.appId === 'lms') {
-      // Frappe custom social login URL format: /api/method/frappe.integrations.oauth2_logins.custom/{provider}
-      // Provider name must match the Social Login Key name (case-sensitive)
-      const lmsAuthUrl = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/seemplify`
-      console.log('  📍 LMS FRAPPE SOCIAL LOGIN REDIRECT TO:', lmsAuthUrl)
+      // Build the OAuth authorization URL with proper parameters
+      const state = Buffer.from(JSON.stringify({
+        site: app.url,
+        token: crypto.randomBytes(16).toString('hex'),
+        redirect_to: '/lms'
+      })).toString('base64')
+      
+      const redirectUri = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/Seemplify`
+      const authParams = new URLSearchParams({
+        client_id: 'lms',
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile',
+        state: state
+      })
+      
+      const lmsAuthUrl = `https://auth.seemplifyai.com/auth?${authParams.toString()}`
+      console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(lmsAuthUrl)
     }
