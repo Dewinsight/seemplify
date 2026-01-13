@@ -91,6 +91,19 @@ const developmentApps = [
     isPublic: true,
     category: 'hr',
     order: 4
+  },
+  {
+    appId: 'lms',
+    name: 'Learning',
+    description: 'Online courses, training, and certifications',
+    icon: 'academic-cap',
+    color: '#06b6d4',
+    url: process.env.LMS_URL || 'http://localhost:8000',
+    authType: 'direct', // No SSO - direct link to app
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7
   }
 ]
 
@@ -179,6 +192,19 @@ const productionApps = [
     isPublic: true,
     category: 'hr',
     order: 4
+  },
+  {
+    appId: 'lms',
+    name: 'Learning',
+    description: 'Online courses, training, and certifications',
+    icon: 'academic-cap',
+    color: '#06b6d4',
+    url: process.env.LMS_URL || 'https://lms.seemplifyai.com',
+    authType: 'direct', // No SSO - direct link to app
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7
   }
 ]
 

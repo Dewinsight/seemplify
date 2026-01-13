@@ -3068,6 +3068,14 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(samlSsoUrl)
     }
 
+    // Check if app uses direct link (no SSO)
+    if (app.authType === 'direct') {
+      // For direct apps, just redirect to the app URL - no SSO integration
+      console.log('  📍 DIRECT REDIRECT TO:', app.url)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(app.url)
+    }
+
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
     if (app.appId === 'outline') {
       // Outline handles OIDC at /auth/oidc - redirect there directly
