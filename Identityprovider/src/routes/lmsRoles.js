@@ -2,17 +2,62 @@ import express from 'express'
 import { LmsRole, LMS_ROLE_PERMISSIONS } from '../models/LmsRole.js'
 import { LmsAccessRequest } from '../models/LmsAccessRequest.js'
 import { Account } from '../models/Account.js'
+import MongoAdapter from '../models/MongoAdapter.js'
 
 const router = express.Router()
 
 /**
+ * Get session from cookies (same logic as index.js)
+ */
+async function getSessionFromCookies(req) {
+  try {
+    const sessionCookie = req.cookies['_session']
+    if (!sessionCookie) return null
+
+    const adapter = new MongoAdapter('Session')
+    const sessionData = await adapter.find(sessionCookie)
+
+    if (!sessionData?.accountId) return null
+
+    const account = await Account.findOne({ sub: sessionData.accountId })
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    
+    return account
+  } catch (error) {
+    console.error('Session lookup error:', error)
+    return null
+  }
+}
+
+/**
  * Middleware to check if user is authenticated
  */
-const requireAuth = (req, res, next) => {
-  if (!req.session?.user) {
+const requireAuth = async (req, res, next) => {
+  try {
+    // First check express-session (if accountId stored there)
+    if (req.session?.accountId) {
+      const account = await Account.findOne({ sub: req.session.accountId })
+        .populate('organizations.organization', 'name')
+        .populate('currentOrganization', 'name')
+      if (account) {
+        req.account = account
+        return next()
+      }
+    }
+
+    // Try cookie-based session
+    const account = await getSessionFromCookies(req)
+    if (account) {
+      req.account = account
+      return next()
+    }
+
     return res.status(401).json({ error: 'Authentication required' })
+  } catch (error) {
+    console.error('Auth check error:', error)
+    return res.status(500).json({ error: 'Authentication check failed' })
   }
-  next()
 }
 
 /**
@@ -20,23 +65,21 @@ const requireAuth = (req, res, next) => {
  */
 const requireOrgAdmin = async (req, res, next) => {
   const { organizationId } = req.params
-  const userId = req.session.user.sub
   
   try {
-    const account = await Account.findOne({ sub: userId })
+    const account = req.account
     if (!account) {
       return res.status(404).json({ error: 'Account not found' })
     }
     
     const orgMembership = account.organizations.find(
-      o => o.organization.toString() === organizationId && o.isActive
+      o => o.organization._id.toString() === organizationId && o.isActive
     )
     
     if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
       return res.status(403).json({ error: 'Admin privileges required' })
     }
     
-    req.account = account
     req.orgMembership = orgMembership
     next()
   } catch (error) {
@@ -56,12 +99,7 @@ const requireOrgAdmin = async (req, res, next) => {
 router.get('/roles/:organizationId/my-role', requireAuth, async (req, res) => {
   try {
     const { organizationId } = req.params
-    const userId = req.session.user.sub
-    
-    const account = await Account.findOne({ sub: userId })
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' })
-    }
+    const account = req.account
     
     const lmsRole = await LmsRole.getUserRole(account._id, organizationId)
     
@@ -131,21 +169,16 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
   try {
     const { organizationId } = req.params
     const { userId, role } = req.body
-    const currentUserId = req.session.user.sub
+    const currentAccount = req.account
     
     // Validate role (can be null/empty to remove)
     if (role && !['instructor', 'student', 'course_creator', 'moderator'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
     
-    const currentAccount = await Account.findOne({ sub: currentUserId })
-    if (!currentAccount) {
-      return res.status(404).json({ error: 'Current account not found' })
-    }
-    
     // Check if user is org admin/owner
     const orgMembership = currentAccount.organizations.find(
-      o => o.organization.toString() === organizationId && o.isActive
+      o => o.organization._id.toString() === organizationId && o.isActive
     )
     
     const isAdmin = orgMembership && ['owner', 'admin'].includes(orgMembership.role)
@@ -247,16 +280,11 @@ router.post('/access-requests/:organizationId', requireAuth, async (req, res) =>
   try {
     const { organizationId } = req.params
     const { role, reason } = req.body
-    const userId = req.session.user.sub
+    const account = req.account
     
     // Validate role
     if (!['instructor', 'student'].includes(role)) {
       return res.status(400).json({ error: 'Can only request instructor or student roles' })
-    }
-    
-    const account = await Account.findOne({ sub: userId })
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' })
     }
     
     // Check if already has a role
@@ -331,12 +359,7 @@ router.get('/access-requests/:organizationId', requireAuth, requireOrgAdmin, asy
 router.get('/access-requests/my/:organizationId', requireAuth, async (req, res) => {
   try {
     const { organizationId } = req.params
-    const userId = req.session.user.sub
-    
-    const account = await Account.findOne({ sub: userId })
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' })
-    }
+    const account = req.account
     
     const request = await LmsAccessRequest.findOne({
       requestedBy: account._id,
@@ -401,7 +424,7 @@ router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, r
 router.post('/access-requests/:requestId/approve', requireAuth, async (req, res) => {
   try {
     const { requestId } = req.params
-    const userId = req.session.user.sub
+    const account = req.account
     
     // Get the request to find the organization
     const existingRequest = await LmsAccessRequest.findById(requestId)
@@ -410,9 +433,8 @@ router.post('/access-requests/:requestId/approve', requireAuth, async (req, res)
     }
     
     // Check if user is admin for this organization
-    const account = await Account.findOne({ sub: userId })
     const orgMembership = account?.organizations.find(
-      o => o.organization.toString() === existingRequest.organization.toString() && o.isActive
+      o => o.organization._id.toString() === existingRequest.organization.toString() && o.isActive
     )
     
     if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
@@ -448,7 +470,7 @@ router.post('/access-requests/:requestId/approve', requireAuth, async (req, res)
 router.post('/access-requests/:requestId/reject', requireAuth, async (req, res) => {
   try {
     const { requestId } = req.params
-    const userId = req.session.user.sub
+    const account = req.account
     
     // Get the request to find the organization
     const existingRequest = await LmsAccessRequest.findById(requestId)
@@ -457,9 +479,8 @@ router.post('/access-requests/:requestId/reject', requireAuth, async (req, res) 
     }
     
     // Check if user is admin for this organization
-    const account = await Account.findOne({ sub: userId })
     const orgMembership = account?.organizations.find(
-      o => o.organization.toString() === existingRequest.organization.toString() && o.isActive
+      o => o.organization._id.toString() === existingRequest.organization.toString() && o.isActive
     )
     
     if (!orgMembership || !['owner', 'admin'].includes(orgMembership.role)) {
