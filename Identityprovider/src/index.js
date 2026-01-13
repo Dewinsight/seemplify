@@ -3161,14 +3161,15 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(openwebuiAuthUrl)
     }
 
-    // Special handling for LMS - redirect to LMS homepage
-    // Note: Full OIDC integration requires Frappe Social Login Key to be configured in admin
-    // For now, we just redirect to the LMS frontend - user can login from there
+    // Special handling for LMS - Frappe uses Social Login Key for OIDC
+    // Redirect to Frappe's social login endpoint which initiates OAuth with our IDP
     if (app.appId === 'lms') {
-      const lmsUrl = `${app.url}/lms/`
-      console.log('  📍 LMS REDIRECT TO:', lmsUrl)
+      // Frappe social login URL format: /api/method/frappe.integrations.oauth2_logins.login_via_{provider}
+      // Provider name must be lowercase of the Social Login Key name
+      const lmsAuthUrl = `${app.url}/api/method/frappe.integrations.oauth2_logins.login_via_seemplify`
+      console.log('  📍 LMS FRAPPE SOCIAL LOGIN REDIRECT TO:', lmsAuthUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
-      return res.redirect(lmsUrl)
+      return res.redirect(lmsAuthUrl)
     }
 
     // For OIDC apps, generate SSO token and redirect to backend OIDC start
