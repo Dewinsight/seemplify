@@ -7,26 +7,45 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
-      - --skip-innodb-read-only-compressed # Temporary fix for MariaDB 10.6
+      - --skip-innodb-read-only-compressed
     environment:
-      MYSQL_ROOT_PASSWORD: 123
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-secure_password_here}
     volumes:
       - mariadb-data:/var/lib/mysql
+    networks:
+      - lms-network
 
   redis:
     image: redis:alpine
+    networks:
+      - lms-network
 
   frappe:
     image: frappe/bench:latest
     command: bash /workspace/init.sh
     environment:
       - SHELL=/bin/bash
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-secure_password_here}
     working_dir: /home/frappe
     volumes:
       - .:/workspace
-    ports:
-      - 8000:8000
-      - 9000:9000
+      - frappe-data:/home/frappe
+    networks:
+      - lms-network
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lms.rule=Host(`lms.seemplifyai.com`)"
+      - "traefik.http.routers.lms.entrypoints=websecure"
+      - "traefik.http.routers.lms.tls.certresolver=letsencrypt"
+      - "traefik.http.services.lms.loadbalancer.server.port=8000"
 
 volumes:
   mariadb-data:
+  frappe-data:
+
+networks:
+  lms-network:
+    driver: bridge
+  dokploy-network:
+    external: true

@@ -26,15 +26,15 @@ sed -i '/watch/d' ./Procfile
 
 bench get-app lms
 
-bench new-site lms.localhost \
+bench new-site lms.seemplifyai.com \
 --force \
---mariadb-root-password 123 \
---admin-password admin \
+--mariadb-root-password ${MYSQL_ROOT_PASSWORD:-123} \
+--admin-password admin123 \
 --no-mariadb-socket
 
-bench --site lms.localhost install-app lms
-bench --site lms.localhost set-config developer_mode 1
-bench --site lms.localhost clear-cache
-bench use lms.localhost
+bench --site lms.seemplifyai.com install-app lms
+bench --site lms.seemplifyai.com set-config developer_mode 1
+bench --site lms.seemplifyai.com clear-cache
+bench use lms.seemplifyai.com
 
 bench start
