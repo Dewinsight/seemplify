@@ -47,10 +47,7 @@ web_include_js = [
 # application home page (will override Website Settings)
 # home_page = "login"
 
-# Custom branded login page for LMS
-website_route_rules = [
-    {"from_route": "/lms-login", "to_route": "lms-login"},
-]
+# Custom branded login page for LMS - merged with other route rules below
 
 # website user home page (by Role)
 # role_home_page = {
@@ -170,6 +167,7 @@ override_whitelisted_methods = {
 
 # Add all simple route rules here
 website_route_rules = [
+	{"from_route": "/lms-login", "to_route": "lms-login"},
 	{"from_route": "/lms/<path:app_path>", "to_route": "lms"},
 	{
 		"from_route": "/courses/<course_name>/<certificate_id>",
@@ -197,6 +195,8 @@ website_redirects = [
 		"match_with_query_string": True,
 	},
 	{"source": "/statistics", "target": "/lms/statistics"},
+	# Redirect default login to custom branded login
+	{"source": "/login", "target": "/lms-login"},
 ]
 
 update_website_context = [
