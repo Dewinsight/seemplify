@@ -301,7 +301,7 @@ const config = {
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline', 'openwebui'];
+      const noPkceClients = ['outline', 'openwebui', 'lms'];
       return !noPkceClients.includes(client.clientId);
     }
   },
