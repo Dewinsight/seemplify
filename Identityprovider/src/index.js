@@ -3162,11 +3162,11 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
-    // Redirect to Frappe's social login endpoint which initiates OAuth with our IDP
+    // Redirect to Frappe's custom social login endpoint which initiates OAuth with our IDP
     if (app.appId === 'lms') {
-      // Frappe social login URL format: /api/method/frappe.integrations.oauth2_logins.login_via_{provider}
-      // Provider name must be lowercase of the Social Login Key name
-      const lmsAuthUrl = `${app.url}/api/method/frappe.integrations.oauth2_logins.login_via_seemplify`
+      // Frappe custom social login URL format: /api/method/frappe.integrations.oauth2_logins.custom/{provider}
+      // Provider name must match the Social Login Key name (case-sensitive)
+      const lmsAuthUrl = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/seemplify`
       console.log('  📍 LMS FRAPPE SOCIAL LOGIN REDIRECT TO:', lmsAuthUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(lmsAuthUrl)

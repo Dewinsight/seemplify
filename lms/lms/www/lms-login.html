@@ -757,10 +757,9 @@ function loginWithSeemplify() {
   btn.style.opacity = '0.8';
   btnText.textContent = 'Redirecting...';
   
-  // Redirect to Hub launch - this checks for LMS role first
-  // If user has no role, they'll be redirected to role selection
-  // If user has role, they'll proceed to OIDC login
-  window.location.href = 'https://auth.seemplifyai.com/launch/lms';
+  // Redirect to Frappe's custom OAuth endpoint for Seemplify
+  // This initiates the OAuth flow with our IDP
+  window.location.href = '/api/method/frappe.integrations.oauth2_logins.custom/seemplify';
 }
 
 async function loginWithEmail(event) {
