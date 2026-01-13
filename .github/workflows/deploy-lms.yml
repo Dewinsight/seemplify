@@ -48,7 +48,7 @@ jobs:
             ssh seemplify@4.180.153.209 "docker cp ~/lms-deploy/lms/. $FRAPPE_CONTAINER:/home/frappe/frappe-bench/apps/lms/"
             
             echo "🔨 Building frontend assets..."
-            ssh seemplify@4.180.153.209 "docker exec $FRAPPE_CONTAINER bash -c 'cd /home/frappe/frappe-bench && ./env/bin/bench build --app lms 2>/dev/null || echo Build skipped'"
+            ssh seemplify@4.180.153.209 "docker exec $FRAPPE_CONTAINER bash -c 'cd /home/frappe/frappe-bench && /home/frappe/.local/bin/bench build --app lms' || echo 'Build skipped (might need manual build)'"
             
             echo "🗑️ Clearing cache..."
             ssh seemplify@4.180.153.209 "docker exec \$(docker ps -q -f name=lms_redis) redis-cli FLUSHALL"
