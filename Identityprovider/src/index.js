@@ -450,8 +450,26 @@ app.use((req, res, next) => {
 })
 
 app.use(cookieParser())
-app.use(express.json())
-app.use(express.urlencoded({ extended: false }))
+
+// IMPORTANT: Skip body parsing for OIDC endpoints to avoid conflicts with oidc-provider
+// oidc-provider needs to parse the body itself for token requests
+const skipBodyParsingRoutes = ['/token', '/introspect', '/revocation']
+
+app.use((req, res, next) => {
+  // Skip body parsing for OIDC token-related endpoints
+  if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
+    return next()
+  }
+  express.json()(req, res, next)
+})
+
+app.use((req, res, next) => {
+  // Skip body parsing for OIDC token-related endpoints
+  if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
+    return next()
+  }
+  express.urlencoded({ extended: false })(req, res, next)
+})
 
 // Static assets (shared theme, icons)
 app.use(express.static(join(__dirname, 'public'), {
