@@ -24,14 +24,15 @@ LMS_ROLE_MAPPING = {
     'course_creator': 'Course Creator',
     'moderator': 'Moderator',
     'batch_evaluator': 'Batch Evaluator',
-    'course_evaluator': 'Course Evaluator'
+    'course_evaluator': 'Course Evaluator',
+    'administrator': 'System Manager'
 }
 
 # Default role if no LMS role claim is present
 DEFAULT_LMS_ROLE = 'LMS Student'
 
 # Roles that grant Frappe desk access
-DESK_ACCESS_ROLES = ['Course Creator', 'Moderator', 'Batch Evaluator', 'Course Evaluator']
+DESK_ACCESS_ROLES = ['Course Creator', 'Moderator', 'Batch Evaluator', 'Course Evaluator', 'System Manager']
 
 
 def process_seemplify_login(login_info):

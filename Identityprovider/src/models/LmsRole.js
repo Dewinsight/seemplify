@@ -38,7 +38,8 @@ const LmsRoleSchema = new mongoose.Schema({
       'course_creator',    // Maps to Frappe "Course Creator" role
       'moderator',         // Maps to Frappe "Moderator" role
       'batch_evaluator',   // Maps to Frappe "Batch Evaluator" role
-      'course_evaluator'   // Maps to Frappe "Course Evaluator" role (for certifications)
+      'course_evaluator',  // Maps to Frappe "Course Evaluator" role (for certifications)
+      'administrator'      // Maps to Frappe "System Manager" role (full Frappe admin)
     ],
     required: true
   },
@@ -176,6 +177,20 @@ export const LMS_ROLE_PERMISSIONS = {
     'view_student_submissions',
     'grade_final_evaluations',
     'view_analytics'
+  ],
+  
+  // Administrator - Full system access (maps to Frappe System Manager)
+  administrator: [
+    '*', // All permissions
+    'manage_users',
+    'manage_settings',
+    'manage_system',
+    'manage_all_courses',
+    'manage_all_batches',
+    'manage_all_certificates',
+    'manage_all_evaluators',
+    'manage_all_content',
+    'full_desk_access'
   ]
 }
 
@@ -188,7 +203,8 @@ export const FRAPPE_ROLE_MAPPING = {
   course_creator: 'Course Creator',
   moderator: 'Moderator',
   batch_evaluator: 'Batch Evaluator',
-  course_evaluator: 'Course Evaluator'
+  course_evaluator: 'Course Evaluator',
+  administrator: 'System Manager'
 }
 
 /**

@@ -95,6 +95,10 @@
       background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
     }
 
+    .role-icon.administrator {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    }
+
     .role-card h3 {
       font-size: 18px;
       color: var(--text);
@@ -396,6 +400,22 @@
               <span class="permission-badge">Desk Access</span>
             </div>
           </div>
+
+          <% if (isAdmin) { %>
+          <div class="role-card" data-role="administrator" onclick="selectRole('administrator')">
+            <div class="role-card-header">
+              <div class="role-icon administrator">👑</div>
+              <h3>Administrator (System Manager)</h3>
+            </div>
+            <p>Full Frappe system access - manage users, settings, and all system features beyond LMS.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Full System Access</span>
+              <span class="permission-badge">User Management</span>
+              <span class="permission-badge">System Settings</span>
+              <span class="permission-badge">All Modules</span>
+            </div>
+          </div>
+          <% } %>
         </div>
 
         <% if (!isAdmin) { %>
@@ -452,7 +472,8 @@
       'course_creator': 'Course Creator',
       'moderator': 'Moderator',
       'batch_evaluator': 'Batch Evaluator',
-      'course_evaluator': 'Course Evaluator'
+      'course_evaluator': 'Course Evaluator',
+      'administrator': 'Administrator'
     };
 
     function selectRole(role) {

@@ -134,6 +134,11 @@
       color: #ec4899;
     }
 
+    .role-badge.administrator {
+      background: rgba(220, 38, 38, 0.15);
+      color: #dc2626;
+    }
+
     .role-badge.none {
       background: rgba(100, 116, 139, 0.15);
       color: #64748b;
@@ -388,7 +393,8 @@
               'course_creator': '👨‍🏫 Course Creator',
               'moderator': '🛡️ Moderator',
               'batch_evaluator': '📋 Batch Evaluator',
-              'course_evaluator': '🏆 Course Evaluator'
+              'course_evaluator': '🏆 Course Evaluator',
+              'administrator': '👑 Administrator'
             };
           %>
           <% members.forEach(member => { 
@@ -415,6 +421,7 @@
                   <option value="moderator" <%= lmsRole?.role === 'moderator' ? 'selected' : '' %>>🛡️ Moderator</option>
                   <option value="batch_evaluator" <%= lmsRole?.role === 'batch_evaluator' ? 'selected' : '' %>>📋 Batch Evaluator</option>
                   <option value="course_evaluator" <%= lmsRole?.role === 'course_evaluator' ? 'selected' : '' %>>🏆 Course Evaluator</option>
+                  <option value="administrator" <%= lmsRole?.role === 'administrator' ? 'selected' : '' %>>👑 Administrator</option>
                 </select>
               </div>
             </div>
@@ -471,7 +478,8 @@
       'course_creator': '👨‍🏫 Course Creator',
       'moderator': '🛡️ Moderator',
       'batch_evaluator': '📋 Batch Evaluator',
-      'course_evaluator': '🏆 Course Evaluator'
+      'course_evaluator': '🏆 Course Evaluator',
+      'administrator': '👑 Administrator'
     };
 
     function showTab(tabName) {

@@ -344,7 +344,7 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions']
+    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'lms_role']
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()

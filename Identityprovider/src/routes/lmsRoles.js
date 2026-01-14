@@ -172,8 +172,8 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
     const currentAccount = req.account
     
     // Validate role (can be null/empty to remove)
-    // All Frappe LMS roles: student, course_creator, moderator, batch_evaluator, course_evaluator
-    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator']
+    // All Frappe LMS roles: student, course_creator, moderator, batch_evaluator, course_evaluator, administrator
+    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator', 'administrator']
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role. Valid roles: ' + validRoles.join(', ') })
     }
@@ -285,7 +285,7 @@ router.post('/access-requests/:organizationId', requireAuth, async (req, res) =>
     const account = req.account
     
     // Validate role - users can request any role, admins will approve
-    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator']
+    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator', 'administrator']
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role. Valid roles: ' + validRoles.join(', ') })
     }
