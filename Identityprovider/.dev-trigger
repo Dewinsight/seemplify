@@ -1,3 +1,3 @@
 ﻿# Dev Deployment Trigger
-# Fixed: Full Dockerfile paths from repo root
-# Timestamp: 2026-01-14T16:08:39Z
+# Added environment variables
+# Timestamp: 2026-01-14T16:22:10Z
