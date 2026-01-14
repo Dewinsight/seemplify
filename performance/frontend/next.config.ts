@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Optimize for production builds
-  swcMinify: true,
-
   // Ensure environment variables are available
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
@@ -18,11 +15,6 @@ const nextConfig: NextConfig = {
   // Disable TypeScript strict checks for production build
   typescript: {
     ignoreBuildErrors: false,
-  },
-
-  // Disable ESLint warnings for production build
-  eslint: {
-    ignoreDuringBuilds: false,
   },
 
   // Handle image optimization
@@ -45,18 +37,14 @@ const nextConfig: NextConfig = {
   // Output configuration
   output: 'standalone',
 
-  // Webpack configuration for better build performance
-  webpack: (config, { isServer }) => {
-    // Handle node modules correctly
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    return config;
+  // Turbopack configuration (Next.js 16 default)
+  turbopack: {
+    // Resolve fallbacks for browser builds
+    resolveAlias: {
+      fs: { browser: './empty-module.js' },
+      net: { browser: './empty-module.js' },
+      tls: { browser: './empty-module.js' },
+    },
   },
 };
 
