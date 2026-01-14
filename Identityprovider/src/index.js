@@ -4084,7 +4084,6 @@ function renderHubPage(account, apps, organizations = []) {
         <div class="app-card__title">${app.name}</div>
         <div class="app-card__desc">${app.description || 'Secure single sign-on'}</div>
         <div class="app-card__meta">
-          <span class="pill">SSO</span>
           <span class="pill pill--soft">Instant launch</span>
         </div>
       </div>
