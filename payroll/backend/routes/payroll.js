@@ -885,6 +885,288 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/payroll/analytics/comprehensive
+ * Get comprehensive payroll analytics for admin dashboard
+ */
+router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const { year = new Date().getFullYear() } = req.query;
+    const currentYear = parseInt(year);
+    const previousYear = currentYear - 1;
+
+    // Get all payslips for current and previous year
+    const [currentYearPayslips, previousYearPayslips, allProfiles, currentYearRuns] = await Promise.all([
+      Payslip.find({
+        organizationId,
+        'payPeriod.year': currentYear,
+        status: { $in: ['approved', 'paid'] }
+      }),
+      Payslip.find({
+        organizationId,
+        'payPeriod.year': previousYear,
+        status: { $in: ['approved', 'paid'] }
+      }),
+      PayrollProfile.find({ organizationId }),
+      PayrollRun.find({
+        organizationId,
+        'payPeriod.year': currentYear,
+        status: { $in: ['calculated', 'approved', 'paid'] }
+      }).sort({ 'payPeriod.month': 1 })
+    ]);
+
+    // Calculate current year totals
+    let currentYearGross = 0;
+    let currentYearNet = 0;
+    let currentYearTax = 0;
+    let currentYearDeductions = 0;
+
+    currentYearPayslips.forEach(slip => {
+      currentYearGross += slip.earningsSummary?.grossPay || 0;
+      currentYearNet += slip.netPay || 0;
+      currentYearTax += slip.taxBreakdown?.taxAmount || 0;
+      currentYearDeductions += slip.deductionsSummary?.totalDeductions || 0;
+    });
+
+    // Calculate previous year totals for comparison
+    let previousYearGross = 0;
+    let previousYearNet = 0;
+
+    previousYearPayslips.forEach(slip => {
+      previousYearGross += slip.earningsSummary?.grossPay || 0;
+      previousYearNet += slip.netPay || 0;
+    });
+
+    // Calculate YoY growth
+    const yoyGrossGrowth = previousYearGross > 0 
+      ? ((currentYearGross - previousYearGross) / previousYearGross * 100).toFixed(1)
+      : 0;
+    const yoyNetGrowth = previousYearNet > 0 
+      ? ((currentYearNet - previousYearNet) / previousYearNet * 100).toFixed(1)
+      : 0;
+
+    // Monthly breakdown with comparison
+    const monthlyData = [];
+    for (let month = 1; month <= 12; month++) {
+      const monthSlips = currentYearPayslips.filter(s => s.payPeriod?.month === month);
+      const prevMonthSlips = previousYearPayslips.filter(s => s.payPeriod?.month === month);
+      
+      const monthGross = monthSlips.reduce((sum, s) => sum + (s.earningsSummary?.grossPay || 0), 0);
+      const monthNet = monthSlips.reduce((sum, s) => sum + (s.netPay || 0), 0);
+      const monthTax = monthSlips.reduce((sum, s) => sum + (s.taxBreakdown?.taxAmount || 0), 0);
+      const prevMonthGross = prevMonthSlips.reduce((sum, s) => sum + (s.earningsSummary?.grossPay || 0), 0);
+      
+      monthlyData.push({
+        month,
+        grossPayroll: monthGross,
+        netPayroll: monthNet,
+        tax: monthTax,
+        employees: monthSlips.length,
+        previousYearGross: prevMonthGross,
+        growth: prevMonthGross > 0 ? ((monthGross - prevMonthGross) / prevMonthGross * 100).toFixed(1) : 0
+      });
+    }
+
+    // Department breakdown
+    const deptMap = new Map();
+    currentYearPayslips.forEach(slip => {
+      const dept = slip.employeeSnapshot?.department || 'Unassigned';
+      const current = deptMap.get(dept) || { 
+        department: dept, 
+        totalGross: 0, 
+        totalNet: 0, 
+        employeeCount: new Set(),
+        avgSalary: 0 
+      };
+      current.totalGross += slip.earningsSummary?.grossPay || 0;
+      current.totalNet += slip.netPay || 0;
+      current.employeeCount.add(slip.userId);
+      deptMap.set(dept, current);
+    });
+
+    const departmentBreakdown = Array.from(deptMap.values()).map(d => ({
+      department: d.department,
+      totalGross: d.totalGross,
+      totalNet: d.totalNet,
+      employeeCount: d.employeeCount.size,
+      avgSalary: d.employeeCount.size > 0 ? Math.round(d.totalGross / d.employeeCount.size / 12) : 0
+    })).sort((a, b) => b.totalGross - a.totalGross);
+
+    // Salary distribution
+    const activeProfiles = allProfiles.filter(p => p.isActive);
+    const salaryRanges = [
+      { min: 0, max: 30000, label: '$0-30K' },
+      { min: 30000, max: 50000, label: '$30K-50K' },
+      { min: 50000, max: 75000, label: '$50K-75K' },
+      { min: 75000, max: 100000, label: '$75K-100K' },
+      { min: 100000, max: 150000, label: '$100K-150K' },
+      { min: 150000, max: Infinity, label: '$150K+' }
+    ];
+
+    const salaryDistribution = salaryRanges.map(range => {
+      const count = activeProfiles.filter(p => {
+        const annual = (p.basicSalary || 0) * 12;
+        return annual >= range.min && annual < range.max;
+      }).length;
+      return { label: range.label, count };
+    });
+
+    // Top earners (anonymized)
+    const topEarnersByDept = {};
+    departmentBreakdown.forEach(d => {
+      const deptSlips = currentYearPayslips.filter(
+        s => (s.employeeSnapshot?.department || 'Unassigned') === d.department
+      );
+      const userTotals = {};
+      deptSlips.forEach(s => {
+        userTotals[s.userId] = (userTotals[s.userId] || 0) + (s.earningsSummary?.grossPay || 0);
+      });
+      const maxEarner = Object.values(userTotals).sort((a, b) => b - a)[0] || 0;
+      topEarnersByDept[d.department] = maxEarner;
+    });
+
+    // Payroll run status summary
+    const runStatusSummary = {
+      total: currentYearRuns.length,
+      paid: currentYearRuns.filter(r => r.status === 'paid').length,
+      approved: currentYearRuns.filter(r => r.status === 'approved').length,
+      pending: currentYearRuns.filter(r => r.status === 'pending_approval').length
+    };
+
+    // Deduction breakdown
+    const deductionTypes = {};
+    currentYearPayslips.forEach(slip => {
+      (slip.deductions || []).forEach(d => {
+        if (!deductionTypes[d.type]) {
+          deductionTypes[d.type] = { type: d.type, name: d.name, total: 0 };
+        }
+        deductionTypes[d.type].total += d.amount || 0;
+      });
+    });
+
+    const deductionBreakdown = Object.values(deductionTypes)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    // Earning breakdown
+    const earningTypes = {};
+    currentYearPayslips.forEach(slip => {
+      (slip.earnings || []).forEach(e => {
+        if (!earningTypes[e.type]) {
+          earningTypes[e.type] = { type: e.type, name: e.name, total: 0 };
+        }
+        earningTypes[e.type].total += e.amount || 0;
+      });
+    });
+
+    const earningBreakdown = Object.values(earningTypes)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    // Cost per employee metrics
+    const avgCostPerEmployee = activeProfiles.length > 0 
+      ? Math.round(currentYearGross / activeProfiles.length)
+      : 0;
+
+    const avgMonthlyPayroll = currentYearRuns.length > 0
+      ? Math.round(currentYearGross / currentYearRuns.length)
+      : 0;
+
+    res.json({
+      year: currentYear,
+      overview: {
+        totalGrossPayroll: currentYearGross,
+        totalNetPayroll: currentYearNet,
+        totalTaxWithheld: currentYearTax,
+        totalDeductions: currentYearDeductions,
+        totalEmployees: activeProfiles.length,
+        totalPayslips: currentYearPayslips.length,
+        avgCostPerEmployee,
+        avgMonthlyPayroll,
+        yoyGrossGrowth: parseFloat(yoyGrossGrowth),
+        yoyNetGrowth: parseFloat(yoyNetGrowth)
+      },
+      monthlyTrend: monthlyData,
+      departmentBreakdown,
+      salaryDistribution,
+      runStatusSummary,
+      deductionBreakdown,
+      earningBreakdown,
+      topEarnersByDept
+    });
+  } catch (err) {
+    console.error('Comprehensive Analytics Error:', err);
+    res.status(500).json({ error: 'Failed to fetch comprehensive analytics' });
+  }
+});
+
+/**
+ * GET /api/payroll/analytics/headcount
+ * Get headcount and workforce analytics
+ */
+router.get('/analytics/headcount', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+
+    const profiles = await PayrollProfile.find({ organizationId });
+
+    // Status breakdown
+    const statusBreakdown = {
+      active: profiles.filter(p => p.status === 'active').length,
+      on_notice: profiles.filter(p => p.status === 'on_notice').length,
+      on_leave: profiles.filter(p => p.status === 'on_leave').length,
+      terminated: profiles.filter(p => p.status === 'terminated').length,
+      suspended: profiles.filter(p => p.status === 'suspended').length
+    };
+
+    // Employment type breakdown
+    const employmentTypes = {
+      full_time: profiles.filter(p => p.employeeInfo?.employmentType === 'full_time').length,
+      part_time: profiles.filter(p => p.employeeInfo?.employmentType === 'part_time').length,
+      contract: profiles.filter(p => p.employeeInfo?.employmentType === 'contract').length,
+      intern: profiles.filter(p => p.employeeInfo?.employmentType === 'intern').length
+    };
+
+    // Department headcount
+    const departmentHeadcount = {};
+    profiles.forEach(p => {
+      const dept = p.employeeInfo?.department || 'Unassigned';
+      departmentHeadcount[dept] = (departmentHeadcount[dept] || 0) + 1;
+    });
+
+    // Tenure distribution
+    const today = new Date();
+    const tenureRanges = {
+      'Less than 1 year': 0,
+      '1-2 years': 0,
+      '2-5 years': 0,
+      '5+ years': 0
+    };
+
+    profiles.forEach(p => {
+      if (p.employeeInfo?.dateOfJoining) {
+        const years = (today - new Date(p.employeeInfo.dateOfJoining)) / (365.25 * 24 * 60 * 60 * 1000);
+        if (years < 1) tenureRanges['Less than 1 year']++;
+        else if (years < 2) tenureRanges['1-2 years']++;
+        else if (years < 5) tenureRanges['2-5 years']++;
+        else tenureRanges['5+ years']++;
+      }
+    });
+
+    res.json({
+      total: profiles.length,
+      statusBreakdown,
+      employmentTypes,
+      departmentHeadcount,
+      tenureDistribution: Object.entries(tenureRanges).map(([label, count]) => ({ label, count }))
+    });
+  } catch (err) {
+    console.error('Headcount Analytics Error:', err);
+    res.status(500).json({ error: 'Failed to fetch headcount analytics' });
+  }
+});
+
+/**
  * GET /api/payroll/analytics/ytd/:userId
  * Get year-to-date summary for a user
  */

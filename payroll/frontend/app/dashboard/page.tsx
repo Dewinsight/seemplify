@@ -206,6 +206,30 @@ export default function Dashboard() {
           </Link>
         )}
 
+        {/* Analytics Card - HR Admin Only */}
+        {isHRAdmin && (
+          <Link href="/admin/analytics" className="group">
+            <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-cyan-500/20 p-6 transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/10">
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/0 to-teal-500/0 group-hover:from-cyan-500/5 group-hover:to-teal-500/5 transition-all" />
+              <div className="relative">
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-110 transition-transform mb-4">
+                  <TrendingUp className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-zinc-100 text-lg mb-2">Analytics</h3>
+                <p className="text-zinc-400 text-sm mb-4 leading-relaxed">
+                  View comprehensive payroll insights, department breakdowns, and workforce analytics.
+                </p>
+                <div className="flex items-center text-cyan-400 font-medium text-sm group-hover:text-cyan-300">
+                  <span>View Analytics</span>
+                  <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
+
         {/* Year to Date Stats Card */}
         <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 p-6">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-green-500/5" />

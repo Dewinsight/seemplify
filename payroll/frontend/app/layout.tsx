@@ -125,7 +125,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { name: 'Run Payroll', href: '/admin/run', icon: Calculator, section: 'admin' },
     { name: 'History', href: '/admin/runs', icon: FileText, section: 'admin' },
     { name: 'Approvals', href: '/admin/approvals', icon: CheckCircle, section: 'admin' },
-    { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'admin' },
+    { name: 'Analytics', href: '/admin/analytics', icon: BarChart3, section: 'admin' },
+    { name: 'Reports', href: '/admin/reports', icon: FileText, section: 'admin' },
     { name: 'Currencies', href: '/admin/currencies', icon: Calculator, section: 'admin' },
   ];
 
