@@ -12,12 +12,12 @@
     "base_url": "https://auth.seemplifyai.com",
     "authorize_url": "/auth",
     "access_token_url": "/token",
-    "redirect_url": "/api/method/frappe.integrations.oauth2_logins.custom/Seemplify",
+    "redirect_url": "https://lms.seemplifyai.com/api/method/frappe.integrations.oauth2_logins.custom/Seemplify",
     "api_endpoint": "/me",
     "api_endpoint_args": null,
     "auth_url_data": "{\"response_type\": \"code\", \"scope\": \"openid email profile\"}",
     "user_id_property": "email",
-    "sign_ups": 1,
+    "sign_ups": "Allow",
     "custom_base_url": 1
   }
 ]
