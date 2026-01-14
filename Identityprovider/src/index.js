@@ -468,7 +468,7 @@ async function syncLmsRoleToFrappe(accountId) {
   const signature = crypto.createHmac('sha256', secret).update(message).digest('hex')
   
   const lmsApiUrl = process.env.LMS_API_URL || 'https://lms.seemplifyai.com'
-  const endpoint = `${lmsApiUrl}/api/method/lms.lms.api.set_lms_role.set_user_lms_role`
+  const endpoint = `${lmsApiUrl}/api/method/lms.lms.lms.api.set_lms_role.set_user_lms_role`
   
   try {
     const response = await fetch(endpoint, {
