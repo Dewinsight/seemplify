@@ -21,6 +21,7 @@ import {
   DollarSign,
   BarChart3,
   CheckCircle,
+  Check,
 } from 'lucide-react';
 
 function cn(...classes: (string | boolean | undefined)[]) {
@@ -91,10 +92,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       setSwitchingOrg(true);
       setOrgMenuOpen(false);
       const response = await authApi.switchOrganization(orgId);
-      if (response.data?.success) {
+      // authApi.switchOrganization returns response.data directly
+      if (response?.success) {
+        console.log('✅ Organization switched to:', response.organization?.name);
         window.location.reload();
       } else {
-        throw new Error(response.data?.error || 'Failed to switch organization');
+        throw new Error(response?.error || 'Failed to switch organization');
       }
     } catch (error) {
       console.error('Failed to switch organization:', error);
@@ -201,16 +204,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             {organizations.map((org: any) => (
                               <button
                                 key={org.id}
-                                onClick={() => handleSwitchOrganization(org.id)}
+                                onClick={() => !org.isCurrent && handleSwitchOrganization(org.id)}
                                 disabled={org.isCurrent || switchingOrg}
                                 className={cn(
                                   'w-full text-left px-4 py-3 text-sm hover:bg-zinc-800/70 transition-colors',
-                                  org.isCurrent && 'bg-zinc-800/70'
+                                  org.isCurrent && 'bg-zinc-800/70 cursor-default'
                                 )}
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-zinc-200 truncate">{org.name}</span>
-                                  <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
+                                    {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
+                                  </div>
                                 </div>
                               </button>
                             ))}
@@ -329,18 +335,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             <button
                               key={org.id}
                               onClick={() => {
-                                handleSwitchOrganization(org.id);
-                                setMobileOpen(false);
+                                if (!org.isCurrent) {
+                                  handleSwitchOrganization(org.id);
+                                  setMobileOpen(false);
+                                }
                               }}
                               disabled={org.isCurrent || switchingOrg}
                               className={cn(
                                 'w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800/70 transition-colors',
-                                org.isCurrent && 'bg-zinc-800/70'
+                                org.isCurrent && 'bg-zinc-800/70 cursor-default'
                               )}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-zinc-200 truncate">{org.name}</span>
-                                <span className="text-xs text-zinc-500">{org.role}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-zinc-500">{org.role}</span>
+                                  {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
+                                </div>
                               </div>
                             </button>
                           ))}

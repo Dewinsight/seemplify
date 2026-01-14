@@ -110,19 +110,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = response.data.user;
       setUser(userData);
 
-      // Set current organization
-      if (response.data.currentOrganizationId && userData.organizations) {
-        const org = userData.organizations.find(
+      // Set current organization - prefer currentOrganization from response (from IDP)
+      const organizations = userData.organizations || [];
+      
+      if (response.data.currentOrganization) {
+        // Use the full currentOrganization object from the response (from IDP)
+        setCurrentOrganization({ ...response.data.currentOrganization, isCurrent: true });
+      } else if (response.data.currentOrganizationId && organizations.length > 0) {
+        // Fallback: find by ID
+        const org = organizations.find(
           (o: Organization) => o.id === response.data.currentOrganizationId
         );
-        if (org) {
-          setCurrentOrganization({ ...org, isCurrent: true });
-        } else if (userData.organizations.length > 0) {
-          setCurrentOrganization({ ...userData.organizations[0], isCurrent: true });
-        }
-      } else if (userData.organizations?.length > 0) {
-        setCurrentOrganization({ ...userData.organizations[0], isCurrent: true });
+        setCurrentOrganization(org ? { ...org, isCurrent: true } : { ...organizations[0], isCurrent: true });
+      } else if (organizations.length > 0) {
+        // Fallback: use first organization
+        setCurrentOrganization({ ...organizations[0], isCurrent: true });
       }
+
+      console.log('✅ Payroll user loaded:', userData.email, 'org:', response.data.currentOrganization?.name || response.data.currentOrganizationId);
     } catch (error: any) {
       // Only log non-401 errors
       if (error?.response?.status !== 401) {
@@ -168,9 +173,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchOrganization = async (orgId: string) => {
     try {
-      await api.post('/auth/switch-organization', { organizationId: orgId });
-      // Reload to refresh all data
-      window.location.reload();
+      const response = await api.post('/auth/switch-organization', { organizationId: orgId });
+      
+      if (response.data?.success) {
+        // Update current organization from response
+        if (response.data.organization) {
+          setCurrentOrganization({ ...response.data.organization, isCurrent: true });
+        }
+        console.log('✅ Payroll organization switched to:', response.data.organization?.name);
+        // Reload to refresh all data
+        window.location.reload();
+      } else {
+        throw new Error(response.data?.error || 'Failed to switch organization');
+      }
     } catch (error) {
       console.error('Failed to switch organization:', error);
       throw error;

@@ -27,10 +27,14 @@ export function useUserContext() {
 
   // Extract user from response
   const user = data?.user;
-  const currentOrgId = data?.currentOrganizationId;
+  
+  // Get current organization - prefer full object from response (from IDP)
+  const currentOrganization = data?.currentOrganization;
+  const currentOrgId = currentOrganization?.id || data?.currentOrganizationId;
 
-  // Find current organization from user's organizations
-  const currentOrg = user?.organizations?.find((o: any) => o.id === currentOrgId) ||
+  // Find current organization from user's organizations (fallback)
+  const currentOrg = currentOrganization || 
+                     user?.organizations?.find((o: any) => o.id === currentOrgId || o.isCurrent) ||
                      user?.organizations?.[0];
 
   // Determine role from organization role
@@ -155,6 +159,7 @@ export function useUserTeams() {
 
 /**
  * Get user's organizations (for organization switcher)
+ * Organizations come from IDP via the auth/me endpoint
  */
 export function useOrganizations() {
   const { data, error, isLoading, mutate } = useSWR('/auth/me', fetcher, {
@@ -162,25 +167,26 @@ export function useOrganizations() {
     dedupingInterval: 30000, // 30 seconds - orgs rarely change
   });
 
-  // Extract organizations from auth/me response
+  // Extract organizations from auth/me response (these come from IDP)
   const organizations = data?.user?.organizations || [];
 
-  // Find current organization
-  const currentOrgId = data?.currentOrganizationId ||
-    (organizations[0]?.id);
+  // Get current organization - prefer full object from response
+  const currentOrganization = data?.currentOrganization;
+  const currentOrgId = currentOrganization?.id || data?.currentOrganizationId || organizations[0]?.id;
 
-  // Mark current organization
+  // Map organizations with isCurrent flag (backend already adds this, but ensure consistency)
   const orgsWithCurrent = organizations.map((org: any) => ({
     id: org.id || org._id || org.organizationId,
     name: org.name || org.organizationName || 'Organization',
     slug: org.slug,
     logo: org.logo,
     role: org.role,
-    isCurrent: (org.id || org._id || org.organizationId) === currentOrgId,
+    isCurrent: org.isCurrent || (org.id || org._id || org.organizationId) === currentOrgId,
   }));
 
   return {
     organizations: orgsWithCurrent,
+    currentOrganization: currentOrganization, // Full organization object from IDP
     currentOrganizationId: currentOrgId,
     isLoading,
     isError: error,
