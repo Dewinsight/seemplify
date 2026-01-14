@@ -12,16 +12,26 @@ import frappe
 from frappe import _
 
 
-# LMS Role mapping from Seemplify claims to Frappe roles
+# LMS Role mapping from Seemplify IDP claims to Frappe roles
+# Based on Frappe LMS DocType permissions research:
+# - LMS Student: Basic learner (no desk access)
+# - Course Creator: Create/edit courses (desk access)
+# - Moderator: Full LMS admin (desk access)
+# - Batch Evaluator: Manage batches, grade assignments (desk access)
+# - Course Evaluator: Certification evaluations (desk access)
 LMS_ROLE_MAPPING = {
-    'instructor': 'Course Creator',
     'student': 'LMS Student',
     'course_creator': 'Course Creator',
-    'moderator': 'Moderator'
+    'moderator': 'Moderator',
+    'batch_evaluator': 'Batch Evaluator',
+    'course_evaluator': 'Course Evaluator'
 }
 
 # Default role if no LMS role claim is present
 DEFAULT_LMS_ROLE = 'LMS Student'
+
+# Roles that grant Frappe desk access
+DESK_ACCESS_ROLES = ['Course Creator', 'Moderator', 'Batch Evaluator', 'Course Evaluator']
 
 
 def process_seemplify_login(login_info):
@@ -129,6 +139,117 @@ def assign_role_to_user(email, role_name):
     frappe.logger().info(f"Assigned role {role_name} to user {email}")
 
 
+def assign_lms_role_from_claim(email, lms_role_claim):
+    """
+    Assign the appropriate Frappe LMS role based on IDP claim.
+    Also handles user type upgrade if role requires desk access.
+    
+    Args:
+        email (str): User's email
+        lms_role_claim (dict): LMS role claim from Seemplify IDP containing:
+            - role: 'student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator'
+            - permissions: List of permissions
+            - organization_id: Organization context
+    
+    Returns:
+        str: The Frappe role that was assigned
+    """
+    if not email:
+        frappe.logger().warning("No email provided for role assignment")
+        return None
+    
+    if not frappe.db.exists('User', email):
+        frappe.logger().warning(f"User {email} does not exist")
+        return None
+    
+    # Determine the Frappe role from the claim
+    if lms_role_claim and isinstance(lms_role_claim, dict):
+        idp_role = lms_role_claim.get('role')
+        frappe_role = LMS_ROLE_MAPPING.get(idp_role, DEFAULT_LMS_ROLE)
+    else:
+        frappe_role = DEFAULT_LMS_ROLE
+    
+    frappe.logger().info(f"Assigning LMS role to {email}: {frappe_role}")
+    
+    # Get user document
+    user_doc = frappe.get_doc('User', email)
+    
+    # Remove any existing LMS roles first (user should have only one LMS role)
+    existing_lms_roles = [r.role for r in user_doc.roles if r.role in LMS_ROLE_MAPPING.values()]
+    for old_role in existing_lms_roles:
+        if old_role != frappe_role:
+            user_doc.remove_roles(old_role)
+            frappe.logger().info(f"Removed old LMS role {old_role} from {email}")
+    
+    # Add the new role
+    if frappe_role not in [r.role for r in user_doc.roles]:
+        user_doc.add_roles(frappe_role)
+        frappe.logger().info(f"Added LMS role {frappe_role} to {email}")
+    
+    # If role requires desk access, upgrade user type
+    if frappe_role in DESK_ACCESS_ROLES:
+        if user_doc.user_type == 'Website User':
+            user_doc.user_type = 'System User'
+            user_doc.save(ignore_permissions=True)
+            frappe.logger().info(f"Upgraded {email} to System User for desk access")
+    
+    return frappe_role
+
+
+def get_frappe_role_for_idp_role(idp_role):
+    """
+    Get the Frappe role name for an IDP role.
+    
+    Args:
+        idp_role (str): IDP role name (e.g., 'student', 'course_creator')
+    
+    Returns:
+        str: Frappe role name (e.g., 'LMS Student', 'Course Creator')
+    """
+    return LMS_ROLE_MAPPING.get(idp_role, DEFAULT_LMS_ROLE)
+
+
+def get_all_lms_roles():
+    """
+    Get all available LMS roles with their descriptions.
+    
+    Returns:
+        list: List of role dictionaries
+    """
+    return [
+        {
+            'idp_role': 'student',
+            'frappe_role': 'LMS Student',
+            'desk_access': False,
+            'description': 'Basic learner - enroll in courses, submit assignments, take quizzes'
+        },
+        {
+            'idp_role': 'course_creator',
+            'frappe_role': 'Course Creator',
+            'desk_access': True,
+            'description': 'Create and manage courses, chapters, lessons, quizzes'
+        },
+        {
+            'idp_role': 'moderator',
+            'frappe_role': 'Moderator',
+            'desk_access': True,
+            'description': 'Full LMS admin - publish courses, manage all content and settings'
+        },
+        {
+            'idp_role': 'batch_evaluator',
+            'frappe_role': 'Batch Evaluator',
+            'desk_access': True,
+            'description': 'Manage batches, grade assignments, evaluate student progress'
+        },
+        {
+            'idp_role': 'course_evaluator',
+            'frappe_role': 'Course Evaluator',
+            'desk_access': True,
+            'description': 'Evaluate certifications, issue and manage certificates'
+        }
+    ]
+
+
 @frappe.whitelist(allow_guest=True)
 def get_seemplify_login_url(redirect_to=None):
     """
@@ -155,27 +276,50 @@ def get_seemplify_login_url(redirect_to=None):
 
 def create_lms_roles():
     """
-    Create LMS-specific roles in Frappe if they don't exist.
-    Called during app installation.
+    Create/verify all LMS-specific roles in Frappe.
+    Called during app installation or via bench command.
+    
+    Frappe LMS uses these roles (from DocType permissions):
+    - LMS Student: Basic learner, no desk access
+    - Course Creator: Create/edit courses, desk access
+    - Moderator: Full LMS admin, desk access
+    - Batch Evaluator: Manage batches, grade assignments, desk access
+    - Course Evaluator: Certification evaluations, desk access (via Course Evaluator doctype)
     """
     roles = [
         {
             'role_name': 'LMS Student',
             'desk_access': 0,
-            'home_page': '/lms'
+            'home_page': '/lms',
+            'description': 'Basic learner role - can enroll in courses, submit assignments, take quizzes'
         },
         {
-            'role_name': 'LMS Instructor',
+            'role_name': 'Course Creator',
             'desk_access': 1,
-            'home_page': '/lms'
+            'home_page': '/lms',
+            'description': 'Can create and manage courses, chapters, lessons, quizzes'
         },
         {
-            'role_name': 'LMS Moderator',
+            'role_name': 'Moderator',
             'desk_access': 1,
-            'home_page': '/lms'
+            'home_page': '/lms',
+            'description': 'Full LMS admin - can publish courses, manage all content and settings'
+        },
+        {
+            'role_name': 'Batch Evaluator',
+            'desk_access': 1,
+            'home_page': '/lms',
+            'description': 'Can manage batches, grade assignments, evaluate student progress'
+        },
+        {
+            'role_name': 'Course Evaluator',
+            'desk_access': 1,
+            'home_page': '/lms',
+            'description': 'Can evaluate certifications, issue and manage certificates'
         }
     ]
     
+    created_roles = []
     for role_data in roles:
         if not frappe.db.exists('Role', role_data['role_name']):
             role = frappe.get_doc({
@@ -183,7 +327,16 @@ def create_lms_roles():
                 **role_data
             })
             role.insert(ignore_permissions=True)
+            created_roles.append(role_data['role_name'])
             frappe.logger().info(f"Created role: {role_data['role_name']}")
+        else:
+            frappe.logger().info(f"Role already exists: {role_data['role_name']}")
+    
+    if created_roles:
+        frappe.db.commit()
+        frappe.logger().info(f"Created {len(created_roles)} LMS roles: {', '.join(created_roles)}")
+    
+    return created_roles
 
 
 def setup_seemplify_social_login():

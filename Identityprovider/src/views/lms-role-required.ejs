@@ -75,12 +75,24 @@
       font-size: 24px;
     }
 
-    .role-icon.instructor {
+    .role-icon.course_creator {
       background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
     }
 
     .role-icon.student {
       background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%);
+    }
+
+    .role-icon.moderator {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+
+    .role-icon.batch_evaluator {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+
+    .role-icon.course_evaluator {
+      background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
     }
 
     .role-card h3 {
@@ -313,31 +325,75 @@
       <!-- Role Selection Cards -->
       <div id="roleSelection">
         <div class="role-cards">
-          <div class="role-card" data-role="instructor" onclick="selectRole('instructor')">
-            <div class="role-card-header">
-              <div class="role-icon instructor">👨‍🏫</div>
-              <h3>Instructor</h3>
-            </div>
-            <p>Create courses, manage batches, and grade student assignments. Ideal for teachers, trainers, and content creators.</p>
-            <div class="role-permissions">
-              <span class="permission-badge">Create Courses</span>
-              <span class="permission-badge">Manage Batches</span>
-              <span class="permission-badge">Grade Work</span>
-              <span class="permission-badge">View Analytics</span>
-            </div>
-          </div>
-
           <div class="role-card" data-role="student" onclick="selectRole('student')">
             <div class="role-card-header">
               <div class="role-icon student">🎓</div>
-              <h3>Student</h3>
+              <h3>Student (LMS Student)</h3>
             </div>
-            <p>Enroll in courses, submit assignments, and earn certificates. Perfect for learners and trainees.</p>
+            <p>Enroll in courses, submit assignments, take quizzes, and earn certificates. Perfect for learners and trainees.</p>
             <div class="role-permissions">
               <span class="permission-badge">Enroll in Courses</span>
-              <span class="permission-badge">Submit Work</span>
+              <span class="permission-badge">Submit Assignments</span>
               <span class="permission-badge">Take Quizzes</span>
               <span class="permission-badge">Earn Certificates</span>
+            </div>
+          </div>
+
+          <div class="role-card" data-role="course_creator" onclick="selectRole('course_creator')">
+            <div class="role-card-header">
+              <div class="role-icon course_creator">👨‍🏫</div>
+              <h3>Course Creator</h3>
+            </div>
+            <p>Create and manage courses, chapters, lessons, quizzes, and programming exercises. Ideal for teachers and content creators.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Create Courses</span>
+              <span class="permission-badge">Manage Content</span>
+              <span class="permission-badge">Create Quizzes</span>
+              <span class="permission-badge">Desk Access</span>
+            </div>
+          </div>
+
+          <% if (isAdmin) { %>
+          <div class="role-card" data-role="moderator" onclick="selectRole('moderator')">
+            <div class="role-card-header">
+              <div class="role-icon moderator">🛡️</div>
+              <h3>Moderator</h3>
+            </div>
+            <p>Full LMS administration - publish courses, manage all content, enrollments, discussions, and settings.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Publish Courses</span>
+              <span class="permission-badge">Manage Enrollments</span>
+              <span class="permission-badge">Moderate Discussions</span>
+              <span class="permission-badge">Full Desk Access</span>
+            </div>
+          </div>
+          <% } %>
+
+          <div class="role-card" data-role="batch_evaluator" onclick="selectRole('batch_evaluator')">
+            <div class="role-card-header">
+              <div class="role-icon batch_evaluator">📋</div>
+              <h3>Batch Evaluator</h3>
+            </div>
+            <p>Manage student batches, grade assignments, and track student progress across courses.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Manage Batches</span>
+              <span class="permission-badge">Grade Assignments</span>
+              <span class="permission-badge">View Progress</span>
+              <span class="permission-badge">Desk Access</span>
+            </div>
+          </div>
+
+          <div class="role-card" data-role="course_evaluator" onclick="selectRole('course_evaluator')">
+            <div class="role-card-header">
+              <div class="role-icon course_evaluator">🏆</div>
+              <h3>Course Evaluator</h3>
+            </div>
+            <p>Evaluate certifications, issue certificates, and manage the certification process for completed courses.</p>
+            <div class="role-permissions">
+              <span class="permission-badge">Evaluate Certifications</span>
+              <span class="permission-badge">Issue Certificates</span>
+              <span class="permission-badge">Manage Certificates</span>
+              <span class="permission-badge">Desk Access</span>
             </div>
           </div>
         </div>
@@ -391,6 +447,14 @@
     const isAdmin = <%= isAdmin %>;
     let selectedRole = null;
 
+    const roleDisplayNames = {
+      'student': 'Student',
+      'course_creator': 'Course Creator',
+      'moderator': 'Moderator',
+      'batch_evaluator': 'Batch Evaluator',
+      'course_evaluator': 'Course Evaluator'
+    };
+
     function selectRole(role) {
       selectedRole = role;
       
@@ -405,10 +469,12 @@
       const btnText = document.getElementById('btnText');
       submitBtn.disabled = false;
       
+      const displayName = roleDisplayNames[role] || role;
+      
       if (isAdmin) {
-        btnText.textContent = `Assign ${role.charAt(0).toUpperCase() + role.slice(1)} Role`;
+        btnText.textContent = `Assign ${displayName} Role`;
       } else {
-        btnText.textContent = `Request ${role.charAt(0).toUpperCase() + role.slice(1)} Access`;
+        btnText.textContent = `Request ${displayName} Access`;
         document.getElementById('requestForm').style.display = 'block';
       }
     }
@@ -437,7 +503,7 @@
           document.getElementById('roleSelection').style.display = 'none';
           document.getElementById('successMessage').style.display = 'block';
           document.getElementById('successTitle').textContent = 'Role Assigned!';
-          document.getElementById('successText').textContent = `You've been assigned the ${selectedRole} role.`;
+          document.getElementById('successText').textContent = `You've been assigned the ${roleDisplayNames[selectedRole] || selectedRole} role.`;
         } else {
           throw new Error(data.error || 'Failed to assign role');
         }

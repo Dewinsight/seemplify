@@ -23,10 +23,16 @@ const LmsAccessRequestSchema = new mongoose.Schema({
     index: true
   },
   
-  // The role being requested
+  // The role being requested - matches Frappe LMS roles
   requestedRole: {
     type: String,
-    enum: ['instructor', 'student', 'course_creator', 'moderator'],
+    enum: [
+      'student',           // LMS Student
+      'course_creator',    // Course Creator
+      'moderator',         // Moderator (full admin)
+      'batch_evaluator',   // Batch Evaluator
+      'course_evaluator'   // Course Evaluator
+    ],
     required: true
   },
   

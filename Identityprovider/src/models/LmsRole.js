@@ -24,10 +24,22 @@ const LmsRoleSchema = new mongoose.Schema({
     index: true
   },
   
-  // LMS-specific role
+  // LMS-specific role - matches Frappe LMS roles
+  // Based on research from Frappe LMS codebase:
+  // - LMS Student: Basic learner role (no desk access)
+  // - Course Creator: Can create/edit courses (desk access)
+  // - Moderator: Full LMS admin - publish courses, manage all content (desk access)
+  // - Batch Evaluator: Evaluate batches, grade assignments (desk access)
+  // - Course Evaluator: Evaluate course certifications (desk access)
   role: {
     type: String,
-    enum: ['instructor', 'student', 'course_creator', 'moderator'],
+    enum: [
+      'student',           // Maps to Frappe "LMS Student" role
+      'course_creator',    // Maps to Frappe "Course Creator" role
+      'moderator',         // Maps to Frappe "Moderator" role
+      'batch_evaluator',   // Maps to Frappe "Batch Evaluator" role
+      'course_evaluator'   // Maps to Frappe "Course Evaluator" role (for certifications)
+    ],
     required: true
   },
   
@@ -65,45 +77,125 @@ LmsRoleSchema.index({ organization: 1, role: 1 })
 
 /**
  * LMS Role Permissions
- * Maps roles to their specific permissions
+ * Maps IDP roles to their specific permissions
+ * 
+ * Based on Frappe LMS DocType permissions:
+ * - LMS Student: Read-only on courses, batches, settings
+ * - Course Creator: Full CRUD on courses, chapters, lessons, quizzes
+ * - Moderator: Full CRUD on all LMS content + settings + publish
+ * - Batch Evaluator: Full CRUD on batches, evaluations, assignments
+ * - Course Evaluator: Manage course evaluations and certifications
  */
 export const LMS_ROLE_PERMISSIONS = {
-  instructor: [
-    'view_courses',
-    'create_courses',
-    'edit_own_courses',
-    'manage_batches',
-    'grade_assignments',
-    'view_student_progress',
-    'create_quizzes',
-    'send_announcements',
-    'view_analytics'
-  ],
+  // LMS Student - Basic learner role
   student: [
     'view_courses',
     'enroll_courses',
+    'view_lessons',
     'submit_assignments',
     'take_quizzes',
     'view_certificates',
     'view_own_progress',
-    'participate_discussions'
+    'participate_discussions',
+    'view_batches',
+    'view_live_classes'
   ],
+  
+  // Course Creator - Can create and manage courses
   course_creator: [
     'view_courses',
     'create_courses',
-    'edit_any_course',
-    'manage_course_content',
+    'edit_own_courses',
+    'delete_own_courses',
+    'create_chapters',
+    'create_lessons',
     'create_quizzes',
-    'manage_certifications',
-    'view_analytics'
+    'create_assignments',
+    'manage_course_content',
+    'view_enrollments',
+    'view_student_progress',
+    'view_analytics',
+    'export_data'
   ],
+  
+  // Moderator - Full LMS admin (like System Manager for LMS)
   moderator: [
     'view_courses',
+    'create_courses',
+    'edit_any_course',
+    'delete_any_course',
+    'publish_courses',
+    'unpublish_courses',
+    'create_chapters',
+    'create_lessons',
+    'create_quizzes',
+    'create_assignments',
+    'manage_course_content',
+    'manage_batches',
+    'create_batches',
+    'edit_batches',
+    'delete_batches',
+    'manage_enrollments',
+    'manage_live_classes',
+    'manage_certifications',
+    'manage_lms_settings',
+    'view_all_analytics',
+    'export_data',
+    'import_data',
     'moderate_discussions',
-    'manage_user_enrollments',
-    'view_reports',
-    'handle_support_tickets'
+    'manage_user_roles'
+  ],
+  
+  // Batch Evaluator - Manages batches and evaluates students
+  batch_evaluator: [
+    'view_courses',
+    'view_batches',
+    'create_batches',
+    'edit_batches',
+    'delete_batches',
+    'manage_batch_enrollments',
+    'grade_assignments',
+    'evaluate_quizzes',
+    'view_student_progress',
+    'manage_live_classes',
+    'send_announcements',
+    'view_analytics',
+    'export_data',
+    'manage_evaluator_schedule'
+  ],
+  
+  // Course Evaluator - Handles certification evaluations
+  course_evaluator: [
+    'view_courses',
+    'view_batches',
+    'evaluate_certifications',
+    'issue_certificates',
+    'revoke_certificates',
+    'view_evaluation_schedule',
+    'manage_evaluator_schedule',
+    'view_student_submissions',
+    'grade_final_evaluations',
+    'view_analytics'
   ]
+}
+
+/**
+ * Frappe Role Mapping
+ * Maps IDP LMS roles to Frappe role names
+ */
+export const FRAPPE_ROLE_MAPPING = {
+  student: 'LMS Student',
+  course_creator: 'Course Creator',
+  moderator: 'Moderator',
+  batch_evaluator: 'Batch Evaluator',
+  course_evaluator: 'Course Evaluator'
+}
+
+/**
+ * Get Frappe role name from IDP role
+ */
+export function getFrappeRoleName(idpRole) {
+  return FRAPPE_ROLE_MAPPING[idpRole] || 'LMS Student'
 }
 
 /**

@@ -28,7 +28,7 @@ import { samlIdPService as samlService } from './services/samlService.js'
 
 // LMS Role Support
 import lmsRolesRouter from './routes/lmsRoles.js'
-import { LmsRole, LMS_ROLE_PERMISSIONS } from './models/LmsRole.js'
+import { LmsRole, LMS_ROLE_PERMISSIONS, FRAPPE_ROLE_MAPPING, getFrappeRoleName } from './models/LmsRole.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -96,8 +96,10 @@ async function getCachedClaims(acc) {
         permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
       })),
     // LMS role claim for current organization
+    // Includes both IDP role name and Frappe role name for easy mapping
     lms_role: lmsRoleClaim ? {
-      role: lmsRoleClaim.role,
+      role: lmsRoleClaim.role,  // IDP role: student, course_creator, moderator, batch_evaluator, course_evaluator
+      frappe_role: getFrappeRoleName(lmsRoleClaim.role),  // Frappe role: LMS Student, Course Creator, etc.
       permissions: LMS_ROLE_PERMISSIONS[lmsRoleClaim.role] || [],
       organization_id: currentOrgIdForLms
     } : null

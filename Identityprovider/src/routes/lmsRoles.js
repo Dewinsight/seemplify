@@ -172,8 +172,10 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
     const currentAccount = req.account
     
     // Validate role (can be null/empty to remove)
-    if (role && !['instructor', 'student', 'course_creator', 'moderator'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' })
+    // All Frappe LMS roles: student, course_creator, moderator, batch_evaluator, course_evaluator
+    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator']
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Valid roles: ' + validRoles.join(', ') })
     }
     
     // Check if user is org admin/owner
@@ -282,9 +284,10 @@ router.post('/access-requests/:organizationId', requireAuth, async (req, res) =>
     const { role, reason } = req.body
     const account = req.account
     
-    // Validate role
-    if (!['instructor', 'student'].includes(role)) {
-      return res.status(400).json({ error: 'Can only request instructor or student roles' })
+    // Validate role - users can request any role, admins will approve
+    const validRoles = ['student', 'course_creator', 'moderator', 'batch_evaluator', 'course_evaluator']
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Valid roles: ' + validRoles.join(', ') })
     }
     
     // Check if already has a role
@@ -547,33 +550,50 @@ router.put('/access-requests/:organizationId/:requestId/deny', requireAuth, requ
 /**
  * GET /api/lms/role-options
  * Get available LMS roles and their descriptions
+ * These map directly to Frappe LMS roles
  */
 router.get('/role-options', (req, res) => {
   res.json({
     roles: [
       {
-        id: 'instructor',
-        name: 'Instructor',
-        description: 'Create courses, manage batches, and grade student work',
-        permissions: LMS_ROLE_PERMISSIONS.instructor
-      },
-      {
         id: 'student',
         name: 'Student',
-        description: 'Enroll in courses, submit assignments, and earn certificates',
+        frappeRole: 'LMS Student',
+        description: 'Enroll in courses, submit assignments, take quizzes, and earn certificates',
+        deskAccess: false,
         permissions: LMS_ROLE_PERMISSIONS.student
       },
       {
         id: 'course_creator',
         name: 'Course Creator',
-        description: 'Create and manage course content across the platform',
+        frappeRole: 'Course Creator',
+        description: 'Create and manage courses, chapters, lessons, and quizzes',
+        deskAccess: true,
         permissions: LMS_ROLE_PERMISSIONS.course_creator
       },
       {
         id: 'moderator',
         name: 'Moderator',
-        description: 'Moderate discussions and manage user enrollments',
+        frappeRole: 'Moderator',
+        description: 'Full LMS admin - publish courses, manage all content, settings, and users',
+        deskAccess: true,
         permissions: LMS_ROLE_PERMISSIONS.moderator
+      },
+      {
+        id: 'batch_evaluator',
+        name: 'Batch Evaluator',
+        frappeRole: 'Batch Evaluator',
+        description: 'Manage batches, grade assignments, evaluate student progress',
+        deskAccess: true,
+        permissions: LMS_ROLE_PERMISSIONS.batch_evaluator
+      },
+      {
+        id: 'course_evaluator',
+        name: 'Course Evaluator',
+        frappeRole: 'Course Evaluator',
+        description: 'Evaluate certifications, issue and manage certificates',
+        deskAccess: true,
+        permissions: LMS_ROLE_PERMISSIONS.course_evaluator
       }
     ]
   })
