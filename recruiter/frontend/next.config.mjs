@@ -4,12 +4,18 @@ const nextConfig = {
   poweredByHeader: false,
 
   async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:5001/api/:path*',
-      },
-    ]
+    // Only use rewrites in local development, not in Docker/production
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL;
+    if (!apiUrl || apiUrl.includes('localhost')) {
+      return [
+        {
+          source: '/api/:path*',
+          destination: 'http://localhost:5001/api/:path*',
+        },
+      ];
+    }
+    // In Docker/production, frontend uses direct API calls (no rewrites needed)
+    return [];
   },
   
   // Security headers configuration
