@@ -4,11 +4,12 @@
 
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
-    cd frappe-bench
+    cd /home/frappe/frappe-bench
     bench start
-else
-    echo "Creating new bench..."
+    exit 0
 fi
+
+echo "Creating new bench..."
 
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
@@ -92,23 +93,31 @@ def set_user_lms_role(email=None, role=None, timestamp=None, signature=None):
     if not frappe.db.exists("User", email):
         frappe.throw(_(f"User {email} does not exist"), frappe.ValidationError)
 
-    user_doc = frappe.get_doc("User", email)
+    # Run with elevated permissions since we've verified the signature from IDP
+    original_user = frappe.session.user
+    try:
+        frappe.set_user("Administrator")
+        
+        user_doc = frappe.get_doc("User", email)
 
-    # Remove existing LMS roles (user should have only one)
-    for old_role in list(LMS_ROLE_MAPPING.values()):
-        if old_role != frappe_role and old_role in [r.role for r in user_doc.roles]:
-            user_doc.remove_roles(old_role)
+        # Remove existing LMS roles (user should have only one)
+        for old_role in list(LMS_ROLE_MAPPING.values()):
+            if old_role != frappe_role and old_role in [r.role for r in user_doc.roles]:
+                user_doc.remove_roles(old_role)
 
-    # Add new role if not already present
-    if frappe_role not in [r.role for r in user_doc.roles]:
-        user_doc.add_roles(frappe_role)
+        # Add new role if not already present
+        if frappe_role not in [r.role for r in user_doc.roles]:
+            user_doc.add_roles(frappe_role)
 
-    # Upgrade to System User if role requires desk access
-    if frappe_role in DESK_ACCESS_ROLES and user_doc.user_type == "Website User":
-        user_doc.user_type = "System User"
-        user_doc.save(ignore_permissions=True)
+        # Upgrade to System User if role requires desk access
+        if frappe_role in DESK_ACCESS_ROLES and user_doc.user_type == "Website User":
+            user_doc.user_type = "System User"
+            user_doc.save(ignore_permissions=True)
 
-    frappe.db.commit()
+        frappe.db.commit()
+    finally:
+        frappe.set_user(original_user)
+    
     return {"success": True, "message": f"LMS role '{frappe_role}' assigned to {email}"}
 
 
