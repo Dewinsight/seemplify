@@ -2050,3 +2050,79 @@ def get_upcoming_batches():
 		limit=4,
 		pluck="name",
 	)
+
+
+# === LMS Role Sync from Seemplify IDP ===
+import hmac
+import hashlib
+
+# LMS Role mapping from Seemplify IDP to Frappe roles
+LMS_ROLE_MAPPING = {
+	"student": "LMS Student",
+	"course_creator": "Course Creator",
+	"moderator": "Moderator",
+	"batch_evaluator": "Batch Evaluator",
+	"course_evaluator": "Course Evaluator",
+	"administrator": "System Manager"
+}
+
+DEFAULT_LMS_ROLE = "LMS Student"
+DESK_ACCESS_ROLES = ["Course Creator", "Moderator", "Batch Evaluator", "Course Evaluator", "System Manager"]
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def set_user_lms_role(email=None, role=None, timestamp=None, signature=None):
+	"""
+	API endpoint to receive and set LMS roles from the Seemplify IDP.
+	Called by IDP after successful OIDC login to sync user's LMS role.
+	"""
+	if frappe.request.method != "POST":
+		frappe.throw(_("Only POST requests are allowed"), frappe.PermissionError)
+
+	# Verify signature from IDP
+	idp_frappe_secret = os.environ.get("IDP_FRAPPE_SECRET", "seemplify-lms-secret-2026")
+	expected_signature = hmac.new(
+		idp_frappe_secret.encode("utf-8"),
+		f"{email}:{role}:{timestamp}".encode("utf-8"),
+		hashlib.sha256
+	).hexdigest()
+
+	if not hmac.compare_digest(expected_signature, signature or ""):
+		frappe.throw(_("Invalid signature"), frappe.PermissionError)
+
+	if role not in LMS_ROLE_MAPPING:
+		frappe.throw(_(f"Invalid LMS role: {role}"), frappe.ValidationError)
+
+	frappe_role = LMS_ROLE_MAPPING.get(role, DEFAULT_LMS_ROLE)
+
+	if not frappe.db.exists("User", email):
+		frappe.throw(_(f"User {email} does not exist"), frappe.ValidationError)
+
+	user_doc = frappe.get_doc("User", email)
+
+	# Remove existing LMS roles (user should have only one)
+	for old_role in list(LMS_ROLE_MAPPING.values()):
+		if old_role != frappe_role and old_role in [r.role for r in user_doc.roles]:
+			user_doc.remove_roles(old_role)
+
+	# Add new role if not already present
+	if frappe_role not in [r.role for r in user_doc.roles]:
+		user_doc.add_roles(frappe_role)
+
+	# Upgrade to System User if role requires desk access
+	if frappe_role in DESK_ACCESS_ROLES and user_doc.user_type == "Website User":
+		user_doc.user_type = "System User"
+		user_doc.save(ignore_permissions=True)
+
+	frappe.db.commit()
+	return {"success": True, "message": f"LMS role '{frappe_role}' assigned to {email}"}
+
+
+@frappe.whitelist()
+def get_user_lms_roles(email=None):
+	"""Get user's current LMS roles."""
+	if not email:
+		email = frappe.session.user
+	roles = frappe.get_roles(email)
+	lms_roles = [r for r in roles if r in LMS_ROLE_MAPPING.values()]
+	return {"email": email, "lms_roles": lms_roles}
