@@ -356,11 +356,9 @@ const provider = new Provider(ISSUER_URL, config)
 // Set provider instance for API authentication middleware
 setProviderInstance(provider)
 
-// Set proxy on the Koa app directly for Azure
-if (isProduction) {
-  provider.proxy = true
-  console.log('🔧 Provider proxy set to:', provider.proxy)
-}
+// Set proxy on the Koa app directly for Azure and dev (behind Traefik)
+provider.proxy = true
+console.log('🔧 Provider proxy set to:', provider.proxy)
 
 // Add event listeners to debug the OIDC flow
 provider.on('authorization.accepted', (ctx) => {
