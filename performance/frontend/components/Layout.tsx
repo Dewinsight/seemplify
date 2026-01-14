@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useThemeMode } from '@/context/ThemeContext';
 import {
   TrendingUp,
   Target,
@@ -20,6 +21,8 @@ import {
   ChevronDown,
   Building2,
   Sparkles,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useUserContext } from '@/lib/hooks';
 
@@ -77,14 +80,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const orgs = authUser?.organizations || [];
   const currentOrganization = orgs.find((o: any) => o.isCurrent) || orgs[0];
   const showOrgSwitcher = orgs.length > 1;
+  
+  const { mode, toggleColorMode } = useThemeMode();
+  const isDarkMode = mode === 'dark';
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--background-start-rgb))]">
+    <div className={cn(
+      "min-h-screen transition-colors duration-300",
+      isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+    )}>
       {/* Background Noise */}
-      <div className="bg-noise" />
+      {isDarkMode && <div className="bg-noise" />}
       
       {/* Top Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      <nav className={cn(
+        "fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-colors duration-300",
+        isDarkMode 
+          ? "border-zinc-800/40 bg-zinc-950/80" 
+          : "border-gray-200/60 bg-white/80"
+      )}>
         <div className="mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
@@ -93,8 +107,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div className="hidden sm:block">
-                <div className="text-sm font-semibold text-white">Performance Management</div>
-                <div className="text-xs text-zinc-400">by Seemplify</div>
+                <div className={cn(
+                  "text-sm font-semibold transition-colors",
+                  isDarkMode ? "text-white" : "text-gray-900"
+                )}>Performance Management</div>
+                <div className={cn(
+                  "text-xs transition-colors",
+                  isDarkMode ? "text-zinc-400" : "text-gray-500"
+                )}>by Seemplify</div>
               </div>
             </Link>
 
@@ -109,8 +129,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     className={cn(
                       'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                       active
-                        ? 'bg-zinc-800/80 text-white'
-                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                        ? isDarkMode 
+                          ? 'bg-zinc-800/80 text-white' 
+                          : 'bg-gray-100 text-gray-900'
+                        : isDarkMode 
+                          ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     )}
                   >
                     <item.icon className="h-4 w-4" />
@@ -127,16 +151,36 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-3">
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleColorMode}
+                className={cn(
+                  'p-2 rounded-lg transition-all duration-200',
+                  isDarkMode 
+                    ? 'hover:bg-zinc-800/50 text-zinc-400 hover:text-yellow-400' 
+                    : 'hover:bg-gray-200 text-gray-600 hover:text-yellow-500'
+                )}
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+
               {/* Organization Switcher */}
               {showOrgSwitcher && (
                 <div className="hidden md:block relative">
                   <button
                     onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                      isDarkMode 
+                        ? "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800/70" 
+                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                    )}
                   >
                     <Building2 className="h-4 w-4" />
                     <span className="max-w-[120px] truncate">{currentOrganization?.name || 'Org'}</span>
-                    <ChevronDown className="h-4 w-4 text-zinc-500" />
+                    <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
                   </button>
                   {orgDropdownOpen && (
                     <>
@@ -144,18 +188,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         className="fixed inset-0 z-40"
                         onClick={() => setOrgDropdownOpen(false)}
                       />
-                      <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
+                      <div className={cn(
+                        "absolute right-0 top-12 w-64 rounded-xl border shadow-2xl overflow-hidden z-50",
+                        isDarkMode 
+                          ? "border-white/[0.08] bg-zinc-950" 
+                          : "border-gray-200 bg-white"
+                      )}>
                         {orgs.map((org: any) => (
                           <button
                             key={org.id}
                             className={cn(
-                              'w-full text-left px-4 py-3 text-sm hover:bg-zinc-800/70 transition-colors',
-                              org.isCurrent && 'bg-zinc-800/70'
+                              'w-full text-left px-4 py-3 text-sm transition-colors',
+                              isDarkMode 
+                                ? cn('hover:bg-zinc-800/70', org.isCurrent && 'bg-zinc-800/70')
+                                : cn('hover:bg-gray-50', org.isCurrent && 'bg-gray-100')
                             )}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-zinc-200 truncate">{org.name}</span>
-                              <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
+                              <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                              <span className={cn("text-xs flex-shrink-0", isDarkMode ? "text-zinc-500" : "text-gray-500")}>{org.role}</span>
                             </div>
                           </button>
                         ))}
@@ -169,16 +220,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <div className="relative">
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 rounded-lg hover:bg-zinc-800/50 p-2 transition-colors"
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg p-2 transition-colors",
+                    isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                  )}
                 >
-                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center ring-2 ring-zinc-800">
+                  <div className={cn(
+                    "h-9 w-9 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center ring-2",
+                    isDarkMode ? "ring-zinc-800" : "ring-gray-200"
+                  )}>
                     <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
                   <div className="hidden lg:block text-left">
-                    <div className="text-sm font-medium text-white truncate max-w-[120px]">{user?.name || 'User'}</div>
-                    <div className="text-xs text-zinc-500 truncate max-w-[120px]">{user?.email}</div>
+                    <div className={cn(
+                      "text-sm font-medium truncate max-w-[120px]",
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    )}>{user?.name || 'User'}</div>
+                    <div className={cn(
+                      "text-xs truncate max-w-[120px]",
+                      isDarkMode ? "text-zinc-500" : "text-gray-500"
+                    )}>{user?.email}</div>
                   </div>
-                  <ChevronDown className="hidden lg:block h-4 w-4 text-zinc-500" />
+                  <ChevronDown className={cn("hidden lg:block h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
                 </button>
                 {userDropdownOpen && (
                   <>
@@ -186,16 +249,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className="fixed inset-0 z-40"
                       onClick={() => setUserDropdownOpen(false)}
                     />
-                        <div className="absolute right-0 top-14 w-56 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
-                      <div className="p-3 border-b border-zinc-800/60">
-                        <div className="text-sm font-medium text-white truncate">{user?.name || 'User'}</div>
-                        <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
+                    <div className={cn(
+                      "absolute right-0 top-14 w-56 rounded-xl border shadow-2xl overflow-hidden z-50",
+                      isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
+                    )}>
+                      <div className={cn(
+                        "p-3 border-b",
+                        isDarkMode ? "border-zinc-800/60" : "border-gray-100"
+                      )}>
+                        <div className={cn(
+                          "text-sm font-medium truncate",
+                          isDarkMode ? "text-white" : "text-gray-900"
+                        )}>{user?.name || 'User'}</div>
+                        <div className={cn(
+                          "text-xs truncate",
+                          isDarkMode ? "text-zinc-500" : "text-gray-500"
+                        )}>{user?.email}</div>
                       </div>
                       <div className="py-2">
                         {isManager && (
                           <Link
                             href="/team"
-                            className="block px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
+                            className={cn(
+                              "block px-4 py-2 text-sm transition-colors",
+                              isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                            )}
                             onClick={() => setUserDropdownOpen(false)}
                           >
                             <Users className="h-4 w-4 inline mr-2" />
@@ -205,7 +283,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         {isHRAdmin && (
                           <Link
                             href="/admin/appraisal-cycles"
-                            className="block px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
+                            className={cn(
+                              "block px-4 py-2 text-sm transition-colors",
+                              isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                            )}
                             onClick={() => setUserDropdownOpen(false)}
                           >
                             <Settings className="h-4 w-4 inline mr-2" />
@@ -213,7 +294,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           </Link>
                         )}
                         <button
-                          className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors flex items-center gap-2"
+                          className={cn(
+                            "w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2",
+                            isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                          )}
                           onClick={() => {
                             setUserDropdownOpen(false);
                             handleLogout();
@@ -230,11 +314,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Mobile Menu Button */}
               <button
-                className="lg:hidden p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                className={cn(
+                  "lg:hidden p-2 rounded-lg transition-colors",
+                  isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                )}
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open menu"
               >
-                <Menu className="h-5 w-5 text-zinc-300" />
+                <Menu className={cn("h-5 w-5", isDarkMode ? "text-zinc-300" : "text-gray-600")} />
               </button>
             </div>
           </div>
@@ -248,7 +335,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="fixed inset-y-0 right-0 w-80 max-w-[85vw] bg-zinc-950 border-l border-zinc-800/60 shadow-2xl z-50 lg:hidden overflow-y-auto">
+          <div className={cn(
+            "fixed inset-y-0 right-0 w-80 max-w-[85vw] border-l shadow-2xl z-50 lg:hidden overflow-y-auto",
+            isDarkMode ? "bg-zinc-950 border-zinc-800/60" : "bg-white border-gray-200"
+          )}>
             <div className="p-4">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
@@ -256,33 +346,72 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <Sparkles className="h-5 w-5 text-white" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-white">Performance</div>
-                    <div className="text-xs text-zinc-400">by Seemplify</div>
+                    <div className={cn(
+                      "text-sm font-semibold",
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    )}>Performance</div>
+                    <div className={cn(
+                      "text-xs",
+                      isDarkMode ? "text-zinc-400" : "text-gray-500"
+                    )}>by Seemplify</div>
                   </div>
                 </div>
                 <button
-                  className="p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                  )}
                   onClick={() => setMobileOpen(false)}
                 >
-                  <X className="h-5 w-5 text-zinc-400" />
+                  <X className={cn("h-5 w-5", isDarkMode ? "text-zinc-400" : "text-gray-500")} />
                 </button>
               </div>
+
+              {/* Mobile Theme Toggle */}
+              <button
+                onClick={toggleColorMode}
+                className={cn(
+                  "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm mb-4 transition-colors",
+                  isDarkMode 
+                    ? "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800" 
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {isDarkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                  <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                </div>
+                <span className={cn(
+                  "text-xs px-2 py-1 rounded",
+                  isDarkMode ? "bg-zinc-700" : "bg-gray-200"
+                )}>
+                  {isDarkMode ? 'ON' : 'OFF'}
+                </span>
+              </button>
 
               {/* Mobile Organization Switcher */}
               {showOrgSwitcher && (
                 <div className="mb-6">
                   <button
                     onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm"
+                    className={cn(
+                      "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm",
+                      isDarkMode 
+                        ? "border-zinc-800 bg-zinc-900/50" 
+                        : "border-gray-200 bg-gray-50"
+                    )}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
-                      <span className="text-zinc-200 truncate">{currentOrganization?.name || 'Select'}</span>
+                      <Building2 className={cn("h-4 w-4 flex-shrink-0", isDarkMode ? "text-zinc-400" : "text-gray-500")} />
+                      <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{currentOrganization?.name || 'Select'}</span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-zinc-500" />
+                    <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
                   </button>
                   {orgDropdownOpen && (
-                        <div className="mt-2 rounded-lg border border-white/[0.08] bg-[#0a0a0c] overflow-hidden">
+                    <div className={cn(
+                      "mt-2 rounded-lg border overflow-hidden",
+                      isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
+                    )}>
                       {orgs.map((org: any) => (
                         <button
                           key={org.id}
@@ -290,13 +419,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             setMobileOpen(false);
                           }}
                           className={cn(
-                            'w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800/70 transition-colors',
-                            org.isCurrent && 'bg-zinc-800/70'
+                            'w-full text-left px-3 py-2.5 text-sm transition-colors',
+                            isDarkMode 
+                              ? cn('hover:bg-zinc-800/70', org.isCurrent && 'bg-zinc-800/70')
+                              : cn('hover:bg-gray-50', org.isCurrent && 'bg-gray-100')
                           )}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-zinc-200 truncate">{org.name}</span>
-                            <span className="text-xs text-zinc-500">{org.role}</span>
+                            <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                            <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>{org.role}</span>
                           </div>
                         </button>
                       ))}
@@ -307,7 +438,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Mobile Navigation */}
               <div className="space-y-1 mb-6">
-                <div className="text-xs font-semibold text-zinc-500 px-2 mb-2">Navigation</div>
+                <div className={cn(
+                  "text-xs font-semibold px-2 mb-2",
+                  isDarkMode ? "text-zinc-500" : "text-gray-500"
+                )}>Navigation</div>
                 {navigation.map((item) => {
                   const active = pathname === item.href;
                   return (
@@ -318,8 +452,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                         active
-                          ? 'bg-zinc-800/80 text-white'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                          ? isDarkMode 
+                            ? 'bg-zinc-800/80 text-white' 
+                            : 'bg-gray-100 text-gray-900'
+                          : isDarkMode 
+                            ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       )}
                     >
                       <item.icon className="h-4 w-4" />
@@ -339,7 +477,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <main className="pt-16 min-h-screen">
+      <main className={cn(
+        "pt-16 min-h-screen transition-colors duration-300",
+        isDarkMode ? "" : "bg-slate-50"
+      )}>
         <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
           {children}
         </div>
