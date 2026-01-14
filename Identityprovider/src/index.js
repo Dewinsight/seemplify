@@ -26,10 +26,6 @@ import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
 import { samlIdPService as samlService } from './services/samlService.js'
 
-// LMS Role Support
-import lmsRolesRouter from './routes/lmsRoles.js'
-import { LmsRole, LMS_ROLE_PERMISSIONS, FRAPPE_ROLE_MAPPING, getFrappeRoleName } from './models/LmsRole.js'
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
@@ -64,11 +60,9 @@ async function getCachedClaims(acc) {
   console.log(`🔨 [PERF] Building claims for ${acc.email}...`)
 
   // Build claims in PARALLEL for performance
-  const currentOrgIdForLms = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString()
-  const [organizationClaims, teamClaims, lmsRoleClaim] = await Promise.all([
+  const [organizationClaims, teamClaims] = await Promise.all([
     buildOrganizationClaims(acc),
-    getTeamClaims(acc),
-    currentOrgIdForLms ? LmsRole.getUserRole(acc._id, currentOrgIdForLms) : Promise.resolve(null)
+    getTeamClaims(acc)
   ])
 
   const claims = {
@@ -94,15 +88,7 @@ async function getCachedClaims(acc) {
         organization_id: t.organizationId,
         direct_reports: t.directReports,
         permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
-      })),
-    // LMS role claim for current organization
-    // Includes both IDP role name and Frappe role name for easy mapping
-    lms_role: lmsRoleClaim ? {
-      role: lmsRoleClaim.role,  // IDP role: student, course_creator, moderator, batch_evaluator, course_evaluator
-      frappe_role: getFrappeRoleName(lmsRoleClaim.role),  // Frappe role: LMS Student, Course Creator, etc.
-      permissions: LMS_ROLE_PERMISSIONS[lmsRoleClaim.role] || [],
-      organization_id: currentOrgIdForLms
-    } : null
+      }))
   }
 
   // Cache the claims
@@ -303,7 +289,7 @@ const config = {
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline', 'openwebui', 'lms'];
+      const noPkceClients = ['outline', 'openwebui'];
       return !noPkceClients.includes(client.clientId);
     }
   },
@@ -344,7 +330,7 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'lms_role']
+    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization']
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()
@@ -419,81 +405,7 @@ provider.on('grant.success', async (ctx) => {
     sessionAccountId: ctx.oidc.session?.accountId,
     grantAccountId: ctx.oidc.grant?.accountId
   })
-  
-  // For LMS client, sync the user's LMS role to Frappe
-  if (clientId === 'lms' && accountId) {
-    try {
-      await syncLmsRoleToFrappe(accountId)
-    } catch (err) {
-      console.error('❌ Failed to sync LMS role to Frappe:', err.message)
-    }
-  }
 })
-
-// Helper function to sync LMS role to Frappe
-async function syncLmsRoleToFrappe(accountId) {
-  const account = await Account.findOne({ sub: accountId })
-    .populate('currentOrganization', 'name')
-  
-  if (!account || !account.email) {
-    console.log('⚠️ No account or email found for', accountId)
-    return
-  }
-  
-  const orgId = account.currentOrganization?._id?.toString()
-  if (!orgId) {
-    console.log('⚠️ No current organization for', account.email)
-    return
-  }
-  
-  // Get the user's LMS role for their current organization
-  const lmsRole = await LmsRole.findOne({
-    account: account._id,
-    organization: orgId,
-    isActive: true
-  })
-  
-  if (!lmsRole) {
-    console.log('⚠️ No LMS role found for', account.email, 'in org', orgId)
-    return
-  }
-  
-  console.log('📤 Syncing LMS role to Frappe:', account.email, '->', lmsRole.role)
-  
-  // Call Frappe API to set the role
-  const timestamp = Math.floor(Date.now() / 1000).toString()
-  const secret = process.env.IDP_FRAPPE_SECRET || 'seemplify-lms-secret-2026'
-  const message = `${account.email}:${lmsRole.role}:${timestamp}`
-  const crypto = await import('crypto')
-  const signature = crypto.createHmac('sha256', secret).update(message).digest('hex')
-  
-  const lmsApiUrl = process.env.LMS_API_URL || 'https://lms.seemplifyai.com'
-  const endpoint = `${lmsApiUrl}/api/method/lms.lms.api.set_user_lms_role`
-  
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: account.email,
-        role: lmsRole.role,
-        timestamp: timestamp,
-        signature: signature
-      })
-    })
-    
-    const result = await response.json()
-    if (result.message?.success) {
-      console.log('✅ LMS role synced to Frappe:', result.message)
-    } else {
-      console.error('❌ Frappe API error:', result)
-    }
-  } catch (err) {
-    console.error('❌ Failed to call Frappe API:', err.message)
-  }
-}
 
 provider.on('grant.error', (ctx, err) => {
   console.error('❌ Grant error:', {
@@ -519,21 +431,12 @@ provider.on('server_error', (ctx, err) => {
   console.error('Server error stack:', err.stack)
 })
 
-// Userinfo endpoint - sync LMS role after claims are retrieved
+// Userinfo endpoint
 provider.on('userinfo.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   const account = ctx.oidc.account
   
   console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
-  
-  // For LMS client, sync the user's LMS role to Frappe
-  if (clientId === 'lms' && account?.accountId) {
-    try {
-      await syncLmsRoleToFrappe(account.accountId)
-    } catch (err) {
-      console.error('❌ Failed to sync LMS role to Frappe:', err.message)
-    }
-  }
 })
 
 const app = express()
@@ -3213,39 +3116,6 @@ app.get('/logout', async (req, res) => {
 })
 
 
-// LMS Role Required Page - shown when user tries to access LMS without a role
-app.get('/hub/lms-role-required', async (req, res) => {
-  try {
-    const account = await getSessionFromCookies(req)
-    if (!account) {
-      return res.redirect('/login')
-    }
-
-    const { admin, org } = req.query
-    const isAdmin = admin === 'true'
-    const organizationId = org
-
-    // Check if user already has a pending request
-    const { LmsAccessRequest } = await import('./models/LmsAccessRequest.js')
-    const pendingRequest = await LmsAccessRequest.findOne({
-      requestedBy: account._id,
-      organization: organizationId,
-      status: 'pending'
-    })
-
-    res.render('lms-role-required', {
-      user: account,
-      isAdmin,
-      organizationId,
-      hasPendingRequest: !!pendingRequest,
-      pendingRole: pendingRequest?.requestedRole || null
-    })
-  } catch (error) {
-    console.error('LMS role required page error:', error)
-    res.redirect('/')
-  }
-})
-
 // Hub App Launch - Creates SSO token and redirects to app's auth endpoint
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
@@ -3288,28 +3158,6 @@ app.get('/launch/:appId', async (req, res) => {
       console.log('  📍 DIRECT REDIRECT TO:', app.url)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
       return res.redirect(app.url)
-    }
-
-    // Special handling for LMS - check for LMS role
-    if (app.requiresLmsRole && account.currentOrganization) {
-      const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
-      const lmsRole = await LmsRole.getUserRole(account._id, orgId)
-      
-      if (!lmsRole) {
-        // User doesn't have an LMS role - redirect to role selection
-        const orgMembership = account.organizations.find(
-          o => o.organization.toString() === orgId && o.isActive
-        )
-        const isOrgAdmin = orgMembership && ['owner', 'admin'].includes(orgMembership.role)
-        
-        console.log('  ⚠️ LMS role required but not found')
-        console.log('  Is admin:', isOrgAdmin)
-        
-        // Redirect to role selection/request page
-        return res.redirect(`/hub/lms-role-required?admin=${isOrgAdmin}&org=${orgId}`)
-      }
-      
-      console.log('  ✅ LMS role found:', lmsRole.role)
     }
 
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
@@ -3498,9 +3346,6 @@ app.use('/api/organizations', membersRouter)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
-
-// LMS Role Management Routes
-app.use('/api/lms', lmsRolesRouter)
 
 // Profile API Routes - MUST come BEFORE teams router to avoid route conflicts
 /**
@@ -3821,55 +3666,6 @@ app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
   } catch (error) {
     console.error('Teams page error:', error)
     res.redirect('/organizations?error=Failed to load teams')
-  }
-})
-
-// LMS Roles management page
-app.get('/organizations/:orgId/lms-roles', getSessionUser, async (req, res) => {
-  try {
-    const organization = await Organization.findById(req.params.orgId)
-      .populate('members.account', 'email profile.name')
-    
-    if (!organization) {
-      return res.redirect('/organizations?error=Organization not found')
-    }
-
-    const member = organization.members.find(
-      m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
-    )
-
-    if (!member || !['owner', 'admin'].includes(member.role)) {
-      return res.redirect('/organizations?error=Admin or owner role required')
-    }
-
-    // Get all LMS roles for this organization
-    const lmsRoles = await LmsRole.find({ organization: req.params.orgId })
-    
-    // Get all pending access requests for this organization
-    const { LmsAccessRequest } = await import('./models/LmsAccessRequest.js')
-    const accessRequests = await LmsAccessRequest.find({
-      organization: req.params.orgId,
-      status: 'pending'
-    }).populate('requestedBy', 'email profile.name')
-
-    const activeMembers = organization.members.filter(m => m.status === 'active')
-
-    res.render('lms-roles', {
-      organization: {
-        _id: organization._id,
-        name: organization.name
-      },
-      members: activeMembers,
-      lmsRoles,
-      accessRequests,
-      yourRole: member.role,
-      user: req.user,
-      error: req.query.error,
-      success: req.query.success
-    })
-  } catch (error) {
-    console.error('LMS Roles page error:', error)
-    res.redirect('/organizations?error=Failed to load LMS roles')
   }
 })
 

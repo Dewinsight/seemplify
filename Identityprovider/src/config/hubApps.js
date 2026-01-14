@@ -99,10 +99,7 @@ const developmentApps = [
     icon: 'academic-cap',
     color: '#06b6d4',
     url: process.env.LMS_URL || 'http://localhost:8000',
-    apiUrl: process.env.LMS_URL || 'http://localhost:8000',
-    clientId: 'lms',
-    authType: 'oidc',
-    requiresLmsRole: true, // Special handling - check for LMS role before launch
+    authType: 'direct',
     isActive: true,
     isPublic: true,
     category: 'productivity',
@@ -203,10 +200,7 @@ const productionApps = [
     icon: 'academic-cap',
     color: '#06b6d4',
     url: process.env.LMS_URL || 'https://lms.seemplifyai.com',
-    apiUrl: process.env.LMS_URL || 'https://lms.seemplifyai.com',
-    clientId: 'lms',
-    authType: 'oidc',
-    requiresLmsRole: true, // Special handling - check for LMS role before launch
+    authType: 'direct',
     isActive: true,
     isPublic: true,
     category: 'productivity',
