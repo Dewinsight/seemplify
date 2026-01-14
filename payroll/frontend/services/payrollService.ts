@@ -59,53 +59,51 @@ export interface SalaryGrade {
 export const payrollService = {
   // Get current user's payroll profile
   async getMyProfile(): Promise<PayrollProfile> {
-    const response = await apiClient.get('/api/payroll/my-profile');
+    const response = await apiClient.get('/payroll/profile/me');
     return response.data;
   },
 
   // Create payroll profile (admin only)
   async createProfile(profile: Partial<PayrollProfile>): Promise<PayrollProfile> {
-    const response = await apiClient.post('/api/payroll/profiles', profile);
-    return response.data;
+    const response = await apiClient.post('/payroll/profiles', profile);
+    return response.data.profile || response.data;
   },
 
   // Update payroll profile
-  async updateProfile(id: string, profile: Partial<PayrollProfile>): Promise<PayrollProfile> {
-    const response = await apiClient.put(`/api/payroll/profiles/${id}`, profile);
-    return response.data;
+  async updateProfile(userId: string, profile: Partial<PayrollProfile>): Promise<PayrollProfile> {
+    const response = await apiClient.put(`/payroll/profiles/${userId}`, profile);
+    return response.data.profile || response.data;
   },
 
   // Get all payroll profiles (admin only)
-  async getAllProfiles(organizationId?: string): Promise<PayrollProfile[]> {
-    const params = organizationId ? { organizationId } : {};
-    const response = await apiClient.get('/api/payroll/profiles', { params });
+  async getAllProfiles(options?: { status?: string; teamId?: string; department?: string }): Promise<{ profiles: PayrollProfile[]; total: number }> {
+    const response = await apiClient.get('/payroll/profiles', { params: options });
     return response.data;
   },
 
   // Get payroll profile by user ID (admin/manager only)
   async getProfileByUserId(userId: string): Promise<PayrollProfile> {
-    const response = await apiClient.get(`/api/payroll/profiles/user/${userId}`);
+    const response = await apiClient.get(`/payroll/profiles/${userId}`);
     return response.data;
   },
 
   // Salary Grade management
   async createSalaryGrade(grade: Partial<SalaryGrade>): Promise<SalaryGrade> {
-    const response = await apiClient.post('/api/payroll/salary-grades', grade);
+    const response = await apiClient.post('/payroll/salary-grades', grade);
     return response.data;
   },
 
-  async getAllSalaryGrades(organizationId?: string): Promise<SalaryGrade[]> {
-    const params = organizationId ? { organizationId } : {};
-    const response = await apiClient.get('/api/payroll/salary-grades', { params });
+  async getAllSalaryGrades(): Promise<SalaryGrade[]> {
+    const response = await apiClient.get('/payroll/salary-grades');
     return response.data;
   },
 
   async updateSalaryGrade(id: string, grade: Partial<SalaryGrade>): Promise<SalaryGrade> {
-    const response = await apiClient.put(`/api/payroll/salary-grades/${id}`, grade);
+    const response = await apiClient.put(`/payroll/salary-grades/${id}`, grade);
     return response.data;
   },
 
   async deleteSalaryGrade(id: string): Promise<void> {
-    await apiClient.delete(`/api/payroll/salary-grades/${id}`);
+    await apiClient.delete(`/payroll/salary-grades/${id}`);
   }
 };

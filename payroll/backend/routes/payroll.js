@@ -393,6 +393,101 @@ router.get('/payslips/:id', requireHRAdmin, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/payroll/payslips/:id/pdf
+ * Generate and download payslip as PDF
+ */
+router.get('/payslips/:id/pdf', requireAuth, async (req, res) => {
+  try {
+    const { userId, organizationId, role } = getUserInfo(req);
+    const isHRAdmin = ['owner', 'admin', 'hr_manager'].includes(role);
+
+    const payslip = await Payslip.findOne({
+      _id: req.params.id,
+      organizationId
+    }).populate('payrollRunId');
+
+    if (!payslip) {
+      return res.status(404).json({ error: 'Payslip not found' });
+    }
+
+    // Check permission - only HR admin or own payslip
+    if (!isHRAdmin && payslip.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Generate PDF using pdfkit
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 50 });
+
+    // Set response headers
+    const filename = `payslip-${payslip.payslipNumber}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(20).text('PAYSLIP', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Payslip Number: ${payslip.payslipNumber}`, { align: 'center' });
+    doc.text(`Period: ${payslip.periodDisplay || `${payslip.payPeriod?.month}/${payslip.payPeriod?.year}`}`, { align: 'center' });
+    doc.moveDown(2);
+
+    // Employee Details
+    doc.fontSize(14).text('EMPLOYEE DETAILS', { underline: true });
+    doc.fontSize(10);
+    doc.text(`Name: ${payslip.employeeSnapshot?.name || 'N/A'}`);
+    doc.text(`Employee ID: ${payslip.employeeSnapshot?.employeeId || 'N/A'}`);
+    doc.text(`Department: ${payslip.employeeSnapshot?.department || 'N/A'}`);
+    doc.text(`Designation: ${payslip.employeeSnapshot?.designation || 'N/A'}`);
+    doc.moveDown();
+
+    // Earnings
+    doc.fontSize(14).text('EARNINGS', { underline: true });
+    doc.fontSize(10);
+    
+    if (payslip.earnings && payslip.earnings.length > 0) {
+      payslip.earnings.forEach(earning => {
+        doc.text(`${earning.name}: ${payslip.currency} ${earning.amount.toLocaleString()}`);
+      });
+    }
+    
+    doc.fontSize(11).text(`Gross Pay: ${payslip.currency} ${(payslip.earningsSummary?.grossPay || 0).toLocaleString()}`, { bold: true });
+    doc.moveDown();
+
+    // Deductions
+    doc.fontSize(14).text('DEDUCTIONS', { underline: true });
+    doc.fontSize(10);
+    
+    if (payslip.deductions && payslip.deductions.length > 0) {
+      payslip.deductions.forEach(deduction => {
+        doc.text(`${deduction.name}: ${payslip.currency} ${deduction.amount.toLocaleString()}`);
+      });
+    }
+    
+    doc.fontSize(11).text(`Total Deductions: ${payslip.currency} ${(payslip.deductionsSummary?.totalDeductions || 0).toLocaleString()}`, { bold: true });
+    doc.moveDown(2);
+
+    // Net Pay
+    doc.fontSize(16).fillColor('green').text(`NET PAY: ${payslip.currency} ${(payslip.netPay || 0).toLocaleString()}`, { align: 'center' });
+    doc.fillColor('black');
+    doc.moveDown(2);
+
+    // Footer
+    doc.fontSize(8).text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.text('This is a computer-generated document and does not require a signature.', { align: 'center' });
+
+    // Finalize PDF
+    doc.end();
+
+  } catch (err) {
+    console.error('Generate PDF Error:', err);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
 // =====================================================
 // PAYROLL RUN ROUTES (HR Admin only)
 // =====================================================

@@ -68,35 +68,20 @@ class MonthlyPayrollScheduler {
 
   async processOrganizationPayroll(organizationId, month, year) {
     try {
-      // Check if payroll run already exists for this month
+      // Check if payroll run already exists for this month (check with correct field structure)
       const existingRun = await PayrollRun.findOne({
         organizationId,
-        month,
-        year,
-        status: { $in: ['processing', 'approval_pending', 'approved', 'paid'] }
+        'payPeriod.month': month,
+        'payPeriod.year': year,
+        status: { $nin: ['cancelled'] }
       });
 
       if (existingRun) {
-        console.log(`Payroll run already exists for organization ${organizationId}, month ${month}/${year}`);
-        return;
+        console.log(`Payroll run already exists for organization ${organizationId}, month ${month}/${year} (status: ${existingRun.status})`);
+        return { skipped: true, reason: 'Run already exists' };
       }
 
-      // Create payroll run record
-      const payrollRun = new PayrollRun({
-        organizationId,
-        month,
-        year,
-        status: 'processing',
-        processedBy: 'system-scheduler',
-        settings: {
-          includeBonuses: true,
-          includeOvertime: true
-        }
-      });
-
-      await payrollRun.save();
-
-      // Process payroll using the engine
+      // Use PayrollEngineService to process - it will create the run internally
       const payrollResult = await this.payrollEngine.processPayrollRun(organizationId, {
         month,
         year,
@@ -104,23 +89,30 @@ class MonthlyPayrollScheduler {
         includeOvertime: true
       });
 
-      // Payslips are already created by processPayrollRun -> calculateRun
-      // Just update the payroll run status
-      const updatedRun = await PayrollRun.findOne({
+      // Find the created run and update status to pending_approval
+      const createdRun = await PayrollRun.findOne({
         organizationId,
-        month,
-        year
+        'payPeriod.month': month,
+        'payPeriod.year': year,
+        status: { $in: ['calculated', 'pending_review'] }
       });
       
-      if (updatedRun) {
-        updatedRun.status = 'approval_pending';
-        await updatedRun.save();
+      if (createdRun) {
+        createdRun.status = 'pending_approval';
+        createdRun.processedBy = 'system-scheduler';
+        createdRun.processedByName = 'Automated Scheduler';
+        await createdRun.save();
+        
+        console.log(`Payroll processed for organization ${organizationId}: ${payrollResult.totalEmployees} employees, total cost: ${payrollResult.totalPayrollCost}`);
+
+        // Send notification to finance/admin
+        await this.notifyPayrollReady(createdRun);
+        
+        return { success: true, run: createdRun, result: payrollResult };
+      } else {
+        console.warn(`No payroll run found after processing for organization ${organizationId}`);
+        return { success: false, reason: 'Run not found after processing' };
       }
-
-      console.log(`Payroll processed for organization ${organizationId}: ${payslips.length} employees, total cost: ${payrollRun.totalPayrollCost}`);
-
-      // Send notification to finance/admin
-      await this.notifyPayrollReady(payrollRun);
 
     } catch (error) {
       console.error(`Error processing organization payroll for ${organizationId}:`, error);
@@ -128,13 +120,14 @@ class MonthlyPayrollScheduler {
       // Mark any existing run as failed
       const failedRun = await PayrollRun.findOne({
         organizationId,
-        month,
-        year,
-        status: 'processing'
+        'payPeriod.month': month,
+        'payPeriod.year': year,
+        status: { $in: ['processing', 'calculating'] }
       });
       
       if (failedRun) {
-        failedRun.status = 'failed';
+        failedRun.status = 'cancelled';
+        failedRun.notes = `Scheduler error: ${error.message}`;
         await failedRun.save();
       }
       
@@ -166,8 +159,13 @@ class MonthlyPayrollScheduler {
 
   async notifyPayrollReady(payrollRun) {
     // In a real implementation, this would send notifications to finance/admin users
-    console.log(`PAYROLL READY FOR REVIEW: Organization ${payrollRun.organizationId}, ${payrollRun.month}/${payrollRun.year}`);
-    console.log(`Total employees: ${payrollRun.totalEmployees}, Total cost: ${payrollRun.totalPayrollCost}`);
+    const month = payrollRun.payPeriod?.month || 'N/A';
+    const year = payrollRun.payPeriod?.year || 'N/A';
+    const totalEmployees = payrollRun.summary?.totalEmployees || 0;
+    const totalCost = payrollRun.summary?.totalGrossPayroll || 0;
+    
+    console.log(`PAYROLL READY FOR REVIEW: Organization ${payrollRun.organizationId}, ${month}/${year}`);
+    console.log(`Total employees: ${totalEmployees}, Total cost: ${totalCost}`);
     console.log(`Review and approve at: /admin/payroll-runs/${payrollRun._id}`);
   }
 

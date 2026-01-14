@@ -522,6 +522,324 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/user/team-hierarchy - Get full team hierarchy for the organization
+ * Used by HR Admin to see org structure for appraisal launching
+ */
+router.get('/team-hierarchy', requireAuth, async (req, res) => {
+  try {
+    const role = req.userRole;
+    const currentOrganization = req.currentOrganization;
+
+    // Only HR Admin and Line Managers can view team hierarchy
+    if (role !== 'hr_admin' && role !== 'line_manager') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. HR Admin or Line Manager role required.'
+      });
+    }
+
+    // Get all users in the organization with their team info
+    const users = await User.find({
+      $or: [
+        { currentOrganizationId: currentOrganization?.id },
+        { 'idpOrganizations.id': currentOrganization?.id },
+        { 'idpTeams.organizationId': currentOrganization?.id }
+      ]
+    }).select('email profile idpTeams idpOrganizations currentOrganizationId');
+
+    // Build team hierarchy map
+    const teamsMap = new Map();
+    const employeesWithManagers = [];
+
+    users.forEach(user => {
+      const userTeams = user.idpTeams || [];
+      
+      userTeams.forEach(team => {
+        // Add team to map if not exists
+        if (!teamsMap.has(team.id)) {
+          teamsMap.set(team.id, {
+            id: team.id,
+            name: team.name,
+            organizationId: team.organizationId,
+            parentTeamId: team.parentTeamId,
+            parentTeamName: team.parentTeamName,
+            hierarchyPath: team.hierarchyPath || [],
+            members: [],
+            managers: [],
+            subTeams: []
+          });
+        }
+
+        const teamData = teamsMap.get(team.id);
+        
+        // Add user to team
+        const memberInfo = {
+          userId: user._id?.toString(),
+          email: user.email,
+          name: user.profile?.displayName ||
+                `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() ||
+                user.email?.split('@')[0],
+          jobTitle: user.profile?.title || team.role || 'Employee',
+          teamRole: team.role,
+          isManager: team.isManager || team.role === 'line_manager',
+          directReports: team.directReports || []
+        };
+
+        if (memberInfo.isManager) {
+          teamData.managers.push(memberInfo);
+        } else {
+          teamData.members.push(memberInfo);
+        }
+
+        // Build employee-manager relationship
+        if (team.managerId) {
+          employeesWithManagers.push({
+            userId: user._id?.toString(),
+            name: memberInfo.name,
+            email: user.email,
+            jobTitle: memberInfo.jobTitle,
+            teamId: team.id,
+            teamName: team.name,
+            teamRole: team.role,
+            managerId: team.managerId,
+            managerName: team.managerName,
+            managerEmail: team.managerEmail,
+            isManager: memberInfo.isManager
+          });
+        }
+      });
+    });
+
+    // Build parent-child relationships for teams
+    const teams = Array.from(teamsMap.values());
+    teams.forEach(team => {
+      if (team.parentTeamId && teamsMap.has(team.parentTeamId)) {
+        const parentTeam = teamsMap.get(team.parentTeamId);
+        parentTeam.subTeams.push({
+          id: team.id,
+          name: team.name,
+          memberCount: team.members.length + team.managers.length
+        });
+      }
+    });
+
+    // Find root teams (no parent)
+    const rootTeams = teams.filter(t => !t.parentTeamId);
+
+    res.json({
+      success: true,
+      data: {
+        teams: teams,
+        rootTeams: rootTeams,
+        employeesWithManagers: employeesWithManagers,
+        summary: {
+          totalTeams: teams.length,
+          totalEmployees: employeesWithManagers.length,
+          managersCount: employeesWithManagers.filter(e => e.isManager).length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching team hierarchy:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch team hierarchy' });
+  }
+});
+
+/**
+ * GET /api/user/employees-for-appraisal - Get all employees with manager relationships
+ * Specifically designed for launching appraisal cycles
+ * Returns employees grouped by manager for easy selection
+ */
+router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
+  try {
+    const role = req.userRole;
+    const currentOrganization = req.currentOrganization;
+    const sessionUser = req.session.user;
+
+    // HR Admin sees all, Line Manager sees only their direct reports
+    if (role !== 'hr_admin' && role !== 'line_manager') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. HR Admin or Line Manager role required.'
+      });
+    }
+
+    // Get all users in the organization
+    const users = await User.find({
+      $or: [
+        { currentOrganizationId: currentOrganization?.id },
+        { 'idpOrganizations.id': currentOrganization?.id },
+        { 'idpTeams.organizationId': currentOrganization?.id }
+      ]
+    }).select('email profile idpTeams');
+
+    const employees = [];
+    const managersMap = new Map();
+
+    users.forEach(user => {
+      const userTeams = user.idpTeams || [];
+      
+      userTeams.forEach(team => {
+        // Skip if line_manager only sees direct reports
+        if (role === 'line_manager') {
+          const directReports = req.directReports || [];
+          if (!directReports.includes(user._id?.toString())) {
+            return;
+          }
+        }
+
+        const employeeInfo = {
+          userId: user._id?.toString(),
+          name: user.profile?.displayName ||
+                `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() ||
+                user.email?.split('@')[0] ||
+                'Unknown',
+          email: user.email,
+          jobTitle: user.profile?.title || team.role || 'Employee',
+          department: team.name,
+          teamId: team.id,
+          teamName: team.name,
+          teamRole: team.role,
+          isManager: team.isManager || team.role === 'line_manager',
+          managerId: team.managerId || null,
+          managerName: team.managerName || null,
+          managerEmail: team.managerEmail || null
+        };
+
+        employees.push(employeeInfo);
+
+        // Track managers
+        if (employeeInfo.managerId && !managersMap.has(employeeInfo.managerId)) {
+          managersMap.set(employeeInfo.managerId, {
+            managerId: employeeInfo.managerId,
+            managerName: employeeInfo.managerName,
+            managerEmail: employeeInfo.managerEmail,
+            directReports: []
+          });
+        }
+
+        if (employeeInfo.managerId) {
+          const manager = managersMap.get(employeeInfo.managerId);
+          if (manager) {
+            manager.directReports.push({
+              userId: employeeInfo.userId,
+              name: employeeInfo.name,
+              email: employeeInfo.email,
+              jobTitle: employeeInfo.jobTitle,
+              teamName: employeeInfo.teamName
+            });
+          }
+        }
+      });
+    });
+
+    // Deduplicate employees (user might be in multiple teams)
+    const uniqueEmployees = Array.from(
+      new Map(employees.map(e => [e.userId, e])).values()
+    );
+
+    // Group by manager for easy UI rendering
+    const byManager = Array.from(managersMap.values());
+
+    // Find employees without managers
+    const withoutManager = uniqueEmployees.filter(e => !e.managerId);
+
+    res.json({
+      success: true,
+      data: {
+        employees: uniqueEmployees,
+        byManager: byManager,
+        withoutManager: withoutManager,
+        summary: {
+          totalEmployees: uniqueEmployees.length,
+          withManager: uniqueEmployees.length - withoutManager.length,
+          withoutManager: withoutManager.length,
+          totalManagers: byManager.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching employees for appraisal:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch employees' });
+  }
+});
+
+/**
+ * GET /api/user/my-team-members - Get team members for a line manager
+ * Used by managers to see their direct reports and team structure
+ */
+router.get('/my-team-members', requireAuth, async (req, res) => {
+  try {
+    const role = req.userRole;
+    const directReportIds = req.directReports || [];
+    const managedTeams = req.managedTeams || [];
+    const sessionUser = req.session.user;
+
+    if (role !== 'line_manager' && role !== 'hr_admin') {
+      return res.json({
+        success: true,
+        data: {
+          isManager: false,
+          teams: [],
+          directReports: [],
+          message: 'You are not a manager'
+        }
+      });
+    }
+
+    // Get direct report details from database
+    let directReports = [];
+    if (directReportIds.length > 0) {
+      const dbUsers = await User.find({
+        _id: { $in: directReportIds }
+      }).select('email profile idpTeams');
+
+      directReports = dbUsers.map(u => {
+        const primaryTeam = u.idpTeams?.find(t => 
+          managedTeams.some(mt => mt.id === t.id)
+        ) || u.idpTeams?.[0];
+
+        return {
+          userId: u._id?.toString(),
+          email: u.email,
+          name: u.profile?.displayName ||
+                `${u.profile?.firstName || ''} ${u.profile?.lastName || ''}`.trim() ||
+                u.email?.split('@')[0],
+          jobTitle: u.profile?.title || primaryTeam?.role || 'Team Member',
+          avatar: u.profile?.avatar,
+          teamId: primaryTeam?.id,
+          teamName: primaryTeam?.name,
+          teamRole: primaryTeam?.role,
+          // Check if this person is also a manager (has their own direct reports)
+          isAlsoManager: primaryTeam?.isManager || primaryTeam?.role === 'line_manager',
+          directReportCount: primaryTeam?.directReports?.length || 0
+        };
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        isManager: true,
+        managerId: sessionUser.id || sessionUser.sub,
+        managerName: sessionUser.name,
+        teams: managedTeams.map(t => ({
+          id: t.id,
+          name: t.name,
+          role: t.role,
+          memberCount: t.directReports?.length || 0
+        })),
+        directReports: directReports,
+        totalDirectReports: directReports.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching team members:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch team members' });
+  }
+});
+
 // Helper functions
 function formatRoleName(role) {
   const roleNames = {

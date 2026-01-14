@@ -57,29 +57,34 @@ export const payslipService = {
   // Get my payslips
   async getMyPayslips(year?: number): Promise<Payslip[]> {
     const params = year ? { year } : {};
-    const response = await apiClient.get('/api/payroll/my-payslips', { params });
+    const response = await apiClient.get('/payroll/my-payslips', { params });
     return response.data;
   },
 
-  // Get payslip by ID
+  // Get payslip by ID (for own payslips)
+  async getMyPayslipById(payslipId: string): Promise<Payslip> {
+    const response = await apiClient.get(`/payroll/my-payslips/${payslipId}`);
+    return response.data;
+  },
+
+  // Get payslip by ID (admin view)
   async getPayslipById(payslipId: string): Promise<Payslip> {
-    const response = await apiClient.get(`/api/payroll/payslips/${payslipId}`);
+    const response = await apiClient.get(`/payroll/payslips/${payslipId}`);
     return response.data;
   },
 
   // Download payslip as PDF
   async downloadPayslipPDF(payslipId: string): Promise<Blob> {
-    const response = await apiClient.get(`/api/payroll/payslips/${payslipId}/pdf`, {
+    const response = await apiClient.get(`/payroll/payslips/${payslipId}/pdf`, {
       responseType: 'blob'
     });
     return response.data;
   },
 
-  // Get payslips for a specific user (admin/manager)
-  async getUserPayslips(userId: string, year?: number): Promise<Payslip[]> {
-    const params = year ? { year } : {};
-    const response = await apiClient.get(`/api/payroll/payslips/user/${userId}`, { params });
-    return response.data;
+  // Get all payslips (admin only)
+  async getAllPayslips(options?: { year?: number; month?: number; status?: string }): Promise<Payslip[]> {
+    const response = await apiClient.get('/payroll/payslips', { params: options });
+    return response.data.payslips || response.data;
   },
 
   // Payroll Run management (admin only)
@@ -91,62 +96,62 @@ export const payslipService = {
       includeOvertime: boolean;
     };
   }): Promise<PayrollRun> {
-    const response = await apiClient.post('/api/payroll/runs', data);
+    const response = await apiClient.post('/payroll/runs', data);
     return response.data;
   },
 
-  async getAllPayrollRuns(organizationId?: string): Promise<PayrollRun[]> {
-    const params = organizationId ? { organizationId } : {};
-    const response = await apiClient.get('/api/payroll/runs', { params });
+  async getAllPayrollRuns(year?: number): Promise<PayrollRun[]> {
+    const params = year ? { year } : {};
+    const response = await apiClient.get('/payroll/runs', { params });
     return response.data;
   },
 
   async getPayrollRunById(runId: string): Promise<PayrollRun> {
-    const response = await apiClient.get(`/api/payroll/runs/${runId}`);
+    const response = await apiClient.get(`/payroll/runs/${runId}`);
     return response.data;
   },
 
-  async updatePayrollRun(runId: string, data: Partial<PayrollRun>): Promise<PayrollRun> {
-    const response = await apiClient.put(`/api/payroll/runs/${runId}`, data);
-    return response.data;
-  },
-
-  // Execute payroll run
-  async executePayrollRun(runId: string): Promise<{
-    success: boolean;
-    message: string;
-    payslipsGenerated: number;
-    totalCost: number;
-  }> {
-    const response = await apiClient.post(`/api/payroll/runs/${runId}/execute`);
+  // Submit payroll run for approval
+  async submitForApproval(runId: string): Promise<PayrollRun> {
+    const response = await apiClient.post(`/payroll/runs/${runId}/submit-for-approval`);
     return response.data;
   },
 
   // Approve payroll run
   async approvePayrollRun(runId: string): Promise<PayrollRun> {
-    const response = await apiClient.post(`/api/payroll/runs/${runId}/approve`);
+    const response = await apiClient.post(`/payroll/runs/${runId}/approve`);
     return response.data;
   },
 
-  // Mark payroll run as paid
-  async markPayrollRunAsPaid(runId: string): Promise<PayrollRun> {
-    const response = await apiClient.post(`/api/payroll/runs/${runId}/mark-paid`);
+  // Process payment (mark payroll run as paid)
+  async processPayment(runId: string, bankReference?: string, transactionId?: string): Promise<PayrollRun> {
+    const response = await apiClient.post(`/payroll/runs/${runId}/process-payment`, {
+      bankReference,
+      transactionId
+    });
     return response.data;
   },
 
-  // Get payroll statistics
-  async getPayrollStats(organizationId: string, month?: number, year?: number): Promise<{
-    totalEmployees: number;
-    totalPayrollCost: number;
-    averageSalary: number;
-    totalTaxes: number;
-    totalBonuses: number;
+  // Get payroll analytics summary
+  async getAnalyticsSummary(year?: number): Promise<{
+    year: number;
+    totalPayrollRuns: number;
+    totalEmployeesPaid: number;
+    totalGrossPayroll: number;
+    totalNetPayroll: number;
+    totalTaxWithheld: number;
+    activeEmployees: number;
+    monthlyBreakdown: Array<{
+      month: number;
+      year: number;
+      grossPayroll: number;
+      netPayroll: number;
+      employees: number;
+      status: string;
+    }>;
   }> {
-    const params: any = { organizationId };
-    if (month) params.month = month;
-    if (year) params.year = year;
-    
-    const response = await apiClient.get('/api/payroll/stats', { params });
+    const params = year ? { year } : {};
+    const response = await apiClient.get('/payroll/analytics/summary', { params });
     return response.data;
   }
 };

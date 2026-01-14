@@ -9,12 +9,17 @@ const { requireAuth, requireHRAdmin, requirePermission } = require('../middlewar
 
 // Helper to get user info from session
 function getUserInfo(req) {
-    const session = req.session || {};
+    const user = req.session?.user || {};
+    const currentOrgId = req.session?.currentOrganizationId || req.currentOrganization?.id;
+    
+    // Get role from current organization
+    const currentOrg = user.organizations?.find(o => o.id === currentOrgId);
+    
     return {
-        userId: session.userId,
-        organizationId: session.organizationId,
-        name: session.userName,
-        role: session.role
+        userId: user.id || user.sub,
+        organizationId: currentOrgId,
+        name: user.name,
+        role: currentOrg?.role || req.userRole
     };
 }
 

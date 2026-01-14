@@ -56,9 +56,26 @@ interface Employee {
   email: string;
   jobTitle?: string;
   department?: string;
+  teamId?: string;
+  teamName?: string;
+  teamRole?: string;
+  isManager?: boolean;
   managerId?: string;
   managerName?: string;
   managerEmail?: string;
+}
+
+interface ManagerGroup {
+  managerId: string;
+  managerName: string;
+  managerEmail?: string;
+  directReports: Array<{
+    userId: string;
+    name: string;
+    email: string;
+    jobTitle?: string;
+    teamName?: string;
+  }>;
 }
 
 const cycleTypeLabels: Record<string, string> = {
@@ -125,8 +142,11 @@ export default function AppraisalCyclesAdminPage() {
 
   // Launch dialog state
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [managerGroups, setManagerGroups] = useState<ManagerGroup[]>([]);
+  const [employeesWithoutManager, setEmployeesWithoutManager] = useState<Employee[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'byManager'>('byManager');
 
   // Snackbar state for messages
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -187,22 +207,44 @@ export default function AppraisalCyclesAdminPage() {
     setLoadingEmployees(true);
 
     try {
-      // Fetch all employees in the organization
-      const response = await api.get('/user/all-employees');
-      // API returns { success: true, data: [...] }
-      const employeeList = response.data?.data || [];
+      // Fetch employees with manager relationships for better grouping
+      const response = await api.get('/user/employees-for-appraisal');
+      // API returns { success: true, data: { employees, byManager, withoutManager, summary } }
+      const data = response.data?.data || {};
+      const employeeList = data.employees || [];
+      const byManager = data.byManager || [];
+      const withoutManager = data.withoutManager || [];
+
       setEmployees(employeeList);
+      setManagerGroups(byManager);
+      setEmployeesWithoutManager(withoutManager);
+
       if (employeeList.length === 0) {
         setSnackbar({ open: true, message: 'No employees found in the organization', severity: 'info' });
+      } else {
+        // Show summary
+        const summary = data.summary || {};
+        console.log(`Found ${summary.totalEmployees} employees, ${summary.totalManagers} managers, ${summary.withoutManager} without manager`);
       }
     } catch (error: any) {
       console.error('Fetch employees error:', error);
-      setEmployees([]);
-      setSnackbar({
-        open: true,
-        message: error.response?.data?.error || 'Failed to fetch employees',
-        severity: 'error'
-      });
+      // Fallback to old endpoint if new one fails
+      try {
+        const fallbackResponse = await api.get('/user/all-employees');
+        const employeeList = fallbackResponse.data?.data || [];
+        setEmployees(employeeList);
+        setManagerGroups([]);
+        setEmployeesWithoutManager([]);
+      } catch (fallbackError) {
+        setEmployees([]);
+        setManagerGroups([]);
+        setEmployeesWithoutManager([]);
+        setSnackbar({
+          open: true,
+          message: error.response?.data?.error || 'Failed to fetch employees',
+          severity: 'error'
+        });
+      }
     } finally {
       setLoadingEmployees(false);
     }
@@ -638,7 +680,13 @@ export default function AppraisalCyclesAdminPage() {
         </DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
-            Select the employees to include in this appraisal cycle. Managers will be auto-assigned from IdP reporting lines if not listed.
+            Select the employees to include in this appraisal cycle. Managers will be auto-assigned from IdP reporting lines.
+            {employeesWithoutManager.length > 0 && (
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                <Warning fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                {employeesWithoutManager.length} employee(s) have no assigned manager - HR Admin will be assigned as fallback.
+              </Typography>
+            )}
           </Alert>
 
           {loadingEmployees ? (
@@ -648,9 +696,19 @@ export default function AppraisalCyclesAdminPage() {
           ) : (
             <>
               <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
-                  {selectedEmployees.length} of {employees.length} employees selected
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedEmployees.length} of {employees.length} employees selected
+                  </Typography>
+                  <Tabs
+                    value={viewMode}
+                    onChange={(_, v) => setViewMode(v)}
+                    sx={{ minHeight: 32 }}
+                  >
+                    <Tab value="byManager" label="By Manager" sx={{ minHeight: 32, py: 0 }} />
+                    <Tab value="list" label="List View" sx={{ minHeight: 32, py: 0 }} />
+                  </Tabs>
+                </Box>
                 <Button
                   size="small"
                   onClick={() => setSelectedEmployees(
@@ -663,54 +721,183 @@ export default function AppraisalCyclesAdminPage() {
                 </Button>
               </Box>
 
-              <TableContainer sx={{ maxHeight: 400 }}>
-                <Table stickyHeader size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={selectedEmployees.length === employees.length && employees.length > 0}
-                          indeterminate={selectedEmployees.length > 0 && selectedEmployees.length < employees.length}
-                          onChange={(e) => setSelectedEmployees(
-                            e.target.checked ? employees.map(emp => emp.userId) : []
-                          )}
-                        />
-                      </TableCell>
-                      <TableCell>Employee</TableCell>
-                      <TableCell>Department</TableCell>
-                      <TableCell>Manager</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {employees.map((employee) => (
-                      <TableRow
-                        key={employee.userId}
-                        hover
-                        onClick={() => {
-                          setSelectedEmployees(prev =>
-                            prev.includes(employee.userId)
-                              ? prev.filter(id => id !== employee.userId)
-                              : [...prev, employee.userId]
-                          );
-                        }}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        <TableCell padding="checkbox">
-                          <Checkbox checked={selectedEmployees.includes(employee.userId)} />
-                        </TableCell>
-                        <TableCell>
-                          <Box>
-                            <Typography variant="body2" fontWeight={600}>{employee.name}</Typography>
-                            <Typography variant="caption" color="text.secondary">{employee.email}</Typography>
+              {viewMode === 'byManager' && managerGroups.length > 0 ? (
+                <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                  {managerGroups.map((group) => (
+                    <Card key={group.managerId} sx={{ mb: 2 }} variant="outlined">
+                      <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Groups color="primary" fontSize="small" />
+                            <Typography variant="subtitle2" fontWeight={600}>
+                              {group.managerName}
+                            </Typography>
+                            <Chip label={`${group.directReports.length} reports`} size="small" />
                           </Box>
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              const reportIds = group.directReports.map(r => r.userId);
+                              const allSelected = reportIds.every(id => selectedEmployees.includes(id));
+                              if (allSelected) {
+                                setSelectedEmployees(prev => prev.filter(id => !reportIds.includes(id)));
+                              } else {
+                                setSelectedEmployees(prev => [...new Set([...prev, ...reportIds])]);
+                              }
+                            }}
+                          >
+                            {group.directReports.every(r => selectedEmployees.includes(r.userId)) ? 'Deselect Team' : 'Select Team'}
+                          </Button>
+                        </Box>
+                        <Divider sx={{ my: 1 }} />
+                        {group.directReports.map((report) => (
+                          <Box
+                            key={report.userId}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              py: 0.5,
+                              px: 1,
+                              borderRadius: 1,
+                              cursor: 'pointer',
+                              '&:hover': { bgcolor: 'action.hover' }
+                            }}
+                            onClick={() => {
+                              setSelectedEmployees(prev =>
+                                prev.includes(report.userId)
+                                  ? prev.filter(id => id !== report.userId)
+                                  : [...prev, report.userId]
+                              );
+                            }}
+                          >
+                            <Checkbox
+                              checked={selectedEmployees.includes(report.userId)}
+                              size="small"
+                              sx={{ p: 0.5, mr: 1 }}
+                            />
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="body2">{report.name}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {report.jobTitle || report.teamName || report.email}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ))}
+
+                  {/* Employees without manager */}
+                  {employeesWithoutManager.length > 0 && (
+                    <Card sx={{ mb: 2, borderColor: 'warning.main' }} variant="outlined">
+                      <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Warning color="warning" fontSize="small" />
+                          <Typography variant="subtitle2" fontWeight={600} color="warning.main">
+                            No Manager Assigned (HR Admin will review)
+                          </Typography>
+                          <Chip label={`${employeesWithoutManager.length} employees`} size="small" color="warning" />
+                        </Box>
+                        <Divider sx={{ my: 1 }} />
+                        {employeesWithoutManager.map((emp) => (
+                          <Box
+                            key={emp.userId}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              py: 0.5,
+                              px: 1,
+                              borderRadius: 1,
+                              cursor: 'pointer',
+                              '&:hover': { bgcolor: 'action.hover' }
+                            }}
+                            onClick={() => {
+                              setSelectedEmployees(prev =>
+                                prev.includes(emp.userId)
+                                  ? prev.filter(id => id !== emp.userId)
+                                  : [...prev, emp.userId]
+                              );
+                            }}
+                          >
+                            <Checkbox
+                              checked={selectedEmployees.includes(emp.userId)}
+                              size="small"
+                              sx={{ p: 0.5, mr: 1 }}
+                            />
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="body2">{emp.name}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {emp.jobTitle || emp.teamName || emp.email}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                </Box>
+              ) : (
+                <TableContainer sx={{ maxHeight: 400 }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            checked={selectedEmployees.length === employees.length && employees.length > 0}
+                            indeterminate={selectedEmployees.length > 0 && selectedEmployees.length < employees.length}
+                            onChange={(e) => setSelectedEmployees(
+                              e.target.checked ? employees.map(emp => emp.userId) : []
+                            )}
+                          />
                         </TableCell>
-                        <TableCell>{employee.department || '-'}</TableCell>
-                        <TableCell>{employee.managerName || <Chip label="Auto-assign" size="small" variant="outlined" />}</TableCell>
+                        <TableCell>Employee</TableCell>
+                        <TableCell>Team / Role</TableCell>
+                        <TableCell>Manager</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {employees.map((employee) => (
+                        <TableRow
+                          key={employee.userId}
+                          hover
+                          onClick={() => {
+                            setSelectedEmployees(prev =>
+                              prev.includes(employee.userId)
+                                ? prev.filter(id => id !== employee.userId)
+                                : [...prev, employee.userId]
+                            );
+                          }}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <TableCell padding="checkbox">
+                            <Checkbox checked={selectedEmployees.includes(employee.userId)} />
+                          </TableCell>
+                          <TableCell>
+                            <Box>
+                              <Typography variant="body2" fontWeight={600}>
+                                {employee.name}
+                                {employee.isManager && (
+                                  <Chip label="Manager" size="small" color="primary" sx={{ ml: 1 }} />
+                                )}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">{employee.email}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{employee.teamName || employee.department || '-'}</Typography>
+                            <Typography variant="caption" color="text.secondary">{employee.teamRole || employee.jobTitle || ''}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            {employee.managerName || (
+                              <Chip label="Auto-assign" size="small" variant="outlined" color="warning" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
             </>
           )}
         </DialogContent>

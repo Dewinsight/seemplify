@@ -172,29 +172,49 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireHRAdmin, async (req, 
         }
 
         // Create new appraisal
-        // If manager info is missing, use the HR Admin launching the cycle as temporary manager
-        // Create new appraisal
-        // If manager info is missing, try to auto-derive from IdP
+        // If manager info is missing, try to auto-derive from:
+        // 1. Employee's own team data (their line_manager)
+        // 2. HR Admin's view of the org structure
+        // 3. Fallback to HR Admin as temporary manager
         let managerUserId = emp.managerId;
         let managerName = emp.managerName;
         let managerEmail = emp.managerEmail;
 
         if (!managerUserId) {
-          const teams = req.session?.user?.idpTeams || req.session?.user?.teams || [];
-          const matchedManager = findManagerForEmployee(emp.userId, teams);
+          // First, try to find manager from the employee's own user record
+          const employeeUser = await User.findOne({
+            $or: [{ _id: emp.userId }, { email: emp.email }]
+          });
 
-          if (matchedManager) {
-            managerUserId = matchedManager.userId;
-            managerName = matchedManager.name;
-
-            // Try to find manager email if missing
-            if (!managerEmail) {
-              const managerUser = await User.findOne({
-                $or: [{ _id: managerUserId }, { 'userinfo.sub': managerUserId }]
-              });
-              if (managerUser) managerEmail = managerUser.email;
+          if (employeeUser?.idpTeams?.length > 0) {
+            // Find the team where this employee has a manager assigned
+            const teamWithManager = employeeUser.idpTeams.find(t => t.managerId);
+            if (teamWithManager) {
+              managerUserId = teamWithManager.managerId;
+              managerName = teamWithManager.managerName;
+              managerEmail = teamWithManager.managerEmail;
+              console.log(`Found manager from employee's team data: ${managerName} for ${emp.name}`);
             }
-            console.log(`Auto-assigned manager ${managerName} for ${emp.name}`);
+          }
+
+          // If still no manager, try from HR Admin's team view
+          if (!managerUserId) {
+            const teams = req.session?.user?.idpTeams || req.session?.user?.teams || [];
+            const matchedManager = findManagerForEmployee(emp.userId, teams);
+
+            if (matchedManager) {
+              managerUserId = matchedManager.userId;
+              managerName = matchedManager.name;
+              console.log(`Auto-assigned manager from IdP: ${managerName} for ${emp.name}`);
+            }
+          }
+
+          // Try to find manager email if we have userId but no email
+          if (managerUserId && !managerEmail) {
+            const managerUser = await User.findOne({
+              $or: [{ _id: managerUserId }, { 'userinfo.sub': managerUserId }]
+            });
+            if (managerUser) managerEmail = managerUser.email;
           }
         }
 
@@ -203,6 +223,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireHRAdmin, async (req, 
           managerUserId = req.session?.user?.id;
           managerName = req.session?.user?.name || 'HR Admin';
           managerEmail = req.session?.user?.email;
+          console.log(`Using HR Admin as fallback manager for ${emp.name}`);
         }
 
         if (!managerUserId || !managerEmail) {
