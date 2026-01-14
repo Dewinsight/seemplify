@@ -77,12 +77,36 @@ export function getRuntimeConfig() {
 
 export function getApiBaseUrl(): string {
   const config = getRuntimeConfig();
-  return config.NEXT_PUBLIC_API_BASE_URL!;
+  if (config.NEXT_PUBLIC_API_BASE_URL) {
+    return config.NEXT_PUBLIC_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('localhost') || hostname.startsWith('127.0.0.1')) {
+      return 'http://localhost:5001';
+    }
+    if (hostname.includes('-dev')) {
+      return 'https://api-dev.seemplifyai.com';
+    }
+  }
+  return process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.seemplifyai.com';
 }
 
 export function getWsBaseUrl(): string {
   const config = getRuntimeConfig();
-  return config.NEXT_PUBLIC_WS_BASE_URL!;
+  if (config.NEXT_PUBLIC_WS_BASE_URL) {
+    return config.NEXT_PUBLIC_WS_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('localhost') || hostname.startsWith('127.0.0.1')) {
+      return 'ws://localhost:5001';
+    }
+    if (hostname.includes('-dev')) {
+      return 'wss://api-dev.seemplifyai.com';
+    }
+  }
+  return process.env.NEXT_PUBLIC_WS_BASE_URL || 'wss://api.seemplifyai.com';
 }
 
 export function getInactivityTimeout(): number {
