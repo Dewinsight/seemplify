@@ -10,7 +10,7 @@ export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Performance Management - SmartHR",
-  description: "AI-Powered Performance Management System",
+  description: "AI-Powered Performance Management System - v2.0",
 };
 
 export default function RootLayout({

@@ -54,12 +54,12 @@ ENV OIDC_ISSUER=$OIDC_ISSUER
 ENV OIDC_CLIENT_ID=$OIDC_CLIENT_ID
 # OIDC_CLIENT_SECRET should be provided at runtime via Dokploy environment variables
 
-# Copy necessary files from builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
+# Copy standalone build output (Next.js standalone mode)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 5005
 
-CMD ["npm", "start"]
+# Use the standalone server directly
+CMD ["node", "server.js"]
