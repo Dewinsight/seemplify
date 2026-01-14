@@ -321,8 +321,8 @@
 
   <script>
     const orgId = '<%= organization._id %>';
-    const orgMembers = <% - JSON.stringify(orgMembers) %>;
-    const teams = <% - JSON.stringify(teams) %>;
+    const orgMembers = <%- JSON.stringify(orgMembers) %>;
+    const teams = <%- JSON.stringify(teams) %>;
 
     function showCreateModal() {
       document.getElementById('createModal').classList.add('active');
