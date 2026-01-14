@@ -109,7 +109,7 @@
       font-weight: 500;
     }
 
-    .role-badge.instructor {
+    .role-badge.course_creator {
       background: rgba(139, 92, 246, 0.15);
       color: #8b5cf6;
     }
@@ -117,6 +117,21 @@
     .role-badge.student {
       background: rgba(6, 182, 212, 0.15);
       color: #06b6d4;
+    }
+
+    .role-badge.moderator {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+    }
+
+    .role-badge.batch_evaluator {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+    }
+
+    .role-badge.course_evaluator {
+      background: rgba(236, 72, 153, 0.15);
+      color: #ec4899;
     }
 
     .role-badge.none {
@@ -329,12 +344,16 @@
         <div class="stat-label">Total Members</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" id="instructorCount"><%= lmsRoles.filter(r => r.role === 'instructor').length %></div>
-        <div class="stat-label">Instructors</div>
-      </div>
-      <div class="stat-card">
         <div class="stat-value" id="studentCount"><%= lmsRoles.filter(r => r.role === 'student').length %></div>
         <div class="stat-label">Students</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="courseCreatorCount"><%= lmsRoles.filter(r => r.role === 'course_creator').length %></div>
+        <div class="stat-label">Course Creators</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="moderatorCount"><%= lmsRoles.filter(r => r.role === 'moderator').length %></div>
+        <div class="stat-label">Moderators</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="pendingCount"><%= accessRequests.length %></div>
@@ -363,8 +382,17 @@
             <p>No members in this organization yet.</p>
           </div>
         <% } else { %>
+          <% 
+            const roleLabels = {
+              'student': '🎓 Student',
+              'course_creator': '👨‍🏫 Course Creator',
+              'moderator': '🛡️ Moderator',
+              'batch_evaluator': '📋 Batch Evaluator',
+              'course_evaluator': '🏆 Course Evaluator'
+            };
+          %>
           <% members.forEach(member => { 
-            const lmsRole = lmsRoles.find(r => r.userId.toString() === member.account._id.toString());
+            const lmsRole = lmsRoles.find(r => r.account?.toString() === member.account._id.toString() || r.userId?.toString() === member.account._id.toString());
           %>
             <div class="member-row">
               <div class="member-info">
@@ -378,12 +406,15 @@
               </div>
               <div class="member-actions">
                 <span class="role-badge <%= lmsRole ? lmsRole.role : 'none' %>">
-                  <%= lmsRole ? (lmsRole.role === 'instructor' ? '👨‍🏫 Instructor' : '🎓 Student') : 'No LMS Role' %>
+                  <%= lmsRole ? roleLabels[lmsRole.role] || lmsRole.role : 'No LMS Role' %>
                 </span>
                 <select class="role-select" onchange="updateRole('<%= member.account._id %>', this.value)" data-user-id="<%= member.account._id %>">
                   <option value="">No LMS Access</option>
                   <option value="student" <%= lmsRole?.role === 'student' ? 'selected' : '' %>>🎓 Student</option>
-                  <option value="instructor" <%= lmsRole?.role === 'instructor' ? 'selected' : '' %>>👨‍🏫 Instructor</option>
+                  <option value="course_creator" <%= lmsRole?.role === 'course_creator' ? 'selected' : '' %>>👨‍🏫 Course Creator</option>
+                  <option value="moderator" <%= lmsRole?.role === 'moderator' ? 'selected' : '' %>>🛡️ Moderator</option>
+                  <option value="batch_evaluator" <%= lmsRole?.role === 'batch_evaluator' ? 'selected' : '' %>>📋 Batch Evaluator</option>
+                  <option value="course_evaluator" <%= lmsRole?.role === 'course_evaluator' ? 'selected' : '' %>>🏆 Course Evaluator</option>
                 </select>
               </div>
             </div>
@@ -409,12 +440,12 @@
                 <div class="member-name"><%= request.requestedBy?.profile?.name || request.requestedBy?.email || 'Unknown User' %></div>
                 <div class="member-email">
                   Requested: <span class="role-badge <%= request.requestedRole %>">
-                    <%= request.requestedRole === 'instructor' ? '👨‍🏫 Instructor' : '🎓 Student' %>
+                    <%= roleLabels[request.requestedRole] || request.requestedRole %>
                   </span>
-                  • <%= new Date(request.createdAt).toLocaleDateString() %>
+                  • <%= new Date(request.requestedAt || request.createdAt).toLocaleDateString() %>
                 </div>
-                <% if (request.reason) { %>
-                  <div class="request-reason">"<%= request.reason %>"</div>
+                <% if (request.requestReason || request.reason) { %>
+                  <div class="request-reason">"<%= request.requestReason || request.reason %>"</div>
                 <% } %>
               </div>
             </div>
@@ -434,6 +465,14 @@
 
   <script>
     const organizationId = '<%= organization._id %>';
+    
+    const roleLabels = {
+      'student': '🎓 Student',
+      'course_creator': '👨‍🏫 Course Creator',
+      'moderator': '🛡️ Moderator',
+      'batch_evaluator': '📋 Batch Evaluator',
+      'course_evaluator': '🏆 Course Evaluator'
+    };
 
     function showTab(tabName) {
       // Update tab buttons
@@ -463,12 +502,12 @@
         const data = await response.json();
 
         if (response.ok) {
-          showAlert('success', role ? `LMS role updated to ${role}` : 'LMS role removed');
+          showAlert('success', role ? `LMS role updated to ${roleLabels[role] || role}` : 'LMS role removed');
           // Update the badge
           const row = document.querySelector(`[data-user-id="${userId}"]`).closest('.member-row');
           const badge = row.querySelector('.role-badge');
           badge.className = `role-badge ${role || 'none'}`;
-          badge.textContent = role === 'instructor' ? '👨‍🏫 Instructor' : (role === 'student' ? '🎓 Student' : 'No LMS Role');
+          badge.textContent = roleLabels[role] || 'No LMS Role';
 
           // Update stats
           updateStats();
@@ -484,8 +523,8 @@
 
     async function approveRequest(requestId) {
       try {
-        const response = await fetch(`/api/lms/access-requests/${requestId}/approve`, {
-          method: 'POST',
+        const response = await fetch(`/api/lms/access-requests/${organizationId}/${requestId}/approve`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' }
         });
 
@@ -509,8 +548,8 @@
       if (!confirm('Are you sure you want to reject this access request?')) return;
 
       try {
-        const response = await fetch(`/api/lms/access-requests/${requestId}/reject`, {
-          method: 'POST',
+        const response = await fetch(`/api/lms/access-requests/${organizationId}/${requestId}/deny`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' }
         });
 
@@ -530,12 +569,14 @@
 
     function updateStats() {
       // Re-count from the DOM
-      const instructors = document.querySelectorAll('.role-badge.instructor').length;
       const students = document.querySelectorAll('.role-badge.student').length;
+      const courseCreators = document.querySelectorAll('.role-badge.course_creator').length;
+      const moderators = document.querySelectorAll('.role-badge.moderator').length;
       const pending = document.querySelectorAll('.request-card').length;
 
-      document.getElementById('instructorCount').textContent = instructors;
       document.getElementById('studentCount').textContent = students;
+      document.getElementById('courseCreatorCount').textContent = courseCreators;
+      document.getElementById('moderatorCount').textContent = moderators;
       document.getElementById('pendingCount').textContent = pending;
 
       // Update tab badge
