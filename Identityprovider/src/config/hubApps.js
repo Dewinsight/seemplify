@@ -76,7 +76,8 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 3
+    order: 3,
+    badge: 'Beta'
   },
   {
     appId: 'payroll-management',
@@ -90,7 +91,8 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 4
+    order: 4,
+    badge: 'Beta'
   },
   {
     appId: 'lms',
@@ -177,7 +179,8 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 3
+    order: 3,
+    badge: 'Beta'
   },
   {
     appId: 'payroll-management',
@@ -191,7 +194,8 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 4
+    order: 4,
+    badge: 'Beta'
   },
   {
     appId: 'lms',

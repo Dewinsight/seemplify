@@ -4081,7 +4081,10 @@ function renderHubPage(account, apps, organizations = []) {
     <a href="/launch/${app.appId}" class="card app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
       <div class="app-card__icon">${getAppIcon(app.icon)}</div>
       <div class="app-card__body">
-        <div class="app-card__title">${app.name}</div>
+        <div class="app-card__title">
+          ${app.name}
+          ${app.badge ? `<span class="app-card__badge">${app.badge}</span>` : ''}
+        </div>
         <div class="app-card__desc">${app.description || 'Secure single sign-on'}</div>
         <div class="app-card__meta">
           <span class="pill pill--soft">Instant launch</span>
@@ -4178,7 +4181,18 @@ function renderHubPage(account, apps, organizations = []) {
         }
         .app-card__icon svg { width: 24px; height: 24px; }
         .app-card__body { display: grid; gap: 6px; }
-        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); }
+        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .app-card__badge { 
+          font-size: 10px; 
+          font-weight: 600; 
+          padding: 2px 8px; 
+          border-radius: 10px; 
+          background: linear-gradient(135deg, #f59e0b, #ef4444); 
+          color: white; 
+          text-transform: uppercase; 
+          letter-spacing: 0.5px;
+          box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+        }
         .app-card__desc { color: var(--muted); font-size: 13px; }
         .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
         .pill { background: var(--panel-strong); border: 1px solid var(--border); color: var(--text-secondary); }
