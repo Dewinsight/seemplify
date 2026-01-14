@@ -22,6 +22,10 @@ import {
   BarChart3,
   CheckCircle,
   Check,
+  Wallet,
+  History,
+  Coins,
+  ChevronRight,
 } from 'lucide-react';
 
 function cn(...classes: (string | boolean | undefined)[]) {
@@ -33,7 +37,12 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string | number;
-  section: 'main' | 'admin';
+}
+
+interface NavDropdown {
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items: NavItem[];
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -60,6 +69,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [hasAccessToken, setHasAccessToken] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [mobileExpandedDropdown, setMobileExpandedDropdown] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -117,23 +128,59 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const mainNavItems: NavItem[] = [
-    { name: 'Dashboard', href: '/', icon: LayoutGrid, section: 'main' },
-    { name: 'My Payslips', href: '/payslips', icon: FileText, section: 'main' },
-    { name: 'Team', href: '/team', icon: Users, section: 'main' },
+  // Simple nav items (direct links)
+  const simpleNavItems: NavItem[] = [
+    { name: 'Dashboard', href: '/', icon: LayoutGrid },
+    { name: 'My Payslips', href: '/payslips', icon: FileText },
   ];
 
-  const adminNavItems: NavItem[] = [
-    { name: 'Employees', href: '/admin/employees', icon: Users, section: 'admin' },
-    { name: 'Run Payroll', href: '/admin/run', icon: Calculator, section: 'admin' },
-    { name: 'History', href: '/admin/runs', icon: FileText, section: 'admin' },
-    { name: 'Approvals', href: '/admin/approvals', icon: CheckCircle, section: 'admin' },
-    { name: 'Analytics', href: '/admin/analytics', icon: BarChart3, section: 'admin' },
-    { name: 'Reports', href: '/admin/reports', icon: FileText, section: 'admin' },
-    { name: 'Currencies', href: '/admin/currencies', icon: Calculator, section: 'admin' },
+  // Dropdown menus for admin (grouped by functionality)
+  const adminDropdowns: NavDropdown[] = [
+    {
+      name: 'Payroll',
+      icon: Wallet,
+      items: [
+        { name: 'Run Payroll', href: '/admin/run', icon: Calculator },
+        { name: 'Payroll History', href: '/admin/runs', icon: History },
+        { name: 'Approvals', href: '/admin/approvals', icon: CheckCircle },
+      ],
+    },
+    {
+      name: 'Team',
+      icon: Users,
+      items: [
+        { name: 'My Team', href: '/team', icon: Users },
+        { name: 'All Employees', href: '/admin/employees', icon: Users },
+      ],
+    },
+    {
+      name: 'Reports',
+      icon: BarChart3,
+      items: [
+        { name: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+        { name: 'Reports', href: '/admin/reports', icon: FileText },
+      ],
+    },
+    {
+      name: 'Settings',
+      icon: Settings,
+      items: [
+        { name: 'Currencies', href: '/admin/currencies', icon: Coins },
+      ],
+    },
   ];
 
-  const navigation = isHRAdmin ? [...mainNavItems, ...adminNavItems] : mainNavItems;
+  // For non-admin users, show simple nav with team link
+  const nonAdminNavItems: NavItem[] = [
+    ...simpleNavItems,
+    { name: 'Team', href: '/team', icon: Users },
+  ];
+
+  const isDropdownActive = (dropdown: NavDropdown) => {
+    return dropdown.items.some(item => 
+      pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+    );
+  };
 
   const showOrgSwitcher = Array.isArray(organizations) && organizations.length > 1;
 
@@ -160,15 +207,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
 
                 {/* Desktop Navigation */}
-                <div className="hidden lg:flex items-center gap-2">
-                  {navigation.map((item) => {
+                <div className="hidden lg:flex items-center gap-1">
+                  {/* Simple nav items */}
+                  {simpleNavItems.map((item) => {
                     const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
                     return (
                       <Link
                         key={item.href}
                         href={item.href}
                         className={cn(
-                          'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                          'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                           active
                             ? 'bg-zinc-800/80 text-white'
                             : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
@@ -179,6 +227,79 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       </Link>
                     );
                   })}
+
+                  {/* Dropdown menus for admin */}
+                  {isHRAdmin ? (
+                    <>
+                      {adminDropdowns.map((dropdown) => {
+                        const isOpen = openDropdown === dropdown.name;
+                        const isActive = isDropdownActive(dropdown);
+                        return (
+                          <div key={dropdown.name} className="relative">
+                            <button
+                              onClick={() => setOpenDropdown(isOpen ? null : dropdown.name)}
+                              className={cn(
+                                'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                                isActive || isOpen
+                                  ? 'bg-zinc-800/80 text-white'
+                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                              )}
+                            >
+                              <dropdown.icon className="h-4 w-4" />
+                              {dropdown.name}
+                              <ChevronDown className={cn(
+                                "h-3.5 w-3.5 transition-transform duration-200",
+                                isOpen && "rotate-180"
+                              )} />
+                            </button>
+                            {isOpen && (
+                              <>
+                                <div
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setOpenDropdown(null)}
+                                />
+                                <div className="absolute left-0 top-11 w-48 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                                  {dropdown.items.map((item) => {
+                                    const itemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                                    return (
+                                      <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={() => setOpenDropdown(null)}
+                                        className={cn(
+                                          'flex items-center gap-2 px-4 py-2.5 text-sm transition-colors',
+                                          itemActive
+                                            ? 'bg-zinc-800/80 text-white'
+                                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                                        )}
+                                      >
+                                        <item.icon className="h-4 w-4" />
+                                        {item.name}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    /* Non-admin: just show Team link */
+                    <Link
+                      href="/team"
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                        pathname === '/team'
+                          ? 'bg-zinc-800/80 text-white'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      )}
+                    >
+                      <Users className="h-4 w-4" />
+                      Team
+                    </Link>
+                  )}
                 </div>
 
                 {/* Right Side Actions */}
@@ -363,7 +484,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   {/* Mobile Navigation */}
                   <div className="space-y-1">
                     <div className="text-xs font-semibold text-zinc-500 px-2 mb-2">Navigation</div>
-                    {navigation.map((item) => {
+                    
+                    {/* Simple nav items */}
+                    {simpleNavItems.map((item) => {
                       const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
                       return (
                         <Link
@@ -382,6 +505,76 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         </Link>
                       );
                     })}
+
+                    {isHRAdmin ? (
+                      <>
+                        {/* Admin dropdown sections */}
+                        {adminDropdowns.map((dropdown) => {
+                          const isExpanded = mobileExpandedDropdown === dropdown.name;
+                          const isActive = isDropdownActive(dropdown);
+                          return (
+                            <div key={dropdown.name}>
+                              <button
+                                onClick={() => setMobileExpandedDropdown(isExpanded ? null : dropdown.name)}
+                                className={cn(
+                                  'w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                                  isActive || isExpanded
+                                    ? 'bg-zinc-800/80 text-white'
+                                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                                )}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <dropdown.icon className="h-4 w-4" />
+                                  {dropdown.name}
+                                </div>
+                                <ChevronRight className={cn(
+                                  "h-4 w-4 transition-transform duration-200",
+                                  isExpanded && "rotate-90"
+                                )} />
+                              </button>
+                              {isExpanded && (
+                                <div className="mt-1 ml-4 pl-4 border-l border-zinc-800 space-y-1">
+                                  {dropdown.items.map((item) => {
+                                    const itemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                                    return (
+                                      <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={() => setMobileOpen(false)}
+                                        className={cn(
+                                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                                          itemActive
+                                            ? 'bg-zinc-800/60 text-white'
+                                            : 'text-zinc-500 hover:text-white hover:bg-zinc-800/40'
+                                        )}
+                                      >
+                                        <item.icon className="h-4 w-4" />
+                                        {item.name}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      /* Non-admin: just show Team link */
+                      <Link
+                        href="/team"
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                          pathname === '/team'
+                            ? 'bg-zinc-800/80 text-white'
+                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                        )}
+                      >
+                        <Users className="h-4 w-4" />
+                        Team
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
