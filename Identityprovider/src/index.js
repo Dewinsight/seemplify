@@ -404,13 +404,90 @@ provider.on('interaction.ended', (ctx) => {
 })
 
 // Token endpoint events
-provider.on('grant.success', (ctx) => {
+provider.on('grant.success', async (ctx) => {
+  const clientId = ctx.oidc.client?.clientId
+  const accountId = ctx.oidc.session?.accountId
+  
   console.log('✅ Grant success:', {
-    client_id: ctx.oidc.client?.clientId,
+    client_id: clientId,
     grant_type: ctx.oidc.params?.grant_type,
-    accountId: ctx.oidc.session?.accountId
+    accountId: accountId
   })
+  
+  // For LMS client, sync the user's LMS role to Frappe
+  if (clientId === 'lms' && accountId) {
+    try {
+      await syncLmsRoleToFrappe(accountId)
+    } catch (err) {
+      console.error('❌ Failed to sync LMS role to Frappe:', err.message)
+    }
+  }
 })
+
+// Helper function to sync LMS role to Frappe
+async function syncLmsRoleToFrappe(accountId) {
+  const account = await Account.findOne({ sub: accountId })
+    .populate('currentOrganization', 'name')
+  
+  if (!account || !account.email) {
+    console.log('⚠️ No account or email found for', accountId)
+    return
+  }
+  
+  const orgId = account.currentOrganization?._id?.toString()
+  if (!orgId) {
+    console.log('⚠️ No current organization for', account.email)
+    return
+  }
+  
+  // Get the user's LMS role for their current organization
+  const lmsRole = await LmsRole.findOne({
+    account: account._id,
+    organization: orgId,
+    isActive: true
+  })
+  
+  if (!lmsRole) {
+    console.log('⚠️ No LMS role found for', account.email, 'in org', orgId)
+    return
+  }
+  
+  console.log('📤 Syncing LMS role to Frappe:', account.email, '->', lmsRole.role)
+  
+  // Call Frappe API to set the role
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+  const secret = process.env.IDP_FRAPPE_SECRET || 'seemplify-lms-secret-2026'
+  const message = `${account.email}:${lmsRole.role}:${timestamp}`
+  const crypto = await import('crypto')
+  const signature = crypto.createHmac('sha256', secret).update(message).digest('hex')
+  
+  const lmsApiUrl = process.env.LMS_API_URL || 'https://lms.seemplifyai.com'
+  const endpoint = `${lmsApiUrl}/api/method/lms.lms.lms.api.set_lms_role.set_user_lms_role`
+  
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: account.email,
+        role: lmsRole.role,
+        timestamp: timestamp,
+        signature: signature
+      })
+    })
+    
+    const result = await response.json()
+    if (result.message?.success) {
+      console.log('✅ LMS role synced to Frappe:', result.message)
+    } else {
+      console.error('❌ Frappe API error:', result)
+    }
+  } catch (err) {
+    console.error('❌ Failed to call Frappe API:', err.message)
+  }
+}
 
 provider.on('grant.error', (ctx, err) => {
   console.error('❌ Grant error:', {
