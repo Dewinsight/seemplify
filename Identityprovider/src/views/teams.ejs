@@ -178,19 +178,19 @@
                   </div>
                   <div class="team-actions">
                     <button class="btn btn-secondary btn-sm"
-                      onclick="manageMembers('<%= team.id %>', '<%= team.name %>')">
+                      onclick="manageMembers('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
                       👥 Members
                     </button>
                     <% if (['owner', 'admin' ].includes(yourRole)) { %>
                       <button class="btn btn-secondary btn-sm"
-                        onclick="setManager('<%= team.id %>', '<%= team.name %>')">
+                        onclick="setManager('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
                         👤 Manager
                       </button>
                       <button class="btn btn-secondary btn-sm"
                         onclick="editTeam('<%= team.id %>', <%- JSON.stringify(team.name) %>, <%- JSON.stringify(team.description || '') %>, '<%= team.parentTeam ? team.parentTeam.id : '' %>')">
                         ✏️ Edit
                       </button>
-                      <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', '<%= team.name %>')">
+                      <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
                         🗑️ Delete
                       </button>
                       <% } %>
