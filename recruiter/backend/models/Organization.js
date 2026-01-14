@@ -210,7 +210,7 @@ const OrganizationSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee'],
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee', 'staff'],
       default: 'recruiter'
     },
     joinedAt: {

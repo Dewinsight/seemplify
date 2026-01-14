@@ -454,6 +454,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'hr_manager': return <UserCheck className="w-4 h-4 text-green-600" />;
       case 'recruiter': return <User className="w-4 h-4 text-orange-600" />;
       case 'interviewer': return <Eye className="w-4 h-4 text-muted-foreground" />;
+      case 'staff': return <User className="w-4 h-4 text-gray-600" />;
       default: return <User className="w-4 h-4 text-muted-foreground" />;
     }
   };
@@ -465,6 +466,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'hr_manager': return 'bg-green-100 text-green-800';
       case 'recruiter': return 'bg-orange-100 text-orange-800';
       case 'interviewer': return 'bg-muted/50 text-gray-800';
+      case 'staff': return 'bg-gray-100 text-gray-800';
       default: return 'bg-muted/50 text-gray-800';
     }
   };
@@ -476,6 +478,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'hr_manager': return 'HR Manager';
       case 'recruiter': return 'Recruiter';
       case 'interviewer': return 'Interviewer';
+      case 'staff': return 'Staff';
       default: return role;
     }
   };
@@ -701,6 +704,15 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                           <div>
                             <div className="font-medium">Interviewer</div>
                             <div className="text-xs text-muted-foreground">Can view candidates and jobs for interviews</div>
+                          </div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="staff">
+                        <div className="flex items-center space-x-2">
+                          <User className="w-4 h-4 text-gray-600" />
+                          <div>
+                            <div className="font-medium">Staff</div>
+                            <div className="text-xs text-muted-foreground">Basic staff member access</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -1061,9 +1073,11 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                 <Badge variant={selectedMemberForActions?.role === 'owner' ? 'default' : 'secondary'}>
                   {selectedMemberForActions?.role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
                   {selectedMemberForActions?.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'recruiter' && <UserCheck className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'viewer' && <Eye className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role?.charAt(0).toUpperCase() + selectedMemberForActions?.role?.slice(1)}
+                  {selectedMemberForActions?.role === 'hr_manager' && <UserCheck className="w-3 h-3 mr-1" />}
+                  {selectedMemberForActions?.role === 'recruiter' && <User className="w-3 h-3 mr-1" />}
+                  {selectedMemberForActions?.role === 'interviewer' && <Eye className="w-3 h-3 mr-1" />}
+                  {selectedMemberForActions?.role === 'staff' && <User className="w-3 h-3 mr-1" />}
+                  {getRoleLabel(selectedMemberForActions?.role)}
                 </Badge>
                 <Badge 
                   variant={

@@ -12,7 +12,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Shield, Edit, Eye } from "lucide-react"
+import { Shield, UserCheck, User, Eye } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface ChangeRoleDialogProps {
@@ -82,29 +82,49 @@ export function ChangeRoleDialog({ open, onOpenChange, member, onRoleChange }: C
                   <Shield className="h-4 w-4 text-blue-600" />
                   Admin
                 </Label>
-                <p className="text-sm text-muted-foreground">Can manage team members, billing, and all resources.</p>
+                <p className="text-sm text-muted-foreground">Full access to manage users, jobs, and candidates.</p>
               </div>
             </div>
             <div className="flex items-start space-x-3 space-y-0 rounded-lg p-3 hover:bg-muted/50 transition-colors">
-              <RadioGroupItem value="editor" id="editor" />
+              <RadioGroupItem value="hr_manager" id="hr_manager" />
               <div className="grid gap-1.5 leading-none">
-                <Label htmlFor="editor" className="flex items-center gap-1.5">
-                  <Edit className="h-4 w-4 text-green-600" />
-                  Editor
+                <Label htmlFor="hr_manager" className="flex items-center gap-1.5">
+                  <UserCheck className="h-4 w-4 text-green-600" />
+                  HR Manager
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  Can create and edit resources but cannot manage team members or billing.
+                  Can manage jobs, candidates, and view analytics.
                 </p>
               </div>
             </div>
             <div className="flex items-start space-x-3 space-y-0 rounded-lg p-3 hover:bg-muted/50 transition-colors">
-              <RadioGroupItem value="viewer" id="viewer" />
+              <RadioGroupItem value="recruiter" id="recruiter" />
               <div className="grid gap-1.5 leading-none">
-                <Label htmlFor="viewer" className="flex items-center gap-1.5">
-                  <Eye className="h-4 w-4 text-gray-600" />
-                  Viewer
+                <Label htmlFor="recruiter" className="flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-purple-600" />
+                  Recruiter
                 </Label>
-                <p className="text-sm text-muted-foreground">Can only view resources but cannot make any changes.</p>
+                <p className="text-sm text-muted-foreground">Can manage candidates and view jobs.</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3 space-y-0 rounded-lg p-3 hover:bg-muted/50 transition-colors">
+              <RadioGroupItem value="interviewer" id="interviewer" />
+              <div className="grid gap-1.5 leading-none">
+                <Label htmlFor="interviewer" className="flex items-center gap-1.5">
+                  <Eye className="h-4 w-4 text-orange-600" />
+                  Interviewer
+                </Label>
+                <p className="text-sm text-muted-foreground">Can view candidates and jobs for interviews.</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3 space-y-0 rounded-lg p-3 hover:bg-muted/50 transition-colors">
+              <RadioGroupItem value="staff" id="staff" />
+              <div className="grid gap-1.5 leading-none">
+                <Label htmlFor="staff" className="flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-gray-600" />
+                  Staff
+                </Label>
+                <p className="text-sm text-muted-foreground">Basic staff member access.</p>
               </div>
             </div>
           </RadioGroup>
