@@ -435,7 +435,16 @@ export default function LoginPage() {
                         type="button"
                         className="w-full h-12 bg-foreground text-background dark:bg-white dark:text-black rounded-lg font-medium hover:opacity-90 transition-all duration-300 shadow-md"
                         onClick={() => {
-                          const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+                          const envBase =
+                            process.env.NEXT_PUBLIC_API_BASE_URL ||
+                            process.env.NEXT_PUBLIC_API_URL
+                          const hostname = window.location.hostname
+                          const derivedBase = hostname.includes('localhost') || hostname.startsWith('127.0.0.1')
+                            ? 'http://localhost:5001'
+                            : hostname.includes('-dev')
+                              ? 'https://api-dev.seemplifyai.com'
+                              : 'https://api.seemplifyai.com'
+                          const base = envBase || derivedBase
                           const returnTo = encodeURIComponent(window.location.href)
                           window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
                         }}
