@@ -50,6 +50,16 @@ export function getRuntimeConfig() {
     return config;
   }
   
+  // In dev deployments, use build-time env vars instead of runtime config
+  if (typeof window !== 'undefined' && window.location.hostname.includes('-dev')) {
+    return {
+      NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+      NEXT_PUBLIC_WS_BASE_URL: process.env.NEXT_PUBLIC_WS_BASE_URL,
+      NEXT_PUBLIC_INACTIVITY_TIMEOUT: process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT,
+      NEXT_PUBLIC_INACTIVITY_WARNING_TIME: process.env.NEXT_PUBLIC_INACTIVITY_WARNING_TIME,
+    };
+  }
+
   // In production, use runtime config from __runtime_config__.js if available
   if (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__) {
     console.log('🌐 Production detected - using runtime configuration');
