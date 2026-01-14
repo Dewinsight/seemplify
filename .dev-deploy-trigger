@@ -1,3 +1,3 @@
-# Dev Deployment Trigger
-# This file triggers deployment of all dev applications
-# Last triggered: 2026-01-14T14:30:00Z
+﻿# Dev Environment - Fixed Configuration
+# Deployment trigger: 2026-01-14T15:46:30Z
+# Fixed: Removed customGitBuildPath to match production configuration
