@@ -40,11 +40,12 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user: authUser } = useAuth();
+  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout } = useAuth();
   const { user, role, isManager, isHRAdmin } = useUserContext();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [switchingOrg, setSwitchingOrg] = useState(false);
 
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
@@ -73,12 +74,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [isManager, isHRAdmin]);
 
   const handleLogout = async () => {
-    // Implementation from auth context
-    window.location.href = '/api/auth/logout';
+    await logout();
   };
 
-  const orgs = authUser?.organizations || [];
-  const currentOrganization = orgs.find((o: any) => o.isCurrent) || orgs[0];
+  // Handle organization switch
+  const handleSwitchOrganization = async (orgId: string) => {
+    if (switchingOrg) return;
+    setSwitchingOrg(true);
+    setOrgDropdownOpen(false);
+    try {
+      await switchOrganization(orgId);
+    } catch (error) {
+      console.error('Failed to switch organization:', error);
+      setSwitchingOrg(false);
+    }
+  };
+
+  // Get organizations from auth user - includes IDP data
+  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
+  
+  // Current organization from AuthContext (synced with IDP)
+  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
   const showOrgSwitcher = orgs.length > 1;
   
   const { mode, toggleColorMode } = useThemeMode();
@@ -194,22 +210,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           ? "border-white/[0.08] bg-zinc-950" 
                           : "border-gray-200 bg-white"
                       )}>
-                        {orgs.map((org: any) => (
-                          <button
-                            key={org.id}
-                            className={cn(
-                              'w-full text-left px-4 py-3 text-sm transition-colors',
-                              isDarkMode 
-                                ? cn('hover:bg-zinc-800/70', org.isCurrent && 'bg-zinc-800/70')
-                                : cn('hover:bg-gray-50', org.isCurrent && 'bg-gray-100')
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
-                              <span className={cn("text-xs flex-shrink-0", isDarkMode ? "text-zinc-500" : "text-gray-500")}>{org.role}</span>
-                            </div>
-                          </button>
-                        ))}
+                        {orgs.map((org: any) => {
+                          const isCurrentOrg = org.id === currentOrganization?.id;
+                          return (
+                            <button
+                              key={org.id}
+                              onClick={() => !isCurrentOrg && handleSwitchOrganization(org.id)}
+                              disabled={switchingOrg || isCurrentOrg}
+                              className={cn(
+                                'w-full text-left px-4 py-3 text-sm transition-colors',
+                                isDarkMode 
+                                  ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
+                                  : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
+                                isCurrentOrg && 'cursor-default',
+                                switchingOrg && 'opacity-50 cursor-wait'
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                                <span className={cn("text-xs flex-shrink-0", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                                  {isCurrentOrg ? '✓ Current' : org.role}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -412,25 +437,36 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       "mt-2 rounded-lg border overflow-hidden",
                       isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
                     )}>
-                      {orgs.map((org: any) => (
-                        <button
-                          key={org.id}
-                          onClick={() => {
-                            setMobileOpen(false);
-                          }}
-                          className={cn(
-                            'w-full text-left px-3 py-2.5 text-sm transition-colors',
-                            isDarkMode 
-                              ? cn('hover:bg-zinc-800/70', org.isCurrent && 'bg-zinc-800/70')
-                              : cn('hover:bg-gray-50', org.isCurrent && 'bg-gray-100')
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
-                            <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>{org.role}</span>
-                          </div>
-                        </button>
-                      ))}
+                      {orgs.map((org: any) => {
+                        const isCurrentOrg = org.id === currentOrganization?.id;
+                        return (
+                          <button
+                            key={org.id}
+                            onClick={() => {
+                              if (!isCurrentOrg) {
+                                handleSwitchOrganization(org.id);
+                              }
+                              setMobileOpen(false);
+                            }}
+                            disabled={switchingOrg || isCurrentOrg}
+                            className={cn(
+                              'w-full text-left px-3 py-2.5 text-sm transition-colors',
+                              isDarkMode 
+                                ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
+                                : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
+                              isCurrentOrg && 'cursor-default',
+                              switchingOrg && 'opacity-50 cursor-wait'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                              <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                                {isCurrentOrg ? '✓ Current' : org.role}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
