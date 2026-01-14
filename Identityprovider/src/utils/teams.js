@@ -137,6 +137,12 @@ export async function getTeamClaims(account) {
       ? (subTeamsMap.get(teamIdStr) || [])
       : []
 
+    // Skip teams with missing organization (data integrity issue)
+    if (!team.organization) {
+      console.warn(`⚠️ Team ${team.name} (${teamIdStr}) has no organization - skipping`)
+      return null
+    }
+
     return {
       id: teamIdStr,
       name: team.name,
