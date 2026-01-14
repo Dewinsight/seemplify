@@ -38,14 +38,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   // Turbopack configuration (Next.js 16 default)
-  turbopack: {
-    // Resolve fallbacks for browser builds
-    resolveAlias: {
-      fs: { browser: './empty-module.js' },
-      net: { browser: './empty-module.js' },
-      tls: { browser: './empty-module.js' },
-    },
-  },
+  // Empty config to acknowledge we're using Turbopack
+  turbopack: {},
 };
 
 export default nextConfig;
