@@ -117,8 +117,8 @@ router.get('/context', requireAuth, async (req, res) => {
               name: firstTeam.organizationName || 'Organization'
             };
           }
-          // Try from session organizations
-          const orgs = dbUser?.idpOrganizations || sessionUser.organizations || sessionUser.userinfo?.organizations || [];
+          // Try from IDP session organizations (never from local database)
+          const orgs = sessionUser.organizations || sessionUser.userinfo?.organizations || [];
           if (orgs.length > 0) {
             const org = orgs[0];
             return {
@@ -300,11 +300,10 @@ router.get('/all-employees', requireAuth, async (req, res) => {
       });
     }
 
-    // Get all users in the organization
+    // Get all users in the organization (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
         { currentOrganizationId: currentOrganization?.id },
-        { 'idpOrganizations.id': currentOrganization?.id },
         { 'idpTeams.organizationId': currentOrganization?.id }
       ]
     }).select('email profile idpTeams currentOrganizationId');
@@ -379,30 +378,18 @@ router.get('/search', requireAuth, async (req, res) => {
 
 /**
  * GET /api/user/organizations - Get all organizations user belongs to
+ * Organizations are ALWAYS fetched from IDP session, never stored locally
  */
 router.get('/organizations', requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
-    const dbUser = await User.findOne({ email: sessionUser.email });
     
-    // Get organizations from multiple sources (fallback chain)
-    let organizations = [];
+    // Organizations ALWAYS come from IDP session - never from local database
+    let organizations = sessionUser.organizations || sessionUser.userinfo?.organizations || [];
     
-    // 1. Check database first
-    if (dbUser?.idpOrganizations?.length > 0) {
-      organizations = dbUser.idpOrganizations;
-    }
-    // 2. Check session organizations
-    else if (sessionUser.organizations?.length > 0) {
-      organizations = sessionUser.organizations;
-    }
-    // 3. Check userinfo from IdP
-    else if (sessionUser.userinfo?.organizations?.length > 0) {
-      organizations = sessionUser.userinfo.organizations;
-    }
-    // 4. Extract from teams (fallback)
-    else {
-      const teams = dbUser?.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || [];
+    // Fallback: Extract from teams if no organizations in session
+    if (organizations.length === 0) {
+      const teams = sessionUser.teams || sessionUser.userinfo?.teams || [];
       const orgMap = new Map();
       teams.forEach(t => {
         if (t.organizationId && !orgMap.has(t.organizationId)) {
@@ -416,10 +403,11 @@ router.get('/organizations', requireAuth, async (req, res) => {
       organizations = Array.from(orgMap.values());
     }
     
-    // Get current org ID
-    const currentOrgId = dbUser?.currentOrganizationId || 
-                         sessionUser.currentOrganizationId ||
-                         req.currentOrganization?.id ||
+    // Get current org ID - only currentOrganizationId is stored locally as a preference
+    const dbUser = await User.findOne({ email: sessionUser.email }).select('currentOrganizationId');
+    const currentOrgId = req.session.currentOrganizationId ||
+                         sessionUser.currentOrganization?.id ||
+                         dbUser?.currentOrganizationId ||
                          (organizations[0]?.id);
     
     res.json({
@@ -430,6 +418,7 @@ router.get('/organizations', requireAuth, async (req, res) => {
           name: org.name || org.organizationName || 'Organization',
           slug: org.slug,
           logo: org.logo,
+          role: org.role,
           isCurrent: (org.id || org._id || org.organizationId) === currentOrgId
         })),
         currentOrganizationId: currentOrgId
@@ -443,6 +432,7 @@ router.get('/organizations', requireAuth, async (req, res) => {
 
 /**
  * POST /api/user/switch-organization - Switch current organization
+ * Organizations come from IDP - only currentOrganizationId is stored locally as preference
  */
 router.post('/switch-organization', requireAuth, async (req, res) => {
   try {
@@ -453,27 +443,12 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Organization ID required' });
     }
     
-    // Update user's current organization
-    let dbUser = await User.findOne({ email: sessionUser.email });
+    // Get organizations from IDP session (NEVER from local database)
+    let organizations = sessionUser.organizations || sessionUser.userinfo?.organizations || [];
     
-    // Create user if not exists
-    if (!dbUser) {
-      dbUser = new User({
-        email: sessionUser.email,
-        profile: {
-          displayName: sessionUser.name || sessionUser.email?.split('@')[0]
-        }
-      });
-    }
-    
-    // Get organizations from multiple sources
-    let organizations = dbUser.idpOrganizations || [];
+    // Fallback: Extract from teams if no organizations
     if (organizations.length === 0) {
-      organizations = sessionUser.organizations || sessionUser.userinfo?.organizations || [];
-    }
-    if (organizations.length === 0) {
-      // Extract from teams
-      const teams = dbUser?.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || [];
+      const teams = sessionUser.teams || sessionUser.userinfo?.teams || [];
       const orgMap = new Map();
       teams.forEach(t => {
         if (t.organizationId && !orgMap.has(t.organizationId)) {
@@ -486,31 +461,41 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
       organizations = Array.from(orgMap.values());
     }
     
-    // Verify user has access to this organization
-    const hasAccess = organizations.some(org => 
+    // Verify user has access to this organization (from IDP data)
+    const selectedOrg = organizations.find(org => 
       (org.id || org._id || org.organizationId) === organizationId
     );
     
-    if (!hasAccess && organizations.length > 0) {
+    if (!selectedOrg && organizations.length > 0) {
       return res.status(403).json({ 
         success: false, 
         error: 'You do not have access to this organization' 
       });
     }
     
+    // Only store currentOrganizationId locally as a preference
+    let dbUser = await User.findOne({ email: sessionUser.email });
+    if (!dbUser) {
+      dbUser = new User({
+        email: sessionUser.email,
+        profile: {
+          displayName: sessionUser.name || sessionUser.email?.split('@')[0]
+        }
+      });
+    }
     dbUser.currentOrganizationId = organizationId;
     await dbUser.save();
     
     // Update session
     req.session.currentOrganizationId = organizationId;
+    req.session.user.currentOrganization = selectedOrg;
     
-    const selectedOrg = organizations.find(org => 
-      (org.id || org._id || org.organizationId) === organizationId
-    );
+    console.log('✅ Performance organization switched to:', selectedOrg?.name, 'for', sessionUser.email);
     
     res.json({
       success: true,
       message: 'Organization switched successfully',
+      organization: selectedOrg, // Return full org object
       data: {
         organizationId,
         organizationName: selectedOrg?.name || selectedOrg?.organizationName
@@ -539,14 +524,13 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
       });
     }
 
-    // Get all users in the organization with their team info
+    // Get all users in the organization with their team info (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
         { currentOrganizationId: currentOrganization?.id },
-        { 'idpOrganizations.id': currentOrganization?.id },
         { 'idpTeams.organizationId': currentOrganization?.id }
       ]
-    }).select('email profile idpTeams idpOrganizations currentOrganizationId');
+    }).select('email profile idpTeams currentOrganizationId');
 
     // Build team hierarchy map
     const teamsMap = new Map();
@@ -665,11 +649,10 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       });
     }
 
-    // Get all users in the organization
+    // Get all users in the organization (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
         { currentOrganizationId: currentOrganization?.id },
-        { 'idpOrganizations.id': currentOrganization?.id },
         { 'idpTeams.organizationId': currentOrganization?.id }
       ]
     }).select('email profile idpTeams');

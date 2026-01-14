@@ -383,14 +383,16 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       userinfo,
     };
 
-    // Sync user with local database
+    // Sync user profile with local database (NOT organizations - those come from IDP only)
     const User = require('./models/User');
     let user = await User.findOne({ email: userinfo.email });
 
     if (user) {
-      user.idpTeams = userinfo.teams || [];
-      user.idpOrganizations = userinfo.organizations || [];
+      // Only update profile and current org preference - organizations come from IDP session
       user.lastGrantRefresh = new Date();
+      if (userinfo.currentOrganization?.id) {
+        user.currentOrganizationId = userinfo.currentOrganization.id;
+      }
       await user.save();
     } else {
       user = new User({
@@ -400,14 +402,14 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
           lastName: userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || 'User',
           displayName: userinfo.name
         },
-        idpTeams: userinfo.teams || [],
-        idpOrganizations: userinfo.organizations || [],
         lastGrantRefresh: new Date(),
-        currentOrganizationId: userinfo.currentOrganization?.id || null,
+        currentOrganizationId: userinfo.currentOrganization?.id || (userinfo.organizations?.[0]?.id) || null,
         hasCompletedOrganizationSetup: true
       });
       await user.save();
     }
+    
+    console.log('✅ User synced (orgs from IDP):', userinfo.email, 'orgs:', userinfo.organizations?.length || 0);
 
     // Clear OIDC cookies
     res.clearCookie('oidc_verifier');
@@ -434,32 +436,53 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
 // Get current user - works with session OR bearer token via requireAuth middleware
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
-    // Get fresh user data from database
+    // Get user profile from database (NOT organizations - those come from IDP session)
     const User = require('./models/User');
     const dbUser = await User.findOne({ email: req.session.user.email });
 
     const { accessToken, refreshToken, idToken, ...safeUser } = req.session.user;
 
+    // Organizations ALWAYS come from IDP session, not local database
+    const organizations = req.session.user.organizations || req.session.user.userinfo?.organizations || [];
+    const teams = req.session.user.teams || req.session.user.userinfo?.teams || [];
+    
+    // Get current organization - prefer session, fallback to db preference
+    const currentOrganization = req.session.user.currentOrganization;
+    const currentOrgId = req.session.currentOrganizationId || 
+                         dbUser?.currentOrganizationId || 
+                         currentOrganization?.id ||
+                         organizations[0]?.id;
+
+    // Mark current organization in the list
+    const orgsWithCurrent = organizations.map(org => ({
+      ...org,
+      isCurrent: org.id === currentOrgId
+    }));
+
     res.json({
       success: true,
       user: {
         ...safeUser,
-        idpTeams: dbUser?.idpTeams || req.session.user.teams || [],
-        idpTeamPermissions: dbUser?.idpTeamPermissions || [],
-        idpOrganizations: dbUser?.idpOrganizations || req.session.user.organizations || [],
+        organizations: orgsWithCurrent, // From IDP session
+        teams: teams, // From IDP session  
         profile: dbUser?.profile || {}
       },
-      currentOrganizationId: req.session.currentOrganizationId,
-      currentOrganization: req.session.user.currentOrganization,
+      currentOrganizationId: currentOrgId,
+      currentOrganization: currentOrganization || orgsWithCurrent.find(o => o.isCurrent),
       role: req.userRole
     });
   } catch (error) {
     console.error('Error fetching user:', error);
     const { accessToken, refreshToken, idToken, ...safeUser } = req.session.user;
+    const organizations = req.session.user.organizations || [];
     res.json({
       success: true,
-      user: safeUser,
-      currentOrganizationId: req.session.currentOrganizationId
+      user: {
+        ...safeUser,
+        organizations: organizations
+      },
+      currentOrganizationId: req.session.currentOrganizationId || organizations[0]?.id,
+      currentOrganization: req.session.user.currentOrganization
     });
   }
 });
