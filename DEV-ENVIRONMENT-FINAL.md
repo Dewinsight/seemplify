@@ -1,7 +1,8 @@
 # ✅ Dev Environment - Complete & Working!
 
 **Status:** 100% OPERATIONAL  
-**Date:** 2026-01-14 17:25 UTC
+**Date:** 2026-01-14 17:55 UTC
+**Last Fix:** OIDC login now correctly redirects to `auth-dev.seemplifyai.com`
 
 ---
 
@@ -127,6 +128,14 @@ git push origin main
 - Traefik routing: Configured ✅
 - SSL certificates: Active ✅
 - Same network as production ✅
+
+**Frontend Dockerfiles:**
+- Each frontend has a `Dockerfile.dev` with dev environment defaults:
+  - `leave-management/frontend/Dockerfile.dev`
+  - `performance/frontend/Dockerfile.dev`
+  - `payroll/frontend/Dockerfile.dev`
+  - `recruiter/frontend/Dockerfile.dev`
+- These have `NEXT_PUBLIC_IDP_URL=https://auth-dev.seemplifyai.com` baked in at build time
 
 ---
 
