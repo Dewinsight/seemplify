@@ -406,12 +406,18 @@ provider.on('interaction.ended', (ctx) => {
 // Token endpoint events
 provider.on('grant.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
-  const accountId = ctx.oidc.session?.accountId
+  // Account ID can be in session, grant, or entities.Account
+  const accountId = ctx.oidc.session?.accountId || 
+                    ctx.oidc.account?.accountId ||
+                    ctx.oidc.entities?.Account?.accountId ||
+                    ctx.oidc.grant?.accountId
   
   console.log('✅ Grant success:', {
     client_id: clientId,
     grant_type: ctx.oidc.params?.grant_type,
-    accountId: accountId
+    accountId: accountId,
+    sessionAccountId: ctx.oidc.session?.accountId,
+    grantAccountId: ctx.oidc.grant?.accountId
   })
   
   // For LMS client, sync the user's LMS role to Frappe
@@ -511,6 +517,23 @@ provider.on('grant.revoked', (ctx, grantId) => {
 provider.on('server_error', (ctx, err) => {
   console.error('💥 Server error:', err.message)
   console.error('Server error stack:', err.stack)
+})
+
+// Userinfo endpoint - sync LMS role after claims are retrieved
+provider.on('userinfo.success', async (ctx) => {
+  const clientId = ctx.oidc.client?.clientId
+  const account = ctx.oidc.account
+  
+  console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
+  
+  // For LMS client, sync the user's LMS role to Frappe
+  if (clientId === 'lms' && account?.accountId) {
+    try {
+      await syncLmsRoleToFrappe(account.accountId)
+    } catch (err) {
+      console.error('❌ Failed to sync LMS role to Frappe:', err.message)
+    }
+  }
 })
 
 const app = express()
