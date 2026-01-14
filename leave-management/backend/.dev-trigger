@@ -1,3 +1,2 @@
-﻿# Dev Deployment Trigger
-# Fixed: Full Dockerfile paths from repo root
-# Timestamp: 2026-01-14T16:08:39Z
+﻿# Dev Deployment Trigger - Force Redeploy with Env Vars
+# Timestamp: 2026-01-14T16:27:15Z
