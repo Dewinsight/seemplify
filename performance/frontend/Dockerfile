@@ -20,8 +20,6 @@ ENV NEXTAUTH_SECRET=$NEXTAUTH_SECRET
 ENV OIDC_ISSUER=$OIDC_ISSUER
 ENV OIDC_CLIENT_ID=$OIDC_CLIENT_ID
 
-# OIDC_CLIENT_SECRET should be set at runtime in Dokploy, NOT build time
-
 # Copy package files
 COPY package*.json ./
 
@@ -44,22 +42,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Runtime environment variables (set in Dokploy)
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
-ENV NEXTAUTH_URL=$NEXTAUTH_URL
-ENV NEXTAUTH_SECRET=$NEXTAUTH_SECRET
-ENV OIDC_ISSUER=$OIDC_ISSUER
-ENV OIDC_CLIENT_ID=$OIDC_CLIENT_ID
-# OIDC_CLIENT_SECRET should be provided at runtime via Dokploy environment variables
-
-# Copy standalone build output (Next.js standalone mode)
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Copy necessary files from builder
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 5005
 
-# Use the standalone server directly
-CMD ["node", "server.js"]
+CMD ["npm", "start"]

@@ -1,20 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Ensure environment variables are available
+  // Environment variables
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
     NEXT_PUBLIC_IDP_URL: process.env.NEXT_PUBLIC_IDP_URL,
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-    OIDC_ISSUER: process.env.OIDC_ISSUER,
-    OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-  },
-
-  // Disable TypeScript strict checks for production build
-  typescript: {
-    ignoreBuildErrors: false,
   },
 
   // Handle image optimization
@@ -25,20 +16,9 @@ const nextConfig: NextConfig = {
         hostname: '**',
       },
     ],
-    unoptimized: false,
   },
 
-  // Experimental features
-  experimental: {
-    // Optimize package imports
-    optimizePackageImports: ['lucide-react', '@mui/material'],
-  },
-
-  // Output configuration
-  output: 'standalone',
-
-  // Turbopack configuration (Next.js 16 default)
-  // Empty config to acknowledge we're using Turbopack
+  // Turbopack configuration (required for Next.js 16)
   turbopack: {},
 };
 
