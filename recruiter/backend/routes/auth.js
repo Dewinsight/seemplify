@@ -921,12 +921,18 @@ router.get('/oidc/callback', async (req, res) => {
       res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
     }
     
+    const safeLoc = loc
+      .replace(/token=[^&]*/g, 'token=[redacted]')
+      .replace(/refreshToken=[^&]*/g, 'refreshToken=[redacted]')
+      .replace(/expiresIn=[^&]*/g, 'expiresIn=[redacted]');
+
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,
       targetUrl: target,
       hasToken: !!accessToken,
       hasRefreshToken: !!refreshToken
     });
+    console.log('🔄 Redirect URL:', safeLoc);
     
     console.log(`⏱️ OIDC Callback total time: ${Date.now() - callbackStartTime}ms`);
     res.redirect(loc);
