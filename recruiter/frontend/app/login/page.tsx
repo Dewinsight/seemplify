@@ -100,19 +100,21 @@ export default function LoginPage() {
 
   useEffect(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    const search = typeof window !== 'undefined' ? window.location.search : ''
     // ... existing logging code ...
     console.log('🔐 Login page checking for OIDC tokens:', {
       hasHash: !!hash,
       hashContent: hash ? hash.substring(0, 50) + '...' : 'none',
-      hasToken: hash.includes('token=')
+      hasToken: hash.includes('token=') || search.includes('token=')
     })
 
-    if (hash && hash.includes('token=')) {
+    if ((hash && hash.includes('token=')) || (search && search.includes('token='))) {
       setIsProcessingOIDC(true)
-      const params = new URLSearchParams(hash.replace('#', ''))
-      const token = params.get('token') || ''
-      const refreshToken = params.get('refreshToken') || ''
-      const expiresIn = params.get('expiresIn') || '10m'
+      const hashParams = new URLSearchParams(hash.replace('#', ''))
+      const searchParams = new URLSearchParams(search)
+      const token = hashParams.get('token') || searchParams.get('token') || ''
+      const refreshToken = hashParams.get('refreshToken') || searchParams.get('refreshToken') || ''
+      const expiresIn = hashParams.get('expiresIn') || searchParams.get('expiresIn') || '10m'
 
       console.log('🎯 Processing OIDC login:', {
         hasToken: !!token,
@@ -125,6 +127,14 @@ export default function LoginPage() {
           try {
             console.log('📝 Starting auth login...')
             auth.login(token, refreshToken, expiresIn)
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href)
+              url.hash = ''
+              url.searchParams.delete('token')
+              url.searchParams.delete('refreshToken')
+              url.searchParams.delete('expiresIn')
+              window.history.replaceState({}, '', url.pathname)
+            }
           } catch (error) {
             console.error('❌ OIDC login error:', error)
             setIsProcessingOIDC(false)

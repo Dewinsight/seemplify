@@ -906,7 +906,10 @@ router.get('/oidc/callback', async (req, res) => {
 
     const base = returnTo.replace(/#.*$/, '');
     const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
-    const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const tokenParams = `token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const loc = process.env.NODE_ENV === 'development'
+      ? `${target}?${tokenParams}`
+      : `${target}#${tokenParams}`;
     
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,
