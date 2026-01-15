@@ -907,8 +907,11 @@ router.get('/oidc/callback', async (req, res) => {
     const base = returnTo.replace(/#.*$/, '');
     const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
     const tokenParams = `token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const callbackTarget = base.includes('/login')
+      ? base.replace(/\/login.*$/, '') + '/oidc/callback'
+      : `${base.replace(/\/$/, '')}/oidc/callback`;
     const loc = process.env.NODE_ENV === 'development'
-      ? `${target}?${tokenParams}`
+      ? `${callbackTarget}?${tokenParams}`
       : `${target}#${tokenParams}`;
 
     if (process.env.NODE_ENV === 'development') {
