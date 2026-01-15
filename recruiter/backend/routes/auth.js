@@ -912,9 +912,10 @@ router.get('/oidc/callback', async (req, res) => {
       : `${target}#${tokenParams}`;
 
     if (process.env.NODE_ENV === 'development') {
-      res.cookie('dev_jwt', accessToken, { sameSite: 'lax', secure: true });
-      res.cookie('dev_refreshToken', refreshToken, { sameSite: 'lax', secure: true });
-      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', { sameSite: 'lax', secure: true });
+      const cookieOptions = { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };
+      res.cookie('dev_jwt', accessToken, cookieOptions);
+      res.cookie('dev_refreshToken', refreshToken, cookieOptions);
+      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
     }
     
     console.log('🔄 Redirecting to frontend with tokens:', {
