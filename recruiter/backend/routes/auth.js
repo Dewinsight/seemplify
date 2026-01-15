@@ -910,6 +910,12 @@ router.get('/oidc/callback', async (req, res) => {
     const loc = process.env.NODE_ENV === 'development'
       ? `${target}?${tokenParams}`
       : `${target}#${tokenParams}`;
+
+    if (process.env.NODE_ENV === 'development') {
+      res.cookie('dev_jwt', accessToken, { sameSite: 'lax', secure: true });
+      res.cookie('dev_refreshToken', refreshToken, { sameSite: 'lax', secure: true });
+      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', { sameSite: 'lax', secure: true });
+    }
     
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,

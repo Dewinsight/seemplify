@@ -102,19 +102,30 @@ export default function LoginPage() {
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
     const search = typeof window !== 'undefined' ? window.location.search : ''
     // ... existing logging code ...
+    const getCookie = (name: string) => {
+      if (typeof document === 'undefined') {
+        return ''
+      }
+      const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    const cookieToken = getCookie('dev_jwt')
+    const cookieRefresh = getCookie('dev_refreshToken')
+    const cookieExpiresIn = getCookie('dev_expiresIn')
+
     console.log('🔐 Login page checking for OIDC tokens:', {
       hasHash: !!hash,
       hashContent: hash ? hash.substring(0, 50) + '...' : 'none',
-      hasToken: hash.includes('token=') || search.includes('token=')
+      hasToken: hash.includes('token=') || search.includes('token=') || !!cookieToken
     })
 
-    if ((hash && hash.includes('token=')) || (search && search.includes('token='))) {
+    if ((hash && hash.includes('token=')) || (search && search.includes('token=')) || (cookieToken && cookieRefresh)) {
       setIsProcessingOIDC(true)
       const hashParams = new URLSearchParams(hash.replace('#', ''))
       const searchParams = new URLSearchParams(search)
-      const token = hashParams.get('token') || searchParams.get('token') || ''
-      const refreshToken = hashParams.get('refreshToken') || searchParams.get('refreshToken') || ''
-      const expiresIn = hashParams.get('expiresIn') || searchParams.get('expiresIn') || '10m'
+      const token = hashParams.get('token') || searchParams.get('token') || cookieToken || ''
+      const refreshToken = hashParams.get('refreshToken') || searchParams.get('refreshToken') || cookieRefresh || ''
+      const expiresIn = hashParams.get('expiresIn') || searchParams.get('expiresIn') || cookieExpiresIn || '10m'
 
       console.log('🎯 Processing OIDC login:', {
         hasToken: !!token,
@@ -134,6 +145,9 @@ export default function LoginPage() {
               url.searchParams.delete('refreshToken')
               url.searchParams.delete('expiresIn')
               window.history.replaceState({}, '', url.pathname)
+              document.cookie = 'dev_jwt=; Max-Age=0; path=/'
+              document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
+              document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
             }
           } catch (error) {
             console.error('❌ OIDC login error:', error)
