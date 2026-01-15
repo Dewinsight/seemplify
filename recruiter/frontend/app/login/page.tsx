@@ -124,15 +124,7 @@ export default function LoginPage() {
         ; (async () => {
           try {
             console.log('📝 Starting auth login...')
-            // Initialize token manager before calling user profile endpoints
-            auth.login(token, refreshToken, expiresIn, true)
-            console.log('✅ Auth login complete, starting user login...')
-            await user.login(token)
-            console.log('✅ User login complete, redirecting...')
-            if (typeof window !== 'undefined') {
-              window.location.hash = ''
-              window.location.href = '/organization/check'
-            }
+            auth.login(token, refreshToken, expiresIn)
           } catch (error) {
             console.error('❌ OIDC login error:', error)
             setIsProcessingOIDC(false)
