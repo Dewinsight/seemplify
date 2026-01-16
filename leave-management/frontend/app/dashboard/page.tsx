@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [pendingApprovals, setPendingApprovals] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -53,6 +54,7 @@ export default function DashboardPage() {
         }
       } catch (err: any) {
         setError(err.response?.data?.error || 'Failed to load dashboard data');
+        setErrorCode(err.response?.data?.code || null);
       } finally {
         setLoading(false);
       }
@@ -72,10 +74,20 @@ export default function DashboardPage() {
   }
 
   if (error) {
+    const isOrgError = errorCode === 'ORG_REQUIRED' || errorCode === 'NO_ORGANIZATIONS';
     return (
       <Layout>
         <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
-          {error}
+          <p>{error}</p>
+          {isOrgError && (
+            <a
+              href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Go to App Hub
+            </a>
+          )}
         </div>
       </Layout>
     );

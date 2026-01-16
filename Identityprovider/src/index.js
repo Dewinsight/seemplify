@@ -4213,6 +4213,7 @@ function renderHubPage(account, apps, organizations = []) {
         }
       </style>
       <script src="/js/theme.js?v=2"></script>
+      <script src="/js/invitation-gatekeeper.js"></script>
     </head>
     <body>
       <nav class="top-nav">
