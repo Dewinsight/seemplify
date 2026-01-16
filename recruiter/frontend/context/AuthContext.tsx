@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Set global logout handler
     setGlobalLogoutHandler(logout);
-    
+
     // Check if we're in the browser before accessing localStorage
     if (typeof window !== 'undefined') {
       try {
@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     setIsLoading(false);
-    
+
     // Cleanup on unmount
     return () => {
       cleanupInactivityTracking();
@@ -56,14 +56,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         // Initialize token manager
         tokenManager.initialize(newToken, newRefreshToken, expiresIn);
-        
+
         setToken(newToken);
         setRefreshToken(newRefreshToken);
         setIsAuthenticated(true);
-        
+
         // Initialize inactivity tracking after login
         initializeInactivityTracking();
-        
+
         // Only redirect if skipRedirect is false
         // This allows signup flow to control its own redirection
         if (!skipRedirect) {
@@ -83,19 +83,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         // Cleanup inactivity tracking before logout
         cleanupInactivityTracking();
-        
+
         // Clear tokens from manager
         tokenManager.clearTokens();
-        
+
+        // Clear dev environment cookies (set by backend for dev/deployed environments)
+        // These must be cleared with the same domain they were set with
+        const hostname = window.location.hostname;
+        const isDevDeployed = hostname.includes('-dev') && hostname.includes('seemplifyai.com');
+
+        if (isDevDeployed) {
+          // Dev deployed environment uses domain cookies
+          document.cookie = 'dev_jwt=; Max-Age=0; path=/; domain=.seemplifyai.com';
+          document.cookie = 'dev_refreshToken=; Max-Age=0; path=/; domain=.seemplifyai.com';
+          document.cookie = 'dev_expiresIn=; Max-Age=0; path=/; domain=.seemplifyai.com';
+        } else {
+          // Localhost or other environments
+          document.cookie = 'dev_jwt=; Max-Age=0; path=/';
+          document.cookie = 'dev_refreshToken=; Max-Age=0; path=/';
+          document.cookie = 'dev_expiresIn=; Max-Age=0; path=/';
+        }
+
         // Clear state
         setToken(null);
         setRefreshToken(null);
         setIsAuthenticated(false);
-        
+
         // Clear any remaining cached data
         localStorage.removeItem('lastSelectedOrg');
         sessionStorage.clear();
-        
+
         // Try to reset organization state (without creating import cycle)
         try {
           // This is a workaround to avoid circular imports
@@ -105,7 +122,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (e) {
           console.warn('Could not reset organization state:', e);
         }
-        
+
         if (!silent) {
           // Hard refresh to ensure all React state is cleared between users
           window.location.href = '/login';
