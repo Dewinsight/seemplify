@@ -440,9 +440,9 @@ export function InterviewStageConfiguration({
 
   if (stages.length === 0) {
     return (
-      <Card className="glass-card border-white/5">
+      <Card className="glass-card border-border/50 dark:border-white/5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-white">
+          <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
             <Settings className="h-5 w-5" />
             Configure Interview Stages
           </CardTitle>
@@ -451,8 +451,8 @@ export function InterviewStageConfiguration({
           <div className="text-center py-8">
             <div className="mb-6">
               <Wand2 className="h-12 w-12 text-purple-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2 text-white">No Interview Stages Configured</h3>
-              <p className="text-gray-400 mb-6">
+              <h3 className="text-lg font-semibold mb-2 text-foreground dark:text-white">No Interview Stages Configured</h3>
+              <p className="text-muted-foreground dark:text-gray-400 mb-6">
                 Get started by choosing a template for your hiring process. Templates provide a structured interview pipeline with predefined stages.
               </p>
             </div>
@@ -465,14 +465,14 @@ export function InterviewStageConfiguration({
                     Use Template
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-[#0A0A0A] border-white/10">
+                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-background border-border text-foreground dark:bg-[#0A0A0A] dark:border-white/10">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl text-white">Choose Interview Pipeline Template</DialogTitle>
+                    <DialogTitle className="text-2xl text-foreground dark:text-white">Choose Interview Pipeline Template</DialogTitle>
                   </DialogHeader>
 
                   <Alert className="bg-blue-500/10 border-blue-500/20">
-                    <AlertTriangle className="h-4 w-4 text-blue-400" />
-                    <AlertDescription className="text-blue-200">
+                    <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <AlertDescription className="text-blue-700 dark:text-blue-200">
                       Applying a template will create interview stages for this job.
                     </AlertDescription>
                   </Alert>
@@ -516,9 +516,9 @@ export function InterviewStageConfiguration({
                             .map(([key, template]) => (
                               <Card
                                 key={key}
-                                className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group glass-card ${selectedTemplate === key
+                                className={`cursor-pointer transition-all duration-200 hover:bg-muted/60 dark:hover:bg-white/5 group glass-card ${selectedTemplate === key
                                   ? 'border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-900/10'
-                                  : 'border border-white/10 hover:border-blue-500/30'
+                                  : 'border border-border/60 dark:border-white/10 hover:border-blue-500/30'
                                   }`}
                                 onClick={() => setSelectedTemplate(key)}
                               >
@@ -576,9 +576,9 @@ export function InterviewStageConfiguration({
                               .map((template) => (
                                 <Card
                                   key={template._id}
-                                  className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group relative glass-card ${selectedTemplate === template._id
+                                  className={`cursor-pointer transition-all duration-200 hover:bg-muted/60 dark:hover:bg-white/5 group relative glass-card ${selectedTemplate === template._id
                                     ? 'border-2 border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-900/10'
-                                    : 'border border-white/10 hover:border-purple-500/30'
+                                    : 'border border-border/60 dark:border-white/10 hover:border-purple-500/30'
                                     }`}
                                   onClick={() => setSelectedTemplate(template._id)}
                                 >
@@ -591,8 +591,8 @@ export function InterviewStageConfiguration({
                                         {selectedTemplate === template._id && <CheckCircle className="w-3 h-3 text-white" />}
                                       </div>
                                       <div className="flex-1">
-                                        <h4 className="font-semibold text-base mb-1 text-white">{template.name}</h4>
-                                        <p className="text-xs text-gray-400 line-clamp-2">
+                                        <h4 className="font-semibold text-base mb-1 text-foreground dark:text-white">{template.name}</h4>
+                                        <p className="text-xs text-muted-foreground dark:text-gray-400 line-clamp-2">
                                           {template.description || 'No description'}
                                         </p>
                                       </div>
@@ -608,8 +608,8 @@ export function InterviewStageConfiguration({
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
                                     </div>
-                                    <div className="flex items-center justify-between text-xs text-gray-400 mt-3 pt-3 border-t border-white/10">
-                                      <Badge variant="outline" className="text-xs bg-purple-500/10 border-purple-500/30 text-purple-300">
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground dark:text-gray-400 mt-3 pt-3 border-t border-border/60 dark:border-white/10">
+                                      <Badge variant="outline" className="text-xs bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300">
                                         {template.stages.length} stages
                                       </Badge>
                                       <span className="flex items-center gap-1">
@@ -622,12 +622,12 @@ export function InterviewStageConfiguration({
                               ))}
                           </div>
                         ) : (
-                          <div className="text-center py-12 border-2 border-dashed border-white/10 rounded-lg bg-white/5">
-                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-3 border border-purple-500/20">
-                              <Bookmark className="h-6 w-6 text-purple-400" />
+                          <div className="text-center py-12 border-2 border-dashed border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50/30 dark:bg-purple-950/10">
+                            <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center mx-auto mb-3 border border-purple-200 dark:border-purple-700">
+                              <Bookmark className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                             </div>
-                            <p className="text-sm font-medium text-gray-300 mb-1">No custom templates yet</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-sm font-medium text-muted-foreground mb-1">No custom templates yet</p>
+                            <p className="text-xs text-muted-foreground/80">
                               Save your first template by clicking "Save as Template" on a job with stages
                             </p>
                           </div>
@@ -721,8 +721,8 @@ export function InterviewStageConfiguration({
                     </Alert>
                   ) : (
                     <Alert className="bg-blue-500/10 border-blue-500/20">
-                      <AlertTriangle className="h-4 w-4 text-blue-400" />
-                      <AlertDescription className="text-blue-200">
+                      <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      <AlertDescription className="text-blue-700 dark:text-blue-200">
                         Applying a template will create interview stages for this job.
                       </AlertDescription>
                     </Alert>
@@ -767,9 +767,9 @@ export function InterviewStageConfiguration({
                             .map(([key, template]) => (
                               <Card
                                 key={key}
-                                className={`cursor-pointer transition-all duration-200 hover:bg-white/5 group glass-card ${selectedTemplate === key
+                                className={`cursor-pointer transition-all duration-200 hover:bg-muted/60 dark:hover:bg-white/5 group glass-card ${selectedTemplate === key
                                   ? 'border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-900/10'
-                                  : 'border border-white/10 hover:border-blue-500/30'
+                                  : 'border border-border/60 dark:border-white/10 hover:border-blue-500/30'
                                   }`}
                                 onClick={() => setSelectedTemplate(key)}
                               >

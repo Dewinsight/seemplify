@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -69,6 +70,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
   const [loadingCandidates, setLoadingCandidates] = useState(false)
   const [addingCandidates, setAddingCandidates] = useState<Set<string>>(new Set())
   const [allCandidatesLoaded, setAllCandidatesLoaded] = useState(false)
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
 
   // Error dialog state for stage requirement
   const [showStageErrorDialog, setShowStageErrorDialog] = useState(false)
@@ -611,6 +613,10 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
     fetchShortlistedCandidates()
   }, [jobId])
 
+  useEffect(() => {
+    setPortalTarget(typeof document !== "undefined" ? document.body : null)
+  }, [])
+
   if (loading) {
     return (
       <Card className="glass-card border-0 shadow-lg">
@@ -629,8 +635,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
   return (
     <>
       {/* Bulk Action Bar - Portal to body level for true fixed positioning */}
-      {selectedCandidates.size > 0 && (
-        <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-full max-w-6xl z-[9999] px-2 sm:px-4">
+      {portalTarget && selectedCandidates.size > 0 && createPortal(
+        <div className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-full max-w-6xl z-[9999] px-2 sm:px-4">
           <div className="bg-gradient-to-r from-primary/90 to-purple-600/90 dark:from-blue-900/90 dark:to-purple-900/90 text-white p-3 sm:p-4 rounded-xl shadow-2xl backdrop-blur-xl border border-white/10 ring-1 ring-white/5">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Selection count */}
@@ -687,7 +693,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        portalTarget
       )}
 
       <Card className="glass-card border-0 shadow-lg">
@@ -1247,7 +1254,10 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                       )
 
                       return (
-                        <div key={candidateId} className="border border-white/10 rounded-lg p-3 sm:p-4 flex items-center justify-between gap-2 sm:gap-3 bg-white/5">
+                        <div
+                          key={candidateId}
+                          className="border border-border/60 dark:border-white/10 rounded-lg p-3 sm:p-4 flex items-center justify-between gap-2 sm:gap-3 bg-muted/40 dark:bg-white/5"
+                        >
                           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                             <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
                               <AvatarFallback className="text-xs sm:text-sm bg-gradient-to-br from-blue-500 to-purple-600 text-white">
@@ -1255,10 +1265,10 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
-                              <h4 className="font-medium text-sm sm:text-base truncate text-white">{candidateName}</h4>
-                              <p className="text-xs sm:text-sm text-gray-400 truncate">{candidate.position || 'Position not specified'}</p>
+                              <h4 className="font-medium text-sm sm:text-base truncate text-foreground dark:text-white">{candidateName}</h4>
+                              <p className="text-xs sm:text-sm text-muted-foreground dark:text-gray-400 truncate">{candidate.position || 'Position not specified'}</p>
                               {candidate.location && (
-                                <p className="text-[10px] sm:text-xs text-gray-500 truncate">{candidate.location}</p>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground/80 dark:text-gray-500 truncate">{candidate.location}</p>
                               )}
                             </div>
                           </div>
