@@ -1,0 +1,3 @@
+﻿# Dev Environment - Fixed Configuration
+# Deployment trigger: 2026-01-14T15:46:30Z
+# Fixed: Removed customGitBuildPath to match production configuration

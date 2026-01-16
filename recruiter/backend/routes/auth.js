@@ -906,14 +906,33 @@ router.get('/oidc/callback', async (req, res) => {
 
     const base = returnTo.replace(/#.*$/, '');
     const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
-    const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const tokenParams = `token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const callbackTarget = base.includes('/login')
+      ? base.replace(/\/login.*$/, '') + '/oidc/callback'
+      : `${base.replace(/\/$/, '')}/oidc/callback`;
+    const loc = process.env.NODE_ENV === 'development'
+      ? `${callbackTarget}?${tokenParams}`
+      : `${target}#${tokenParams}`;
+
+    if (process.env.NODE_ENV === 'development') {
+      const cookieOptions = { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };
+      res.cookie('dev_jwt', accessToken, cookieOptions);
+      res.cookie('dev_refreshToken', refreshToken, cookieOptions);
+      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
+    }
     
+    const safeLoc = loc
+      .replace(/token=[^&]*/g, 'token=[redacted]')
+      .replace(/refreshToken=[^&]*/g, 'refreshToken=[redacted]')
+      .replace(/expiresIn=[^&]*/g, 'expiresIn=[redacted]');
+
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,
       targetUrl: target,
       hasToken: !!accessToken,
       hasRefreshToken: !!refreshToken
     });
+    console.log('🔄 Redirect URL:', safeLoc);
     
     console.log(`⏱️ OIDC Callback total time: ${Date.now() - callbackStartTime}ms`);
     res.redirect(loc);

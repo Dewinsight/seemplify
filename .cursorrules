@@ -1,0 +1,265 @@
+# Seemplify Project Rules
+
+## 🚨 CRITICAL: Identity Provider (IDP) Protection
+
+**READ `IDP-CRITICAL-RULES.md` BEFORE TOUCHING THESE FILES:**
+- `Identityprovider/src/index.js`
+- `Identityprovider/clients.json`
+- Any file with OIDC/authentication logic
+
+### ⚠️ Never Change Without Verification:
+
+1. **`provider.proxy = true`** - Must ALWAYS be true (not conditional)
+2. **Client IDs in `clients.json`** - Match backend `OIDC_CLIENT_ID` exactly
+3. **Redirect URI patterns** - Must include prod, dev, and localhost
+4. **`TRUST_PROXY=true`** - Required in all IDP env vars
+5. **`IDP_ISSUER_URL`** - Must use HTTPS (not HTTP)
+6. **CSP headers** - Must allow all `auth*.seemplifyai.com` URLs
+
+### 🛡️ If You Break IDP:
+- **ALL app logins fail** (Recruiter, Leave, Performance, Payroll, Outline, AI)
+- Symptoms: 308 redirects, CSP violations, "Invalid token" errors
+- Fix: Check `IDP-CRITICAL-RULES.md` debugging section
+
+---
+
+## 📋 Environment Separation Rules
+
+### Dev vs Production Architecture
+
+**We have TWO complete, isolated environments:**
+
+| Aspect | Production (`main` branch) | Dev (`dev` branch) |
+|--------|---------------------------|-------------------|
+| **Branch** | `main` | `dev` |
+| **Domains** | `*.seemplifyai.com` | `*-dev.seemplifyai.com` |
+| **Databases** | `identity`, `smart_hr_db`, `leave-management`, `performance_db`, `payroll_db` | `identity_dev`, `smart_hr_db_dev`, `leave-management_dev`, `performance_db_dev`, `payroll_db_dev` |
+| **IDP URL** | `https://auth.seemplifyai.com` | `https://auth-dev.seemplifyai.com` |
+| **Dokploy Apps** | 9 production apps | 9 dev apps (with `-dev` suffix) |
+| **GitHub Workflows** | `deploy-*.yml` (triggers on `main`) | `deploy-*-dev.yml` (triggers on `dev`) |
+| **Dockerfiles** | `Dockerfile` | `Dockerfile.dev` (frontends only) |
+| **NODE_ENV** | `production` | `development` |
+
+### What's DIFFERENT Between Dev and Production:
+
+**1. MongoDB Connection Strings:**
+```env
+# Production
+MONGO_URI=mongodb+srv://.../identity
+MONGO_URI=mongodb+srv://.../smart_hr_db
+MONGO_URI=mongodb+srv://.../leave-management
+MONGO_URI=mongodb+srv://.../performance_db
+MONGO_URI=mongodb+srv://.../payroll_db
+
+# Dev (same cluster, different databases)
+MONGO_URI=mongodb+srv://.../identity_dev
+MONGO_URI=mongodb+srv://.../smart_hr_db_dev
+MONGO_URI=mongodb+srv://.../leave-management_dev
+MONGO_URI=mongodb+srv://.../performance_db_dev
+MONGO_URI=mongodb+srv://.../payroll_db_dev
+```
+
+**2. Internal App URLs (OIDC redirects, webhooks):**
+```env
+# Production
+IDP_ISSUER_URL=https://auth.seemplifyai.com
+SMARTHR_URL=https://app.seemplifyai.com
+SMARTHR_API_URL=https://api.seemplifyai.com
+LEAVE_MANAGEMENT_URL=https://leave.seemplifyai.com
+PERFORMANCE_MANAGEMENT_URL=https://performance.seemplifyai.com
+PAYROLL_MANAGEMENT_URL=https://payroll.seemplifyai.com
+
+# Dev
+IDP_ISSUER_URL=https://auth-dev.seemplifyai.com
+SMARTHR_URL=https://app-dev.seemplifyai.com
+SMARTHR_API_URL=https://api-dev.seemplifyai.com
+LEAVE_MANAGEMENT_URL=https://leave-dev.seemplifyai.com
+PERFORMANCE_MANAGEMENT_URL=https://performance-dev.seemplifyai.com
+PAYROLL_MANAGEMENT_URL=https://payroll-dev.seemplifyai.com
+```
+
+**3. NODE_ENV:**
+```env
+# Production
+NODE_ENV=production
+
+# Dev
+NODE_ENV=development
+```
+
+### What's IDENTICAL Between Dev and Production:
+
+**1. External Service URLs (shared services):**
+```env
+# SAME in both dev and production
+OPENWEBUI_URL=https://ai.seemplifyai.com          # AI Assistant
+OUTLINE_URL=https://docs.seemplifyai.com          # Docs
+LMS_URL=https://lms.seemplifyai.com               # Learning platform
+```
+
+**2. API Keys & Secrets (same services):**
+```env
+# SAME in both dev and production
+AZURE_OPENAI_API_KEY=<same-key>
+AZURE_OPENAI_ENDPOINT=<same-endpoint>
+BREVO_API_KEY=<same-key>
+BREVO_FROM_EMAIL=<same-email>
+NYLAS_API_KEY=<same-key>
+```
+
+**3. OIDC Client Secrets:**
+```env
+# SAME in both dev and production
+OIDC_CLIENT_ID=smarthr-backend              # From clients.json
+OIDC_CLIENT_SECRET=smarthr-secret           # From clients.json
+```
+
+**4. Application Logic:**
+- All routes, controllers, services are identical
+- All business logic runs the same way
+- All AI models, prompts, features work identically
+
+### Required Environment Variables (All Backends):
+
+**Template (replace `[-dev]` based on environment):**
+```env
+# DIFFERENT per environment:
+IDP_ISSUER_URL=https://auth[-dev].seemplifyai.com
+OIDC_REDIRECT_URI=https://api[-dev].seemplifyai.com/api/auth/oidc/callback
+FRONTEND_URL=https://app[-dev].seemplifyai.com
+MONGO_URI=mongodb+srv://.../database[_dev]
+NODE_ENV=production|development
+
+# SAME in both environments:
+OIDC_CLIENT_ID=<from-clients.json>
+OIDC_CLIENT_SECRET=<from-clients.json>
+AZURE_OPENAI_API_KEY=<shared-key>
+BREVO_API_KEY=<shared-key>
+```
+
+### Required Build Args (All Frontends):
+
+**Template (replace `[-dev]` based on environment):**
+```dockerfile
+# DIFFERENT per environment:
+ARG NEXT_PUBLIC_IDP_URL=https://auth[-dev].seemplifyai.com
+ARG NEXT_PUBLIC_API_URL=https://api[-dev].seemplifyai.com
+ARG NEXT_PUBLIC_APP_URL=https://app[-dev].seemplifyai.com
+
+# Build-time injection (baked into compiled code)
+ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+```
+
+### How Code Switches Between Environments:
+
+**Backend (automatic via Docker env vars):**
+```javascript
+// Reads from container environment (set by Dokploy)
+const mongoUri = process.env.MONGO_URI;  
+// Production container: mongodb.net/smart_hr_db
+// Dev container: mongodb.net/smart_hr_db_dev
+```
+
+**Frontend (hostname or build-time detection):**
+```typescript
+// Option 1: Hostname-based (recruiter)
+if (window.location.hostname.includes('-dev')) {
+  return process.env.NEXT_PUBLIC_API_BASE_URL;  // Build-time dev URL
+}
+
+// Option 2: Build-time only (leave, performance, payroll)
+// Uses ARG in Dockerfile.dev vs Dockerfile
+```
+
+### Deployment Flow:
+
+**Push to dev:**
+```bash
+git push origin dev
+→ Triggers deploy-*-dev.yml workflows
+→ Deploys to *-dev Dokploy apps
+→ Uses *_dev databases
+→ Updates *-dev.seemplifyai.com domains
+```
+
+**Push to main:**
+```bash
+git push origin main
+→ Triggers deploy-*.yml workflows  
+→ Deploys to production Dokploy apps
+→ Uses production databases
+→ Updates *.seemplifyai.com domains
+```
+
+---
+
+## 🔒 Security Rules
+
+1. **Never commit secrets** to git (use Dokploy env vars)
+2. **Always use `httpOnly: true`** for sensitive cookies
+3. **Always validate OIDC state** to prevent CSRF
+4. **Never disable CSP** - only add to whitelist
+5. **Always use HTTPS** in production URLs
+
+---
+
+## 🚀 Deployment Rules
+
+1. **Test on dev first** - Push to `dev`, verify, then merge to `main`
+2. **Watch GitHub Actions** - Verify deployment success before testing
+3. **Check logs after deploy** - Use `docker logs` to verify startup
+4. **Clear browser cache** - After CSP/config changes
+5. **Restart services** - If env vars change: `docker service update --force <service>`
+
+---
+
+## 📁 File Structure Rules
+
+### Dockerfile Naming:
+- `Dockerfile` - Used by production apps
+- `Dockerfile.dev` - Used by dev apps (configured in Dokploy)
+- Never modify production Dockerfile to include dev URLs
+
+### Workflow Naming:
+- `deploy-*.yml` - Triggers on `main` branch (production)
+- `deploy-*-dev.yml` - Triggers on `dev` branch (dev environment)
+
+### Database Naming:
+- Production: `database_name` (no suffix)
+- Dev: `database_name_dev` (underscore, not hyphen)
+
+---
+
+## 🎯 Common Pitfalls
+
+### ❌ Things That WILL Break Production:
+
+1. Removing `-dev` URLs from `clients.json` → Breaks dev environment
+2. Changing client IDs without updating backend env vars → Auth fails
+3. Making `provider.proxy` conditional → HTTP URLs in one environment
+4. Hardcoding production URLs in code → Dev can't work
+5. Removing CSP entries → Blocks API calls
+6. Using hyphen `-dev` for databases → Inconsistent naming
+
+### ✅ Safe Development Practices:
+
+1. Always add URLs (dev + prod) - never replace
+2. Use environment variables for all configs
+3. Test CSP changes on dev first
+4. Keep client secrets in Dokploy (never in code)
+5. Document any OIDC flow changes
+6. Add comments for security-critical code
+
+---
+
+## 📚 Reference Documents
+
+- `IDP-CRITICAL-RULES.md` - Full IDP protection guide
+- `DEV-PROD-DEPLOYMENT-WORKFLOW.md` - CI/CD workflow
+- `OIDC-DEV-COMPLETE.md` - OIDC configuration reference
+- `DEV-LOGIN-SUCCESS-FINAL.md` - Working configuration snapshot
+
+---
+
+**🔥 GOLDEN RULE: If it touches authentication, test on dev first and verify end-to-end login!**

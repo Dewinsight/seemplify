@@ -100,19 +100,32 @@ export default function LoginPage() {
 
   useEffect(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    const search = typeof window !== 'undefined' ? window.location.search : ''
     // ... existing logging code ...
+    const getCookie = (name: string) => {
+      if (typeof document === 'undefined') {
+        return ''
+      }
+      const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    const cookieToken = getCookie('dev_jwt')
+    const cookieRefresh = getCookie('dev_refreshToken')
+    const cookieExpiresIn = getCookie('dev_expiresIn')
+
     console.log('🔐 Login page checking for OIDC tokens:', {
       hasHash: !!hash,
       hashContent: hash ? hash.substring(0, 50) + '...' : 'none',
-      hasToken: hash.includes('token=')
+      hasToken: hash.includes('token=') || search.includes('token=') || !!cookieToken
     })
 
-    if (hash && hash.includes('token=')) {
+    if ((hash && hash.includes('token=')) || (search && search.includes('token=')) || (cookieToken && cookieRefresh)) {
       setIsProcessingOIDC(true)
-      const params = new URLSearchParams(hash.replace('#', ''))
-      const token = params.get('token') || ''
-      const refreshToken = params.get('refreshToken') || ''
-      const expiresIn = params.get('expiresIn') || '10m'
+      const hashParams = new URLSearchParams(hash.replace('#', ''))
+      const searchParams = new URLSearchParams(search)
+      const token = hashParams.get('token') || searchParams.get('token') || cookieToken || ''
+      const refreshToken = hashParams.get('refreshToken') || searchParams.get('refreshToken') || cookieRefresh || ''
+      const expiresIn = hashParams.get('expiresIn') || searchParams.get('expiresIn') || cookieExpiresIn || '10m'
 
       console.log('🎯 Processing OIDC login:', {
         hasToken: !!token,
@@ -123,13 +136,18 @@ export default function LoginPage() {
       if (token && refreshToken) {
         ; (async () => {
           try {
-            console.log('📝 Starting user login...')
-            await user.login(token)
-            console.log('✅ User login complete, starting auth login...')
+            console.log('📝 Starting auth login...')
             auth.login(token, refreshToken, expiresIn)
-            console.log('✅ Auth login complete, clearing hash...')
             if (typeof window !== 'undefined') {
-              window.location.hash = ''
+              const url = new URL(window.location.href)
+              url.hash = ''
+              url.searchParams.delete('token')
+              url.searchParams.delete('refreshToken')
+              url.searchParams.delete('expiresIn')
+              window.history.replaceState({}, '', url.pathname)
+              document.cookie = 'dev_jwt=; Max-Age=0; path=/'
+              document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
+              document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
             }
           } catch (error) {
             console.error('❌ OIDC login error:', error)
@@ -435,7 +453,16 @@ export default function LoginPage() {
                         type="button"
                         className="w-full h-12 bg-foreground text-background dark:bg-white dark:text-black rounded-lg font-medium hover:opacity-90 transition-all duration-300 shadow-md"
                         onClick={() => {
-                          const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+                          const envBase =
+                            process.env.NEXT_PUBLIC_API_BASE_URL ||
+                            process.env.NEXT_PUBLIC_API_URL
+                          const hostname = window.location.hostname
+                          const derivedBase = hostname.includes('localhost') || hostname.startsWith('127.0.0.1')
+                            ? 'http://localhost:5001'
+                            : hostname.includes('-dev')
+                              ? 'https://api-dev.seemplifyai.com'
+                              : 'https://api.seemplifyai.com'
+                          const base = envBase || derivedBase
                           const returnTo = encodeURIComponent(window.location.href)
                           window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
                         }}
