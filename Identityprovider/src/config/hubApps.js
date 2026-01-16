@@ -6,6 +6,15 @@
 // Determine environment from NODE_ENV
 const isProduction = process.env.NODE_ENV === 'production'
 
+function buildLmsLaunchUrl(baseUrl) {
+  const normalized = (baseUrl || '').replace(/\/+$/, '')
+  if (!normalized) return baseUrl
+  if (normalized.endsWith('/lms')) {
+    return `${normalized}/`
+  }
+  return `${normalized}/lms/`
+}
+
 // Development apps configuration
 const developmentApps = [
   {
@@ -100,7 +109,7 @@ const developmentApps = [
     description: 'Online courses, training, and certifications',
     icon: 'academic-cap',
     color: '#06b6d4',
-    url: process.env.LMS_URL || 'http://localhost:8000',
+    url: buildLmsLaunchUrl(process.env.LMS_URL || 'http://localhost:8000'),
     authType: 'direct',
     isActive: true,
     isPublic: true,
@@ -203,7 +212,7 @@ const productionApps = [
     description: 'Online courses, training, and certifications',
     icon: 'academic-cap',
     color: '#06b6d4',
-    url: process.env.LMS_URL || 'https://lms.seemplifyai.com',
+    url: buildLmsLaunchUrl(process.env.LMS_URL || 'https://lms.seemplifyai.com'),
     authType: 'direct',
     isActive: true,
     isPublic: true,
