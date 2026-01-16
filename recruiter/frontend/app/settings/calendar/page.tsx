@@ -216,8 +216,8 @@ export default function CalendarSettingsPage() {
     <div className="container mx-auto p-6 max-w-4xl space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Calendar Settings</h1>
-        <p className="text-gray-600">Manage your calendar integration for interview scheduling</p>
+        <h1 className="text-3xl font-bold text-foreground">Calendar Settings</h1>
+        <p className="text-muted-foreground">Manage your calendar integration for interview scheduling</p>
       </div>
 
       {/* Dynamic Grant Verification Alert */}
@@ -270,7 +270,7 @@ export default function CalendarSettingsPage() {
               
               {calendarStatus.provider && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Provider:</span>
+                  <span className="text-sm text-muted-foreground">Provider:</span>
                   <span className="text-sm font-medium capitalize">{calendarStatus.provider}</span>
                 </div>
               )}
@@ -405,7 +405,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Automatic Scheduling
               </h4>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Create calendar events automatically when interviews are scheduled
               </p>
             </div>
@@ -415,7 +415,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Availability Checking
               </h4>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Prevent double-booking by checking availability before scheduling
               </p>
             </div>
@@ -425,7 +425,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Real-time Sync
               </h4>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Keep interviews in sync with external calendar changes
               </p>
             </div>
@@ -435,7 +435,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Meeting Links
               </h4>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Automatically generate video meeting links for remote interviews
               </p>
             </div>
@@ -470,7 +470,7 @@ export default function CalendarSettingsPage() {
           
           <Separator />
           
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-muted-foreground">
             <p>
               Your calendar data is securely encrypted and only used for interview scheduling purposes. 
               You can disconnect your calendar at any time.

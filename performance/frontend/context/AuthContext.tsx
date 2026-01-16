@@ -96,14 +96,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setUser(response.user);
 
-      // Set current organization
-      if (response.currentOrganizationId && response.user?.organizations) {
-        const org = response.user.organizations.find(
+      // Set current organization - prefer IDP organizations
+      const organizations = response.user?.idpOrganizations || response.user?.organizations || [];
+      
+      // Use currentOrganization from response (from IDP) or find by ID
+      if (response.currentOrganization) {
+        setCurrentOrganization(response.currentOrganization);
+      } else if (response.currentOrganizationId && organizations.length > 0) {
+        const org = organizations.find(
           (o: Organization) => o.id === response.currentOrganizationId
         );
-        setCurrentOrganization(org || response.user.organizations[0] || null);
-      } else if (response.user?.organizations?.length > 0) {
-        setCurrentOrganization(response.user.organizations[0]);
+        setCurrentOrganization(org || organizations[0] || null);
+      } else if (organizations.length > 0) {
+        setCurrentOrganization(organizations[0]);
       }
     } catch (error: any) {
       console.error('❌ Failed to load user:', error?.response?.status, error?.message);

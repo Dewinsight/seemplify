@@ -10,7 +10,7 @@ export interface ThemeSettings {
   lightEnabled: boolean;
   darkEnabled: boolean;
   systemEnabled: boolean;
-  
+
   // Default theme (must be one of the enabled themes)
   defaultTheme: 'light' | 'dark' | 'system';
 }
@@ -26,11 +26,11 @@ export interface ThemeSettings {
 export const THEME_CONFIG: ThemeSettings = {
   // Theme Availability
   lightEnabled: true,
-  darkEnabled: false,
-  systemEnabled: false,
-  
+  darkEnabled: true,
+  systemEnabled: true,
+
   // Default Theme (must be enabled above)
-  defaultTheme: 'light'
+  defaultTheme: 'system'
 };
 
 /**
@@ -58,7 +58,7 @@ export function validateThemeConfig(config: ThemeSettings): {
   }
 
   // Check if default theme is enabled
-  const isDefaultEnabled = 
+  const isDefaultEnabled =
     (config.defaultTheme === 'light' && correctedConfig.lightEnabled) ||
     (config.defaultTheme === 'dark' && correctedConfig.darkEnabled) ||
     (config.defaultTheme === 'system' && correctedConfig.systemEnabled);
@@ -83,7 +83,7 @@ export function validateThemeConfig(config: ThemeSettings): {
  */
 export function getValidatedThemeConfig(): ThemeSettings {
   const validation = validateThemeConfig(THEME_CONFIG);
-  
+
   if (!validation.isValid) {
     console.warn('⚠️ Theme configuration has issues:', validation.errors);
     if (validation.correctedConfig) {
@@ -91,16 +91,16 @@ export function getValidatedThemeConfig(): ThemeSettings {
       return validation.correctedConfig;
     }
   }
-  
+
   return THEME_CONFIG;
 }
 
 /**
  * Get available themes as options for UI components
  */
-export function getAvailableThemes(): Array<{value: string; label: string; enabled: boolean}> {
+export function getAvailableThemes(): Array<{ value: string; label: string; enabled: boolean }> {
   const config = getValidatedThemeConfig();
-  
+
   return [
     { value: 'light', label: 'Light', enabled: config.lightEnabled },
     { value: 'dark', label: 'Dark', enabled: config.darkEnabled },

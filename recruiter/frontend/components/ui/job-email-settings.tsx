@@ -359,7 +359,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
                       className="font-mono text-xs leading-relaxed"
                       spellCheck={false}
                     />
-                    <div className="absolute top-2 right-2 bg-white/90 dark:bg-gray-800/90 px-2 py-1 rounded text-xs text-gray-500">
+                    <div className="absolute top-2 right-2 bg-white/90 dark:bg-gray-800/90 px-2 py-1 rounded text-xs text-muted-foreground">
                       {(settings.customTemplates?.[activeTemplate] || defaultTemplates[
                         activeTemplate === 'rejection' ? 'rejection-notice' :
                         activeTemplate === 'shortlistRejection' ? 'shortlist-rejection' :

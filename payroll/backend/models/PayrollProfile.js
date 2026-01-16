@@ -43,15 +43,6 @@ const AllowanceSchema = new Schema({
 const RecurringDeductionSchema = new Schema({
   type: {
     type: String,
-    enum: [
-      'pension',           // Pension/401k contribution
-      'health_insurance',  // Health insurance premium
-      'life_insurance',    // Life insurance premium
-      'loan_repayment',    // Company loan repayment
-      'union_dues',        // Union membership dues
-      'voluntary_contribution',
-      'other'
-    ],
     required: true
   },
   name: { type: String, required: true },
@@ -143,7 +134,7 @@ const PayrollProfileSchema = new Schema({
   // User identification (from IdP)
   userId: { type: String, required: true, index: true },
   organizationId: { type: String, required: true, index: true },
-  
+
   // Employee snapshot (synced from IdP but stored locally for payroll processing)
   employeeInfo: {
     name: String,
@@ -167,7 +158,7 @@ const PayrollProfileSchema = new Schema({
     workLocation: String,
     lastSyncedAt: Date
   },
-  
+
   // ===== COMPENSATION =====
   // Base Salary
   basicSalary: { type: Number, required: true, default: 0 },
@@ -181,7 +172,7 @@ const PayrollProfileSchema = new Schema({
     enum: ['monthly', 'bi-weekly', 'weekly', 'semi-monthly'],
     default: 'monthly'
   },
-  
+
   // Salary Grade (optional - for organizations using grade structures)
   salaryGrade: {
     gradeId: { type: Schema.Types.ObjectId, ref: 'SalaryGrade' },
@@ -189,22 +180,22 @@ const PayrollProfileSchema = new Schema({
     gradeLevel: String,
     assignedAt: Date
   },
-  
+
   // Salary History
   salaryHistory: [SalaryHistorySchema],
-  
+
   // ===== ALLOWANCES =====
   allowances: [AllowanceSchema],
-  
+
   // ===== RECURRING DEDUCTIONS =====
   recurringDeductions: [RecurringDeductionSchema],
-  
+
   // ===== BANK DETAILS =====
   bankAccounts: [BankAccountSchema],
-  
+
   // ===== TAX CONFIGURATION =====
   taxConfig: TaxConfigSchema,
-  
+
   // ===== STATUTORY CONTRIBUTIONS =====
   statutoryContributions: {
     socialSecurityOptIn: { type: Boolean, default: true },
@@ -214,7 +205,7 @@ const PayrollProfileSchema = new Schema({
     pensionContributionPercent: { type: Number, default: 0 }, // Employee contribution %
     employerPensionPercent: { type: Number, default: 0 },      // Employer contribution %
   },
-  
+
   // ===== BENEFITS ENROLLMENT =====
   benefits: {
     healthInsurancePlan: String,
@@ -224,7 +215,7 @@ const PayrollProfileSchema = new Schema({
     dentalPlan: String,
     visionPlan: String
   },
-  
+
   // ===== LEAVE BALANCES (synced from Leave Management) =====
   leaveBalances: {
     annual: { type: Number, default: 0 },
@@ -232,10 +223,10 @@ const PayrollProfileSchema = new Schema({
     unpaid: { type: Number, default: 0 },
     lastSyncedAt: Date
   },
-  
+
   // ===== EMERGENCY CONTACT =====
   emergencyContact: EmergencyContactSchema,
-  
+
   // ===== STATUS =====
   status: {
     type: String,
@@ -245,7 +236,7 @@ const PayrollProfileSchema = new Schema({
   isActive: { type: Boolean, default: true },
   terminationDate: Date,
   terminationReason: String,
-  
+
   // ===== PAYROLL PROCESSING FLAGS =====
   payrollFlags: {
     includeInNextRun: { type: Boolean, default: true },
@@ -254,15 +245,15 @@ const PayrollProfileSchema = new Schema({
     requiresReview: { type: Boolean, default: false },
     reviewReason: String
   },
-  
+
   // ===== METADATA =====
   notes: String, // Internal notes (HR only)
   tags: [String], // For filtering/grouping
-  
+
   // Audit
   createdBy: String,
   lastModifiedBy: String,
-  
+
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -278,7 +269,7 @@ PayrollProfileSchema.index({ 'salaryGrade.gradeId': 1 });
 // ===== VIRTUALS =====
 
 // Calculate total recurring allowances
-PayrollProfileSchema.virtual('totalAllowances').get(function() {
+PayrollProfileSchema.virtual('totalAllowances').get(function () {
   if (!this.allowances) return 0;
   return this.allowances
     .filter(a => a.isActive)
@@ -286,7 +277,7 @@ PayrollProfileSchema.virtual('totalAllowances').get(function() {
 });
 
 // Calculate total recurring deductions
-PayrollProfileSchema.virtual('totalRecurringDeductions').get(function() {
+PayrollProfileSchema.virtual('totalRecurringDeductions').get(function () {
   if (!this.recurringDeductions) return 0;
   return this.recurringDeductions
     .filter(d => d.isActive)
@@ -294,12 +285,12 @@ PayrollProfileSchema.virtual('totalRecurringDeductions').get(function() {
 });
 
 // Calculate gross monthly salary (basic + allowances)
-PayrollProfileSchema.virtual('grossMonthlySalary').get(function() {
+PayrollProfileSchema.virtual('grossMonthlySalary').get(function () {
   return this.basicSalary + (this.totalAllowances || 0);
 });
 
 // Get primary bank account
-PayrollProfileSchema.virtual('primaryBankAccount').get(function() {
+PayrollProfileSchema.virtual('primaryBankAccount').get(function () {
   if (!this.bankAccounts || this.bankAccounts.length === 0) return null;
   return this.bankAccounts.find(b => b.isPrimary) || this.bankAccounts[0];
 });
@@ -307,12 +298,12 @@ PayrollProfileSchema.virtual('primaryBankAccount').get(function() {
 // ===== METHODS =====
 
 // Add salary history entry
-PayrollProfileSchema.methods.recordSalaryChange = function(newSalary, reason, approvedBy, approvedByName, notes) {
+PayrollProfileSchema.methods.recordSalaryChange = function (newSalary, reason, approvedBy, approvedByName, notes) {
   const previousSalary = this.basicSalary;
-  const changePercentage = previousSalary > 0 
+  const changePercentage = previousSalary > 0
     ? ((newSalary - previousSalary) / previousSalary * 100).toFixed(2)
     : 0;
-    
+
   this.salaryHistory.push({
     effectiveDate: new Date(),
     previousSalary,
@@ -323,15 +314,15 @@ PayrollProfileSchema.methods.recordSalaryChange = function(newSalary, reason, ap
     approvedByName,
     notes
   });
-  
+
   this.basicSalary = newSalary;
   return this;
 };
 
 // Add or update allowance
-PayrollProfileSchema.methods.setAllowance = function(type, name, amount, options = {}) {
+PayrollProfileSchema.methods.setAllowance = function (type, name, amount, options = {}) {
   const existingIndex = this.allowances.findIndex(a => a.type === type);
-  
+
   const allowanceData = {
     type,
     name,
@@ -342,18 +333,18 @@ PayrollProfileSchema.methods.setAllowance = function(type, name, amount, options
     effectiveTo: options.effectiveTo,
     notes: options.notes
   };
-  
+
   if (existingIndex >= 0) {
     this.allowances[existingIndex] = { ...this.allowances[existingIndex], ...allowanceData };
   } else {
     this.allowances.push(allowanceData);
   }
-  
+
   return this;
 };
 
 // Add recurring deduction
-PayrollProfileSchema.methods.addRecurringDeduction = function(type, name, amount, options = {}) {
+PayrollProfileSchema.methods.addRecurringDeduction = function (type, name, amount, options = {}) {
   this.recurringDeductions.push({
     type,
     name,
@@ -368,12 +359,12 @@ PayrollProfileSchema.methods.addRecurringDeduction = function(type, name, amount
     remainingAmount: options.remainingAmount || options.totalAmount,
     notes: options.notes
   });
-  
+
   return this;
 };
 
 // Sync employee info from IdP user data
-PayrollProfileSchema.methods.syncFromIdpUser = function(idpUser) {
+PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
   this.employeeInfo = {
     ...this.employeeInfo,
     name: idpUser.name,
@@ -386,16 +377,16 @@ PayrollProfileSchema.methods.syncFromIdpUser = function(idpUser) {
     managerName: idpUser.managerName,
     lastSyncedAt: new Date()
   };
-  
+
   return this;
 };
 
 // ===== STATICS =====
 
 // Find or create profile for user
-PayrollProfileSchema.statics.findOrCreateForUser = async function(userId, organizationId, defaults = {}) {
+PayrollProfileSchema.statics.findOrCreateForUser = async function (userId, organizationId, defaults = {}) {
   let profile = await this.findOne({ userId, organizationId });
-  
+
   if (!profile) {
     profile = new this({
       userId,
@@ -407,29 +398,29 @@ PayrollProfileSchema.statics.findOrCreateForUser = async function(userId, organi
     });
     await profile.save();
   }
-  
+
   return profile;
 };
 
 // Get all active profiles for an organization
-PayrollProfileSchema.statics.getActiveByOrganization = function(organizationId, options = {}) {
+PayrollProfileSchema.statics.getActiveByOrganization = function (organizationId, options = {}) {
   const query = {
     organizationId,
     isActive: true,
     'payrollFlags.includeInNextRun': true
   };
-  
+
   if (options.teamId) {
     query['employeeInfo.teamId'] = options.teamId;
   }
-  
+
   return this.find(query)
     .populate('salaryGrade.gradeId')
     .sort({ 'employeeInfo.name': 1 });
 };
 
 // Get profiles for a list of user IDs (for team view)
-PayrollProfileSchema.statics.getByUserIds = function(userIds, organizationId) {
+PayrollProfileSchema.statics.getByUserIds = function (userIds, organizationId) {
   return this.find({
     userId: { $in: userIds },
     organizationId,

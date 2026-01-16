@@ -285,12 +285,12 @@ class AiJobService {
                 return false;
             }
 
-            // Delete embedding from Pinecone first
+            // Delete embedding from Weaviate first
             try {
-                await embeddingService.deleteEmbedding(jobId, embeddingService.jobIndexName);
-                console.log(`[AiJobService] Job embedding deleted from Pinecone for job: ${jobId}`);
+                await embeddingService.deleteEmbedding(jobId, 'jobs');
+                console.log(`[AiJobService] Job embedding deleted from Weaviate for job: ${jobId}`);
             } catch (embeddingError) {
-                console.warn(`[AiJobService] WARNING: Failed to delete job embedding for ${jobId} from Pinecone:`, embeddingError.message);
+                console.warn(`[AiJobService] WARNING: Failed to delete job embedding for ${jobId} from Weaviate:`, embeddingError.message);
                 // Continue with DB deletion even if embedding deletion fails
             }
 
@@ -316,14 +316,14 @@ class AiJobService {
                 throw new Error('Job not found');
             }
 
-            const pineconeExists = await embeddingService.checkEmbeddingExists(jobId, embeddingService.jobIndexName);
+            const weaviateExists = await embeddingService.checkEmbeddingExists(jobId, 'jobs');
             
             return {
                 jobId: job._id,
                 isEmbeddedInDB: job.isEmbedded,
                 embeddingCreatedAt: job.embeddingCreatedAt,
-                isEmbeddedInPinecone: pineconeExists,
-                isConsistent: job.isEmbedded === pineconeExists
+                isEmbeddedInWeaviate: weaviateExists,
+                isConsistent: job.isEmbedded === weaviateExists
             };
         } catch (error) {
             console.error(`[AiJobService] Error getting embedding status for job ID ${jobId}:`, error);

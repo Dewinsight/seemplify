@@ -55,6 +55,101 @@ const appPermissions = {
     // Team-based permissions (separate from organization role)
     line_manager: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves'],
     team_lead: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
+  },
+
+  // LMS permissions (role-based, not org-role based)
+  // Based on Frappe LMS DocType permissions
+  lms: {
+    // LMS Student - Basic learner role (no desk access in Frappe)
+    student: [
+      'view_courses',
+      'enroll_courses',
+      'view_lessons',
+      'submit_assignments',
+      'take_quizzes',
+      'view_certificates',
+      'view_own_progress',
+      'participate_discussions',
+      'view_batches',
+      'view_live_classes'
+    ],
+    
+    // Course Creator - Can create and manage courses (desk access in Frappe)
+    course_creator: [
+      'view_courses',
+      'create_courses',
+      'edit_own_courses',
+      'delete_own_courses',
+      'create_chapters',
+      'create_lessons',
+      'create_quizzes',
+      'create_assignments',
+      'manage_course_content',
+      'view_enrollments',
+      'view_student_progress',
+      'view_analytics',
+      'export_data'
+    ],
+    
+    // Moderator - Full LMS admin (desk access in Frappe)
+    moderator: [
+      'view_courses',
+      'create_courses',
+      'edit_any_course',
+      'delete_any_course',
+      'publish_courses',
+      'unpublish_courses',
+      'create_chapters',
+      'create_lessons',
+      'create_quizzes',
+      'create_assignments',
+      'manage_course_content',
+      'manage_batches',
+      'create_batches',
+      'edit_batches',
+      'delete_batches',
+      'manage_enrollments',
+      'manage_live_classes',
+      'manage_certifications',
+      'manage_lms_settings',
+      'view_all_analytics',
+      'export_data',
+      'import_data',
+      'moderate_discussions',
+      'manage_user_roles'
+    ],
+    
+    // Batch Evaluator - Manages batches and evaluates students (desk access in Frappe)
+    batch_evaluator: [
+      'view_courses',
+      'view_batches',
+      'create_batches',
+      'edit_batches',
+      'delete_batches',
+      'manage_batch_enrollments',
+      'grade_assignments',
+      'evaluate_quizzes',
+      'view_student_progress',
+      'manage_live_classes',
+      'send_announcements',
+      'view_analytics',
+      'export_data',
+      'manage_evaluator_schedule'
+    ],
+    
+    // Course Evaluator - Handles certification evaluations (desk access in Frappe)
+    course_evaluator: [
+      'view_courses',
+      'view_batches',
+      'evaluate_certifications',
+      'issue_certificates',
+      'revoke_certificates',
+      'view_evaluation_schedule',
+      'manage_evaluator_schedule',
+      'view_student_submissions',
+      'grade_final_evaluations',
+      'view_analytics'
+    ]
   }
 }
 

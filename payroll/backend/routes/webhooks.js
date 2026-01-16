@@ -7,6 +7,7 @@ const express = require('express')
 const router = express.Router()
 const crypto = require('crypto')
 const sessionStore = require('../services/sessionStore')
+const PayrollProfile = require('../models/PayrollProfile')
 
 const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key'
 
@@ -53,11 +54,41 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
     switch (event) {
       case 'team.member.removed':
         await sessionStore.invalidateUserSessions(data.userId)
+
+        // Update PayrollProfile
+        await PayrollProfile.findOneAndUpdate(
+          { userId: data.userId },
+          {
+            $set: {
+              'employeeInfo.teamId': null,
+              'employeeInfo.teamName': null,
+              'employeeInfo.managerId': null,
+              'employeeInfo.managerName': null,
+              'employeeInfo.lastSyncedAt': new Date()
+            }
+          }
+        );
+
         console.log(`🔒 Invalidated sessions for user ${data.userId} (removed from team)`)
         break
 
       case 'team.member.added':
         await sessionStore.updateUserTeamClaims(data.userId, data.team)
+
+        // Update PayrollProfile with new team info
+        await PayrollProfile.findOneAndUpdate(
+          { userId: data.userId },
+          {
+            $set: {
+              'employeeInfo.teamId': data.team.id,
+              'employeeInfo.teamName': data.team.name,
+              'employeeInfo.managerId': data.team.managerId,
+              'employeeInfo.managerName': data.team.managerName,
+              'employeeInfo.lastSyncedAt': new Date()
+            }
+          }
+        );
+
         console.log(`🔄 Updated team claims for user ${data.userId} (added to team)`)
         break
 
@@ -83,7 +114,19 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
 
       case 'organization.member.added':
         await sessionStore.updateUserOrgClaims(data.userId, data.organization)
-        console.log(`🔄 Updated org claims for user ${data.userId}`)
+
+        // Auto-Onboarding: Create/Update PayrollProfile
+        await PayrollProfile.findOrCreateForUser(data.userId, data.organization.id, {
+          employeeInfo: {
+            name: data.user.name,
+            email: data.user.email,
+            designation: data.user.jobTitle || data.user.designation,
+            lastSyncedAt: new Date()
+          },
+          status: 'active'
+        });
+
+        console.log(`🔄 Updated org claims & Onboarded user ${data.userId}`)
         break
 
       case 'user.session.invalidate':

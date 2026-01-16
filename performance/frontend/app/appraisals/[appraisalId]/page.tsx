@@ -12,7 +12,7 @@ import {
 import {
   ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
   ExpandMore, Star, Assignment, TrendingUp, Chat, Description,
-  Psychology, Flag, Warning
+  Psychology, Flag, Warning, Groups
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -54,6 +54,7 @@ const ratingLabels: Record<number, string> = {
 };
 
 const workflowSteps = [
+  { key: 'goalSetting', label: 'Goal Setting' },
   { key: 'selfAssessment', label: 'Self-Assessment' },
   { key: 'managerReview', label: 'Manager Review' },
   { key: 'discussion', label: 'Discussion' },
@@ -98,13 +99,15 @@ export default function AppraisalDetailPage() {
   // Determine active workflow step
   const getActiveStep = () => {
     const status = appraisal.status || '';
-    if (status.includes('self_assessment')) return 0;
-    if (status.includes('manager_review')) return 1;
-    if (status.includes('discussion')) return 2;
-    if (status.includes('calibration')) return 3;
-    if (status === 'completed' || status === 'employee_acknowledged') return 5;
-    return 4;
+    if (status === 'not_started' || status.includes('goal_setting')) return 0;
+    if (status.includes('self_assessment')) return 1;
+    if (status.includes('manager_review')) return 2;
+    if (status.includes('discussion')) return 3;
+    if (status.includes('calibration')) return 4;
+    if (status === 'completed' || status === 'employee_acknowledged') return 6;
+    return 5;
   };
+  const activeStep = getActiveStep();
 
   const selfAssessment = appraisal.selfAssessment;
   const managerReview = appraisal.managerReview;
@@ -142,6 +145,15 @@ export default function AppraisalDetailPage() {
 
           {/* Action Buttons */}
           <Box sx={{ display: 'flex', gap: 2 }}>
+            {isEmployee && (appraisal.status === 'goal_setting') && (
+              <Button
+                variant="contained"
+                startIcon={<Flag />}
+                onClick={() => router.push(`/appraisals/${appraisalId}/goal-setting`)}
+              >
+                Set Goals
+              </Button>
+            )}
             {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
               <Button
                 variant="contained"
@@ -149,6 +161,16 @@ export default function AppraisalDetailPage() {
                 onClick={() => router.push(`/appraisals/${appraisalId}/self-assessment`)}
               >
                 {appraisal.status === 'self_assessment_in_progress' ? 'Continue' : 'Start'} Self-Assessment
+              </Button>
+            )}
+
+            {(activeStep === 3) && (
+              <Button
+                variant="contained"
+                startIcon={<Groups />}
+                onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}
+              >
+                {appraisal.status === 'discussion_completed' ? 'View Discussion' : 'Open Discussion'}
               </Button>
             )}
             {isAssignedManager && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (

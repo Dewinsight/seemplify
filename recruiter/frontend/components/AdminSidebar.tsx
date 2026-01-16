@@ -22,6 +22,7 @@ import {
   Coins
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import SeemplifyLogo from '@/components/SeemplifyLogo';
 
 interface AdminSidebarProps {
   collapsed?: boolean;
@@ -37,7 +38,7 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       title: 'Dashboard',
       icon: LayoutDashboard,
       href: '/admin/dashboard',
-      permission: null // All admins can view dashboard
+      permission: null
     },
     {
       title: 'Users',
@@ -55,7 +56,7 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       title: 'Admins',
       icon: UserCog,
       href: '/admin/admins',
-      permission: null, // Special handling for super admin only
+      permission: null,
       superAdminOnly: true
     },
     {
@@ -109,82 +110,90 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
   ];
 
   const filteredMenuItems = menuItems.filter(item => {
-    // Special handling for super admin only items
     if (item.superAdminOnly) {
       return isSuperAdmin();
     }
-    // Regular permission check
     return !item.permission || checkPermission(item.permission);
   });
 
   return (
     <div className={cn(
-      "flex flex-col bg-gray-800 border-r border-gray-700 transition-all duration-300",
+      "flex flex-col bg-[#0a0a0c] border-r border-white/[0.08] transition-all duration-300",
       collapsed ? "w-16" : "w-64"
     )}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+      <div className="flex items-center justify-between p-4 border-b border-white/[0.08]">
         {!collapsed && (
-          <div className="flex items-center space-x-2">
-            <Shield className="h-8 w-8 text-blue-500" />
-            <span className="text-xl font-bold text-white">Admin Portal</span>
+          <div className="flex items-center gap-2.5">
+            <SeemplifyLogo size="sm" />
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-white tracking-tight">Seemplify</span>
+              <span className="text-xs text-zinc-500">Admin Portal</span>
+            </div>
+          </div>
+        )}
+        {collapsed && (
+          <div className="w-full flex justify-center">
+            <SeemplifyLogo size="sm" />
           </div>
         )}
         <button
           onClick={onToggle}
-          className="p-1 rounded-lg hover:bg-gray-700 transition-colors"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-5 w-5 text-gray-400" />
-          ) : (
-            <ChevronLeft className="h-5 w-5 text-gray-400" />
+          className={cn(
+            "p-1.5 rounded-lg hover:bg-white/5 transition-colors",
+            collapsed && "hidden"
           )}
+        >
+          <ChevronLeft className="h-4 w-4 text-zinc-500" />
         </button>
       </div>
 
       {/* Admin Info */}
       {!collapsed && admin && (
-        <div className="p-4 border-b border-gray-700">
-          <div className="text-sm text-gray-400">Logged in as</div>
-          <div className="text-white font-semibold truncate">{admin.name}</div>
-          <div className="text-xs text-gray-500 truncate">{admin.email}</div>
-          <div className="mt-2">
+        <div className="p-4 border-b border-white/[0.08]">
+          <div className="p-3 rounded-xl bg-white/[0.03]">
+            <div className="text-xs text-zinc-500 mb-1">Logged in as</div>
+            <div className="text-sm text-white font-medium truncate">{admin.name}</div>
+            <div className="text-xs text-zinc-500 truncate mb-2">{admin.email}</div>
             <span className={cn(
-              "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-              admin.role === 'super_admin' 
-                ? "bg-gradient-to-r from-yellow-500 to-orange-500 text-white"
+              "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wide",
+              admin.role === 'super_admin'
+                ? "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/20"
                 : admin.role === 'admin'
-                ? "bg-blue-500 text-white"
-                : "bg-gray-600 text-gray-200"
+                ? "bg-blue-500/20 text-blue-400 border border-blue-500/20"
+                : "bg-zinc-800 text-zinc-400 border border-zinc-700"
             )}>
-              {admin.role.replace('_', ' ').toUpperCase()}
+              {admin.role.replace('_', ' ')}
             </span>
           </div>
         </div>
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-4">
-        <ul className="space-y-2">
+      <nav className="flex-1 overflow-y-auto p-3">
+        <ul className="space-y-1">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
-            
+
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={cn(
-                    "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
                     isActive
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-300 hover:bg-gray-700 hover:text-white",
-                    collapsed && "justify-center"
+                      ? "bg-white/10 text-white"
+                      : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                    collapsed && "justify-center px-2"
                   )}
                   title={collapsed ? item.title : undefined}
                 >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  {!collapsed && <span>{item.title}</span>}
+                  <Icon className={cn(
+                    "h-4 w-4 flex-shrink-0",
+                    isActive && "text-blue-400"
+                  )} />
+                  {!collapsed && <span className="text-sm">{item.title}</span>}
                 </Link>
               </li>
             );
@@ -193,20 +202,20 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-700">
+      <div className="p-3 border-t border-white/[0.08]">
         {collapsed ? (
           <button
-            className="p-2 rounded-lg hover:bg-gray-700 transition-colors w-full flex justify-center"
+            className="p-2 rounded-lg hover:bg-white/5 transition-colors w-full flex justify-center"
             title="System Status"
           >
-            <AlertCircle className="h-5 w-5 text-green-400" />
+            <AlertCircle className="h-4 w-4 text-emerald-400" />
           </button>
         ) : (
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="h-5 w-5 text-green-400" />
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-white/[0.03]">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             <div>
-              <div className="text-xs text-gray-400">System Status</div>
-              <div className="text-sm text-green-400 font-medium">All Systems Operational</div>
+              <div className="text-xs text-zinc-500">System Status</div>
+              <div className="text-xs text-emerald-400 font-medium">All Systems Operational</div>
             </div>
           </div>
         )}

@@ -1,0 +1,1 @@
+zai-mcp-server, analyse the image or video atached

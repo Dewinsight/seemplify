@@ -22,6 +22,13 @@ import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 
+// SAML 2.0 Support
+import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
+import { samlIdPService as samlService } from './services/samlService.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
 // =============================================================================
 // CLAIMS CACHING - Performance optimization for repeated claims building
 // =============================================================================
@@ -30,11 +37,19 @@ const CLAIMS_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Get cached claims or build new ones
- * Cache key includes account ID and updatedAt timestamp for invalidation
+ * Cache key includes:
+ *   - account ID (sub)
+ *   - updatedAt timestamp for data change invalidation
+ *   - currentOrganization ID to invalidate on org switch
+ *
+ * IMPORTANT: Including currentOrganization in the cache key ensures that
+ * switching organizations in the Hub immediately gives the user fresh claims
+ * reflecting their new current organization context.
  */
 async function getCachedClaims(acc) {
   const startTime = Date.now()
-  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}`
+  const currentOrgId = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString() || 'none'
+  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}:${currentOrgId}`
   const cached = claimsCache.get(cacheKey)
 
   if (cached && (Date.now() - cached.timestamp) < CLAIMS_CACHE_TTL) {
@@ -94,6 +109,45 @@ async function getCachedClaims(acc) {
   return claims
 }
 
+// =============================================================================
+// SAML 2.0 SETUP - Share getCachedClaims and getSessionFromCookies with SAML routes
+// =============================================================================
+setClaimsFunction(getCachedClaims)
+setSessionFunction(getSessionFromCookies)
+
+// Initialize SAML Identity Provider and load Service Providers
+const initializeSamlIdP = () => {
+  try {
+    // Initialize the SAML IdP service
+    samlService.initialize()
+
+    if (!samlService.isReady()) {
+      console.log('ℹ️ SAML IdP not configured (missing certificates)')
+      return
+    }
+
+    // Load Service Provider configurations
+    const spsConfigPath = join(__dirname, '../saml-sps.json')
+    const spsData = JSON.parse(readFileSync(spsConfigPath, 'utf-8'))
+
+    let enabledCount = 0
+    for (const sp of spsData.serviceProviders) {
+      if (sp.enabled !== false) {
+        samlService.registerServiceProvider(sp.id, sp)
+        enabledCount++
+      }
+    }
+
+    if (enabledCount > 0) {
+      console.log(`✅ SAML IdP ready with ${enabledCount} Service Provider(s)`)
+    }
+  } catch (error) {
+    console.log('ℹ️ SAML IdP not configured:', error.message)
+  }
+}
+
+initializeSamlIdP()
+
 /**
  * Invalidate claims cache for a specific account
  * Call this when account data changes (org membership, team membership, etc.)
@@ -113,8 +167,23 @@ import teamsRouter from './routes/teams.js'
 
 dotenv.config()
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+// Shared UI theme for IdP pages (marketing-site aesthetic)
+const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
+const seemplifyMarkSvg = `
+  <svg viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#3b82f6" />
+        <stop offset="50%" stop-color="#8b5cf6" />
+        <stop offset="100%" stop-color="#ec4899" />
+      </linearGradient>
+    </defs>
+    <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75" stroke="url(#seemplifyGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="65" cy="25" r="6" fill="#fff" />
+    <circle cx="50" cy="50" r="6" fill="#fff" />
+    <circle cx="35" cy="75" r="6" fill="#fff" />
+  </svg>
+`
 
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production'
@@ -186,6 +255,7 @@ const config = {
     client_id: client.client_id,
     client_secret: client.client_secret,
     redirect_uris: client.redirect_uri_patterns,
+    post_logout_redirect_uris: client.redirect_uri_patterns,
     response_types: client.response_types,
     grant_types: client.grant_types,
     token_endpoint_auth_method: client.token_endpoint_auth_method
@@ -214,6 +284,14 @@ const config = {
     revocation: { enabled: true },
     introspection: { enabled: true },
     userinfo: { enabled: true }
+  },
+  // Make PKCE optional for clients that don't support it (like Outline)
+  pkce: {
+    required: (ctx, client) => {
+      // List of clients that don't support PKCE
+      const noPkceClients = ['outline', 'openwebui'];
+      return !noPkceClients.includes(client.clientId);
+    }
   },
   interactions: {
     url(ctx, interaction) {
@@ -252,7 +330,7 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions']
+    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization']
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()
@@ -278,19 +356,22 @@ const provider = new Provider(ISSUER_URL, config)
 // Set provider instance for API authentication middleware
 setProviderInstance(provider)
 
-// Set proxy on the Koa app directly for Azure
-if (isProduction) {
-  provider.proxy = true
-  console.log('🔧 Provider proxy set to:', provider.proxy)
-}
+// Set proxy on the Koa app directly for Azure and dev (behind Traefik)
+provider.proxy = true
+console.log('🔧 Provider proxy set to:', provider.proxy)
 
 // Add event listeners to debug the OIDC flow
 provider.on('authorization.accepted', (ctx) => {
   console.log('✅ Authorization accepted:', {
     client_id: ctx.oidc.client?.clientId,
     redirect_uri: ctx.oidc.params?.redirect_uri,
-    response_type: ctx.oidc.params?.response_type
+    response_type: ctx.oidc.params?.response_type,
+    code_issued: ctx.oidc.authorization?.code ? 'yes' : 'no'
   })
+  // Store this for comparison later
+  if (ctx.oidc.client?.clientId === 'lms') {
+    console.log('📝 LMS Authorization redirect_uri:', ctx.oidc.params?.redirect_uri)
+  }
 })
 
 provider.on('authorization.error', (ctx, err) => {
@@ -304,6 +385,56 @@ provider.on('interaction.started', (ctx) => {
 
 provider.on('interaction.ended', (ctx) => {
   console.log('✅ Interaction ended for:', ctx.oidc.interaction?.uid)
+})
+
+// Token endpoint events
+provider.on('grant.success', async (ctx) => {
+  const clientId = ctx.oidc.client?.clientId
+  // Account ID can be in session, grant, or entities.Account
+  const accountId = ctx.oidc.session?.accountId || 
+                    ctx.oidc.account?.accountId ||
+                    ctx.oidc.entities?.Account?.accountId ||
+                    ctx.oidc.grant?.accountId
+  
+  console.log('✅ Grant success:', {
+    client_id: clientId,
+    grant_type: ctx.oidc.params?.grant_type,
+    accountId: accountId,
+    sessionAccountId: ctx.oidc.session?.accountId,
+    grantAccountId: ctx.oidc.grant?.accountId
+  })
+})
+
+provider.on('grant.error', (ctx, err) => {
+  console.error('❌ Grant error:', {
+    client_id: ctx.oidc.client?.clientId,
+    grant_type: ctx.oidc.params?.grant_type,
+    error: err.error,
+    error_description: err.error_description,
+    error_detail: err.error_detail,
+    message: err.message
+  })
+  // Log redirect_uri comparison
+  console.error('🔍 Token request redirect_uri:', ctx.oidc.params?.redirect_uri)
+  console.error('Grant error details:', err)
+})
+
+provider.on('grant.revoked', (ctx, grantId) => {
+  console.log('🗑️ Grant revoked:', grantId)
+})
+
+// Server errors
+provider.on('server_error', (ctx, err) => {
+  console.error('💥 Server error:', err.message)
+  console.error('Server error stack:', err.stack)
+})
+
+// Userinfo endpoint
+provider.on('userinfo.success', async (ctx) => {
+  const clientId = ctx.oidc.client?.clientId
+  const account = ctx.oidc.account
+  
+  console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
 })
 
 const app = express()
@@ -360,8 +491,42 @@ app.use((req, res, next) => {
 })
 
 app.use(cookieParser())
-app.use(express.json())
-app.use(express.urlencoded({ extended: false }))
+
+// IMPORTANT: Skip body parsing for OIDC endpoints to avoid conflicts with oidc-provider
+// oidc-provider needs to parse the body itself for token requests
+const skipBodyParsingRoutes = ['/token', '/introspect', '/revocation']
+
+// Debug middleware to log token requests (headers only, don't consume body)
+app.use((req, res, next) => {
+  if (req.path === '/token' && req.method === 'POST') {
+    console.log('🔍 TOKEN REQUEST RECEIVED:')
+    console.log('  Content-Type:', req.headers['content-type'])
+    console.log('  Authorization header:', req.headers['authorization'] ? 'PRESENT (Basic)' : 'MISSING')
+    console.log('  Expecting: client_secret_post (credentials in body)')
+  }
+  next()
+})
+
+app.use((req, res, next) => {
+  // Skip body parsing for OIDC token-related endpoints
+  if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
+    return next()
+  }
+  express.json()(req, res, next)
+})
+
+app.use((req, res, next) => {
+  // Skip body parsing for OIDC token-related endpoints
+  if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
+    return next()
+  }
+  express.urlencoded({ extended: false })(req, res, next)
+})
+
+// Static assets (shared theme, icons)
+app.use(express.static(join(__dirname, 'public'), {
+  maxAge: isProduction ? '7d' : 0
+}))
 
 // Session middleware for organization management routes
 app.use(session({
@@ -789,14 +954,9 @@ app.get('/interaction/:uid', async (req, res) => {
 
           <div class="card">
             <div class="brand">
-              <div class="brand-mark">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
-                </svg>
-              </div>
+            <div class="brand-mark">
+              ${seemplifyMarkSvg}
+            </div>
               <div>
                 <h2>Sign in</h2>
                 <div class="muted">Use your AIIN credentials to continue</div>
@@ -2725,18 +2885,43 @@ async function getSessionFromCookies(req) {
 app.get('/', async (req, res) => {
   try {
     // Check for authenticated session
-    const account = await getSessionFromCookies(req)
+    const sessionAccount = await getSessionFromCookies(req)
 
-    if (!account) {
+    if (!sessionAccount) {
       // Not logged in - redirect to login
       return res.redirect('/login')
     }
+
+    // Get full account with populated organizations
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    // Get user's organizations with their roles
+    const userOrganizations = await Organization.find({
+      'members.account': account._id,
+      'members.status': 'active'
+    }).lean()
+
+    const organizations = userOrganizations.map(org => {
+      const member = org.members.find(m => m.account.toString() === account._id.toString())
+      return {
+        id: org._id.toString(),
+        name: org.name,
+        role: member?.role || 'member',
+        isCurrent: account.currentOrganization?._id?.toString() === org._id.toString()
+      }
+    })
 
     // Get all active apps
     const apps = getHubApps()
 
     // Render the hub homepage
-    res.send(renderHubPage(account, apps))
+    res.send(renderHubPage(account, apps, organizations))
   } catch (err) {
     console.error('Hub error:', err)
     res.status(500).send('Internal server error')
@@ -2929,12 +3114,13 @@ app.get('/logout', async (req, res) => {
 })
 
 
-// Hub App Launch - Creates SSO token and redirects to app's OIDC start endpoint
+// Hub App Launch - Creates SSO token and redirects to app's auth endpoint
+// Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
   const launchStartTime = Date.now()
   try {
     const { appId } = req.params
-    
+
     const sessionStart = Date.now()
     const account = await getSessionFromCookies(req)
     console.log(`⏱️ Hub session lookup took ${Date.now() - sessionStart}ms`)
@@ -2951,10 +3137,89 @@ app.get('/launch/:appId', async (req, res) => {
     console.log('🚀 Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
+    console.log('  Auth Type:', app.authType || 'oidc')
     console.log('  User:', account.email)
 
-    // Generate a signed SSO token that proves the user is authenticated at the hub
-    // This token will be passed to the backend, which will pass it to the IdP
+    // Check if app uses SAML authentication
+    if (app.authType === 'saml') {
+      // For SAML apps, redirect directly to the SAML SSO endpoint
+      // The user is already authenticated (we have their session), so SAML will generate assertion
+      const samlSsoUrl = `/saml/sso?sp=${app.appId}`
+      console.log('  📍 SAML SSO REDIRECT TO:', samlSsoUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(samlSsoUrl)
+    }
+
+    // Check if app uses direct link (no SSO)
+    if (app.authType === 'direct') {
+      // For direct apps, just redirect to the app URL - no SSO integration
+      console.log('  📍 DIRECT REDIRECT TO:', app.url)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(app.url)
+    }
+
+    // Special handling for Outline - it uses direct OIDC, not backend-initiated
+    if (app.appId === 'outline') {
+      // Outline handles OIDC at /auth/oidc - redirect there directly
+      const outlineAuthUrl = `${app.url}/auth/oidc`
+      console.log('  📍 OUTLINE OIDC REDIRECT TO:', outlineAuthUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(outlineAuthUrl)
+    }
+
+    // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
+    if (app.appId === 'openwebui') {
+      // Open WebUI handles OIDC at /oauth/oidc/login - redirect there directly
+      const openwebuiAuthUrl = `${app.url}/oauth/oidc/login`
+      console.log('  📍 OPEN WEBUI OIDC REDIRECT TO:', openwebuiAuthUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(openwebuiAuthUrl)
+    }
+
+    // Special handling for LMS - Frappe uses Social Login Key for OIDC
+    // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
+    // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify
+    if (app.appId === 'lms') {
+      // Generate SSO token to enable auto-login from hub session
+      const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
+      const secretKey = new TextEncoder().encode(ssoSecret)
+      
+      const hubToken = await new SignJWT({
+        sub: account.sub,
+        email: account.email,
+        name: account.profile?.name,
+        purpose: 'hub_sso'
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('5m') // Short-lived token
+        .sign(secretKey)
+      
+      // Build the OAuth authorization URL with proper parameters
+      const state = Buffer.from(JSON.stringify({
+        site: app.url,
+        token: crypto.randomBytes(16).toString('hex'),
+        redirect_to: '/lms'
+      })).toString('base64')
+      
+      const redirectUri = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/Seemplify`
+      const authParams = new URLSearchParams({
+        client_id: 'lms',
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile',
+        state: state,
+        hub_token: hubToken // Include SSO token for auto-login
+      })
+      
+      const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
+      console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
+      console.log('  🔑 Hub SSO token included for auto-login')
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(lmsAuthUrl)
+    }
+
+    // For OIDC apps, generate SSO token and redirect to backend OIDC start
     const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
     const secretKey = new TextEncoder().encode(ssoSecret)
 
@@ -2970,7 +3235,6 @@ app.get('/launch/:appId', async (req, res) => {
       .sign(secretKey)
 
     // Build the redirect URL to the app's backend OIDC start
-    // The backend will redirect to the IdP with this token
     // Use app-specific API URL based on appId
     let apiUrl;
     switch (app.appId) {
@@ -2986,7 +3250,8 @@ app.get('/launch/:appId', async (req, res) => {
       case 'payroll-management':
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
         break;
-      // Fallback to smarthr API URL for unknown apps
+      default:
+        // Fallback to smarthr API URL for unknown apps
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
     }
 
@@ -2999,7 +3264,7 @@ app.get('/launch/:appId', async (req, res) => {
       returnTo: frontendUrl
     }).toString()
 
-    console.log('  📍 REDIRECTING TO:', redirectUrl)
+    console.log('  📍 OIDC REDIRECT TO:', redirectUrl)
     console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
 
     res.redirect(redirectUrl)
@@ -3076,6 +3341,9 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+
+// SAML 2.0 Identity Provider Routes
+app.use('/saml', samlRoutes)
 
 // Profile API Routes - MUST come BEFORE teams router to avoid route conflicts
 /**
@@ -3224,13 +3492,34 @@ app.get('/organizations', getSessionUser, async (req, res) => {
 
 app.post('/organizations/:orgId/switch', getSessionUser, async (req, res) => {
   try {
+    // Update currentOrganization and updatedAt to ensure claims cache is invalidated
     await Account.updateOne(
       { _id: req.user._id },
-      { $set: { currentOrganization: req.params.orgId } }
+      {
+        $set: {
+          currentOrganization: req.params.orgId,
+          updatedAt: new Date() // Explicitly update timestamp for cache invalidation
+        }
+      }
     )
-    res.redirect('/organizations?success=Switched organization')
+
+    // Invalidate claims cache for this user
+    invalidateClaimsCache(req.user.sub)
+
+    console.log(`🔄 User ${req.user.email} switched to organization ${req.params.orgId}`)
+
+    // Redirect back to where the user came from (e.g. Hub or specific page)
+    const referer = req.get('Referer') || '/'
+    const returnUrl = new URL(referer, `http://${req.headers.host}`)
+    returnUrl.searchParams.set('success', 'Switched organization')
+
+    res.redirect(returnUrl.pathname + returnUrl.search)
   } catch (error) {
-    res.redirect('/organizations?error=Failed to switch organization')
+    console.error('Organization switch error:', error)
+    const referer = req.get('Referer') || '/'
+    const returnUrl = new URL(referer, `http://${req.headers.host}`)
+    returnUrl.searchParams.set('error', 'Failed to switch organization')
+    res.redirect(returnUrl.pathname + returnUrl.search)
   }
 })
 
@@ -3784,15 +4073,18 @@ app.get('/debug/smarthr', async (req, res) => {
 })
 
 // Hub Page Renderer
-function renderHubPage(account, apps) {
+function renderHubPage(account, apps, organizations = []) {
+  const currentOrg = organizations.find(o => o.isCurrent)
   const appCards = apps.map(app => `
-    <a href="/launch/${app.appId}" class="app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
+    <a href="/launch/${app.appId}" class="card app-card ${app.appId === 'smarthr' ? 'app-card--primary' : ''}" style="--app-color: ${app.color || '#2563eb'}">
       <div class="app-card__icon">${getAppIcon(app.icon)}</div>
       <div class="app-card__body">
-        <div class="app-card__title">${app.name}</div>
+        <div class="app-card__title">
+          ${app.name}
+          ${app.badge ? `<span class="app-card__badge">${app.badge}</span>` : ''}
+        </div>
         <div class="app-card__desc">${app.description || 'Secure single sign-on'}</div>
         <div class="app-card__meta">
-          <span class="pill">SSO</span>
           <span class="pill pill--soft">Instant launch</span>
         </div>
       </div>
@@ -3811,248 +4103,70 @@ function renderHubPage(account, apps) {
       <title>AIIN Hub - Your Apps</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        * { box-sizing: border-box; }
-        body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.14), transparent 30%), radial-gradient(circle at 80% 0%, rgba(56,189,248,0.18), transparent 28%), linear-gradient(135deg, #0b1221 0%, #0f172a 50%, #0b1021 100%);
-          color: #e5e7eb;
-          min-height: 100vh;
-        }
-        .shell {
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 28px 20px 48px;
-        }
-        .header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.15);
-          border-radius: 14px;
-          padding: 12px 16px;
-          position: sticky;
-          top: 12px;
-          z-index: 2;
-          box-shadow: 0 12px 36px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .nav-links {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-        }
-        .nav-link {
-          padding: 8px 14px;
-          border-radius: 8px;
-          color: #94a3b8;
-          text-decoration: none;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        .nav-link:hover {
-          color: #e2e8f0;
-          background: rgba(255,255,255,0.08);
-        }
-        @media (max-width: 768px) {
-          .nav-links {
-            display: none;
-          }
-        }
-        .logo {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-          color: inherit;
-        }
-        .logo-mark {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          display: grid;
-          place-items: center;
-          color: #fff;
-        }
-        .logo-text { display: flex; flex-direction: column; gap: 2px; }
-        .logo-text strong { font-size: 17px; letter-spacing: -0.02em; }
-        .logo-text span { color: #cbd5e1; font-size: 13px; }
-        .user-menu { display: flex; align-items: center; gap: 10px; }
-        .user-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-        .user-meta strong { font-size: 14px; }
-        .user-meta span { color: #6b7280; font-size: 12px; }
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
-          display: grid;
-          place-items: center;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          color: #fff;
-          font-weight: 700;
-        }
-        .ghost-btn {
-          padding: 10px 12px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.2);
-          background: rgba(255,255,255,0.1);
-          color: #e5e7eb;
-          text-decoration: none;
-          font-weight: 600;
-          transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
-        }
-        .ghost-btn:hover {
-          background: rgba(255,255,255,0.18);
-          border-color: rgba(255,255,255,0.35);
-          box-shadow: 0 10px 28px rgba(0,0,0,0.32);
-          color: #fff;
-        }
+        ${themeCss}
+        /* Modal Styles */
+        /* Modal Styles (Native Dialog) */
 
-        .welcome {
-          display: grid;
-          grid-template-columns: 1.3fr 1fr;
-          gap: 14px;
-          margin: 16px 0 18px;
-        }
-        .welcome-card {
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          background: rgba(255,255,255,0.07);
-          padding: 18px 18px;
-          box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-          position: relative;
-          overflow: hidden;
-          backdrop-filter: blur(16px);
-        }
-        .welcome-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: 16px;
-          padding: 1px;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          opacity: 0.12;
-          pointer-events: none;
-        }
-        .welcome-card > * { position: relative; z-index: 1; }
-        .welcome h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: #f8fafc; }
-        .welcome p { margin: 0; color: #cbd5e1; font-size: 15px; }
-        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 10px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.08);
-          color: #e0e7ff;
-          border: 1px solid rgba(255,255,255,0.18);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .chip.secondary { background: #f5f3ff; color: #6d28d9; border-color: #ede9fe; }
-        .stat {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-top: 12px;
-          color: #e2e8f0;
-          font-weight: 600;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: #22c55e;
-          box-shadow: 0 0 0 6px rgba(34,197,94,0.14);
-        }
 
-        .app-grid {
+        /* Hub-specific tune-ups: reduce noise + keep clean backdrop */
+        body { padding: 28px 18px 48px; }
+        body::before { opacity: var(--halo-opacity); }
+        body::after { display: none; }
+        .hub-content { margin-top: 8px; }
+        .hub-hero {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          grid-template-columns: 1.2fr 0.8fr;
           gap: 14px;
+          margin: 14px 0 20px;
         }
-        .manage-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-          gap: 12px;
-          margin-top: 10px;
-        }
-        .manage-card {
-          border: 1px solid rgba(255,255,255,0.16);
-          border-radius: 12px;
-          padding: 12px 14px;
-          background: rgba(255,255,255,0.06);
-          color: inherit;
-          text-decoration: none;
-          display: grid;
-          gap: 6px;
-          transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
-        }
-        .manage-card:hover {
-          border-color: rgba(96,165,250,0.65);
-          background: rgba(255,255,255,0.10);
-          transform: translateY(-2px);
-        }
-        .manage-card__title {
-          font-weight: 700;
-          font-size: 15px;
-          letter-spacing: -0.01em;
-          color: #f8fafc;
-        }
-        .manage-card__desc {
-          font-size: 13px;
-          color: #cbd5e1;
-        }
+        .hub-card { position: relative; }
+        .hub-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: var(--text); }
+        .hub-card p { margin: 0; color: var(--muted); font-size: 15px; }
+        .hub-card .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .hub-card .chip { background: var(--panel-strong); border: 1px solid var(--border); }
+        .hub-card .chip.secondary { color: var(--brand-2); }
+        .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text); font-weight: 600; }
+        .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
+
+        .apps { width: 100%; display: block; margin-top: 18px; }
         .section-title {
           margin: 22px 0 10px;
-          color: #e2e8f0;
+          color: var(--text);
           font-weight: 700;
           letter-spacing: -0.01em;
           display: flex;
           align-items: center;
           gap: 10px;
         }
-        .section-title::after {
-          content: '';
-          flex: 1;
-          height: 1px;
-          background: rgba(255,255,255,0.12);
+        .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+        .ghost-btn {
+          padding: 8px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: var(--panel-strong);
+          color: var(--text);
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 13px;
         }
+        .ghost-btn:hover { background: var(--hover-bg); }
+
+        .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
         .app-card {
-          border: 1px solid rgba(255,255,255,0.16);
-          border-radius: 14px;
-          background: rgba(255,255,255,0.08);
           text-decoration: none;
           color: inherit;
           display: grid;
           grid-template-columns: auto 1fr auto;
           align-items: center;
           gap: 12px;
-          padding: 14px;
-          transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+          padding: 16px;
           cursor: pointer;
+          transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
         }
-        .app-card:hover {
-          box-shadow: 0 18px 36px rgba(0,0,0,0.35);
-          transform: translateY(-3px);
-          border-color: rgba(255,255,255,0.35);
-          background: rgba(255,255,255,0.12);
-        }
-        .app-card--primary {
-          border: 1px solid rgba(96,165,250,0.65);
-          background: linear-gradient(140deg, rgba(59,130,246,0.16), rgba(168,85,247,0.14)), rgba(255,255,255,0.08);
-          box-shadow: 0 18px 42px rgba(59,130,246,0.28), 0 0 0 1px rgba(255,255,255,0.06) inset;
-        }
-        .app-card--primary:hover {
-          box-shadow: 0 22px 46px rgba(59,130,246,0.35);
-          background: linear-gradient(140deg, rgba(59,130,246,0.22), rgba(168,85,247,0.18)), rgba(255,255,255,0.12);
-          border-color: rgba(96,165,250,0.85);
-        }
+        .app-card:hover { box-shadow: 0 18px 36px rgba(0,0,0,0.35); transform: translateY(-3px); }
+        .app-card--primary { border-color: rgba(129,140,248,0.65); box-shadow: 0 18px 42px rgba(59,130,246,0.22); }
+        .app-card--primary:hover { border-color: rgba(129,140,248,0.8); box-shadow: 0 22px 46px rgba(59,130,246,0.32); }
         .app-card__icon {
           width: 46px;
           height: 46px;
@@ -4061,140 +4175,360 @@ function renderHubPage(account, apps) {
           display: grid;
           place-items: center;
           color: #0f172a;
-          border: 1px solid rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.18);
         }
         .app-card__icon svg { width: 24px; height: 24px; }
         .app-card__body { display: grid; gap: 6px; }
-        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: #f8fafc; }
-        .app-card__desc { color: #cbd5e1; font-size: 13px; }
+        .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .app-card__badge { 
+          font-size: 10px; 
+          font-weight: 600; 
+          padding: 2px 8px; 
+          border-radius: 10px; 
+          background: linear-gradient(135deg, #f59e0b, #ef4444); 
+          color: white; 
+          text-transform: uppercase; 
+          letter-spacing: 0.5px;
+          box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+        }
+        .app-card__desc { color: var(--muted); font-size: 13px; }
         .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 8px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.08);
-          color: #e0e7ff;
-          border: 1px solid rgba(255,255,255,0.18);
-          font-weight: 600;
-          font-size: 12px;
-        }
-        .pill--soft {
-          background: rgba(255,255,255,0.06);
-          color: #e2e8f0;
-          border-color: rgba(255,255,255,0.12);
-        }
-        .app-card__arrow { color: #cbd5e1; }
+        .pill { background: var(--panel-strong); border: 1px solid var(--border); color: var(--text-secondary); }
+        .pill--soft { background: var(--hover-bg); color: var(--muted); border-color: var(--border); }
+        .app-card__arrow { color: var(--muted); }
 
         .empty {
           margin-top: 12px;
           padding: 48px 16px;
           text-align: center;
-          color: #cbd5e1;
-          border: 1px dashed rgba(255,255,255,0.3);
+          color: var(--muted);
+          border: 1px dashed var(--border);
           border-radius: 14px;
-          background: rgba(255,255,255,0.06);
+          background: var(--hover-bg);
         }
         @media (max-width: 720px) {
-          .header { position: static; }
-          .welcome { grid-template-columns: 1fr; }
+          .hub-hero { grid-template-columns: 1fr; }
           .app-card { grid-template-columns: 1fr auto; }
           .app-card__icon { justify-self: flex-start; }
         }
       </style>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
-      <div class="shell">
-        <header class="header">
-          <a href="/" class="logo">
-            <div class="logo-mark">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
-            </div>
-            <div class="logo-text">
-              <strong>AIIN Hub</strong>
-              <span>Identity provider</span>
-            </div>
-          </a>
-          <div class="nav-links">
-            <a href="/" class="nav-link">Home</a>
-            <a href="/organizations" class="nav-link">Organizations</a>
-            <a href="/invitations/pending" class="nav-link">Invitations</a>
-            <a href="/profile" class="nav-link">Profile</a>
-          </div>
-      <div class="user-menu">
-        <div class="user-meta">
-          <strong>${account.profile?.name || account.email.split('@')[0]}</strong>
-          <span>${account.email}</span>
+      <nav class="top-nav">
+        <a href="/" class="top-nav-brand">
+          ${seemplifyMarkSvg}
+          <span>Seemplify</span>
+        </a>
+        <div class="top-nav-links">
+          <a href="/" class="top-nav-link">Home</a>
+          <a href="/organizations" class="top-nav-link">Organizations</a>
+          <a href="/invitations/pending" class="top-nav-link">Invitations</a>
+          <a href="/profile" class="top-nav-link">Profile</a>
         </div>
-            <div class="avatar">${(account.profile?.name || account.email)[0].toUpperCase()}</div>
-            <div style="display: flex; gap: 8px;">
-              <a href="/logout" class="ghost-btn">Sign out</a>
-            </div>
+        <div class="top-nav-user">
+      <div class="theme-dropdown">
+        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            Light
+          </button>
+          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            Dark
+          </button>
+          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            System
+          </button>
+        </div>
+      </div>
+          <div class="top-nav-user-info">
+            <div class="top-nav-user-name">${account.profile?.name || account.email.split('@')[0]}</div>
+            <div class="top-nav-user-email">${account.email}</div>
           </div>
-        </header>
+          <a href="/logout" class="top-nav-logout">Sign out</a>
+        </div>
+      </nav>
 
-        <section class="welcome">
-          <div class="welcome-card">
-            <h1>Your AIIN apps</h1>
-            <p>Launch SmartHR and connected tools from one place.</p>
-            <div class="chips">
-              <span class="chip">SSO ready</span>
-              <span class="chip secondary">Smart launch</span>
-            </div>
-          </div>
-          <div class="welcome-card">
-            <div class="stat"><span class="dot"></span>Signed in as ${account.email}</div>
-            <div class="stat"><span class="dot" style="background:#2563eb; box-shadow:0 0 0 6px rgba(37,99,235,0.12);"></span>${apps.length} active app${apps.length === 1 ? '' : 's'}</div>
-          </div>
-      </section>
+      <div class="container hub-content">
 
-      <section class="apps">
-        <div class="section-title">Manage identity & access</div>
-        <div class="welcome-card" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: grid; place-items: center;">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
+
+        <section class="apps">
+          <div class="section-title">Manage identity & access</div>
+          
+          <!-- Unified Organization Card -->
+          ${organizations.length > 0 ? `
+          <div class="card hub-card" style="padding: 0; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; gap: 0;">
+            <!-- Top Strip: Current Org & Switcher -->
+            <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--hover-bg);">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: grid; place-items: center;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                    <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px;">Current Organization</div>
+                  <div style="font-size: 18px; font-weight: 700; color: var(--text);">${currentOrg?.name || 'Select Organization'}</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; align-items: center; gap: 12px;">
+                ${currentOrg ? `
+                  <a href="/organizations/${currentOrg.id}/members" class="ghost-btn">Members</a>
+                  <a href="/organizations/${currentOrg.id}/teams" class="ghost-btn">Teams</a>
+                  ${['owner', 'admin'].includes(currentOrg.role) ? `
+                    <a href="/organizations/${currentOrg.id}/invitations" class="ghost-btn">Invites</a>
+                  ` : ''}
+                  <div style="width: 1px; height: 24px; background: var(--border); margin: 0 4px;"></div>
+                ` : ''}
+                <button onclick="openOrgModal()" style="
+                  display: flex; align-items: center; gap: 10px; padding: 10px 16px; 
+                  background: var(--panel-strong); border: 1px solid var(--border); 
+                  border-radius: 8px; color: var(--text); font-weight: 500; font-size: 14px; cursor: pointer;
+                  transition: all 0.2s;
+                " class="org-switch-btn">
+                  <span>Switch organization...</span>
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <div style="padding: 10px 14px; background: var(--panel-strong); border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  <span style="font-size: 13px; font-weight: 600; color: var(--text);">${organizations.length} Org${organizations.length === 1 ? '' : 's'}</span>
+                </div>
+              </div>
             </div>
-            <div>
-              <div style="font-weight: 700; font-size: 15px; color: #f8fafc;">Organization Settings</div>
-              <div style="font-size: 13px; color: #94a3b8;">Manage your organization structure and team access</div>
+
+            <!-- Bottom Strip: Settings & Actions -->
+            <div style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; background: var(--panel);">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(96, 165, 250, 0.1); display: grid; place-items: center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-weight: 600; color: var(--text); font-size: 15px;">Organization Settings</div>
+                  <div style="font-size: 13px; color: var(--muted);">Manage your organization structure and team access</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; gap: 8px;">
+                <a href="/profile" class="ghost-btn">Profile</a>
+                <a href="/organizations" class="ghost-btn">Organizations</a>
+                <a href="/invitations/pending" class="ghost-btn">Invitations</a>
+              </div>
             </div>
           </div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <a href="/profile" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Profile</a>
-            <a href="/organizations" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Organizations</a>
-            <a href="/invitations/pending" class="ghost-btn" style="font-size: 13px; padding: 8px 12px;">Invitations</a>
+          ` : ''}
+        </section>
+
+        <section class="apps">
+          <div class="section-title">Choose an app to launch with single sign-on</div>
+          ${apps.length > 0 ? `
+            <div class="app-grid">
+              ${appCards}
+            </div>
+          ` : `
+            <div class="empty">
+              <div style="margin-bottom:8px;font-weight:700;">No apps available yet</div>
+              Add an app to launch it from the hub.
+            </div>
+          `}
+        </section>
+      </div>
+      
+      <!-- Custom Premium Modal -->
+      <style>
+        .custom-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(8px);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .custom-modal-overlay.active {
+          opacity: 1;
+          visibility: visible;
+        }
+        .custom-modal {
+          background: #1e293b;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 24px;
+          width: 90%;
+          max-width: 440px;
+          box-shadow: 
+            0 0 0 1px rgba(0,0,0,0.2), 
+            0 20px 60px -10px rgba(0,0,0,0.6);
+          transform: scale(0.92) translateY(8px);
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          opacity: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .custom-modal-overlay.active .custom-modal {
+          transform: scale(1) translateY(0);
+          opacity: 1;
+        }
+        .custom-modal-header {
+          padding: 24px 24px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .custom-modal-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #f8fafc;
+          letter-spacing: -0.01em;
+        }
+        .custom-modal-close {
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          padding: 8px;
+          margin: -8px -8px -8px 0;
+          border-radius: 99px;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .custom-modal-close:hover {
+          background: rgba(255,255,255,0.08);
+          color: #fff;
+        }
+        .custom-modal-body {
+          padding: 8px 16px 24px;
+          max-height: 60vh;
+          overflow-y: auto;
+        }
+        .org-option-item {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          padding: 12px 16px;
+          margin-bottom: 4px;
+          gap: 14px;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          text-align: left;
+          position: relative;
+        }
+        .org-option-item:hover {
+          background: rgba(255,255,255,0.04);
+        }
+        .org-option-item.active {
+          background: rgba(59,130,246,0.1);
+          border-color: rgba(59,130,246,0.2);
+        }
+        .org-option-avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: #334155;
+          display: grid;
+          place-items: center;
+          font-weight: 700;
+          color: #cbd5e1;
+          font-size: 14px;
+          flex-shrink: 0;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .org-option-item.active .org-option-avatar {
+          background: linear-gradient(135deg, #3b82f6, #60a5fa);
+          color: #fff;
+          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .org-option-info { flex: 1; min-width: 0; }
+        .org-option-name { font-weight: 600; color: #e2e8f0; font-size: 15px; margin-bottom: 2px; }
+        .org-option-role { font-size: 13px; color: #94a3b8; text-transform: capitalize; }
+      </style>
+
+      <div id="customOrgModal" class="custom-modal-overlay">
+        <div class="custom-modal" onclick="event.stopPropagation()">
+          <div class="custom-modal-header">
+            <div class="custom-modal-title">Switch Organization</div>
+            <button class="custom-modal-close" onclick="closeCustomOrgModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="custom-modal-body">
+            ${organizations.map(org => `
+              <button onclick="switchOrganization('${org.id}')" class="org-option-item ${org.isCurrent ? 'active' : ''}">
+                <div class="org-option-avatar">${org.name.substring(0, 2).toUpperCase()}</div>
+                <div class="org-option-info">
+                  <div class="org-option-name">${org.name}</div>
+                  <div class="org-option-role">${org.role}</div>
+                </div>
+                ${org.isCurrent ? `
+                  <div style="color: #60a5fa;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                  </div>
+                ` : ''}
+              </button>
+            `).join('')}
           </div>
         </div>
-      </section>
+      </div>
+      <form id="org-switch-form" method="POST" style="display: none;"></form>
 
-      <section class="apps">
-        <div class="section-title">Choose an app to launch with single sign-on</div>
-        ${apps.length > 0 ? `
-          <div class="app-grid">
-            ${appCards}
-          </div>
-        ` : `
-          <div class="empty">
-            <div style="margin-bottom:8px;font-weight:700;">No apps available yet</div>
-            Add an app to launch it from the hub.
-          </div>
-        `}
-      </section>
-    </div>
-  </body>
-  </html>
+      <script>
+        function openOrgModal() {
+          const modal = document.getElementById('customOrgModal');
+          const modalContent = modal.querySelector('.custom-modal');
+          modal.classList.add('active');
+          
+          // Animate backdrop click
+          modal.onclick = (e) => {
+            if (e.target === modal) closeCustomOrgModal();
+          };
+          
+          document.onkeydown = (e) => {
+            if (e.key === 'Escape') closeCustomOrgModal();
+          };
+        }
+
+        function closeCustomOrgModal() {
+          const modal = document.getElementById('customOrgModal');
+          modal.classList.remove('active');
+          document.onkeydown = null;
+        }
+
+        function switchOrganization(orgId) {
+          const form = document.getElementById('org-switch-form');
+          form.action = '/organizations/' + orgId + '/switch';
+          form.submit();
+        }
+      </script>
+    </body>
+    </html>
   `
 }
 
@@ -4244,43 +4578,15 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
       <title>AIIN Hub - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        :root {
-          --brand: #2563eb;
-          --accent: #7c3aed;
-          --bg: #0c1224;
-          --panel: rgba(255, 255, 255, 0.06);
-          --panel-strong: rgba(255, 255, 255, 0.1);
-          --border: rgba(255, 255, 255, 0.14);
-          --text: #e5e7eb;
-          --muted: #cbd5e1;
-        }
-        * { box-sizing: border-box; }
+        ${themeCss}
+        /* Page-specific tweaks */
         body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          color: var(--text);
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at 18% 18%, rgba(59,130,246,0.24), transparent 32%),
-            radial-gradient(circle at 80% 8%, rgba(124,58,237,0.20), transparent 36%),
-            linear-gradient(135deg, #0b1021 0%, #0f172a 55%, #0b1021 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 36px 18px;
+          padding: 32px 18px;
           position: relative;
-          overflow: hidden;
         }
-        .halo {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(60px);
-          opacity: 0.8;
-          z-index: 0;
-        }
-        .halo.one { width: 540px; height: 540px; background: rgba(59,130,246,0.25); top: -120px; left: -60px; }
-        .halo.two { width: 420px; height: 420px; background: rgba(124,58,237,0.2); bottom: -80px; right: -120px; }
-        .halo.three { width: 280px; height: 280px; background: rgba(45,212,191,0.14); top: 30%; right: 22%; }
         .auth-shell {
           position: relative;
           z-index: 1;
@@ -4290,252 +4596,41 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           gap: 22px;
           align-items: stretch;
         }
-        .card {
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 18px;
-          padding: 28px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .intro {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.08);
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .title h1 {
-          margin: 6px 0 8px;
-          font-size: 32px;
-          line-height: 1.2;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .title p {
-          margin: 0;
-          color: var(--muted);
-          line-height: 1.6;
-          max-width: 520px;
-        }
-        .chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin: 6px 0 2px;
-        }
-        .chip {
-          padding: 8px 12px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.07);
-          border: 1px solid var(--panel-strong);
-          color: #e0f2fe;
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .chip.secondary { color: #e9d5ff; }
-        .surface {
-          margin-top: 10px;
-          padding: 16px;
-          border-radius: 14px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.05);
-        }
-        .surface-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-        .label { color: var(--muted); font-size: 13px; }
-        .value { color: #e2e8f0; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-        .badge {
-          padding: 6px 10px;
-          border-radius: 10px;
-          font-size: 12px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.02em;
-        }
-        .badge.success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4); color: #bbf7d0; }
-        .surface-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 10px;
-        }
-        .stat {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #a5b4fc;
-          box-shadow: 0 0 0 8px rgba(99,102,241,0.08);
-        }
-        .dot.online {
-          background: #22c55e;
-          box-shadow: 0 0 0 8px rgba(34,197,94,0.12);
-        }
-        .form-card {
-          background: linear-gradient(180deg, rgba(15,23,42,0.8), rgba(12,18,33,0.92));
-        }
-        .form-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 14px;
-        }
-        .eyebrow {
-          display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: rgba(59,130,246,0.12);
-          border: 1px solid rgba(59,130,246,0.25);
-          color: #bfdbfe;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-        }
-        .form-title {
-          margin: 0;
-          font-size: 24px;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .hint { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          display: grid;
-          place-items: center;
-          color: #fff;
-          box-shadow: 0 10px 26px rgba(37,99,235,0.35);
-        }
-        .form-group { margin-bottom: 14px; }
-        label {
-          display: block;
-          margin-bottom: 6px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        input[type="email"],
-        input[type="password"] {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: rgba(255,255,255,0.06);
-          color: #e5e7eb;
-          font-size: 15px;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-        }
-        input::placeholder { color: rgba(255,255,255,0.55); }
-        input:focus {
-          outline: none;
-          border-color: rgba(59,130,246,0.6);
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-          background: rgba(255,255,255,0.09);
-        }
-        .muted-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin: 6px 0 10px;
-          color: var(--muted);
-          font-size: 14px;
-        }
-        .muted-row label {
-          margin: 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: #d1d5db;
-          cursor: pointer;
-          font-weight: 600;
-        }
-        .muted-row input[type="checkbox"] { width: auto; }
-        .link {
-          color: #93c5fd;
-          text-decoration: none;
-          font-weight: 700;
-        }
-        .link:hover { text-decoration: underline; }
-        .btn {
-          width: 100%;
-          padding: 14px;
-          border: none;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          color: #fff;
-          font-weight: 700;
-          font-size: 16px;
-          cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.2s ease;
-          margin-top: 6px;
-        }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(37,99,235,0.35); }
-        .btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-        .error {
-          background: rgba(239,68,68,0.14);
-          border: 1px solid rgba(239,68,68,0.45);
-          color: #fecaca;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 14px;
-          margin-bottom: 12px;
-        }
-        .meta-footer {
-          text-align: center;
-          margin-top: 14px;
-          color: var(--muted);
-          font-size: 14px;
-        }
-        .spinner {
-          border: 2px solid rgba(255, 255, 255, 0.28);
-          border-top: 2px solid #fff;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .card { padding: 28px; }
+        .btn { width: 100%; margin-top: 6px; }
         @media (max-width: 1024px) {
           .auth-shell { grid-template-columns: 1fr; }
         }
         @media (max-width: 640px) {
-          body { padding: 24px 14px; }
           .card { padding: 22px; }
           .title h1 { font-size: 26px; }
         }
       </style>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+        <div class="theme-dropdown">
+          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu">
+            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              Light
+            </button>
+            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Dark
+            </button>
+            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              System
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="halo one"></div>
       <div class="halo two"></div>
       <div class="halo three"></div>
@@ -4576,12 +4671,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
               <p class="hint">Access SmartHR, dashboards, and connected tools.</p>
             </div>
             <div class="brand-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+              ${seemplifyMarkSvg}
             </div>
           </div>
 
@@ -4644,43 +4734,14 @@ function renderHubSignupPage(errorMsg) {
       <title>AIIN Hub - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        :root {
-          --brand: #2563eb;
-          --accent: #7c3aed;
-          --bg: #0c1224;
-          --panel: rgba(255, 255, 255, 0.06);
-          --panel-strong: rgba(255, 255, 255, 0.12);
-          --border: rgba(255, 255, 255, 0.14);
-          --text: #e5e7eb;
-          --muted: #cbd5e1;
-        }
-        * { box-sizing: border-box; }
+        ${themeCss}
         body {
-          margin: 0;
-          font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-          color: var(--text);
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at 18% 18%, rgba(59,130,246,0.24), transparent 32%),
-            radial-gradient(circle at 80% 8%, rgba(124,58,237,0.20), transparent 36%),
-            linear-gradient(135deg, #0b1021 0%, #0f172a 55%, #0b1021 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 36px 18px;
+          padding: 32px 18px;
           position: relative;
-          overflow: hidden;
         }
-        .halo {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(60px);
-          opacity: 0.8;
-          z-index: 0;
-        }
-        .halo.one { width: 520px; height: 520px; background: rgba(59,130,246,0.25); top: -120px; left: -60px; }
-        .halo.two { width: 420px; height: 420px; background: rgba(124,58,237,0.2); bottom: -90px; right: -120px; }
-        .halo.three { width: 280px; height: 280px; background: rgba(45,212,191,0.14); top: 32%; right: 24%; }
         .shell {
           position: relative;
           z-index: 1;
@@ -4690,205 +4751,36 @@ function renderHubSignupPage(errorMsg) {
           gap: 20px;
           align-items: stretch;
         }
-        .card {
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 18px;
-          padding: 28px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.35);
-          backdrop-filter: blur(18px);
-        }
-        .intro h1 {
-          margin: 0 0 10px;
-          font-size: 30px;
-          letter-spacing: -0.02em;
-          color: #f8fafc;
-        }
-        .intro p {
-          margin: 0 0 14px;
-          color: var(--muted);
-          line-height: 1.6;
-        }
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--panel-strong);
-          background: rgba(255,255,255,0.08);
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 13px;
-        }
-        .list {
-          display: grid;
-          gap: 10px;
-          margin-top: 10px;
-        }
-        .list-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 12px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid var(--panel-strong);
-          color: #e2e8f0;
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 0 8px rgba(34,197,94,0.12);
-        }
-        .form-card { background: linear-gradient(180deg, rgba(15,23,42,0.82), rgba(12,18,33,0.95)); }
-        .form-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 12px;
-        }
-        .eyebrow {
-          display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: rgba(124,58,237,0.12);
-          border: 1px solid rgba(124,58,237,0.25);
-          color: #e9d5ff;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-        }
-        .form-title {
-          margin: 4px 0 0;
-          font-size: 24px;
-          color: #f8fafc;
-          letter-spacing: -0.02em;
-        }
-        .hint { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          display: grid;
-          place-items: center;
-          color: #fff;
-          box-shadow: 0 10px 26px rgba(37,99,235,0.35);
-        }
-        .form-group { margin-bottom: 14px; }
-        label {
-          display: block;
-          margin-bottom: 6px;
-          color: var(--muted);
-          font-weight: 600;
-          font-size: 14px;
-        }
-        input[type="email"],
-        input[type="password"],
-        input[type="text"] {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: rgba(255,255,255,0.06);
-          color: #e5e7eb;
-          font-size: 15px;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-        }
-        input::placeholder { color: rgba(255,255,255,0.55); }
-        input:focus {
-          outline: none;
-          border-color: rgba(59,130,246,0.6);
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-          background: rgba(255,255,255,0.09);
-        }
-        .password-strength {
-          height: 5px;
-          border-radius: 3px;
-          background: rgba(255,255,255,0.08);
-          margin-top: 10px;
-          overflow: hidden;
-          border: 1px solid var(--panel-strong);
-        }
-        .password-strength-bar {
-          height: 100%;
-          width: 0%;
-          transition: all 0.3s ease;
-          border-radius: 3px;
-        }
-        .strength-weak { width: 33%; background: #f87171; }
-        .strength-medium { width: 66%; background: #fbbf24; }
-        .strength-strong { width: 100%; background: #34d399; }
-        .password-hint {
-          font-size: 12px;
-          color: var(--muted);
-          margin-top: 6px;
-        }
-        .error {
-          background: rgba(239,68,68,0.14);
-          border: 1px solid rgba(239,68,68,0.45);
-          color: #fecaca;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 14px;
-          margin-bottom: 12px;
-        }
-        .btn {
-          width: 100%;
-          padding: 14px;
-          border: none;
-          border-radius: 12px;
-          background: linear-gradient(135deg, var(--brand), var(--accent));
-          color: #fff;
-          font-weight: 700;
-          font-size: 16px;
-          cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.2s ease;
-          margin-top: 6px;
-        }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(37,99,235,0.35); }
-        .btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-        .divider {
-          margin: 22px 0 12px;
-          height: 1px;
-          background: var(--panel-strong);
-          border: none;
-        }
-        .login-link {
-          text-align: center;
-          font-size: 14px;
-          color: var(--muted);
-        }
-        .login-link a {
-          color: #93c5fd;
-          font-weight: 700;
-          text-decoration: none;
-        }
-        .login-link a:hover { text-decoration: underline; }
-        .spinner {
-          border: 2px solid rgba(255, 255, 255, 0.28);
-          border-top: 2px solid #fff;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .card { padding: 28px; }
+        .btn { width: 100%; margin-top: 6px; }
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
-        @media (max-width: 640px) { body { padding: 24px 14px; } .card { padding: 22px; } }
+        @media (max-width: 640px) { .card { padding: 22px; } }
       </style>
+      <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+        <div class="theme-dropdown">
+          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu">
+            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              Light
+            </button>
+            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Dark
+            </button>
+            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              System
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="halo one"></div>
       <div class="halo two"></div>
       <div class="halo three"></div>
@@ -4913,12 +4805,7 @@ function renderHubSignupPage(errorMsg) {
               <p class="hint">One account for the hub and all connected apps.</p>
             </div>
             <div class="brand-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+              ${seemplifyMarkSvg}
             </div>
           </div>
 

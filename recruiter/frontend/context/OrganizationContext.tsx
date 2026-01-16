@@ -1,9 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import organizationService, { PendingInvitation, UserPendingInvitation } from '@/services/organizationService';
+
+// Roles that are NOT allowed to access Recruiter
+const BLOCKED_ROLES = ['staff'];
 
 interface Organization {
   _id: string;
@@ -91,8 +94,9 @@ interface OrganizationContextType {
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
 
 export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const [currentOrganization, setCurrentOrganization] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -103,6 +107,64 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   
   // Check if we're on an admin route (SSR-safe)
   const isAdminRoute = pathname?.startsWith('/admin') || false;
+  
+  // ==========================================================================
+  // STAFF ROLE INTERCEPTOR
+  // Check if user's role in current organization is blocked from Recruiter
+  // Only blocks if role is EXPLICITLY 'staff' - any other role (including undefined) is allowed
+  // ==========================================================================
+  const checkAndHandleBlockedRole = useCallback((org: Organization, allOrgs: Organization[]) => {
+    // Debug logging to understand what's happening
+    console.log('🔍 Checking role for org:', org?.name, '- userRole:', org?.userRole);
+    
+    // If no org or no userRole, allow access (don't block)
+    if (!org) {
+      console.log('✅ No org provided, allowing access');
+      return false;
+    }
+    
+    if (!org.userRole) {
+      console.log('✅ No userRole on org, allowing access (role:', org.userRole, ')');
+      return false;
+    }
+    
+    const role = org.userRole.toLowerCase().trim();
+    
+    // Only block if role is explicitly 'staff'
+    if (role === 'staff') {
+      console.log('🚫 User has STAFF role in current organization');
+      console.log('   Organization:', org.name);
+      
+      // Check if user has other organizations with non-blocked roles
+      const otherOrgsWithAccess = allOrgs.filter(
+        o => o._id !== org._id && o.userRole && o.userRole.toLowerCase().trim() !== 'staff'
+      );
+      const hasOtherOrgs = otherOrgsWithAccess.length > 0;
+      
+      console.log('   Other organizations with access:', 
+        hasOtherOrgs ? otherOrgsWithAccess.map(o => `${o.name} (${o.userRole})`).join(', ') : 'None');
+      
+      // Build error URL params
+      const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+      const errorParams = new URLSearchParams({
+        error: 'staff_role_denied',
+        orgName: org.name || 'your current organization',
+        hubUrl: hubUrl,
+        hasOtherOrgs: hasOtherOrgs ? 'true' : 'false'
+      });
+      
+      // Log out and redirect to login with error
+      console.log('🚪 Logging out user due to STAFF role...');
+      logout(true); // Silent logout (don't redirect immediately)
+      
+      // Redirect to login with error params
+      window.location.href = `/login?${errorParams.toString()}`;
+      return true; // Blocked
+    }
+    
+    console.log('✅ Role is', role, '- allowing access');
+    return false; // Not blocked
+  }, [logout]);
 
   const clearError = () => setError(null);
   
@@ -134,6 +196,11 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       isAdminRoute,
       forceRefresh
     });
+    
+    // Clear cache if force refresh to ensure fresh data from backend
+    if (forceRefresh) {
+      organizationService.clearCache();
+    }
     
     // Skip loading for admin routes
     if (isAdminRoute) {
@@ -177,16 +244,65 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setOrganizations(orgs);
         setNeedsOrganizationSetup(false);
         
-        // Get current organization from backend to ensure we have the right one
-        try {
-          console.log('🏢 Getting current organization from backend...');
-          const currentOrg = await organizationService.getCurrentOrganization();
-          console.log('✅ Current organization from backend:', currentOrg.name);
-          setCurrentOrganization(currentOrg);
-        } catch (currentOrgError) {
-          console.warn('⚠️ Failed to get current organization, using first available:', currentOrgError);
-          // Fallback to first organization if getCurrentOrganization fails
-          setCurrentOrganization(orgs[0]);
+        // IMPORTANT: Use the isCurrentOrganization flag from the IDP response
+        // This is the source of truth for which org the user is currently in
+        // (the separate getCurrentOrganization endpoint might have stale data)
+        const currentOrgFromList = orgs.find((o: any) => o.isCurrentOrganization);
+        console.log('🔍 Looking for current org in list:', orgs.map((o: any) => ({
+          name: o.name,
+          isCurrentOrganization: o.isCurrentOrganization,
+          userRole: o.userRole
+        })));
+        
+        if (currentOrgFromList) {
+          console.log('✅ Found current org from IDP list:', {
+            name: currentOrgFromList.name,
+            userRole: currentOrgFromList.userRole,
+            _id: currentOrgFromList._id
+          });
+          
+          // IMPORTANT: Only check blocked role if we have a valid role value
+          // If userRole is missing/undefined, DON'T block - let them through
+          if (currentOrgFromList.userRole) {
+            console.log('🔍 Checking if role is blocked:', currentOrgFromList.userRole);
+            if (checkAndHandleBlockedRole(currentOrgFromList, orgs)) {
+              return; // Exit early, user is being logged out
+            }
+          } else {
+            console.log('⚠️ No userRole on current org, skipping block check');
+          }
+          
+          setCurrentOrganization(currentOrgFromList);
+        } else {
+          // Fallback: try to get from backend API (might have stale currentOrg)
+          console.log('⚠️ No isCurrentOrganization flag found, falling back to API...');
+          try {
+            const currentOrg = await organizationService.getCurrentOrganization();
+            console.log('🏢 Current organization from API:', {
+              name: currentOrg.name,
+              userRole: currentOrg.userRole,
+              _id: currentOrg._id
+            });
+            
+            if (currentOrg.userRole) {
+              if (checkAndHandleBlockedRole(currentOrg, orgs)) {
+                return;
+              }
+            }
+            
+            setCurrentOrganization(currentOrg);
+          } catch (currentOrgError) {
+            console.warn('⚠️ Failed to get current organization, using first available:', currentOrgError);
+            const fallbackOrg = orgs[0];
+            
+            if (fallbackOrg?.userRole) {
+              if (checkAndHandleBlockedRole(fallbackOrg, orgs)) {
+                return;
+              }
+            }
+            
+            setCurrentOrganization(fallbackOrg);
+          }
         }
       }
       
@@ -324,10 +440,15 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Get the updated current organization from backend to ensure consistency
       try {
         const currentOrg = await organizationService.getCurrentOrganization();
-        console.log('🏢 Updated current organization:', currentOrg.name);
+        console.log('🏢 Updated current organization:', currentOrg.name, '- Role:', currentOrg.userRole);
         
         // Verify the switch was successful
         if (currentOrg._id === organizationId) {
+          // Check if new organization's role is blocked from Recruiter
+          if (checkAndHandleBlockedRole(currentOrg, organizations)) {
+            return; // Exit early, user is being logged out
+          }
+          
           setCurrentOrganization(currentOrg);
           
           // Refresh limits after switching
@@ -351,6 +472,11 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // Fallback: find organization in local list and set it
         const org = organizations.find(o => o._id === organizationId);
         if (org) {
+          // Check if fallback org role is blocked
+          if (checkAndHandleBlockedRole(org, organizations)) {
+            return; // Exit early, user is being logged out
+          }
+          
           setCurrentOrganization(org);
           console.log('✅ Using local organization data as fallback');
         } else {

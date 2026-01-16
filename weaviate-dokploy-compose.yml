@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.24.0
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      # Authentication
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_USERS: "seemplify-admin"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "lJAiU5kO0QcSLZYxfzpr1E9dD8NRHFMV"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      
+      # Vectorizer Configuration
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      
+      # Persistence
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      
+      # Cluster Configuration
+      CLUSTER_HOSTNAME: "node1"
+      CLUSTER_GOSSIP_BIND_PORT: "7100"
+      CLUSTER_DATA_BIND_PORT: "7101"
+      
+      # Query Configuration
+      QUERY_DEFAULTS_LIMIT: "25"
+      
+      # Memory Configuration
+      GOMEMLIMIT: "2GiB"
+      GOGC: "100"
+      
+      # Logging
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "text"
+      
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    
+    networks:
+      - dokploy-network
+    
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/v1/.well-known/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  weaviate_data:
+    driver: local
+
+networks:
+  dokploy-network:
+    external: true

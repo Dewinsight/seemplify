@@ -547,17 +547,17 @@ exports.checkEmbeddingStatus = async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
-    console.log(`Candidate found, checking Pinecone for: ${id}`);
-    // Check both database flag and Pinecone existence
-    const existsInPinecone = await embeddingService.checkEmbeddingExists(id);
-    console.log(`Pinecone check result: ${existsInPinecone}`);
+    console.log(`Candidate found, checking Weaviate for: ${id}`);
+    // Check both database flag and Weaviate existence
+    const existsInWeaviate = await embeddingService.checkEmbeddingExists(id);
+    console.log(`Weaviate check result: ${existsInWeaviate}`);
     
     const response = {
       candidateId: id,
       isEmbedded: candidate.isEmbedded,
       embeddingCreatedAt: candidate.embeddingCreatedAt,
-      existsInPinecone: existsInPinecone,
-      needsEmbedding: !candidate.isEmbedded || !existsInPinecone
+      existsInWeaviate: existsInWeaviate,
+      needsEmbedding: !candidate.isEmbedded || !existsInWeaviate
     };
     
     console.log(`Embedding status response:`, response);
@@ -799,10 +799,10 @@ exports.deleteCandidate = async (req, res) => {
 
     console.log(`🗑️ Deleting candidate: ${candidate.firstName} ${candidate.lastName} (${req.params.id})`);
 
-    // Delete embedding from Pinecone first
+    // Delete embedding from Weaviate first
     try {
       await embeddingService.deleteEmbedding(req.params.id);
-      console.log(`✅ Embedding deleted from Pinecone for candidate: ${req.params.id}`);
+      console.log(`✅ Embedding deleted from Weaviate for candidate: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete embedding for candidate ${req.params.id}:`, embeddingError.message);
       // Continue with deletion even if embedding deletion fails

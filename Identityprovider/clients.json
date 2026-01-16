@@ -1,13 +1,56 @@
 {
   "clients": [
     {
+      "client_id": "openwebui",
+      "client_secret": "openwebui-seemplify-secret-2026",
+      "redirect_uri_patterns": [
+        "https://ai.seemplifyai.com/oauth/oidc/callback",
+        "https://ai-dev.seemplifyai.com/oauth/oidc/callback",
+        "http://localhost:8080/oauth/oidc/callback",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "allowed_origins": [
+        "https://ai.seemplifyai.com",
+        "https://ai-dev.seemplifyai.com",
+        "http://localhost:8080",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_post"
+    },
+    {
+      "client_id": "outline",
+      "client_secret": "outline-seemplify-secret-2026",
+      "redirect_uri_patterns": [
+        "https://docs.seemplifyai.com/auth/oidc.callback",
+        "https://docs-dev.seemplifyai.com/auth/oidc.callback",
+        "http://localhost:3000/auth/oidc.callback",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "allowed_origins": [
+        "https://docs.seemplifyai.com",
+        "https://docs-dev.seemplifyai.com",
+        "http://localhost:3000",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_post"
+    },
+    {
       "client_id": "smarthr-backend",
       "client_secret": "smarthr-secret",
       "redirect_uri_patterns": [
         "http://localhost:3001/api/auth/oidc/callback",
         "http://localhost:5001/api/auth/oidc/callback",
         "http://127.0.0.1:5001/api/auth/oidc/callback",
-        "https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net/api/auth/oidc/callback",
+        "https://api.seemplifyai.com/api/auth/oidc/callback",
+        "https://api-dev.seemplifyai.com/api/auth/oidc/callback",
         "https://*.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -16,8 +59,12 @@
         "http://localhost:3000",
         "http://127.0.0.1:5000",
         "http://127.0.0.1:5001",
-        "https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net",
-        "https://smarthr-identity.azurewebsites.net",
+        "https://app.seemplifyai.com",
+        "https://api.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://app-dev.seemplifyai.com",
+        "https://api-dev.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com",
         "https://smarthr.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
@@ -31,7 +78,8 @@
       "redirect_uri_patterns": [
         "http://localhost:5002/api/auth/oidc/callback",
         "http://127.0.0.1:5002/api/auth/oidc/callback",
-        "https://leave-management-backend.azurewebsites.net/api/auth/oidc/callback",
+        "https://api-leave.seemplifyai.com/api/auth/oidc/callback",
+        "https://api-leave-dev.seemplifyai.com/api/auth/oidc/callback",
         "https://*.leave-management.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -39,7 +87,12 @@
         "http://localhost:5003",
         "http://127.0.0.1:5002",
         "http://127.0.0.1:5003",
-        "https://smarthr-identity.azurewebsites.net",
+        "https://leave.seemplifyai.com",
+        "https://api-leave.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://leave-dev.seemplifyai.com",
+        "https://api-leave-dev.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com",
         "https://smarthr-leave-management.netlify.app"
       ],
       "response_types": ["code"],
@@ -52,7 +105,8 @@
       "redirect_uri_patterns": [
         "http://localhost:5004/api/auth/oidc/callback",
         "http://127.0.0.1:5004/api/auth/oidc/callback",
-        "https://performance-backend.azurewebsites.net/api/auth/oidc/callback",
+        "https://api-performance.seemplifyai.com/api/auth/oidc/callback",
+        "https://api-performance-dev.seemplifyai.com/api/auth/oidc/callback",
         "https://*.performance.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -60,9 +114,13 @@
         "http://localhost:5005",
         "http://127.0.0.1:5004",
         "http://127.0.0.1:5005",
-        "https://smarthr-identity.azurewebsites.net",
-        "https://smarthr-performance.netlify.app",
-        "https://performance-backend.azurewebsites.net"
+        "https://performance.seemplifyai.com",
+        "https://api-performance.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://performance-dev.seemplifyai.com",
+        "https://api-performance-dev.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com",
+        "https://smarthr-performance.netlify.app"
       ],
       "response_types": ["code"],
       "grant_types": ["authorization_code", "refresh_token"],
@@ -74,7 +132,8 @@
       "redirect_uri_patterns": [
         "http://localhost:5006/api/auth/oidc/callback",
         "http://127.0.0.1:5006/api/auth/oidc/callback",
-        "https://payroll-backend-smarthr.azurewebsites.net/api/auth/oidc/callback",
+        "https://api-payroll.seemplifyai.com/api/auth/oidc/callback",
+        "https://api-payroll-dev.seemplifyai.com/api/auth/oidc/callback",
         "https://*.payroll.smarthr.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
@@ -82,9 +141,13 @@
         "http://localhost:5007",
         "http://127.0.0.1:5006",
         "http://127.0.0.1:5007",
-        "https://smarthr-identity.azurewebsites.net",
-        "https://smarthr-payroll.netlify.app",
-        "https://payroll-backend-smarthr.azurewebsites.net"
+        "https://payroll.seemplifyai.com",
+        "https://api-payroll.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://payroll-dev.seemplifyai.com",
+        "https://api-payroll-dev.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com",
+        "https://smarthr-payroll.netlify.app"
       ],
       "response_types": ["code"],
       "grant_types": ["authorization_code", "refresh_token"],

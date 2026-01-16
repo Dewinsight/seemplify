@@ -271,9 +271,32 @@ router.get('/me', requireAuth, (req, res) => {
   // Return user info (without sensitive tokens)
   const { accessToken, refreshToken, idToken, ...safeUser } = req.session.user;
 
+  // Get current organization from session
+  const currentOrgId = req.session.currentOrganizationId || req.currentOrganization?.id;
+  const organizations = safeUser.organizations || [];
+  
+  // Find the full current organization object
+  let currentOrganization = safeUser.currentOrganization;
+  if (!currentOrganization && currentOrgId && organizations.length > 0) {
+    currentOrganization = organizations.find(org => org.id === currentOrgId);
+  }
+  if (!currentOrganization && organizations.length > 0) {
+    currentOrganization = organizations[0];
+  }
+
+  // Mark current organization in the list
+  const orgsWithCurrent = organizations.map(org => ({
+    ...org,
+    isCurrent: org.id === (currentOrganization?.id || currentOrgId)
+  }));
+
   res.json({
-    user: safeUser,
-    currentOrganizationId: req.session.currentOrganizationId || req.currentOrganization?.id,
+    user: {
+      ...safeUser,
+      organizations: orgsWithCurrent, // Organizations from IDP with isCurrent flag
+    },
+    currentOrganizationId: currentOrganization?.id || currentOrgId,
+    currentOrganization: currentOrganization, // Full organization object from IDP
   });
 });
 
@@ -328,21 +351,26 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
   try {
     // Verify user is a member of the target organization
     const user = req.session.user;
-    const isMember = user.organizations?.some(org => org.id === organizationId);
+    const organizations = user.organizations || [];
+    const targetOrg = organizations.find(org => org.id === organizationId);
 
-    if (!isMember) {
+    if (!targetOrg) {
       return res.status(403).json({
         error: 'Not a member of the specified organization',
         code: 'NOT_MEMBER'
       });
     }
 
-    // Switch the active organization
+    // Switch the active organization - update both ID and full object
     req.session.currentOrganizationId = organizationId;
+    req.session.user.currentOrganization = targetOrg;
+
+    console.log('✅ Payroll organization switched to:', targetOrg.name, 'for', user.email);
 
     res.json({
       success: true,
       currentOrganizationId: organizationId,
+      organization: targetOrg, // Return full organization object
       message: 'Organization switched successfully'
     });
   } catch (error) {

@@ -193,13 +193,13 @@ export function PipelineEmailControls({
                       {totalCandidates} total candidates
                     </Badge>
                   </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  <p className="text-sm text-muted-foreground dark:text-gray-400 mt-1">
                     Send targeted rejection emails to candidates in <span className="font-medium">{jobTitle}</span> pipeline
                   </p>
                 </div>
               </div>
               
-              <div className="hidden sm:flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
+              <div className="hidden sm:flex items-center space-x-4 text-sm text-muted-foreground dark:text-gray-400">
                 <div className="flex items-center gap-1">
                   <Layers className="h-4 w-4 text-blue-500" />
                   <span>Multi-Stage</span>
@@ -222,7 +222,7 @@ export function PipelineEmailControls({
                   key={stage._id}
                   className="bg-white dark:bg-gray-800/50 rounded-lg p-3 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all duration-200"
                 >
-                  <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 truncate" title={stage.name}>
+                  <div className="text-xs font-medium text-muted-foreground dark:text-gray-400 mb-1 truncate" title={stage.name}>
                     {stage.name}
                   </div>
                   <div className="flex items-center justify-between">
@@ -240,14 +240,14 @@ export function PipelineEmailControls({
             {/* Filter Controls */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-gray-500" />
+                <Filter className="h-4 w-4 text-muted-foreground" />
                 <Label className="text-sm font-medium">Filter Recipients</Label>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Filter Type */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-600 dark:text-gray-400">Scope</Label>
+                  <Label className="text-xs text-muted-foreground dark:text-gray-400">Scope</Label>
                   <Select value={filterBy} onValueChange={(value: FilterOption) => {
                     setFilterBy(value)
                     setSelectedCandidates([]) // Reset selection when filter changes
@@ -280,7 +280,7 @@ export function PipelineEmailControls({
                 {/* Stage Selection */}
                 {filterBy === 'stage' && (
                   <div className="space-y-2">
-                    <Label className="text-xs text-gray-600 dark:text-gray-400">Select Stage</Label>
+                    <Label className="text-xs text-muted-foreground dark:text-gray-400">Select Stage</Label>
                     <Select value={selectedStageId} onValueChange={(value) => {
                       setSelectedStageId(value)
                       setSelectedCandidates([]) // Reset selection when stage changes
@@ -306,7 +306,7 @@ export function PipelineEmailControls({
 
                 {/* Action Button */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-600 dark:text-gray-400">Action</Label>
+                  <Label className="text-xs text-muted-foreground dark:text-gray-400">Action</Label>
                   <Button 
                     onClick={openBulkDialog}
                     disabled={filteredCandidates.length === 0}
@@ -362,12 +362,12 @@ export function PipelineEmailControls({
 
           <div className="space-y-6">
             {/* Filter Summary */}
-            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border">
+            <div className="bg-muted/30 dark:bg-gray-900 rounded-lg p-4 border">
               <div className="flex items-center gap-2 mb-2">
-                <Settings className="h-4 w-4 text-gray-500" />
+                <Settings className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Email Scope</span>
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-muted-foreground dark:text-gray-400">
                 {filterBy === 'all' 
                   ? `All ${totalCandidates} pipeline candidates across ${stages.length} stages`
                   : `${filteredCandidates.length} candidates in "${stages.find(s => s._id === selectedStageId)?.name}" stage`
@@ -392,7 +392,7 @@ export function PipelineEmailControls({
                 </Button>
               </div>
               
-              <div className="border rounded-lg bg-gray-50 dark:bg-gray-900 max-h-64 overflow-y-auto">
+              <div className="border rounded-lg bg-muted/30 dark:bg-gray-900 max-h-64 overflow-y-auto">
                 {filteredCandidates.map((candidate) => (
                   <div key={candidate._id} className="flex items-center space-x-3 p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-b border-gray-200 dark:border-gray-700 last:border-b-0">
                     <Checkbox
@@ -406,7 +406,7 @@ export function PipelineEmailControls({
                           <span className="font-medium text-gray-900 dark:text-gray-100">
                             {candidate.firstName} {candidate.lastName}
                           </span>
-                          <span className="text-gray-500 text-sm ml-2">({candidate.email})</span>
+                          <span className="text-muted-foreground text-sm ml-2">({candidate.email})</span>
                         </div>
                         <Badge variant="outline" className="text-xs">
                           {candidate.currentStage?.stageName || 'Unknown Stage'}
@@ -432,7 +432,7 @@ export function PipelineEmailControls({
                 rows={4}
                 className="resize-none"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Leave empty to use the default rejection message template for each candidate's current stage.
               </p>
             </div>

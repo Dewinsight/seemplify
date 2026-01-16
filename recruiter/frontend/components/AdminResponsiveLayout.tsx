@@ -16,27 +16,22 @@ export default function AdminResponsiveLayout({ children }: AdminResponsiveLayou
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
 
-  // Check if screen is mobile and set sidebar state accordingly
   useEffect(() => {
     const checkIsMobile = () => {
-      const mobile = window.innerWidth < 1024; // lg breakpoint
+      const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
-      
-      // Auto-close sidebar on mobile, auto-open on desktop
+
       if (sidebarOpen !== !mobile) {
         setSidebarOpen(!mobile);
       }
     };
 
-    // Initial check
     checkIsMobile();
 
-    // Add resize listener
     window.addEventListener('resize', checkIsMobile);
     return () => window.removeEventListener('resize', checkIsMobile);
   }, []);
 
-  // Close sidebar when navigating on mobile
   useEffect(() => {
     if (isMobile) {
       setSidebarOpen(false);
@@ -44,18 +39,18 @@ export default function AdminResponsiveLayout({ children }: AdminResponsiveLayou
   }, [pathname, isMobile]);
 
   return (
-    <div className="relative min-h-screen bg-gray-900 flex flex-col lg:flex-row">
+    <div className="relative min-h-screen bg-[#050505] flex flex-col lg:flex-row">
       {/* Mobile sidebar overlay */}
       {isMobile && sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-20"
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
         />
       )}
 
       {/* Sidebar */}
-      <div 
+      <div
         className={`
           ${isMobile ? 'fixed inset-y-0 left-0 z-30' : 'relative'}
           ${sidebarOpen ? 'translate-x-0' : isMobile ? '-translate-x-full' : 'w-0 overflow-hidden'}
@@ -68,23 +63,21 @@ export default function AdminResponsiveLayout({ children }: AdminResponsiveLayou
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Header with mobile menu button */}
-        <div className="sticky top-0 z-10">
-          <AdminHeader>
-            {isMobile && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="mr-2 text-gray-400 hover:text-white hover:bg-gray-700"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </Button>
-            )}
-          </AdminHeader>
-        </div>
+        <AdminHeader>
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-zinc-400 hover:text-white hover:bg-white/5"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          )}
+        </AdminHeader>
 
         {/* Main content area */}
-        <main className="flex-1 overflow-y-auto bg-gray-900 p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto bg-[#050505] p-4 sm:p-6">
           <div className="w-full mx-auto">
             {children}
           </div>

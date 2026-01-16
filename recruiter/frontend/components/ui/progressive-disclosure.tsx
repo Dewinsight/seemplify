@@ -64,18 +64,18 @@ export function ProgressiveDisclosure({
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </motion.div>
           )}
-          
+
           {icon && (
             <div className="text-muted-foreground">{icon}</div>
           )}
-          
+
           <div className="flex-1">
             <h3 className="font-semibold text-sm">{title}</h3>
             {subtitle && (
               <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
             )}
           </div>
-          
+
           {badge}
         </div>
       </div>
@@ -116,6 +116,7 @@ interface ProgressiveCardProps {
   preview?: React.ReactNode;
   detail?: React.ReactNode;
   className?: string;
+  iconClassName?: string;
   onDetailClick?: () => void;
 }
 
@@ -127,6 +128,7 @@ export function ProgressiveCard({
   preview,
   detail,
   className,
+  iconClassName,
   onDetailClick,
 }: ProgressiveCardProps) {
   const [showPreview, setShowPreview] = React.useState(false);
@@ -151,7 +153,7 @@ export function ProgressiveCard({
             <p className="text-2xl font-bold">{value}</p>
           </div>
           {icon && (
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
+            <div className={cn("rounded-lg bg-primary/10 p-2 text-primary", iconClassName)}>
               {icon}
             </div>
           )}

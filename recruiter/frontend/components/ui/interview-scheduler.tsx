@@ -522,9 +522,9 @@ Best regards,
     switch (role) {
       case 'candidate': return 'bg-blue-100 text-blue-800';
       case 'interviewer': return 'bg-green-100 text-green-800';
-      case 'observer': return 'bg-gray-100 text-gray-800';
+      case 'observer': return 'bg-muted/50 text-gray-800';
       case 'external': return 'bg-purple-100 text-purple-800';
-      default: return 'bg-gray-100 text-gray-800';
+      default: return 'bg-muted/50 text-gray-800';
     }
   };
 
@@ -1473,7 +1473,7 @@ Best regards,
                                     </Avatar>
                                     <div>
                                       <p className="text-sm font-medium">{memberName}</p>
-                                      <p className="text-xs text-gray-500">{member.user.email}</p>
+                                      <p className="text-xs text-muted-foreground">{member.user.email}</p>
                                     </div>
                                   </div>
                                   <Button
@@ -1489,7 +1489,7 @@ Best regards,
                             })}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 text-center py-4">
+                        <p className="text-sm text-muted-foreground text-center py-4">
                           No team members available
                         </p>
                       )}
@@ -1568,7 +1568,7 @@ Best regards,
                           <Badge variant="secondary" className="text-xs">Required</Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">{participant.email}</p>
+                      <p className="text-xs text-muted-foreground">{participant.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1644,7 +1644,7 @@ Best regards,
               >
                 Set as Default
               </Button>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-muted-foreground">
                 Default: {providers.find(p => p.id === defaultProvider)?.name}
               </span>
             </div>
@@ -1917,7 +1917,7 @@ Best regards,
                 Add AI Notetaker to record and transcribe the interview
               </label>
             </div>
-            <p className="text-xs text-gray-500 ml-6">
+            <p className="text-xs text-muted-foreground ml-6">
               The AI notetaker will automatically join the meeting to provide transcripts and summaries.
               All participants will be notified that the meeting is being recorded.
             </p>
@@ -1966,7 +1966,7 @@ Best regards,
                 </Select>
               </div>
               
-              <div className="border rounded-lg p-4 bg-gray-50">
+              <div className="border rounded-lg p-4 bg-muted/30">
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <MessageCircle className="h-5 w-5 text-primary" />
@@ -2030,11 +2030,11 @@ Best regards,
                   rows={10}
                   className="font-mono text-sm"
                 />
-                <div className="absolute top-2 right-2 bg-gray-100 px-2 py-1 rounded text-xs text-gray-500">
+                <div className="absolute top-2 right-2 bg-muted/50 px-2 py-1 rounded text-xs text-muted-foreground">
                   Template
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Available placeholders: &#123;&#123;candidateName&#125;&#125;, &#123;&#123;jobTitle&#125;&#125;, &#123;&#123;interviewDate&#125;&#125;, &#123;&#123;interviewTime&#125;&#125;, 
                 &#123;&#123;duration&#125;&#125;, &#123;&#123;interviewType&#125;&#125;, &#123;&#123;meetingLink&#125;&#125;, &#123;&#123;notes&#125;&#125;, &#123;&#123;interviewerName&#125;&#125;, &#123;&#123;organizationName&#125;&#125;
               </p>
@@ -2400,9 +2400,9 @@ Best regards,
                 {/* Candidate List */}
                 {multiCandidateSlots.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                    <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600">No candidates added yet</p>
-                    <p className="text-xs text-gray-500 mt-1">Add at least 2 candidates to create a multi-candidate session</p>
+                    <Users className="h-8 w-8 text-muted-foreground/70 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No candidates added yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Add at least 2 candidates to create a multi-candidate session</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2423,14 +2423,14 @@ Best regards,
                                 {slot.jobTitle}
                               </Badge>
                             </div>
-                            <p className="text-sm text-gray-500">{slot.candidateEmail}</p>
+                            <p className="text-sm text-muted-foreground">{slot.candidateEmail}</p>
                             {multiBaseStartTime && slotWithTime && (
                               <p className="text-sm text-blue-600 mt-1">
                                 {formatTimeRange(slotWithTime.startTime, slot.duration)}
                               </p>
                             )}
                             {slot.notes && (
-                              <p className="text-xs text-gray-500 mt-1 italic">{slot.notes}</p>
+                              <p className="text-xs text-muted-foreground mt-1 italic">{slot.notes}</p>
                             )}
                           </div>
                           
@@ -2540,7 +2540,7 @@ Best regards,
                           </Avatar>
                           <div>
                             <p className="text-sm font-medium">{participant.name}</p>
-                            <p className="text-xs text-gray-500">{participant.email}</p>
+                            <p className="text-xs text-muted-foreground">{participant.email}</p>
                           </div>
                           <Badge variant="outline" className="text-xs">
                             {participant.role}
@@ -2602,7 +2602,7 @@ Best regards,
                       </Select>
                     </div>
                     
-                    <div className="border rounded-lg p-4 bg-gray-50">
+                    <div className="border rounded-lg p-4 bg-muted/30">
                       <div className="flex justify-between items-center mb-4">
                         <div className="flex items-center gap-2">
                           <MessageCircle className="h-5 w-5 text-primary" />
@@ -2666,11 +2666,11 @@ Best regards,
                         rows={10}
                         className="font-mono text-sm"
                       />
-                      <div className="absolute top-2 right-2 bg-gray-100 px-2 py-1 rounded text-xs text-gray-500">
+                      <div className="absolute top-2 right-2 bg-muted/50 px-2 py-1 rounded text-xs text-muted-foreground">
                         Template
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       Each candidate will receive this email with their specific time slot. 
                       Available placeholders: &#123;&#123;candidateName&#125;&#125;, &#123;&#123;jobTitle&#125;&#125;, &#123;&#123;interviewDate&#125;&#125;, &#123;&#123;interviewTime&#125;&#125;, 
                       &#123;&#123;duration&#125;&#125;, &#123;&#123;interviewType&#125;&#125;, &#123;&#123;meetingLink&#125;&#125;, &#123;&#123;notes&#125;&#125;, &#123;&#123;interviewerName&#125;&#125;, &#123;&#123;organizationName&#125;&#125;
@@ -2816,10 +2816,10 @@ Best regards,
                                 }}
                                 className={`p-2 sm:p-3 rounded-lg cursor-pointer transition-colors ${
                                   isAlreadyAdded 
-                                    ? 'bg-gray-50 opacity-50 cursor-not-allowed'
+                                    ? 'bg-muted/30 opacity-50 cursor-not-allowed'
                                     : isSelected
                                     ? 'bg-blue-100 border-blue-500 border'
-                                    : 'hover:bg-gray-100 border border-gray-200'
+                                    : 'hover:bg-muted/50 border border-gray-200'
                                 }`}
                               >
                                 <div className="flex items-start gap-2 sm:gap-3">
@@ -2831,11 +2831,11 @@ Best regards,
                                   <div className="flex-1 min-w-0">
                                     <p className="font-medium text-sm sm:text-base truncate">
                                       {candidate.firstName} {candidate.lastName}
-                                      {isAlreadyAdded && <span className="text-xs text-gray-500 ml-1 sm:ml-2">(Added)</span>}
+                                      {isAlreadyAdded && <span className="text-xs text-muted-foreground ml-1 sm:ml-2">(Added)</span>}
                                     </p>
-                                    <p className="text-xs sm:text-sm text-gray-500 truncate">{candidate.email}</p>
+                                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{candidate.email}</p>
                                     {candidate.position && (
-                                      <p className="text-xs text-gray-400 truncate">Position: {candidate.position}</p>
+                                      <p className="text-xs text-muted-foreground/70 truncate">Position: {candidate.position}</p>
                                     )}
                                     {candidate.status && (
                                       <Badge variant="outline" className="mt-1 text-xs">
@@ -2849,10 +2849,10 @@ Best regards,
                           })}
                         {systemCandidates.length === 0 && (
                           <div className="text-center py-4">
-                            <p className="text-gray-500">
+                            <p className="text-muted-foreground">
                               {stageId ? 'No candidates in this stage' : 'No candidates in the pipeline'}
                             </p>
-                            <p className="text-xs text-gray-400 mt-1">
+                            <p className="text-xs text-muted-foreground/70 mt-1">
                               {stageId ? 'Move candidates to this interview stage first' : 'Add candidates to the job pipeline first'}
                             </p>
                           </div>
@@ -2993,7 +2993,7 @@ Best regards,
                                 </Avatar>
                                 <div>
                                   <p className="text-sm font-medium">{memberName}</p>
-                                  <p className="text-xs text-gray-500">{member.user.email}</p>
+                                  <p className="text-xs text-muted-foreground">{member.user.email}</p>
                                 </div>
                               </div>
                               <Button
@@ -3009,7 +3009,7 @@ Best regards,
                         })}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500 text-center py-4">
+                    <p className="text-sm text-muted-foreground text-center py-4">
                       No team members available
                     </p>
                   )}
@@ -3088,10 +3088,10 @@ Best regards,
                 {/* Technical details (if available) */}
                 {errorDetails?.details && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold text-gray-600 uppercase">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase">
                       Technical Details
                     </Label>
-                    <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div className="p-3 bg-muted/30 border border-gray-200 rounded-lg">
                       <code className="text-xs text-gray-700 font-mono break-all">
                         {errorDetails.details}
                       </code>
@@ -3102,7 +3102,7 @@ Best regards,
                 {/* Suggestions */}
                 {errorDetails?.suggestions && errorDetails.suggestions.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold text-gray-600 uppercase">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase">
                       Suggested Actions
                     </Label>
                     <ul className="space-y-2">

@@ -1,0 +1,40 @@
+# Deploy Performance Backend to Dokploy
+name: Deploy Performance Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'performance/backend/**'
+      - '.github/workflows/deploy-performance-backend.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: performance-backend
+  APP_PATH: performance/backend
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets.PERFORMANCE_BACKEND_APP_ID }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
+            cat /tmp/response.txt 2>/dev/null || true
+          else
+            echo "❌ Deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi

@@ -40,12 +40,16 @@ router.get('/launch', validateHubToken, async (req, res) => {
       req.session.currentOrganizationId = hubUser.organizations[0].id;
     }
 
-    // Sync user with local database
+    // Sync user profile and teams with local database
+    // Note: Organizations come from IDP session only, not stored locally
+    // Teams are cached for querying users in an organization
     let user = await User.findOne({ email: hubUser.email });
     if (user) {
-      user.idpTeams = hubUser.teams || [];
-      user.idpOrganizations = hubUser.organizations || [];
+      user.idpTeams = hubUser.teams || []; // Cache teams for org queries
       user.lastGrantRefresh = new Date();
+      if (req.session.currentOrganizationId) {
+        user.currentOrganizationId = req.session.currentOrganizationId;
+      }
       await user.save();
     } else {
       user = new User({
@@ -55,8 +59,7 @@ router.get('/launch', validateHubToken, async (req, res) => {
           firstName: hubUser.name?.split(' ')[0],
           lastName: hubUser.name?.split(' ').slice(1).join(' ')
         },
-        idpTeams: hubUser.teams || [],
-        idpOrganizations: hubUser.organizations || [],
+        idpTeams: hubUser.teams || [], // Cache teams for org queries
         currentOrganizationId: req.session.currentOrganizationId,
         lastGrantRefresh: new Date()
       });

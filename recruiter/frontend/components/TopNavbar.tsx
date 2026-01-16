@@ -7,23 +7,20 @@ import {
   Home,
   Users,
   Briefcase,
-  Upload,
   Calendar,
   Settings,
   Menu,
   MessageSquare,
   LogOut,
   User,
-  Sun,
-  Moon,
   Shield,
-  GraduationCap,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
-import { getAvailableThemeOptions } from "@/utils/themeConfig";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useUser } from "@/context/UserContext";
 import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
@@ -33,10 +30,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -48,6 +41,7 @@ import {
 import OrganizationSwitcher from "@/components/OrganizationSwitcher";
 import { Logo } from "@/components/ui/Logo";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import SeemplifyLogo from "@/components/SeemplifyLogo";
 
 const navigationItems = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
@@ -57,7 +51,6 @@ const navigationItems = [
   { title: "AI Assistant", href: "/assistant", icon: MessageSquare },
 ];
 
-// Directly use the Settings component for the icon
 const settingsNavigation = { title: "Settings", href: "/settings", icon: Settings };
 
 interface NavLinkProps {
@@ -71,24 +64,35 @@ interface NavLinkProps {
   onClick?: () => void;
 }
 
-const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) => (
-  <Link
-    href={item.href}
-    onClick={onClick}
-    className={cn(
-      "flex items-center gap-2 transition-colors duration-200 ease-in-out",
-      isMobile
-        ? "text-lg font-medium p-3 rounded-lg"
-        : "text-sm font-medium px-3 py-2 rounded-md",
-      pathname?.startsWith(item.href)
-        ? "bg-primary/10 text-primary"
-        : "text-foreground/70 hover:text-foreground hover:bg-accent"
-    )}
-  >
-    <item.icon className="h-5 w-5" />
-    <span>{item.title}</span>
-  </Link>
-);
+const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) => {
+  const isActive = pathname?.startsWith(item.href);
+
+  return (
+    <Link
+      href={item.href}
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 transition-all duration-300 relative group",
+        isMobile
+          ? "text-base font-medium p-3 rounded-xl"
+          : "text-sm font-medium px-3 py-2 rounded-lg",
+        isActive
+          ? isMobile
+            ? "bg-primary/10 text-primary shadow-lg"
+            : "text-foreground bg-primary/10 shadow-lg shadow-primary/5 backdrop-blur-md border border-primary/10"
+          : isMobile
+            ? "text-muted-foreground hover:text-foreground hover:bg-muted"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+      )}
+    >
+      <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+      <span>{item.title}</span>
+      {isActive && !isMobile && (
+        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.6)]" />
+      )}
+    </Link>
+  );
+};
 
 const TopNavbar = () => {
   const pathname = usePathname();
@@ -98,106 +102,138 @@ const TopNavbar = () => {
   const { user } = state;
   const { currentOrganization } = useOrganization();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  
-  // Get available theme options from environment configuration
-  const availableThemes = getAvailableThemeOptions();
+
+
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" data-tutorial="app-navbar">
-      <div className="container flex h-20 items-center justify-between max-w-screen-2xl">
+    <header
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 dark:bg-black/5 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60"
+      data-tutorial="app-navbar"
+    >
+      <div className="container flex h-16 items-center justify-between max-w-screen-2xl px-4 lg:px-6">
         {/* Left Section - Logo and Mobile Menu */}
         <div className="flex items-center gap-4">
-          <div className="md:hidden">
+          {/* Mobile Menu Button */}
+          <div className="lg:hidden">
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-6 w-6" />
+                <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Menu className="h-5 w-5" />
                   <span className="sr-only">Open menu</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] sm:w-[340px]">
-                <SheetHeader className="mb-8">
-                  <SheetTitle>
-                    <Logo size="sm" />
-                  </SheetTitle>
-                </SheetHeader>
-                <nav className="flex flex-col gap-4">
-                  {[...navigationItems, settingsNavigation].map((item) => (
-                    <NavLink
-                      key={item.title}
-                      item={item}
-                      isMobile={true}
-                      onClick={() => setIsSheetOpen(false)}
-                      pathname={pathname}
-                    />
-                  ))}
-                </nav>
+              <SheetContent
+                side="left"
+                className="w-[300px] bg-background border-border p-0"
+              >
+                <div className="flex flex-col h-full">
+                  <SheetHeader className="p-6 border-b border-border">
+                    <SheetTitle className="flex items-center gap-2.5">
+                      <SeemplifyLogo size="md" />
+                      <div className="flex items-baseline">
+                        <span className="font-semibold tracking-tight text-foreground">Seemplify</span>
+                        <span className="ml-1.5 font-light text-primary">Recruiter</span>
+                      </div>
+                    </SheetTitle>
+                  </SheetHeader>
+
+                  <nav className="flex-1 p-4 space-y-1">
+                    {[...navigationItems, settingsNavigation].map((item) => (
+                      <NavLink
+                        key={item.title}
+                        item={item}
+                        isMobile={true}
+                        onClick={() => setIsSheetOpen(false)}
+                        pathname={pathname}
+                      />
+                    ))}
+                  </nav>
+
+                  <div className="p-4 border-t border-border">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
+                      <Avatar className="h-10 w-10 border border-border">
+                        <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
+                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                          {user?.profile?.firstName?.[0] || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{getUserDisplayName()}</p>
+                        <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </SheetContent>
             </Sheet>
           </div>
-          <div className="hidden md:block">
+
+          {/* Desktop Logo */}
+          <div className="hidden lg:block">
             <Logo size="sm" />
           </div>
         </div>
 
         {/* Center Section - Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-2">
+        <nav className="hidden lg:flex items-center gap-1">
           {navigationItems.map((item) => (
-            <NavLink key={item.title} item={item} pathname={pathname} />
+            <div key={item.title} className="relative">
+              <NavLink item={item} pathname={pathname} />
+            </div>
           ))}
         </nav>
 
         {/* Right Section - Actions */}
-        <div className="flex items-center gap-4">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
+        <div className="flex items-center gap-3">
+          {/* Organization Switcher */}
+          <div className="hidden sm:block">
             {currentOrganization && <OrganizationSwitcher showCreateOption={true} />}
           </div>
+
+          <ThemeToggle />
+
+          {/* Notifications */}
           <NotificationDropdown />
+
+          {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                <Avatar className="h-10 w-10 border-2 border-transparent group-hover:border-primary transition-colors">
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
+                <Avatar className="h-9 w-9 border border-border/50 transition-all hover:border-primary/50">
                   <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
-                  <AvatarFallback>{user?.profile?.firstName?.[0] || 'U'}</AvatarFallback>
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-sm">
+                    {user?.profile?.firstName?.[0] || 'U'}
+                  </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                <span>Profile</span>
+            <DropdownMenuContent
+              className="w-56 glass-card border-border/20 text-foreground bg-white/80 dark:bg-black/50"
+              align="end"
+              forceMount
+            >
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium">{getUserDisplayName()}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={settingsNavigation.href}>
+                <Link href={settingsNavigation.href} className="cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" />
                   <span>{settingsNavigation.title}</span>
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                  <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                  <span className="ml-2">Toggle Theme</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
-                    {availableThemes.map((themeOption) => (
-                      <DropdownMenuItem 
-                        key={themeOption.value}
-                        onClick={() => setTheme(themeOption.value)}
-                      >
-                        {themeOption.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
               {user?.email === 'michael.egbo@aiinnigeria.com' && (
                 <>
                   <DropdownMenuItem asChild>
-                    <Link href="/admin/dashboard" target="_blank">
+                    <Link href="/admin/dashboard" target="_blank" className="cursor-pointer">
                       <Shield className="mr-2 h-4 w-4" />
                       <span>Admin Portal</span>
                     </Link>
@@ -205,7 +241,10 @@ const TopNavbar = () => {
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem onClick={() => logout()}>
+              <DropdownMenuItem
+                onClick={() => logout()}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Log out</span>
               </DropdownMenuItem>

@@ -2,432 +2,36 @@
 <html>
 
 <head>
+  <meta charset="UTF-8">
   <title>Invitations - <%= organization.name %> - AIIN Identity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    :root {
-      --brand: #60a5fa;
-      --brand-2: #a855f7;
-      --surface: #0b1224;
-      --surface-2: #0f172a;
-      --surface-3: #1e293b;
-      --line: #1f2a44;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --success: #22c55e;
-      --error: #ef4444;
-      --warning: #f59e0b;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
-      min-height: 100vh;
-      color: var(--text);
-      padding: 24px;
-    }
-
-    .container {
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 32px;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .header h1 {
-      font-size: 28px;
-      color: #f8fafc;
-    }
-
-    .header-subtitle {
-      color: var(--muted);
-      font-size: 14px;
-      margin-top: 4px;
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--brand), var(--brand-2));
-      color: white;
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
-    }
-
-    .btn-secondary {
-      background: var(--surface-3);
-      color: var(--text);
-      border: 1px solid var(--line);
-    }
-
-    .btn-danger {
-      background: rgba(239, 68, 68, 0.2);
-      color: #fca5a5;
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-
-    .btn-sm {
-      padding: 6px 12px;
-      font-size: 13px;
-    }
-
-    .card {
-      background: linear-gradient(160deg, rgba(16, 24, 40, 0.88), rgba(11, 18, 36, 0.92));
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 16px;
-    }
-
-    .invite-card {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .invite-info {
-      flex: 1;
-    }
-
-    .invite-email {
-      font-size: 16px;
-      font-weight: 600;
-      color: #f8fafc;
-      margin-bottom: 4px;
-    }
-
-    .invite-meta {
-      display: flex;
-      gap: 12px;
-      margin-top: 8px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .invite-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .role-badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .role-admin {
-      background: rgba(96, 165, 250, 0.2);
-      color: #60a5fa;
-    }
-
-    .role-hr_manager {
-      background: rgba(34, 197, 94, 0.2);
-      color: #22c55e;
-    }
-
-    .role-recruiter {
-      background: rgba(245, 158, 11, 0.2);
-      color: #f59e0b;
-    }
-
-    .role-interviewer {
-      background: rgba(148, 163, 184, 0.2);
-      color: #94a3b8;
-    }
-
-    .status-pending {
-      color: var(--warning);
-    }
-
-    .back-link {
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 14px;
-      margin-bottom: 16px;
-      display: inline-block;
-    }
-
-    .back-link:hover {
-      color: var(--text);
-    }
-
-    .alert {
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      font-size: 14px;
-    }
-
-    .alert-error {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
-    }
-
-    .alert-success {
-      background: rgba(34, 197, 94, 0.15);
-      border: 1px solid rgba(34, 197, 94, 0.3);
-      color: #86efac;
-    }
-
-    .modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal.active {
-      display: flex;
-    }
-
-    .modal-content {
-      background: var(--surface-2);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 24px;
-      width: 100%;
-      max-width: 480px;
-      margin: 16px;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .modal-header h2 {
-      font-size: 20px;
-      color: #f8fafc;
-    }
-
-    .modal-close {
-      background: none;
-      border: none;
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 24px;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-group label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 500;
-      color: var(--text);
-      font-size: 14px;
-    }
-
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: var(--text);
-      font-size: 15px;
-    }
-
-    .form-group input:focus,
-    .form-group select:focus {
-      outline: none;
-      border-color: var(--brand);
-    }
-
-    .form-actions {
-      display: flex;
-      gap: 12px;
-      justify-content: flex-end;
-      margin-top: 24px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-    }
-
-    .empty-state h3 {
-      color: #f8fafc;
-      margin-bottom: 8px;
-    }
-
-    .empty-state p {
-      color: var(--muted);
-      margin-bottom: 24px;
-    }
-
-    /* Top Navigation */
-    .top-nav {
-      background: rgba(15, 23, 42, 0.95);
-      border-bottom: 1px solid var(--line);
-      padding: 12px 24px;
-      margin: -24px -24px 24px -24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      backdrop-filter: blur(10px);
-    }
-
-    .top-nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--text);
-    }
-
-    .top-nav-brand svg {
-      width: 32px;
-      height: 32px;
-    }
-
-    .top-nav-brand span {
-      font-size: 18px;
-      font-weight: 700;
-      background: linear-gradient(135deg, var(--brand), var(--brand-2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .top-nav-links {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .top-nav-link {
-      padding: 8px 16px;
-      border-radius: 8px;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-
-    .top-nav-link:hover {
-      color: var(--text);
-      background: var(--surface-3);
-    }
-
-    .top-nav-link.active {
-      color: var(--text);
-      background: var(--surface-3);
-    }
-
-    .top-nav-user {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .top-nav-user-info {
-      text-align: right;
-    }
-
-    .top-nav-user-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .top-nav-user-email {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .top-nav-logout {
-      padding: 8px 16px;
-      border-radius: 8px;
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-decoration: none;
-    }
-
-    .top-nav-logout:hover {
-      background: rgba(239, 68, 68, 0.25);
-    }
-
-    @media (max-width: 768px) {
-      .top-nav {
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-
-      .top-nav-user-info {
-        display: none;
-      }
-    }
+    <%- include('../public/css/idp-theme.css') %>
   </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
 </head>
 
 <body>
   <!-- Top Navigation -->
   <nav class="top-nav">
-    <a href="/" class="top-nav-brand">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <path d="M2 17L12 22L22 17" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <path d="M2 12L12 17L22 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" />
+    <a href="https://seemplifyai.com" class="top-nav-brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
         <defs>
-          <linearGradient id="grad1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#60a5fa" />
-            <stop offset="1" stop-color="#a855f7" />
+          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3b82f6" />
+            <stop offset="50%" stop-color="#8b5cf6" />
+            <stop offset="100%" stop-color="#ec4899" />
           </linearGradient>
         </defs>
+        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
+          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <circle cx="65" cy="25" r="6" class="logo-dot" />
+        <circle cx="50" cy="50" r="6" class="logo-dot" />
+        <circle cx="35" cy="75" r="6" class="logo-dot" />
       </svg>
-      <span>AIIN Identity</span>
+      <span>Seemplify</span>
     </a>
     <div class="top-nav-links">
       <a href="/" class="top-nav-link">Home</a>
@@ -437,6 +41,46 @@
       <a href="/logout" class="top-nav-link">Logout</a>
     </div>
     <div class="top-nav-user">
+      <div class="theme-dropdown">
+        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" />
+            <path
+              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5" />
+              <path
+                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+            Light
+          </button>
+          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            Dark
+          </button>
+          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            System
+          </button>
+        </div>
+      </div>
       <div class="top-nav-user-info">
         <div class="top-nav-user-name">
           <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
@@ -535,6 +179,7 @@
             <option value="hr_manager">HR Manager</option>
             <option value="recruiter" selected>Recruiter</option>
             <option value="interviewer">Interviewer</option>
+            <option value="staff">Staff</option>
           </select>
         </div>
         <div class="form-actions">

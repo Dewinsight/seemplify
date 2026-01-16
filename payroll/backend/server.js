@@ -23,21 +23,23 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     const allowedOrigins = [
       process.env.FRONTEND_URL || 'http://localhost:5007',
       'http://localhost:3000', // Hub local
       'http://localhost:5000', // SmartHR frontend local
       'http://localhost:5006', // Legacy port
       'http://localhost:5007', // Frontend dev server
-      'https://smarthr-identity.azurewebsites.net', // IdP production
-      'https://smarthr-payroll.netlify.app', // Payroll frontend production
+      'https://auth.seemplifyai.com', // IdP production
+      'https://payroll.seemplifyai.com', // Payroll frontend production
+      'https://api-payroll.seemplifyai.com', // Payroll backend production
+      'https://smarthr-payroll.netlify.app', // Payroll frontend Netlify
       // Allow any Netlify preview URLs
     ];
-    
+
     // Check if origin is allowed or is a Netlify preview
     if (allowedOrigins.includes(origin) || origin.endsWith('.netlify.app')) {
       callback(null, true);
@@ -75,13 +77,16 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/payroll-m
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('Connected to MongoDB (Payroll DB)'))
-.catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('Connected to MongoDB (Payroll DB)'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/compensation', require('./routes/compensation'));
+app.use('/api/payroll/reports', require('./routes/reports'));
+app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
+app.use('/api/payroll/currencies', require('./routes/currencies'));
 app.use('/api/webhooks', webhooksRouter);
 
 // Initialize Payroll Scheduler

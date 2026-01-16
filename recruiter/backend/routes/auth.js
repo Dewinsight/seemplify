@@ -621,6 +621,48 @@ router.get('/oidc/callback', async (req, res) => {
     console.log('✅ OIDC tokens received for:', email);
     console.log('📊 Organization claims:', userinfo.organizations ? userinfo.organizations.length : 0, 'organizations');
     console.log('👥 Team claims:', userinfo.teams ? userinfo.teams.length : 0, 'teams');
+    console.log('🏢 Current organization:', userinfo.current_organization?.name || 'none');
+
+    // ==========================================================================
+    // STAFF ROLE ACCESS CHECK
+    // Staff role users are not allowed to access Recruiter
+    // IMPORTANT: We only check the CURRENT organization's role, not all orgs.
+    // A user can be 'staff' in one org but 'admin' in another - they should
+    // be able to access Recruiter when their current org role allows it.
+    // ==========================================================================
+    const currentOrg = userinfo.current_organization;
+    
+    if (currentOrg && userinfo.organizations && userinfo.organizations.length > 0) {
+      // Find the user's role in their current organization
+      const currentOrgMembership = userinfo.organizations.find(org => org.id === currentOrg.id);
+      
+      if (currentOrgMembership && currentOrgMembership.role === 'staff') {
+        console.log('🚫 User with staff role in CURRENT organization attempting to access Recruiter:', email);
+        console.log('   Current org:', currentOrg.name, '- Role:', currentOrgMembership.role);
+        
+        // Check if user has other organizations with non-staff roles
+        const otherOrgsWithAccess = userinfo.organizations.filter(
+          org => org.id !== currentOrg.id && org.role !== 'staff'
+        );
+        const hasOtherOrgs = otherOrgsWithAccess.length > 0;
+        
+        console.log('   Other organizations with access:', 
+          hasOtherOrgs ? otherOrgsWithAccess.map(o => `${o.name} (${o.role})`).join(', ') : 'None');
+        
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+        const hubUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+        
+        // Build a helpful error message
+        const errorParams = new URLSearchParams({
+          error: 'staff_role_denied',
+          orgName: currentOrg.name || 'your current organization',
+          hubUrl: hubUrl,
+          hasOtherOrgs: hasOtherOrgs ? 'true' : 'false'
+        });
+        
+        return res.redirect(`${frontendUrl}/login?${errorParams.toString()}`);
+      }
+    }
 
     let user = await User.findOne({ email });
     if (!user) {
@@ -777,7 +819,7 @@ router.get('/oidc/callback', async (req, res) => {
           if (membership.joinedAt && (!existing.joinedAt || membership.joinedAt > existing.joinedAt)) {
             existing.joinedAt = membership.joinedAt;
           }
-          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, employee: 5 };
+          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, employee: 5, staff: 6 };
           const existingRank = rolePriority[existing.role] ?? 99;
           const incomingRank = rolePriority[membership.role] ?? 99;
           if (incomingRank < existingRank) {
@@ -864,14 +906,33 @@ router.get('/oidc/callback', async (req, res) => {
 
     const base = returnTo.replace(/#.*$/, '');
     const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
-    const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const tokenParams = `token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
+    const callbackTarget = base.includes('/login')
+      ? base.replace(/\/login.*$/, '') + '/oidc/callback'
+      : `${base.replace(/\/$/, '')}/oidc/callback`;
+    const loc = process.env.NODE_ENV === 'development'
+      ? `${callbackTarget}?${tokenParams}`
+      : `${target}#${tokenParams}`;
+
+    if (process.env.NODE_ENV === 'development') {
+      const cookieOptions = { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };
+      res.cookie('dev_jwt', accessToken, cookieOptions);
+      res.cookie('dev_refreshToken', refreshToken, cookieOptions);
+      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
+    }
     
+    const safeLoc = loc
+      .replace(/token=[^&]*/g, 'token=[redacted]')
+      .replace(/refreshToken=[^&]*/g, 'refreshToken=[redacted]')
+      .replace(/expiresIn=[^&]*/g, 'expiresIn=[redacted]');
+
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,
       targetUrl: target,
       hasToken: !!accessToken,
       hasRefreshToken: !!refreshToken
     });
+    console.log('🔄 Redirect URL:', safeLoc);
     
     console.log(`⏱️ OIDC Callback total time: ${Date.now() - callbackStartTime}ms`);
     res.redirect(loc);

@@ -1,867 +1,526 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Box,
-  Drawer,
-  AppBar,
-  Toolbar,
-  List,
-  Typography,
-  Divider,
-  IconButton,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Avatar,
-  Menu,
-  MenuItem,
-  useMediaQuery,
-  useTheme,
-  Chip,
-  Collapse,
-  Badge,
-  Skeleton,
-  CircularProgress,
-  alpha,
-} from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Dashboard,
-  Flag,
-  RateReview,
-  Feedback,
-  Analytics,
-  Logout,
-  Person,
-  Settings,
-  ChevronLeft,
-  AutoAwesome,
-  Groups,
-  Business,
-  ExpandMore,
-  ExpandLess,
-  SupervisorAccount,
-  Assessment,
-  AdminPanelSettings,
-  PeopleAlt,
-  Event,
-  TrendingUp,
-  Balance,
-  BarChart,
-  SwapHoriz,
-  Assignment,
-  School,
-} from '@mui/icons-material';
-import { useUserContext, useOrganizations } from '@/lib/hooks';
-import api, { authApi, isAuthenticated as checkAuthenticated } from '@/lib/api';
-import { useRouter } from 'next/navigation';
-import { gradients } from '@/app/theme';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useThemeMode } from '@/context/ThemeContext';
+import {
+  TrendingUp,
+  Target,
+  FileText,
+  MessageSquare,
+  Video,
+  GraduationCap,
+  BarChart3,
+  Users,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  ChevronDown,
+  Building2,
+  Sparkles,
+  Sun,
+  Moon,
+} from 'lucide-react';
+import { useUserContext } from '@/lib/hooks';
 
-const drawerWidth = 280;
-
-interface NavItem {
+type NavItem = {
   name: string;
   href: string;
-  icon: React.ReactNode;
-  badge?: string | number;
-  requiresRole?: string[];
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string;
+  section: 'main' | 'manager' | 'admin' | 'analytics';
+};
+
+function cn(...classes: (string | boolean | undefined)[]) {
+  return classes.filter(Boolean).join(' ');
 }
-
-// Main navigation items - available to all authenticated users
-const mainNavItems: NavItem[] = [
-  { name: 'Dashboard', href: '/dashboard', icon: <Dashboard /> },
-  { name: 'My OKRs', href: '/okrs', icon: <Flag />, badge: 'AI' },
-  { name: 'Appraisals', href: '/appraisals', icon: <Assignment />, badge: 'AI' },
-  { name: 'Reviews', href: '/reviews', icon: <RateReview />, badge: 'AI' },
-  { name: 'Feedback', href: '/feedback', icon: <Feedback /> },
-  { name: '1:1 Meetings', href: '/one-on-ones', icon: <Event /> },
-  { name: 'Development Plan', href: '/development', icon: <TrendingUp /> },
-];
-
-// Manager navigation items - only for line_manager and hr_admin
-const managerNavItems: NavItem[] = [
-  { name: 'My Team', href: '/team', icon: <Groups /> },
-  { name: 'Team OKRs', href: '/team/okrs', icon: <PeopleAlt /> },
-  { name: 'Team Reviews', href: '/team/reviews', icon: <SupervisorAccount /> },
-  { name: 'Team Feedback', href: '/team/feedback', icon: <Feedback /> },
-];
-
-// Analytics - available based on role
-const analyticsNavItems: NavItem[] = [
-  { name: 'My Analytics', href: '/analytics', icon: <Analytics /> },
-  { name: 'Team Analytics', href: '/analytics/team', icon: <Assessment />, requiresRole: ['team_lead', 'line_manager', 'hr_admin'] },
-];
-
-// Admin items - only for hr_admin
-const adminNavItems: NavItem[] = [
-  { name: 'Appraisal Cycles', href: '/admin/appraisal-cycles', icon: <AdminPanelSettings /> },
-  { name: 'Review Cycles', href: '/admin/review-cycles', icon: <AdminPanelSettings /> },
-  { name: 'Calibration', href: '/admin/calibration', icon: <Balance /> },
-  { name: 'Reports', href: '/admin/reports', icon: <BarChart /> },
-  { name: 'Org Analytics', href: '/admin/analytics', icon: <Assessment /> },
-];
-
-// Help/Resources
-const helpNavItems: NavItem[] = [
-  { name: 'Tutorial & Help', href: '/tutorial', icon: <School /> },
-];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const theme = useTheme();
-  const router = useRouter();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-
-  // Get auth state from AuthContext FIRST
-  const { isAuthenticated: authIsAuthenticated, isLoading: authLoading, user: authUser } = useAuth();
-
-  // Only use SWR hooks AFTER auth is ready (prevents 401 errors during token extraction)
-  const shouldFetchData = authIsAuthenticated && !authLoading;
-
-  // Use comprehensive user context - but only when auth is ready
-  const {
-    user,
-    role,
-    roleDisplay,
-    isManager,
-    isHRAdmin,
-    isTeamLead,
-    organization,
-    teams,
-    primaryTeam,
-    managerData,
-    pendingReviews,
-    features,
-    isLoading: contextLoading
-  } = useUserContext();
-
-  // Get organizations for switcher - but only when auth is ready
-  const {
-    organizations,
-    currentOrganizationId,
-    isLoading: orgsLoading,
-    mutate: mutateOrgs
-  } = useOrganizations();
-
+  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout } = useAuth();
+  const { user, role, isManager, isHRAdmin } = useUserContext();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [orgAnchorEl, setOrgAnchorEl] = useState<null | HTMLElement>(null);
-  const [managerMenuOpen, setManagerMenuOpen] = useState(true);
-  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
 
-  // Use auth from context
-  const isAuthenticated = authIsAuthenticated;
-  // Get user name with multiple fallbacks
-  const userName = user?.name || 'User';
-  const userEmail = user?.email || '';
+  const navigation: NavItem[] = useMemo(() => {
+    const main: NavItem[] = [
+      { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
+      { name: 'My OKRs', href: '/okrs', icon: Target, badge: 'AI', section: 'main' },
+      { name: 'Appraisals', href: '/appraisals', icon: FileText, badge: 'AI', section: 'main' },
+      { name: 'Reviews', href: '/reviews', icon: BarChart3, badge: 'AI', section: 'main' },
+      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'main' },
+      { name: '1:1 Meetings', href: '/one-on-ones', icon: Video, section: 'main' },
+      { name: 'Development', href: '/development', icon: GraduationCap, section: 'main' },
+    ];
 
-  // Get org name from multiple sources
-  const orgName = organization?.name ||
-    (Array.isArray(organizations) && organizations.length > 0
-      ? organizations.find((o: any) => o.isCurrent)?.name || organizations[0]?.name
-      : 'Organization');
+    const manager: NavItem[] = isManager
+      ? [
+          { name: 'My Team', href: '/team', icon: Users, section: 'manager' },
+        ]
+      : [];
 
-  // Check if nav item should be shown based on role
-  const shouldShowNavItem = (item: NavItem) => {
-    if (!item.requiresRole) return true;
-    return item.requiresRole.includes(role);
-  };
+    const admin: NavItem[] = isHRAdmin
+      ? [
+          { name: 'Admin Panel', href: '/admin/appraisal-cycles', icon: Settings, section: 'admin' },
+        ]
+      : [];
 
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
-
-  const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
+    return [...main, ...manager, ...admin];
+  }, [isManager, isHRAdmin]);
 
   const handleLogout = async () => {
-    handleClose();
-    await authApi.logout();
-    router.push('/login');
+    await logout();
   };
 
-  const handleOrgMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setOrgAnchorEl(event.currentTarget);
-  };
-
-  const handleOrgClose = () => {
-    setOrgAnchorEl(null);
-  };
-
+  // Handle organization switch
   const handleSwitchOrganization = async (orgId: string) => {
-    if (switchingOrg) return; // Prevent double-click
+    if (switchingOrg) return;
+    setSwitchingOrg(true);
+    setOrgDropdownOpen(false);
     try {
-      setSwitchingOrg(true);
-      handleOrgClose(); // Close menu first
-
-      // Call the auth endpoint (same as leave management)
-      const response = await api.post('/auth/switch-organization', { organizationId: orgId });
-
-      if (response.data?.success) {
-        // Reload the page to refresh all data with new organization context
-        window.location.reload();
-      } else {
-        throw new Error(response.data?.error || 'Failed to switch organization');
-      }
+      await switchOrganization(orgId);
     } catch (error) {
       console.error('Failed to switch organization:', error);
       setSwitchingOrg(false);
     }
   };
 
-  // Render navigation item with enhanced styling
-  const renderNavItem = (item: NavItem, isActive: boolean, indent: boolean = false) => (
-    <ListItem key={item.href} disablePadding sx={{ mb: 0.5 }}>
-      <ListItemButton
-        component={Link}
-        href={item.href}
-        onClick={() => isMobile && setMobileOpen(false)}
-        sx={{
-          borderRadius: 2.5,
-          mx: 1.5,
-          pl: indent ? 4 : 2,
-          py: 1.25,
-          position: 'relative',
-          overflow: 'hidden',
-          bgcolor: isActive ? alpha(theme.palette.primary.main, 0.12) : 'transparent',
-          color: isActive ? 'primary.main' : 'text.primary',
-          transition: 'all 0.2s ease',
-          '&::before': isActive ? {
-            content: '""',
-            position: 'absolute',
-            left: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: 4,
-            height: '60%',
-            borderRadius: '0 4px 4px 0',
-            background: gradients.primary,
-          } : {},
-          '&:hover': {
-            bgcolor: isActive
-              ? alpha(theme.palette.primary.main, 0.16)
-              : alpha(theme.palette.primary.main, 0.06),
-            transform: 'translateX(4px)',
-          },
-        }}
-      >
-        <ListItemIcon
-          sx={{
-            color: isActive ? 'primary.main' : 'text.secondary',
-            minWidth: 40,
-            transition: 'color 0.2s ease',
-          }}
-        >
-          {item.icon}
-        </ListItemIcon>
-        <ListItemText
-          primary={item.name}
-          primaryTypographyProps={{
-            fontWeight: isActive ? 600 : 500,
-            fontSize: indent ? 14 : 'inherit',
-          }}
-        />
-        {item.badge && (
-          typeof item.badge === 'number' ? (
-            <Badge badgeContent={item.badge} color="secondary" />
-          ) : (
-            <Chip
-              label={item.badge}
-              size="small"
-              sx={{
-                height: 20,
-                fontSize: 10,
-                fontWeight: 700,
-                background: isActive
-                  ? alpha(theme.palette.primary.main, 0.2)
-                  : 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
-                color: isActive ? 'primary.main' : 'white',
-                border: 'none',
-              }}
-            />
-          )
-        )}
-      </ListItemButton>
-    </ListItem>
-  );
+  // Get organizations from auth user - includes IDP data
+  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
+  
+  // Current organization from AuthContext (synced with IDP)
+  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
+  const showOrgSwitcher = orgs.length > 1;
+  
+  const { mode, toggleColorMode } = useThemeMode();
+  const isDarkMode = mode === 'dark';
 
-  const drawer = (
-    <Box sx={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
-    }}>
-      {/* Header with Logo */}
-      <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Box
-          sx={{
-            width: 44,
-            height: 44,
-            borderRadius: 2.5,
-            background: gradients.purple,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 8px 24px -8px rgba(102, 126, 234, 0.5)',
-            transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-            '&:hover': {
-              transform: 'scale(1.05)',
-              boxShadow: '0 12px 32px -8px rgba(102, 126, 234, 0.6)',
-            },
-          }}
-        >
-          <AutoAwesome sx={{ color: 'white', fontSize: 24 }} />
-        </Box>
-        <Box sx={{ flex: 1 }}>
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            noWrap
-            sx={{
-              background: gradients.purple,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
-            Performance
-          </Typography>
-          <Typography variant="caption" color="text.secondary" noWrap>
-            AI-Powered Management
-          </Typography>
-        </Box>
-        {isMobile && (
-          <IconButton
-            onClick={handleDrawerToggle}
-            sx={{
-              bgcolor: alpha(theme.palette.grey[500], 0.08),
-              '&:hover': { bgcolor: alpha(theme.palette.grey[500], 0.12) },
-            }}
-          >
-            <ChevronLeft />
-          </IconButton>
-        )}
-      </Box>
+  return (
+    <div className={cn(
+      "min-h-screen transition-colors duration-300",
+      isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+    )}>
+      {/* Background Noise */}
+      {isDarkMode && <div className="bg-noise" />}
+      
+      {/* Top Navbar */}
+      <nav className={cn(
+        "fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-colors duration-300",
+        isDarkMode 
+          ? "border-zinc-800/40 bg-zinc-950/80" 
+          : "border-gray-200/60 bg-white/80"
+      )}>
+        <div className="mx-auto px-4 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            {/* Logo */}
+            <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
+              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center shadow-lg shadow-purple-500/20 transition-transform duration-300 group-hover:scale-105">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div className="hidden sm:block">
+                <div className={cn(
+                  "text-sm font-semibold transition-colors",
+                  isDarkMode ? "text-white" : "text-gray-900"
+                )}>Performance Management</div>
+                <div className={cn(
+                  "text-xs transition-colors",
+                  isDarkMode ? "text-zinc-400" : "text-gray-500"
+                )}>by Seemplify</div>
+              </div>
+            </Link>
 
-      <Divider sx={{ mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
+            {/* Desktop Navigation */}
+            <div className="hidden lg:flex items-center gap-2">
+              {navigation.filter(n => n.section === 'main').slice(0, 5).map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                      active
+                        ? isDarkMode 
+                          ? 'bg-zinc-800/80 text-white' 
+                          : 'bg-gray-100 text-gray-900'
+                        : isDarkMode 
+                          ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.name}
+                    {item.badge && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                        {item.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
 
-      {/* Organization & Role Info */}
-      {isAuthenticated && (
-        <>
-          {/* Organization Switcher - Only show if user has multiple orgs */}
-          {Array.isArray(organizations) && organizations.length > 1 && !orgsLoading && (
-            <Box sx={{ px: 1.5, pt: 1.5 }}>
-              <ListItemButton
-                onClick={handleOrgMenu}
-                sx={{
-                  borderRadius: 2,
-                  bgcolor: alpha(theme.palette.primary.main, 0.04),
-                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: alpha(theme.palette.primary.main, 0.08),
-                    borderColor: alpha(theme.palette.primary.main, 0.2),
-                  }
-                }}
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-3">
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleColorMode}
+                className={cn(
+                  'p-2 rounded-lg transition-all duration-200',
+                  isDarkMode 
+                    ? 'hover:bg-zinc-800/50 text-zinc-400 hover:text-yellow-400' 
+                    : 'hover:bg-gray-200 text-gray-600 hover:text-yellow-500'
+                )}
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  <Business sx={{ fontSize: 18, color: 'primary.main' }} />
-                </ListItemIcon>
-                <ListItemText
-                  primary={orgName}
-                  secondary={organizations.length > 1 ? `Switch (${organizations.length})` : null}
-                  primaryTypographyProps={{ fontSize: 13, fontWeight: 600, noWrap: true }}
-                  secondaryTypographyProps={{ fontSize: 11 }}
-                />
-                <SwapHoriz sx={{ fontSize: 18, color: 'primary.main' }} />
-              </ListItemButton>
-            </Box>
-          )}
+                {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
 
-          {/* User Info Card */}
-          <Box
-            sx={{
-              px: 2,
-              py: 1.5,
-              mx: 1.5,
-              borderRadius: 2.5,
-              mt: 1.5,
-              background: alpha(theme.palette.primary.main, 0.04),
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}`,
-            }}
-          >
-            {contextLoading ? (
-              <>
-                <Skeleton variant="text" width={100} height={16} />
-                <Skeleton variant="text" width={150} height={20} />
-              </>
-            ) : (
-              <>
-                {/* Organization (shown when only 1 org or no orgs loaded) */}
-                {(!Array.isArray(organizations) || organizations.length <= 1) && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    <Business sx={{ fontSize: 14, color: 'text.secondary' }} />
-                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                      {organization?.name || orgName}
-                    </Typography>
-                  </Box>
-                )}
-
-                {/* User Name */}
-                <Typography variant="body2" fontWeight={600} noWrap>
-                  {userName}
-                </Typography>
-
-                {/* Role & Team */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
-                  <Chip
-                    label={roleDisplay}
-                    size="small"
-                    sx={{
-                      height: 22,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: isHRAdmin
-                        ? 'linear-gradient(135deg, #ec4899 0%, #f472b6 100%)'
-                        : isManager
-                          ? gradients.primary
-                          : alpha(theme.palette.grey[500], 0.12),
-                      color: isHRAdmin || isManager ? 'white' : 'text.secondary',
-                    }}
-                  />
-                  {primaryTeam && (
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ ml: 0.5 }}>
-                      • {primaryTeam.name}
-                    </Typography>
+              {/* Organization Switcher */}
+              {showOrgSwitcher && (
+                <div className="hidden md:block relative">
+                  <button
+                    onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                      isDarkMode 
+                        ? "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800/70" 
+                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                    )}
+                  >
+                    <Building2 className="h-4 w-4" />
+                    <span className="max-w-[120px] truncate">{currentOrganization?.name || 'Org'}</span>
+                    <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
+                  </button>
+                  {orgDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40"
+                        onClick={() => setOrgDropdownOpen(false)}
+                      />
+                      <div className={cn(
+                        "absolute right-0 top-12 w-64 rounded-xl border shadow-2xl overflow-hidden z-50",
+                        isDarkMode 
+                          ? "border-white/[0.08] bg-zinc-950" 
+                          : "border-gray-200 bg-white"
+                      )}>
+                        {orgs.map((org: any) => {
+                          const isCurrentOrg = org.id === currentOrganization?.id;
+                          return (
+                            <button
+                              key={org.id}
+                              onClick={() => !isCurrentOrg && handleSwitchOrganization(org.id)}
+                              disabled={switchingOrg || isCurrentOrg}
+                              className={cn(
+                                'w-full text-left px-4 py-3 text-sm transition-colors',
+                                isDarkMode 
+                                  ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
+                                  : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
+                                isCurrentOrg && 'cursor-default',
+                                switchingOrg && 'opacity-50 cursor-wait'
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                                <span className={cn("text-xs flex-shrink-0", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                                  {isCurrentOrg ? '✓ Current' : org.role}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
                   )}
-                </Box>
+                </div>
+              )}
 
-                {/* Manager Stats */}
-                {isManager && managerData && (
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-                    {managerData.directReportCount > 0 && (
-                      <Chip
-                        icon={<Groups sx={{ fontSize: 12 }} />}
-                        label={`${managerData.directReportCount} Reports`}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: 10, borderColor: alpha(theme.palette.primary.main, 0.3) }}
-                      />
-                    )}
-                    {pendingReviews > 0 && (
-                      <Chip
-                        label={`${pendingReviews} Pending`}
-                        size="small"
-                        sx={{
-                          height: 20,
-                          fontSize: 10,
-                          background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
-                          color: 'white',
-                        }}
-                      />
-                    )}
-                  </Box>
+              {/* User Menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg p-2 transition-colors",
+                    isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                  )}
+                >
+                  <div className={cn(
+                    "h-9 w-9 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center ring-2",
+                    isDarkMode ? "ring-zinc-800" : "ring-gray-200"
+                  )}>
+                    <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
+                  </div>
+                  <div className="hidden lg:block text-left">
+                    <div className={cn(
+                      "text-sm font-medium truncate max-w-[120px]",
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    )}>{user?.name || 'User'}</div>
+                    <div className={cn(
+                      "text-xs truncate max-w-[120px]",
+                      isDarkMode ? "text-zinc-500" : "text-gray-500"
+                    )}>{user?.email}</div>
+                  </div>
+                  <ChevronDown className={cn("hidden lg:block h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
+                </button>
+                {userDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40"
+                      onClick={() => setUserDropdownOpen(false)}
+                    />
+                    <div className={cn(
+                      "absolute right-0 top-14 w-56 rounded-xl border shadow-2xl overflow-hidden z-50",
+                      isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
+                    )}>
+                      <div className={cn(
+                        "p-3 border-b",
+                        isDarkMode ? "border-zinc-800/60" : "border-gray-100"
+                      )}>
+                        <div className={cn(
+                          "text-sm font-medium truncate",
+                          isDarkMode ? "text-white" : "text-gray-900"
+                        )}>{user?.name || 'User'}</div>
+                        <div className={cn(
+                          "text-xs truncate",
+                          isDarkMode ? "text-zinc-500" : "text-gray-500"
+                        )}>{user?.email}</div>
+                      </div>
+                      <div className="py-2">
+                        {isManager && (
+                          <Link
+                            href="/team"
+                            className={cn(
+                              "block px-4 py-2 text-sm transition-colors",
+                              isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                            )}
+                            onClick={() => setUserDropdownOpen(false)}
+                          >
+                            <Users className="h-4 w-4 inline mr-2" />
+                            My Team
+                          </Link>
+                        )}
+                        {isHRAdmin && (
+                          <Link
+                            href="/admin/appraisal-cycles"
+                            className={cn(
+                              "block px-4 py-2 text-sm transition-colors",
+                              isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                            )}
+                            onClick={() => setUserDropdownOpen(false)}
+                          >
+                            <Settings className="h-4 w-4 inline mr-2" />
+                            Admin Panel
+                          </Link>
+                        )}
+                        <button
+                          className={cn(
+                            "w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2",
+                            isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                          )}
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            handleLogout();
+                          }}
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
-              </>
-            )}
-          </Box>
+              </div>
+
+              {/* Mobile Menu Button */}
+              <button
+                className={cn(
+                  "lg:hidden p-2 rounded-lg transition-colors",
+                  isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                )}
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu className={cn("h-5 w-5", isDarkMode ? "text-zinc-300" : "text-gray-600")} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Mobile Slide-out Menu */}
+      {mobileOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+          <div className={cn(
+            "fixed inset-y-0 right-0 w-80 max-w-[85vw] border-l shadow-2xl z-50 lg:hidden overflow-y-auto",
+            isDarkMode ? "bg-zinc-950 border-zinc-800/60" : "bg-white border-gray-200"
+          )}>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center shadow-lg">
+                    <Sparkles className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <div className={cn(
+                      "text-sm font-semibold",
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    )}>Performance</div>
+                    <div className={cn(
+                      "text-xs",
+                      isDarkMode ? "text-zinc-400" : "text-gray-500"
+                    )}>by Seemplify</div>
+                  </div>
+                </div>
+                <button
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
+                  )}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <X className={cn("h-5 w-5", isDarkMode ? "text-zinc-400" : "text-gray-500")} />
+                </button>
+              </div>
+
+              {/* Mobile Theme Toggle */}
+              <button
+                onClick={toggleColorMode}
+                className={cn(
+                  "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm mb-4 transition-colors",
+                  isDarkMode 
+                    ? "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800" 
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {isDarkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                  <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                </div>
+                <span className={cn(
+                  "text-xs px-2 py-1 rounded",
+                  isDarkMode ? "bg-zinc-700" : "bg-gray-200"
+                )}>
+                  {isDarkMode ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* Mobile Organization Switcher */}
+              {showOrgSwitcher && (
+                <div className="mb-6">
+                  <button
+                    onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                    className={cn(
+                      "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm",
+                      isDarkMode 
+                        ? "border-zinc-800 bg-zinc-900/50" 
+                        : "border-gray-200 bg-gray-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className={cn("h-4 w-4 flex-shrink-0", isDarkMode ? "text-zinc-400" : "text-gray-500")} />
+                      <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{currentOrganization?.name || 'Select'}</span>
+                    </div>
+                    <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
+                  </button>
+                  {orgDropdownOpen && (
+                    <div className={cn(
+                      "mt-2 rounded-lg border overflow-hidden",
+                      isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
+                    )}>
+                      {orgs.map((org: any) => {
+                        const isCurrentOrg = org.id === currentOrganization?.id;
+                        return (
+                          <button
+                            key={org.id}
+                            onClick={() => {
+                              if (!isCurrentOrg) {
+                                handleSwitchOrganization(org.id);
+                              }
+                              setMobileOpen(false);
+                            }}
+                            disabled={switchingOrg || isCurrentOrg}
+                            className={cn(
+                              'w-full text-left px-3 py-2.5 text-sm transition-colors',
+                              isDarkMode 
+                                ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
+                                : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
+                              isCurrentOrg && 'cursor-default',
+                              switchingOrg && 'opacity-50 cursor-wait'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
+                              <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                                {isCurrentOrg ? '✓ Current' : org.role}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mobile Navigation */}
+              <div className="space-y-1 mb-6">
+                <div className={cn(
+                  "text-xs font-semibold px-2 mb-2",
+                  isDarkMode ? "text-zinc-500" : "text-gray-500"
+                )}>Navigation</div>
+                {navigation.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                        active
+                          ? isDarkMode 
+                            ? 'bg-zinc-800/80 text-white' 
+                            : 'bg-gray-100 text-gray-900'
+                          : isDarkMode 
+                            ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      )}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.name}
+                      {item.badge && (
+                        <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </>
       )}
 
-      {/* Navigation */}
-      <Box sx={{ flex: 1, py: 1.5, overflowY: 'auto' }}>
-        {/* Main Navigation */}
-        <Typography
-          variant="overline"
-          sx={{
-            px: 3,
-            color: 'text.secondary',
-            fontWeight: 700,
-            fontSize: 10,
-            letterSpacing: '0.1em',
-          }}
-        >
-          My Performance
-        </Typography>
-        <List sx={{ px: 0.5, pt: 0.5 }}>
-          {mainNavItems.map((item) => renderNavItem(item, pathname === item.href))}
-        </List>
-
-        {/* Manager Section */}
-        {isManager && (
-          <>
-            <Divider sx={{ my: 1.5, mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
-            <ListItemButton
-              onClick={() => setManagerMenuOpen(!managerMenuOpen)}
-              sx={{
-                mx: 1.5,
-                borderRadius: 2,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 40 }}>
-                <Badge badgeContent={pendingReviews} color="error">
-                  <SupervisorAccount sx={{ color: 'secondary.main' }} />
-                </Badge>
-              </ListItemIcon>
-              <ListItemText
-                primary="Team Management"
-                primaryTypographyProps={{ fontWeight: 600, color: 'secondary.main' }}
-              />
-              {managerData?.directReportCount && (
-                <Chip
-                  label={managerData.directReportCount}
-                  size="small"
-                  sx={{
-                    height: 20,
-                    fontSize: 10,
-                    mr: 1,
-                    background: gradients.secondary,
-                    color: 'white',
-                  }}
-                />
-              )}
-              {managerMenuOpen ? <ExpandLess /> : <ExpandMore />}
-            </ListItemButton>
-            <Collapse in={managerMenuOpen} timeout="auto" unmountOnExit>
-              <List component="div" disablePadding sx={{ px: 0.5 }}>
-                {managerNavItems.map((item) => {
-                  const isActive = pathname === item.href;
-                  const badge = item.href === '/team/reviews' ? pendingReviews : undefined;
-                  return renderNavItem({ ...item, badge }, isActive, true);
-                })}
-              </List>
-            </Collapse>
-          </>
-        )}
-
-        {/* Analytics Section */}
-        <Divider sx={{ my: 1.5, mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
-        <Typography
-          variant="overline"
-          sx={{
-            px: 3,
-            color: 'text.secondary',
-            fontWeight: 700,
-            fontSize: 10,
-            letterSpacing: '0.1em',
-          }}
-        >
-          Analytics
-        </Typography>
-        <List sx={{ px: 0.5, pt: 0.5 }}>
-          {analyticsNavItems.filter(shouldShowNavItem).map((item) =>
-            renderNavItem(item, pathname === item.href)
-          )}
-        </List>
-
-        {/* HR Admin Section */}
-        {isHRAdmin && (
-          <>
-            <Divider sx={{ my: 1.5, mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
-            <ListItemButton
-              onClick={() => setAdminMenuOpen(!adminMenuOpen)}
-              sx={{
-                mx: 1.5,
-                borderRadius: 2,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 40 }}>
-                <AdminPanelSettings sx={{ color: 'error.main' }} />
-              </ListItemIcon>
-              <ListItemText
-                primary="HR Administration"
-                primaryTypographyProps={{ fontWeight: 600, color: 'error.main' }}
-              />
-              {adminMenuOpen ? <ExpandLess /> : <ExpandMore />}
-            </ListItemButton>
-            <Collapse in={adminMenuOpen} timeout="auto" unmountOnExit>
-              <List component="div" disablePadding sx={{ px: 0.5 }}>
-                {adminNavItems.map((item) => renderNavItem(item, pathname === item.href, true))}
-              </List>
-            </Collapse>
-          </>
-        )}
-
-        {/* Teams List */}
-        {teams.length > 1 && (
-          <>
-            <Divider sx={{ my: 1.5, mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
-            <Typography
-              variant="overline"
-              sx={{
-                px: 3,
-                color: 'text.secondary',
-                fontWeight: 700,
-                fontSize: 10,
-                letterSpacing: '0.1em',
-              }}
-            >
-              My Teams ({teams.length})
-            </Typography>
-            <List sx={{ px: 0.5, pt: 0.5 }}>
-              {teams.slice(0, 3).map((team: any) => (
-                <ListItem key={team.id} disablePadding>
-                  <ListItemButton sx={{ borderRadius: 2, mx: 1.5, py: 0.75 }}>
-                    <ListItemIcon sx={{ minWidth: 32 }}>
-                      <Groups sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={team.name}
-                      secondary={team.roleDisplay}
-                      primaryTypographyProps={{ fontSize: 13, fontWeight: 500 }}
-                      secondaryTypographyProps={{ fontSize: 11 }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          </>
-        )}
-
-        {/* Help & Resources */}
-        <Divider sx={{ my: 1.5, mx: 2, borderColor: alpha(theme.palette.divider, 0.5) }} />
-        <List sx={{ px: 0.5 }}>
-          {helpNavItems.map((item) => renderNavItem(item, pathname === item.href))}
-        </List>
-      </Box>
-
-      {/* User Section */}
-      <Divider sx={{ borderColor: alpha(theme.palette.divider, 0.5) }} />
-      <Box sx={{ p: 2 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            p: 1.5,
-            borderRadius: 2.5,
-            bgcolor: alpha(theme.palette.grey[500], 0.04),
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              bgcolor: alpha(theme.palette.grey[500], 0.08),
-              transform: 'translateY(-2px)',
-            },
-          }}
-          onClick={handleMenu}
-        >
-          <Avatar
-            sx={{
-              background: gradients.primary,
-              boxShadow: '0 4px 12px -2px rgba(99, 102, 241, 0.4)',
-            }}
-          >
-            {userName.charAt(0).toUpperCase()}
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>
-              {userName}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {userEmail}
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
-    </Box>
-  );
-
-  return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* App Bar */}
-      <AppBar
-        position="fixed"
-        sx={{
-          display: { md: 'none' },
-          bgcolor: 'white',
-          color: 'text.primary',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Toolbar>
-          <IconButton color="inherit" edge="start" onClick={handleDrawerToggle}>
-            <MenuIcon />
-          </IconButton>
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              ml: 1,
-            }}
-          >
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: 1.5,
-                background: gradients.purple,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <AutoAwesome sx={{ color: 'white', fontSize: 18 }} />
-            </Box>
-            <Typography
-              variant="h6"
-              noWrap
-              component="div"
-              fontWeight={700}
-              sx={{
-                background: gradients.purple,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
-              Performance
-            </Typography>
-          </Box>
-        </Toolbar>
-      </AppBar>
-
-      {/* Drawer */}
-      <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
-        {/* Mobile Drawer */}
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{ keepMounted: true }}
-          sx={{
-            display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': {
-              width: drawerWidth,
-              border: 'none',
-              boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
-            },
-          }}
-        >
-          {drawer}
-        </Drawer>
-
-        {/* Desktop Drawer */}
-        <Drawer
-          variant="permanent"
-          sx={{
-            display: { xs: 'none', md: 'block' },
-            '& .MuiDrawer-paper': {
-              width: drawerWidth,
-              boxSizing: 'border-box',
-              border: 'none',
-              borderRight: '1px solid',
-              borderColor: alpha(theme.palette.divider, 0.5),
-            },
-          }}
-          open
-        >
-          {drawer}
-        </Drawer>
-      </Box>
-
       {/* Main Content */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: { xs: 2, sm: 3 },
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          mt: { xs: '56px', md: 0 },
-          minHeight: '100vh',
-        }}
-      >
-        {children}
-      </Box>
-
-      {/* User Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleClose}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        PaperProps={{
-          sx: {
-            mt: -1,
-            minWidth: 200,
-          }
-        }}
-      >
-        <MenuItem onClick={handleClose}>
-          <ListItemIcon><Person fontSize="small" /></ListItemIcon>
-          Profile
-        </MenuItem>
-        <MenuItem onClick={handleClose}>
-          <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
-          Settings
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
-          <ListItemIcon><Logout fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
-          Logout
-        </MenuItem>
-      </Menu>
-
-      {/* Organization Switcher Menu */}
-      <Menu
-        anchorEl={orgAnchorEl}
-        open={Boolean(orgAnchorEl)}
-        onClose={handleOrgClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        PaperProps={{
-          sx: { minWidth: 250 }
-        }}
-      >
-        <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ letterSpacing: '0.05em' }}>
-            SWITCH ORGANIZATION
-          </Typography>
-        </Box>
-        {organizations && organizations.map((org) => (
-          <MenuItem
-            key={org.id}
-            onClick={() => handleSwitchOrganization(org.id)}
-            disabled={org.isCurrent || switchingOrg}
-            sx={{
-              py: 1.5,
-              bgcolor: org.isCurrent ? alpha(theme.palette.primary.main, 0.08) : 'transparent'
-            }}
-          >
-            <ListItemIcon>
-              <Business fontSize="small" color={org.isCurrent ? 'primary' : 'inherit'} />
-            </ListItemIcon>
-            <ListItemText
-              primary={org.name}
-              secondary={org.isCurrent ? 'Current' : 'Switch'}
-              primaryTypographyProps={{
-                fontWeight: org.isCurrent ? 600 : 400
-              }}
-            />
-            {switchingOrg && (
-              <CircularProgress size={16} sx={{ ml: 1 }} />
-            )}
-          </MenuItem>
-        ))}
-      </Menu>
-    </Box>
+      <main className={cn(
+        "pt-16 min-h-screen transition-colors duration-300",
+        isDarkMode ? "" : "bg-slate-50"
+      )}>
+        <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
+          {children}
+        </div>
+      </main>
+    </div>
   );
 }
-
-
-

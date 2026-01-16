@@ -488,7 +488,7 @@ export function TranscriptViewer({
                 <Clock className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Duration</p>
+                <p className="text-sm font-medium text-muted-foreground">Duration</p>
                 <p className="text-2xl font-bold text-gray-900">{formatDuration(transcript.duration)}</p>
               </div>
             </div>
@@ -502,7 +502,7 @@ export function TranscriptViewer({
                 <Users className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Participants</p>
+                <p className="text-sm font-medium text-muted-foreground">Participants</p>
                 <p className="text-2xl font-bold text-gray-900">{speakers.length}</p>
               </div>
             </div>
@@ -516,7 +516,7 @@ export function TranscriptViewer({
                 <MessageSquare className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Segments</p>
+                <p className="text-sm font-medium text-muted-foreground">Segments</p>
                 <p className="text-2xl font-bold text-gray-900">{parsedTranscript.length}</p>
               </div>
             </div>
@@ -530,7 +530,7 @@ export function TranscriptViewer({
                 <Hash className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Confidence</p>
+                <p className="text-sm font-medium text-muted-foreground">Confidence</p>
                 <p className="text-2xl font-bold text-gray-900">
                   {transcript.confidence && !isNaN(transcript.confidence) 
                     ? `${Math.round(transcript.confidence * 100)}%` 
@@ -561,7 +561,7 @@ export function TranscriptViewer({
               <div className="flex items-center justify-between">
                 <CardTitle>Conversation Transcript</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Search className="h-4 w-4 text-gray-400" />
+                  <Search className="h-4 w-4 text-muted-foreground/70" />
                   <Input
                     placeholder="Search transcript..."
                     value={searchTerm}
@@ -577,7 +577,7 @@ export function TranscriptViewer({
                   {filteredTranscript.length > 0 ? (
                     filteredTranscript.map((segment, index) => (
                       <div key={index} className="group">
-                        <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/30 transition-colors">
                           <div className="flex-shrink-0">
                             <Badge 
                               variant="outline" 
@@ -603,7 +603,7 @@ export function TranscriptViewer({
                               )}
                             </p>
                             {segment.timestamp && (
-                              <p className="text-xs text-gray-500 mt-1">{segment.timestamp}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{segment.timestamp}</p>
                             )}
                           </div>
                         </div>
@@ -613,7 +613,7 @@ export function TranscriptViewer({
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-muted-foreground">
                       <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No transcript segments found matching your search.</p>
                     </div>
@@ -640,10 +640,10 @@ export function TranscriptViewer({
                   <FileText className="h-8 w-8 text-blue-600" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Interview Summary</h3>
-                <p className="text-gray-600 mb-4">
+                <p className="text-muted-foreground mb-4">
                   The AI Interview Summary will appear here once generated from the transcript.
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Interview ID is required to generate the summary.
                 </p>
               </div>
@@ -667,7 +667,7 @@ export function TranscriptViewer({
                         <div key={index} className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="font-medium">{participant.name}</span>
-                            <span className="text-sm text-gray-500">{formatSpeakingTime(participant.speakingTime)}</span>
+                            <span className="text-sm text-muted-foreground">{formatSpeakingTime(participant.speakingTime)}</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div 
@@ -675,12 +675,12 @@ export function TranscriptViewer({
                               style={{ width: `${percentage}%` }}
                             />
                           </div>
-                          <div className="text-xs text-gray-500">{percentage.toFixed(1)}% of total time</div>
+                          <div className="text-xs text-muted-foreground">{percentage.toFixed(1)}% of total time</div>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-muted-foreground">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No participant data available.</p>
                     </div>
@@ -711,13 +711,13 @@ export function TranscriptViewer({
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4 pt-4">
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                    <div className="text-center p-3 bg-muted/30 rounded-lg">
                       <p className="text-2xl font-bold text-gray-900">{parsedTranscript.length}</p>
-                      <p className="text-sm text-gray-600">Total Segments</p>
+                      <p className="text-sm text-muted-foreground">Total Segments</p>
                     </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                    <div className="text-center p-3 bg-muted/30 rounded-lg">
                       <p className="text-2xl font-bold text-gray-900">{speakers.length}</p>
-                      <p className="text-sm text-gray-600">Speakers Detected</p>
+                      <p className="text-sm text-muted-foreground">Speakers Detected</p>
                     </div>
                   </div>
                 </div>
@@ -744,7 +744,7 @@ export function TranscriptViewer({
                         <div className="space-y-3">
                           <div>
                             <h3 className="font-semibold text-lg">{participant.name}</h3>
-                            <p className="text-sm text-gray-600">{participant.email}</p>
+                            <p className="text-sm text-muted-foreground">{participant.email}</p>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">Speaking Time</span>
@@ -771,7 +771,7 @@ export function TranscriptViewer({
                         <div className="space-y-3">
                           <div>
                             <h3 className="font-semibold text-lg">{speaker}</h3>
-                            <p className="text-sm text-gray-600">Detected from transcript</p>
+                            <p className="text-sm text-muted-foreground">Detected from transcript</p>
                           </div>
                           <Badge variant="outline" className={getSpeakerColor(speaker)}>
                             Speaker {index + 1}
@@ -781,7 +781,7 @@ export function TranscriptViewer({
                     </Card>
                   ))
                 ) : (
-                  <div className="col-span-2 text-center py-8 text-gray-500">
+                  <div className="col-span-2 text-center py-8 text-muted-foreground">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No participant information available.</p>
                   </div>
@@ -807,11 +807,11 @@ export function TranscriptViewer({
               <CardContent>
                 {!multiCandidateAnalysis && !loadingAnalysis && (
                   <div className="text-center py-8">
-                    <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <MessageSquare className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
                       No Comparative Analysis Available
                     </h3>
-                    <p className="text-gray-600 mb-4">
+                    <p className="text-muted-foreground mb-4">
                       Generate an AI-powered comparative analysis to see how all candidates performed.
                     </p>
                     <Button 
@@ -840,7 +840,7 @@ export function TranscriptViewer({
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
                       Analyzing Interview Session...
                     </h3>
-                    <p className="text-gray-600">
+                    <p className="text-muted-foreground">
                       Our AI is comparing all candidates' performances. This may take a few moments.
                     </p>
                   </div>
@@ -869,14 +869,14 @@ export function TranscriptViewer({
                                     {interview.analysis?.overallScore || 'N/A'}%
                                   </Badge>
                                 </div>
-                                <div className="text-xs text-gray-600">
+                                <div className="text-xs text-muted-foreground">
                                   {interview.analysis?.summary?.substring(0, 100)}...
                                 </div>
                               </div>
                             ) : (
                               <div className="text-center py-4">
-                                <Clock className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                                <p className="text-xs text-gray-500">
+                                <Clock className="h-6 w-6 text-muted-foreground/70 mx-auto mb-2" />
+                                <p className="text-xs text-muted-foreground">
                                   Analysis pending
                                 </p>
                               </div>

@@ -5,12 +5,25 @@ import { handleCreditError, extractCreditError } from '../utils/creditErrorHandl
 
 const isBrowser = typeof window !== 'undefined';
 
-// Use runtime configuration
-let FALLBACK_API = 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
-let FALLBACK_WS = 'wss://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
+// Detect if running in local development environment
+function isLocalDevelopment(): boolean {
+  if (!isBrowser) {
+    return process.env.NODE_ENV === 'development';
+  }
+  const hostname = window.location.hostname;
+  return hostname === 'localhost' || 
+         hostname === '127.0.0.1' || 
+         hostname.startsWith('192.168.') ||
+         hostname.startsWith('10.') ||
+         hostname.endsWith('.local');
+}
 
-// Attempt to load fallback-config.json at startup (best-effort, browser only)
-if (isBrowser) {
+// Set appropriate fallback URLs based on environment
+let FALLBACK_API = isLocalDevelopment() ? 'http://localhost:5001' : 'https://api.seemplifyai.com';
+let FALLBACK_WS = isLocalDevelopment() ? 'ws://localhost:5001' : 'wss://api.seemplifyai.com';
+
+// Attempt to load fallback-config.json at startup (best-effort, browser only, production only)
+if (isBrowser && !isLocalDevelopment()) {
   fetch('/fallback-config.json')
     .then((r) => r.ok ? r.json() : null)
     .then((cfg) => {

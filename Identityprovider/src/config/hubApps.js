@@ -9,6 +9,34 @@ const isProduction = process.env.NODE_ENV === 'production'
 // Development apps configuration
 const developmentApps = [
   {
+    appId: 'openwebui',
+    name: 'AI Assistant',
+    description: 'AI chat interface with multiple model support',
+    icon: 'chat',
+    color: '#7c3aed',
+    url: process.env.OPENWEBUI_URL || 'http://localhost:8080',
+    apiUrl: process.env.OPENWEBUI_URL || 'http://localhost:8080',
+    clientId: 'openwebui',
+    isActive: true,
+    isPublic: true,
+    category: 'ai',
+    order: 6
+  },
+  {
+    appId: 'outline',
+    name: 'Outline Docs',
+    description: 'Team knowledge base and documentation',
+    icon: 'document-text',
+    color: '#0366d6',
+    url: process.env.OUTLINE_URL || 'http://localhost:3000',
+    apiUrl: process.env.OUTLINE_URL || 'http://localhost:3000',
+    clientId: 'outline',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 5
+  },
+  {
     appId: 'smarthr',
     name: 'SmartHR',
     description: 'AI-powered recruitment and HR management',
@@ -48,7 +76,8 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 3
+    order: 3,
+    badge: 'Beta'
   },
   {
     appId: 'payroll-management',
@@ -62,12 +91,54 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 4
+    order: 4,
+    badge: 'Beta'
+  },
+  {
+    appId: 'lms',
+    name: 'Seemplify LMS',
+    description: 'Online courses, training, and certifications',
+    icon: 'academic-cap',
+    color: '#06b6d4',
+    url: process.env.LMS_URL || 'http://localhost:8000',
+    authType: 'direct',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7
   }
 ]
 
 // Production apps configuration
 const productionApps = [
+  {
+    appId: 'openwebui',
+    name: 'AI Assistant',
+    description: 'AI chat interface with multiple model support',
+    icon: 'chat',
+    color: '#7c3aed',
+    url: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
+    apiUrl: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
+    clientId: 'openwebui',
+    isActive: true,
+    isPublic: true,
+    category: 'ai',
+    order: 6
+  },
+  {
+    appId: 'outline',
+    name: 'Outline Docs',
+    description: 'Team knowledge base and documentation',
+    icon: 'document-text',
+    color: '#0366d6',
+    url: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
+    apiUrl: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
+    clientId: 'outline',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 5
+  },
   {
     appId: 'smarthr',
     name: 'SmartHR',
@@ -108,7 +179,8 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 3
+    order: 3,
+    badge: 'Beta'
   },
   {
     appId: 'payroll-management',
@@ -122,7 +194,21 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'hr',
-    order: 4
+    order: 4,
+    badge: 'Beta'
+  },
+  {
+    appId: 'lms',
+    name: 'Seemplify LMS',
+    description: 'Online courses, training, and certifications',
+    icon: 'academic-cap',
+    color: '#06b6d4',
+    url: process.env.LMS_URL || 'https://lms.seemplifyai.com',
+    authType: 'direct',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7
   }
 ]
 

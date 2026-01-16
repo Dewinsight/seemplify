@@ -97,7 +97,7 @@ export default function ApprovalsPage() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
         </div>
       </Layout>
     );
@@ -108,12 +108,12 @@ export default function ApprovalsPage() {
       <div className="space-y-8">
         {/* Header */}
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-purple-500/10 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 p-6 shadow-lg">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
+          <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 via-emerald-500/20 to-teal-500/20 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-8 shadow-2xl shadow-green-500/10">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent">
               Pending Approvals
             </h1>
-            <p className="text-slate-600 mt-2">
+            <p className="text-muted-foreground mt-2">
               Review and approve leave requests from your team members
             </p>
           </div>
@@ -133,10 +133,10 @@ export default function ApprovalsPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
           </div>
         ) : pendingRequests.length === 0 ? (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-12 text-center">
+          <div className="bg-card/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl shadow-lg border border-border dark:border-slate-200/5 p-12 text-center">
             <CheckSquare className="h-16 w-16 text-emerald-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">All caught up!</h3>
-            <p className="text-slate-600">No pending leave requests to approve</p>
+            <h3 className="text-lg font-semibold text-foreground dark:text-slate-200 mb-2">All caught up!</h3>
+            <p className="text-muted-foreground dark:text-slate-400">No pending leave requests to approve</p>
           </div>
         ) : (
           <>
@@ -161,17 +161,17 @@ export default function ApprovalsPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-border dark:border-zinc-700 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent dark:hover:bg-zinc-800/70 bg-card dark:bg-zinc-900/60 text-foreground dark:text-zinc-200 transition-all"
                 >
                   Previous
                 </button>
-                <span className="px-4 py-2 text-sm">
+                <span className="px-4 py-2 text-sm text-muted-foreground dark:text-zinc-300">
                   Page {page} of {totalPages}
                 </span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 bg-white"
+                  className="px-4 py-2 border border-border dark:border-zinc-700 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent dark:hover:bg-zinc-800/70 bg-card dark:bg-zinc-900/60 text-foreground dark:text-zinc-200 transition-all"
                 >
                   Next
                 </button>
@@ -182,11 +182,11 @@ export default function ApprovalsPage() {
 
         {/* Reject dialog */}
         {selectedRequest && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-slate-200/60">
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Reject Leave Request</h3>
-              <p className="text-sm text-slate-600 mb-4">
-                Rejecting request from {selectedRequest.userName} for{' '}
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-popover dark:bg-gradient-to-br dark:from-zinc-900 dark:to-zinc-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-border dark:border-zinc-700/50">
+              <h3 className="text-lg font-bold text-foreground dark:text-zinc-100 mb-2">Reject Leave Request</h3>
+              <p className="text-sm text-muted-foreground dark:text-zinc-400 mb-4">
+                Rejecting request from <span className="text-foreground dark:text-zinc-200 font-medium">{selectedRequest.userName}</span> for{' '}
                 {selectedRequest.numberOfDays} day(s) of {selectedRequest.leaveType} leave
               </p>
               <textarea
@@ -194,11 +194,12 @@ export default function ApprovalsPage() {
                 onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="Please provide a reason for rejection..."
                 rows={4}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full px-3 py-2.5 border border-input dark:border-zinc-700 bg-background dark:bg-zinc-800/60 text-foreground dark:text-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/50 placeholder:text-muted-foreground dark:placeholder:text-zinc-500"
               />
               <div className="flex justify-end gap-3 mt-4">
                 <Button
                   variant="outline"
+                  className="border-input dark:border-zinc-700 bg-background dark:bg-zinc-800/60 text-foreground dark:text-zinc-200 hover:bg-accent dark:hover:bg-zinc-800 hover:text-accent-foreground dark:hover:text-white"
                   onClick={() => {
                     setSelectedRequest(null);
                     setRejectReason('');
@@ -209,7 +210,7 @@ export default function ApprovalsPage() {
                 <Button
                   onClick={handleReject}
                   disabled={actionLoading || !rejectReason.trim()}
-                  className="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white"
+                  className="rounded-lg bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/20"
                 >
                   {actionLoading ? 'Rejecting...' : 'Reject Request'}
                 </Button>

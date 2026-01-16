@@ -238,7 +238,7 @@ export default function TestAIMatchingPage() {
           AI Matching Test with Embeddings
         </h1>
         <p className="text-gray-600">
-          Test the AI-powered candidate matching using Azure OpenAI embeddings and Pinecone vector database
+          Test the AI-powered candidate matching using Azure OpenAI embeddings and Weaviate vector database
         </p>
       </div>
 

@@ -41,9 +41,9 @@ router.get('/:orgId/members',
           isOwner: m.account._id.toString() === organization.owner.toString()
         }))
         .sort((a, b) => {
-          // Sort by role priority: owner > admin > hr_manager > recruiter > interviewer
-          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4 }
-          return (rolePriority[a.role] || 5) - (rolePriority[b.role] || 5)
+          // Sort by role priority: owner > admin > hr_manager > recruiter > interviewer > staff
+          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, staff: 5 }
+          return (rolePriority[a.role] || 6) - (rolePriority[b.role] || 6)
         })
 
       res.json({
@@ -121,7 +121,7 @@ router.put('/:orgId/members/:memberId',
         return res.status(400).json({ error: 'Role is required' })
       }
 
-      const validRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer']
+      const validRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
       }

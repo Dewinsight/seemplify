@@ -1,0 +1,219 @@
+const express = require('express');
+const router = express.Router();
+const currencyService = require('../services/CurrencyService');
+const ExchangeRate = require('../models/ExchangeRate');
+const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
+
+// Helper to get user info
+const getUserInfo = (req) => ({
+    userId: req.session?.user?.sub || req.session?.user?.id,
+    organizationId: req.currentOrganization?.id || req.session?.currentOrganizationId,
+    name: req.session?.user?.name
+});
+
+/**
+ * GET /api/payroll/currencies
+ * Get all supported currencies
+ */
+router.get('/', requireAuth, (req, res) => {
+    res.json({
+        currencies: currencyService.getSupportedCurrencies()
+    });
+});
+
+/**
+ * GET /api/payroll/currencies/rates
+ * Get active exchange rates for organization
+ */
+router.get('/rates', requireAuth, async (req, res) => {
+    try {
+        const { organizationId } = getUserInfo(req);
+        const { baseCurrency } = req.query;
+
+        const rates = await currencyService.getActiveRates(organizationId, baseCurrency);
+
+        res.json({
+            rates,
+            baseCurrency: baseCurrency || null,
+            count: rates.length
+        });
+    } catch (err) {
+        console.error('Get Rates Error:', err);
+        res.status(500).json({ error: 'Failed to fetch exchange rates' });
+    }
+});
+
+/**
+ * POST /api/payroll/currencies/rates
+ * Set exchange rate (HR Admin only)
+ */
+router.post('/rates', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const { baseCurrency, targetCurrency, rate, effectiveDate, notes } = req.body;
+
+        if (!baseCurrency || !targetCurrency || rate === undefined) {
+            return res.status(400).json({
+                error: 'baseCurrency, targetCurrency, and rate are required'
+            });
+        }
+
+        if (rate <= 0) {
+            return res.status(400).json({ error: 'Rate must be greater than 0' });
+        }
+
+        const exchangeRate = await currencyService.setRate(
+            organizationId,
+            baseCurrency,
+            targetCurrency,
+            parseFloat(rate),
+            {
+                effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
+                notes,
+                source: 'manual',
+                createdBy: userId,
+                createdByName: name
+            }
+        );
+
+        res.status(201).json({
+            success: true,
+            rate: exchangeRate
+        });
+    } catch (err) {
+        console.error('Set Rate Error:', err);
+        res.status(500).json({ error: 'Failed to set exchange rate' });
+    }
+});
+
+/**
+ * POST /api/payroll/currencies/rates/bulk
+ * Bulk set exchange rates
+ */
+router.post('/rates/bulk', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const { baseCurrency, rates } = req.body;
+
+        if (!baseCurrency || !rates || typeof rates !== 'object') {
+            return res.status(400).json({
+                error: 'baseCurrency and rates object are required'
+            });
+        }
+
+        const results = await currencyService.setBulkRates(
+            organizationId,
+            baseCurrency,
+            rates,
+            {
+                source: 'manual',
+                createdBy: userId,
+                createdByName: name
+            }
+        );
+
+        res.status(201).json({
+            success: true,
+            count: results.length,
+            rates: results
+        });
+    } catch (err) {
+        console.error('Bulk Set Rates Error:', err);
+        res.status(500).json({ error: 'Failed to set exchange rates' });
+    }
+});
+
+/**
+ * GET /api/payroll/currencies/convert
+ * Convert amount between currencies
+ */
+router.get('/convert', requireAuth, async (req, res) => {
+    try {
+        const { organizationId } = getUserInfo(req);
+        const { amount, from, to, date } = req.query;
+
+        if (!amount || !from || !to) {
+            return res.status(400).json({
+                error: 'amount, from, and to currencies are required'
+            });
+        }
+
+        const conversion = await currencyService.convert(
+            organizationId,
+            parseFloat(amount),
+            from,
+            to,
+            date ? new Date(date) : new Date()
+        );
+
+        res.json({
+            ...conversion,
+            formattedOriginal: currencyService.formatAmount(parseFloat(amount), from),
+            formattedConverted: currencyService.formatAmount(conversion.convertedAmount, to)
+        });
+    } catch (err) {
+        console.error('Convert Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to convert currency' });
+    }
+});
+
+/**
+ * DELETE /api/payroll/currencies/rates/:id
+ * Deactivate an exchange rate
+ */
+router.delete('/rates/:id', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId } = getUserInfo(req);
+
+        const rate = await ExchangeRate.findOneAndUpdate(
+            { _id: req.params.id, organizationId },
+            { isActive: false },
+            { new: true }
+        );
+
+        if (!rate) {
+            return res.status(404).json({ error: 'Rate not found' });
+        }
+
+        res.json({ success: true, rate });
+    } catch (err) {
+        console.error('Delete Rate Error:', err);
+        res.status(500).json({ error: 'Failed to deactivate rate' });
+    }
+});
+
+/**
+ * GET /api/payroll/currencies/history
+ * Get historical rates for a currency pair
+ */
+router.get('/history', requireAuth, async (req, res) => {
+    try {
+        const { organizationId } = getUserInfo(req);
+        const { baseCurrency, targetCurrency, limit = 30 } = req.query;
+
+        if (!baseCurrency || !targetCurrency) {
+            return res.status(400).json({
+                error: 'baseCurrency and targetCurrency are required'
+            });
+        }
+
+        const rates = await ExchangeRate.find({
+            organizationId,
+            baseCurrency: baseCurrency.toUpperCase(),
+            targetCurrency: targetCurrency.toUpperCase()
+        })
+            .sort({ effectiveDate: -1 })
+            .limit(parseInt(limit));
+
+        res.json({
+            baseCurrency,
+            targetCurrency,
+            history: rates
+        });
+    } catch (err) {
+        console.error('Get History Error:', err);
+        res.status(500).json({ error: 'Failed to fetch rate history' });
+    }
+});
+
+module.exports = router;

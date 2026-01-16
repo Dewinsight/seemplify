@@ -326,6 +326,42 @@ router.post('/:token/reject',
   }
 )
 
+/**
+ * Decline invitation by ID (for gatekeeper modal)
+ * POST /api/invitations/decline/:invitationId
+ */
+router.post('/decline/:invitationId',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const invitation = await OrganizationInvite.findById(req.params.invitationId)
+
+      if (!invitation) {
+        return res.status(404).json({ error: 'Invitation not found' })
+      }
+
+      // Verify email matches
+      if (invitation.email.toLowerCase() !== req.user.email.toLowerCase()) {
+        return res.status(403).json({ error: 'This invitation is not for your email' })
+      }
+
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ error: 'Invitation is no longer pending' })
+      }
+
+      // Reject/decline invitation
+      await invitation.reject(req.user._id, req.user.email)
+
+      console.log('✅ Invitation declined by:', req.user.email)
+
+      res.json({ message: 'Invitation declined successfully' })
+    } catch (error) {
+      console.error('Decline invitation error:', error)
+      res.status(400).json({ error: error.message })
+    }
+  }
+)
+
 // Routes for /api/organizations/:orgId/invitations (organization-specific operations)
 // These come after the invitation-specific routes to avoid conflicts
 
@@ -393,7 +429,7 @@ router.post('/:orgId/invitations',
       const normalizedEmail = email.toLowerCase().trim()
 
       // Validate role
-      const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer']
+      const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
       }

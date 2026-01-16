@@ -18,7 +18,7 @@ const OrganizationInviteSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'hr_manager', 'recruiter', 'interviewer'],
+    enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
     default: 'recruiter'
   },
   // CRITICAL: Store HASHED token, not plain token

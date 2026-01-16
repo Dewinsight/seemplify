@@ -312,10 +312,10 @@ export function PublicJobApplicationForm({
                 <div className="space-y-2">
                   <Upload className="h-8 w-8 mx-auto text-gray-400" />
                   <div>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Click to upload or drag and drop your CV
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       PDF, DOC, or DOCX (max 10MB)
                     </p>
                   </div>
@@ -354,7 +354,7 @@ export function PublicJobApplicationForm({
                     <File className="h-5 w-5 text-blue-500" />
                     <div>
                       <p className="text-sm font-medium">{uploadedFile.name}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
@@ -398,7 +398,7 @@ export function PublicJobApplicationForm({
                 </div>
                 <Progress value={uploadProgress} className="h-2" />
                 {uploadProgress > 30 && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     CV processing can take several minutes. Please wait...
                   </p>
                 )}

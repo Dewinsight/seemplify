@@ -18,9 +18,9 @@ import interviewService from '@/services/interviewService';
 import { toast } from 'sonner';
 import { RealtimeTranscript } from '@/components/ui/realtime-transcript';
 import { TranscriptViewer } from '@/components/ui/transcript-viewer';
-import { 
+import {
   calculateComprehensiveReport,
-  getScoreColorClass 
+  getScoreColorClass
 } from '@/utils/interview-scoring-utils';
 import { InterviewSummary } from '@/components/ui/interview-summary';
 import { InterviewFeedbackSimple } from '@/components/ui/interview-feedback-simple';
@@ -29,11 +29,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 // Helper component for transcript content
 function TranscriptContent({ transcript }: { transcript: any }) {
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Parse transcript content
   const parsedTranscript = useMemo(() => {
     if (!transcript.content) return [];
-    
+
     try {
       const parsed = JSON.parse(transcript.content);
       if (Array.isArray(parsed)) {
@@ -51,7 +51,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
         timestamp: `${Math.floor(index * 30)}s`
       }));
     }
-    
+
     return [{
       text: transcript.content,
       speaker: 'Unknown',
@@ -61,17 +61,17 @@ function TranscriptContent({ transcript }: { transcript: any }) {
 
   const filteredTranscript = useMemo(() => {
     if (!searchTerm) return parsedTranscript;
-    return parsedTranscript.filter((segment: any) => 
+    return parsedTranscript.filter((segment: any) =>
       segment.text.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [parsedTranscript, searchTerm]);
 
   const getSpeakerColor = (speaker: string) => {
     const colors = [
-      'bg-blue-100 text-blue-800',
-      'bg-green-100 text-green-800',
-      'bg-purple-100 text-purple-800',
-      'bg-orange-100 text-orange-800'
+      'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-100',
+      'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-100',
+      'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-100',
+      'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-100'
     ];
     const hash = speaker.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     return colors[hash % colors.length];
@@ -99,17 +99,17 @@ function TranscriptContent({ transcript }: { transcript: any }) {
             {filteredTranscript.length > 0 ? (
               filteredTranscript.map((segment: any, index: number) => (
                 <div key={index} className="group">
-                  <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/30 transition-colors">
                     <div className="flex-shrink-0">
-                      <Badge 
-                        variant="outline" 
+                      <Badge
+                        variant="outline"
                         className={`text-xs font-medium ${getSpeakerColor(segment.speaker || 'Unknown')}`}
                       >
                         {segment.speaker || 'Unknown'}
                       </Badge>
                     </div>
                     <div className="flex-1">
-                      <p className="text-gray-900 leading-relaxed">
+                      <p className="text-gray-900 dark:text-gray-100 leading-relaxed">
                         {searchTerm ? (
                           segment.text.split(new RegExp(`(${searchTerm})`, 'gi')).map((part: string, i: number) =>
                             part.toLowerCase() === searchTerm.toLowerCase() ? (
@@ -125,7 +125,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
                         )}
                       </p>
                       {segment.timestamp && (
-                        <p className="text-xs text-gray-500 mt-1">{segment.timestamp}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{segment.timestamp}</p>
                       )}
                     </div>
                   </div>
@@ -135,7 +135,7 @@ function TranscriptContent({ transcript }: { transcript: any }) {
                 </div>
               ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No transcript segments found matching your search.</p>
               </div>
@@ -148,13 +148,13 @@ function TranscriptContent({ transcript }: { transcript: any }) {
 }
 
 // Helper component for summary content
-function SummaryContent({ 
-  transcript, 
-  interviewId, 
-  aiSummary, 
+function SummaryContent({
+  transcript,
+  interviewId,
+  aiSummary,
   teamAnalysis,
-  comments 
-}: { 
+  comments
+}: {
   transcript: any;
   interviewId: string;
   aiSummary?: any;
@@ -167,7 +167,7 @@ function SummaryContent({
 
   const generateComprehensiveReport = () => {
     setGeneratingReport(true);
-    
+
     // Simulate report generation (in real app, this would call an API)
     setTimeout(() => {
       const report = calculateComprehensiveReport(transcript, aiSummary, teamAnalysis, comments || []);
@@ -214,34 +214,34 @@ function SummaryContent({
             {transcript.summary && (
               <div>
                 <h3 className="font-semibold mb-2">Summary</h3>
-                <p className="text-gray-700 leading-relaxed">{transcript.summary}</p>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{transcript.summary}</p>
               </div>
             )}
-            
+
             {transcript.keyPoints && transcript.keyPoints.length > 0 && (
               <div>
                 <h3 className="font-semibold mb-2">Key Points</h3>
-                <ul className="list-disc list-inside space-y-1 text-gray-700">
+                <ul className="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
                   {transcript.keyPoints.map((point: string, index: number) => (
                     <li key={index}>{point}</li>
                   ))}
                 </ul>
               </div>
             )}
-            
+
             {transcript.actionItems && transcript.actionItems.length > 0 && (
               <div>
                 <h3 className="font-semibold mb-2">Action Items</h3>
-                <ul className="list-disc list-inside space-y-1 text-gray-700">
+                <ul className="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
                   {transcript.actionItems.map((item: string, index: number) => (
                     <li key={index}>{item}</li>
                   ))}
                 </ul>
               </div>
             )}
-            
+
             {(!transcript.summary && (!transcript.keyPoints || transcript.keyPoints.length === 0)) && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>Summary information not available for this transcript.</p>
               </div>
@@ -252,8 +252,8 @@ function SummaryContent({
 
       {/* Comprehensive Report Card */}
       {showReport && reportData && (
-        <Card className="mt-6 border-2 border-blue-200">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50">
+        <Card className="mt-6 border-2 border-blue-200 dark:border-blue-900">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/40 dark:to-purple-950/40">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl">Comprehensive Interview Report</CardTitle>
               <Badge variant="outline" className="text-sm">
@@ -269,7 +269,7 @@ function SummaryContent({
                   {reportData.percentage}%
                 </span>
               </h2>
-              <p className="text-lg text-gray-600 mb-4">
+              <p className="text-lg text-muted-foreground mb-4">
                 {reportData.finalScore} / {reportData.maxScore} points
               </p>
               <Badge className="text-lg px-4 py-2" variant={
@@ -286,7 +286,7 @@ function SummaryContent({
               <h3 className="text-lg font-semibold mb-4">Score Breakdown</h3>
               <div className="space-y-3">
                 {reportData.scoreComponents.map((component: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div key={index} className="flex items-center justify-between p-3 bg-muted/30 dark:bg-white/5 rounded-lg">
                     <div className="flex items-center gap-3">
                       <span className="font-medium">{component.category}</span>
                       {!component.available && (
@@ -297,7 +297,7 @@ function SummaryContent({
                       <span className={`font-semibold ${component.available ? 'text-blue-600' : 'text-gray-400'}`}>
                         {component.score} / {component.maxScore}
                       </span>
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-muted-foreground">
                         ({Math.round((component.score / component.maxScore) * 100)}%)
                       </span>
                     </div>
@@ -312,11 +312,10 @@ function SummaryContent({
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-4">Data Sources</h3>
               <div className="grid grid-cols-3 gap-4">
-                <div className={`p-3 rounded-lg text-center ${
-                  reportData.dataAvailability.hasAIInsights 
-                    ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
-                }`}>
+                <div className={`p-3 rounded-lg text-center ${reportData.dataAvailability.hasAIInsights
+                  ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                  : 'bg-muted/30 dark:bg-white/5 border border-gray-200 dark:border-white/5'
+                  }`}>
                   {reportData.dataAvailability.hasAIInsights ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
                   ) : (
@@ -324,11 +323,10 @@ function SummaryContent({
                   )}
                   <p className="text-sm font-medium">AI Insights</p>
                 </div>
-                <div className={`p-3 rounded-lg text-center ${
-                  reportData.dataAvailability.hasTeamComments 
-                    ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
-                }`}>
+                <div className={`p-3 rounded-lg text-center ${reportData.dataAvailability.hasTeamComments
+                  ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                  : 'bg-muted/30 dark:bg-white/5 border border-gray-200 dark:border-white/5'
+                  }`}>
                   {reportData.dataAvailability.hasTeamComments ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
                   ) : (
@@ -336,11 +334,10 @@ function SummaryContent({
                   )}
                   <p className="text-sm font-medium">Team Comments</p>
                 </div>
-                <div className={`p-3 rounded-lg text-center ${
-                  reportData.dataAvailability.hasTeamAnalysis 
-                    ? 'bg-green-50 border border-green-200' 
-                    : 'bg-gray-50 border border-gray-200'
-                }`}>
+                <div className={`p-3 rounded-lg text-center ${reportData.dataAvailability.hasTeamAnalysis
+                  ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                  : 'bg-muted/30 dark:bg-white/5 border border-gray-200 dark:border-white/5'
+                  }`}>
                   {reportData.dataAvailability.hasTeamAnalysis ? (
                     <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
                   ) : (
@@ -356,7 +353,7 @@ function SummaryContent({
               <Button variant="outline" onClick={() => setShowReport(false)}>
                 Close Report
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
                   // In a real app, this would download the report as PDF
                   toast.success('Report download started');
@@ -382,10 +379,10 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
 
   const getSpeakerColor = (speaker: string) => {
     const colors = [
-      'bg-blue-100 text-blue-800',
-      'bg-green-100 text-green-800', 
-      'bg-purple-100 text-purple-800',
-      'bg-orange-100 text-orange-800'
+      'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-100',
+      'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-100',
+      'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-100',
+      'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-100'
     ];
     const hash = speaker.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     return colors[hash % colors.length];
@@ -394,12 +391,12 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
   // Extract speakers from transcript if no participants data
   const speakers = useMemo(() => {
     if (!transcript.content) return [];
-    
+
     try {
       const parsed = JSON.parse(transcript.content);
-      const segments = Array.isArray(parsed) ? parsed : 
+      const segments = Array.isArray(parsed) ? parsed :
         (parsed.segments || parsed.transcript || []);
-      
+
       const speakerSet = new Set();
       segments.forEach((segment: any) => {
         if (segment.speaker) speakerSet.add(segment.speaker);
@@ -434,7 +431,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
                   <div className="space-y-3">
                     <div>
                       <h3 className="font-semibold text-lg">{participant.name}</h3>
-                      <p className="text-sm text-gray-600">{participant.email}</p>
+                      <p className="text-sm text-muted-foreground">{participant.email}</p>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Speaking Time</span>
@@ -442,11 +439,11 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
                         {formatSpeakingTime(participant.speakingTime)}
                       </Badge>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1">
-                      <div 
+                    <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-1">
+                      <div
                         className="bg-blue-600 h-1 rounded-full"
-                        style={{ 
-                          width: `${transcript.duration > 0 ? (participant.speakingTime / transcript.duration) * 100 : 0}%` 
+                        style={{
+                          width: `${transcript.duration > 0 ? (participant.speakingTime / transcript.duration) * 100 : 0}%`
                         }}
                       />
                     </div>
@@ -461,7 +458,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
                   <div className="space-y-3">
                     <div>
                       <h3 className="font-semibold text-lg">{speaker}</h3>
-                      <p className="text-sm text-gray-600">Detected from transcript</p>
+                      <p className="text-sm text-muted-foreground">Detected from transcript</p>
                     </div>
                     <Badge variant="outline" className={getSpeakerColor(speaker)}>
                       Speaker {index + 1}
@@ -471,7 +468,7 @@ function ParticipantsContent({ transcript }: { transcript: any }) {
               </Card>
             ))
           ) : (
-            <div className="col-span-2 text-center py-8 text-gray-500">
+            <div className="col-span-2 text-center py-8 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No participant information available.</p>
             </div>
@@ -487,11 +484,11 @@ export default function TranscriptPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const interviewId = params.id as string;
-  
+
   // Get referrer information from URL parameters
   const referrerSource = searchParams.get('from');
   const jobId = searchParams.get('jobId');
-  
+
   // Smart back navigation function
   const handleBackNavigation = () => {
     if (referrerSource === 'jobs' && jobId) {
@@ -518,12 +515,12 @@ export default function TranscriptPage() {
   const [aiSummary, setAiSummary] = useState<any>(null);
   const [teamAnalysis, setTeamAnalysis] = useState<any>(null);
   const [comments, setComments] = useState<any[]>([]);
-  
+
   // Cancel interview states
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  
+
   // Use ref instead of state to persist the flag across re-renders
   const hasAttemptedSyncRef = useRef(false);
 
@@ -545,11 +542,11 @@ export default function TranscriptPage() {
         const scheduledEnd = new Date(interview.scheduledAt);
         scheduledEnd.setMinutes(scheduledEnd.getMinutes() + interview.duration);
         const now = new Date();
-        
+
         if (now > scheduledEnd) {
           console.log('Interview should have ended, checking for completed transcript...');
           fetchCompletedTranscript();
-          
+
           // If status is still pending and interview ended more than 15 minutes ago, 
           // try to sync notetaker status
           const minutesSinceEnd = Math.round((now.getTime() - scheduledEnd.getTime()) / (1000 * 60));
@@ -573,9 +570,9 @@ export default function TranscriptPage() {
         scheduledAt: data.scheduledAt,
         duration: data.duration
       });
-      
+
       setInterview(data);
-      
+
       // Extract AI summary and team analysis if available
       if ((data as any).aiInterviewSummary?.generated) {
         setAiSummary((data as any).aiInterviewSummary);
@@ -583,31 +580,31 @@ export default function TranscriptPage() {
       if ((data as any).teamFeedbackAnalysis?.analyzed) {
         setTeamAnalysis((data as any).teamFeedbackAnalysis);
       }
-      
+
       // Pre-fill meeting link if available
       if (data.conferencing?.details?.url) {
         setMeetingLink(data.conferencing.details.url);
       }
-      
+
       // Check if we need to sync notetaker (only if we haven't attempted sync yet)
       if (data.notetakerEnabled && !data.notetakerId && !hasAttemptedSyncRef.current) {
         console.log('Notetaker enabled but ID missing, attempting to sync...');
         hasAttemptedSyncRef.current = true; // Set flag before attempting sync
-        
+
         // Add a small delay to ensure component is fully mounted
         setTimeout(async () => {
           await handleSyncNotetaker(data);
         }, 500);
       }
-      
+
       // Check if interview has ended but notetaker status is still pending
-      if (data.notetakerEnabled && data.notetakerId && data.notetakerStatus === 'pending' && 
-          data.scheduledAt && data.duration) {
+      if (data.notetakerEnabled && data.notetakerId && data.notetakerStatus === 'pending' &&
+        data.scheduledAt && data.duration) {
         const scheduledEnd = new Date(data.scheduledAt);
         scheduledEnd.setMinutes(scheduledEnd.getMinutes() + data.duration);
         const now = new Date();
         const minutesSinceEnd = Math.round((now.getTime() - scheduledEnd.getTime()) / (1000 * 60));
-        
+
         if (minutesSinceEnd > 15) {
           console.log(`Interview ended ${minutesSinceEnd} minutes ago but status is pending, auto-syncing...`);
           setTimeout(async () => {
@@ -626,24 +623,24 @@ export default function TranscriptPage() {
   const handleSyncNotetaker = async (interviewData?: any) => {
     const currentInterview = interviewData || interview;
     if (!currentInterview) return;
-    
+
     console.log('Starting sync for interview:', {
       id: currentInterview._id,
       notetakerEnabled: currentInterview.notetakerEnabled,
       notetakerId: currentInterview.notetakerId
     });
-    
+
     // Check if sync is actually needed
     if (currentInterview.notetakerId && currentInterview.notetakerEnabled) {
       console.log('Interview already has notetaker ID and is enabled - no sync needed');
       return;
     }
-    
+
     setSyncing(true);
     try {
       const result = await interviewService.syncNotetakerStatus(currentInterview._id);
       console.log('Sync result:', result);
-      
+
       if (result.success) {
         toast.success('Notetaker synced successfully!');
         // Update the interview state instead of reloading
@@ -657,37 +654,37 @@ export default function TranscriptPage() {
       }
     } catch (error: any) {
       console.error('Failed to sync notetaker:', error);
-      
+
       // Handle the specific case where interview doesn't need syncing
       if (error.message && error.message.includes('Interview does not need syncing')) {
         console.log('Interview already synced or not eligible for syncing - this is expected');
         // Don't show error toast for this expected case
         return;
       }
-      
+
       toast.error('Failed to sync notetaker: ' + error.message);
     } finally {
       setSyncing(false);
     }
   };
-  
+
   const refreshNotetakerStatus = async () => {
     if (!interview || !interview._id || !interview.notetakerEnabled || !interview.notetakerId) {
       toast.error('No active notetaker to refresh');
       return;
     }
-    
+
     setRefreshingStatus(true);
     try {
       const result = await interviewService.checkNotetakerStatus(interview._id);
-      
+
       if (result.success && result.status) {
         // Update the interview state with new status
         setInterview((prev: any) => ({
           ...prev,
           notetakerStatus: result.status
         }));
-        
+
         toast.success(`Notetaker status updated: ${result.status}`);
       } else {
         toast.error('Failed to update notetaker status');
@@ -708,14 +705,14 @@ export default function TranscriptPage() {
 
   const handleManualTranscriptSync = async () => {
     if (!interview) return;
-    
+
     setSyncingTranscript(true);
     try {
       const result = await interviewService.manualTranscriptSync(interview._id);
-      
+
       if (result.success) {
         toast.success(result.message);
-        
+
         // Update the completed transcript state
         if (result.transcript) {
           setCompletedTranscript({
@@ -727,10 +724,10 @@ export default function TranscriptPage() {
             sessionId: (result as any).sessionId
           });
         }
-        
+
         // Refresh interview data
         await fetchInterview();
-        
+
       }
     } catch (error: any) {
       console.error('Failed to sync transcript:', error);
@@ -742,23 +739,23 @@ export default function TranscriptPage() {
 
   const handleForceCompletion = async () => {
     if (!interview) return;
-    
+
     setForcingCompletion(true);
     try {
       const result = await interviewService.forceInterviewCompletion(interview._id);
-      
+
       if (result.success) {
         toast.success(result.message);
-        
+
         // Update interview status
         setInterview((prev: any) => ({
           ...prev,
           status: result.status
         }));
-        
+
         // Refresh interview data
         await fetchInterview();
-        
+
       }
     } catch (error: any) {
       console.error('Failed to force completion:', error);
@@ -792,21 +789,21 @@ export default function TranscriptPage() {
         cancelReason,
         true // notifyParticipants
       );
-      
+
       toast.success('Interview cancelled successfully');
-      
+
       // Update local interview state
       setInterview((prev: any) => prev ? { ...prev, status: 'cancelled' } : null);
-      
+
       // Close dialog and reset state
       setShowCancelDialog(false);
       setCancelReason('');
-      
+
       // Optionally redirect back or refresh
       setTimeout(() => {
         router.push('/calendar');
       }, 1000);
-      
+
     } catch (error: any) {
       console.error('Failed to cancel interview:', error);
       toast.error('Failed to cancel interview: ' + error.message);
@@ -817,7 +814,7 @@ export default function TranscriptPage() {
 
   const fetchCompletedTranscript = async () => {
     if (!interview?.notetakerId || loadingTranscript) return;
-    
+
     setLoadingTranscript(true);
     try {
       const data = await interviewService.getTranscript(interviewId);
@@ -833,11 +830,11 @@ export default function TranscriptPage() {
 
   const handleEnableNotetaker = async () => {
     if (!interview || !meetingLink) return;
-    
+
     try {
       setEnablingNotetaker(true);
       const result = await interviewService.enableNotetaker(interview._id, meetingLink);
-      
+
       if (result.success) {
         toast.success('Notetaker enabled successfully');
         // Update the interview state instead of reloading
@@ -885,8 +882,8 @@ export default function TranscriptPage() {
       case 'enabled': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case 'recording': return 'bg-red-100 text-red-800 border-red-200';
       case 'failed': return 'bg-red-100 text-red-800 border-red-200';
-      case 'deleted': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'deleted': return 'bg-muted/50 text-gray-800 border-gray-200';
+      default: return 'bg-muted/50 text-gray-800 border-gray-200';
     }
   };
 
@@ -912,21 +909,21 @@ export default function TranscriptPage() {
     })() : false;
 
     switch (status) {
-      case 'completed': 
+      case 'completed':
         return 'Complete';
-      case 'processing': 
+      case 'processing':
         return 'Processing';
-      case 'pending': 
+      case 'pending':
         return hasEnded ? 'Updating Status...' : 'Pending';
-      case 'enabled': 
+      case 'enabled':
         return 'Active';
-      case 'recording': 
+      case 'recording':
         return 'Recording';
-      case 'failed': 
+      case 'failed':
         return 'Failed';
-      case 'deleted': 
+      case 'deleted':
         return 'Unavailable';
-      default: 
+      default:
         return 'Unknown';
     }
   };
@@ -940,21 +937,21 @@ export default function TranscriptPage() {
     })() : false;
 
     switch (status) {
-      case 'completed': 
+      case 'completed':
         return 'Transcript and recording are ready';
-      case 'processing': 
+      case 'processing':
         return 'Generating transcript...';
-      case 'pending': 
+      case 'pending':
         return hasEnded ? 'Interview has ended, checking final status...' : 'Will start at scheduled time';
-      case 'enabled': 
+      case 'enabled':
         return 'AI notetaker is active';
-      case 'recording': 
+      case 'recording':
         return 'AI notetaker is recording';
-      case 'failed': 
+      case 'failed':
         return 'Recording failed or was interrupted';
-      case 'deleted': 
+      case 'deleted':
         return 'Notetaker was removed or expired';
-      default: 
+      default:
         return 'Status unknown';
     }
   };
@@ -967,12 +964,12 @@ export default function TranscriptPage() {
 
   const getMeetingTimeStatus = () => {
     if (!interview?.scheduledAt || !interview?.duration) return null;
-    
+
     const scheduledStart = new Date(interview.scheduledAt);
     const scheduledEnd = new Date(interview.scheduledAt);
     scheduledEnd.setMinutes(scheduledEnd.getMinutes() + interview.duration);
     const now = new Date();
-    
+
     if (now < scheduledStart) {
       const minutesUntilStart = Math.round((scheduledStart.getTime() - now.getTime()) / (1000 * 60));
       return {
@@ -992,7 +989,7 @@ export default function TranscriptPage() {
       return {
         status: 'ended',
         text: `Ended ${minutesSinceEnd} minutes ago`,
-        color: 'text-gray-600'
+        color: 'text-muted-foreground'
       };
     }
   };
@@ -1010,7 +1007,7 @@ export default function TranscriptPage() {
         icon: CheckCircle
       };
     }
-    
+
     // Priority 2: Check if notetaker is processing or completed but we don't have content yet
     if (['processing', 'completed'].includes(interview?.notetakerStatus)) {
       return {
@@ -1023,14 +1020,14 @@ export default function TranscriptPage() {
         icon: Loader2
       };
     }
-    
+
     // Priority 3: Check if interview has ended but notetaker status is unclear
     if (interview?.scheduledAt && interview?.duration) {
       const scheduledEnd = new Date(interview.scheduledAt);
       scheduledEnd.setMinutes(scheduledEnd.getMinutes() + interview.duration);
       const now = new Date();
       const minutesSinceEnd = Math.round((now.getTime() - scheduledEnd.getTime()) / (1000 * 60));
-      
+
       if (minutesSinceEnd > 5) {
         return {
           status: 'checking',
@@ -1043,7 +1040,7 @@ export default function TranscriptPage() {
         };
       }
     }
-    
+
     // Priority 4: Check if waiting to start
     if (['pending', 'scheduled'].includes(interview?.notetakerStatus)) {
       return {
@@ -1052,11 +1049,11 @@ export default function TranscriptPage() {
         hasTranscript: false,
         title: 'Waiting to Start',
         description: 'AI notetaker will join at the scheduled meeting time',
-        color: 'bg-gray-100 text-gray-800 border-gray-200',
+        color: 'bg-muted/50 text-gray-800 border-gray-200',
         icon: Clock3
       };
     }
-    
+
     // Priority 5: Check if recording is in progress
     if (['recording', 'enabled', 'joined', 'joining'].includes(interview?.notetakerStatus)) {
       return {
@@ -1069,7 +1066,7 @@ export default function TranscriptPage() {
         icon: Mic
       };
     }
-    
+
     // Priority 6: Failed or deleted states
     if (['failed', 'deleted', 'cancelled'].includes(interview?.notetakerStatus)) {
       return {
@@ -1078,11 +1075,11 @@ export default function TranscriptPage() {
         hasTranscript: false,
         title: 'Recording Unavailable',
         description: 'Recording was not completed or has expired',
-        color: 'bg-gray-100 text-gray-600 border-gray-200',
+        color: 'bg-muted/50 text-muted-foreground border-gray-200',
         icon: XCircle
       };
     }
-    
+
     // Default state
     return {
       status: 'unknown',
@@ -1090,7 +1087,7 @@ export default function TranscriptPage() {
       hasTranscript: false,
       title: 'Status Unknown',
       description: 'Unable to determine recording status',
-      color: 'bg-gray-100 text-gray-500 border-gray-200',
+      color: 'bg-muted/50 text-muted-foreground border-gray-200',
       icon: AlertCircle
     };
   };
@@ -1098,7 +1095,7 @@ export default function TranscriptPage() {
   const getRecordingMetadata = (interview: any, completedTranscript: any) => {
     const recordingUrl = completedTranscript?.recordingUrl || interview?.recordingUrl;
     const transcriptData = completedTranscript?.transcript || interview?.transcript;
-    
+
     return {
       recordingUrl,
       transcriptUrl: transcriptData?.url,
@@ -1112,7 +1109,7 @@ export default function TranscriptPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-muted/30">
         <div className="container mx-auto p-6 max-w-7xl">
           <div className="mb-8">
             <Skeleton className="h-8 w-48 mb-4" />
@@ -1156,38 +1153,37 @@ export default function TranscriptPage() {
   const timeStatus = getMeetingTimeStatus();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted/30 dark:bg-background">
       <div className="container mx-auto p-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
           <Button
             variant="ghost"
             onClick={handleBackNavigation}
-            className="mb-6 hover:bg-white"
+            className="mb-6 hover:bg-white dark:hover:bg-card"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to {referrerSource === 'jobs' ? 'Job Details' : referrerSource === 'calendar' ? 'Calendar' : 'Interview'}
           </Button>
-          
+
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Interview Transcript</h1>
-              <p className="text-lg text-gray-600">
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-foreground mb-2">Interview Transcript</h1>
+              <p className="text-lg text-muted-foreground">
                 AI-powered recording and analysis for your interview
               </p>
             </div>
-            
+
             <div className="flex items-center gap-3">
               {interview?.notetakerEnabled && (
                 (() => {
                   const recordingStatus = getActualRecordingStatus(interview, completedTranscript);
                   return (
-                    <Badge 
+                    <Badge
                       className={`${recordingStatus.color} border px-3 py-1.5 text-sm font-medium`}
                     >
-                      <recordingStatus.icon className={`h-4 w-4 ${
-                        recordingStatus.status === 'processing' ? 'animate-spin' : ''
-                      }`} />
+                      <recordingStatus.icon className={`h-4 w-4 ${recordingStatus.status === 'processing' ? 'animate-spin' : ''
+                        }`} />
                       <span className="ml-2">
                         AI Notetaker {recordingStatus.title.replace('Recording ', '')}
                       </span>
@@ -1195,14 +1191,14 @@ export default function TranscriptPage() {
                   );
                 })()
               )}
-              
+
               {interview?.notetakerEnabled && interview?.notetakerId && !completedTranscript && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={fetchCompletedTranscript}
                   disabled={loadingTranscript}
-                  className="bg-white hover:bg-gray-50"
+                  className="bg-white hover:bg-muted/30"
                 >
                   {loadingTranscript ? (
                     <>
@@ -1217,7 +1213,7 @@ export default function TranscriptPage() {
                   )}
                 </Button>
               )}
-              
+
               {/* Show additional sync button if status seems stuck */}
               {(() => {
                 const recordingStatus = getActualRecordingStatus(interview, completedTranscript);
@@ -1243,7 +1239,7 @@ export default function TranscriptPage() {
                   </Button>
                 );
               })()}
-              
+
               {/* Refresh Notetaker Status button - show if notetaker is enabled */}
               {interview?.notetakerEnabled && interview?.notetakerId && (
                 <Button
@@ -1317,21 +1313,21 @@ export default function TranscriptPage() {
               )}
 
               {/* Cancel interview button - only show if interview is not completed/cancelled and is before current time */}
-              {interview?.status !== 'completed' && 
-               interview?.status !== 'cancelled' && 
-               interview?.scheduledAt &&
-               new Date(interview.scheduledAt) > new Date() && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleShowCancelDialog}
-                  className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
-                  title="Cancel this interview"
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel Interview
-                </Button>
-              )}
+              {interview?.status !== 'completed' &&
+                interview?.status !== 'cancelled' &&
+                interview?.scheduledAt &&
+                new Date(interview.scheduledAt) > new Date() && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleShowCancelDialog}
+                    className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+                    title="Cancel this interview"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Cancel Interview
+                  </Button>
+                )}
             </div>
           </div>
         </div>
@@ -1339,10 +1335,10 @@ export default function TranscriptPage() {
         <div className="space-y-6">
           {/* Interview Overview Card */}
           {interview && (
-            <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+            <Card className="bg-white dark:bg-card shadow-sm border-0 ring-1 ring-gray-200 dark:ring-border">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-xl font-semibold text-gray-900">Interview Overview</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-foreground">Interview Overview</CardTitle>
                   {timeStatus && (
                     <Badge variant="outline" className={`${timeStatus.color} border-current bg-transparent`}>
                       <Clock className="h-3 w-3 mr-1" />
@@ -1354,24 +1350,24 @@ export default function TranscriptPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Users className="h-4 w-4 text-blue-600" />
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+                      <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Candidate</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm font-medium text-gray-900 dark:text-foreground">Candidate</p>
+                      <p className="text-sm text-muted-foreground">
                         {interview.candidateId?.firstName} {interview.candidateId?.lastName}
                       </p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Calendar className="h-4 w-4 text-green-600" />
+                    <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg">
+                      <Calendar className="h-4 w-4 text-green-600 dark:text-green-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Scheduled</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm font-medium text-gray-900 dark:text-foreground">Scheduled</p>
+                      <p className="text-sm text-muted-foreground">
                         {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleDateString('en-US', {
                           weekday: 'short',
                           year: 'numeric',
@@ -1379,7 +1375,7 @@ export default function TranscriptPage() {
                           day: 'numeric'
                         }) : 'Date not available'}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit'
@@ -1387,31 +1383,31 @@ export default function TranscriptPage() {
                       </p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Clock className="h-4 w-4 text-purple-600" />
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
+                      <Clock className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Duration</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm font-medium text-gray-900 dark:text-foreground">Duration</p>
+                      <p className="text-sm text-muted-foreground">
                         {formatDuration(interview.duration)}
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 {interview.conferencing?.details?.url && (
                   <>
                     <Separator />
-                    <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-900/30">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                          <Video className="h-4 w-4 text-blue-600" />
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+                          <Video className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-blue-900">Meeting Link</p>
-                          <p className="text-xs text-blue-700">Click to join the interview</p>
+                          <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Meeting Link</p>
+                          <p className="text-xs text-blue-700 dark:text-blue-300">Click to join the interview</p>
                         </div>
                       </div>
                       <Button
@@ -1437,36 +1433,36 @@ export default function TranscriptPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* AI Analysis Status */}
-            <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+            <Card className="bg-white dark:bg-card shadow-sm border-0 ring-1 ring-gray-200 dark:ring-border">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <CardTitle className="text-lg font-semibold text-gray-900 dark:text-foreground flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-purple-600" />
                   AI Analysis
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-gray-600" />
-                    <span className="text-sm font-medium text-gray-900">Summary</span>
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-foreground">Summary</span>
                   </div>
                   <Badge variant={aiSummary ? "default" : "secondary"} className="text-xs">
                     {aiSummary ? "Ready" : "Pending"}
                   </Badge>
                 </div>
-                
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+
+                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-gray-600" />
-                    <span className="text-sm font-medium text-gray-900">Team Feedback</span>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-foreground">Team Feedback</span>
                   </div>
                   <Badge variant={teamAnalysis ? "default" : "secondary"} className="text-xs">
                     {teamAnalysis ? "Analyzed" : "Pending"}
                   </Badge>
                 </div>
-                
+
                 {(!aiSummary && !teamAnalysis) && (
-                  <p className="text-xs text-gray-500 mt-3">
+                  <p className="text-xs text-muted-foreground mt-3">
                     AI analysis will be available after the interview transcript is complete.
                   </p>
                 )}
@@ -1475,25 +1471,24 @@ export default function TranscriptPage() {
 
             {/* Recording Status */}
             {interview?.notetakerEnabled && interview?.notetakerId && (
-              <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+              <Card className="bg-white dark:bg-card shadow-sm border-0 ring-1 ring-gray-200 dark:ring-border">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-semibold text-gray-900">Recording Status</CardTitle>
+                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-foreground">Recording Status</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {(() => {
                     const recordingStatus = getActualRecordingStatus(interview, completedTranscript);
                     const metadata = getRecordingMetadata(interview, completedTranscript);
                     const IconComponent = recordingStatus.icon;
-                    
+
                     return (
                       <div className="space-y-4">
                         {/* Main Status Display */}
                         <div className={`p-4 rounded-lg border ${recordingStatus.color}`}>
                           <div className="flex items-center gap-3">
                             <div className="flex-shrink-0">
-                              <IconComponent className={`h-6 w-6 ${
-                                recordingStatus.status === 'processing' ? 'animate-spin' : ''
-                              }`} />
+                              <IconComponent className={`h-6 w-6 ${recordingStatus.status === 'processing' ? 'animate-spin' : ''
+                                }`} />
                             </div>
                             <div className="flex-1">
                               <h3 className="font-semibold text-lg">{recordingStatus.title}</h3>
@@ -1517,7 +1512,7 @@ export default function TranscriptPage() {
               <TabsTrigger value="participants" className="text-base font-medium">Participants</TabsTrigger>
               <TabsTrigger value="feedback" className="text-base font-medium">Feedbacks</TabsTrigger>
             </TabsList>
-            
+
             {/* Transcript Tab Content */}
             <TabsContent value="transcript">
               {completedTranscript && completedTranscript.transcript ? (
@@ -1530,8 +1525,8 @@ export default function TranscriptPage() {
                   onGenerateSummary={handleSummaryGenerated}
                   interviewId={interviewId}
                   isMultiCandidate={interview?.isMultiCandidate || false}
-                  candidateName={interview?.candidateId?.firstName && interview?.candidateId?.lastName 
-                    ? `${interview.candidateId.firstName} ${interview.candidateId.lastName}` 
+                  candidateName={interview?.candidateId?.firstName && interview?.candidateId?.lastName
+                    ? `${interview.candidateId.firstName} ${interview.candidateId.lastName}`
                     : undefined}
                   candidateEmail={interview?.candidateId?.email}
                   sessionId={interview?.multiCandidateSessionId}
@@ -1539,9 +1534,9 @@ export default function TranscriptPage() {
               ) : interview?.notetakerEnabled && interview?.notetakerId ? (
                 <>
                   {loadingTranscript && (
-                    <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+                    <Card className="bg-white dark:bg-card shadow-sm border-0 ring-1 ring-gray-200 dark:ring-border">
                       <CardContent className="pt-6">
-                        <div className="flex items-center gap-3 text-gray-600">
+                        <div className="flex items-center gap-3 text-muted-foreground">
                           <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
                           <span className="font-medium">Checking for completed transcript...</span>
                         </div>
@@ -1554,7 +1549,7 @@ export default function TranscriptPage() {
                   />
                 </>
               ) : (
-                <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+                <Card className="bg-white dark:bg-card shadow-sm border-0 ring-1 ring-gray-200 dark:ring-border">
                   <CardContent className="pt-6">
                     <Alert className="border-amber-200 bg-amber-50">
                       <AlertCircle className="h-5 w-5 text-amber-600" />
@@ -1625,7 +1620,7 @@ export default function TranscriptPage() {
             {/* Summary Tab Content */}
             <TabsContent value="summary">
               {completedTranscript && completedTranscript.transcript ? (
-                <SummaryContent 
+                <SummaryContent
                   transcript={completedTranscript.transcript}
                   interviewId={interviewId}
                   aiSummary={aiSummary}
@@ -1706,7 +1701,7 @@ export default function TranscriptPage() {
                 Add an AI notetaker to record and transcribe this interview. The bot will join the meeting automatically.
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4 mt-4">
               <div>
                 <Label htmlFor="meetingLink" className="text-sm font-medium">Meeting Link</Label>
@@ -1718,7 +1713,7 @@ export default function TranscriptPage() {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMeetingLink(e.target.value)}
                   className="mt-2"
                 />
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-sm text-muted-foreground mt-2">
                   Enter the Google Meet, Zoom, or Teams link for this interview.
                 </p>
               </div>
@@ -1765,7 +1760,7 @@ export default function TranscriptPage() {
                 Are you sure you want to cancel this interview? This action cannot be undone and will notify all participants.
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4">
               <div>
                 <Label htmlFor="cancelReason">Reason for cancellation</Label>

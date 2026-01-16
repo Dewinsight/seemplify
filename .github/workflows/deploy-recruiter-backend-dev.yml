@@ -1,0 +1,47 @@
+# Deploy Recruiter Backend to Dokploy (Development Environment)
+name: Deploy Recruiter Backend (Dev)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'recruiter/backend/**'
+      - '.github/workflows/deploy-recruiter-backend-dev.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: recruiter-backend-dev
+  APP_PATH: recruiter/backend
+  ENVIRONMENT: development
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy (Dev)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment (Dev Environment)
+        run: |
+          echo "🚀 Deploying ${{ env.APP_NAME }} to DEVELOPMENT environment"
+          echo "📦 Application: ${{ env.APP_PATH }}"
+          echo "🌍 Environment: ${{ env.ENVIRONMENT }}"
+          echo ""
+          
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets.RECRUITER_BACKEND_DEV_APP_ID }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ env.APP_NAME }} (DEV) deployment triggered successfully (HTTP $response)"
+            echo "🔗 Dev URL: https://api-dev.seemplifyai.com"
+            cat /tmp/response.txt 2>/dev/null || true
+          else
+            echo "❌ Dev deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi

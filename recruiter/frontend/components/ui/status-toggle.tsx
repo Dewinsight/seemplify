@@ -70,7 +70,7 @@ export function StatusToggle({ jobId, currentStatus, onStatusChange, className =
       case 'closed':
         return 'text-red-600'
       case 'archived':
-        return 'text-gray-500'
+        return 'text-muted-foreground'
       default:
         return 'text-gray-600'
     }

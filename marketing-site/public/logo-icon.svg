@@ -1,0 +1,26 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+  </defs>
+
+  <!-- Simplified S with nodes (icon version) -->
+  <g>
+    <path
+      d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
+      stroke="url(#iconGradient)"
+      stroke-width="7"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    
+    <!-- Key nodes -->
+    <circle cx="65" cy="25" r="5" fill="white" />
+    <circle cx="50" cy="50" r="5" fill="white" />
+    <circle cx="35" cy="75" r="5" fill="white" />
+  </g>
+</svg>

@@ -20,7 +20,7 @@ const AccountSchema = new mongoose.Schema({
     otpAttempts: { type: Number, default: 0 },
     otpLockedUntil: { type: Date },
     lastOtpSent: { type: Date },
-    
+
     // Trusted browsers (for device verification - future use)
     trustedBrowsers: [{
       fingerprint: { type: String },
@@ -43,7 +43,7 @@ const AccountSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer']
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
     },
     joinedAt: {
       type: Date,
@@ -91,6 +91,34 @@ const AccountSchema = new mongoose.Schema({
     default: false
   },
 
+  // =====================================================
+  // SAML Support
+  // =====================================================
+  saml: {
+    // SAML NameID (unique identifier from IdP)
+    nameId: { type: String, sparse: true, index: true },
+    nameIdFormat: { type: String },
+
+    // IdP that authenticated this user
+    identityProvider: { type: String },
+
+    // Session tracking
+    sessionIndex: { type: String },
+
+    // Last SAML authentication
+    lastSamlAuth: { type: Date },
+
+    // SAML attributes passed from IdP
+    attributes: { type: Map, of: String }
+  },
+
+  // Auth provider tracking
+  authProvider: {
+    type: String,
+    enum: ['local', 'oauth', 'oidc', 'saml', 'oidc-saml'],
+    default: 'local'
+  },
+
   createdAt: { type: Date, default: Date.now }
 })
 
@@ -100,34 +128,34 @@ AccountSchema.index({ 'teams.team': 1 })
 AccountSchema.index({ 'teams.organization': 1 })
 
 // Get active organizations
-AccountSchema.methods.getActiveOrganizations = function() {
+AccountSchema.methods.getActiveOrganizations = function () {
   return this.organizations.filter(o => o.isActive)
 }
 
 // Get active teams
-AccountSchema.methods.getActiveTeams = function() {
+AccountSchema.methods.getActiveTeams = function () {
   return this.teams.filter(t => t.isActive)
 }
 
 // Get teams for a specific organization
-AccountSchema.methods.getTeamsForOrganization = function(organizationId) {
+AccountSchema.methods.getTeamsForOrganization = function (organizationId) {
   return this.teams.filter(
     t => t.organization.toString() === organizationId.toString() && t.isActive
   )
 }
 
 // Check if user has line_manager role in any team
-AccountSchema.methods.isLineManager = function() {
+AccountSchema.methods.isLineManager = function () {
   return this.teams.some(t => t.role === 'line_manager' && t.isActive)
 }
 
 // Get organizations where user has a specific role
-AccountSchema.methods.getOrganizationsWithRole = function(role) {
+AccountSchema.methods.getOrganizationsWithRole = function (role) {
   return this.organizations.filter(o => o.role === role && o.isActive)
 }
 
 // Set current organization (for session context switching)
-AccountSchema.methods.setCurrentOrganization = async function(organizationId) {
+AccountSchema.methods.setCurrentOrganization = async function (organizationId) {
   // Verify user is member of organization
   const isMember = this.organizations.some(
     o => o.organization.toString() === organizationId.toString() && o.isActive

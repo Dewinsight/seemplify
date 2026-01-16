@@ -261,11 +261,66 @@ class NotificationService {
       const personalizedHtml = htmlContent.replace(/{{name}}/g, recipient.name);
       const result = await this.sendEmail(recipient.email, subject, personalizedHtml);
       results.push({ email: recipient.email, ...result });
-      
+
       // Rate limiting - wait 100ms between emails
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return results;
+  }
+  // ============== GOAL SETTING NOTIFICATIONS ==============
+
+  /**
+   * Notify manager that goals are submitted for approval
+   */
+  async notifyGoalsSubmitted(manager, employee) {
+    const subject = `Action Desired: Approve Goals for ${employee.name}`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #667eea;">Goals Submitted for Approval</h2>
+        <p>Hi ${manager.name},</p>
+        <p><strong>${employee.name}</strong> has submitted their performance goals for the upcoming cycle.</p>
+        <p>Please review and approve them to allow the appraisal process to proceed.</p>
+        <a href="${process.env.FRONTEND_URL}/appraisals" style="display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px;">Review Goals</a>
+      </div>
+    `;
+    return this.sendEmail(manager.email, subject, htmlContent);
+  }
+
+  /**
+   * Notify employee that goals were approved
+   */
+  async notifyGoalsApproved(employee, manager) {
+    const subject = `Goals Approved: You can start Self-Assessment`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #10b981;">Goals Approved</h2>
+        <p>Hi ${employee.name},</p>
+        <p>Your manager, <strong>${manager.name}</strong>, has approved your goals.</p>
+        <p>You can now proceed to the Self-Assessment phase when the cycle timeline allows.</p>
+        <a href="${process.env.FRONTEND_URL}/appraisals" style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px;">View Appraisal</a>
+      </div>
+    `;
+    return this.sendEmail(employee.email, subject, htmlContent);
+  }
+
+  /**
+   * Notify employee that goals were rejected/returned
+   */
+  async notifyGoalsRejected(employee, manager, comments) {
+    const subject = `Action Required: Please Revise Your Goals`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #ef4444;">Goal Revision Requested</h2>
+        <p>Hi ${employee.name},</p>
+        <p>Your manager has requested changes to your goals.</p>
+        <div style="background: #fef2f2; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
+          <p><strong>Manager Comments:</strong></p>
+          <p>${comments || 'Please align your goals with team objectives.'}</p>
+        </div>
+        <a href="${process.env.FRONTEND_URL}/appraisals" style="display: inline-block; background: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px;">Revise Goals</a>
+      </div>
+    `;
+    return this.sendEmail(employee.email, subject, htmlContent);
   }
 }
 

@@ -71,11 +71,10 @@ function StarRating({ rating }: { rating: number }) {
       {[...Array(5)].map((_, i) => (
         <Star
           key={i}
-          className={`h-4 w-4 ${
-            i < rating
-              ? "fill-yellow-400 text-yellow-400"
-              : "fill-gray-200 text-gray-200 dark:fill-gray-700 dark:text-gray-700"
-          }`}
+          className={`h-4 w-4 ${i < rating
+            ? "fill-yellow-400 text-yellow-400"
+            : "fill-gray-200 text-gray-200 dark:fill-gray-700 dark:text-gray-700"
+            }`}
         />
       ))}
     </div>
@@ -85,9 +84,9 @@ function StarRating({ rating }: { rating: number }) {
 
 
 // Pagination component
-function Pagination({ 
-  currentPage, 
-  totalPages, 
+function Pagination({
+  currentPage,
+  totalPages,
   onPageChange,
   totalItems,
   itemsPerPage
@@ -100,11 +99,11 @@ function Pagination({
 }) {
   const startItem = (currentPage - 1) * itemsPerPage + 1
   const endItem = Math.min(currentPage * itemsPerPage, totalItems)
-  
+
   const getPageNumbers = () => {
     const pages = []
     const maxVisiblePages = 5
-    
+
     if (totalPages <= maxVisiblePages) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i)
@@ -124,7 +123,7 @@ function Pagination({
         pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages)
       }
     }
-    
+
     return pages
   }
 
@@ -132,35 +131,35 @@ function Pagination({
 
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-      <div className="text-sm text-gray-700 dark:text-gray-300">
+      <div className="text-sm text-muted-foreground">
         Showing {startItem} to {endItem} of {totalItems} candidates
       </div>
-      
+
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
-          className="border-gray-200 dark:border-gray-700"
+          className="border-border"
         >
           <ChevronLeft className="h-4 w-4" />
           Previous
         </Button>
-        
+
         <div className="flex items-center gap-1">
           {getPageNumbers().map((page, index) => (
             page === '...' ? (
-              <span key={index} className="px-3 py-2 text-gray-500">...</span>
+              <span key={index} className="px-3 py-2 text-muted-foreground">...</span>
             ) : (
               <Button
                 key={index}
                 variant={currentPage === page ? "default" : "outline"}
                 size="sm"
                 onClick={() => onPageChange(page as number)}
-                className={currentPage === page 
-                  ? "bg-blue-600 hover:bg-blue-700 text-white" 
-                  : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                className={currentPage === page
+                  ? ""
+                  : "border-border hover:bg-accent"
                 }
               >
                 {page}
@@ -168,13 +167,13 @@ function Pagination({
             )
           ))}
         </div>
-        
+
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="border-gray-200 dark:border-gray-700"
+          className="border-border"
         >
           Next
           <ChevronRight className="h-4 w-4" />
@@ -187,25 +186,25 @@ function Pagination({
 export default function CandidatesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  
+
   const Pop = ({ title, children }: { title: string; children: React.ReactNode }) => {
     const { currentStep, setCurrentStep, setIsOpen, steps } = useTour() as any
     const total = (steps?.length ?? 0)
     return (
       <div className="p-3 sm:p-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm sm:text-base font-semibold text-gray-900">{title}</h3>
-          <button className="text-gray-500 hover:text-gray-700" onClick={() => setIsOpen(false)} aria-label="Close">×</button>
+          <h3 className="text-sm sm:text-base font-semibold text-foreground">{title}</h3>
+          <button className="text-muted-foreground hover:text-foreground" onClick={() => setIsOpen(false)} aria-label="Close">×</button>
         </div>
-        <div className="text-sm text-gray-700 mb-3">{children}</div>
+        <div className="text-sm text-foreground mb-3">{children}</div>
         <div className="flex items-center justify-between mt-2 gap-2">
           <button className="px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100" onClick={() => setCurrentStep(Math.max(0, (currentStep ?? 0) - 1))}>Prev</button>
           <div className="flex items-center gap-1">
-            {Array.from({ length: total }).map((_, i) => (<span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-blue-600' : 'bg-gray-300'}`}></span>))}
+            {Array.from({ length: total }).map((_, i) => (<span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-primary' : 'bg-muted'}`}></span>))}
           </div>
           <div className="flex items-center gap-2">
-            <button className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700" onClick={() => setIsOpen(false)}>Skip</button>
-            <button className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onClick={() => { if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false) }}>{(currentStep ?? 0) + 1 < total ? 'Next' : 'Done'}</button>
+            <button className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => setIsOpen(false)}>Skip</button>
+            <button className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90" onClick={() => { if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false) }}>{(currentStep ?? 0) + 1 < total ? 'Next' : 'Done'}</button>
           </div>
         </div>
       </div>
@@ -267,7 +266,7 @@ export default function CandidatesPage() {
       if (searchInput !== searchTerm) {
         setIsSearching(true)
       }
-      
+
       const timeoutId = setTimeout(() => {
         setSearchTerm(searchInput)
         setIsSearching(false)
@@ -282,19 +281,19 @@ export default function CandidatesPage() {
       const currentSearch = params.get('search') || ''
       const currentPageParam = parseInt(params.get('page') || '1')
       const currentLimitParam = parseInt(params.get('limit') || '10')
-      
+
       // Only update URL if values actually changed
-      if (currentSearch === searchTerm && 
-          currentPageParam === currentPage && 
-          currentLimitParam === itemsPerPage) {
+      if (currentSearch === searchTerm &&
+        currentPageParam === currentPage &&
+        currentLimitParam === itemsPerPage) {
         return
       }
-      
+
       const newParams = new URLSearchParams()
       if (searchTerm) newParams.set('search', searchTerm)
       if (currentPage > 1) newParams.set('page', currentPage.toString())
       if (itemsPerPage !== 10) newParams.set('limit', itemsPerPage.toString())
-      
+
       const newUrl = newParams.toString() ? `?${newParams.toString()}` : ''
       window.history.replaceState({}, '', `/candidates${newUrl}`)
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +307,7 @@ export default function CandidatesPage() {
           limit: itemsPerPage,
           search: searchTerm || undefined
         })
-        
+
         setCandidates(data.candidates || [])
         setTotalPages(data.totalPages || 0)
         setTotalCandidates(data.total || 0)
@@ -416,7 +415,7 @@ export default function CandidatesPage() {
         const failures = result.failures || []
         const successCount = result.deleted || 0
         if (successCount > 0) {
-          toast.success(`Deleted ${successCount} candidate(s)`) 
+          toast.success(`Deleted ${successCount} candidate(s)`)
         }
         if (failures.length > 0) {
           const sample = failures.slice(0, 3).map(f => f.id).join(', ')
@@ -524,33 +523,34 @@ export default function CandidatesPage() {
 
     if (loading) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 flex items-center justify-center">
+        <div className="min-h-screen flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-              <Users className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-pulse" />
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Users className="h-8 w-8 text-primary animate-pulse" />
             </div>
-            <p className="text-lg font-medium text-gray-600 dark:text-gray-400">Loading candidates...</p>
+            <p className="text-lg font-medium text-muted-foreground">Loading candidates...</p>
           </div>
         </div>
       )
     }
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 p-4 lg:p-8 candidates-container">
+      <div className="min-h-screen p-4 lg:p-8 candidates-container relative z-10">
+        <div className="bg-noise" />
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent candidate-page-title">
+              <h1 className="text-3xl font-bold tracking-tight candidate-page-title gradient-text-primary">
                 Candidate Management
               </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400 mt-2 candidate-page-description">
+              <p className="text-muted-foreground mt-1 candidate-page-description">
                 Discover and manage top talent for your organization
               </p>
             </div>
             <div className="flex items-center gap-3">
               <StartTourButton />
-              <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
+              <Button asChild variant="outline" className="border-border hover:bg-accent" data-tutorial="add-candidate-btn">
                 <Link href="/bulk-upload">
                   <Upload className="h-4 w-4 mr-2" />
                   Add Candidates
@@ -560,12 +560,12 @@ export default function CandidatesPage() {
           </div>
 
           {/* Search and Filters */}
-          <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg" data-tutorial="filter-section">
+          <Card className="glass-card border-border/50" data-tutorial="filter-section">
             <CardHeader className="pb-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  <Users className="h-6 w-6 text-primary" />
+                  <CardTitle className="text-xl font-semibold">
                     Candidates Overview
                   </CardTitle>
                   {hasActiveFilters && (
@@ -577,15 +577,15 @@ export default function CandidatesPage() {
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     {isSearching ? (
-                      <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-500 animate-spin" />
+                      <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-primary animate-spin" />
                     ) : (
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     )}
                     <Input
                       placeholder="Search candidates by name, position, skills..."
                       value={searchInput}
                       onChange={(e) => handleSearchChange(e.target.value)}
-                      className="pl-10 w-80 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                      className="pl-10 w-80 bg-background border-border"
                       data-tutorial="search-input"
                     />
                     {searchInput && (
@@ -596,7 +596,7 @@ export default function CandidatesPage() {
                           setSearchInput("")
                           setSearchTerm("")
                         }}
-                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-accent"
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -608,7 +608,7 @@ export default function CandidatesPage() {
                       variant="outline"
                       size="sm"
                       onClick={clearFilters}
-                      className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      className="border-border hover:bg-accent"
                     >
                       <X className="h-4 w-4 mr-1" />
                       Clear
@@ -622,19 +622,19 @@ export default function CandidatesPage() {
 
               {/* Bulk Actions */}
               {selectedCandidates.length > 0 && (
-                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    <span className="text-sm font-medium text-primary">
                       {selectedCandidates.length} candidate(s) selected
                     </span>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50">
+                      <Button size="sm" variant="outline" className="border-border hover:bg-accent">
                         Export Selected
                       </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
+                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist
                       </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 disabled:opacity-50" onClick={handleBulkDelete}>
+                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-50" onClick={handleBulkDelete}>
                         Delete Selected
                       </Button>
                     </div>
@@ -645,15 +645,15 @@ export default function CandidatesPage() {
           </Card>
 
           {/* Candidates Table */}
-          <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg" data-tutorial="candidates-table">
+          <Card className="glass-card border-border/50" data-tutorial="candidates-table">
             <CardHeader className="pb-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <CardTitle className="text-lg font-semibold">
                     Candidates ({totalCandidates})
                   </CardTitle>
-                  <CardDescription className="text-gray-600 dark:text-gray-400">
-                    {searchInput 
+                  <CardDescription>
+                    {searchInput
                       ? `Filtered results showing ${totalCandidates} candidates`
                       : `Showing ${totalCandidates} candidates with ${itemsPerPage} per page`
                     }
@@ -684,7 +684,7 @@ export default function CandidatesPage() {
                     return (
                       <Card
                         key={candidate._id}
-                        className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg"
+                        className="glass-card border-border/50"
                         onClick={() => router.push(`/candidates/${candidate._id}`)}
                       >
                         <CardContent className="p-4">
@@ -695,7 +695,7 @@ export default function CandidatesPage() {
                               aria-label={`Select ${candidate.firstName} ${candidate.lastName}`}
                               onClick={(e) => e.stopPropagation()}
                             />
-                            <Avatar className="h-12 w-12 ring-2 ring-gray-200 dark:ring-gray-700">
+                            <Avatar className="h-12 w-12 ring-2 ring-border">
                               <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                                 {candidate.firstName?.charAt(0) || ""}
                                 {candidate.lastName?.charAt(0) || ""}
@@ -703,7 +703,7 @@ export default function CandidatesPage() {
                             </Avatar>
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
-                                <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">{candidate.firstName} {candidate.lastName}</h3>
+                                <h3 className="font-bold text-lg text-foreground">{candidate.firstName} {candidate.lastName}</h3>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
@@ -718,13 +718,13 @@ export default function CandidatesPage() {
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">{candidate.email}</p>
-                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{candidate.position}</p>
+                              <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                              <p className="text-sm text-foreground/80 mt-1">{candidate.position}</p>
                             </div>
                           </div>
                           <div className="mt-4 space-y-3">
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600 dark:text-gray-400">Date Added</span>
+                              <span className="text-muted-foreground">Date Added</span>
                               <span>{formatDate(candidate.createdAt || new Date().toISOString())}</span>
                             </div>
                           </div>
@@ -736,7 +736,7 @@ export default function CandidatesPage() {
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-gray-200 dark:border-gray-700">
+                    <TableRow className="border-border">
                       <TableHead className="w-12">
                         <Checkbox
                           checked={selectedCandidates.length === candidates.length && candidates.length > 0}
@@ -747,7 +747,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("name")}
                         >
                           Candidate
@@ -756,7 +756,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("position")}
                         >
                           Position
@@ -765,17 +765,16 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("experience")}
                         >
                           Experience
                           {getSortIcon("experience")}
                         </button>
                       </TableHead>
-
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("createdAt")}
                         >
                           Added
@@ -790,7 +789,7 @@ export default function CandidatesPage() {
                       return (
                         <TableRow
                           key={candidate._id}
-                          className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
+                          className="border-border hover:bg-accent/50 transition-colors cursor-pointer"
                           onClick={() => router.push(`/candidates/${candidate._id}`)}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -802,35 +801,35 @@ export default function CandidatesPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center space-x-3">
-                              <Avatar className="h-10 w-10 ring-2 ring-gray-200 dark:ring-gray-700">
+                              <Avatar className="h-10 w-10 ring-2 ring-border">
                                 <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                                   {candidate.firstName?.charAt(0) || ""}
                                   {candidate.lastName?.charAt(0) || ""}
                                 </AvatarFallback>
                               </Avatar>
                               <div>
-                                <div className="font-medium text-gray-900 dark:text-gray-100 candidate-name">
+                                <div className="font-medium candidate-name">
                                   {candidate?.firstName || ''} {candidate?.lastName || ''}
                                 </div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400 candidate-details">{candidate.email}</div>
-                                
+                                <div className="text-sm text-muted-foreground candidate-details">{candidate.email}</div>
+
                                 {/* Status indicators */}
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {/* Shortlist indicators */}
                                   {candidateShortlists[candidate._id] && candidateShortlists[candidate._id].length > 0 && (
                                     <>
                                       {candidateShortlists[candidate._id].slice(0, 2).map((shortlist, index) => (
-                                        <Badge 
+                                        <Badge
                                           key={index}
-                                          variant="secondary" 
+                                          variant="secondary"
                                           className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
                                         >
                                           📋 {shortlist.jobTitle.length > 15 ? shortlist.jobTitle.slice(0, 15) + '...' : shortlist.jobTitle}
                                         </Badge>
                                       ))}
                                       {candidateShortlists[candidate._id].length > 2 && (
-                                        <Badge 
-                                          variant="outline" 
+                                        <Badge
+                                          variant="outline"
                                           className="text-xs px-1.5 py-0.5"
                                         >
                                           +{candidateShortlists[candidate._id].length - 2} more
@@ -838,11 +837,11 @@ export default function CandidatesPage() {
                                       )}
                                     </>
                                   )}
-                                  
+
                                   {/* Check for rejection indicators */}
                                   {candidateShortlists[candidate._id] && candidateShortlists[candidate._id].some(s => s.status === 'rejected') && (
-                                    <Badge 
-                                      variant="destructive" 
+                                    <Badge
+                                      variant="destructive"
                                       className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
                                     >
                                       🚫 Rejected from shortlist
@@ -853,19 +852,19 @@ export default function CandidatesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <div className="text-gray-900 dark:text-gray-100 font-medium">
+                            <div className="font-medium">
                               {candidate.position || "Not specified"}
                             </div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                            <div className="text-sm text-muted-foreground">
                               {candidate.skills
                                 ? candidate.skills.split(',').slice(0, 2).map(skill => skill.trim()).join(', ')
                                 : "No skills listed"}
                             </div>
                           </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400">
+                          <TableCell className="text-muted-foreground">
                             {candidate.experience || "Not specified"}
                           </TableCell>
-                          <TableCell className="text-gray-600 dark:text-gray-400">
+                          <TableCell className="text-muted-foreground">
                             {formatDate(candidate.createdAt || new Date().toISOString())}
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -874,37 +873,37 @@ export default function CandidatesPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  className="hover:bg-accent"
                                   data-tutorial="candidate-actions"
                                 >
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                <DropdownMenuLabel className="text-gray-900 dark:text-gray-100">Actions</DropdownMenuLabel>
-                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
+                              <DropdownMenuContent align="end" className="bg-popover border-border">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-border" />
                                 <DropdownMenuItem
                                   onClick={() => router.push(`/candidates/${candidate._id}`)}
-                                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer"
+                                  className="cursor-pointer"
                                 >
                                   View Profile
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => router.push(`/candidates/${candidate._id}/edit`)}
-                                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer"
+                                  className="cursor-pointer"
                                 >
                                   Edit Candidate
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={(e) => handleOpenAddToShortlist(candidate, e)}
-                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer"
+                                  className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 cursor-pointer"
                                 >
                                   Add to Shortlist
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
+                                <DropdownMenuSeparator className="bg-border" />
                                 <DropdownMenuItem
                                   onClick={(e) => handleDeleteCandidate(candidate._id, e)}
-                                  className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer"
+                                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
                                 >
                                   Delete
                                 </DropdownMenuItem>
@@ -920,7 +919,7 @@ export default function CandidatesPage() {
 
               {/* Pagination */}
               {candidates.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700" data-tutorial="pagination">
+                <div className="mt-6 pt-6 border-t border-border" data-tutorial="pagination">
                   <Pagination
                     currentPage={currentPage}
                     totalPages={totalPages}
@@ -934,20 +933,20 @@ export default function CandidatesPage() {
               {/* Empty State */}
               {candidates.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-                    <Users className="h-8 w-8 text-blue-500 dark:text-blue-400" />
+                  <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
+                    <Users className="h-8 w-8 text-blue-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  <h3 className="text-lg font-semibold mb-2">
                     No candidates found
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-muted-foreground mb-6">
                     {searchTerm
-                      ? "Try adjusting your search criteria to find candidates" 
+                      ? "Try adjusting your search criteria to find candidates"
                       : "Start building your talent pool by adding candidates"
                     }
                   </p>
                   {!searchTerm && (
-                    <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                    <Button asChild>
                       <Link href="/candidates/new">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Your First Candidate
@@ -955,10 +954,10 @@ export default function CandidatesPage() {
                     </Button>
                   )}
                   {searchTerm && (
-                    <Button 
+                    <Button
                       onClick={clearFilters}
                       variant="outline"
-                      className="border-gray-200 dark:border-gray-700"
+                      className="border-border"
                     >
                       <X className="h-4 w-4 mr-2" />
                       Clear Filters
@@ -1005,19 +1004,19 @@ export default function CandidatesPage() {
               {loadingJobs ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="animate-spin h-8 w-8 text-primary" />
-                  <span className="ml-3 text-gray-600">Loading available jobs...</span>
+                  <span className="ml-3 text-muted-foreground">Loading available jobs...</span>
                 </div>
               ) : allJobs.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
                   <p>No active jobs available</p>
                   <p className="text-sm text-gray-400 mt-1">Create a job first to add candidates to shortlist</p>
                 </div>
               ) : (
                 <ScrollArea className="h-96">
                   {(() => {
-                    const filteredJobs = allJobs.filter(job => 
-                      !jobSearchTerm || 
+                    const filteredJobs = allJobs.filter(job =>
+                      !jobSearchTerm ||
                       job.title.toLowerCase().includes(jobSearchTerm.toLowerCase()) ||
                       (job.department && (typeof job.department === 'string' ? job.department : (job.department as any)?.name || '').toLowerCase().includes(jobSearchTerm.toLowerCase())) ||
                       job.location.toLowerCase().includes(jobSearchTerm.toLowerCase())
@@ -1026,7 +1025,7 @@ export default function CandidatesPage() {
                     if (filteredJobs.length === 0 && jobSearchTerm) {
                       return (
                         <div className="text-center py-8 text-gray-500">
-                          <Search className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                          <Search className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
                           <p>No jobs match your search</p>
                           <p className="text-sm text-gray-400 mt-1">Try a different search term</p>
                         </div>
@@ -1036,79 +1035,78 @@ export default function CandidatesPage() {
                     return (
                       <div className="space-y-3">
                         {filteredJobs.map((job) => (
-                    <div
-                      key={job._id}
-                      className={`border rounded-lg p-4 transition-all duration-200 ${
-                        addingToShortlist 
-                          ? 'cursor-not-allowed opacity-50' 
-                          : 'hover:shadow-md hover:border-blue-300 cursor-pointer'
-                      }`}
-                      onClick={() => !addingToShortlist && handleAddToJobShortlist(job._id, job.title)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">{job.title}</h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">{(typeof job.department === 'object' && job.department !== null ? (job.department as any)?.name || '' : job.department) || 'N/A'} • {job.location}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <Badge variant="outline" className="text-xs">
-                              {job.type}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {job.level}
-                            </Badge>
-                            {job.priority === 'high' || job.priority === 'urgent' ? (
-                              <Badge variant="destructive" className="text-xs">
-                                {job.priority}
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="text-right text-sm text-gray-500 flex flex-col items-end gap-1">
-                          <p>{job.openings} opening{job.openings !== 1 ? 's' : ''}</p>
-                          {job.applicantCount !== undefined && (
-                            <p>{job.applicantCount} applicant{job.applicantCount !== 1 ? 's' : ''}</p>
-                          )}
-                          {addingToShortlist ? (
-                            <div className="flex items-center gap-2 text-blue-600">
-                              <Loader2 className="animate-spin h-3 w-3" />
-                              <span className="text-xs">Adding...</span>
+                          <div
+                            key={job._id}
+                            className={`border rounded-lg p-4 transition-all duration-200 ${addingToShortlist
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'hover:shadow-md hover:border-blue-300 cursor-pointer'
+                              }`}
+                            onClick={() => !addingToShortlist && handleAddToJobShortlist(job._id, job.title)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-foreground">{job.title}</h4>
+                                <p className="text-sm text-gray-600 dark:text-muted-foreground/50">{(typeof job.department === 'object' && job.department !== null ? (job.department as any)?.name || '' : job.department) || 'N/A'} • {job.location}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {job.type}
+                                  </Badge>
+                                  <Badge variant="outline" className="text-xs">
+                                    {job.level}
+                                  </Badge>
+                                  {job.priority === 'high' || job.priority === 'urgent' ? (
+                                    <Badge variant="destructive" className="text-xs">
+                                      {job.priority}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="text-right text-sm text-gray-500 flex flex-col items-end gap-1">
+                                <p>{job.openings} opening{job.openings !== 1 ? 's' : ''}</p>
+                                {job.applicantCount !== undefined && (
+                                  <p>{job.applicantCount} applicant{job.applicantCount !== 1 ? 's' : ''}</p>
+                                )}
+                                {addingToShortlist ? (
+                                  <div className="flex items-center gap-2 text-blue-600">
+                                    <Loader2 className="animate-spin h-3 w-3" />
+                                    <span className="text-xs">Adding...</span>
+                                  </div>
+                                ) : (
+                                  <Badge variant="secondary" className="text-xs hover:bg-blue-100 hover:text-blue-700 transition-colors">
+                                    Click to add
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs hover:bg-blue-100 hover:text-blue-700 transition-colors">
-                              Click to add
-                            </Badge>
-                          )}
-                        </div>
+                          </div>
+                        ))}
                       </div>
-                      </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </ScrollArea>
-            )}
-          </div>
+                    );
+                  })()}
+                </ScrollArea>
+              )}
+            </div>
 
-          <div className="flex items-center justify-between pt-4 border-t">
-            <p className="text-sm text-gray-500">
-              Click on a job to add the candidate to its shortlist
-            </p>
-            <Button 
-              variant="outline" 
-              onClick={handleCloseModal}
-              disabled={addingToShortlist}
-            >
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
+            <div className="flex items-center justify-between pt-4 border-t">
+              <p className="text-sm text-gray-500">
+                Click on a job to add the candidate to its shortlist
+              </p>
+              <Button
+                variant="outline"
+                onClick={handleCloseModal}
+                disabled={addingToShortlist}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
   return (
-    <TourProvider 
+    <TourProvider
       steps={steps}
       scrollSmooth
       showBadge={false}
@@ -1119,7 +1117,7 @@ export default function CandidatesPage() {
         Navigation: () => null,
         Close: () => null,
       } as any}
-      styles={{ 
+      styles={{
         popover: (base) => ({ ...base, zIndex: 2147483000, pointerEvents: 'auto', maxWidth: 420 }),
         maskWrapper: (base) => ({ ...base, zIndex: 2147482000 }),
         maskArea: (base) => ({ ...base, pointerEvents: 'none' }),

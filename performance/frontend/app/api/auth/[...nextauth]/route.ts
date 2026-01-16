@@ -30,8 +30,8 @@ export const authOptions: NextAuthOptions = {
             authorization: { params: { scope: "openid profile email teams organizations" } },
             idToken: true,
             checks: ["pkce", "state"],
-            clientId: process.env.OIDC_CLIENT_ID!,
-            clientSecret: process.env.OIDC_CLIENT_SECRET!,
+            clientId: process.env.OIDC_CLIENT_ID || "performance-management",
+            clientSecret: process.env.OIDC_CLIENT_SECRET || "default-secret-for-build",
             issuer: process.env.OIDC_ISSUER,
             // Use userinfo endpoint to get full profile
             userinfo: {

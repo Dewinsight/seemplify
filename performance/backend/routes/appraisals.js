@@ -11,6 +11,9 @@ const OKR = require('../models/OKR');
 const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
+const notificationService = require('../services/notificationService');
+const { findManagerForEmployee } = require('../services/idpService');
+const User = require('../models/User');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -169,10 +172,59 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireHRAdmin, async (req, 
         }
 
         // Create new appraisal
-        // If manager info is missing, use the HR Admin launching the cycle as temporary manager
-        const managerUserId = emp.managerId || req.session?.user?.id;
-        const managerName = emp.managerName || req.session?.user?.name || 'HR Admin';
-        const managerEmail = emp.managerEmail || req.session?.user?.email;
+        // If manager info is missing, try to auto-derive from:
+        // 1. Employee's own team data (their line_manager)
+        // 2. HR Admin's view of the org structure
+        // 3. Fallback to HR Admin as temporary manager
+        let managerUserId = emp.managerId;
+        let managerName = emp.managerName;
+        let managerEmail = emp.managerEmail;
+
+        if (!managerUserId) {
+          // First, try to find manager from the employee's own user record
+          const employeeUser = await User.findOne({
+            $or: [{ _id: emp.userId }, { email: emp.email }]
+          });
+
+          if (employeeUser?.idpTeams?.length > 0) {
+            // Find the team where this employee has a manager assigned
+            const teamWithManager = employeeUser.idpTeams.find(t => t.managerId);
+            if (teamWithManager) {
+              managerUserId = teamWithManager.managerId;
+              managerName = teamWithManager.managerName;
+              managerEmail = teamWithManager.managerEmail;
+              console.log(`Found manager from employee's team data: ${managerName} for ${emp.name}`);
+            }
+          }
+
+          // If still no manager, try from HR Admin's team view
+          if (!managerUserId) {
+            const teams = req.session?.user?.idpTeams || req.session?.user?.teams || [];
+            const matchedManager = findManagerForEmployee(emp.userId, teams);
+
+            if (matchedManager) {
+              managerUserId = matchedManager.userId;
+              managerName = matchedManager.name;
+              console.log(`Auto-assigned manager from IdP: ${managerName} for ${emp.name}`);
+            }
+          }
+
+          // Try to find manager email if we have userId but no email
+          if (managerUserId && !managerEmail) {
+            const managerUser = await User.findOne({
+              $or: [{ _id: managerUserId }, { 'userinfo.sub': managerUserId }]
+            });
+            if (managerUser) managerEmail = managerUser.email;
+          }
+        }
+
+        // Fallback to HR Admin if still missing
+        if (!managerUserId) {
+          managerUserId = req.session?.user?.id;
+          managerName = req.session?.user?.name || 'HR Admin';
+          managerEmail = req.session?.user?.email;
+          console.log(`Using HR Admin as fallback manager for ${emp.name}`);
+        }
 
         if (!managerUserId || !managerEmail) {
           errors.push({ userId: emp.userId, error: 'Manager information missing and no fallback available' });
@@ -194,7 +246,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireHRAdmin, async (req, 
             name: managerName,
             email: managerEmail
           },
-          status: 'self_assessment_pending',
+          status: 'goal_setting',
           deadlines: {
             selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
             managerReviewDue: cycle.phases?.managerReview?.endDate
@@ -221,8 +273,8 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireHRAdmin, async (req, 
     if (createdAppraisals.length > 0) {
       console.log('Updating cycle status to active:', cycle._id);
       cycle.status = 'active';
-      cycle.currentPhase = 'selfAssessment';
-      cycle.phases.selfAssessment.isActive = true;
+      cycle.currentPhase = 'goalSetting';
+      cycle.phases.goalSetting.isActive = true;
       cycle.markModified('phases'); // Ensure nested changes are detected
       await cycle.save();
       console.log('Cycle updated successfully');
@@ -275,6 +327,12 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
 
     for (const emp of employees) {
       try {
+        // Enforce direct report access
+        const directReports = req.directReports || [];
+        if (!directReports.includes(emp.userId)) {
+          throw new Error('Access denied: User is not your direct report');
+        }
+
         const existing = await Appraisal.findOne({
           cycleId: cycle._id,
           'employee.userId': emp.userId
@@ -300,7 +358,7 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
             name: managerName,
             email: managerEmail
           },
-          status: 'self_assessment_pending',
+          status: cycle.currentPhase === 'goalSetting' ? 'goal_setting' : 'self_assessment_pending',
           deadlines: {
             selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
             managerReviewDue: cycle.phases?.managerReview?.endDate
@@ -482,6 +540,108 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get appraisal error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch appraisal' });
+  }
+});
+
+// =============================================
+// GOAL SETTING
+// =============================================
+
+router.post('/:appraisalId/submit-goals', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    // Verify employee
+    // Handle ID mismatch if needed
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    if (appraisal.employee.userId !== userId && appraisal.employee.email !== userEmail) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // appraisal.status = 'self_assessment_pending';
+    // CHANGE: Move to goal_approval_pending instead of self_assessment_pending
+    appraisal.status = 'goal_approval_pending';
+
+    appraisal.addAuditLog('goals_submitted', req.session.user, {});
+    await appraisal.save();
+
+    // Notify Manager
+    try {
+      if (appraisal.manager && appraisal.manager.email) {
+        await notificationService.notifyGoalsSubmitted(appraisal.manager, appraisal.employee);
+      }
+    } catch (notifyErr) { console.error('Notification error:', notifyErr); }
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    console.error('Submit goals error:', error);
+    res.status(500).json({ success: false, error: 'Failed to submit goals' });
+  }
+});
+
+// Approve goals (Manager)
+router.post('/:appraisalId/approve-goals', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    // Check permission
+    const userId = req.session?.user?.id;
+    if (appraisal.manager.userId !== userId && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    appraisal.status = 'self_assessment_pending';
+    appraisal.addAuditLog('goals_approved', req.session.user, {});
+    await appraisal.save();
+
+    // Notify Employee
+    try {
+      await notificationService.notifyGoalsApproved(appraisal.employee, appraisal.manager);
+    } catch (e) { console.error(e); }
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to approve goals' });
+  }
+});
+
+// Reject goals (Manager)
+router.post('/:appraisalId/reject-goals', requireAuth, requireManager, async (req, res) => {
+  try {
+    const { comments } = req.body;
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    if (appraisal.manager.userId !== req.session.user.id && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    appraisal.status = 'goal_setting'; // Revert to goal setting
+    // Add rejection comment to audit or discussion notes?
+    // Usually we add to audit log or a specific rejectionReason field.
+    // For simplicity, add to audit log and send email.
+
+    appraisal.addAuditLog('goals_rejected', req.session.user, { comments });
+
+    // Optionally store rejection comment in a temp field if UI needs to show it.
+    // We can use `goalRejectionReason` field if we add it to schema, or just rely on email/audit.
+    // I'll add it to `notes` in `discussion` temporarily or just trust email.
+    // Better: Add to `feedbacks` via feedback service? No.
+    // Let's just rely on Email + Audit Log for now. The status reversion is key.
+
+    await appraisal.save();
+
+    // Notify Employee
+    try {
+      await notificationService.notifyGoalsRejected(appraisal.employee, appraisal.manager, comments);
+    } catch (e) { console.error(e); }
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to reject goals' });
   }
 });
 
@@ -861,6 +1021,46 @@ router.get('/:appraisalId/documents/:documentId', requireAuth, async (req, res) 
   } catch (error) {
     console.error('Get document error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch document' });
+  }
+});
+
+// =============================================
+// DISCUSSION
+// =============================================
+
+// Update discussion notes
+router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    // Check permission
+    const userId = req.session?.user?.id;
+    // Allow HR Admin or Assigned Manager
+    const isAssignedManager = appraisal.manager.userId === userId;
+    const isHR = ['hr_admin', 'super_admin'].includes(req.userRole);
+
+    if (!isAssignedManager && !isHR) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // Update fields
+    if (req.body.notes) appraisal.discussion.notes = { ...appraisal.discussion.notes, ...req.body.notes };
+    if (req.body.scheduledDate) appraisal.discussion.scheduledDate = req.body.scheduledDate;
+    if (req.body.completedDate) appraisal.discussion.completedDate = req.body.completedDate;
+    if (req.body.location) appraisal.discussion.location = req.body.location;
+    if (req.body.meetingLink) appraisal.discussion.meetingLink = req.body.meetingLink;
+
+    if (req.body.markCompleted) {
+      appraisal.status = 'discussion_completed';
+      appraisal.discussion.completedDate = new Date();
+    }
+
+    await appraisal.save();
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    console.error('Update discussion error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update discussion' });
   }
 });
 

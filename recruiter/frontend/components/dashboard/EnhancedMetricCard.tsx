@@ -4,9 +4,9 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { ProgressiveCard } from '@/components/ui/progressive-disclosure';
-import { 
-  LineChart, 
-  Line, 
+import {
+  LineChart,
+  Line,
   ResponsiveContainer,
   Tooltip
 } from 'recharts';
@@ -31,20 +31,24 @@ interface EnhancedMetricCardProps {
 
 const variantStyles = {
   default: {
-    icon: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-    border: 'hover:border-gray-300 dark:hover:border-gray-600',
+    icon: 'bg-secondary text-secondary-foreground',
+    border: 'hover:border-border',
+    card: 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-300 dark:bg-none dark:glass-card dark:border-white/5',
   },
   primary: {
-    icon: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
-    border: 'hover:border-indigo-300 dark:hover:border-indigo-600',
+    icon: 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',
+    border: 'hover:border-blue-300 dark:hover:border-blue-500/50',
+    card: 'bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 dark:bg-none dark:bg-blue-500/5 dark:border-blue-500/20',
   },
   success: {
-    icon: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',
-    border: 'hover:border-teal-300 dark:hover:border-teal-600',
+    icon: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
+    border: 'hover:border-emerald-500/50',
+    card: 'bg-card border-border dark:bg-emerald-500/5 dark:border-emerald-500/20',
   },
   warning: {
-    icon: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
-    border: 'hover:border-amber-300 dark:hover:border-amber-600',
+    icon: 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400',
+    border: 'hover:border-amber-500/50',
+    card: 'bg-card border-border dark:bg-amber-500/5 dark:border-amber-500/20',
   },
 };
 
@@ -74,9 +78,9 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
     <div className="h-16 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData.slice(-7)} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-          <Line 
-            type="monotone" 
-            dataKey="value" 
+          <Line
+            type="monotone"
+            dataKey="value"
             stroke="currentColor"
             strokeWidth={2}
             dot={false}
@@ -107,9 +111,11 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
     return (
       <motion.div
         className={cn(
-          'relative rounded-xl border bg-card p-6 transition-all cursor-pointer',
-          'hover:shadow-lg',
-          styles.border
+          'relative rounded-xl border p-6 transition-all cursor-pointer',
+          'shadow-sm hover:shadow-md dark:shadow-none',
+          'hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-black/20',
+          styles.border,
+          styles.card
         )}
         whileHover={{ y: -2 }}
         onHoverStart={() => setIsHovered(true)}
@@ -118,7 +124,7 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
       >
         <div className="flex items-start justify-between">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-muted-foreground">{title}</p>
             <p className="text-3xl font-bold tracking-tight">{displayValue}</p>
             {showTrends && trend && (
               <div className="flex items-center gap-1 text-sm">
@@ -175,7 +181,8 @@ export const EnhancedMetricCard = React.memo(function EnhancedMetricCard({
       }
       detail={<div>Full details would go here</div>}
       onDetailClick={handleClick}
-      className={styles.border}
+      className={cn(styles.border, styles.card)}
+      iconClassName={styles.icon}
     />
   );
 });

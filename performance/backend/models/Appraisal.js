@@ -55,6 +55,7 @@ const appraisalSchema = new mongoose.Schema({
     enum: [
       'not_started',
       'goal_setting',
+      'goal_approval_pending',  // Manager needs to approve goals
       'self_assessment_pending',
       'self_assessment_in_progress',
       'self_assessment_submitted',

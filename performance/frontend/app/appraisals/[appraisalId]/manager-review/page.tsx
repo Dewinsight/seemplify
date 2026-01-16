@@ -14,7 +14,7 @@ import {
 import {
   Save, Send, ArrowBack, ArrowForward, Psychology, Lightbulb, Star,
   ExpandMore, CheckCircle, Warning, AutoAwesome, Compare, Person,
-  TrendingUp, TrendingDown, Balance, EmojiObjects, Flag, Visibility
+  TrendingUp, TrendingDown, Balance, EmojiObjects, Flag, Visibility, Comment
 } from '@mui/icons-material';
 
 interface ManagerReviewData {
@@ -89,6 +89,8 @@ export default function ManagerReviewPage() {
     overallManagerRating: 3
   });
 
+  const [feedbackList, setFeedbackList] = useState<any[]>([]);
+
   // Initialize form data from appraisal
   useEffect(() => {
     if (appraisal) {
@@ -137,7 +139,26 @@ export default function ManagerReviewPage() {
       });
     }
   }, [appraisal]);
+  useEffect(() => {
+    if (appraisal) {
+      fetchFeedback();
+    }
+  }, [appraisal]);
 
+  const fetchFeedback = async () => {
+    try {
+      const res = await api.get('/feedback/direct-reports');
+      // Filter for this employee
+      // The API returns object keyed by user ID
+      const employeeId = appraisal.employee.userId;
+      const userFeedbackData = res.data?.data?.[employeeId];
+      if (userFeedbackData) {
+        setFeedbackList(userFeedbackData.feedback || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch feedback context', e);
+    }
+  };
   const handleSave = async (showNotification = true) => {
     setSaving(true);
     try {
@@ -425,6 +446,30 @@ export default function ManagerReviewPage() {
               </Box>
             </Box>
           ))}
+        </AccordionDetails>
+      </Accordion>
+
+      {/* Feedback History */}
+      <Accordion>
+        <AccordionSummary expandIcon={<ExpandMore />}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Comment color="action" />
+            <Typography fontWeight={600}>Performance Feedback ({feedbackList.length})</Typography>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          {feedbackList.length > 0 ? (
+            feedbackList.map((f: any) => (
+              <Box key={f._id} sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Chip label={f.type} size="small" color={f.type === 'Positive' ? 'success' : 'default'} />
+                  <Typography variant="caption" color="text.secondary">{new Date(f.date).toLocaleDateString()}</Typography>
+                </Box>
+                <Typography variant="body2" sx={{ mb: 1 }}>"{f.message}"</Typography>
+                <Typography variant="caption" color="text.secondary">- From {f.sender}</Typography>
+              </Box>
+            ))
+          ) : <Typography variant="body2" color="text.secondary">No feedback records found for this period.</Typography>}
         </AccordionDetails>
       </Accordion>
 

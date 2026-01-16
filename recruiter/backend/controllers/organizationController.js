@@ -176,14 +176,14 @@ exports.getUserOrganizations = async (req, res) => {
     try {
       // Get user to access IdP token
       const user = await User.findById(userId).select('+idpAccessToken +idpTokenExpiry +idpRefreshToken');
-      
+
       if (!user) {
         return res.status(404).json({ msg: 'User not found' });
       }
 
       if (!user.idpAccessToken) {
         console.error('❌ No IdP access token for user:', user.email);
-        return res.status(401).json({ 
+        return res.status(401).json({
           msg: 'Not authenticated with Identity Provider. Please log in again.',
           code: 'idp_token_missing'
         });
@@ -204,7 +204,7 @@ exports.getUserOrganizations = async (req, res) => {
       });
 
       const organizations = [];
-      
+
       for (const idpOrg of idpOrganizations) {
         // Find local SmartHR org (for plan data)
         let localOrg = localOrgs.find(lo => lo.idpOrganizationId === idpOrg.id);
@@ -246,12 +246,14 @@ exports.getUserOrganizations = async (req, res) => {
         });
       }
 
-      // Check if user needs organization setup
+      // Check if user needs organization setup - redirect to IdP
       if (organizations.length === 0) {
-        return res.status(400).json({ 
-          msg: 'Organization required',
+        const idpUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+        return res.status(400).json({
+          msg: 'Organization required. Please create or join an organization in the Identity Provider.',
           requiresOrganizationSetup: true,
-          organizations: []
+          organizations: [],
+          redirectUrl: `${idpUrl}/organizations`
         });
       }
 
@@ -260,7 +262,7 @@ exports.getUserOrganizations = async (req, res) => {
 
     } catch (idpError) {
       console.error('❌ Failed to fetch organizations from IdP:', idpError.message);
-      
+
       // NO FALLBACK - If IdP fails, return error
       return res.status(503).json({
         msg: 'Identity Provider unavailable. Please try again later.',
@@ -271,7 +273,7 @@ exports.getUserOrganizations = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error in getUserOrganizations:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       msg: 'Server error',
       error: error.message
     });
@@ -282,7 +284,7 @@ exports.getUserOrganizations = async (req, res) => {
 exports.getOrganizationLimits = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
@@ -335,7 +337,7 @@ exports.switchOrganization = async (req, res) => {
     // CRITICAL: Verify membership via IdP, not local database
     try {
       console.log('🌐 Fetching organizations from IdP to verify membership...');
-      
+
       // Get all user's organizations from IdP
       const idpOrganizations = await idpService.executeWithTokenRefresh(userId, async (client) => {
         const response = await client.get('/api/organizations');
@@ -354,7 +356,7 @@ exports.switchOrganization = async (req, res) => {
       // Check if organization is not linked to IdP
       if (!localOrg.idpOrganizationId) {
         console.log('⚠️ Organization not linked to IdP:', localOrg.name);
-        return res.status(400).json({ 
+        return res.status(400).json({
           msg: 'Organization not linked to Identity Provider',
           code: 'idp_not_linked'
         });
@@ -368,7 +370,7 @@ exports.switchOrganization = async (req, res) => {
       }
 
       console.log('✅ User is member of organization in IdP, switching...');
-      
+
       // Update user's current organization
       user.currentOrganization = organizationId;
       await user.save();
@@ -404,7 +406,7 @@ exports.inviteUser = async (req, res) => {
 
     // Get organization first to check for IdP link
     const organization = await Organization.findById(organizationId);
-    
+
     // If organization is linked to IdP, redirect to IdP for member management
     if (organization && organization.idpOrganizationId) {
       return res.status(410).json({
@@ -422,10 +424,10 @@ exports.inviteUser = async (req, res) => {
     }
     const activeMembers = organization.members.filter(m => m.status === 'active').length;
     const memberLimit = organization.subscription?.memberLimit || 5;
-    
+
     // Check if organization has reached member limit
     if (memberLimit !== 'unlimited' && activeMembers >= memberLimit) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: `Member limit reached. Your plan allows ${memberLimit} members and you currently have ${activeMembers} active members.`,
         limit: memberLimit,
         current: activeMembers
@@ -435,7 +437,7 @@ exports.inviteUser = async (req, res) => {
     // Check if user with this email is already a member
     const targetUser = await User.findOne({ email });
     if (targetUser) {
-      const existingMember = organization.members.find(m => 
+      const existingMember = organization.members.find(m =>
         m.user && m.user.toString() === targetUser._id.toString()
       );
 
@@ -478,11 +480,11 @@ exports.inviteUser = async (req, res) => {
     // Check email service configuration before sending
     const emailConfig = emailService.checkConfiguration();
     console.log('📧 Email configuration check:', emailConfig);
-    
+
     // Send invitation email with proper error handling
     let emailSent = false;
     let emailError = null;
-    
+
     if (!emailConfig.isConfigured) {
       emailError = 'Email service is not configured - BREVO_API_KEY missing';
       console.error('❌ Cannot send email - service not configured');
@@ -531,10 +533,10 @@ exports.inviteUser = async (req, res) => {
     }
 
     // Return appropriate success message with detailed information
-    const message = emailSent 
+    const message = emailSent
       ? 'Invite sent successfully - email notification has been sent'
       : `Invite created successfully - however, the email notification could not be sent. ${emailError ? `Error: ${emailError}` : ''} Please contact the user directly.`;
-    
+
     res.json({
       msg: message,
       emailSent: emailSent,
@@ -574,14 +576,14 @@ exports.acceptInvite = async (req, res) => {
     const organization = await Organization.findById(invite.organization._id);
     const activeMembers = organization.members.filter(m => m.status === 'active').length;
     const memberLimit = organization.subscription?.memberLimit || 5;
-    
+
     // Check if organization has reached member limit (in case limit changed after invite was sent)
     if (memberLimit !== 'unlimited' && activeMembers >= memberLimit) {
       // Mark invite as expired since org is at capacity
       invite.status = 'expired';
       await invite.save();
-      
-      return res.status(400).json({ 
+
+      return res.status(400).json({
         msg: `Cannot accept invite. The organization has reached its member limit of ${memberLimit} members.`,
         limit: memberLimit,
         current: activeMembers
@@ -594,14 +596,14 @@ exports.acceptInvite = async (req, res) => {
 
     // Update user's organization membership
     user.addOrganizationMembership(invite.organization._id, invite.role);
-    
+
     // Set as current organization if user has no current organization
     // or if this is their first organization
     if (!user.currentOrganization || user.organizationMemberships.filter(m => m.isActive).length <= 1) {
       console.log(`🏢 Setting ${invite.organization.name} as current organization for user ${user.email}`);
       user.currentOrganization = invite.organization._id;
     }
-    
+
     await user.save();
 
     // Mark invite as accepted
@@ -616,7 +618,7 @@ exports.acceptInvite = async (req, res) => {
       isNowCurrentOrg: user.currentOrganization?.toString() === invite.organization._id.toString()
     });
 
-    res.json({ 
+    res.json({
       msg: 'Invite accepted successfully',
       organization: invite.organization
     });
@@ -648,7 +650,7 @@ exports.getOrganization = async (req, res) => {
     // Organizations MUST be linked to IdP
     if (!localOrg.idpOrganizationId) {
       console.error('⚠️ Organization not linked to IdP:', localOrg.name);
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: 'Organization not linked to Identity Provider. Please contact your administrator.',
         code: 'idp_not_linked'
       });
@@ -690,7 +692,7 @@ exports.getOrganization = async (req, res) => {
 
     } catch (idpError) {
       console.error('❌ Failed to fetch organization from IdP:', idpError.message);
-      
+
       // NO FALLBACK - If IdP fails, return error
       return res.status(503).json({
         msg: 'Identity Provider unavailable. Please try again later.',
@@ -710,14 +712,14 @@ exports.updateOrganization = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     const user = await User.findById(userId);
     if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
     const { name, description, industry, size, website, settings } = req.body;
-    
+
     const organization = await Organization.findByIdAndUpdate(
       organizationId,
       {
@@ -747,7 +749,7 @@ exports.deleteOrganization = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     const organization = await Organization.findById(organizationId);
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
@@ -759,13 +761,13 @@ exports.deleteOrganization = async (req, res) => {
     }
 
     // TODO: Handle data migration/cleanup for jobs, candidates, etc.
-    
+
     await Organization.findByIdAndDelete(organizationId);
-    
+
     // Remove organization from all users
     await User.updateMany(
       { 'organizationMemberships.organization': organizationId },
-      { 
+      {
         $pull: { organizationMemberships: { organization: organizationId } },
         $unset: { currentOrganization: 1 }
       }
@@ -783,9 +785,9 @@ exports.deleteOrganizationById = async (req, res) => {
   try {
     const { organizationId } = req.params;
     const userId = req.user.id;
-    
+
     console.log('🗑️ Deleting organization by ID:', organizationId, 'for user:', userId);
-    
+
     const organization = await Organization.findById(organizationId);
     if (!organization) {
       console.log('❌ Organization not found:', organizationId);
@@ -806,21 +808,21 @@ exports.deleteOrganizationById = async (req, res) => {
 
     // Clean up all related data
     console.log('🧹 Starting cleanup of related data...');
-    
+
     // Get all models that reference the organization
     const Job = require('../models/Job');
     const Candidate = require('../models/Candidate');
     const Interview = require('../models/Interview');
     const ChatSession = require('../models/ChatSession');
     const Session = require('../models/Session');
-    
+
     // Count related data for logging
     const jobCount = await Job.countDocuments({ organization: organizationId });
     const candidateCount = await Candidate.countDocuments({ organization: organizationId });
     const interviewCount = await Interview.countDocuments({ organization: organizationId });
     const chatSessionCount = await ChatSession.countDocuments({ organization: organizationId });
     const sessionCount = await Session.countDocuments({ organization: organizationId });
-    
+
     console.log('📊 Related data to delete:', {
       jobs: jobCount,
       candidates: candidateCount,
@@ -828,7 +830,7 @@ exports.deleteOrganizationById = async (req, res) => {
       chatSessions: chatSessionCount,
       sessions: sessionCount
     });
-    
+
     // Delete all related data
     await Promise.all([
       Job.deleteMany({ organization: organizationId }),
@@ -838,22 +840,22 @@ exports.deleteOrganizationById = async (req, res) => {
       Session.deleteMany({ organization: organizationId }),
       OrganizationInvite.deleteMany({ organization: organizationId })
     ]);
-    
+
     console.log('✅ All related data cleaned up');
-    
+
     // Finally delete the organization
     await Organization.findByIdAndDelete(organizationId);
     console.log('🗑️ Organization deleted from database');
-    
+
     // Remove organization from all users
     const updateResult = await User.updateMany(
       { 'organizationMemberships.organization': organizationId },
-      { 
+      {
         $pull: { organizationMemberships: { organization: organizationId } },
         $unset: { currentOrganization: 1 }
       }
     );
-    
+
     console.log('👥 Updated users:', updateResult.modifiedCount);
 
     res.json({ msg: 'Organization deleted successfully' });
@@ -899,7 +901,7 @@ exports.getOrganizationMembers = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     if (!organizationId) {
       return res.status(400).json({ msg: 'No current organization set' });
     }
@@ -918,9 +920,9 @@ exports.getOrganizationMembers = async (req, res) => {
           organization.idpOrganizationId,
           userId
         );
-        
+
         console.log('✅ IdP returned', idpData.memberCount, 'members');
-        
+
         // Transform IdP response to match expected frontend format
         const members = idpData.members.map(m => ({
           user: {
@@ -995,7 +997,7 @@ exports.removeMember = async (req, res) => {
         idpOrganizationId: organization.idpOrganizationId
       });
     }
-    
+
     const user = await User.findById(userId);
     if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
@@ -1029,7 +1031,7 @@ exports.leaveOrganization = async (req, res) => {
   try {
     const userId = req.user.id;
     const organizationId = req.user.currentOrganization;
-    
+
     if (!organizationId) {
       return res.status(400).json({ msg: 'No current organization set' });
     }
@@ -1041,7 +1043,7 @@ exports.leaveOrganization = async (req, res) => {
 
     // Check if user is the owner
     if (organization.owner.toString() === userId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: 'Organization owners cannot leave. Please transfer ownership or delete the organization first.',
         code: 'OWNER_CANNOT_LEAVE'
       });
@@ -1073,7 +1075,7 @@ exports.leaveOrganization = async (req, res) => {
 
     console.log(`👋 User ${user.email} left organization ${organization.name}`);
 
-    res.json({ 
+    res.json({
       msg: 'Successfully left organization',
       organizationName: organization.name
     });
@@ -1105,7 +1107,7 @@ exports.updateMemberRole = async (req, res) => {
         idpOrganizationId: organization.idpOrganizationId
       });
     }
-    
+
     const user = await User.findById(userId);
     if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
@@ -1144,7 +1146,7 @@ exports.getPendingInvitations = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     if (!organizationId) {
       return res.status(400).json({ msg: 'No current organization set' });
     }
@@ -1179,13 +1181,13 @@ exports.cancelInvitation = async (req, res) => {
     const { inviteId } = req.params;
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     if (!organizationId) {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
     const organization = await Organization.findById(organizationId);
-    
+
     // If organization is linked to IdP, redirect to IdP for invitation management
     if (organization && organization.idpOrganizationId) {
       return res.status(410).json({
@@ -1228,7 +1230,7 @@ exports.cancelInvitation = async (req, res) => {
 exports.getUserPendingInvitations = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     // Get user's email to find invitations
     const user = await User.findById(userId);
     if (!user) {
@@ -1258,7 +1260,7 @@ exports.cleanupInvitations = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
-    
+
     if (!organizationId) {
       return res.status(400).json({ msg: 'No current organization set' });
     }
@@ -1280,8 +1282,8 @@ exports.cleanupInvitations = async (req, res) => {
     });
 
     console.log(`🧹 Cleaned up ${cleanupResult.deletedCount} old invitations for organization: ${organizationId}`);
-    
-    res.json({ 
+
+    res.json({
       msg: 'Invitations cleaned up successfully',
       deletedCount: cleanupResult.deletedCount
     });
@@ -1312,7 +1314,7 @@ exports.transferOwnership = async (req, res) => {
     // Get organization first to check for IdP link
     const organization = await Organization.findById(organizationId)
       .populate('members.user', 'profile.firstName profile.lastName email');
-    
+
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }

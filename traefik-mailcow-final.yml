@@ -1,0 +1,22 @@
+http:
+  routers:
+    mailcow:
+      rule: "Host(`mail.seemplifyai.com`)"
+      service: mailcow
+      entryPoints:
+        - websecure
+      middlewares:
+        - mailcow-headers
+  services:
+    mailcow:
+      loadBalancer:
+        servers:
+          - url: "http://mailcowdockerized-nginx-mailcow-1:8081"
+  middlewares:
+    mailcow-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+          X-Forwarded-Host: "mail.seemplifyai.com"
+          X-Real-IP: ""  # Will use client IP
+          X-Forwarded-For: ""  # Will append client IP

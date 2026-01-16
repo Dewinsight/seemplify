@@ -157,34 +157,34 @@ export default function LeaveRequestDetailPage() {
         {/* Header */}
         <div className="mb-6 relative">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 p-6 shadow-lg">
-          <Link
-            href="/leave-requests"
-            className="inline-flex items-center text-sm text-slate-600 hover:text-slate-900 mb-4 font-medium"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Requests
-          </Link>
-          <div className="flex justify-between items-start gap-4 flex-wrap">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
-                Leave Request
-              </h1>
-              <p className="text-slate-600 mt-2">
-                Submitted on {formatDate(request.createdAt)}
-              </p>
+          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-sm rounded-2xl border border-border dark:border-slate-200/50 p-6 shadow-lg">
+            <Link
+              href="/leave-requests"
+              className="inline-flex items-center text-sm text-muted-foreground dark:text-slate-400 hover:text-foreground dark:hover:text-slate-200 mb-4 font-medium"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to Requests
+            </Link>
+            <div className="flex justify-between items-start gap-4 flex-wrap">
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground dark:from-slate-100 dark:via-slate-200 dark:to-slate-300 bg-clip-text text-transparent">
+                  Leave Request
+                </h1>
+                <p className="text-muted-foreground dark:text-slate-400 mt-2">
+                  Submitted on {formatDate(request.createdAt)}
+                </p>
+              </div>
+              <span className={cn('inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold', getStatusColor(request.status))}>
+                {getStatusLabel(request.status)}
+              </span>
             </div>
-            <span className={cn('inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold', getStatusColor(request.status))}>
-              {getStatusLabel(request.status)}
-            </span>
-          </div>
           </div>
         </div>
 
         {/* Main content */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 overflow-hidden">
+        <div className="bg-card dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl shadow-lg border border-border dark:border-slate-200/50 overflow-hidden">
           {/* Leave details */}
-          <div className="p-6 border-b border-slate-200/50">
+          <div className="p-6 border-b border-border dark:border-slate-200/50">
             <div className="flex items-center gap-3 mb-4">
               <span
                 className={cn(
@@ -198,21 +198,21 @@ export default function LeaveRequestDetailPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <div className="flex items-center text-slate-600 mb-2">
-                  <Calendar className="h-5 w-5 mr-2 text-slate-500" />
+                <div className="flex items-center text-muted-foreground dark:text-slate-400 mb-2">
+                  <Calendar className="h-5 w-5 mr-2 text-muted-foreground dark:text-slate-500" />
                   <span className="font-medium">Date Range</span>
                 </div>
-                <p className="text-lg font-semibold text-slate-900">
+                <p className="text-lg font-semibold text-foreground dark:text-slate-100">
                   {formatDateRange(request.startDate, request.endDate)}
                 </p>
               </div>
 
               <div>
-                <div className="flex items-center text-slate-600 mb-2">
-                  <Clock className="h-5 w-5 mr-2 text-slate-500" />
+                <div className="flex items-center text-muted-foreground dark:text-slate-400 mb-2">
+                  <Clock className="h-5 w-5 mr-2 text-muted-foreground dark:text-slate-500" />
                   <span className="font-medium">Duration</span>
                 </div>
-                <p className="text-lg font-semibold text-slate-900">
+                <p className="text-lg font-semibold text-foreground dark:text-slate-100">
                   {request.numberOfDays} {pluralize(request.numberOfDays, 'day')}
                 </p>
               </div>
@@ -220,14 +220,14 @@ export default function LeaveRequestDetailPage() {
 
             {request.reason && (
               <div className="mt-6">
-                <p className="font-semibold text-slate-800 mb-2">Reason</p>
-                <p className="text-slate-700">{request.reason}</p>
+                <p className="font-semibold text-foreground/80 dark:text-slate-300 mb-2">Reason</p>
+                <p className="text-foreground dark:text-slate-200">{request.reason}</p>
               </div>
             )}
 
             {request.teamName && (
               <div className="mt-4">
-                <Badge variant="secondary" className="bg-slate-100 border-slate-200 text-slate-700">
+                <Badge variant="secondary" className="bg-muted dark:bg-slate-800 border-border dark:border-slate-700 text-foreground dark:text-slate-300">
                   Team: {request.teamHierarchyPath?.join(' → ') || request.teamName}
                 </Badge>
               </div>
@@ -235,26 +235,26 @@ export default function LeaveRequestDetailPage() {
           </div>
 
           {/* Requester info */}
-          <div className="p-6 border-b border-slate-200/50 bg-slate-50/60">
+          <div className="p-6 border-b border-border dark:border-slate-200/50 bg-muted/30 dark:bg-slate-50/5">
             <div className="flex items-center">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md ring-2 ring-white">
+              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md ring-2 ring-background dark:ring-white/10">
                 <User className="h-5 w-5 text-white" />
               </div>
               <div className="ml-3">
-                <p className="font-semibold text-slate-900">{request.userName}</p>
-                <p className="text-sm text-slate-600">{request.userEmail}</p>
+                <p className="font-semibold text-foreground dark:text-slate-100">{request.userName}</p>
+                <p className="text-sm text-muted-foreground dark:text-slate-400">{request.userEmail}</p>
               </div>
             </div>
           </div>
 
           {/* Approval status */}
           {request.status === 'approved' && request.approvedBy && (
-            <div className="p-6 border-b border-slate-200/50 bg-emerald-500/10">
+            <div className="p-6 border-b border-border dark:border-slate-200/50 bg-emerald-500/10 dark:bg-emerald-500/20">
               <div className="flex items-start">
                 <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3" />
                 <div>
-                  <p className="font-medium text-green-900">Approved</p>
-                  <p className="text-sm text-green-700">
+                  <p className="font-medium text-green-700 dark:text-green-300">Approved</p>
+                  <p className="text-sm text-green-600 dark:text-green-400">
                     by {request.approvedBy.userName} on{' '}
                     {formatDate(request.approvedBy.approvedAt)}
                   </p>
@@ -267,12 +267,12 @@ export default function LeaveRequestDetailPage() {
           )}
 
           {request.status === 'rejected' && request.rejectedBy && (
-            <div className="p-6 border-b border-slate-200/50 bg-red-500/10">
+            <div className="p-6 border-b border-border dark:border-slate-200/50 bg-red-500/10 dark:bg-red-500/20">
               <div className="flex items-start">
                 <XCircle className="h-5 w-5 text-red-600 mt-0.5 mr-3" />
                 <div>
-                  <p className="font-medium text-red-900">Rejected</p>
-                  <p className="text-sm text-red-700">
+                  <p className="font-medium text-red-700 dark:text-red-300">Rejected</p>
+                  <p className="text-sm text-red-600 dark:text-red-400">
                     by {request.rejectedBy.userName} on{' '}
                     {formatDate(request.rejectedBy.rejectedAt)}
                   </p>
@@ -283,12 +283,12 @@ export default function LeaveRequestDetailPage() {
           )}
 
           {request.status === 'pending' && request.assignedApprover && (
-            <div className="p-6 border-b border-slate-200/50 bg-amber-500/10">
+            <div className="p-6 border-b border-border dark:border-slate-200/50 bg-amber-500/10 dark:bg-amber-500/20">
               <div className="flex items-start">
                 <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 mr-3" />
                 <div>
-                  <p className="font-medium text-yellow-900">Awaiting Approval</p>
-                  <p className="text-sm text-yellow-700">
+                  <p className="font-medium text-amber-700 dark:text-yellow-300">Awaiting Approval</p>
+                  <p className="text-sm text-amber-600 dark:text-yellow-400">
                     Assigned to {request.assignedApprover.userName}
                     {request.assignedApprover.assignmentType === 'line_manager' && (
                       <span> (Line Manager)</span>
@@ -301,7 +301,7 @@ export default function LeaveRequestDetailPage() {
 
           {/* Audit log */}
           {request.auditLog && request.auditLog.length > 0 && (
-            <div className="p-6 border-b border-slate-200/50">
+            <div className="p-6 border-b border-border dark:border-slate-200/50">
               <div className="flex items-center mb-4">
                 <History className="h-5 w-5 text-slate-500 mr-2" />
                 <h3 className="font-semibold text-slate-900">Activity History</h3>
@@ -309,17 +309,17 @@ export default function LeaveRequestDetailPage() {
               <div className="space-y-3">
                 {request.auditLog.map((entry, index) => (
                   <div key={index} className="flex items-start text-sm">
-                    <div className="w-2 h-2 rounded-full bg-slate-400 mt-2 mr-3" />
+                    <div className="w-2 h-2 rounded-full bg-muted-foreground/50 dark:bg-slate-600 mt-2 mr-3" />
                     <div>
-                      <p className="text-slate-900">
+                      <p className="text-foreground dark:text-slate-200">
                         <span className="font-medium capitalize">{entry.action}</span>
                         {entry.performedByName && ` by ${entry.performedByName}`}
                       </p>
-                      <p className="text-slate-500">
+                      <p className="text-muted-foreground dark:text-slate-500">
                         {formatDate(entry.performedAt, 'MMM dd, yyyy HH:mm')}
                       </p>
                       {entry.details && (
-                        <p className="text-slate-600 mt-1">{entry.details}</p>
+                        <p className="text-foreground/80 dark:text-slate-400 mt-1">{entry.details}</p>
                       )}
                     </div>
                   </div>
@@ -329,7 +329,7 @@ export default function LeaveRequestDetailPage() {
           )}
 
           {/* Actions */}
-          <div className="p-6 bg-slate-50/60">
+          <div className="p-6 bg-muted/30 dark:bg-slate-50/5">
             <div className="flex justify-end gap-3">
               {canCancel && (
                 <Button
@@ -367,9 +367,9 @@ export default function LeaveRequestDetailPage() {
 
         {/* Reject dialog */}
         {showRejectDialog && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-slate-200/60">
-              <h3 className="text-lg font-bold text-slate-900 mb-4">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-popover dark:bg-zinc-800/90 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-border dark:border-slate-200/20">
+              <h3 className="text-lg font-bold text-foreground dark:text-zinc-100 mb-4">
                 Reject Leave Request
               </h3>
               <textarea
@@ -377,7 +377,7 @@ export default function LeaveRequestDetailPage() {
                 onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="Please provide a reason for rejection..."
                 rows={4}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full px-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-900/50 text-foreground dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <div className="flex justify-end gap-3 mt-4">
                 <Button

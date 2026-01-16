@@ -1,0 +1,1 @@
+usign web-search mcp and web reader mcp and todos from cursor research 
