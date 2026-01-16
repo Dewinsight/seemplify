@@ -20,6 +20,7 @@ import {
   X,
   ChevronDown,
   Building2,
+  LayoutGrid,
   Sparkles,
   Sun,
   Moon,
@@ -40,7 +41,7 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout } = useAuth();
+  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout, isLoading: authLoading } = useAuth();
   const { user, role, isManager, isHRAdmin } = useUserContext();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
@@ -99,6 +100,61 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   
   const { mode, toggleColorMode } = useThemeMode();
   const isDarkMode = mode === 'dark';
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const showNoOrganizations = !authLoading && !!authUser && orgs.length === 0;
+
+  if (showNoOrganizations) {
+    return (
+      <div className={cn(
+        "min-h-screen transition-colors duration-300",
+        isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+      )}>
+        {isDarkMode && <div className="bg-noise" />}
+        <div className="relative mx-auto px-4 py-16 lg:px-8 max-w-3xl">
+          <div className={cn(
+            "rounded-2xl border p-8 text-center shadow-2xl",
+            isDarkMode
+              ? "bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 border-zinc-700/50"
+              : "bg-white border-gray-200"
+          )}>
+            <div className={cn(
+              "mx-auto mb-6 h-16 w-16 rounded-2xl flex items-center justify-center",
+              isDarkMode
+                ? "bg-zinc-800/70 text-purple-300"
+                : "bg-purple-50 text-purple-600"
+            )}>
+              <Building2 className="h-8 w-8" />
+            </div>
+            <h1 className={cn(
+              "text-2xl font-semibold",
+              isDarkMode ? "text-white" : "text-gray-900"
+            )}>
+              No organizations yet
+            </h1>
+            <p className={cn(
+              "mt-3 text-sm",
+              isDarkMode ? "text-zinc-400" : "text-gray-600"
+            )}>
+              To use Performance Management, you need to belong to an organization.
+            </p>
+            <p className={cn(
+              "mt-1 text-sm",
+              isDarkMode ? "text-zinc-500" : "text-gray-500"
+            )}>
+              Return to the hub to join or create one.
+            </p>
+            <a
+              href={hubUrl}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Return to Hub
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(
