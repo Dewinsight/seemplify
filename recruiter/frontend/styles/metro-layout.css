@@ -527,6 +527,24 @@
   --tile-to: #334155;
 }
 
+/* Light mode emphasis for key dashboard tiles */
+:root:not(.dark) .metro-tile-emphasis {
+  background-color: hsl(var(--foreground) / 0.1);
+  border-color: hsl(var(--border) / 0.7);
+}
+
+:root:not(.dark) .metro-tile-emphasis::before {
+  opacity: 0.3;
+}
+
+:root:not(.dark) .metro-tile-emphasis:hover::before {
+  opacity: 0.4;
+}
+
+:root:not(.dark) .metro-tile-emphasis .metro-tile-overlay {
+  opacity: 0.55;
+}
+
 /* Animation */
 @keyframes metro-fade-in {
   from {

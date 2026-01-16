@@ -107,9 +107,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         if (!silent) {
-          // Use Next.js router for smooth navigation (avoids runtime config reload)
-          console.log('🔄 Logging out and redirecting to login');
-          router.push('/login');
+          // Hard refresh to ensure all React state is cleared between users
+          window.location.href = '/login';
         }
       } catch (error) {
         console.error('Error during logout:', error);

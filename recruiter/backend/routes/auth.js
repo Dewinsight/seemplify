@@ -25,23 +25,23 @@ const ISSUER_CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
  */
 async function getCachedIssuer(issuerUrl) {
   const now = Date.now();
-  
+
   // Return cached if valid
   if (cachedIssuer && cachedIssuerUrl === issuerUrl && cachedIssuerExpiry > now) {
     console.log('⚡ Using cached OIDC issuer');
     return cachedIssuer;
   }
-  
+
   // Discover and cache
   console.log('🔍 Discovering OIDC issuer (will be cached for 1 hour)...');
   const startTime = Date.now();
   const issuer = await Issuer.discover(issuerUrl);
   console.log(`✅ OIDC issuer discovered in ${Date.now() - startTime}ms`);
-  
+
   cachedIssuer = issuer;
   cachedIssuerUrl = issuerUrl;
   cachedIssuerExpiry = now + ISSUER_CACHE_TTL;
-  
+
   return issuer;
 }
 
@@ -49,345 +49,345 @@ async function getCachedIssuer(issuerUrl) {
 // @desc    Register a new user
 // @access  Public
 router.post('/signup', async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    // Validate input
-    if (!email || !password) {
-        return res.status(400).json({ msg: 'Please enter all fields' });
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ msg: 'Please enter all fields' });
+  }
+
+  try {
+    // Check for existing user
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ msg: 'User already exists' });
     }
+
+    // Create new user
+    user = new User({
+      email,
+      password,
+    });
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+
+    // Save user to database
+    await user.save();
 
     try {
-        // Check for existing user
-        let user = await User.findOne({ email });
-        if (user) {
-            return res.status(400).json({ msg: 'User already exists' });
+      // Generate browser fingerprint
+      const fingerprintData = browserFingerprintService.generateFingerprint(req);
+
+      // Create session with proper tokens
+      const { accessToken, refreshToken, session } = await sessionService.createSession({
+        user,
+        fingerprint: fingerprintData.fingerprint,
+        userAgent: req.headers['user-agent'] || 'unknown',
+        ip: req.ip,
+      });
+
+      // Trust this browser for future logins
+      await browserFingerprintService.trustBrowser(user, fingerprintData.fingerprint);
+
+      // Return both tokens for proper authentication
+      res.json({
+        token: accessToken,
+        refreshToken,
+        expiresIn: process.env.JWT_ACCESS_TTL || '10m',
+        sessionId: session.accessTokenId,
+        user: {
+          id: user.id,
+          email: user.email
         }
+      });
+    } catch (sessionErr) {
+      console.error('Session creation error:', sessionErr);
 
-        // Create new user
-        user = new User({
-            email,
-            password,
-        });
+      // Fallback to simple JWT if session creation fails
+      const payload = {
+        user: {
+          id: user.id,
+        },
+      };
 
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(password, salt);
-
-        // Save user to database
-        await user.save();
-
-        try {
-            // Generate browser fingerprint
-            const fingerprintData = browserFingerprintService.generateFingerprint(req);
-            
-            // Create session with proper tokens
-            const { accessToken, refreshToken, session } = await sessionService.createSession({
-                user,
-                fingerprint: fingerprintData.fingerprint,
-                userAgent: req.headers['user-agent'] || 'unknown',
-                ip: req.ip,
-            });
-            
-            // Trust this browser for future logins
-            await browserFingerprintService.trustBrowser(user, fingerprintData.fingerprint);
-            
-            // Return both tokens for proper authentication
-            res.json({ 
-                token: accessToken,
-                refreshToken,
-                expiresIn: process.env.JWT_ACCESS_TTL || '10m',
-                sessionId: session.accessTokenId,
-                user: {
-                    id: user.id,
-                    email: user.email
-                }
-            });
-        } catch (sessionErr) {
-            console.error('Session creation error:', sessionErr);
-            
-            // Fallback to simple JWT if session creation fails
-            const payload = {
-                user: {
-                    id: user.id,
-                },
-            };
-            
-            jwt.sign(
-                payload,
-                process.env.JWT_SECRET,
-                { expiresIn: '7d' },
-                (err, token) => {
-                    if (err) {
-                        console.error(err.message);
-                        return res.status(500).send('Server error on token generation');
-                    }
-                    // Note: This fallback doesn't include refresh token
-                    // Client should handle this case appropriately
-                    res.json({ 
-                        token,
-                        fallback: true,
-                        message: 'Session creation failed, using fallback authentication'
-                    });
-                }
-            );
+      jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' },
+        (err, token) => {
+          if (err) {
+            console.error(err.message);
+            return res.status(500).send('Server error on token generation');
+          }
+          // Note: This fallback doesn't include refresh token
+          // Client should handle this case appropriately
+          res.json({
+            token,
+            fallback: true,
+            message: 'Session creation failed, using fallback authentication'
+          });
         }
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server error');
+      );
     }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token (with MFA for new browsers)
 // @access  Public
 router.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    // Validate input
-    if (!email || !password) {
-        return res.status(400).json({ msg: 'Please enter all fields' });
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ msg: 'Please enter all fields' });
+  }
+
+  try {
+    // Check for user
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    try {
-        // Check for user
-        let user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ msg: 'Invalid credentials' });
-        }
-
-        // Validate password
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ msg: 'Invalid credentials' });
-        }
-
-        // Generate browser fingerprint
-        const fingerprintData = browserFingerprintService.generateFingerprint(req);
-        
-        // Check if browser is trusted
-        const isTrusted = browserFingerprintService.isBrowserTrusted(user, fingerprintData.fingerprint);
-        
-        // If browser is not trusted, require OTP
-        if (!isTrusted) {
-            // Check if user can receive OTP (rate limiting)
-            const canSend = otpService.canSendOTP(user);
-            
-            // Even if rate limited, still show OTP modal so user can enter existing OTP
-            if (!canSend.allowed) {
-                return res.status(200).json({ 
-                    requiresOTP: true,
-                    message: canSend.reason,
-                    browserInfo: fingerprintData.browserInfo,
-                    rateLimited: true  // Flag to indicate rate limiting
-                });
-            }
-            
-            // Generate and send OTP
-            const otp = otpService.generateOTP();
-            otpService.storeOTP(user.id, otp, 'login');
-            
-            // Update user's last OTP sent time
-            user.security = user.security || {};
-            user.security.lastOtpSent = new Date();
-            await user.save();
-            
-            // Send OTP email
-            try {
-                await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
-            } catch (emailError) {
-                console.error('Failed to send OTP email:', emailError);
-                return res.status(500).json({ msg: 'Failed to send verification email' });
-            }
-            
-            // Return response indicating OTP is required
-            return res.status(200).json({ 
-                requiresOTP: true,
-                message: 'Verification code sent to your email',
-                browserInfo: fingerprintData.browserInfo
-            });
-        }
-        
-        // Browser is trusted, update last used
-        await browserFingerprintService.updateBrowserLastUsed(user, fingerprintData.fingerprint);
-
-        const { accessToken, refreshToken, session } = await sessionService.createSession({
-            user,
-            fingerprint: fingerprintData.fingerprint,
-            userAgent: req.headers['user-agent'] || 'unknown',
-            ip: req.ip,
-        });
-
-        res.json({ 
-            token: accessToken,
-            refreshToken,
-            expiresIn: process.env.JWT_ACCESS_TTL || '10m',
-            sessionId: session.accessTokenId,
-            user: {
-                id: user.id,
-                email: user.email,
-                mfaEnabled: user.security?.mfaEnabled || false
-            }
-        });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server error');
+    // Validate password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
     }
+
+    // Generate browser fingerprint
+    const fingerprintData = browserFingerprintService.generateFingerprint(req);
+
+    // Check if browser is trusted
+    const isTrusted = browserFingerprintService.isBrowserTrusted(user, fingerprintData.fingerprint);
+
+    // If browser is not trusted, require OTP
+    if (!isTrusted) {
+      // Check if user can receive OTP (rate limiting)
+      const canSend = otpService.canSendOTP(user);
+
+      // Even if rate limited, still show OTP modal so user can enter existing OTP
+      if (!canSend.allowed) {
+        return res.status(200).json({
+          requiresOTP: true,
+          message: canSend.reason,
+          browserInfo: fingerprintData.browserInfo,
+          rateLimited: true  // Flag to indicate rate limiting
+        });
+      }
+
+      // Generate and send OTP
+      const otp = otpService.generateOTP();
+      otpService.storeOTP(user.id, otp, 'login');
+
+      // Update user's last OTP sent time
+      user.security = user.security || {};
+      user.security.lastOtpSent = new Date();
+      await user.save();
+
+      // Send OTP email
+      try {
+        await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
+      } catch (emailError) {
+        console.error('Failed to send OTP email:', emailError);
+        return res.status(500).json({ msg: 'Failed to send verification email' });
+      }
+
+      // Return response indicating OTP is required
+      return res.status(200).json({
+        requiresOTP: true,
+        message: 'Verification code sent to your email',
+        browserInfo: fingerprintData.browserInfo
+      });
+    }
+
+    // Browser is trusted, update last used
+    await browserFingerprintService.updateBrowserLastUsed(user, fingerprintData.fingerprint);
+
+    const { accessToken, refreshToken, session } = await sessionService.createSession({
+      user,
+      fingerprint: fingerprintData.fingerprint,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      ip: req.ip,
+    });
+
+    res.json({
+      token: accessToken,
+      refreshToken,
+      expiresIn: process.env.JWT_ACCESS_TTL || '10m',
+      sessionId: session.accessTokenId,
+      user: {
+        id: user.id,
+        email: user.email,
+        mfaEnabled: user.security?.mfaEnabled || false
+      }
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 // @route   POST /api/auth/verify-otp
 // @desc    Verify OTP and complete login
 // @access  Public
 router.post('/verify-otp', async (req, res) => {
-    const { email, otp } = req.body;
+  const { email, otp } = req.body;
 
-    // Validate input
-    if (!email || !otp) {
-        return res.status(400).json({ msg: 'Please provide email and OTP' });
+  // Validate input
+  if (!email || !otp) {
+    return res.status(400).json({ msg: 'Please provide email and OTP' });
+  }
+
+  try {
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid request' });
     }
 
-    try {
-        // Find user
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ msg: 'Invalid request' });
-        }
+    // Verify OTP
+    const verificationResult = otpService.verifyOTP(user.id, otp, 'login');
 
-        // Verify OTP
-        const verificationResult = otpService.verifyOTP(user.id, otp, 'login');
-        
-        if (!verificationResult.valid) {
-            // Update failed attempts
-            await otpService.updateOTPAttempts(user, true);
-            
-            return res.status(400).json({ 
-                msg: verificationResult.reason,
-                remainingAttempts: verificationResult.remainingAttempts
-            });
-        }
+    if (!verificationResult.valid) {
+      // Update failed attempts
+      await otpService.updateOTPAttempts(user, true);
 
-        // OTP is valid, reset attempts
-        await otpService.updateOTPAttempts(user, false);
-        
-        // Get browser fingerprint and add to trusted browsers
-        const fingerprintData = browserFingerprintService.generateFingerprint(req);
-        await browserFingerprintService.addTrustedBrowser(user, fingerprintData);
-        
-        // Enable MFA if not already enabled
-        if (!user.security?.mfaEnabled) {
-            user.security = user.security || {};
-            user.security.mfaEnabled = true;
-            await user.save();
-        }
-
-        const { accessToken, refreshToken, session } = await sessionService.createSession({
-            user,
-            fingerprint: fingerprintData.fingerprint,
-            userAgent: req.headers['user-agent'] || 'unknown',
-            ip: req.ip,
-        });
-
-        res.json({ 
-            token: accessToken,
-            refreshToken,
-            expiresIn: process.env.JWT_ACCESS_TTL || '10m',
-            sessionId: session.accessTokenId,
-            user: {
-                id: user.id,
-                email: user.email,
-                mfaEnabled: true
-            },
-            message: 'Device trusted successfully'
-        });
-    } catch (err) {
-        console.error('OTP verification error:', err.message);
-        res.status(500).json({ msg: 'Server error' });
+      return res.status(400).json({
+        msg: verificationResult.reason,
+        remainingAttempts: verificationResult.remainingAttempts
+      });
     }
+
+    // OTP is valid, reset attempts
+    await otpService.updateOTPAttempts(user, false);
+
+    // Get browser fingerprint and add to trusted browsers
+    const fingerprintData = browserFingerprintService.generateFingerprint(req);
+    await browserFingerprintService.addTrustedBrowser(user, fingerprintData);
+
+    // Enable MFA if not already enabled
+    if (!user.security?.mfaEnabled) {
+      user.security = user.security || {};
+      user.security.mfaEnabled = true;
+      await user.save();
+    }
+
+    const { accessToken, refreshToken, session } = await sessionService.createSession({
+      user,
+      fingerprint: fingerprintData.fingerprint,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      ip: req.ip,
+    });
+
+    res.json({
+      token: accessToken,
+      refreshToken,
+      expiresIn: process.env.JWT_ACCESS_TTL || '10m',
+      sessionId: session.accessTokenId,
+      user: {
+        id: user.id,
+        email: user.email,
+        mfaEnabled: true
+      },
+      message: 'Device trusted successfully'
+    });
+  } catch (err) {
+    console.error('OTP verification error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
 });
 
 router.post('/refresh-token', async (req, res) => {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-        return res.status(400).json({ msg: 'Refresh token is required' });
-    }
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    return res.status(400).json({ msg: 'Refresh token is required' });
+  }
 
-    try {
-        const fingerprintData = browserFingerprintService.generateFingerprint(req);
-        const { accessToken, refreshToken: newRefreshToken, user } = await sessionService.refreshSession(
-            refreshToken,
-            fingerprintData.fingerprint,
-            req.headers['user-agent'] || 'unknown',
-            req.ip,
-        );
+  try {
+    const fingerprintData = browserFingerprintService.generateFingerprint(req);
+    const { accessToken, refreshToken: newRefreshToken, user } = await sessionService.refreshSession(
+      refreshToken,
+      fingerprintData.fingerprint,
+      req.headers['user-agent'] || 'unknown',
+      req.ip,
+    );
 
-        res.json({
-            token: accessToken,
-            refreshToken: newRefreshToken,
-            expiresIn: process.env.JWT_ACCESS_TTL || '10m',
-            sessionVersion: user.security?.sessionVersion || 1,
-        });
-    } catch (error) {
-        console.error('Refresh token error:', error);
-        const codeMap = {
-            invalid_refresh_token: 'invalid_refresh_token',
-            session_revoked: 'session_revoked',
-            refresh_expired: 'refresh_expired',
-            user_not_found: 'user_not_found',
-        };
+    res.json({
+      token: accessToken,
+      refreshToken: newRefreshToken,
+      expiresIn: process.env.JWT_ACCESS_TTL || '10m',
+      sessionVersion: user.security?.sessionVersion || 1,
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    const codeMap = {
+      invalid_refresh_token: 'invalid_refresh_token',
+      session_revoked: 'session_revoked',
+      refresh_expired: 'refresh_expired',
+      user_not_found: 'user_not_found',
+    };
 
-        const code = codeMap[error.message] || 'refresh_failed';
-        res.status(401).json({ msg: 'Refresh token invalid or expired', code });
-    }
+    const code = codeMap[error.message] || 'refresh_failed';
+    res.status(401).json({ msg: 'Refresh token invalid or expired', code });
+  }
 });
 
 // @route   POST /api/auth/resend-otp
 // @desc    Resend OTP for login
 // @access  Public
 router.post('/resend-otp', async (req, res) => {
-    const { email } = req.body;
+  const { email } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ msg: 'Email is required' });
+  if (!email) {
+    return res.status(400).json({ msg: 'Email is required' });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid request' });
     }
 
+    // Check if user can receive OTP (rate limiting)
+    const canSend = otpService.canSendOTP(user);
+    if (!canSend.allowed) {
+      return res.status(429).json({ msg: canSend.reason });
+    }
+
+    // Clear old OTP and generate new one
+    otpService.clearOTP(user.id, 'login');
+    const otp = otpService.generateOTP();
+    otpService.storeOTP(user.id, otp, 'login');
+
+    // Update last OTP sent time
+    user.security = user.security || {};
+    user.security.lastOtpSent = new Date();
+    await user.save();
+
+    // Get browser info for email
+    const fingerprintData = browserFingerprintService.generateFingerprint(req);
+
+    // Send OTP email
     try {
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ msg: 'Invalid request' });
-        }
-
-        // Check if user can receive OTP (rate limiting)
-        const canSend = otpService.canSendOTP(user);
-        if (!canSend.allowed) {
-            return res.status(429).json({ msg: canSend.reason });
-        }
-
-        // Clear old OTP and generate new one
-        otpService.clearOTP(user.id, 'login');
-        const otp = otpService.generateOTP();
-        otpService.storeOTP(user.id, otp, 'login');
-
-        // Update last OTP sent time
-        user.security = user.security || {};
-        user.security.lastOtpSent = new Date();
-        await user.save();
-
-        // Get browser info for email
-        const fingerprintData = browserFingerprintService.generateFingerprint(req);
-
-        // Send OTP email
-        try {
-            await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
-            res.json({ 
-                message: 'New verification code sent to your email',
-                nextResendIn: 60 // seconds
-            });
-        } catch (emailError) {
-            console.error('Failed to send OTP email:', emailError);
-            return res.status(500).json({ msg: 'Failed to send verification email' });
-        }
-    } catch (err) {
-        console.error('Resend OTP error:', err.message);
-        res.status(500).json({ msg: 'Server error' });
+      await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
+      res.json({
+        message: 'New verification code sent to your email',
+        nextResendIn: 60 // seconds
+      });
+    } catch (emailError) {
+      console.error('Failed to send OTP email:', emailError);
+      return res.status(500).json({ msg: 'Failed to send verification email' });
     }
+  } catch (err) {
+    console.error('Resend OTP error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
 });
 
 // @route   POST /api/auth/forgot-password
@@ -447,7 +447,7 @@ router.post('/reset-password', async (req, res) => {
 
     await user.save();
 
-  res.json({ msg: 'Password has been reset successfully.' });
+    res.json({ msg: 'Password has been reset successfully.' });
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).send('Server error');
@@ -579,11 +579,14 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(500).json({ msg: 'OIDC client credentials not configured' });
     }
 
-    // Dynamically determine callback URL from request
+    // CRITICAL: Use the same redirect URI as OIDC start - based on the incoming request
+    // This ensures the redirect_uri matches between authorization and token exchange
+    // Previous bug: Used FRONTEND_URL which defaults to localhost:3001, but OIDC start used localhost:5001
+    const callbackPath = '/api/auth/oidc/callback';
     const protocol = req.protocol;
     const host = req.get('host');
-    const callbackPath = '/api/auth/oidc/callback';
     const redirectUri = `${protocol}://${host}${callbackPath}`;
+    console.log('🔗 OIDC redirect URI:', { protocol, host, redirectUri });
 
     // Decode state JWT to extract returnTo and nonce
     const stateCookie = req.cookies['oidc_state'];
@@ -608,10 +611,10 @@ router.get('/oidc/callback', async (req, res) => {
     });
 
     const params = client.callbackParams(req);
-    const checks = { 
-      state: stateCookie, 
-      nonce: statePayload.nonce, 
-      code_verifier: req.cookies['oidc_verifier'] 
+    const checks = {
+      state: stateCookie,
+      nonce: statePayload.nonce,
+      code_verifier: req.cookies['oidc_verifier']
     };
 
     const tokenSet = await client.callback(redirectUri, params, checks);
@@ -631,27 +634,27 @@ router.get('/oidc/callback', async (req, res) => {
     // be able to access Recruiter when their current org role allows it.
     // ==========================================================================
     const currentOrg = userinfo.current_organization;
-    
+
     if (currentOrg && userinfo.organizations && userinfo.organizations.length > 0) {
       // Find the user's role in their current organization
       const currentOrgMembership = userinfo.organizations.find(org => org.id === currentOrg.id);
-      
+
       if (currentOrgMembership && currentOrgMembership.role === 'staff') {
         console.log('🚫 User with staff role in CURRENT organization attempting to access Recruiter:', email);
         console.log('   Current org:', currentOrg.name, '- Role:', currentOrgMembership.role);
-        
+
         // Check if user has other organizations with non-staff roles
         const otherOrgsWithAccess = userinfo.organizations.filter(
           org => org.id !== currentOrg.id && org.role !== 'staff'
         );
         const hasOtherOrgs = otherOrgsWithAccess.length > 0;
-        
-        console.log('   Other organizations with access:', 
+
+        console.log('   Other organizations with access:',
           hasOtherOrgs ? otherOrgsWithAccess.map(o => `${o.name} (${o.role})`).join(', ') : 'None');
-        
+
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
         const hubUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
-        
+
         // Build a helpful error message
         const errorParams = new URLSearchParams({
           error: 'staff_role_denied',
@@ -659,7 +662,7 @@ router.get('/oidc/callback', async (req, res) => {
           hubUrl: hubUrl,
           hasOtherOrgs: hasOtherOrgs ? 'true' : 'false'
         });
-        
+
         return res.redirect(`${frontendUrl}/login?${errorParams.toString()}`);
       }
     }
@@ -888,11 +891,11 @@ router.get('/oidc/callback', async (req, res) => {
     }
 
     const fingerprintData = browserFingerprintService.generateFingerprint(req);
-    const { accessToken, refreshToken, session } = await sessionService.createSession({ 
-      user, 
-      fingerprint: fingerprintData.fingerprint, 
-      userAgent: req.headers['user-agent'] || 'unknown', 
-      ip: req.ip 
+    const { accessToken, refreshToken, session } = await sessionService.createSession({
+      user,
+      fingerprint: fingerprintData.fingerprint,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      ip: req.ip
     });
 
     res.clearCookie('oidc_verifier');
@@ -915,12 +918,18 @@ router.get('/oidc/callback', async (req, res) => {
       : `${target}#${tokenParams}`;
 
     if (process.env.NODE_ENV === 'development') {
-      const cookieOptions = { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };
+      // Check if this is localhost or deployed dev environment
+      const isLocalhost = returnTo.includes('localhost') || returnTo.includes('127.0.0.1');
+
+      const cookieOptions = isLocalhost
+        ? { sameSite: 'lax', path: '/' }  // Localhost: no secure, no domain restriction
+        : { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };  // Deployed dev
+
       res.cookie('dev_jwt', accessToken, cookieOptions);
       res.cookie('dev_refreshToken', refreshToken, cookieOptions);
       res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
     }
-    
+
     const safeLoc = loc
       .replace(/token=[^&]*/g, 'token=[redacted]')
       .replace(/refreshToken=[^&]*/g, 'refreshToken=[redacted]')
@@ -933,7 +942,7 @@ router.get('/oidc/callback', async (req, res) => {
       hasRefreshToken: !!refreshToken
     });
     console.log('🔄 Redirect URL:', safeLoc);
-    
+
     console.log(`⏱️ OIDC Callback total time: ${Date.now() - callbackStartTime}ms`);
     res.redirect(loc);
   } catch (e) {
