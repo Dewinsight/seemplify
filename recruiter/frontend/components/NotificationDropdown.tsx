@@ -274,7 +274,7 @@ const NotificationDropdown = () => {
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-zinc-100">Notifications</h3>
+                  <h3 className="text-base font-semibold dark:text-zinc-100 text-gray-900">Notifications</h3>
                   {unreadCount > 0 && (
                     <p className="text-xs text-muted-foreground">{unreadCount} unread message{unreadCount !== 1 ? 's' : ''}</p>
                   )}
