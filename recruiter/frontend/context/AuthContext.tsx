@@ -105,10 +105,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (e) {
           console.warn('Could not reset organization state:', e);
         }
-        
+
         if (!silent) {
-          // Hard refresh to ensure all React state is cleared between users
-          window.location.href = '/login';
+          // Use Next.js router for smooth navigation (avoids runtime config reload)
+          console.log('🔄 Logging out and redirecting to login');
+          router.push('/login');
         }
       } catch (error) {
         console.error('Error during logout:', error);
