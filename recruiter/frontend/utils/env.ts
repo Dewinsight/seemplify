@@ -76,36 +76,74 @@ export function getRuntimeConfig() {
 }
 
 export function getApiBaseUrl(): string {
-  const config = getRuntimeConfig();
-  if (config.NEXT_PUBLIC_API_BASE_URL) {
-    return config.NEXT_PUBLIC_API_BASE_URL;
-  }
+  // CRITICAL: Check hostname-based environment BEFORE runtime config
+  // This prevents production config from being used in dev environment
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    if (hostname.includes('localhost') || hostname.startsWith('127.0.0.1')) {
-      return 'http://localhost:5001';
+    
+    // Local development
+    if (hostname === 'localhost' || 
+        hostname === '127.0.0.1' || 
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        hostname.endsWith('.local')) {
+      const localUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+      console.log('🏠 Local development detected - using:', localUrl);
+      return localUrl;
     }
+    
+    // Dev environment (e.g., app-dev.seemplifyai.com)
     if (hostname.includes('-dev')) {
-      return 'https://api-dev.seemplifyai.com';
+      const devUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api-dev.seemplifyai.com';
+      console.log('🔧 Dev environment detected - using:', devUrl);
+      return devUrl;
     }
   }
+  
+  // Production: use runtime config if available, otherwise build-time env var
+  const config = getRuntimeConfig();
+  if (config.NEXT_PUBLIC_API_BASE_URL) {
+    console.log('🌐 Production - using runtime config:', config.NEXT_PUBLIC_API_BASE_URL);
+    return config.NEXT_PUBLIC_API_BASE_URL;
+  }
+  
+  console.log('⚙️ Production - using build-time env var:', process.env.NEXT_PUBLIC_API_BASE_URL);
   return process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.seemplifyai.com';
 }
 
 export function getWsBaseUrl(): string {
-  const config = getRuntimeConfig();
-  if (config.NEXT_PUBLIC_WS_BASE_URL) {
-    return config.NEXT_PUBLIC_WS_BASE_URL;
-  }
+  // CRITICAL: Check hostname-based environment BEFORE runtime config
+  // This prevents production config from being used in dev environment
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    if (hostname.includes('localhost') || hostname.startsWith('127.0.0.1')) {
-      return 'ws://localhost:5001';
+    
+    // Local development
+    if (hostname === 'localhost' || 
+        hostname === '127.0.0.1' || 
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        hostname.endsWith('.local')) {
+      const localUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'ws://localhost:5001';
+      console.log('🏠 Local development detected - using:', localUrl);
+      return localUrl;
     }
+    
+    // Dev environment (e.g., app-dev.seemplifyai.com)
     if (hostname.includes('-dev')) {
-      return 'wss://api-dev.seemplifyai.com';
+      const devUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'wss://api-dev.seemplifyai.com';
+      console.log('🔧 Dev environment detected - using:', devUrl);
+      return devUrl;
     }
   }
+  
+  // Production: use runtime config if available, otherwise build-time env var
+  const config = getRuntimeConfig();
+  if (config.NEXT_PUBLIC_WS_BASE_URL) {
+    console.log('🌐 Production - using runtime config:', config.NEXT_PUBLIC_WS_BASE_URL);
+    return config.NEXT_PUBLIC_WS_BASE_URL;
+  }
+  
+  console.log('⚙️ Production - using build-time env var:', process.env.NEXT_PUBLIC_WS_BASE_URL);
   return process.env.NEXT_PUBLIC_WS_BASE_URL || 'wss://api.seemplifyai.com';
 }
 
