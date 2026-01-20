@@ -4,7 +4,9 @@ const openAIService = require('../services/OpenAIService');
 
 exports.createRule = async (req, res) => {
     try {
-        const rule = new Rule(req.body);
+        // Ensure department is handled (null if empty)
+        const { department } = req.body;
+        const rule = new Rule({ ...req.body, department: department || null });
         await rule.save();
         res.status(201).json(rule);
     } catch (error) {
@@ -14,7 +16,20 @@ exports.createRule = async (req, res) => {
 
 exports.getRules = async (req, res) => {
     try {
-        const rules = await Rule.find();
+        const { department } = req.query;
+        let query = {};
+
+        if (department) {
+            // Specific Context: Rules for this Dept + General Rules
+            query = { $or: [{ department: department }, { department: null }] };
+        } else if (!req.user.isAdmin) {
+            // Non-admin without context sees only General rules? 
+            // Or maybe they shouldn't see anything if no context? Default to General.
+            query = { department: null };
+        }
+        // If Admin and no department query, query remains {} (All rules)
+
+        const rules = await Rule.find(query).populate('department', 'name');
         res.json(rules);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -61,7 +76,10 @@ exports.analyzeProject = async (req, res) => {
 
         // Validate user belongs to this department (unless Admin)
         if (department && !req.user.isAdmin) {
-            const hasConf = req.user.permissions.some(p => p.department.toString() === department.toString());
+            const hasConf = req.user.permissions.some(p => {
+                const userDeptId = (p.department._id || p.department).toString();
+                return userDeptId === department.toString();
+            });
             if (!hasConf) {
                 return res.status(403).json({ error: 'You do not have permissions for the selected department.' });
             }
@@ -84,8 +102,11 @@ exports.analyzeProject = async (req, res) => {
             }
         }
 
-        // 1. Fetch active rules
-        const rules = await Rule.find({ isActive: true });
+        // 1. Fetch active rules for this scope (Dept + Global)
+        const rules = await Rule.find({
+            isActive: true,
+            $or: [{ department: department }, { department: null }]
+        });
 
         if (rules.length === 0) {
             return res.status(400).json({ error: "No active rules defined for approval." });
@@ -154,7 +175,7 @@ exports.getProjects = async (req, res) => {
 
             const approverDeptIds = (req.user.permissions || [])
                 .filter(p => p.role === 'Approver')
-                .map(p => p.department);
+                .map(p => (p.department._id || p.department).toString());
 
             query = {
                 $or: [
@@ -245,7 +266,7 @@ exports.getDashboardStats = async (req, res) => {
             // Wait, the query used in getProjects (Requester OR ApproverDept)
             const approverDepts = (req.user.permissions || [])
                 .filter(p => p.role === 'Approver')
-                .map(p => p.department);
+                .map(p => (p.department._id || p.department).toString());
 
             query = {
                 $or: [

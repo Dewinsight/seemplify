@@ -1,23 +1,25 @@
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail } from './pages';
+import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import api from './api'; // Added this import based on instruction
+import api from './api';
 
 const Navbar = () => {
   const { user, logout, activeDepartment, switchDepartment } = useAuth();
   const { toggleTheme, theme } = useTheme();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [adminDepartments, setAdminDepartments] = useState<any[]>([]);
+  const location = useLocation();
+
+  const isActive = (path: string) => location.pathname === path;
 
   // Fetch all departments if Admin
   useEffect(() => {
     if (user?.isAdmin) {
-      // Import api locally or use from scope if available. Use 'api' imported at top.
       const fetchDepts = async () => {
         try {
-          const res = await api.get('/departments'); // Changed to use the top-level imported 'api'
+          const res = await api.get('/departments');
           setAdminDepartments(res.data);
         } catch (e) {
           console.error(e);
@@ -29,29 +31,12 @@ const Navbar = () => {
 
   const availableDepartments = user?.isAdmin ? adminDepartments : (user?.permissions?.map((p: any) => p.department) || []);
 
-  // Close dropdown when clicking outside (simple version: just toggle)
-
   return (
     <nav className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', position: 'relative', zIndex: 50 }}>
       <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-        {/* Logo using styled HTML for perfect alignment */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
-          <span style={{
-            fontFamily: "'Outfit', sans-serif",
-            fontWeight: 800,
-            fontSize: '1.6rem',
-            color: 'var(--text-primary)',
-            letterSpacing: '-0.5px'
-          }}>STERLING</span>
-          <span style={{
-            fontFamily: "'Outfit', sans-serif",
-            fontWeight: 600,
-            fontSize: '1.6rem',
-            color: 'var(--logo-secondary)',
-            letterSpacing: '-0.5px',
-            marginLeft: '0.4rem'
-          }}>APPR</span>
-          {/* Shield Icon replacing O */}
+          <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1.6rem', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>STERLING</span>
+          <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: '1.6rem', color: 'var(--logo-secondary)', letterSpacing: '-0.5px', marginLeft: '0.4rem' }}>APPR</span>
           <svg viewBox="0 0 30 38" style={{ height: '1.4rem', margin: '0 -1px' }}>
             <defs>
               <linearGradient id="shieldGrad" x1="0" y1="0" x2="1" y2="1">
@@ -62,23 +47,18 @@ const Navbar = () => {
             <path fill="url(#shieldGrad)" d="M15 0 C7 0 2 5 2 15 C2 28 15 38 15 38 C15 38 28 28 28 15 C28 5 23 0 15 0 Z" />
             <path fill="white" d="M9 18 L13 22 L22 11 L25 14 L13 27 L6 20 Z" />
           </svg>
-          <span style={{
-            fontFamily: "'Outfit', sans-serif",
-            fontWeight: 600,
-            fontSize: '1.6rem',
-            color: 'var(--logo-secondary)',
-            letterSpacing: '-0.5px'
-          }}>VER</span>
+          <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: '1.6rem', color: 'var(--logo-secondary)', letterSpacing: '-0.5px' }}>VER</span>
         </div>
       </Link>
       <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
         {user ? (
           <>
-            <Link to="/" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Dashboard</Link>
-            <Link to="/analyze" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Analysis</Link>
+            <Link to="/" style={{ color: isActive('/') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Dashboard</Link>
+            <Link to="/analyze" style={{ color: isActive('/analyze') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Analysis</Link>
+            <Link to="/rules" style={{ color: isActive('/rules') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Rules</Link>
 
             {user.isAdmin && (
-              <Link to="/admin/organization" style={{ color: 'var(--sterling-red)', textDecoration: 'none', fontWeight: 'bold' }}>Organization</Link>
+              <Link to="/admin/organization" style={{ color: isActive('/admin/organization') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Organization</Link>
             )}
 
             {/* Context Switcher & User Profile */}
@@ -86,7 +66,9 @@ const Navbar = () => {
               <span style={{ opacity: 0.3 }}>|</span>
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.1' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{user.username}</span>
+                <Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }} title="View Profile">
+                  <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{user.username}</span>
+                </Link>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.isAdmin ? 'Global Admin' : (activeDepartment?.name || 'No Context')}</span>
               </div>
 
@@ -204,6 +186,7 @@ function App() {
                 <Route path="/analyze" element={<Analyze />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/admin/organization" element={<AdminUsers />} />
               </Route>
             </Routes>

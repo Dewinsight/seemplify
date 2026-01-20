@@ -9,6 +9,7 @@ router.post('/auth/register', authController.register);
 router.post('/auth/verify', authController.verifyOtp);
 router.post('/auth/login', authController.login);
 router.post('/auth/seed-admin', authController.seedAdmin); // Call manually once
+router.patch('/auth/me', verifyToken, authController.updateProfile);
 
 // --- Constants ---
 // Need to make sure mainController has these keys.

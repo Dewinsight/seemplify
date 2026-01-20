@@ -114,7 +114,10 @@ exports.login = async (req, res) => {
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
+        if (!isMatch) {
+            console.warn(`Failed login attempt for email: ${email}`);
+            return res.status(400).json({ error: 'Invalid email or password' });
+        }
 
         // Build Payload
         const payload = {
@@ -210,6 +213,37 @@ exports.updateUserRole = async (req, res) => {
 
         await user.save();
         res.json({ message: 'User updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.updateProfile = async (req, res) => {
+    try {
+        const { username } = req.body;
+        const userId = req.user.id;
+        const user = await User.findById(userId);
+
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (username) user.username = username;
+
+        // Restriction: Email and Password cannot be updated by user via profile.
+        // Contact admin for sensitive changes.
+        /*
+        if (email && email !== user.email) {
+            const existing = await User.findOne({ email });
+            if (existing) return res.status(400).json({ error: 'Email already in use' });
+            user.email = email;
+        }
+
+        if (password && password.trim()) {
+            user.password = await bcrypt.hash(password, 10);
+        }
+        */
+
+        await user.save();
+        res.json({ message: 'Profile updated successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -9,6 +9,7 @@ interface Rule {
     category: string;
     weight: number;
     isMandatory: boolean;
+    department?: { _id: string; name: string } | null;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -21,18 +22,32 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 const Rules: React.FC = () => {
     const [rules, setRules] = useState<Rule[]>([]);
-    const [form, setForm] = useState({ name: '', criteria: '', category: 'Code Quality', weight: 5, isMandatory: false });
+    const { user, activeDepartment } = useAuth();
+    // Form state: department is ID string or empty (for Global)
+    const [form, setForm] = useState({
+        name: '',
+        criteria: '',
+        category: 'Code Quality',
+        weight: 5,
+        isMandatory: false,
+        department: ''
+    });
     const [loading, setLoading] = useState(false);
-    const { user } = useAuth();
-    const canEdit = user?.role === 'Admin' || user?.role === 'Approver';
+
+    // Determine edit permission: Admin or Approver
+    // Note: Requesters probably can't see this page or can't edit. 
+    // ProtectedRoute lets them in. UI should hide form.
+    const canEdit = user?.isAdmin || (user?.permissions || []).some((p: any) => p.role === 'Approver' || p.role === 'Admin');
 
     useEffect(() => {
         fetchRules();
-    }, []);
+    }, [activeDepartment]); // Refetch when context changes
 
     const fetchRules = async () => {
         try {
-            const response = await api.get('/rules');
+            // Filter by context if active (and assume controller returns global + dept)
+            const query = activeDepartment ? `?department=${activeDepartment._id}` : '';
+            const response = await api.get(`/rules${query}`);
             setRules(response.data);
         } catch (error) {
             console.error('Error fetching rules:', error);
@@ -54,12 +69,17 @@ const Rules: React.FC = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            await api.post('/rules', form);
-            setForm({ name: '', criteria: '', category: 'Code Quality', weight: 5, isMandatory: false });
+            await api.post('/rules', {
+                ...form,
+                department: form.department || null // Ensure empty string sends null
+            });
+            // Reset, keeping current scope preference? or reset to default?
+            // Resetting to default (Global or as is)
+            setForm({ ...form, name: '', criteria: '', category: 'Code Quality', weight: 5, isMandatory: false });
             fetchRules();
         } catch (error) {
             console.error('Error creating rule:', error);
-            alert('Failed to create rule. You might need Admin/Approver permissions.');
+            alert('Failed to create rule.');
         } finally {
             setLoading(false);
         }
@@ -67,9 +87,16 @@ const Rules: React.FC = () => {
 
     return (
         <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '2rem' }}>
-            <div style={{ marginBottom: '2rem' }}>
-                <h2 style={{ margin: 0, fontSize: '2rem' }}>Approval Rules</h2>
-                <p style={{ color: 'var(--text-secondary)', margin: '0.5rem 0 0 0' }}>Define the AI evaluation criteria for new projects.</p>
+            <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+                <div>
+                    <h2 style={{ margin: 0, fontSize: '2rem' }}>Approval Rules</h2>
+                    <p style={{ color: 'var(--text-secondary)', margin: '0.5rem 0 0 0' }}>Define the AI evaluation criteria for new projects.</p>
+                </div>
+                {activeDepartment && (
+                    <div style={{ padding: '0.5rem 1rem', background: 'rgba(214, 54, 55, 0.1)', border: '1px solid var(--sterling-red)', borderRadius: '8px', color: 'var(--sterling-red)' }}>
+                        Context: <strong>{activeDepartment.name}</strong>
+                    </div>
+                )}
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', alignItems: 'start' }}>
@@ -79,6 +106,21 @@ const Rules: React.FC = () => {
                             + New Rule
                         </h3>
                         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                            {/* Scope Selector */}
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Scope</label>
+                                <select
+                                    value={form.department}
+                                    onChange={e => setForm({ ...form, department: e.target.value })}
+                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.3)', color: 'white' }}
+                                >
+                                    <option value="">Global (All Departments)</option>
+                                    {activeDepartment && (
+                                        <option value={activeDepartment._id}>{activeDepartment.name} Only</option>
+                                    )}
+                                </select>
+                            </div>
+
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Rule Name</label>
                                 <input
@@ -163,24 +205,49 @@ const Rules: React.FC = () => {
                             <div style={{ padding: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1.5rem' }}>
                                 {rules.map(rule => (
                                     <div key={rule._id} className="glass-card" style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', position: 'relative', borderLeft: rule.isMandatory ? '4px solid var(--sterling-red)' : '4px solid transparent' }}>
-                                        {rule.isMandatory && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: '0.5rem',
-                                                right: '0.5rem',
-                                                background: 'var(--sterling-red)',
-                                                color: 'white',
-                                                fontSize: '0.7rem',
-                                                padding: '0.2rem 0.5rem',
-                                                borderRadius: '10px',
-                                                fontWeight: 'bold',
-                                                textTransform: 'uppercase'
-                                            }}>
-                                                Mandatory
-                                            </div>
-                                        )}
+                                        {/* Badges Container */}
+                                        <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                                            {rule.department ? (
+                                                <div style={{
+                                                    background: 'rgba(33, 150, 243, 0.2)',
+                                                    color: '#2196f3',
+                                                    fontSize: '0.7rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 'bold',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    {rule.department.name}
+                                                </div>
+                                            ) : (
+                                                <div style={{
+                                                    background: 'rgba(255,255,255,0.1)',
+                                                    color: 'var(--text-secondary)',
+                                                    fontSize: '0.7rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 'bold',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    Global
+                                                </div>
+                                            )}
+                                            {rule.isMandatory && (
+                                                <div style={{
+                                                    background: 'var(--sterling-red)',
+                                                    color: 'white',
+                                                    fontSize: '0.7rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 'bold',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    Mandatory
+                                                </div>
+                                            )}
+                                        </div>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem', paddingRight: '1rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem', paddingRight: '1rem', marginTop: '1.5rem' }}>
                                             <div style={{
                                                 fontSize: '1.5rem',
                                                 background: 'rgba(255,255,255,0.1)',
