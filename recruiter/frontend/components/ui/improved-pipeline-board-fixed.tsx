@@ -462,8 +462,8 @@ export function ImprovedPipelineBoard({
           <div className="mb-4 bg-blue-500/10 p-4 rounded-full inline-flex border border-blue-500/20">
             <AlertTriangle className="h-10 w-10 text-blue-400" />
           </div>
-          <h3 className="text-xl font-semibold mb-2 text-blue-100">No Interview Stages Configured</h3>
-          <p className="text-gray-400 mb-6">
+          <h3 className="text-xl font-semibold mb-2 dark:text-blue-100 text-gray-900">No Interview Stages Configured</h3>
+          <p className="text-muted-foreground mb-6">
             You need to set up interview stages before you can use the pipeline.
           </p>
           <Button
@@ -485,9 +485,9 @@ export function ImprovedPipelineBoard({
         {/* Header with Controls */}
         <div className="flex flex-col space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="hidden sm:block">
-              <h2 className="text-xl sm:text-2xl font-bold text-white">Interview Pipeline</h2>
-              <p className="text-sm text-gray-400 mt-1">Manage candidates through your multi-stage interview process</p>
+              <div className="hidden sm:block">
+              <h2 className="text-xl sm:text-2xl font-bold dark:text-white text-gray-900">Interview Pipeline</h2>
+              <p className="text-sm text-muted-foreground mt-1">Manage candidates through your multi-stage interview process</p>
             </div>
 
             <Button variant="outline" size="sm" onClick={() => onNavigateToStages?.()} className="text-sm w-fit">
@@ -510,13 +510,13 @@ export function ImprovedPipelineBoard({
                   placeholder="Search candidates..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full sm:w-48 glass-card border-white/10 text-white placeholder-gray-500"
+                  className="pl-10 w-full sm:w-48 glass-card border-white/10 dark:text-white text-gray-900 dark:placeholder-gray-500 placeholder-gray-600"
                 />
               </div>
 
               <div className="flex gap-2">
                 <Select value={filterBy} onValueChange={(value: any) => setFilterBy(value)}>
-                  <SelectTrigger className="w-full sm:w-36 glass-card border-white/10 text-white">
+                  <SelectTrigger className="w-full sm:w-36 glass-card border-white/10 dark:text-white text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -528,7 +528,7 @@ export function ImprovedPipelineBoard({
                 </Select>
 
                 <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-                  <SelectTrigger className="w-full sm:w-32 glass-card border-white/10 text-white">
+                  <SelectTrigger className="w-full sm:w-32 glass-card border-white/10 dark:text-white text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -582,12 +582,12 @@ export function ImprovedPipelineBoard({
             <Card key={column.stage._id} className="relative overflow-hidden border-0 glass-card shadow-lg group hover:bg-white/5 transition-all">
               <CardHeader className="pb-2 px-3 sm:px-4 pt-3 sm:pt-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-2 text-white">
+                  <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-2 dark:text-white text-gray-900">
                     <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
                     <span className="truncate">{column.stage.name}</span>
                   </CardTitle>
                   <div className="flex items-center gap-1 sm:gap-2">
-                    <Badge variant="outline" className="text-xs border-white/10 text-gray-300">{column.analytics.totalCandidates}</Badge>
+                    <Badge variant="outline" className="text-xs border-white/10 dark:text-gray-300 text-gray-700">{column.analytics.totalCandidates}</Badge>
                     {column.analytics.healthScore < 70 && (
                       <Tooltip>
                         <TooltipTrigger><AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" /></TooltipTrigger>
@@ -602,20 +602,20 @@ export function ImprovedPipelineBoard({
               </CardHeader>
               <CardContent className="px-3 sm:px-4 pb-3 sm:pb-4">
                 <div className="space-y-1 sm:space-y-2">
-                  <div className="flex items-center justify-between text-xs text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Health Score</span>
                     <div className="flex items-center gap-1 sm:gap-2">
                       <Progress value={column.analytics.healthScore} className="w-8 sm:w-12 h-1 sm:h-2 bg-white/10" />
-                      <span className="font-medium text-xs text-gray-300">{column.analytics.healthScore}%</span>
+                      <span className="font-medium text-xs dark:text-gray-300 text-gray-700">{column.analytics.healthScore}%</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>New this week</span>
-                    <span className="font-medium text-gray-300">{column.analytics.newThisWeek > 0 && '+'}{column.analytics.newThisWeek}</span>
+                    <span className="font-medium dark:text-gray-300 text-gray-700">{column.analytics.newThisWeek > 0 && '+'}{column.analytics.newThisWeek}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Avg. time</span>
-                    <span className="font-medium text-gray-300">{column.analytics.averageTimeInStage}d</span>
+                    <span className="font-medium dark:text-gray-300 text-gray-700">{column.analytics.averageTimeInStage}d</span>
                   </div>
                   {column.analytics.overdueCandidates > 0 && (
                     <div className="flex items-center gap-1 text-xs text-red-600">
@@ -650,12 +650,12 @@ export function ImprovedPipelineBoard({
                   <CarouselPrevious className="relative left-0 top-0 translate-y-0 h-8 w-8 sm:h-10 sm:w-10" />
                   <CarouselNext className="relative right-0 top-0 translate-y-0 h-8 w-8 sm:h-10 sm:w-10" />
                 </div>
-                <div className="text-xs sm:text-sm text-gray-400 flex items-center gap-2">
-                  <span className="font-medium text-gray-300">{stageColumns.length}</span>
-                  <span>stage{stageColumns.length !== 1 ? 's' : ''}</span>
-                  <span className="hidden sm:inline">•</span>
-                  <span className="hidden sm:inline">Swipe or use arrows to navigate</span>
-                </div>
+              <div className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
+                <span className="font-medium dark:text-gray-300 text-gray-700">{stageColumns.length}</span>
+                <span>stage{stageColumns.length !== 1 ? 's' : ''}</span>
+                <span className="hidden sm:inline">•</span>
+                <span className="hidden sm:inline">Swipe or use arrows to navigate</span>
+              </div>
               </div>
               <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
                 <span>Use dropdowns to move candidates</span>
@@ -675,9 +675,9 @@ export function ImprovedPipelineBoard({
                               <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <CardTitle className="text-sm sm:text-lg truncate cursor-help text-white">
-                                    {column.stage.name}
-                                  </CardTitle>
+                              <CardTitle className="text-sm sm:text-lg truncate cursor-help dark:text-white text-gray-900">
+                                {column.stage.name}
+                              </CardTitle>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <div>
@@ -692,9 +692,9 @@ export function ImprovedPipelineBoard({
                                 </TooltipContent>
                               </Tooltip>
                             </div>
-                            <Badge variant="secondary" className="text-xs bg-white/10 text-gray-300 border-0">{column.candidates.length}</Badge>
+                            <Badge variant="secondary" className="text-xs bg-white/10 dark:text-gray-300 text-gray-700 border-0">{column.candidates.length}</Badge>
                           </div>
-                          <div className="flex items-center gap-3 sm:gap-4 text-xs text-gray-400">
+                          <div className="flex items-center gap-3 sm:gap-4 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Clock className="h-2 w-2 sm:h-3 sm:w-3" />
                               {column.stage.defaultDuration} min
@@ -754,9 +754,9 @@ export function ImprovedPipelineBoard({
                       {column.candidates.length === 0 && (
                         <div className="flex items-center justify-center h-32 border-2 border-dashed border-white/5 rounded-lg">
                           <div className="text-center">
-                            <Users className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-gray-600" />
-                            <p className="text-xs sm:text-sm text-gray-500">No candidates in this stage</p>
-                            <p className="text-xs text-gray-600">Use dropdown menus to move candidates here</p>
+                            <Users className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-gray-600 dark:text-gray-500" />
+                            <p className="text-xs sm:text-sm text-muted-foreground">No candidates in this stage</p>
+                            <p className="text-xs text-muted-foreground">Use dropdown menus to move candidates here</p>
                           </div>
                         </div>
                       )}

@@ -320,7 +320,6 @@ export default function BulkUploadPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={isProcessing}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Plus className="mr-2 h-4 w-4" />

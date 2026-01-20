@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Lock, Mail, AlertCircle, Check } from 'lucide-react';
-import { apiRequest } from '@/services/apiConfig';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/context/AdminContext';
 
 export default function AdminLoginPage() {
@@ -45,7 +45,9 @@ export default function AdminLoginPage() {
     setError('');
 
     try {
-      const response = await apiRequest('/api/admin/auth/login', {
+      // Use direct fetch for admin login - no token refresh needed for auth endpoints
+      const apiBaseUrl = getApiBaseUrl();
+      const response = await fetch(`${apiBaseUrl}/api/admin/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -76,7 +78,7 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
-      
+
       <Card className="w-full max-w-md mx-4 relative z-10 border-gray-700 bg-gray-800/50 backdrop-blur-xl">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
@@ -91,7 +93,7 @@ export default function AdminLoginPage() {
             Sign in to access the admin dashboard
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -100,14 +102,14 @@ export default function AdminLoginPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            
+
             {successMessage && (
               <Alert className="bg-green-900/20 border-green-900">
                 <Check className="h-4 w-4 text-green-400" />
                 <AlertDescription className="text-green-300">{successMessage}</AlertDescription>
               </Alert>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-gray-300">Email</Label>
               <div className="relative">
@@ -124,7 +126,7 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password" className="text-gray-300">Password</Label>
               <div className="relative">
@@ -141,7 +143,7 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
-            
+
             <Button
               type="submit"
               disabled={loading}
@@ -157,10 +159,10 @@ export default function AdminLoginPage() {
               )}
             </Button>
           </form>
-          
+
           <div className="mt-6 pt-6 border-t border-gray-700 space-y-3">
             <div className="text-center">
-              <Link 
+              <Link
                 href="/admin/forgot-password"
                 className="text-blue-400 hover:text-blue-300 text-sm underline"
               >

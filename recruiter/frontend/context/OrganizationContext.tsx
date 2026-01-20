@@ -241,71 +241,66 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       } else {
         console.log('✅ Organizations found:', orgs.length);
-        setOrganizations(orgs);
         setNeedsOrganizationSetup(false);
         
-        // IMPORTANT: Use the isCurrentOrganization flag from the IDP response
-        // This is the source of truth for which org the user is currently in
-        // (the separate getCurrentOrganization endpoint might have stale data)
+        // Resolve current org using backend current org when available to avoid stale IdP flags
         const currentOrgFromList = orgs.find((o: any) => o.isCurrentOrganization);
-        console.log('🔍 Looking for current org in list:', orgs.map((o: any) => ({
+        console.log('Looking for current org in list:', orgs.map((o: any) => ({
           name: o.name,
           isCurrentOrganization: o.isCurrentOrganization,
           userRole: o.userRole
         })));
-        
-        if (currentOrgFromList) {
-          console.log('✅ Found current org from IDP list:', {
-            name: currentOrgFromList.name,
-            userRole: currentOrgFromList.userRole,
-            _id: currentOrgFromList._id
+
+        let currentOrgFromApi: Organization | null = null;
+        try {
+          currentOrgFromApi = await organizationService.getCurrentOrganization();
+          console.log('Current organization from API:', {
+            name: currentOrgFromApi.name,
+            userRole: currentOrgFromApi.userRole,
+            _id: currentOrgFromApi._id
           });
-          
-          // IMPORTANT: Only check blocked role if we have a valid role value
-          // If userRole is missing/undefined, DON'T block - let them through
-          if (currentOrgFromList.userRole) {
-            console.log('🔍 Checking if role is blocked:', currentOrgFromList.userRole);
-            if (checkAndHandleBlockedRole(currentOrgFromList, orgs)) {
+        } catch (currentOrgError) {
+          console.warn('Failed to get current organization from API:', currentOrgError);
+        }
+
+        let resolvedCurrentOrg: Organization | null = null;
+        let resolvedOrgs = orgs;
+
+        if (currentOrgFromApi) {
+          const matchingOrg = orgs.find(org => org._id === currentOrgFromApi._id);
+          if (matchingOrg) {
+            resolvedCurrentOrg = { ...matchingOrg, ...currentOrgFromApi, isCurrentOrganization: true };
+            resolvedOrgs = orgs.map(org => ({
+              ...org,
+              isCurrentOrganization: org._id === matchingOrg._id
+            }));
+          } else {
+            resolvedCurrentOrg = currentOrgFromApi;
+          }
+        } else if (currentOrgFromList) {
+          resolvedCurrentOrg = currentOrgFromList;
+        } else {
+          resolvedCurrentOrg = orgs[0] || null;
+        }
+
+        setOrganizations(resolvedOrgs);
+
+        if (resolvedCurrentOrg) {
+          if (resolvedCurrentOrg.userRole) {
+            console.log('Checking if role is blocked:', resolvedCurrentOrg.userRole);
+            if (checkAndHandleBlockedRole(resolvedCurrentOrg, resolvedOrgs)) {
               return; // Exit early, user is being logged out
             }
           } else {
-            console.log('⚠️ No userRole on current org, skipping block check');
+            console.log('No userRole on current org, skipping block check');
           }
-          
-          setCurrentOrganization(currentOrgFromList);
+
+          setCurrentOrganization(resolvedCurrentOrg);
         } else {
-          // Fallback: try to get from backend API (might have stale currentOrg)
-          console.log('⚠️ No isCurrentOrganization flag found, falling back to API...');
-          try {
-            const currentOrg = await organizationService.getCurrentOrganization();
-            console.log('🏢 Current organization from API:', {
-              name: currentOrg.name,
-              userRole: currentOrg.userRole,
-              _id: currentOrg._id
-            });
-            
-            if (currentOrg.userRole) {
-              if (checkAndHandleBlockedRole(currentOrg, orgs)) {
-                return;
-              }
-            }
-            
-            setCurrentOrganization(currentOrg);
-          } catch (currentOrgError) {
-            console.warn('⚠️ Failed to get current organization, using first available:', currentOrgError);
-            const fallbackOrg = orgs[0];
-            
-            if (fallbackOrg?.userRole) {
-              if (checkAndHandleBlockedRole(fallbackOrg, orgs)) {
-                return;
-              }
-            }
-            
-            setCurrentOrganization(fallbackOrg);
-          }
+          setCurrentOrganization(null);
         }
       }
-      
+
       // Load organization limits if user has organizations
       if (orgs.length > 0) {
         await getOrganizationLimits();

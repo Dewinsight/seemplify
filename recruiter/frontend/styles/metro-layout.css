@@ -91,6 +91,11 @@
   border: 1px solid hsl(var(--border) / 0.5);
 }
 
+/* Light mode - slightly darker tiles */
+:root:not(.dark) .metro-tile {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .metro-tile::before {
   content: '';
   position: absolute;
