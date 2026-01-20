@@ -11,7 +11,7 @@ const generateOtp = () => {
 
 exports.register = async (req, res) => {
     try {
-        const { username, email, password, department } = req.body;
+        const { username, email, password } = req.body; // department ignored for now, defaulting to General
 
         // Check if user exists
         const existingUser = await User.findOne({ email });
@@ -22,7 +22,6 @@ exports.register = async (req, res) => {
                 const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
                 existingUser.otp = { code: otp, expiresAt: otpExpiresAt };
                 await existingUser.save();
-                // await emailService.sendOtp(email, otp);
                 return res.status(200).json({
                     message: 'Account exists but not verified. OTP resent.',
                     needsVerification: true,
@@ -32,8 +31,23 @@ exports.register = async (req, res) => {
             return res.status(400).json({ error: 'Email already exists and is verified.' });
         }
 
+        // Check for provided department
+        let deptId = null;
+        if (req.body.department) {
+            const requestedDept = await Department.findById(req.body.department);
+            if (requestedDept) deptId = requestedDept._id;
+        }
+
+        // Fallback to General
+        if (!deptId) {
+            let generalDept = await Department.findOne({ name: 'General' });
+            if (!generalDept) {
+                generalDept = await new Department({ name: 'General', description: 'Default' }).save();
+            }
+            deptId = generalDept._id;
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
-        // OTP HARDCODED FOR DEV
         const otp = '111111';
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
@@ -41,14 +55,11 @@ exports.register = async (req, res) => {
             username,
             email,
             password: hashedPassword,
-            department: department || 'General',
-            role: 'Requester', // Default role
+            permissions: [{ department: deptId, role: 'Requester' }], // Default role in that dept
             otp: { code: otp, expiresAt: otpExpiresAt }
         });
 
         await user.save();
-        // await emailService.sendOtp(email, otp); // Skip email sending
-
         res.status(201).json({ message: 'User registered. Use OTP 111111 to verify.' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -61,7 +72,6 @@ exports.verifyOtp = async (req, res) => {
         const user = await User.findOne({ email });
 
         if (!user) return res.status(404).json({ error: 'User not found' });
-
         if (user.isVerified) return res.json({ message: 'User already verified' });
 
         if (!user.otp || user.otp.code !== otp) {
@@ -85,32 +95,46 @@ exports.verifyOtp = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email }).populate('permissions.department');
 
         if (!user) return res.status(400).json({ error: 'User not found' });
 
-        // IMPORTANT: Allow admin login even if not verified (manual seed)
-        // Or enforce verification for everyone. Let's enforce for now generally, but specific exception if we seed verified.
-        if (!user.isVerified) return res.status(403).json({ error: 'Account not verified. Please verify your email.' });
+        if (!user.isVerified) {
+            // Resend OTP/Refresh logic
+            const otp = '111111';
+            const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+            user.otp = { code: otp, expiresAt: otpExpiresAt };
+            await user.save();
+
+            return res.status(403).json({
+                error: 'Account not verified.',
+                needsVerification: true,
+                email: email
+            });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
+        // Build Payload
+        const payload = {
+            id: user._id,
+            username: user.username,
+            isAdmin: user.isAdmin,
+            // Fallbacks for legacy components
+            role: user.isAdmin ? 'Admin' : (user.permissions[0]?.role || 'Requester'),
+            permissions: user.permissions
+        };
+
         const token = jwt.sign(
-            { id: user._id, role: user.role, username: user.username, department: user.department },
+            payload,
             process.env.JWT_SECRET || 'default_secret',
             { expiresIn: '24h' }
         );
 
         res.json({
             token,
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                department: user.department
-            }
+            user: payload
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -119,17 +143,20 @@ exports.login = async (req, res) => {
 
 exports.seedAdmin = async (req, res) => {
     try {
-        const existingAdmin = await User.findOne({ role: 'Admin' });
+        const existingAdmin = await User.findOne({ email: 'admin@approver.com' });
         if (existingAdmin) return res.json({ message: 'Admin already exists' });
 
         const hashedPassword = await bcrypt.hash('password123', 10);
+
+        let generalDept = await Department.findOne({ name: 'General' });
+        if (!generalDept) generalDept = await new Department({ name: 'General' }).save();
 
         const admin = new User({
             username: 'admin',
             email: 'admin@approver.com',
             password: hashedPassword,
-            role: 'Admin',
-            department: 'IT',
+            isAdmin: true,
+            permissions: [{ department: generalDept._id, role: 'Approver' }],
             isVerified: true
         });
 
@@ -142,7 +169,7 @@ exports.seedAdmin = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const users = await User.find({}, '-password'); // Exclude password
+        const users = await User.find({}, '-password').populate('permissions.department');
         res.json(users);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -151,9 +178,38 @@ exports.getAllUsers = async (req, res) => {
 
 exports.updateUserRole = async (req, res) => {
     try {
-        const { userId, role } = req.body;
-        await User.findByIdAndUpdate(userId, { role });
-        res.json({ message: 'User role updated' });
+        const { userId, role, isAdmin, permissions } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // New Mode: Full update
+        if (typeof isAdmin !== 'undefined') {
+            user.isAdmin = isAdmin;
+        }
+
+        if (permissions) {
+            // Validate? Ensure departments exist? Mongoose will cast to ObjectId.
+            // Ensure format is correct
+            user.permissions = permissions;
+        }
+
+        // Legacy fallback (if only role sent)
+        if (role && typeof isAdmin === 'undefined' && !permissions) {
+            if (role === 'Admin') user.isAdmin = true;
+            else {
+                user.isAdmin = false;
+                // Basic toggle logic would go here but let's assume legacy usage is getting phased out
+                // or just mapped to General department if absolutely necessary
+                const generalDept = await Department.findOne({ name: 'General' });
+                if (generalDept) {
+                    user.permissions = [{ department: generalDept._id, role: role }];
+                }
+            }
+        }
+
+        await user.save();
+        res.json({ message: 'User updated' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

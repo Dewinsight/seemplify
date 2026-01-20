@@ -4,22 +4,42 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 
 const Dashboard: React.FC = () => {
-    const { user } = useAuth();
+    const { user, activeDepartment } = useAuth();
     const [stats, setStats] = useState<any>(null);
     const [recentProjects, setRecentProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [activeDepartment]);
 
     const fetchData = async () => {
         try {
-            if (user?.role === 'Admin' || user?.role === 'Approver') {
-                const statsRes = await api.get('/dashboard/stats');
-                setStats(statsRes.data);
+            setLoading(true);
+            const params = activeDepartment ? { department: activeDepartment._id } : {};
+
+            // Determine effective role for this context
+            let showStats = false;
+            if (user?.isAdmin) showStats = true;
+            else if (activeDepartment) {
+                const globalRole = user?.role; // fallback
+                const deptRole = user?.permissions?.find(p => typeof p.department === 'object' ? p.department._id === activeDepartment._id : p.department === activeDepartment._id)?.role;
+                if (deptRole === 'Approver') showStats = true;
+                // If legacy user without permissions array but role=Approver?
+                if (!deptRole && globalRole === 'Approver') showStats = true;
+            } else {
+                // No active dept (Global view?), show if Admin or Global Approver
+                if (user?.role === 'Admin' || user?.role === 'Approver') showStats = true;
             }
-            const projectsRes = await api.get('/projects');
+
+            if (showStats) {
+                const statsRes = await api.get('/dashboard/stats', { params });
+                setStats(statsRes.data);
+            } else {
+                setStats(null);
+            }
+
+            const projectsRes = await api.get('/projects', { params });
             setRecentProjects(projectsRes.data);
             setLoading(false);
         } catch (error) {
@@ -63,7 +83,10 @@ const Dashboard: React.FC = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '2rem' }}>
                 <div className="glass-panel">
-                    <h3 style={{ marginBottom: '1.5rem' }}>Recent Projects</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3 style={{ margin: 0 }}>Recent Analysis</h3>
+                        <Link to="/analyze?tab=view" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>View All →</Link>
+                    </div>
                     {recentProjects.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)' }}>No projects found. Start a new analysis!</p>
                     ) : (
@@ -71,6 +94,7 @@ const Dashboard: React.FC = () => {
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
                                     <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Project Name</th>
+                                    <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Department</th>
                                     <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Status</th>
                                     <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Score</th>
                                     <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Date</th>
@@ -81,6 +105,7 @@ const Dashboard: React.FC = () => {
                                 {recentProjects.map(p => (
                                     <tr key={p._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                         <td style={{ padding: '1rem 0.5rem', fontWeight: 'bold' }}>{p.name}</td>
+                                        <td style={{ padding: '1rem 0.5rem', color: 'var(--text-secondary)' }}>{p.department?.name || 'General'}</td>
                                         <td style={{ padding: '1rem 0.5rem' }}>
                                             <span style={{
                                                 padding: '0.25rem 0.75rem',

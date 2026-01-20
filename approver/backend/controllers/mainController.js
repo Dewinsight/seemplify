@@ -21,9 +21,68 @@ exports.getRules = async (req, res) => {
     }
 };
 
+exports.getDepartments = async (req, res) => {
+    try {
+        const departments = await require('../models/Department').find({}, 'name description manager').populate('manager', 'username');
+        res.json(departments);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.createDepartment = async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        const Department = require('../models/Department');
+        const dept = new Department({ name, description });
+        await dept.save();
+        res.status(201).json(dept);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.deleteDepartment = async (req, res) => {
+    try {
+        const Department = require('../models/Department');
+        await Department.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Department deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 exports.analyzeProject = async (req, res) => {
     try {
         const { name, description, repoUrl } = req.body;
+
+        // Determine Department
+        let department = req.body.department;
+
+        // Validate user belongs to this department (unless Admin)
+        if (department && !req.user.isAdmin) {
+            const hasConf = req.user.permissions.some(p => p.department.toString() === department.toString());
+            if (!hasConf) {
+                return res.status(403).json({ error: 'You do not have permissions for the selected department.' });
+            }
+        }
+
+        if (!department) {
+            // Fallback default
+            if (req.user && req.user.permissions && req.user.permissions.length > 0) {
+                // If permissions objects are populated, .department is an object. 
+                // Wait, verifyToken doesn't populate nested department details, usually just IDs unless explicitly populated in middleware lookup.
+                // In authController.login I populate it. In middleware?
+                // verifyToken just uses jwt payload which HAS populated objects.
+                // So p.department might be {_id:..., name:...} OR a string depending on how it was saved.
+                // Safest to access ._id if it's an object, or use it if string.
+                const firstDept = req.user.permissions[0].department;
+                department = firstDept._id || firstDept;
+            } else {
+                const general = await require('../models/Department').findOne({ name: 'General' });
+                department = general?._id;
+            }
+        }
 
         // 1. Fetch active rules
         const rules = await Rule.find({ isActive: true });
@@ -59,6 +118,7 @@ exports.analyzeProject = async (req, res) => {
         const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
         const minPassScore = process.env.MIN_PASS_SCORE ? parseInt(process.env.MIN_PASS_SCORE) : 70;
         const finalStatus = (!mandatoryFailed && score >= minPassScore) ? 'Approved' : 'Rejected';
+
         const project = new Project({
             name,
             description,
@@ -67,7 +127,8 @@ exports.analyzeProject = async (req, res) => {
             approvalStatus: finalStatus,
             status: finalStatus,
             score,
-            requester: req.user ? req.user.id : null
+            requester: req.user ? req.user.id : null,
+            department: department
         });
         await project.save();
 
@@ -81,12 +142,37 @@ exports.analyzeProject = async (req, res) => {
 exports.getProjects = async (req, res) => {
     try {
         let query = {};
-        // If Requester, only show their own projects
-        if (req.user.role === 'Requester') {
-            query.requester = req.user.id;
+
+        // Admin sees all
+        if (req.user.isAdmin) {
+            // No filter
+        } else {
+            // Build filter based on permissions
+            // Can see if:
+            // 1. I am the requester
+            // 2. I have 'Approver' role in the project's department
+
+            const approverDeptIds = (req.user.permissions || [])
+                .filter(p => p.role === 'Approver')
+                .map(p => p.department);
+
+            query = {
+                $or: [
+                    { requester: req.user.id },
+                    { department: { $in: approverDeptIds } }
+                ]
+            };
         }
 
-        const projects = await Project.find(query).populate('requester', 'username department').sort({ createdAt: -1 });
+        // Filter by specific department if requested
+        if (req.query.department) {
+            query.department = req.query.department;
+        }
+
+        const projects = await Project.find(query)
+            .populate('requester', 'username department')
+            .populate('department', 'name')
+            .sort({ createdAt: -1 });
         res.json(projects);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -131,7 +217,8 @@ exports.getProjectById = async (req, res) => {
     try {
         const projectId = req.params.id;
         const project = await Project.findById(projectId)
-            .populate('requester', 'username department');
+            .populate('requester', 'username department')
+            .populate('department', 'name');
         if (!project) {
             return res.status(404).json({ error: 'Project not found.' });
         }
@@ -144,14 +231,47 @@ exports.getProjectById = async (req, res) => {
 // Dashboard statistics for admin/approver view
 exports.getDashboardStats = async (req, res) => {
     try {
-        const total = await Project.countDocuments();
-        const approved = await Project.countDocuments({ approvalStatus: 'Approved' });
-        const rejected = await Project.countDocuments({ approvalStatus: 'Rejected' });
-        const pending = await Project.countDocuments({ approvalStatus: { $in: ['Pending', 'Under Review'] } });
+        let query = {};
+        if (!req.user.isAdmin) {
+            const approverDeptIds = (req.user.permissions || [])
+                .filter(p => p.role === 'Approver' || p.role === 'Requester') // Requesters see their own scope stats? Or just Approvers?
+                // Usually stats are for Approvers. Requesters just see their own list.
+                // But if a Requester accesses dashboard, maybe show stats of their own projects?
+                // Let's stick to: Stats show what getProjects shows.
+                .map(p => p.department);
+            // Reconstruct the OR query properly is hard for countDocuments aggregate without duplications if logic overlaps.
+            // Simpler: Just count matches.
+
+            // Wait, the query used in getProjects (Requester OR ApproverDept)
+            const approverDepts = (req.user.permissions || [])
+                .filter(p => p.role === 'Approver')
+                .map(p => p.department);
+
+            query = {
+                $or: [
+                    { requester: req.user.id },
+                    { department: { $in: approverDepts } }
+                ]
+            };
+        }
+
+        // Filter by specific department if requested
+        if (req.query.department) {
+            query.department = req.query.department;
+        }
+
+        const total = await Project.countDocuments(query);
+        const approved = await Project.countDocuments({ ...query, approvalStatus: 'Approved' });
+        const rejected = await Project.countDocuments({ ...query, approvalStatus: 'Rejected' });
+        const pending = await Project.countDocuments({ ...query, approvalStatus: { $in: ['Pending', 'Under Review'] } });
+
+        // Aggregate for avg score needs the query match
         const avgScoreAgg = await Project.aggregate([
+            { $match: query },
             { $group: { _id: null, avgScore: { $avg: '$score' } } }
         ]);
         const avgScore = avgScoreAgg[0] ? Math.round(avgScoreAgg[0].avgScore) : 0;
+
         res.json({ total, approved, rejected, pending, avgScore });
     } catch (error) {
         res.status(500).json({ error: error.message });

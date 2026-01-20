@@ -22,6 +22,10 @@ const Login: React.FC = () => {
             navigate('/');
         } catch (err: any) {
             console.error(err);
+            if (err.response?.data?.needsVerification) {
+                navigate('/verify', { state: { email: err.response.data.email || email } });
+                return;
+            }
             setError(err.response?.data?.error || 'Login failed');
         } finally {
             setLoading(false);

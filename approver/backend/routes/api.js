@@ -10,6 +10,15 @@ router.post('/auth/verify', authController.verifyOtp);
 router.post('/auth/login', authController.login);
 router.post('/auth/seed-admin', authController.seedAdmin); // Call manually once
 
+// --- Constants ---
+// Need to make sure mainController has these keys.
+// ... 
+
+// --- Departments (Public List for Register, Admin for Manage) ---
+router.get('/departments', mainController.getDepartments);
+router.post('/departments', verifyToken, verifyRole(['Admin']), mainController.createDepartment);
+router.delete('/departments/:id', verifyToken, verifyRole(['Admin']), mainController.deleteDepartment);
+
 // --- Protected User Management (Admin Only) ---
 router.get('/users', verifyToken, verifyRole(['Admin']), authController.getAllUsers);
 router.patch('/users/role', verifyToken, verifyRole(['Admin']), authController.updateUserRole);

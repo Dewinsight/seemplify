@@ -1,14 +1,38 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import api from './api'; // Added this import based on instruction
 
 const Navbar = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, activeDepartment, switchDepartment } = useAuth();
   const { toggleTheme, theme } = useTheme();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [adminDepartments, setAdminDepartments] = useState<any[]>([]);
+
+  // Fetch all departments if Admin
+  useEffect(() => {
+    if (user?.isAdmin) {
+      // Import api locally or use from scope if available. Use 'api' imported at top.
+      const fetchDepts = async () => {
+        try {
+          const res = await api.get('/departments'); // Changed to use the top-level imported 'api'
+          setAdminDepartments(res.data);
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      fetchDepts();
+    }
+  }, [user]);
+
+  const availableDepartments = user?.isAdmin ? adminDepartments : (user?.permissions?.map((p: any) => p.department) || []);
+
+  // Close dropdown when clicking outside (simple version: just toggle)
 
   return (
-    <nav className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem' }}>
+    <nav className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', position: 'relative', zIndex: 50 }}>
       <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
         {/* Logo using styled HTML for perfect alignment */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
@@ -51,16 +75,79 @@ const Navbar = () => {
         {user ? (
           <>
             <Link to="/" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Dashboard</Link>
-            <Link to="/analyze" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>New Analysis</Link>
-            {(user.role === 'Admin' || user.role === 'Approver') && (
-              <Link to="/rules" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Rules</Link>
+            <Link to="/analyze" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Analysis</Link>
+
+            {user.isAdmin && (
+              <Link to="/admin/organization" style={{ color: 'var(--sterling-red)', textDecoration: 'none', fontWeight: 'bold' }}>Organization</Link>
             )}
-            {user.role === 'Admin' && (
-              <Link to="/admin/users" style={{ color: 'var(--sterling-red)', textDecoration: 'none', fontWeight: 'bold' }}>👥 Users</Link>
-            )}
-            <span style={{ opacity: 0.7 }}>|</span>
-            <span style={{ fontWeight: 'bold' }}>{user.username} ({user.role})</span>
-            <button onClick={logout} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', background: '#f44336' }}>Logout</button>
+
+            {/* Context Switcher & User Profile */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: '1.5rem' }}>
+              <span style={{ opacity: 0.3 }}>|</span>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.1' }}>
+                <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{user.username}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.isAdmin ? 'Global Admin' : (activeDepartment?.name || 'No Context')}</span>
+              </div>
+
+              {/* Custom Dropdown */}
+              {(availableDepartments.length > 0 || user.isAdmin) && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '8px',
+                      padding: '0.4rem 0.8rem',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.85rem' }}>{activeDepartment?.name || 'Select Dept'}</span>
+                    <span style={{ fontSize: '0.7rem' }}>▼</span>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="dropdown-menu">
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '0.4rem', borderBottom: '1px solid var(--glass-border)', marginBottom: '0.4rem' }}>
+                        Switch Context
+                      </div>
+                      {availableDepartments.map((dept: any) => (
+                        <div
+                          key={dept._id}
+                          onClick={() => {
+                            switchDepartment(dept);
+                            setIsDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '0.6rem 0.8rem',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            background: activeDepartment?._id === dept._id ? 'var(--sterling-red)' : 'transparent',
+                            marginBottom: '2px',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => { if (activeDepartment?._id !== dept._id) e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                          onMouseLeave={(e) => { if (activeDepartment?._id !== dept._id) e.currentTarget.style.background = 'transparent' }}
+                        >
+                          {dept.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+
+
+            <button onClick={logout} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', background: '#f44336', marginLeft: '0.5rem' }}>Logout</button>
           </>
         ) : (
           <>
@@ -117,7 +204,7 @@ function App() {
                 <Route path="/analyze" element={<Analyze />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
-                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/organization" element={<AdminUsers />} />
               </Route>
             </Routes>
           </div>

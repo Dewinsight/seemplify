@@ -78,7 +78,7 @@ const ProjectDetail: React.FC = () => {
     if (loading) return <div className="glass-panel">Loading...</div>;
     if (!project) return <div className="glass-panel">Project not found</div>;
 
-    const canOverride = (user?.role === 'Admin' || user?.role === 'Approver');
+    const canOverride = (user?.isAdmin || user?.role === 'Admin' || user?.role === 'Approver');
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -197,7 +197,7 @@ const ProjectDetail: React.FC = () => {
                 </div>
             )}
 
-            {user?.role === 'Admin' && (
+            {(user?.isAdmin || user?.role === 'Admin') && (
                 <div style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)', textAlign: 'right' }}>
                     <button
                         onClick={async () => {

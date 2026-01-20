@@ -10,6 +10,7 @@ const ProjectSchema = new mongoose.Schema({
     status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Under Review'], default: 'Pending' },
     score: { type: Number, default: 0 },
     requester: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     overrideBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     overrideReason: { type: String },
     createdAt: { type: Date, default: Date.now }
