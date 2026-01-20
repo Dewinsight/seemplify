@@ -1,0 +1,8 @@
+export { default as Dashboard } from './Dashboard';
+export { default as Analyze } from './Analyze';
+export { default as Rules } from './Rules';
+export { default as AdminUsers } from './AdminUsers';
+export { default as ProjectDetail } from './ProjectDetail';
+export { default as Login } from './auth/Login';
+export { default as Register } from './auth/Register';
+export { default as VerifyOtp } from './auth/VerifyOtp';
