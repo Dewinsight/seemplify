@@ -69,7 +69,7 @@ exports.deleteDepartment = async (req, res) => {
 
 exports.analyzeProject = async (req, res) => {
     try {
-        const { name, description, repoUrl } = req.body;
+        const { name, description, repoUrl, formData } = req.body;
 
         // Determine Department
         let department = req.body.department;
@@ -88,12 +88,6 @@ exports.analyzeProject = async (req, res) => {
         if (!department) {
             // Fallback default
             if (req.user && req.user.permissions && req.user.permissions.length > 0) {
-                // If permissions objects are populated, .department is an object. 
-                // Wait, verifyToken doesn't populate nested department details, usually just IDs unless explicitly populated in middleware lookup.
-                // In authController.login I populate it. In middleware?
-                // verifyToken just uses jwt payload which HAS populated objects.
-                // So p.department might be {_id:..., name:...} OR a string depending on how it was saved.
-                // Safest to access ._id if it's an object, or use it if string.
                 const firstDept = req.user.permissions[0].department;
                 department = firstDept._id || firstDept;
             } else {
@@ -115,15 +109,18 @@ exports.analyzeProject = async (req, res) => {
         // 2. Perform Analysis
         const analysisResult = await openAIService.analyzeProject(description || "No description provided", rules);
 
-        // 3. Compute weighted score and determine final status
+        // 3. Compute weighted score and check for mandatory rule failures
         let totalWeight = 0;
         let passedWeight = 0;
         let mandatoryFailed = false;
+        const escalationTriggers = [];
         const ruleMap = {};
+
         rules.forEach(r => {
             ruleMap[r.name] = r;
             totalWeight += r.weight || 1;
         });
+
         const ruleAnalyses = analysisResult.rulesAnalysis || [];
         ruleAnalyses.forEach(ra => {
             const rule = ruleMap[ra.ruleName];
@@ -132,24 +129,100 @@ exports.analyzeProject = async (req, res) => {
             if (ra.status && ra.status.toLowerCase() === 'pass') {
                 passedWeight += weight;
             }
+            // Check for mandatory rule failures (these are escalation triggers)
             if (rule.isMandatory && (!ra.status || ra.status.toLowerCase() !== 'pass')) {
                 mandatoryFailed = true;
+                escalationTriggers.push(rule.name);
             }
         });
+
         const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
         const minPassScore = process.env.MIN_PASS_SCORE ? parseInt(process.env.MIN_PASS_SCORE) : 70;
-        const finalStatus = (!mandatoryFailed && score >= minPassScore) ? 'Approved' : 'Rejected';
 
+        // 4. Use AI's calculated priority score and tier (from new scoring parameters)
+        // Get scoring breakdown from AI analysis
+        const scoringBreakdown = analysisResult.scoringBreakdown || null;
+        let priorityScore = analysisResult.priorityScore || (score / 20); // Fallback to simple conversion
+        let tier = analysisResult.calculatedTier;
+
+        // Validate and default tier if not provided
+        if (!tier || tier < 1 || tier > 3) {
+            if (priorityScore >= 3.6) {
+                tier = 3;
+            } else if (priorityScore >= 2.6) {
+                tier = 2;
+            } else {
+                tier = 1;
+            }
+        }
+
+        // Escalation triggers automatically push to Tier 3
+        if (escalationTriggers.length > 0) {
+            tier = 3;
+            priorityScore = Math.max(priorityScore, 3.6);
+        }
+
+        // 5. Determine AI decision and workflow routing
+        const aiApproved = !mandatoryFailed && score >= minPassScore;
+
+        let approvalStatus;
+        let workflowStage;
+        let simpleStatus;
+
+        if (aiApproved) {
+            if (tier === 1) {
+                // Tier 1 + AI Approved = Final Approved
+                approvalStatus = 'AI Approved';
+                workflowStage = 'Complete';
+                simpleStatus = 'Approved';
+            } else {
+                // Tier 2/3 + AI Approved = Still needs human review
+                approvalStatus = 'Pending Governance';
+                workflowStage = 'Governance Committee';
+                simpleStatus = 'Under Review';
+            }
+        } else {
+            if (tier === 1) {
+                // Tier 1 + AI Rejected = Final Rejected
+                approvalStatus = 'AI Rejected';
+                workflowStage = 'Complete';
+                simpleStatus = 'Rejected';
+            } else {
+                // Tier 2/3 + AI Rejected = Escalate to Governance
+                approvalStatus = 'Pending Governance';
+                workflowStage = 'Governance Committee';
+                simpleStatus = 'Under Review';
+            }
+        }
+
+        // 6. Create project with tiered workflow data
         const project = new Project({
             name,
             description,
             repoUrl,
             analysisResult,
-            approvalStatus: finalStatus,
-            status: finalStatus,
+            approvalStatus,
+            status: simpleStatus,
             score,
             requester: req.user ? req.user.id : null,
-            department: department
+            department: department,
+            formData: formData || null,
+            submittedAt: new Date(),
+            tier,
+            priorityScore,
+            scoringBreakdown,
+            escalationTriggers,
+            workflowStage,
+            approvalHistory: [{
+                stage: 'AI',
+                action: aiApproved ? 'Approved' : (tier > 1 ? 'Escalated' : 'Rejected'),
+                by: null, // AI decision
+                reason: aiApproved
+                    ? `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`
+                    : `AI ${tier > 1 ? 'escalated to Governance' : 'rejected'} - Score: ${score}/100, Priority: ${priorityScore.toFixed(2)}, Tier ${tier}${escalationTriggers.length > 0 ? '. Triggers: ' + escalationTriggers.join(', ') : ''}`,
+                score,
+                timestamp: new Date()
+            }]
         });
         await project.save();
 
@@ -174,7 +247,10 @@ exports.getProjects = async (req, res) => {
             // 2. I have 'Approver' role in the project's department
 
             const approverDeptIds = (req.user.permissions || [])
-                .filter(p => p.role === 'Approver')
+                .filter(p => {
+                    const roles = p.roles || (p.role ? [p.role] : []);
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                })
                 .map(p => (p.department._id || p.department).toString());
 
             query = {
@@ -254,18 +330,12 @@ exports.getDashboardStats = async (req, res) => {
     try {
         let query = {};
         if (!req.user.isAdmin) {
-            const approverDeptIds = (req.user.permissions || [])
-                .filter(p => p.role === 'Approver' || p.role === 'Requester') // Requesters see their own scope stats? Or just Approvers?
-                // Usually stats are for Approvers. Requesters just see their own list.
-                // But if a Requester accesses dashboard, maybe show stats of their own projects?
-                // Let's stick to: Stats show what getProjects shows.
-                .map(p => p.department);
-            // Reconstruct the OR query properly is hard for countDocuments aggregate without duplications if logic overlaps.
-            // Simpler: Just count matches.
-
-            // Wait, the query used in getProjects (Requester OR ApproverDept)
+            // Stats for Approvers (Governance or Executive)
             const approverDepts = (req.user.permissions || [])
-                .filter(p => p.role === 'Approver')
+                .filter(p => {
+                    const roles = p.roles || (p.role ? [p.role] : []);
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                })
                 .map(p => (p.department._id || p.department).toString());
 
             query = {
@@ -316,6 +386,211 @@ exports.deleteProject = async (req, res) => {
         // Also remove associated audit logs? Optional but good practice.
         // await require('../models/Audit').deleteMany({ project: req.params.id }); 
         res.json({ message: 'Project deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Helper function to check role hierarchy
+const hasMinimumRole = (user, minRole, departmentId) => {
+    if (user.isAdmin) return true;
+
+    const roleHierarchy = {
+        'Requester': 1,
+        'GovernanceApprover': 2,
+        'ExecutiveApprover': 3
+    };
+
+    const minLevel = roleHierarchy[minRole] || 0;
+
+    return user.permissions?.some(p => {
+        const deptMatch = !departmentId ||
+            (p.department._id || p.department).toString() === departmentId.toString();
+
+        // Support both old format (p.role) and new format (p.roles array)
+        const userRoles = p.roles || (p.role ? [p.role] : []);
+        const maxRoleLevel = Math.max(...userRoles.map(r => roleHierarchy[r] || 0));
+
+        return deptMatch && maxRoleLevel >= minLevel;
+    });
+};
+
+// Governance Committee Review
+exports.governanceReview = async (req, res) => {
+    try {
+        const { projectId, action, reason } = req.body;
+
+        if (!['Approved', 'Rejected'].includes(action)) {
+            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        // Check if project is pending governance review
+        if (project.approvalStatus !== 'Pending Governance') {
+            return res.status(400).json({ error: `Project is not pending governance review (Current: ${project.approvalStatus})` });
+        }
+
+        // Check user has governance approver role
+        if (!hasMinimumRole(req.user, 'GovernanceApprover', project.department)) {
+            return res.status(403).json({ error: 'You do not have permission to perform governance review' });
+        }
+
+        // Add to approval history
+        project.approvalHistory.push({
+            stage: 'Governance',
+            action: action === 'Approved' ? 'Approved' : (project.tier === 3 ? 'Escalated' : 'Rejected'),
+            by: req.user.id,
+            reason: reason || `Governance ${action.toLowerCase()}`,
+            timestamp: new Date()
+        });
+
+        if (action === 'Approved') {
+            if (project.tier === 2) {
+                // Tier 2 + Governance Approved = Final Approved
+                project.approvalStatus = 'Governance Approved';
+                project.status = 'Approved';
+                project.workflowStage = 'Complete';
+            } else if (project.tier === 3) {
+                // Tier 3 + Governance Approved = Send to Executive
+                project.approvalStatus = 'Pending Executive';
+                project.workflowStage = 'Executive Approval';
+            }
+        } else {
+            if (project.tier === 3) {
+                // Tier 3 Governance Rejected = Can still escalate to Executive
+                project.approvalStatus = 'Pending Executive';
+                project.workflowStage = 'Executive Approval';
+                // Update history to show escalation
+                project.approvalHistory[project.approvalHistory.length - 1].action = 'Escalated';
+            } else {
+                // Tier 2 Governance Rejected = Final Rejected
+                project.approvalStatus = 'Governance Rejected';
+                project.status = 'Rejected';
+                project.workflowStage = 'Complete';
+            }
+        }
+
+        await project.save();
+
+        // Record audit
+        const Audit = require('../models/Audit');
+        await Audit.create({
+            project: project._id,
+            action: 'governance_review',
+            performedBy: req.user.id,
+            previousStatus: 'Pending Governance',
+            newStatus: project.approvalStatus,
+            reason,
+        });
+
+        res.json(project);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Executive Review
+exports.executiveReview = async (req, res) => {
+    try {
+        const { projectId, action, reason } = req.body;
+
+        if (!['Approved', 'Rejected'].includes(action)) {
+            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        // Check if project is pending executive review
+        if (project.approvalStatus !== 'Pending Executive') {
+            return res.status(400).json({ error: 'Project is not pending executive review' });
+        }
+
+        // Check user has executive approver role
+        if (!hasMinimumRole(req.user, 'ExecutiveApprover', project.department)) {
+            return res.status(403).json({ error: 'You do not have permission to perform executive review' });
+        }
+
+        // Add to approval history
+        project.approvalHistory.push({
+            stage: 'Executive',
+            action,
+            by: req.user.id,
+            reason: reason || `Executive ${action.toLowerCase()}`,
+            timestamp: new Date()
+        });
+
+        if (action === 'Approved') {
+            project.approvalStatus = 'Executive Approved';
+            project.status = 'Approved';
+        } else {
+            project.approvalStatus = 'Executive Rejected';
+            project.status = 'Rejected';
+        }
+        project.workflowStage = 'Complete';
+
+        await project.save();
+
+        // Record audit
+        const Audit = require('../models/Audit');
+        await Audit.create({
+            project: project._id,
+            action: 'executive_review',
+            performedBy: req.user.id,
+            previousStatus: 'Pending Executive',
+            newStatus: project.approvalStatus,
+            reason,
+        });
+
+        res.json(project);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get projects pending review for specific role
+exports.getPendingReviews = async (req, res) => {
+    try {
+        const { stage } = req.query; // 'governance' or 'executive'
+
+        let query = {};
+
+        if (stage === 'governance') {
+            query.approvalStatus = 'Pending Governance';
+        } else if (stage === 'executive') {
+            query.approvalStatus = 'Pending Executive';
+        } else {
+            query.approvalStatus = { $in: ['Pending Governance', 'Pending Executive'] };
+        }
+
+        // Filter by department if not admin
+        if (!req.user.isAdmin) {
+            const userDepts = req.user.permissions
+                ?.filter(p => {
+                    const roles = p.roles || (p.role ? [p.role] : []);
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                })
+                .map(p => (p.department._id || p.department).toString());
+
+            if (userDepts?.length > 0) {
+                query.department = { $in: userDepts };
+            } else {
+                return res.json([]); // No reviewer permissions
+            }
+        }
+
+        const projects = await Project.find(query)
+            .populate('requester', 'username')
+            .populate('department', 'name')
+            .sort({ createdAt: -1 });
+
+        res.json(projects);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

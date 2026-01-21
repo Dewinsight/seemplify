@@ -20,16 +20,21 @@ const Dashboard: React.FC = () => {
 
             // Determine effective role for this context
             let showStats = false;
+
+            const hasApproverRole = (perms: any) => {
+                const roles = perms?.roles || (perms?.role ? [perms.role] : []);
+                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Approver'].includes(r));
+            };
+
             if (user?.isAdmin) showStats = true;
             else if (activeDepartment) {
-                const globalRole = user?.role; // fallback
-                const deptRole = user?.permissions?.find(p => typeof p.department === 'object' ? p.department._id === activeDepartment._id : p.department === activeDepartment._id)?.role;
-                if (deptRole === 'Approver') showStats = true;
-                // If legacy user without permissions array but role=Approver?
-                if (!deptRole && globalRole === 'Approver') showStats = true;
+                const deptPerms = user?.permissions?.find(p =>
+                    (typeof p.department === 'object' ? p.department._id : p.department) === activeDepartment._id
+                );
+                if (hasApproverRole(deptPerms)) showStats = true;
             } else {
-                // No active dept (Global view?), show if Admin or Global Approver
-                if (user?.role === 'Admin' || user?.role === 'Approver') showStats = true;
+                // No active dept (Global view?) - show if they have ANY approver role
+                if (user?.permissions?.some(p => hasApproverRole(p))) showStats = true;
             }
 
             if (showStats) {
@@ -132,7 +137,7 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 <div className="glass-panel" style={{ height: 'fit-content' }}>
-                    <h3 style={{ marginBottom: '1rem' }}>Approver Guide</h3>
+                    <h3 style={{ marginBottom: '1rem' }}>Reviewer Guide</h3>
                     <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
                         <p>💡 <strong>Budget Rules:</strong> Projects over $500k require explicit executive sponsorship.</p>
                         <p>🔒 <strong>Security:</strong> All customer-facing apps must pass SOC2 criteria.</p>

@@ -24,9 +24,8 @@ router.delete('/departments/:id', verifyToken, verifyRole(['Admin']), mainContro
 router.get('/users', verifyToken, verifyRole(['Admin']), authController.getAllUsers);
 router.patch('/users/role', verifyToken, verifyRole(['Admin']), authController.updateUserRole);
 
-// --- Rules (Admin & Approver can manage, All can view?) ---
-// Let's say Admins/Approvers can create rules, Requesters can only view.
-router.post('/rules', verifyToken, verifyRole(['Admin', 'Approver']), mainController.createRule);
+// --- Rules (Admin & GovernanceApprover can manage, All can view)
+router.post('/rules', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.createRule);
 router.get('/rules', verifyToken, mainController.getRules); // All authenticated users can view rules
 
 // --- Projects (Analysis) ---
@@ -35,13 +34,21 @@ router.get('/projects', verifyToken, mainController.getProjects);
 
 // Project detail
 router.get('/projects/:id', verifyToken, mainController.getProjectById);
-// Admin override
-router.patch('/projects/:id/override', verifyToken, verifyRole(['Admin', 'Approver']), mainController.overrideProject);
-router.delete('/rules/:id', verifyToken, verifyRole(['Admin', 'Approver']), mainController.deleteRule);
+// Admin/Governance override
+router.patch('/projects/:id/override', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.overrideProject);
+router.delete('/rules/:id', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.deleteRule);
 router.delete('/projects/:id', verifyToken, verifyRole(['Admin']), mainController.deleteProject);
 
 // Dashboard stats
-router.get('/dashboard/stats', verifyToken, verifyRole(['Admin', 'Approver']), mainController.getDashboardStats);
+router.get('/dashboard/stats', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.getDashboardStats);
+
+// --- Tiered Approval Workflow ---
+// Governance Committee review
+router.post('/projects/governance-review', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.governanceReview);
+// Executive review  
+router.post('/projects/executive-review', verifyToken, verifyRole(['Admin', 'ExecutiveApprover']), mainController.executiveReview);
+// Get pending reviews for reviewer dashboard
+router.get('/projects/pending-reviews', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.getPendingReviews);
 
 
 module.exports = router;

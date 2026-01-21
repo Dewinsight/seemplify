@@ -51,12 +51,12 @@ const PipelineNode = ({ data }: { data: { label: string; count: number; color: s
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className={`px-5 py-3.5 rounded-xl border ${data.color} bg-zinc-900/90 backdrop-blur min-w-[130px]`}
+      className={`px-5 py-3.5 rounded-xl border ${data.color} bg-white dark:bg-zinc-900/90 backdrop-blur min-w-[130px] shadow-sm dark:shadow-none`}
     >
       <div className="flex items-center gap-3">
-        <div className="text-zinc-400">{data.icon}</div>
+        <div className="text-zinc-500 dark:text-zinc-400">{data.icon}</div>
         <div>
-          <div className="font-medium text-white text-sm">{data.label}</div>
+          <div className="font-medium text-zinc-900 dark:text-white text-sm">{data.label}</div>
           <div className="text-xs text-zinc-500">{data.count} candidates</div>
         </div>
       </div>
@@ -73,31 +73,31 @@ const initialNodes: Node[] = [
     id: '1',
     type: 'pipeline',
     position: { x: 0, y: 80 },
-    data: { label: 'Applied', count: 156, color: 'border-zinc-700', icon: <InboxIcon /> },
+    data: { label: 'Applied', count: 156, color: 'border-zinc-200 dark:border-zinc-700', icon: <InboxIcon /> },
   },
   {
     id: '2',
     type: 'pipeline',
     position: { x: 180, y: 80 },
-    data: { label: 'Screening', count: 48, color: 'border-zinc-700', icon: <SearchIcon /> },
+    data: { label: 'Screening', count: 48, color: 'border-zinc-200 dark:border-zinc-700', icon: <SearchIcon /> },
   },
   {
     id: '3',
     type: 'pipeline',
     position: { x: 360, y: 80 },
-    data: { label: 'Interview', count: 24, color: 'border-zinc-700', icon: <ChatIcon /> },
+    data: { label: 'Interview', count: 24, color: 'border-zinc-200 dark:border-zinc-700', icon: <ChatIcon /> },
   },
   {
     id: '4',
     type: 'pipeline',
     position: { x: 540, y: 80 },
-    data: { label: 'Offer', count: 8, color: 'border-zinc-700', icon: <DocumentIcon /> },
+    data: { label: 'Offer', count: 8, color: 'border-zinc-200 dark:border-zinc-700', icon: <DocumentIcon /> },
   },
   {
     id: '5',
     type: 'pipeline',
     position: { x: 720, y: 80 },
-    data: { label: 'Hired', count: 5, color: 'border-emerald-800/50', icon: <CheckCircleIcon /> },
+    data: { label: 'Hired', count: 5, color: 'border-emerald-300 dark:border-emerald-800/50', icon: <CheckCircleIcon /> },
   },
 ]
 
@@ -113,7 +113,7 @@ export default function HiringPipelineFlow() {
   const [edges] = useEdgesState(initialEdges)
 
   return (
-    <div className="w-full h-[220px] rounded-xl overflow-hidden bg-zinc-900/40 border border-zinc-800/60">
+    <div className="w-full h-[220px] rounded-xl overflow-hidden bg-white/80 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
       <ReactFlow
         nodes={nodes}
         edges={edges}

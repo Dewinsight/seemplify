@@ -11,7 +11,9 @@ const UserSchema = new mongoose.Schema({
     isAdmin: { type: Boolean, default: false }, // Global Admin
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-        role: { type: String, enum: ['Approver', 'Requester'] }
+        // Role hierarchy: Requester < GovernanceApprover < ExecutiveApprover
+        // GovernanceApprover replaces the old "Approver" role and can approve Tier 1 & 2
+        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover'] }]
     }],
 
     // Legacy mapping helpers could be added, but field is enough

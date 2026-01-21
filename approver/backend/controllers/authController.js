@@ -55,7 +55,7 @@ exports.register = async (req, res) => {
             username,
             email,
             password: hashedPassword,
-            permissions: [{ department: deptId, role: 'Requester' }], // Default role in that dept
+            permissions: [{ department: deptId, roles: ['Requester'] }], // Default role in that dept
             otp: { code: otp, expiresAt: otpExpiresAt }
         });
 
@@ -124,8 +124,10 @@ exports.login = async (req, res) => {
             id: user._id,
             username: user.username,
             isAdmin: user.isAdmin,
-            // Fallbacks for legacy components
-            role: user.isAdmin ? 'Admin' : (user.permissions[0]?.role || 'Requester'),
+            // Fallbacks for legacy components - get highest role from first permission
+            role: user.isAdmin ? 'Admin' : (
+                user.permissions[0]?.roles?.[0] || user.permissions[0]?.role || 'Requester'
+            ),
             permissions: user.permissions
         };
 
@@ -159,7 +161,7 @@ exports.seedAdmin = async (req, res) => {
             email: 'admin@approver.com',
             password: hashedPassword,
             isAdmin: true,
-            permissions: [{ department: generalDept._id, role: 'Approver' }],
+            permissions: [{ department: generalDept._id, roles: ['ExecutiveApprover'] }],
             isVerified: true
         });
 
@@ -206,7 +208,7 @@ exports.updateUserRole = async (req, res) => {
                 // or just mapped to General department if absolutely necessary
                 const generalDept = await Department.findOne({ name: 'General' });
                 if (generalDept) {
-                    user.permissions = [{ department: generalDept._id, role: role }];
+                    user.permissions = [{ department: generalDept._id, roles: [role] }];
                 }
             }
         }

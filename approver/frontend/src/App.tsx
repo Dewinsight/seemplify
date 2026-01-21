@@ -53,45 +53,57 @@ const Navbar = () => {
       <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
         {user ? (
           <>
-            <Link to="/" style={{ color: isActive('/') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Dashboard</Link>
-            <Link to="/analyze" style={{ color: isActive('/analyze') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Analysis</Link>
-            <Link to="/rules" style={{ color: isActive('/rules') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Rules</Link>
+            {/* Main Navigation Links */}
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+              <Link to="/" style={{ color: isActive('/') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Dashboard</Link>
+              <Link to="/analyze" style={{ color: isActive('/analyze') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Analysis</Link>
+              <Link to="/rules" style={{ color: isActive('/rules') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Rules</Link>
+              {user.isAdmin && (
+                <Link to="/admin/organization" style={{ color: isActive('/admin/organization') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Organization</Link>
+              )}
+            </div>
 
-            {user.isAdmin && (
-              <Link to="/admin/organization" style={{ color: isActive('/admin/organization') ? 'var(--sterling-red)' : 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Organization</Link>
-            )}
+            {/* User Controls Group - Glassmorphic container */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '12px',
+              padding: '0.5rem 1rem',
+              marginLeft: 'auto'
+            }}>
+              {/* User Info */}
+              <Link to="/profile" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.1' }} title="View Profile">
+                <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{user.username}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{user.isAdmin ? 'Global Admin' : (activeDepartment?.name || 'No Context')}</span>
+              </Link>
 
-            {/* Context Switcher & User Profile */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: '1.5rem' }}>
-              <span style={{ opacity: 0.3 }}>|</span>
+              {/* Divider */}
+              <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>|</span>
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.1' }}>
-                <Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }} title="View Profile">
-                  <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{user.username}</span>
-                </Link>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.isAdmin ? 'Global Admin' : (activeDepartment?.name || 'No Context')}</span>
-              </div>
-
-              {/* Custom Dropdown */}
+              {/* Department Dropdown */}
               {(availableDepartments.length > 0 || user.isAdmin) && (
                 <div style={{ position: 'relative' }}>
                   <button
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     style={{
-                      background: 'rgba(255,255,255,0.05)',
+                      background: 'rgba(255,255,255,0.08)',
                       border: '1px solid var(--glass-border)',
-                      borderRadius: '8px',
-                      padding: '0.4rem 0.8rem',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.6rem',
                       color: 'var(--text-primary)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.5rem',
-                      transition: 'all 0.2s'
+                      gap: '0.4rem',
+                      transition: 'all 0.2s',
+                      fontSize: '0.8rem'
                     }}
                   >
-                    <span style={{ fontSize: '0.85rem' }}>{activeDepartment?.name || 'Select Dept'}</span>
-                    <span style={{ fontSize: '0.7rem' }}>▼</span>
+                    <span>{activeDepartment?.name || (user.isAdmin ? 'All Depts' : 'Select')}</span>
+                    <span style={{ fontSize: '0.65rem' }}>▼</span>
                   </button>
 
                   {isDropdownOpen && (
@@ -99,6 +111,28 @@ const Navbar = () => {
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '0.4rem', borderBottom: '1px solid var(--glass-border)', marginBottom: '0.4rem' }}>
                         Switch Context
                       </div>
+                      {user.isAdmin && (
+                        <div
+                          onClick={() => {
+                            switchDepartment(null);
+                            setIsDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '0.6rem 0.8rem',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 'bold',
+                            background: activeDepartment === null ? 'var(--sterling-red)' : 'transparent',
+                            marginBottom: '2px',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => { if (activeDepartment !== null) e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                          onMouseLeave={(e) => { if (activeDepartment !== null) e.currentTarget.style.background = 'transparent' }}
+                        >
+                          All Departments
+                        </div>
+                      )}
                       {availableDepartments.map((dept: any) => (
                         <div
                           key={dept._id}
@@ -125,36 +159,66 @@ const Navbar = () => {
                   )}
                 </div>
               )}
+
+              {/* Divider */}
+              <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>|</span>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleTheme}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1rem',
+                  padding: '0.25rem'
+                }}
+                title="Toggle Theme"
+              >
+                {theme === 'dark' ? '☀' : '☾'}
+              </button>
+
+              {/* Logout */}
+              <button onClick={logout} style={{
+                padding: '0.35rem 0.7rem',
+                fontSize: '0.8rem',
+                background: 'var(--sterling-red)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600
+              }}>Logout</button>
             </div>
-
-
-
-            <button onClick={logout} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', background: '#f44336', marginLeft: '0.5rem' }}>Logout</button>
           </>
         ) : (
           <>
             <Link to="/login" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Login</Link>
             <Link to="/register" style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 'bold' }}>Register</Link>
+            <button
+              onClick={toggleTheme}
+              style={{
+                background: 'none',
+                border: '1px solid var(--glass-border)',
+                color: 'var(--text-primary)',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Toggle Theme"
+            >
+              {theme === 'dark' ? '☀' : '☾'}
+            </button>
           </>
         )}
-        <button
-          onClick={toggleTheme}
-          style={{
-            background: 'none',
-            border: '1px solid var(--glass-border)',
-            color: 'var(--text-primary)',
-            borderRadius: '50%',
-            width: '32px',
-            height: '32px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title="Toggle Theme"
-        >
-          {theme === 'dark' ? '☀' : '☾'}
-        </button>
       </div>
     </nav >
   );
