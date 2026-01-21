@@ -23,6 +23,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 const Rules: React.FC = () => {
     const [rules, setRules] = useState<Rule[]>([]);
     const { user, activeDepartment } = useAuth();
+    const [availableDepartments, setAvailableDepartments] = useState<any[]>([]);
     // Form state: department is ID string or empty (for Global)
     const [form, setForm] = useState({
         name: '',
@@ -34,10 +35,32 @@ const Rules: React.FC = () => {
     });
     const [loading, setLoading] = useState(false);
 
-    // Determine edit permission: Admin or Approver
+    // Determine edit permission: Admin or Governance/Executive Approver
     // Note: Requesters probably can't see this page or can't edit. 
     // ProtectedRoute lets them in. UI should hide form.
-    const canEdit = user?.isAdmin || (user?.permissions || []).some((p: any) => p.role === 'Approver' || p.role === 'Admin');
+    const canEdit = user?.isAdmin || (user?.permissions || []).some((p: any) => {
+        const roles = p.roles || (p.role ? [p.role] : []);
+        return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Admin'].includes(r));
+    });
+
+    // Fetch available departments for scope dropdown
+    useEffect(() => {
+        const fetchDepartments = async () => {
+            if (user?.isAdmin) {
+                try {
+                    const res = await api.get('/departments');
+                    setAvailableDepartments(res.data);
+                } catch (e) {
+                    console.error('Error fetching departments:', e);
+                }
+            } else {
+                // For non-admins, use their permissions
+                const depts = user?.permissions?.map((p: any) => p.department).filter((d: any) => d && typeof d === 'object') || [];
+                setAvailableDepartments(depts);
+            }
+        };
+        fetchDepartments();
+    }, [user]);
 
     useEffect(() => {
         fetchRules();
@@ -115,9 +138,9 @@ const Rules: React.FC = () => {
                                     style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.3)', color: 'white' }}
                                 >
                                     <option value="">Global (All Departments)</option>
-                                    {activeDepartment && (
-                                        <option value={activeDepartment._id}>{activeDepartment.name} Only</option>
-                                    )}
+                                    {availableDepartments.map((dept: any) => (
+                                        <option key={dept._id} value={dept._id}>{dept.name} Only</option>
+                                    ))}
                                 </select>
                             </div>
 

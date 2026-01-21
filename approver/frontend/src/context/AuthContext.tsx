@@ -18,7 +18,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     isLoading: boolean;
     activeDepartment: { _id: string, name: string } | null;
-    switchDepartment: (dept: { _id: string, name: string }) => void;
+    switchDepartment: (dept: { _id: string, name: string } | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -80,9 +80,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveDepartment(null);
     };
 
-    const switchDepartment = (dept: { _id: string, name: string }) => {
+    const switchDepartment = (dept: { _id: string, name: string } | null) => {
         setActiveDepartment(dept);
-        localStorage.setItem('activeDepartment', JSON.stringify(dept));
+        if (dept) {
+            localStorage.setItem('activeDepartment', JSON.stringify(dept));
+        } else {
+            localStorage.removeItem('activeDepartment');
+        }
     };
 
     return (

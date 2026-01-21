@@ -121,17 +121,26 @@ const Profile: React.FC = () => {
                                 {user?.permissions?.map((p: any, idx: number) => {
                                     // Handle populated object or raw ID string from token
                                     const deptName = typeof p.department === 'object' ? p.department?.name : 'Unknown Dept';
+                                    const roles = p.roles || (p.role ? [p.role] : []);
+
                                     return (
                                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                             <td style={{ padding: '0.5rem' }}>{deptName}</td>
-                                            <td style={{ padding: '0.5rem' }}>
-                                                <span style={{
-                                                    background: p.role === 'Approver' ? 'rgba(76, 175, 80, 0.2)' : 'rgba(33, 150, 243, 0.2)',
-                                                    color: p.role === 'Approver' ? '#4caf50' : '#2196f3',
-                                                    padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold'
-                                                }}>
-                                                    {p.role}
-                                                </span>
+                                            <td style={{ padding: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                {roles.map((role: string) => (
+                                                    <span key={role} style={{
+                                                        background: role === 'ExecutiveApprover' ? 'rgba(244, 67, 54, 0.2)' :
+                                                            role === 'GovernanceApprover' ? 'rgba(255, 152, 0, 0.2)' :
+                                                                role === 'Approver' ? 'rgba(76, 175, 80, 0.2)' : 'rgba(33, 150, 243, 0.2)',
+                                                        color: role === 'ExecutiveApprover' ? '#ef5350' :
+                                                            role === 'GovernanceApprover' ? '#ff9800' :
+                                                                role === 'Approver' ? '#4caf50' : '#2196f3',
+                                                        padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold'
+                                                    }}>
+                                                        {role === 'GovernanceApprover' ? 'Governance' :
+                                                            role === 'ExecutiveApprover' ? 'Executive' : role}
+                                                    </span>
+                                                ))}
                                             </td>
                                         </tr>
                                     );
