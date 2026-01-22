@@ -1,0 +1,35 @@
+# Deploy Approver Application to Dokploy
+# Triggers on changes to approver/ directory and deploys to approver.aiinigeria.com
+
+name: Deploy Approver to Dokploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'approver/**'
+      - '.github/workflows/deploy-approver.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm deployment'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy Approver Application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Trigger Dokploy Deployment
+        uses: benbristow/dokploy-deploy-action@0.0.1
+        with:
+          api_token: ${{ secrets.DOKPLOY_TOKEN }}
+          application_id: ${{ secrets.APPROVER_APP_ID }}
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
+          confirm: ${{ github.event.inputs.confirm }}
