@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require('../middleware/authMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const ScreeningQuestion = require('../models/ScreeningQuestion');
 const Job = require('../models/Job');
@@ -11,7 +11,7 @@ const Job = require('../models/Job');
  */
 
 // Apply authentication middleware
-router.use(verifyToken);
+router.use(authMiddleware);
 
 // Get all screening questions for a job
 router.get('/jobs/:id/questions', async (req, res) => {
