@@ -37,6 +37,9 @@ router.use(authMiddleware);
 
 // Screening questions routes
 router.use('/jobs/:id', screeningQuestionsRouter);
+
+// Public endpoint to get all public jobs (no authentication required)
+router.get('/public', async (req, res) => {
   try {
     const {
       search,
