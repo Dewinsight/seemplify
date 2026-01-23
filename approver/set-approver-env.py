@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-Set environment variables for approver-backend in Dokploy database
+Set environment variables for approver-backend and approver-frontend in Dokploy database.
 Run on the server: python3 set-approver-env.py
 """
 import subprocess
-import secrets
-import os
 
 def run_sql(query, silent=False):
     pc = subprocess.check_output(
@@ -45,45 +43,46 @@ def main():
     print(f"Found application: {app_name}")
     print(f"Application ID: {BACKEND_APP_ID}\n")
     
-    # Generate JWT_SECRET if not provided
-    jwt_secret = secrets.token_urlsafe(32)
+    # Update only FRONTEND_URL in existing env (preserves MONGO_URI, JWT_SECRET, Azure, etc.)
+    cur = run_sql(f"SELECT env FROM application WHERE \"applicationId\" = '{BACKEND_APP_ID}';", silent=True) or ''
+    lines = [l for l in cur.splitlines() if l.strip()]
+    lines = [l for l in lines if not l.strip().startswith('FRONTEND_URL=')]
+    lines.append('FRONTEND_URL=https://approver.seemplifyai.com')
+    updated = '\n'.join(lines)
+    esc = updated.replace("'", "''")
+    print("Updating FRONTEND_URL in backend env...")
+    run_sql_write(f"UPDATE application SET env = E'{esc}' WHERE \"applicationId\" = '{BACKEND_APP_ID}';")
+    print("✅ Backend: FRONTEND_URL=https://approver.seemplifyai.com\n")
     
-    # Get Azure OpenAI config from environment or use placeholders
-    azure_key = os.environ.get('AZURE_OPENAI_API_KEY', '<SET_AZURE_OPENAI_API_KEY>')
-    azure_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', 'https://ai-tranzfarai913527268236.cognitiveservices.azure.com')
-    
-    # Environment variables for approver-backend
-    env_vars = f"""NODE_ENV=production
-PORT=80
-MONGO_URI=mongodb+srv://tonyegbo1:IHjykby58BtH5zyC@cluster0.8hdkzxw.mongodb.net/approver?retryWrites=true&w=majority&appName=Cluster0
-FRONTEND_URL=https://approver.aiinigeria.com
-JWT_SECRET={jwt_secret}
-AZURE_OPENAI_API_KEY={azure_key}
-AZURE_OPENAI_ENDPOINT={azure_endpoint}
-AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4.1
-AZURE_OPENAI_API_VERSION=2025-01-01-preview"""
-    
-    # Escape single quotes for SQL
-    env_vars_escaped = env_vars.replace("'", "''")
-    
-    # Update environment variables (replace entire env field)
-    print("Setting environment variables...")
-    run_sql_write(f"""
-        UPDATE application 
-        SET env = E'{env_vars_escaped}'
-        WHERE "applicationId" = '{BACKEND_APP_ID}';
-    """)
-    
-    print("✅ Environment variables set successfully!\n")
-    
-    # Verify
-    print("Current environment variables:")
+    # Verify backend
+    print("Backend env (masked):")
     current_env = run_sql(f"SELECT env FROM application WHERE \"applicationId\" = '{BACKEND_APP_ID}';", silent=True)
     if current_env:
-        print(current_env)
+        for line in current_env.splitlines():
+            if 'SECRET' in line or 'KEY' in line or 'URI' in line:
+                print("  ", line.split('=')[0] + "=***")
+            else:
+                print("  ", line)
+    
+    # --- Frontend: set VITE_API_BASE_URL (build-time) ---
+    FRONTEND_APP_ID = '063229c9-ed49-49be-a331-92c8c47422bc'
+    fe_name = run_sql(f"SELECT name FROM application WHERE \"applicationId\" = '{FRONTEND_APP_ID}';", silent=True)
+    if not fe_name:
+        print(f"\n[WARN] Frontend app {FRONTEND_APP_ID} not found; skipping frontend env.")
+    else:
+        print(f"\n=== Set Approver Frontend Environment Variables ===\n")
+        print(f"Found application: {fe_name}")
+        cur = run_sql(f"SELECT env FROM application WHERE \"applicationId\" = '{FRONTEND_APP_ID}';", silent=True) or ''
+        lines = [l for l in cur.splitlines() if l.strip()]
+        lines = [l for l in lines if not l.strip().startswith('VITE_API_BASE_URL=')]
+        lines.append('VITE_API_BASE_URL=https://api.approver.seemplifyai.com/api')
+        updated = '\n'.join(lines)
+        esc = updated.replace("'", "''")
+        run_sql_write(f"UPDATE application SET env = E'{esc}' WHERE \"applicationId\" = '{FRONTEND_APP_ID}';")
+        print("✅ Frontend: VITE_API_BASE_URL=https://api.approver.seemplifyai.com/api")
     
     print("\n=== Done ===")
-    print("Next: Deploy approver-backend in Dokploy UI or via API")
+    print("Next: Redeploy approver-backend and approver-frontend in Dokploy UI")
     return 0
 
 if __name__ == '__main__':
