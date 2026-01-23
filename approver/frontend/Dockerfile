@@ -12,8 +12,8 @@ RUN npm ci
 COPY . .
 
 # Build arguments for API URL (build-time injection)
-# Default to api.approver.aiinigeria.com/api for production
-ARG VITE_API_BASE_URL=https://api.approver.aiinigeria.com/api
+# Default to api.approver.seemplifyai.com/api for production
+ARG VITE_API_BASE_URL=https://api.approver.seemplifyai.com/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 # Build the React app (VITE_API_BASE_URL is injected at build time)
