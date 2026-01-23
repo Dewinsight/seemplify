@@ -1,4 +1,9 @@
-require('dotenv').config({ path: '.env.production' });
+// Load base .env file first
+require('dotenv').config();
+
+// Load environment-specific .env file if it exists
+const env = process.env.NODE_ENV || 'development';
+require('dotenv').config({ path: `.env.${env}` });
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -32,22 +37,17 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, 'frontend/dist')));
-    
-    // SPA fallback - serve index.html for all non-API routes
-    app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api')) {
-            res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+// API-only backend (frontend is deployed separately)
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'Approver Backend API',
+        version: '1.0.0',
+        endpoints: {
+            health: '/api/health',
+            api: '/api/*'
         }
     });
-} else {
-    // Development route
-    app.get('/', (req, res) => {
-        res.json({ message: 'Approver Backend API is running (Development Mode)' });
-    });
-}
+});
 
 // Start Server
 app.listen(PORT, () => {

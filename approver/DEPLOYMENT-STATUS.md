@@ -1,159 +1,139 @@
-# Approver Deployment Status
+# Approver Deployment Status & Next Steps
 
 **Date:** January 22, 2026  
-**Status:** 🟡 Partially Complete - Needs Final Steps
+**Status:** ✅ Configuration Complete | 🟡 Deployment Pending
 
 ---
 
-## ✅ What's Been Done
+## ✅ Completed
 
-### 1. Code Configuration ✅
-- [x] Backend production setup (Dockerfile, server.js, .env.production)
-- [x] Frontend production setup (API paths, vite.config.ts)
-- [x] GitHub Actions workflow created (`.github/workflows/deploy-approver.yml`)
+1. **Environment Variables Set**
+   - ✅ approver-backend env vars configured in Dokploy DB
+   - Variables: NODE_ENV, PORT, MONGO_URI, FRONTEND_URL, JWT_SECRET, Azure OpenAI config
 
-### 2. Database Setup ✅
-- [x] Application entry created in Dokploy database
-- [x] Application ID generated: `c39e55d7-abcf-4c7c-b008-ea648f9e7927`
-- [x] Domain entry created: `approver.aiinigeria.com`
+2. **GitHub Secrets Verified**
+   - ✅ DOKPLOY_URL
+   - ✅ DOKPLOY_TOKEN  
+   - ✅ APPROVER_BACKEND_APP_ID (`72cc56e8-1123-4e22-beeb-04c8184405e4`)
+   - ✅ APPROVER_FRONTEND_APP_ID (`063229c9-ed49-49be-a331-92c8c47422bc`)
 
-### 3. GitHub Secrets ✅
-- [x] `DOKPLOY_URL` set to `http://4.180.153.209:3000`
-- [x] `APPROVER_APP_ID` set to `c39e55d7-abcf-4c7c-b008-ea648f9e7927`
-- [ ] `DOKPLOY_TOKEN` - **NEEDS TO BE SET** (see below)
+3. **GitHub Workflows**
+   - ✅ `deploy-approver-backend.yml` - Auto-deploys on `approver/backend/**` changes
+   - ✅ `deploy-approver-frontend.yml` - Auto-deploys on `approver/frontend/**` changes
+   - ✅ `deploy-approver-both.yml` - Optional: Deploys both on `approver/**` changes
+   - ✅ `deploy-approver.yml` - Disabled (old combined app)
 
----
-
-## ⏳ What Needs to Be Done
-
-### Step 1: Complete Application Setup in Dokploy Web UI
-
-1. **Go to Dokploy Dashboard:**
-   - URL: http://4.180.153.209:3000
-   - Login: `admin@seemplifyai.com` / `Seemplify2026!`
-
-2. **Find the Approver Application:**
-   - Look for application named `approver`
-   - Application ID: `c39e55d7-abcf-4c7c-b008-ea648f9e7927`
-
-3. **Update Repository Settings:**
-   - Repository: Update to your actual GitHub repo URL
-   - Branch: `main`
-   - Build Path: `backend/`
-   - Dockerfile: `backend/Dockerfile`
-
-4. **Verify Domain:**
-   - Check that `approver.aiinigeria.com` is listed
-   - SSL should auto-generate via Let's Encrypt
-
-5. **Set Environment Variables:**
-   - `NODE_ENV=production`
-   - `PORT=80`
-   - `MONGO_URI=<your-mongodb-connection-string>`
-   - `FRONTEND_URL=https://approver.aiinigeria.com`
-
-6. **Deploy:**
-   - Click "Deploy" button
-   - Wait for deployment to complete
+4. **DNS Records**
+   - ✅ `api.approver.aiinigeria.com` - Added (propagation may take 1-5 minutes)
 
 ---
 
-### Step 2: Create API Key for GitHub Actions
+## 🟡 Next Steps (Manual)
 
-1. **In Dokploy Dashboard:**
-   - Go to **Settings** → **API Keys**
-   - Click **Create API Key** or **Generate API Key**
-   - Name it: `GitHub Actions Deployment`
-   - **Copy the generated key** (you won't see it again!)
+### 1. Deploy Backend via Dokploy UI
 
-2. **Set GitHub Secret:**
-   ```bash
-   gh secret set DOKPLOY_TOKEN --body "<your-api-key-here>"
-   ```
+**Reason:** Dokploy API returns 401 Unauthorized, so manual deployment is required.
 
----
+1. Go to: **http://4.180.153.209:3000**
+2. Login: `admin@seemplifyai.com` / `Seemplify2026!`
+3. Navigate to: **approver** project → **approver-backend**
+4. Click **"Deploy"** button
+5. Wait for build to complete (check logs)
+6. Verify container: `docker ps | grep approver-backend`
 
-### Step 3: Verify Deployment
+### 2. Seed Admin User
 
-1. **Check Application Status:**
-   - Go to Dokploy dashboard
-   - Verify `approver` application is running
-   - Check logs for any errors
+After backend is deployed and healthy:
 
-2. **Test Domain:**
-   ```bash
-   # Check DNS
-   nslookup approver.aiinigeria.com 8.8.8.8
-   
-   # Test HTTPS
-   curl -I https://approver.aiinigeria.com
-   
-   # Test Health Endpoint
-   curl https://approver.aiinigeria.com/api/health
-   ```
-
-3. **Test GitHub Actions:**
-   - Make a small change to `approver/` code
-   - Commit and push to `main` branch
-   - Check GitHub Actions tab
-   - Verify workflow triggers and deploys
-
----
-
-## 📊 Current Status
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| **Code Configuration** | ✅ Complete | All files ready |
-| **Dockerfile** | ✅ Complete | Multi-stage build |
-| **Database Entry** | ✅ Complete | Application ID: `c39e55d7-abcf-4c7c-b008-ea648f9e7927` |
-| **Domain Entry** | ✅ Complete | `approver.aiinigeria.com` |
-| **GitHub Workflow** | ✅ Complete | `.github/workflows/deploy-approver.yml` |
-| **GitHub Secrets** | 🟡 Partial | Missing `DOKPLOY_TOKEN` |
-| **Dokploy Config** | ⏳ Pending | Need to complete via web UI |
-| **First Deployment** | ⏳ Pending | Need to deploy via web UI |
-| **Auto-Deploy** | ⏳ Pending | Will work after API key is set |
-
----
-
-## 🚀 Quick Commands
-
-### Get Application ID
 ```bash
-ssh seemplify@4.180.153.209 "bash /tmp/get-app-id.sh"
+curl -X POST https://api.approver.aiinigeria.com/api/auth/seed-admin
 ```
 
-### Check Application Status
+Expected: `{"message":"Default admin created: admin / password123"}`
+
+### 3. Deploy Frontend via Dokploy UI
+
+1. In Dokploy UI: **approver** project → **approver-frontend**
+2. Click **"Deploy"** button
+3. Wait for build to complete
+4. Verify container: `docker ps | grep approver-frontend`
+
+### 4. Test Backend
+
 ```bash
-ssh seemplify@4.180.153.209 "docker ps --filter 'name=approver'"
+# Health check
+curl https://api.approver.aiinigeria.com/api/health
+
+# Root endpoint
+curl https://api.approver.aiinigeria.com/
+
+# Login
+curl -X POST https://api.approver.aiinigeria.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@approver.com","password":"password123"}'
 ```
 
-### View Logs
+### 5. Test Frontend in Browser
+
+1. Open: **https://approver.aiinigeria.com**
+2. Login with:
+   - **Email:** `admin@approver.com`
+   - **Password:** `password123`
+3. Verify:
+   - Login succeeds
+   - Dashboard loads
+   - Navigation works (Projects, Rules, Profile)
+   - API calls in DevTools go to `https://api.approver.aiinigeria.com/api/...`
+
+---
+
+## 📋 Test Script
+
+Run `approver/test-approver.sh` on the server after deployment:
+
 ```bash
-ssh seemplify@4.180.153.209 "docker logs <approver-container-name>"
+chmod +x approver/test-approver.sh
+./approver/test-approver.sh
 ```
 
 ---
 
-## 📝 Next Steps Summary
+## 🔍 Troubleshooting
 
-1. ✅ **Database setup complete** - Application entry created
-2. ⏳ **Complete via Dokploy web UI** - Update repo, deploy
-3. ⏳ **Create API key** - In Dokploy Settings → API Keys
-4. ⏳ **Set GitHub secret** - `gh secret set DOKPLOY_TOKEN`
-5. ⏳ **Test deployment** - Verify everything works
-6. ⏳ **Test auto-deploy** - Push code and verify GitHub Actions works
+**"cannot create .../approver/frontend/approver/frontend/.env: Directory nonexistent"** (or backend):
+- Run on the server: `python3 approver/fix-createenvfile.py` (disables `createEnvFile` in Dokploy DB)
+- Redeploy approver-backend and approver-frontend in Dokploy UI
+
+**DNS not resolving:**
+- Wait 1-5 minutes for DNS propagation
+- Check Cloudflare DNS record: `api.approver` → `4.180.153.209`
+- Test: `nslookup api.approver.aiinigeria.com`
+
+**Backend 502/503:**
+- Check Dokploy app logs
+- Verify container is running: `docker ps | grep approver-backend`
+- Verify env vars are set in Dokploy UI
+
+**CORS errors:**
+- Verify `FRONTEND_URL=https://approver.aiinigeria.com` in backend env
+- Check backend logs for CORS issues
+
+**Login fails:**
+- Ensure seed-admin was called: `curl -X POST https://api.approver.aiinigeria.com/api/auth/seed-admin`
+- Check MongoDB connection in backend logs
+- Verify `MONGO_URI` points to correct database
 
 ---
 
-## 🎯 Application Details
+## 📝 Files Created
 
-- **Application ID:** `c39e55d7-abcf-4c7c-b008-ea648f9e7927`
-- **Domain:** `approver.aiinigeria.com`
-- **GitHub Workflow:** `.github/workflows/deploy-approver.yml`
-- **Build Path:** `backend/`
-- **Dockerfile:** `backend/Dockerfile`
+- `approver/set-approver-env.py` - Sets backend env vars via Dokploy DB
+- `approver/fix-createenvfile.py` - Disables createEnvFile for approver apps (fixes .env path error)
+- `approver/deploy-approver-apps.py` - Deployment status checker
+- `approver/test-approver.sh` - Automated test script
+- `approver/DEPLOY-INSTRUCTIONS.md` - Deployment guide
+- `.github/workflows/deploy-approver-both.yml` - Deploy both apps workflow
 
 ---
 
-**Status:** Database setup complete. Complete the final steps via Dokploy web UI, then set the API key for GitHub Actions auto-deploy.
+**Ready for deployment! Follow steps 1-5 above to complete setup.** 🚀

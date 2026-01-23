@@ -1,14 +1,10 @@
 # Deploy Approver Application to Dokploy
-# Triggers on changes to approver/ directory and deploys to approver.aiinigeria.com
+# DISABLED: This workflow was for the old combined app. Use deploy-approver-backend.yml and deploy-approver-frontend.yml instead.
 
-name: Deploy Approver to Dokploy
+name: Deploy Approver to Dokploy (DISABLED)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'approver/**'
-      - '.github/workflows/deploy-approver.yml'
+  # Disabled - use deploy-approver-backend.yml and deploy-approver-frontend.yml instead
   workflow_dispatch:
     inputs:
       confirm:
@@ -27,9 +23,23 @@ jobs:
           fetch-depth: 0
 
       - name: Trigger Dokploy Deployment
-        uses: benbristow/dokploy-deploy-action@0.0.1
-        with:
-          api_token: ${{ secrets.DOKPLOY_TOKEN }}
-          application_id: ${{ secrets.APPROVER_APP_ID }}
-          dokploy_url: ${{ secrets.DOKPLOY_URL }}
-          confirm: ${{ github.event.inputs.confirm }}
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "yes" ]; then
+            echo "❌ Deployment cancelled: confirmation required"
+            exit 1
+          fi
+          
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets.APPROVER_APP_ID }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ Deployment triggered successfully (HTTP $response)"
+            cat /tmp/response.txt 2>/dev/null || true
+          else
+            echo "❌ Deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi
