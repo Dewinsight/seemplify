@@ -1296,6 +1296,41 @@ textarea {
   }
 }
 
+/* Mobile Navigation - CSS Only (Checkbox Hack) */
+.mobile-nav-checkbox {
+  display: none;
+}
+
+.mobile-nav-toggle {
+  display: none;
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 10px 8px;
+  z-index: 1001;
+}
+
+.mobile-nav-toggle span {
+  display: block;
+  width: 24px;
+  height: 3px;
+  background: var(--text);
+  border-radius: 2px;
+  margin: 6px 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Mobile nav overlay - hidden by default */
+.mobile-nav-overlay {
+  display: none;
+}
+
+/* Mobile drawer - hidden by default */
+.mobile-drawer {
+  display: none;
+}
+
 @media (max-width: 1024px) {
 
   .auth-shell,
@@ -1314,11 +1349,551 @@ textarea {
   }
 
   .top-nav {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
+    position: relative;
+  }
+
+  /* Show hamburger button on mobile */
+  .mobile-nav-toggle {
+    display: block;
+    margin-left: auto;
+  }
+
+  /* Hamburger to X animation when checked */
+  .mobile-nav-checkbox:checked ~ .top-nav .mobile-nav-toggle span:nth-child(1) {
+    transform: rotate(45deg) translate(6px, 6px);
+  }
+
+  .mobile-nav-checkbox:checked ~ .top-nav .mobile-nav-toggle span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .mobile-nav-checkbox:checked ~ .top-nav .mobile-nav-toggle span:nth-child(3) {
+    transform: rotate(-45deg) translate(6px, -6px);
+  }
+
+  /* Hide desktop nav links and user section on mobile */
+  .top-nav-links,
+  .top-nav-user {
+    display: none !important;
+  }
+
+  /* Mobile Drawer - slides in from right */
+  .mobile-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    z-index: 1001;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Show drawer when checkbox is checked */
+  .mobile-nav-checkbox:checked ~ .mobile-drawer {
+    transform: translateX(0);
+  }
+
+  /* Close button in drawer */
+  .mobile-drawer-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--hover-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .mobile-drawer-close:hover {
+    background: var(--panel-strong);
+  }
+
+  .mobile-drawer-close svg {
+    width: 20px;
+    height: 20px;
+    color: var(--text);
+  }
+
+  /* Drawer links section */
+  .mobile-drawer-links {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 80px 20px 20px;
+    gap: 4px;
+    overflow-y: auto;
+  }
+
+  .mobile-drawer-links .top-nav-link {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    font-size: 16px;
+    color: var(--text);
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+
+  .mobile-drawer-links .top-nav-link:hover,
+  .mobile-drawer-links .top-nav-link.active {
+    background: var(--hover-bg);
+  }
+
+  /* Drawer user section at bottom */
+  .mobile-drawer-user {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 20px;
+    gap: 12px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .mobile-drawer-user .top-nav-user-info {
+    text-align: left;
+  }
+
+  .mobile-drawer-user .top-nav-logout {
+    width: 100%;
+    text-align: center;
+    padding: 12px;
+    background: var(--hover-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  /* Show overlay when checkbox is checked - BEHIND the drawer */
+  .mobile-nav-checkbox:checked ~ .mobile-nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 1000;
+    cursor: pointer;
   }
 
   .header {
     align-items: flex-start;
+  }
+
+  /* ========================================
+     GLOBAL MOBILE STYLES FOR ALL PAGES
+     ======================================== */
+
+  /* Body & Container */
+  body {
+    padding: 16px 12px 32px;
+  }
+
+  .container {
+    padding: 0;
+  }
+
+  /* Headers */
+  .header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-actions .btn {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    text-align: center;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  /* Cards */
+  .card {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .org-card {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .org-info {
+    width: 100%;
+  }
+
+  .org-name {
+    font-size: 16px;
+  }
+
+  .org-description {
+    font-size: 13px;
+  }
+
+  .org-meta {
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .org-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .org-actions .btn {
+    padding: 10px 8px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  /* Forms */
+  .form-group {
+    margin-bottom: 14px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+
+  .form-group input,
+  .form-group textarea,
+  .form-group select {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  /* Modals */
+  .modal-content {
+    width: 95%;
+    max-width: none;
+    margin: 10px;
+    max-height: 90vh;
+    border-radius: 16px;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-header h2 {
+    font-size: 18px;
+  }
+
+  /* Tables (make them scrollable) */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 500px;
+    font-size: 13px;
+  }
+
+  th, td {
+    padding: 10px 8px;
+  }
+
+  /* Members list */
+  .member-card,
+  .team-card,
+  .invitation-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .member-info,
+  .team-info,
+  .invitation-info {
+    width: 100%;
+  }
+
+  .member-actions,
+  .team-actions,
+  .invitation-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .member-actions .btn,
+  .team-actions .btn,
+  .invitation-actions .btn {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    text-align: center;
+  }
+
+  /* Role badges */
+  .role-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  /* Alerts */
+  .alert {
+    padding: 12px 14px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  /* Empty states */
+  .empty-state {
+    padding: 32px 16px;
+  }
+
+  .empty-state h3 {
+    font-size: 16px;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+  }
+
+  /* Profile page */
+  .profile-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .profile-avatar {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+  }
+
+  .profile-info h2 {
+    font-size: 18px;
+  }
+
+  /* Invitations */
+  .pending-invitation {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .invitation-details {
+    width: 100%;
+  }
+
+  .invitation-buttons {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  /* Notification badge */
+  .notification-badge {
+    position: static;
+  }
+
+  /* Current badge */
+  .current-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  /* Chips */
+  .chip {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+
+  /* Stats section */
+  .stats {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .stat {
+    flex: 1;
+    min-width: calc(33% - 8px);
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+  }
+
+  /* Back link */
+  .back-link {
+    font-size: 13px;
+    margin-bottom: 12px;
+    display: inline-block;
+  }
+
+  /* Header subtitle */
+  .header-subtitle {
+    font-size: 13px;
+  }
+
+  /* Member/Team specific */
+  .member-name,
+  .team-name {
+    font-size: 15px;
+  }
+
+  .member-email {
+    font-size: 13px;
+  }
+
+  .member-meta,
+  .team-meta {
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Role select dropdown */
+  .role-select {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  /* Pending invitations page */
+  .pending-list {
+    gap: 10px;
+  }
+
+  .pending-card {
+    padding: 14px;
+  }
+
+  .pending-org-name {
+    font-size: 16px;
+  }
+
+  .pending-meta {
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pending-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .pending-actions .btn {
+    text-align: center;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 400px) {
+  body {
+    padding: 12px 10px 24px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .header-actions .btn {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .org-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .btn {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .modal-content {
+    margin: 5px;
+    border-radius: 12px;
+  }
+
+  .member-actions .btn,
+  .team-actions .btn,
+  .invitation-actions .btn {
+    min-width: 100%;
+  }
+
+  .invitation-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    flex-direction: column;
+  }
+
+  .stat {
+    min-width: 100%;
+  }
+
+  .pending-actions {
+    grid-template-columns: 1fr;
   }
 }

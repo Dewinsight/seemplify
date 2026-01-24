@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>AIIN Hub - Your Apps</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    /* Hub-specific tune-ups: reduce noise + keep clean backdrop */
+    body { padding: 28px 18px 48px; }
+    body::before { opacity: var(--halo-opacity); }
+    body::after { display: none; }
+    .hub-content { margin-top: 8px; }
+    .hub-hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 14px;
+      margin: 14px 0 20px;
+    }
+    .hub-card { position: relative; }
+    .hub-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; color: var(--text); }
+    .hub-card p { margin: 0; color: var(--muted); font-size: 15px; }
+    .hub-card .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .hub-card .chip { background: var(--panel-strong); border: 1px solid var(--border); }
+    .hub-card .chip.secondary { color: var(--brand-2); }
+    .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text); font-weight: 600; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
+
+    .apps { width: 100%; display: block; margin-top: 18px; }
+    .section-title {
+      margin: 22px 0 10px;
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .ghost-btn {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .ghost-btn:hover { background: var(--hover-bg); }
+
+    .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+    .app-card {
+      text-decoration: none;
+      color: inherit;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+    .app-card:hover { box-shadow: 0 18px 36px rgba(0,0,0,0.35); transform: translateY(-3px); }
+    .app-card--primary { border-color: rgba(129,140,248,0.65); box-shadow: 0 18px 42px rgba(59,130,246,0.22); }
+    .app-card--primary:hover { border-color: rgba(129,140,248,0.8); box-shadow: 0 22px 46px rgba(59,130,246,0.32); }
+    .app-card__icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--app-color, #2563eb), #ffffff);
+      display: grid;
+      place-items: center;
+      color: #0f172a;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .app-card__icon svg { width: 24px; height: 24px; }
+    .app-card__body { display: grid; gap: 6px; }
+    .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .app-card__badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: white;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+    }
+    .app-card__desc { color: var(--muted); font-size: 13px; }
+    .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill { background: var(--panel-strong); border: 1px solid var(--border); color: var(--text-secondary); }
+    .pill--soft { background: var(--hover-bg); color: var(--muted); border-color: var(--border); }
+    .app-card__arrow { color: var(--muted); }
+
+    .empty {
+      margin-top: 12px;
+      padding: 48px 16px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      background: var(--hover-bg);
+    }
+    @media (max-width: 720px) {
+      body { padding: 16px 12px 32px; }
+      .hub-hero { grid-template-columns: 1fr; }
+      .hub-content { margin-top: 4px; }
+      .section-title { font-size: 15px; margin: 16px 0 8px; }
+
+      /* Organization card mobile layout */
+      .org-top-strip {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 12px !important;
+        padding: 16px !important;
+      }
+      .org-top-strip > div:first-child {
+        gap: 12px !important;
+      }
+      .org-top-strip .org-icon {
+        width: 40px !important;
+        height: 40px !important;
+      }
+      .org-top-strip .org-name {
+        font-size: 16px !important;
+      }
+      .org-actions-row {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+      }
+      .org-actions-row .ghost-btn {
+        flex: 1;
+        min-width: calc(33% - 6px);
+        text-align: center;
+        padding: 10px 8px !important;
+        font-size: 12px !important;
+      }
+      .org-switch-btn {
+        width: 100% !important;
+        justify-content: center !important;
+        margin-top: 4px;
+      }
+      .org-count-badge {
+        display: none !important;
+      }
+      .org-divider {
+        display: none !important;
+      }
+
+      /* Bottom strip mobile */
+      .org-bottom-strip {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 12px !important;
+        padding: 14px 16px !important;
+      }
+      .org-bottom-strip > div:first-child {
+        gap: 10px !important;
+      }
+      .org-bottom-strip .settings-icon {
+        width: 36px !important;
+        height: 36px !important;
+      }
+      .org-bottom-strip .settings-title {
+        font-size: 14px !important;
+      }
+      .org-bottom-strip .settings-desc {
+        font-size: 12px !important;
+      }
+      .org-bottom-actions {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px !important;
+      }
+      .org-bottom-actions .ghost-btn {
+        text-align: center;
+        padding: 10px 8px !important;
+        font-size: 12px !important;
+      }
+
+      /* App cards mobile */
+      .app-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      .app-card {
+        grid-template-columns: auto 1fr auto;
+        padding: 14px;
+        gap: 10px;
+      }
+      .app-card__icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+      }
+      .app-card__icon svg { width: 20px; height: 20px; }
+      .app-card__title { font-size: 15px; }
+      .app-card__desc { font-size: 12px; }
+      .app-card__meta { display: none; }
+      .app-card__arrow { display: none; }
+      .app-card:hover { transform: none; box-shadow: none; }
+
+      /* Hide pill text on mobile, show shorter version */
+      .pill--soft {
+        font-size: 10px !important;
+        padding: 4px 8px !important;
+      }
+    }
+
+    @media (max-width: 400px) {
+      body { padding: 12px 10px 24px; }
+      .section-title { font-size: 14px; }
+      .org-top-strip { padding: 14px !important; }
+      .org-bottom-strip { padding: 12px 14px !important; }
+      .ghost-btn {
+        padding: 8px 6px !important;
+        font-size: 11px !important;
+      }
+      .app-card { padding: 12px; }
+      .app-card__title { font-size: 14px; }
+      .app-card__desc { font-size: 11px; }
+    }
+
+    /* Modal Styles */
+    .custom-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .custom-modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    .custom-modal {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      width: 90%;
+      max-width: 440px;
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.2),
+        0 20px 60px -10px rgba(0,0,0,0.6);
+      transform: scale(0.92) translateY(8px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      opacity: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .custom-modal-overlay.active .custom-modal {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+    .custom-modal-header {
+      padding: 24px 24px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .custom-modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: -0.01em;
+    }
+    .custom-modal-close {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      padding: 8px;
+      margin: -8px -8px -8px 0;
+      border-radius: 99px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .custom-modal-close:hover {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+    }
+    .custom-modal-body {
+      padding: 8px 16px 24px;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    .org-option-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 4px;
+      gap: 14px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+      position: relative;
+    }
+    .org-option-item:hover {
+      background: rgba(255,255,255,0.04);
+    }
+    .org-option-item.active {
+      background: rgba(59,130,246,0.1);
+      border-color: rgba(59,130,246,0.2);
+    }
+    .org-option-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #334155;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: #cbd5e1;
+      font-size: 14px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .org-option-item.active .org-option-avatar {
+      background: linear-gradient(135deg, #3b82f6, #60a5fa);
+      color: #fff;
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+    }
+    .org-option-info { flex: 1; min-width: 0; }
+    .org-option-name { font-weight: 600; color: #e2e8f0; font-size: 15px; margin-bottom: 2px; }
+    .org-option-role { font-size: 13px; color: #94a3b8; text-transform: capitalize; }
+  </style>
+  <script src="/js/theme.js?v=2"></script>
+  <script src="/js/invitation-gatekeeper.js"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'home' }) %>
+
+  <div class="container hub-content">
+    <section class="apps">
+      <div class="section-title">Manage identity & access</div>
+
+      <% if (organizations && organizations.length > 0) { %>
+      <% const currentOrg = organizations.find(o => o.isCurrent) %>
+      <div class="card hub-card" style="padding: 0; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; gap: 0;">
+        <!-- Top Strip: Current Org & Switcher -->
+        <div class="org-top-strip" style="padding: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--border); background: var(--hover-bg);">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <div class="org-icon" style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: grid; place-items: center;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
+              </svg>
+            </div>
+            <div>
+              <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px;">Current Organization</div>
+              <div class="org-name" style="font-size: 18px; font-weight: 700; color: var(--text);"><%= currentOrg ? currentOrg.name : 'Select Organization' %></div>
+            </div>
+          </div>
+
+          <div class="org-actions-row" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <% if (currentOrg) { %>
+              <a href="/organizations/<%= currentOrg.id %>/members" class="ghost-btn">Members</a>
+              <a href="/organizations/<%= currentOrg.id %>/teams" class="ghost-btn">Teams</a>
+              <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
+                <a href="/organizations/<%= currentOrg.id %>/invitations" class="ghost-btn">Invites</a>
+              <% } %>
+              <div class="org-divider" style="width: 1px; height: 24px; background: var(--border); margin: 0 4px;"></div>
+            <% } %>
+            <button onclick="openOrgModal()" style="
+              display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+              background: var(--panel-strong); border: 1px solid var(--border);
+              border-radius: 8px; color: var(--text); font-weight: 500; font-size: 14px; cursor: pointer;
+              transition: all 0.2s;
+            " class="org-switch-btn">
+              <span>Switch...</span>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="org-count-badge" style="padding: 10px 14px; background: var(--panel-strong); border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <span style="font-size: 13px; font-weight: 600; color: var(--text);"><%= organizations.length %> Org<%= organizations.length === 1 ? '' : 's' %></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Strip: Settings & Actions -->
+        <div class="org-bottom-strip" style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; background: var(--panel);">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="settings-icon" style="width: 40px; height: 40px; border-radius: 10px; background: rgba(96, 165, 250, 0.1); display: grid; place-items: center;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="settings-title" style="font-weight: 600; color: var(--text); font-size: 15px;">Organization Settings</div>
+              <div class="settings-desc" style="font-size: 13px; color: var(--muted);">Manage your organization structure and team access</div>
+            </div>
+          </div>
+
+          <div class="org-bottom-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a href="/profile" class="ghost-btn">Profile</a>
+            <a href="/organizations" class="ghost-btn">Orgs</a>
+            <a href="/invitations/pending" class="ghost-btn">Invites</a>
+          </div>
+        </div>
+      </div>
+      <% } %>
+    </section>
+
+    <section class="apps">
+      <div class="section-title">Choose an app to launch with single sign-on</div>
+      <% if (apps && apps.length > 0) { %>
+        <div class="app-grid">
+          <% apps.forEach(app => { %>
+            <a href="/launch/<%= app.appId %>" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>">
+              <div class="app-card__icon"><%- app.iconSvg %></div>
+              <div class="app-card__body">
+                <div class="app-card__title">
+                  <%= app.name %>
+                  <% if (app.badge) { %><span class="app-card__badge"><%= app.badge %></span><% } %>
+                </div>
+                <div class="app-card__desc"><%= app.description || 'Secure single sign-on' %></div>
+                <div class="app-card__meta">
+                  <span class="pill pill--soft">Instant launch</span>
+                </div>
+              </div>
+              <div class="app-card__arrow">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </div>
+            </a>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <div class="empty">
+          <div style="margin-bottom:8px;font-weight:700;">No apps available yet</div>
+          Add an app to launch it from the hub.
+        </div>
+      <% } %>
+    </section>
+  </div>
+
+  <!-- Organization Switch Modal -->
+  <div id="customOrgModal" class="custom-modal-overlay">
+    <div class="custom-modal" onclick="event.stopPropagation()">
+      <div class="custom-modal-header">
+        <div class="custom-modal-title">Switch Organization</div>
+        <button class="custom-modal-close" onclick="closeCustomOrgModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="custom-modal-body">
+        <% if (organizations) { organizations.forEach(org => { %>
+          <button onclick="switchOrganization('<%= org.id %>')" class="org-option-item <%= org.isCurrent ? 'active' : '' %>">
+            <div class="org-option-avatar"><%= org.name.substring(0, 2).toUpperCase() %></div>
+            <div class="org-option-info">
+              <div class="org-option-name"><%= org.name %></div>
+              <div class="org-option-role"><%= org.role %></div>
+            </div>
+            <% if (org.isCurrent) { %>
+              <div style="color: #60a5fa;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+            <% } %>
+          </button>
+        <% }) } %>
+      </div>
+    </div>
+  </div>
+  <form id="org-switch-form" method="POST" style="display: none;"></form>
+
+  <script>
+    function openOrgModal() {
+      const modal = document.getElementById('customOrgModal');
+      modal.classList.add('active');
+
+      modal.onclick = (e) => {
+        if (e.target === modal) closeCustomOrgModal();
+      };
+
+      document.onkeydown = (e) => {
+        if (e.key === 'Escape') closeCustomOrgModal();
+      };
+    }
+
+    function closeCustomOrgModal() {
+      const modal = document.getElementById('customOrgModal');
+      modal.classList.remove('active');
+      document.onkeydown = null;
+    }
+
+    function switchOrganization(orgId) {
+      const form = document.getElementById('org-switch-form');
+      form.action = '/organizations/' + orgId + '/switch';
+      form.submit();
+    }
+  </script>
+</body>
+
+</html>
