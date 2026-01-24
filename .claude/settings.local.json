@@ -11,7 +11,9 @@
       "Bash(findstr:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(idp\\): Add responsive mobile navigation and mobile-friendly layouts\n\n- Add CSS-only mobile navigation with hamburger menu and slide-in drawer\n- Create reusable nav.ejs partial used across all pages\n- Convert home page from inline JS to EJS template with shared nav\n- Add comprehensive mobile styles for all pages \\(organizations, members, teams, invitations, profile\\)\n- Responsive layouts with stacked cards, grid buttons, and smaller fonts on mobile\n- Support for extra small screens \\(< 400px\\)\n- Add close button \\(X\\) to mobile drawer\n- Add missing app icons \\(chat, document-text, currency-dollar, academic-cap, chart-bar\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(dir /b \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\recruiter\\\\frontend\\\\app\\\\oidc\")",
+      "Bash(git commit:*)"
     ]
   }
 }

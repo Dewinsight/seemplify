@@ -1,7 +1,7 @@
 # Dokploy API Credentials & Tokens - Complete Reference
 
-**Last Updated:** January 22, 2026  
-**Retrieved Via:** SSH + PostgreSQL Database Query  
+**Last Updated:** January 24, 2026  
+**Retrieved Via:** Dokploy UI (Settings > Profile > API/CLI Keys)  
 **Environment:** Production + Development
 
 ---
@@ -12,21 +12,24 @@ All active API keys for Dokploy deployments:
 
 | Key Name | API Key | Purpose | Created | Status |
 |----------|---------|---------|---------|--------|
-| **GitHub Actions Deploy** | `sk_dokploy_b6178e414ec737424c7d0ecf20cddd51` | Primary key for GitHub Actions workflows | 2026-01-02 | ✅ Active |
-| **github-actions** | `f3d13889c31ed092145296a62f10ec4dd8b2215cc8243dab21fe79899d57ca03` | Alternative GitHub Actions key | 2026-01-01 | ✅ Active |
-| **approver-deployment-key** | `9a4a4367898affab2dc7d17317b2a6862000904bc6dfcf052251049dc3d8f64d` | Approver app deployment | 2026-01-22 | ✅ Active |
-| **MEGA 2** | `QA3UX5K1zl0p5QJTnrplFSrZhS74pIbFPG157R73Iho` | General deployment | 2026-01-02 | ✅ Active |
-| **MEGA** | `RqfxD9YlYx6qiNUKD4QbM5ffP2RUi7YWZR-n0tsAJM0` | General deployment | 2026-01-02 | ✅ Active |
+| **GitHub Actions Deploy 2026** | `github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKktAiCeJVexVmhfcEeh` | **PRIMARY** - GitHub Actions workflows | 2026-01-24 | ✅ Active |
+| **GitHub Actions Deploy** | `sk_dokploy_b6178e414ec737424c7d0ecf20cddd51` | ~~Old key (not working)~~ | 2026-01-02 | ❌ Deprecated |
+| **github-actions** | `f3d13889c31ed092145296a62f10ec4dd8b2215cc8243dab21fe79899d57ca03` | ~~Old key (not working)~~ | 2026-01-01 | ❌ Deprecated |
+| **approver-deployment-key** | `9a4a4367898affab2dc7d17317b2a6862000904bc6dfcf052251049dc3d8f64d` | ~~Old key (not working)~~ | 2026-01-22 | ❌ Deprecated |
+| **MEGA 2** | `QA3UX5K1zl0p5QJTnrplFSrZhS74pIbFPG157R73Iho` | ~~Old key (not working)~~ | 2026-01-02 | ❌ Deprecated |
+| **MEGA** | `RqfxD9YlYx6qiNUKD4QbM5ffP2RUi7YWZR-n0tsAJM0` | ~~Old key (not working)~~ | 2026-01-02 | ❌ Deprecated |
 
-### Recommended Key for GitHub Actions
+### ✅ Recommended Key for GitHub Actions
 
 **Use this key in GitHub Secrets:**
 ```
-DOKPLOY_TOKEN=sk_dokploy_b6178e414ec737424c7d0ecf20cddd51
+DOKPLOY_TOKEN=github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKktAiCeJVexVmhfcEeh
 ```
 
-**Key ID:** `a4eb15fa-d37d-409b-81fb-f9ae7c939a97`  
-**Name:** GitHub Actions Deploy
+**Key Name:** GitHub Actions Deploy 2026  
+**Prefix:** github-actions-2026  
+**Created:** January 24, 2026 via Dokploy UI  
+**Status:** ✅ Active and working
 
 ---
 
@@ -84,7 +87,7 @@ DOKPLOY_TOKEN=sk_dokploy_b6178e414ec737424c7d0ecf20cddd51
 ```bash
 # Dokploy Connection
 DOKPLOY_URL=http://4.180.153.209:3000
-DOKPLOY_TOKEN=sk_dokploy_b6178e414ec737424c7d0ecf20cddd51
+DOKPLOY_TOKEN=github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKktAiCeJVexVmhfcEeh
 
 # Production Application IDs
 IDENTITY_PROVIDER_APP_ID=8e1fIo8p0MwhkMiSBtb8U
@@ -128,8 +131,8 @@ APPROVER_APP_ID=c39e55d7-abcf-4c7c-b008-ea648f9e7927
 
 **Using GitHub CLI:**
 ```bash
-# Set Dokploy token
-gh secret set DOKPLOY_TOKEN --body "sk_dokploy_b6178e414ec737424c7d0ecf20cddd51"
+# Set Dokploy token (UPDATED January 24, 2026)
+gh secret set DOKPLOY_TOKEN --body "github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKktAiCeJVexVmhfcEeh"
 
 # Set production app IDs
 gh secret set RECRUITER_BACKEND_APP_ID --body "tPMolDg5OEdQUBZ4MKMFh"
@@ -147,7 +150,7 @@ gh secret set RECRUITER_FRONTEND_APP_ID --body "k_p-9M7ZWEhSSf_0JusGs"
 **Using cURL:**
 ```bash
 curl -X POST "http://4.180.153.209:3000/api/application.deploy" \
-  -H "x-api-key: sk_dokploy_b6178e414ec737424c7d0ecf20cddd51" \
+  -H "x-api-key: github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKktAiCeJVexVmhfcEeh" \
   -H "Content-Type: application/json" \
   -d '{"applicationId": "tPMolDg5OEdQUBZ4MKMFh"}'
 ```
@@ -220,11 +223,12 @@ ssh seemplify@4.180.153.209 "chmod +x /tmp/get-dokploy-credentials.sh && /tmp/ge
 
 | Key Name | Primary Use | Last Used |
 |----------|-------------|-----------|
-| GitHub Actions Deploy | CI/CD workflows | Active |
-| github-actions | Alternative CI/CD | Active |
-| approver-deployment-key | Approver app | 2026-01-22 |
-| MEGA 2 | General deployments | Active |
-| MEGA | General deployments | Active |
+| **GitHub Actions Deploy 2026** | **CI/CD workflows** | **2026-01-24** ✅ |
+| GitHub Actions Deploy | ~~Old key (deprecated)~~ | Deprecated |
+| github-actions | ~~Old key (deprecated)~~ | Deprecated |
+| approver-deployment-key | ~~Old key (deprecated)~~ | Deprecated |
+| MEGA 2 | ~~Old key (deprecated)~~ | Deprecated |
+| MEGA | ~~Old key (deprecated)~~ | Deprecated |
 
 ---
 
@@ -251,5 +255,8 @@ When credentials change:
 
 **⚠️ Keep this document secure! It contains sensitive deployment credentials.**
 
-**Last Retrieved:** January 22, 2026 via SSH + PostgreSQL query  
-**Retrieved By:** Automated credential retrieval script
+**Last Retrieved:** January 24, 2026 via Dokploy UI  
+**Retrieved By:** Browser automation (Dokploy Dashboard > Settings > Profile > API/CLI Keys)  
+**Key Generated:** January 24, 2026  
+**GitHub Secret Updated:** January 24, 2026  
+**Status:** ✅ All 24 workflows should now work with new API key
