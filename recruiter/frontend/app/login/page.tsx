@@ -2,12 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { useUser } from "@/context/UserContext";
+import { tokenManager } from "@/utils/tokenManager";
 import {
   ArrowRight,
   Zap,
@@ -34,8 +33,6 @@ interface StaffRoleError {
 
 export default function LoginPage() {
   const { toast } = useToast();
-  const auth = useAuth();
-  const user = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -134,31 +131,36 @@ export default function LoginPage() {
       })
 
       if (token && refreshToken) {
-        ; (async () => {
-          try {
-            console.log('📝 Starting auth login...')
-            auth.login(token, refreshToken, expiresIn)
-            if (typeof window !== 'undefined') {
-              const url = new URL(window.location.href)
-              url.hash = ''
-              url.searchParams.delete('token')
-              url.searchParams.delete('refreshToken')
-              url.searchParams.delete('expiresIn')
-              window.history.replaceState({}, '', url.pathname)
-              document.cookie = 'dev_jwt=; Max-Age=0; path=/'
-              document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
-              document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
-            }
-          } catch (error) {
-            console.error('❌ OIDC login error:', error)
-            setIsProcessingOIDC(false)
-            toast({
-              title: "Login Error",
-              description: "Failed to complete login. Please try again.",
-              variant: "destructive",
-            })
+        try {
+          console.log('📝 Starting token initialization...')
+          // Store tokens directly using tokenManager (no AuthContext needed)
+          tokenManager.initialize(token, refreshToken, expiresIn)
+
+          // Clean up URL and cookies
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href)
+            url.hash = ''
+            url.searchParams.delete('token')
+            url.searchParams.delete('refreshToken')
+            url.searchParams.delete('expiresIn')
+            window.history.replaceState({}, '', url.pathname)
+            document.cookie = 'dev_jwt=; Max-Age=0; path=/'
+            document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
+            document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
+
+            // Redirect to organization check
+            console.log('🔄 Redirecting to organization check...')
+            window.location.href = '/organization/check'
           }
-        })()
+        } catch (error) {
+          console.error('❌ OIDC login error:', error)
+          setIsProcessingOIDC(false)
+          toast({
+            title: "Login Error",
+            description: "Failed to complete login. Please try again.",
+            variant: "destructive",
+          })
+        }
       }
     }
   }, [])
