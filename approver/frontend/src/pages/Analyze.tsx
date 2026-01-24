@@ -237,7 +237,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h2 style={{ margin: 0 }}>Project Analysis</h2>
+                <h2 style={{ margin: 0 }}>AI Initiative Intake</h2>
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px' }}>
@@ -249,7 +249,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                         }}
                     >
-                        View All Analysis
+                        View All Initiatives
                     </button>
                     <button
                         onClick={() => setActiveTab('new')}
@@ -259,7 +259,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                         }}
                     >
-                        + New Analysis
+                        + New Initiative
                     </button>
                 </div>
             </div>
