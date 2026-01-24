@@ -1,0 +1,22 @@
+#!/bin/bash
+POSTGRES=$(docker ps --filter "name=dokploy-postgres" --format "{{.Names}}" | head -1)
+echo "=== All projects ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c 'SELECT "projectId", name, "organizationId" FROM project ORDER BY name;'
+echo ""
+echo "=== Application columns (all) ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT column_name FROM information_schema.columns WHERE table_name = 'application' ORDER BY ordinal_position;"
+echo ""
+echo "=== Environment table (project link) ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT column_name FROM information_schema.columns WHERE table_name = 'environment' ORDER BY ordinal_position;"
+echo ""
+echo "=== Sample: recruiter-backend app + its environment ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT a.\"applicationId\", a.name, a.\"environmentId\" FROM application a WHERE a.name = 'recruiter-backend' LIMIT 1;"
+echo ""
+echo "=== Environments and their projectId ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT \"environmentId\", name, \"projectId\" FROM environment LIMIT 5;"
+echo ""
+echo "=== One full application row (recruiter-backend, key cols) ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT \"applicationId\", name, \"appName\", \"sourceType\", \"customGitUrl\", \"customGitBranch\", \"customGitBuildPath\", repository, branch, \"buildPath\", dockerfile, \"dockerContextPath\", \"environmentId\", \"applicationStatus\", \"buildType\", \"createEnvFile\", enabled, replicas FROM application WHERE name = 'recruiter-backend' LIMIT 1;"
+echo ""
+echo "=== All applications named approver ==="
+docker exec $POSTGRES psql -U dokploy -d dokploy -c "SELECT \"applicationId\", name FROM application WHERE name = 'approver';"

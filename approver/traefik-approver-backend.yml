@@ -1,0 +1,23 @@
+http:
+  routers:
+    approver-backend-app-router-1:
+      rule: Host(`api.approver.aiinigeria.com`)
+      service: approver-backend-app-service-1
+      middlewares:
+        - redirect-to-https
+      entryPoints:
+        - web
+    approver-backend-app-router-websecure-1:
+      rule: Host(`api.approver.aiinigeria.com`)
+      service: approver-backend-app-service-1
+      middlewares: []
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+  services:
+    approver-backend-app-service-1:
+      loadBalancer:
+        servers:
+          - url: http://approver-backend-app:80
+        passHostHeader: true
