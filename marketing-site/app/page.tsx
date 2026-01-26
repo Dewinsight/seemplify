@@ -9,7 +9,11 @@ import {
   CalendarIllustration,
   ChartIllustration,
   PayrollIllustration,
+  LearningIllustration,
+  KnowledgeIllustration,
+  ChatIllustration,
 } from '@/components/AnimatedIllustrations'
+
 import SeemplifyLogo, { SeemplifyIcon } from '@/components/SeemplifyLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 
@@ -25,6 +29,18 @@ const LeaveApprovalFlow = dynamic(() => import('@/components/LeaveApprovalFlow')
 const PerformanceCycleFlow = dynamic(() => import('@/components/PerformanceCycleFlow'), {
   ssr: false,
   loading: () => <div className="w-full h-64 rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
+})
+const LearningFlow = dynamic(() => import('@/components/LearningFlow'), {
+  ssr: false,
+  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
+})
+const KnowledgeFlow = dynamic(() => import('@/components/KnowledgeFlow'), {
+  ssr: false,
+  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
+})
+const ChatFlow = dynamic(() => import('@/components/ChatFlow'), {
+  ssr: false,
+  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
 })
 
 const IDP_URL = 'https://auth.seemplifyai.com'
@@ -59,6 +75,24 @@ const IconPayroll = () => (
   <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
     <rect x="2" y="5" width="20" height="14" rx="2" />
     <line x1="2" y1="10" x2="22" y2="10" />
+  </svg>
+)
+
+const IconLearning = () => (
+  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+  </svg>
+)
+
+const IconKnowledge = () => (
+  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+  </svg>
+)
+
+const IconChat = () => (
+  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
   </svg>
 )
 
@@ -121,6 +155,36 @@ export default function HomePage() {
       color: 'text-amber-400',
       features: ['Auto-run', 'Compliance', 'Reporting'],
       url: 'https://payroll.seemplifyai.com',
+    },
+    {
+      title: 'Learning',
+      tagline: 'Upskill Talent',
+      description: 'Role-based courses and certifications.',
+      icon: <IconLearning />,
+      illustration: <LearningIllustration />,
+      color: 'text-sky-400',
+      features: ['Pathways', 'Assignments', 'Compliance'],
+      url: 'https://lms.seemplifyai.com',
+    },
+    {
+      title: 'Knowledge',
+      tagline: 'Centralize Intel',
+      description: 'Modern wiki for team documentation.',
+      icon: <IconKnowledge />,
+      illustration: <KnowledgeIllustration />,
+      color: 'text-blue-400',
+      features: ['Real-time collab', 'Rich text', 'Public share'],
+      url: 'https://docs.seemplifyai.com',
+    },
+    {
+      title: 'AI Assistant',
+      tagline: 'Automate Answers',
+      description: 'Intelligent chat for HR queries.',
+      icon: <IconChat />,
+      illustration: <ChatIllustration />,
+      color: 'text-violet-400',
+      features: ['Context award', 'Deep search', '24/7 Support'],
+      url: 'https://ai.seemplifyai.com',
     },
   ]
 
@@ -388,6 +452,71 @@ export default function HomePage() {
             </div>
             <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
               <PerformanceCycleFlow />
+            </div>
+          </div>
+        </section>
+        {/* Learning */}
+        <section className="container mx-auto px-6">
+          <div className="grid md:grid-cols-2 gap-16 items-center">
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <IconLearning />
+                <span className="text-xs font-mono text-sky-600 dark:text-sky-400 uppercase tracking-widest">LMS Module</span>
+              </div>
+              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Upskill your workforce.</h2>
+              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
+                Create role-based learning pathways. Automate compliance training, track progress, and issue certifications seamlessly.
+              </p>
+              <Link href="https://lms.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center">
+                Explore Learning <span className="ml-2">→</span>
+              </Link>
+            </div>
+            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
+              <LearningFlow />
+            </div>
+          </div>
+        </section>
+
+        {/* Knowledge */}
+        <section className="container mx-auto px-6">
+          <div className="grid md:grid-cols-2 gap-16 items-center">
+            <div className="order-2 md:order-1 glass rounded-2xl p-8 transform -rotate-1 hover:rotate-0 transition-transform duration-700">
+              <KnowledgeFlow />
+            </div>
+            <div className="order-1 md:order-2">
+              <div className="flex items-center gap-2 mb-6">
+                <IconKnowledge />
+                <span className="text-xs font-mono text-blue-600 dark:text-blue-400 uppercase tracking-widest">Knowledge Base</span>
+              </div>
+              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">A single source of truth.</h2>
+              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
+                Stop answering the same questions. Empower your team with a modern, collaborative knowledge base that organizes itself.
+              </p>
+              <Link href="https://docs.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center">
+                Explore Docs <span className="ml-2">→</span>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* AI Chat */}
+        <section className="container mx-auto px-6">
+          <div className="grid md:grid-cols-2 gap-16 items-center">
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <IconChat />
+                <span className="text-xs font-mono text-violet-600 dark:text-violet-400 uppercase tracking-widest">AI Agent</span>
+              </div>
+              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Instant answers, 24/7.</h2>
+              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
+                Your company policy, documentation, and data—instantly accessible through our intelligent AI assistant.
+              </p>
+              <Link href="https://ai.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-violet-600 dark:hover:text-violet-400 transition-colors flex items-center">
+                Explore AI <span className="ml-2">→</span>
+              </Link>
+            </div>
+            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
+              <ChatFlow />
             </div>
           </div>
         </section>

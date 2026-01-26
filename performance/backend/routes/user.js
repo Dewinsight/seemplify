@@ -4,13 +4,14 @@ const User = require('../models/User');
 const OKR = require('../models/OKR');
 const { PerformanceReview } = require('../models/PerformanceReview');
 const Feedback = require('../models/Feedback');
-const { 
+const {
   requireAuth,
   getUserRole,
   getDirectReports,
   getManagedTeams,
   getCurrentOrganization
 } = require('../middleware/rbac');
+const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
 
 /**
  * GET /api/user/context - Get comprehensive user context
@@ -462,17 +463,36 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
     }
     
     // Verify user has access to this organization (from IDP data)
-    const selectedOrg = organizations.find(org => 
+    const selectedOrg = organizations.find(org =>
       (org.id || org._id || org.organizationId) === organizationId
     );
-    
+
     if (!selectedOrg && organizations.length > 0) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'You do not have access to this organization' 
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have access to this organization'
       });
     }
-    
+
+    // Verify subscription access for the target organization
+    console.log('🔒 Verifying subscription access for org:', organizationId);
+    const subscriptionCheck = await verifySubscriptionAccess(
+      organizationId,
+      req.headers['authorization']?.replace('Bearer ', '') || sessionUser.accessToken
+    );
+
+    if (!subscriptionCheck.allowed) {
+      console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+      return res.status(403).json({
+        success: false,
+        error: 'This organization does not have access to Performance Management',
+        code: 'SUBSCRIPTION_REQUIRED',
+        reason: subscriptionCheck.reason,
+        subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.OIDC_ISSUER || 'http://localhost:4000'}/plans`
+      });
+    }
+    console.log('✅ Subscription access verified for performance-management');
+
     // Only store currentOrganizationId locally as a preference
     let dbUser = await User.findOne({ email: sessionUser.email });
     if (!dbUser) {

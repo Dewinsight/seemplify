@@ -3043,6 +3043,71 @@ app.get('/plans', async (req, res) => {
   }
 })
 
+// Subscription Required Page - Redirect destination when app denies access due to subscription
+app.get('/subscription-required', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const { app: appName, org: orgId, reason } = req.query
+
+    // App name display mapping
+    const appDisplayNames = {
+      'recruiter': 'SmartHR Recruiter',
+      'smarthr': 'SmartHR Recruiter',
+      'leave-management': 'Leave Management',
+      'payroll-management': 'Payroll Management',
+      'performance-management': 'Performance Management'
+    }
+
+    // Reason display mapping
+    const reasonMessages = {
+      'no_subscription': 'Your organization does not have an active subscription.',
+      'subscription_inactive': 'Your organization\'s subscription has expired or been cancelled.',
+      'feature_not_included': 'Your current plan does not include access to this application.',
+      'verification_failed': 'We could not verify your subscription status. Please try again.',
+      'verification_error': 'There was an error checking your subscription. Please try again later.',
+      'no_organization': 'You need to be part of an organization to access this application.'
+    }
+
+    let organization = null
+    let subscription = null
+    let plans = []
+
+    // Get plans for the user to see upgrade options
+    plans = await subscriptionService.getPublicPlans()
+
+    if (sessionAccount && orgId) {
+      // Try to get organization info
+      try {
+        organization = await Organization.findById(orgId).lean()
+
+        if (organization) {
+          subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+        }
+      } catch (e) {
+        console.error('Error fetching org for subscription-required:', e.message)
+      }
+    }
+
+    res.render('subscription-required', {
+      user: sessionAccount,
+      appName: appDisplayNames[appName] || appName || 'the application',
+      appKey: appName,
+      organization,
+      subscription,
+      reason,
+      reasonMessage: reasonMessages[reason] || reasonMessages['no_subscription'],
+      plans,
+      plansUrl: '/plans',
+      subscriptionUrl: '/subscription',
+      hubUrl: '/',
+      activePage: null
+    })
+  } catch (err) {
+    console.error('Subscription required page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
 // Subscription Status Page - View current subscription and requests
 app.get('/subscription', async (req, res) => {
   try {
@@ -3435,15 +3500,18 @@ app.get('/launch/:appId', async (req, res) => {
     const appFeatureMap = {
       'smarthr': 'recruiter',
       'recruiter': 'recruiter',
-      'leave': 'leaveManagement',
-      'payroll': 'payrollManagement',
-      'performance': 'performanceManagement',
+      'leave-management': 'leaveManagement',
+      'payroll-management': 'payrollManagement',
+      'performance-management': 'performanceManagement',
       'outline': 'outlineDocs',
       'openwebui': 'aiChat',
       'lms': 'lms'
     }
 
     const featureKey = appFeatureMap[appId]
+    if (!featureKey) {
+      console.warn(`⚠️ No subscription feature mapping for appId: ${appId} - subscription check skipped`)
+    }
     if (featureKey && account.currentOrganization) {
       const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
       const canAccess = await subscriptionService.canAccessApp(orgId, featureKey)

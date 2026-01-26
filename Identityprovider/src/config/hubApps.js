@@ -104,6 +104,21 @@ const developmentApps = [
     badge: 'Beta'
   },
   {
+    appId: 'time-attendance',
+    name: 'Time & Attendance',
+    description: 'Track work hours, manage timesheets, and handle approvals',
+    icon: 'clock',
+    color: '#14b8a6',
+    url: process.env.TIME_ATTENDANCE_URL || 'http://localhost:5011',
+    apiUrl: process.env.TIME_ATTENDANCE_API_URL || 'http://localhost:5010',
+    clientId: 'time-attendance',
+    isActive: true,
+    isPublic: true,
+    category: 'hr',
+    order: 4.5,
+    badge: 'New'
+  },
+  {
     appId: 'lms',
     name: 'Seemplify LMS',
     description: 'Online courses, training, and certifications',
@@ -205,6 +220,21 @@ const productionApps = [
     category: 'hr',
     order: 4,
     badge: 'Beta'
+  },
+  {
+    appId: 'time-attendance',
+    name: 'Time & Attendance',
+    description: 'Track work hours, manage timesheets, and handle approvals',
+    icon: 'clock',
+    color: '#14b8a6',
+    url: process.env.TIME_ATTENDANCE_URL,
+    apiUrl: process.env.TIME_ATTENDANCE_API_URL,
+    clientId: 'time-attendance',
+    isActive: true,
+    isPublic: true,
+    category: 'hr',
+    order: 4.5,
+    badge: 'New'
   },
   {
     appId: 'lms',

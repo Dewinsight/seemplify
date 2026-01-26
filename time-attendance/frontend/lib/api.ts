@@ -1,0 +1,128 @@
+import axios from 'axios';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010/api';
+
+// Create axios instance
+export const api = axios.create({
+    baseURL: API_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    withCredentials: true,
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+    }
+    return config;
+});
+
+// Auth API helpers
+export const authApi = {
+    getMe: async () => {
+        const response = await api.get('/auth/me');
+        return response.data;
+    },
+    logout: async () => {
+        return api.post('/auth/logout');
+    },
+    switchOrganization: async (organizationId: string) => {
+        const response = await api.post('/auth/switch-organization', { organizationId });
+        return response.data;
+    },
+};
+
+// Clock API helpers
+export const clockApi = {
+    getStatus: async () => {
+        const response = await api.get('/clock/status');
+        return response.data;
+    },
+    clockIn: async (note?: string, location?: any) => {
+        const response = await api.post('/clock/in', { note, location });
+        return response.data;
+    },
+    clockOut: async (note?: string, location?: any) => {
+        const response = await api.post('/clock/out', { note, location });
+        return response.data;
+    },
+    startBreak: async (note?: string) => {
+        const response = await api.post('/clock/break/start', { note });
+        return response.data;
+    },
+    endBreak: async (note?: string) => {
+        const response = await api.post('/clock/break/end', { note });
+        return response.data;
+    },
+};
+
+// Timesheet API helpers
+export const timesheetApi = {
+    getCurrent: async () => {
+        const response = await api.get('/timesheets/current');
+        return response.data;
+    },
+    getList: async (params?: any) => {
+        const response = await api.get('/timesheets', { params });
+        return response.data;
+    },
+    getById: async (id: string) => {
+        const response = await api.get(`/timesheets/${id}`);
+        return response.data;
+    },
+    submit: async (id: string, note?: string) => {
+        const response = await api.post(`/timesheets/${id}/submit`, { note });
+        return response.data;
+    },
+    recall: async (id: string) => {
+        const response = await api.post(`/timesheets/${id}/recall`);
+        return response.data;
+    },
+};
+
+// Attendance API helpers
+export const attendanceApi = {
+    getDashboard: async () => {
+        const response = await api.get('/attendance/dashboard');
+        return response.data;
+    },
+    getTeamStatus: async () => {
+        const response = await api.get('/attendance/team');
+        return response.data;
+    },
+};
+
+// Report API helpers
+export const reportsApi = {
+    getMonthlyAttendance: async (start: string, end: string) => {
+        const response = await api.get('/reports/attendance', { params: { start, end } });
+        return response.data;
+    },
+    getOvertime: async (start: string, end: string) => {
+        const response = await api.get('/reports/overtime', { params: { start, end } });
+        return response.data;
+    },
+    getLateness: async (start: string, end: string) => {
+        const response = await api.get('/reports/lateness', { params: { start, end } });
+        return response.data;
+    },
+};
+
+// Admin API helpers
+export const adminApi = {
+    getPolicy: async () => {
+        const response = await api.get('/admin/attendance-policy');
+        return response.data;
+    },
+    updatePolicy: async (policy: any) => {
+        const response = await api.post('/admin/attendance-policy', policy);
+        return response.data;
+    },
+};
+
+export default api;

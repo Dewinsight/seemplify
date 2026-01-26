@@ -123,8 +123,13 @@
     <h1 class="subscription-title">Subscription Required</h1>
 
     <p class="subscription-message">
-      Your organization needs an active subscription to access this application.
-      Please contact your organization administrator to request access.
+      <% if (typeof reasonMessage !== 'undefined' && reasonMessage) { %>
+        <%= reasonMessage %>
+      <% } else { %>
+        Your organization needs an active subscription to access this application.
+      <% } %>
+      <br><br>
+      Please view available plans or contact your organization administrator to request access.
     </p>
 
     <% if (typeof appName !== 'undefined' && appName) { %>

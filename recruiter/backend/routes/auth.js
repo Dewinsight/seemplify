@@ -8,6 +8,7 @@ const otpService = require('../services/otpService');
 const sessionService = require('../services/sessionService');
 const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 const router = express.Router();
 
@@ -665,6 +666,30 @@ router.get('/oidc/callback', async (req, res) => {
 
         return res.redirect(`${frontendUrl}/login?${errorParams.toString()}`);
       }
+    }
+
+    // ==========================================================================
+    // SUBSCRIPTION ACCESS CHECK
+    // Verify the organization has an active subscription with recruiter access
+    // ==========================================================================
+    if (currentOrg) {
+      console.log('🔒 Verifying subscription access for org:', currentOrg.id);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        currentOrg.id,
+        tokenSet.access_token
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied for recruiter:', subscriptionCheck.reason);
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'recruiter',
+          currentOrg.id,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for recruiter');
     }
 
     let user = await User.findOne({ email });

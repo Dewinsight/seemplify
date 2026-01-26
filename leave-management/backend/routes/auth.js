@@ -9,6 +9,7 @@ const { authLimiter } = require('../middleware/rateLimiter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { logUserLogin } = require('../services/auditService');
 const { requireAuth } = require('../middleware/auth');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -318,6 +319,31 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
       console.warn('⚠️ User logged in but has no organizations:', userinfo.email);
     }
 
+    // Verify subscription access for the current organization
+    if (req.session.currentOrganizationId) {
+      console.log('🔒 Verifying subscription access for org:', req.session.currentOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        req.session.currentOrganizationId,
+        tokenSet.access_token
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied:', subscriptionCheck.reason);
+        // Clear session since we're not allowing access
+        req.session.destroy((err) => {
+          if (err) console.error('Session destroy error:', err);
+        });
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'leave-management',
+          req.session.currentOrganizationId,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for leave-management');
+    }
+
     // Redirect to dashboard or return URL
     const returnUrl = req.session.returnUrl || '/dashboard';
     delete req.session.returnUrl;
@@ -426,6 +452,22 @@ router.post('/switch-organization', requireAuth, asyncHandler(async (req, res) =
     return res.status(403).json({
       error: 'You are not a member of this organization',
       code: 'ORG_ACCESS_DENIED',
+    });
+  }
+
+  // Verify subscription access for the target organization
+  const subscriptionCheck = await verifySubscriptionAccess(
+    organizationId,
+    req.user.accessToken
+  );
+
+  if (!subscriptionCheck.allowed) {
+    console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+    return res.status(403).json({
+      error: 'This organization does not have access to Leave Management',
+      code: 'SUBSCRIPTION_REQUIRED',
+      reason: subscriptionCheck.reason,
+      subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.IDP_URL || 'http://localhost:4000'}/plans`
     });
   }
 
