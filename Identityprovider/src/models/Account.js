@@ -91,6 +91,17 @@ const AccountSchema = new mongoose.Schema({
     default: false
   },
 
+  // System-level admin role (IDP admin, not organization admin)
+  isSystemAdmin: {
+    type: Boolean,
+    default: false
+  },
+  // Super admin (can manage other admins)
+  isSuperAdmin: {
+    type: Boolean,
+    default: false
+  },
+
   // =====================================================
   // SAML Support
   // =====================================================
@@ -168,6 +179,26 @@ AccountSchema.methods.setCurrentOrganization = async function (organizationId) {
   this.currentOrganization = organizationId
   await this.save()
   return this
+}
+
+// Check if user is any kind of system admin
+AccountSchema.methods.hasAdminAccess = function () {
+  return this.isSystemAdmin || this.isSuperAdmin
+}
+
+// Check if user can manage other admins
+AccountSchema.methods.canManageAdmins = function () {
+  return this.isSuperAdmin === true
+}
+
+// Static: Find all system admins
+AccountSchema.statics.findSystemAdmins = function () {
+  return this.find({ $or: [{ isSystemAdmin: true }, { isSuperAdmin: true }] })
+}
+
+// Static: Find super admins only
+AccountSchema.statics.findSuperAdmins = function () {
+  return this.find({ isSuperAdmin: true })
 }
 
 export const Account = mongoose.model('AiinAccount', AccountSchema)

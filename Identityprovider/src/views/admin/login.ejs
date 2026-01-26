@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - AIIN Identity Provider</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin-login-page">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>Admin Panel</h1>
+        <p>Identity Provider Management Console</p>
+      </div>
+
+      <% if (locals.error) { %>
+        <div class="alert alert-danger">
+          <span class="alert-icon">⚠️</span>
+          <span><%= error %></span>
+        </div>
+      <% } %>
+
+      <% if (locals.message) { %>
+        <div class="alert alert-success">
+          <span class="alert-icon">✅</span>
+          <span><%= message %></span>
+        </div>
+      <% } %>
+
+      <form id="adminLoginForm" action="/admin/login" method="POST" class="login-form">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            class="form-control"
+            placeholder="admin@example.com"
+            required
+            autofocus
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            class="form-control"
+            placeholder="•••••••••"
+            required
+          >
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" name="remember" value="true">
+            <span>Remember me for 7 days</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">
+          Sign In
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p class="security-notice">
+          🔒 Protected Area - Admin access only
+        </p>
+        <a href="/" class="back-link">
+          ← Back to Hub
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Form validation
+    const form = document.getElementById('adminLoginForm');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+
+    form.addEventListener('submit', (e) => {
+      let isValid = true;
+
+      // Email validation
+      if (!emailInput.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        emailInput.classList.add('error');
+        isValid = false;
+      } else {
+        emailInput.classList.remove('error');
+      }
+
+      // Password validation
+      if (passwordInput.value.length < 1) {
+        passwordInput.classList.add('error');
+        isValid = false;
+      } else {
+        passwordInput.classList.remove('error');
+      }
+
+      if (!isValid) {
+        e.preventDefault();
+      }
+    });
+
+    // Clear error on input
+    [emailInput, passwordInput].forEach(input => {
+      input.addEventListener('input', () => {
+        input.classList.remove('error');
+      });
+    });
+
+    // Focus email field
+    emailInput.focus();
+  </script>
+</body>
+</html>

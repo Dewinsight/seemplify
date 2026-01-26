@@ -21,10 +21,12 @@ import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
+import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
 import { samlIdPService as samlService } from './services/samlService.js'
+import { subscriptionService } from './services/subscriptionService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -60,9 +62,10 @@ async function getCachedClaims(acc) {
   console.log(`🔨 [PERF] Building claims for ${acc.email}...`)
 
   // Build claims in PARALLEL for performance
-  const [organizationClaims, teamClaims] = await Promise.all([
+  const [organizationClaims, teamClaims, subscriptionClaims] = await Promise.all([
     buildOrganizationClaims(acc),
-    getTeamClaims(acc)
+    getTeamClaims(acc),
+    buildSubscriptionClaims(acc)
   ])
 
   const claims = {
@@ -77,6 +80,8 @@ async function getCachedClaims(acc) {
       id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
       name: acc.currentOrganization.name
     } : null,
+    // Subscription claims (for current organization)
+    subscription: subscriptionClaims,
     // Team claims (with hierarchy)
     teams: teamClaims,
     // Team-based permissions across all organizations
@@ -107,6 +112,122 @@ async function getCachedClaims(acc) {
   console.log(`✅ [PERF] Claims built for ${acc.email} in ${Date.now() - startTime}ms (orgs: ${organizationClaims.length}, teams: ${teamClaims.length})`)
 
   return claims
+}
+
+/**
+ * Build subscription claims for the current organization
+ * Returns subscription status, features, and limits for apps to verify access
+ */
+async function buildSubscriptionClaims(acc) {
+  // No current organization = no subscription claims
+  if (!acc.currentOrganization) {
+    return {
+      status: 'none',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
+
+  try {
+    const orgId = acc.currentOrganization._id?.toString() || acc.currentOrganization.toString()
+
+    // Get subscription info from service
+    const subscription = await subscriptionService.getSubscriptionForOrg(orgId)
+
+    if (!subscription) {
+      return {
+        status: 'none',
+        planId: null,
+        planName: null,
+        features: {
+          recruiter: false,
+          leaveManagement: false,
+          payrollManagement: false,
+          performanceManagement: false,
+          outlineDocs: false,
+          aiChat: false,
+          lms: false
+        },
+        limits: {
+          maxMembers: 0,
+          maxTeams: 0
+        },
+        expiresAt: null,
+        isInGracePeriod: false
+      }
+    }
+
+    // Get effective features and limits (merges plan + custom overrides)
+    const [features, limits] = await Promise.all([
+      subscriptionService.getEffectiveFeatures(orgId),
+      subscriptionService.getEffectiveLimits(orgId)
+    ])
+
+    // Determine effective status
+    let effectiveStatus = subscription.status
+    if (subscription.status === 'expired' && subscription.isInGracePeriod) {
+      effectiveStatus = 'grace_period'
+    }
+
+    return {
+      status: effectiveStatus,
+      planId: subscription.plan?._id?.toString() || null,
+      planName: subscription.plan?.name || null,
+      features: {
+        recruiter: features.recruiter || false,
+        leaveManagement: features.leaveManagement || false,
+        payrollManagement: features.payrollManagement || false,
+        performanceManagement: features.performanceManagement || false,
+        outlineDocs: features.outlineDocs || false,
+        aiChat: features.aiChat || false,
+        lms: features.lms || false
+      },
+      limits: {
+        maxMembers: limits.maxMembers,
+        maxTeams: limits.maxTeams
+      },
+      expiresAt: subscription.endDate?.toISOString() || null,
+      isInGracePeriod: subscription.isInGracePeriod || false
+    }
+  } catch (error) {
+    console.error('Error building subscription claims:', error)
+    // Return safe defaults on error
+    return {
+      status: 'error',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
 }
 
 // =============================================================================
@@ -164,6 +285,14 @@ import organizationsRouter from './routes/organizations.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
+// Subscription Management Routes
+import adminPlansRouter from './routes/adminPlans.js'
+import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
+import adminSubscriptionsRouter from './routes/adminSubscriptions.js'
+import adminViewsRouter from './routes/adminViews.js'
+import publicPlansRouter from './routes/publicPlans.js'
+import organizationSubscriptionRouter from './routes/organizationSubscription.js'
+import adminUsersRouter from './routes/adminUsers.js'
 
 dotenv.config()
 
@@ -2881,6 +3010,165 @@ async function getSessionFromCookies(req) {
   }
 }
 
+// Public Plans Page - View available subscription plans
+app.get('/plans', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const plans = await subscriptionService.getPublicPlans()
+
+    // If user is logged in, get their organization subscription info
+    let currentSubscription = null
+    let organization = null
+
+    if (sessionAccount) {
+      const account = await Account.findOne({ sub: sessionAccount.sub })
+        .populate('currentOrganization')
+
+      if (account?.currentOrganization) {
+        organization = account.currentOrganization
+        currentSubscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      }
+    }
+
+    res.render('plans', {
+      user: sessionAccount,
+      plans,
+      currentSubscription,
+      organization,
+      activePage: 'plans'
+    })
+  } catch (err) {
+    console.error('Plans page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Subscription Status Page - View current subscription and requests
+app.get('/subscription', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/subscription')
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    // Get user's organizations for the org selector
+    const userOrganizations = await Organization.find({
+      'members.account': account._id,
+      'members.status': 'active'
+    }).lean()
+
+    // Determine which organization to show
+    let organization = null
+    const orgIdParam = req.query.org
+
+    if (orgIdParam) {
+      // Check if user is member of requested org
+      organization = userOrganizations.find(o => o._id.toString() === orgIdParam)
+    }
+
+    if (!organization && account.currentOrganization) {
+      organization = userOrganizations.find(o => o._id.toString() === account.currentOrganization._id.toString())
+    }
+
+    if (!organization && userOrganizations.length > 0) {
+      organization = userOrganizations[0]
+    }
+
+    let subscription = null
+    let features = null
+    let limits = null
+    let requests = []
+    let isAdmin = false
+
+    if (organization) {
+      // Get subscription info
+      subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      features = await subscriptionService.getEffectiveFeatures(organization._id)
+      limits = await subscriptionService.getEffectiveLimits(organization._id)
+
+      // Get subscription requests
+      const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+      requests = await SubscriptionRequest.findAllForOrg(organization._id)
+
+      // Check if user is admin of this org
+      const member = organization.members?.find(m => m.account.toString() === account._id.toString())
+      isAdmin = member?.role === 'admin' || member?.role === 'owner'
+    }
+
+    res.render('subscription', {
+      user: sessionAccount,
+      organization,
+      organizations: userOrganizations,
+      subscription,
+      features,
+      limits,
+      requests,
+      isAdmin,
+      requested: req.query.requested === 'true',
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Subscription page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Request Plan Page - Form to request a subscription
+app.get('/request-plan/:planId', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/request-plan/' + req.params.planId)
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    if (!account.currentOrganization) {
+      return res.redirect('/organizations?error=select_org_first')
+    }
+
+    // Get the plan
+    const Plan = (await import('./models/Plan.js')).default
+    const plan = await Plan.findById(req.params.planId)
+
+    if (!plan || !plan.isActive || !plan.isPublic) {
+      return res.redirect('/plans?error=plan_not_found')
+    }
+
+    // Check if there's already a pending request
+    const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+    const pendingRequest = await SubscriptionRequest.findOne({
+      organization: account.currentOrganization._id,
+      status: 'pending'
+    })
+
+    res.render('request-plan', {
+      user: sessionAccount,
+      plan,
+      organization: account.currentOrganization,
+      hasPendingRequest: !!pendingRequest,
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Request plan page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
 // Hub Homepage - Main app launcher (root route)
 app.get('/', async (req, res) => {
   try {
@@ -3142,6 +3430,34 @@ app.get('/launch/:appId', async (req, res) => {
       return res.status(404).send('App not found')
     }
 
+    // Check subscription access for apps that require it
+    // Map app IDs to subscription feature keys
+    const appFeatureMap = {
+      'smarthr': 'recruiter',
+      'recruiter': 'recruiter',
+      'leave': 'leaveManagement',
+      'payroll': 'payrollManagement',
+      'performance': 'performanceManagement',
+      'outline': 'outlineDocs',
+      'openwebui': 'aiChat',
+      'lms': 'lms'
+    }
+
+    const featureKey = appFeatureMap[appId]
+    if (featureKey && account.currentOrganization) {
+      const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
+      const canAccess = await subscriptionService.canAccessApp(orgId, featureKey)
+
+      if (!canAccess) {
+        console.log(`🚫 Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
+        return res.render('subscription-required', {
+          appName: app.name,
+          organization: account.currentOrganization,
+          user: account
+        })
+      }
+    }
+
     console.log('🚀 Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
@@ -3349,6 +3665,88 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+
+// Subscription Management API Routes
+app.use('/api/admin/plans', adminPlansRouter)
+app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
+app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
+app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/plans', publicPlansRouter)
+app.use('/api/organizations', organizationSubscriptionRouter)
+
+// Admin Login Routes (must come before admin views router)
+app.get('/admin/login', (req, res) => {
+  const errorMessages = {
+    auth_required: 'Authentication required. Please login.',
+    account_not_found: 'Account not found or does not have admin privileges.',
+    invalid_password: 'Invalid password. Please try again.',
+    login_failed: 'Login failed. Please try again.',
+    admin_access_required: 'Admin access required. You must be a system or super admin.'
+  }
+
+  const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+  const message = req.query.message || ''
+
+  res.render('admin/login', { error: errorMsg, message })
+})
+
+app.post('/admin/login', async (req, res) => {
+  try {
+    const { email, password, remember, redirect } = req.body
+
+    // Find account by email
+    const account = await Account.findOne({ email: email.toLowerCase() })
+
+    if (!account) {
+      return res.redirect('/admin/login?error=account_not_found')
+    }
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, account.passwordHash)
+    if (!validPassword) {
+      return res.redirect('/admin/login?error=invalid_password')
+    }
+
+    // Check admin access
+    if (!account.hasAdminAccess()) {
+      console.warn(`Non-admin login attempt: ${email}`)
+      return res.redirect('/admin/login?error=admin_access_required')
+    }
+
+    console.log(`✅ Admin login successful: ${email} (${account.isSuperAdmin ? 'Super Admin' : 'System Admin'})`)
+
+    // Set session
+    req.session.accountId = account.sub
+
+    // Redirect to requested page or admin dashboard
+    if (redirect && redirect.startsWith('/admin')) {
+      res.redirect(redirect)
+    } else {
+      res.redirect('/admin')
+    }
+  } catch (error) {
+    console.error('Admin login error:', error)
+    res.redirect('/admin/login?error=login_failed')
+  }
+})
+
+app.get('/admin/logout', (req, res, next) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err)
+      return next(err)
+    }
+
+    // Clear session cookie
+    res.clearCookie('_session')
+
+    console.log('✅ Admin logged out')
+    res.redirect('/admin/login?message=You have been logged out')
+  })
+})
+
+// Admin Panel View Routes
+app.use('/admin', adminViewsRouter)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
@@ -4992,9 +5390,17 @@ app.listen(PORT, async () => {
   // Initialize background jobs
   try {
     await initializeCleanupJobs()
-    console.log('✅ Background jobs initialized')
+    console.log('✅ Cleanup jobs initialized')
   } catch (error) {
-    console.error('⚠️ Failed to initialize background jobs:', error)
+    console.error('⚠️ Failed to initialize cleanup jobs:', error)
+  }
+
+  // Initialize subscription lifecycle jobs (runs every 6 hours)
+  try {
+    startSubscriptionLifecycleJobs(6)
+    console.log('✅ Subscription lifecycle jobs initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize subscription lifecycle jobs:', error)
   }
 })
 

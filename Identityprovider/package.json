@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "seed-admin": "node src/seeds/seedAdminSimple.js"
   },
   "dependencies": {
     "@node-saml/passport-saml": "^5.1.0",

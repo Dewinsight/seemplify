@@ -65,6 +65,26 @@ const OrganizationSchema = new mongoose.Schema({
     sparse: true,
     index: true
   },
+  // Active subscription reference
+  activeSubscription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinSubscription'
+  },
+  // Subscription status cache (updated by subscription lifecycle)
+  subscriptionStatus: {
+    type: String,
+    enum: ['none', 'active', 'expired', 'suspended', 'grace_period'],
+    default: 'none'
+  },
+  // Quick access to current plan (cached for performance)
+  currentPlan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinPlan'
+  },
+  // Subscription expiry date (cached for quick checks)
+  subscriptionExpiresAt: {
+    type: Date
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -80,6 +100,9 @@ OrganizationSchema.index({ name: 'text' })
 OrganizationSchema.index({ owner: 1 })
 OrganizationSchema.index({ 'members.account': 1 })
 OrganizationSchema.index({ createdAt: -1 })
+OrganizationSchema.index({ activeSubscription: 1 })
+OrganizationSchema.index({ subscriptionStatus: 1 })
+OrganizationSchema.index({ subscriptionExpiresAt: 1 })
 
 // Pre-save middleware to update timestamp
 OrganizationSchema.pre('save', function(next) {
@@ -356,6 +379,80 @@ OrganizationSchema.statics.findByAccount = function(accountId) {
   return this.find({
     'members.account': accountId,
     'members.status': 'active'
+  })
+}
+
+// Check if organization has active subscription
+OrganizationSchema.methods.hasActiveSubscription = function() {
+  return this.subscriptionStatus === 'active' || this.subscriptionStatus === 'grace_period'
+}
+
+// Check if organization can access a specific app
+OrganizationSchema.methods.canAccessApp = async function(appKey) {
+  if (!this.activeSubscription) return false
+
+  await this.populate('activeSubscription')
+  if (!this.activeSubscription) return false
+
+  return this.activeSubscription.canAccessApp(appKey)
+}
+
+// Update subscription cache (called when subscription changes)
+OrganizationSchema.methods.updateSubscriptionCache = async function(subscription) {
+  if (!subscription) {
+    this.activeSubscription = null
+    this.subscriptionStatus = 'none'
+    this.currentPlan = null
+    this.subscriptionExpiresAt = null
+  } else {
+    this.activeSubscription = subscription._id
+    this.currentPlan = subscription.plan
+    this.subscriptionExpiresAt = subscription.endDate
+
+    // Determine status
+    if (subscription.status === 'suspended') {
+      this.subscriptionStatus = 'suspended'
+    } else if (subscription.status === 'active') {
+      this.subscriptionStatus = 'active'
+    } else if (subscription.isInGracePeriod) {
+      this.subscriptionStatus = 'grace_period'
+    } else {
+      this.subscriptionStatus = 'expired'
+    }
+  }
+
+  return this.save()
+}
+
+// Get subscription details with plan
+OrganizationSchema.methods.getSubscriptionDetails = async function() {
+  if (!this.activeSubscription) return null
+
+  await this.populate({
+    path: 'activeSubscription',
+    populate: { path: 'plan' }
+  })
+
+  return this.activeSubscription
+}
+
+// Static: Find organizations with expiring subscriptions
+OrganizationSchema.statics.findWithExpiringSubscriptions = function(days = 7) {
+  const futureDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+  return this.find({
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: { $lte: futureDate, $gte: new Date() }
+  }).populate(['activeSubscription', 'currentPlan', 'owner'])
+}
+
+// Static: Find organizations without subscription
+OrganizationSchema.statics.findWithoutSubscription = function() {
+  return this.find({
+    $or: [
+      { subscriptionStatus: 'none' },
+      { subscriptionStatus: { $exists: false } },
+      { activeSubscription: { $exists: false } }
+    ]
   })
 }
 

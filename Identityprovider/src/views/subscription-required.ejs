@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Subscription Required - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .subscription-card {
+      max-width: 500px;
+      text-align: center;
+    }
+
+    .subscription-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .subscription-icon svg {
+      width: 40px;
+      height: 40px;
+      color: white;
+    }
+
+    .subscription-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 12px;
+    }
+
+    .subscription-message {
+      font-size: 16px;
+      color: var(--muted);
+      margin: 0 0 24px;
+      line-height: 1.6;
+    }
+
+    .subscription-app {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--hover-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .subscription-app-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--brand);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .subscription-app-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .subscription-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .subscription-actions .btn {
+      min-width: 140px;
+    }
+
+    .subscription-help {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .subscription-help a {
+      color: var(--brand);
+      text-decoration: none;
+    }
+
+    .subscription-help a:hover {
+      text-decoration: underline;
+    }
+  </style>
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="card subscription-card" style="padding: 48px 32px;">
+    <div class="subscription-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path d="M12 8v4M12 16h.01" />
+      </svg>
+    </div>
+
+    <h1 class="subscription-title">Subscription Required</h1>
+
+    <p class="subscription-message">
+      Your organization needs an active subscription to access this application.
+      Please contact your organization administrator to request access.
+    </p>
+
+    <% if (typeof appName !== 'undefined' && appName) { %>
+      <div class="subscription-app">
+        <div class="subscription-app-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          </svg>
+        </div>
+        <span class="subscription-app-name"><%= appName %></span>
+      </div>
+    <% } %>
+
+    <div class="subscription-actions">
+      <a href="/plans" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        </svg>
+        View Plans
+      </a>
+      <a href="/" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+        Go Home
+      </a>
+    </div>
+
+    <div class="subscription-help">
+      <% if (typeof organization !== 'undefined' && organization) { %>
+        <p>Organization: <strong><%= organization.name %></strong></p>
+      <% } %>
+      <p>
+        Need help? <a href="mailto:support@seemplifyai.com">Contact Support</a>
+      </p>
+    </div>
+  </div>
+</body>
+
+</html>
