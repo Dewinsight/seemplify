@@ -111,52 +111,14 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
 });
 
 /**
- * PUT /api/profile/tax
- * Update tax withholding information
- */
-router.put('/api/profile/tax', ensureAuthenticated, async (req, res) => {
-    try {
-        const userId = req.session.accountId;
-        const orgId = req.session.currentOrganization;
-        const { filingStatus, w4Allowances, additionalWithholding, multipleJobs } = req.body;
-
-        const account = await Account.findOne({ sub: userId });
-        if (!account) {
-            return res.status(404).json({ error: 'Account not found' });
-        }
-
-        account.profile = account.profile || {};
-        account.profile.taxInfo = {
-            filingStatus,
-            w4Allowances: w4Allowances || 0,
-            additionalWithholding: additionalWithholding || 0,
-            multipleJobs: multipleJobs || false,
-            lastUpdated: new Date()
-        };
-
-        await account.save();
-
-        // TODO: Send webhook to Payroll module with updated tax info
-        console.log('📤 Tax info updated, should notify Payroll module');
-
-        res.json({
-            success: true,
-            message: 'Tax information updated successfully! Payroll has been notified.'
-        });
-    } catch (error) {
-        console.error('Tax info update error:', error);
-        res.status(500).json({ error: 'Failed to update tax information' });
-    }
-});
-
-/**
  * PUT /api/profile/banking
- * Update banking/direct deposit information
+ * Update banking/direct deposit information (International support)
  */
 router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
     try {
         const userId = req.session.accountId;
-        const { account: bankAccount } = req.body;
+        const orgId = req.session.currentOrganization;
+        const { country, account: bankAccount } = req.body;
 
         const userAccount = await Account.findOne({ sub: userId });
         if (!userAccount) {
@@ -164,15 +126,30 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
         }
 
         userAccount.profile = userAccount.profile || {};
-        userAccount.profile.banking = userAccount.profile.banking || { accounts: [] };
+        userAccount.profile.banking = userAccount.profile.banking || { country: country, accounts: [] };
 
-        // Add new account (TODO: Implement edit/update logic)
-        userAccount.profile.banking.accounts.push(bankAccount);
+        // Update primary banking country if provided
+        if (country) {
+            userAccount.profile.banking.country = country;
+        }
+
+        // Add new account with timestamp
+        userAccount.profile.banking.accounts.push({
+            ...bankAccount,
+            createdAt: new Date()
+        });
 
         await userAccount.save();
 
         // TODO: Send webhook to Payroll module with updated banking info
-        console.log('📤 Banking info updated, should notify Payroll module');
+        // Payload should include country-specific fields for payment processing
+        console.log('📤 Banking info updated, should notify Payroll module with:', {
+            employeeId: userId,
+            organizationId: orgId,
+            country: bankAccount.country,
+            bankingMethod: userAccount.profile.banking.country,
+            accountsCount: userAccount.profile.banking.accounts.length
+        });
 
         res.json({
             success: true,

@@ -21,7 +21,7 @@
                 <div>
                     <h1>Banking & Direct Deposit</h1>
                     <div class="header-subtitle">
-                        Manage your direct deposit accounts
+                        Manage your international payment accounts
                     </div>
                 </div>
             </div>
@@ -46,7 +46,8 @@
                     <div>
                         <h3 style="margin: 0; font-size: 16px; color: var(--text);">Your Information is Secure</h3>
                         <p style="margin: 4px 0 0; font-size: 14px; color: var(--muted);">
-                            All banking information is encrypted and securely stored
+                            All banking information is encrypted and securely stored. We support USA, UK, Europe, and
+                            Nigeria payment systems.
                         </p>
                     </div>
                 </div>
@@ -63,20 +64,45 @@
                             <div style="display: flex; justify-content: space-between; align-items: start;">
                                 <div style="flex: 1;">
                                     <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;">
-                                        <%= account.bankName || 'Bank Account' %> (<%= account.accountType==='checking'
-                                                ? 'Checking' : 'Savings' %>)
+                                        <span
+                                            style="background: var(--brand); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 8px;">
+                                            <%= account.country || 'USA' %>
+                                        </span>
+                                        <%= account.bankName || 'Bank Account' %> (<%= account.accountType %>)
                                     </div>
-                                    <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
-                                        Routing: •••• <%= (account.routingNumber || '' ).slice(-4) %>
-                                    </div>
-                                    <div style="font-size: 14px; color: var(--muted); margin-bottom: 8px;">
-                                        Account: •••• <%= (account.accountNumber || '' ).slice(-4) %>
-                                    </div>
-                                    <div style="font-size: 14px; color: var(--text);">
-                                        <strong>
-                                            <%= account.percentage || 100 %>%
-                                        </strong> of paycheck
-                                    </div>
+
+                                    <% if (account.country==='USA' ) { %>
+                                        <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                            Routing: •••• <%= (account.routingNumber || '' ).slice(-4) %>
+                                        </div>
+                                        <% } else if (account.country==='UK' ) { %>
+                                            <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                                Sort Code: <%= account.sortCode || 'N/A' %>
+                                            </div>
+                                            <% } else if (account.country==='EU' ) { %>
+                                                <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                                    IBAN: <%= (account.iban || '' ).substring(0, 8) %>...
+                                                </div>
+                                                <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                                    BIC: <%= account.bicSwift || 'N/A' %>
+                                                </div>
+                                                <% } else if (account.country==='Nigeria' ) { %>
+                                                    <div
+                                                        style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                                        Bank Code: <%= account.bankCode || 'N/A' %>
+                                                    </div>
+                                                    <% } %>
+
+                                                        <div
+                                                            style="font-size: 14px; color: var(--muted); margin-bottom: 8px;">
+                                                            Account: •••• <%= (account.accountNumber || '' ).slice(-4)
+                                                                %>
+                                                        </div>
+                                                        <div style="font-size: 14px; color: var(--text);">
+                                                            <strong>
+                                                                <%= account.percentage || 100 %>%
+                                                            </strong> of paycheck
+                                                        </div>
                                 </div>
                                 <button type="button" class="btn btn-secondary" onclick="editAccount(<%= index %>)">
                                     Edit
@@ -96,45 +122,157 @@
 
             <!-- Add/Edit Account Form -->
             <div class="card">
-                <h3 style="font-size: 18px; margin-bottom: 16px;">Add Direct Deposit Account</h3>
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Add Payment Account</h3>
 
                 <form id="bankingForm">
+                    <!-- Country Selection -->
+                    <div class="form-group">
+                        <label for="country">Country <span style="color: var(--error);">*</span></label>
+                        <select id="country" name="country" required onchange="updateFormFields()">
+                            <option value="">Select country...</option>
+                            <option value="USA">🇺🇸 United States</option>
+                            <option value="UK">🇬🇧 United Kingdom</option>
+                            <option value="EU">🇪🇺 European Union</option>
+                            <option value="Nigeria">🇳🇬 Nigeria</option>
+                            <option value="Other">🌍 Other</option>
+                        </select>
+                        <div class="form-hint">Select your country to see relevant payment fields</div>
+                    </div>
+
+                    <!-- Bank Name (Common field) -->
                     <div class="form-group">
                         <label for="bankName">Bank Name <span style="color: var(--error);">*</span></label>
-                        <input type="text" id="bankName" name="bankName" placeholder="Chase Bank" required>
+                        <input type="text" id="bankName" name="bankName" placeholder="e.g., Chase Bank" required>
                     </div>
 
-                    <div class="form-group">
-                        <label for="accountType">Account Type <span style="color: var(--error);">*</span></label>
-                        <select id="accountType" name="accountType" required>
-                            <option value="">Select account type...</option>
-                            <option value="checking">Checking</option>
-                            <option value="savings">Savings</option>
-                        </select>
+                    <!-- USA-specific fields -->
+                    <div id="usaFields" style="display:none;">
+                        <div class="form-group">
+                            <label for="routingNumber">Routing Number (ABA RTN) <span
+                                    style="color: var(--error);">*</span></label>
+                            <input type="text" id="routingNumber" name="routingNumber" placeholder="9 digits"
+                                maxlength="9" pattern="[0-9]{9}">
+                            <div class="form-hint">The 9-digit routing number at the bottom left of your check</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="accountType">Account Type <span style="color: var(--error);">*</span></label>
+                            <select id="accountType" name="accountType">
+                                <option value="checking">Checking</option>
+                                <option value="savings">Savings</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="routingNumber">Routing Number <span style="color: var(--error);">*</span></label>
-                        <input type="text" id="routingNumber" name="routingNumber" placeholder="9 digits" maxlength="9"
-                            pattern="[0-9]{9}" required>
-                        <div class="form-hint">The 9-digit number at the bottom left of your check</div>
+                    <!-- UK-specific fields -->
+                    <div id="ukFields" style="display:none;">
+                        <div class="form-group">
+                            <label for="sortCode">Sort Code <span style="color: var(--error);">*</span></label>
+                            <input type="text" id="sortCode" name="sortCode" placeholder="12-34-56" maxlength="8"
+                                pattern="[0-9]{2}-[0-9]{2}-[0-9]{2}">
+                            <div class="form-hint">6-digit code in XX-XX-XX format (identifies bank and branch)</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ukIban">IBAN (Optional)</label>
+                            <input type="text" id="ukIban" name="ukIban" placeholder="GB29 NWBK 6016 1331 9268 19"
+                                maxlength="34">
+                            <div class="form-hint">International Bank Account Number (recommended for international
+                                transfers)</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="accountType">Account Type <span style="color: var(--error);">*</span></label>
+                            <select id="ukAccountType" name="ukAccountType">
+                                <option value="current">Current Account</option>
+                                <option value="savings">Savings Account</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div class="form-group">
+                    <!-- EU-specific fields -->
+                    <div id="euFields" style="display:none;">
+                        <div class="form-group">
+                            <label for="iban">IBAN <span style="color: var(--error);">*</span></label>
+                            <input type="text" id="iban" name="iban" placeholder="DE89 3704 0044 0532 0130 00"
+                                maxlength="34">
+                            <div class="form-hint">Your International Bank Account Number (up to 34 characters)</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="bicSwift">BIC/SWIFT Code <span style="color: var(--error);">*</span></label>
+                            <input type="text" id="bicSwift" name="bicSwift" placeholder="DEUTDEFF" maxlength="11">
+                            <div class="form-hint">8 or 11 character code identifying your bank</div>
+                        </div>
+                    </div>
+
+                    <!-- Nigeria-specific fields -->
+                    <div id="nigeriaFields" style="display:none;">
+                        <div class="form-group">
+                            <label for="nigeriaBank">Select Bank <span style="color: var(--error);">*</span></label>
+                            <select id="nigeriaBank" name="nigeriaBank" onchange="updateBankCode()">
+                                <option value="">Choose your bank...</option>
+                                <option value="044">Access Bank (044)</option>
+                                <option value="023">Citibank (023)</option>
+                                <option value="050">Ecobank (050)</option>
+                                <option value="070">Fidelity Bank (070)</option>
+                                <option value="011">First Bank of Nigeria (011)</option>
+                                <option value="058">GT Bank (058)</option>
+                                <option value="030">Heritage Bank (030)</option>
+                                <option value="082">Keystone Bank (082)</option>
+                                <option value="076">Polaris Bank (076)</option>
+                                <option value="101">Providus Bank (101)</option>
+                                <option value="221">Stanbic IBTC Bank (221)</option>
+                                <option value="068">Standard Chartered (068)</option>
+                                <option value="232">Sterling Bank (232)</option>
+                                <option value="032">Union Bank (032)</option>
+                                <option value="033">United Bank for Africa - UBA (033)</option>
+                                <option value="215">Unity Bank (215)</option>
+                                <option value="035">Wema Bank (035)</option>
+                                <option value="057">Zenith Bank (057)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="bankCode">Bank Code</label>
+                            <input type="text" id="bankCode" name="bankCode" readonly placeholder="Select bank above"
+                                maxlength="3">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="nigeriaAccountType">Account Type <span
+                                    style="color: var(--error);">*</span></label>
+                            <select id="nigeriaAccountType" name="nigeriaAccountType">
+                                <option value="salary">Salary Account</option>
+                                <option value="savings">Savings Account</option>
+                                <option value="current">Current Account</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Account Number (Common field - shown after country selected) -->
+                    <div class="form-group" id="accountNumberField" style="display:none;">
                         <label for="accountNumber">Account Number <span style="color: var(--error);">*</span></label>
-                        <input type="text" id="accountNumber" name="accountNumber" placeholder="Account number"
-                            required>
-                        <div class="form-hint">The account number on your checks or bank statement</div>
+                        <input type="text" id="accountNumber" name="accountNumber" placeholder="Account number">
+                        <div class="form-hint" id="accountNumberHint">Your bank account number</div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="accountNumberConfirmField" style="display:none;">
                         <label for="accountNumberConfirm">Confirm Account Number <span
                                 style="color: var(--error);">*</span></label>
                         <input type="text" id="accountNumberConfirm" name="accountNumberConfirm"
-                            placeholder="Re-enter account number" required>
+                            placeholder="Re-enter account number">
                     </div>
 
-                    <div class="form-group">
+                    <!-- Account Holder Name (Common) -->
+                    <div class="form-group" id="accountHolderField" style="display:none;">
+                        <label for="accountHolderName">Account Holder Name</label>
+                        <input type="text" id="accountHolderName" name="accountHolderName"
+                            placeholder="Full name on account">
+                    </div>
+
+                    <!-- Percentage Allocation -->
+                    <div class="form-group" id="percentageField" style="display:none;">
                         <label for="percentage">Percentage of Paycheck</label>
                         <input type="number" id="percentage" name="percentage" min="1" max="100" value="100">
                         <div class="form-hint">What percentage of your paycheck should go to this account? (Default:
@@ -147,7 +285,7 @@
             <div class="card">
                 <div class="form-actions">
                     <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveBankingInfo()">
-                        <span id="btnText">Add Account</span>
+                        <span id="btnText">Add Payment Account</span>
                         <span id="btnSpinner" style="display:none;">Saving...</span>
                     </button>
                     <a href="/profile" class="btn btn-secondary">Cancel</a>
@@ -155,13 +293,65 @@
 
                 <div
                     style="margin-top: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px; font-size: 14px; color: var(--muted);">
-                    <strong>Important:</strong> Changes to direct deposit will be sent to Payroll and applied to your
-                    next pay period.
+                    <strong>Important:</strong> Changes to banking information will be sent to Payroll and applied to
+                    your next pay period.
                 </div>
             </div>
         </div>
 
         <script>
+            function updateFormFields() {
+                const country = document.getElementById('country').value;
+
+                // Hide all country-specific fields
+                document.getElementById('usaFields').style.display = 'none';
+                document.getElementById('ukFields').style.display = 'none';
+                document.getElementById('euFields').style.display = 'none';
+                document.getElementById('nigeriaFields').style.display = 'none';
+
+                // Show common fields
+                document.getElementById('accountNumberField').style.display = 'none';
+                document.getElementById('accountNumberConfirmField').style.display = 'none';
+                document.getElementById('accountHolderField').style.display = 'none';
+                document.getElementById('percentageField').style.display = 'none';
+
+                if (!country) return;
+
+                // Show country-specific fields
+                if (country === 'USA') {
+                    document.getElementById('usaFields').style.display = 'block';
+                    document.getElementById('accountNumberField').style.display = 'block';
+                    document.getElementById('accountNumberConfirmField').style.display = 'block';
+                    document.getElementById('accountNumberHint').textContent = 'Your bank account number (typically 8-17 digits)';
+                } else if (country === 'UK') {
+                    document.getElementById('ukFields').style.display = 'block';
+                    document.getElementById('accountNumberField').style.display = 'block';
+                    document.getElementById('accountNumberConfirmField').style.display = 'block';
+                    document.getElementById('accountNumberHint').textContent = 'Your 8-digit account number';
+                } else if (country === 'EU') {
+                    document.getElementById('euFields').style.display = 'block';
+                    // IBAN contains account number, so no separate account number field needed
+                } else if (country === 'Nigeria') {
+                    document.getElementById('nigeriaFields').style.display = 'block';
+                    document.getElementById('accountNumberField').style.display = 'block';
+                    document.getElementById('accountNumberConfirmField').style.display = 'block';
+                    document.getElementById('accountNumberHint').textContent = 'Your 10-digit account number (NUBAN)';
+                }
+
+                document.getElementById('accountHolderField').style.display = 'block';
+                document.getElementById('percentageField').style.display = 'block';
+            }
+
+            function updateBankCode() {
+                const select = document.getElementById('nigeriaBank');
+                const bankCodeInput = document.getElementById('bankCode');
+                bankCodeInput.value = select.value;
+
+                // Update bank name based on selection
+                const bankName = select.options[select.selectedIndex].text.split('(')[0].trim();
+                document.getElementById('bankName').value = bankName;
+            }
+
             async function saveBankingInfo() {
                 const alertSuccess = document.getElementById('alertSuccess');
                 const alertError = document.getElementById('alertError');
@@ -173,23 +363,49 @@
                 alertSuccess.classList.remove('show');
                 alertError.classList.remove('show');
 
-                // Validation
+                const country = document.getElementById('country').value;
+                if (!country) {
+                    alertError.textContent = 'Please select a country';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                }
+
+                // Validate account number confirmation
                 const accountNumber = document.getElementById('accountNumber').value;
                 const accountNumberConfirm = document.getElementById('accountNumberConfirm').value;
 
-                if (accountNumber !== accountNumberConfirm) {
+                if (accountNumber && accountNumber !== accountNumberConfirm) {
                     alertError.textContent = 'Account numbers do not match';
                     alertError.classList.add('show');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
 
-                const routingNumber = document.getElementById('routingNumber').value;
-                if (!/^\d{9}$/.test(routingNumber)) {
-                    alertError.textContent = 'Routing number must be exactly 9 digits';
-                    alertError.classList.add('show');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                    return;
+                // Country-specific validation
+                if (country === 'USA') {
+                    const routing = document.getElementById('routingNumber').value;
+                    if (!/^\d{9}$/.test(routing)) {
+                        alertError.textContent = 'Routing number must be exactly 9 digits';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
+                } else if (country === 'UK') {
+                    const sortCode = document.getElementById('sortCode').value;
+                    if (!/^\d{2}-\d{2}-\d{2}$/.test(sortCode)) {
+                        alertError.textContent = 'Sort code must be in format XX-XX-XX';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
+                } else if (country === 'Nigeria') {
+                    if (accountNumber && accountNumber.length !== 10) {
+                        alertError.textContent = 'Nigerian account numbers must be exactly 10 digits';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
                 }
 
                 // Show loading
@@ -197,16 +413,35 @@
                 btnText.style.display = 'none';
                 btnSpinner.style.display = 'inline';
 
-                // Collect data
+                // Collect data based on country
                 const data = {
+                    country: country,
                     account: {
+                        country: country,
                         bankName: document.getElementById('bankName').value.trim(),
-                        accountType: document.getElementById('accountType').value,
-                        routingNumber: routingNumber,
-                        accountNumber: accountNumber,
+                        accountHolderName: document.getElementById('accountHolderName').value.trim(),
                         percentage: parseInt(document.getElementById('percentage').value) || 100
                     }
                 };
+
+                if (country === 'USA') {
+                    data.account.routingNumber = document.getElementById('routingNumber').value;
+                    data.account.accountNumber = accountNumber;
+                    data.account.accountType = document.getElementById('accountType').value;
+                } else if (country === 'UK') {
+                    data.account.sortCode = document.getElementById('sortCode').value;
+                    data.account.accountNumber = accountNumber;
+                    data.account.iban = document.getElementById('ukIban').value.trim();
+                    data.account.accountType = document.getElementById('ukAccountType').value;
+                } else if (country === 'EU') {
+                    data.account.iban = document.getElementById('iban').value.trim();
+                    data.account.bicSwift = document.getElementById('bicSwift').value.trim();
+                    data.account.accountType = 'current';
+                } else if (country === 'Nigeria') {
+                    data.account.bankCode = document.getElementById('bankCode').value;
+                    data.account.accountNumber = accountNumber;
+                    data.account.accountType = document.getElementById('nigeriaAccountType').value;
+                }
 
                 try {
                     const response = await fetch('/api/profile/banking', {
@@ -218,7 +453,7 @@
                     const result = await response.json();
 
                     if (response.ok) {
-                        alertSuccess.textContent = result.message || 'Banking information updated successfully!';
+                        alertSuccess.textContent = result.message || 'Banking information updated successfully! Payroll has been notified.';
                         alertSuccess.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -242,8 +477,7 @@
             }
 
             function editAccount(index) {
-                // TODO: Implement edit functionality
-                alert('Edit functionality coming soon');
+                alert('Edit functionality coming soon - for now, please add a new account');
             }
         </script>
 
