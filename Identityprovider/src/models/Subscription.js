@@ -93,6 +93,7 @@ const SubscriptionSchema = new mongoose.Schema({
     leaveManagement: { type: Boolean },
     payrollManagement: { type: Boolean },
     performanceManagement: { type: Boolean },
+    timeAttendance: { type: Boolean },
     outlineDocs: { type: Boolean },
     aiChat: { type: Boolean },
     lms: { type: Boolean }
@@ -195,6 +196,7 @@ SubscriptionSchema.methods.getEffectiveFeatures = async function() {
       leaveManagement: false,
       payrollManagement: false,
       performanceManagement: false,
+      timeAttendance: false,
       outlineDocs: false,
       aiChat: false,
       lms: false

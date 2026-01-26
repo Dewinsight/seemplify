@@ -7,6 +7,7 @@ const {
     getUserInfo,
     generatePKCE,
 } = require('../config/oidc');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 // Store PKCE verifiers temporarily (in production, use Redis or similar)
 const pkceStore = new Map();
@@ -98,6 +99,32 @@ router.get('/callback', async (req, res) => {
             expiresAt: tokenSet.expires_at,
         };
 
+        // Determine current organization ID
+        const currentOrgId = userinfo.currentOrganization?.id ||
+            userinfo.current_organization?.id ||
+            userinfo.organizations?.[0]?.id;
+
+        // Verify subscription access for the current organization
+        if (currentOrgId) {
+            console.log('🔒 Verifying subscription access for org:', currentOrgId);
+            const subscriptionCheck = await verifySubscriptionAccess(
+                currentOrgId,
+                tokenSet.access_token
+            );
+
+            if (!subscriptionCheck.allowed) {
+                console.log('❌ Subscription access denied for time-attendance:', subscriptionCheck.reason);
+                // Redirect to IDP subscription required page
+                const subscriptionUrl = getSubscriptionRequiredUrl(
+                    'time-attendance',
+                    currentOrgId,
+                    subscriptionCheck.reason
+                );
+                return res.redirect(subscriptionUrl);
+            }
+            console.log('✅ Subscription access verified for time-attendance');
+        }
+
         // Store in session
         if (req.session) {
             req.session.user = user;
@@ -178,6 +205,24 @@ router.post('/switch-organization', async (req, res) => {
         if (!organization) {
             return res.status(403).json({ error: 'Organization not found or access denied' });
         }
+
+        // Verify subscription access for the target organization
+        console.log('🔒 Verifying subscription access for org:', organizationId);
+        const subscriptionCheck = await verifySubscriptionAccess(
+            organizationId,
+            accessToken
+        );
+
+        if (!subscriptionCheck.allowed) {
+            console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+            return res.status(403).json({
+                error: 'This organization does not have access to Time & Attendance',
+                code: 'SUBSCRIPTION_REQUIRED',
+                reason: subscriptionCheck.reason,
+                subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.IDP_URL || 'http://localhost:4000'}/plans`
+            });
+        }
+        console.log('✅ Subscription access verified for time-attendance');
 
         // Update session if exists
         if (req.session && req.session.user) {

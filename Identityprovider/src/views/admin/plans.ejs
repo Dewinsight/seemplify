@@ -203,6 +203,10 @@
                 <span class="feature-toggle-label">Performance Management</span>
               </label>
               <label class="feature-toggle">
+                <input type="checkbox" id="featureTimeAttendance" name="features.timeAttendance">
+                <span class="feature-toggle-label">Time & Attendance</span>
+              </label>
+              <label class="feature-toggle">
                 <input type="checkbox" id="featureOutlineDocs" name="features.outlineDocs">
                 <span class="feature-toggle-label">Outline Docs</span>
               </label>
@@ -336,6 +340,7 @@
           document.getElementById('featureLeaveManagement').checked = features.leaveManagement;
           document.getElementById('featurePayrollManagement').checked = features.payrollManagement;
           document.getElementById('featurePerformanceManagement').checked = features.performanceManagement;
+          document.getElementById('featureTimeAttendance').checked = features.timeAttendance;
           document.getElementById('featureOutlineDocs').checked = features.outlineDocs;
           document.getElementById('featureAiChat').checked = features.aiChat;
           document.getElementById('featureLms').checked = features.lms;
@@ -386,6 +391,7 @@
           leaveManagement: document.getElementById('featureLeaveManagement').checked,
           payrollManagement: document.getElementById('featurePayrollManagement').checked,
           performanceManagement: document.getElementById('featurePerformanceManagement').checked,
+          timeAttendance: document.getElementById('featureTimeAttendance').checked,
           outlineDocs: document.getElementById('featureOutlineDocs').checked,
           aiChat: document.getElementById('featureAiChat').checked,
           lms: document.getElementById('featureLms').checked

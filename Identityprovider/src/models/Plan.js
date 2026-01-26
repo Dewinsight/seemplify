@@ -41,6 +41,7 @@ const PlanSchema = new mongoose.Schema({
     leaveManagement: { type: Boolean, default: false },
     payrollManagement: { type: Boolean, default: false },
     performanceManagement: { type: Boolean, default: false },
+    timeAttendance: { type: Boolean, default: false },
     outlineDocs: { type: Boolean, default: false },
     aiChat: { type: Boolean, default: false },
     lms: { type: Boolean, default: false }
@@ -117,6 +118,7 @@ PlanSchema.virtual('featureList').get(function() {
     leaveManagement: 'Leave Management',
     payrollManagement: 'Payroll Management',
     performanceManagement: 'Performance Management',
+    timeAttendance: 'Time & Attendance',
     outlineDocs: 'Outline Docs',
     aiChat: 'AI Chat Assistant',
     lms: 'Learning Management System'

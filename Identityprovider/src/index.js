@@ -3055,7 +3055,8 @@ app.get('/subscription-required', async (req, res) => {
       'smarthr': 'SmartHR Recruiter',
       'leave-management': 'Leave Management',
       'payroll-management': 'Payroll Management',
-      'performance-management': 'Performance Management'
+      'performance-management': 'Performance Management',
+      'time-attendance': 'Time & Attendance'
     }
 
     // Reason display mapping
@@ -3503,6 +3504,7 @@ app.get('/launch/:appId', async (req, res) => {
       'leave-management': 'leaveManagement',
       'payroll-management': 'payrollManagement',
       'performance-management': 'performanceManagement',
+      'time-attendance': 'timeAttendance',
       'outline': 'outlineDocs',
       'openwebui': 'aiChat',
       'lms': 'lms'
