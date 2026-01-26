@@ -293,6 +293,7 @@ import adminViewsRouter from './routes/adminViews.js'
 import publicPlansRouter from './routes/publicPlans.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
+import profileRouter from './routes/profile.js'
 
 dotenv.config()
 
@@ -520,11 +521,11 @@ provider.on('interaction.ended', (ctx) => {
 provider.on('grant.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   // Account ID can be in session, grant, or entities.Account
-  const accountId = ctx.oidc.session?.accountId || 
-                    ctx.oidc.account?.accountId ||
-                    ctx.oidc.entities?.Account?.accountId ||
-                    ctx.oidc.grant?.accountId
-  
+  const accountId = ctx.oidc.session?.accountId ||
+    ctx.oidc.account?.accountId ||
+    ctx.oidc.entities?.Account?.accountId ||
+    ctx.oidc.grant?.accountId
+
   console.log('✅ Grant success:', {
     client_id: clientId,
     grant_type: ctx.oidc.params?.grant_type,
@@ -562,7 +563,7 @@ provider.on('server_error', (ctx, err) => {
 provider.on('userinfo.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   const account = ctx.oidc.account
-  
+
   console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
 })
 
@@ -3577,7 +3578,7 @@ app.get('/launch/:appId', async (req, res) => {
       // Generate SSO token to enable auto-login from hub session
       const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
       const secretKey = new TextEncoder().encode(ssoSecret)
-      
+
       const hubToken = await new SignJWT({
         sub: account.sub,
         email: account.email,
@@ -3588,14 +3589,14 @@ app.get('/launch/:appId', async (req, res) => {
         .setIssuedAt()
         .setExpirationTime('5m') // Short-lived token
         .sign(secretKey)
-      
+
       // Build the OAuth authorization URL with proper parameters
       const state = Buffer.from(JSON.stringify({
         site: app.url,
         token: crypto.randomBytes(16).toString('hex'),
         redirect_to: '/lms'
       })).toString('base64')
-      
+
       const redirectUri = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/Seemplify`
       const authParams = new URLSearchParams({
         client_id: 'lms',
@@ -3605,7 +3606,7 @@ app.get('/launch/:appId', async (req, res) => {
         state: state,
         hub_token: hubToken // Include SSO token for auto-login
       })
-      
+
       const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
       console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
       console.log('  🔑 Hub SSO token included for auto-login')
@@ -5406,6 +5407,96 @@ function getAppIcon(iconName) {
 
   return icons[iconName] || icons.default
 }
+
+// ==============================================================
+// PROFILE ROUTES - Employee Self-Service Hub
+// ==============================================================
+
+// Register profile API routes
+app.use(profileRouter)
+
+// Profile page GET routes
+app.get('/profile/personal', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-personal', { user: account })
+  } catch (error) {
+    console.error('Error loading personal page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/tax', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-tax', { user: account })
+  } catch (error) {
+    console.error('Error loading tax page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/banking', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-banking', { user: account })
+  } catch (error) {
+    console.error('Error loading banking page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/dependents', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-dependents', { user: account })
+  } catch (error) {
+    console.error('Error loading dependents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/documents', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-documents', { user: account })
+  } catch (error) {
+    console.error('Error loading documents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+// ==============================================================
 
 // Provider callback MUST come AFTER custom routes
 // Wrap provider callback to ensure HTTPS is detected in production

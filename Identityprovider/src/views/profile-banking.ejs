@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Banking & Direct Deposit - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css">
+    <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>Banking & Direct Deposit</h1>
+                    <div class="header-subtitle">
+                        Manage your direct deposit accounts
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Navigation Tabs -->
+            <div class="profile-nav">
+                <a href="/profile">Dashboard</a>
+                <a href="/profile/personal">Personal Info</a>
+                <a href="/profile/documents">Documents</a>
+                <a href="/profile/tax">Tax Settings</a>
+                <a href="/profile/banking" class="active">Banking</a>
+                <a href="/profile/dependents">Dependents</a>
+            </div>
+
+            <div id="alertSuccess" class="alert alert-success"></div>
+            <div id="alertError" class="alert alert-error"></div>
+
+            <!-- Security Notice -->
+            <div class="card" style="background: var(--hover-bg); border-color: var(--brand);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="font-size: 32px;">🔒</div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; color: var(--text);">Your Information is Secure</h3>
+                        <p style="margin: 4px 0 0; font-size: 14px; color: var(--muted);">
+                            All banking information is encrypted and securely stored
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Accounts -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Direct Deposit Accounts</h3>
+
+                <% if (user.profile?.banking?.accounts && user.profile.banking.accounts.length> 0) { %>
+                    <% user.profile.banking.accounts.forEach((account, index)=> { %>
+                        <div
+                            style="padding: 16px; background: var(--hover-bg); border-radius: 8px; margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                                        <%= account.bankName || 'Bank Account' %> (<%= account.accountType==='checking'
+                                                ? 'Checking' : 'Savings' %>)
+                                    </div>
+                                    <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                        Routing: •••• <%= (account.routingNumber || '' ).slice(-4) %>
+                                    </div>
+                                    <div style="font-size: 14px; color: var(--muted); margin-bottom: 8px;">
+                                        Account: •••• <%= (account.accountNumber || '' ).slice(-4) %>
+                                    </div>
+                                    <div style="font-size: 14px; color: var(--text);">
+                                        <strong>
+                                            <%= account.percentage || 100 %>%
+                                        </strong> of paycheck
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-secondary" onclick="editAccount(<%= index %>)">
+                                    Edit
+                                </button>
+                            </div>
+                        </div>
+                        <% }) %>
+                            <% } else { %>
+                                <div style="text-align: center; padding: 40px; color: var(--muted);">
+                                    <div style="font-size: 48px; margin-bottom: 16px;">🏦</div>
+                                    <p>No bank accounts configured yet</p>
+                                    <p style="font-size: 14px;">Add your first account below to set up direct deposit
+                                    </p>
+                                </div>
+                                <% } %>
+            </div>
+
+            <!-- Add/Edit Account Form -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Add Direct Deposit Account</h3>
+
+                <form id="bankingForm">
+                    <div class="form-group">
+                        <label for="bankName">Bank Name <span style="color: var(--error);">*</span></label>
+                        <input type="text" id="bankName" name="bankName" placeholder="Chase Bank" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="accountType">Account Type <span style="color: var(--error);">*</span></label>
+                        <select id="accountType" name="accountType" required>
+                            <option value="">Select account type...</option>
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routingNumber">Routing Number <span style="color: var(--error);">*</span></label>
+                        <input type="text" id="routingNumber" name="routingNumber" placeholder="9 digits" maxlength="9"
+                            pattern="[0-9]{9}" required>
+                        <div class="form-hint">The 9-digit number at the bottom left of your check</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="accountNumber">Account Number <span style="color: var(--error);">*</span></label>
+                        <input type="text" id="accountNumber" name="accountNumber" placeholder="Account number"
+                            required>
+                        <div class="form-hint">The account number on your checks or bank statement</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="accountNumberConfirm">Confirm Account Number <span
+                                style="color: var(--error);">*</span></label>
+                        <input type="text" id="accountNumberConfirm" name="accountNumberConfirm"
+                            placeholder="Re-enter account number" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="percentage">Percentage of Paycheck</label>
+                        <input type="number" id="percentage" name="percentage" min="1" max="100" value="100">
+                        <div class="form-hint">What percentage of your paycheck should go to this account? (Default:
+                            100%)</div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Save Button -->
+            <div class="card">
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveBankingInfo()">
+                        <span id="btnText">Add Account</span>
+                        <span id="btnSpinner" style="display:none;">Saving...</span>
+                    </button>
+                    <a href="/profile" class="btn btn-secondary">Cancel</a>
+                </div>
+
+                <div
+                    style="margin-top: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px; font-size: 14px; color: var(--muted);">
+                    <strong>Important:</strong> Changes to direct deposit will be sent to Payroll and applied to your
+                    next pay period.
+                </div>
+            </div>
+        </div>
+
+        <script>
+            async function saveBankingInfo() {
+                const alertSuccess = document.getElementById('alertSuccess');
+                const alertError = document.getElementById('alertError');
+                const saveBtn = document.getElementById('saveBtn');
+                const btnText = document.getElementById('btnText');
+                const btnSpinner = document.getElementById('btnSpinner');
+
+                // Hide previous alerts
+                alertSuccess.classList.remove('show');
+                alertError.classList.remove('show');
+
+                // Validation
+                const accountNumber = document.getElementById('accountNumber').value;
+                const accountNumberConfirm = document.getElementById('accountNumberConfirm').value;
+
+                if (accountNumber !== accountNumberConfirm) {
+                    alertError.textContent = 'Account numbers do not match';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                }
+
+                const routingNumber = document.getElementById('routingNumber').value;
+                if (!/^\d{9}$/.test(routingNumber)) {
+                    alertError.textContent = 'Routing number must be exactly 9 digits';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                }
+
+                // Show loading
+                saveBtn.disabled = true;
+                btnText.style.display = 'none';
+                btnSpinner.style.display = 'inline';
+
+                // Collect data
+                const data = {
+                    account: {
+                        bankName: document.getElementById('bankName').value.trim(),
+                        accountType: document.getElementById('accountType').value,
+                        routingNumber: routingNumber,
+                        accountNumber: accountNumber,
+                        percentage: parseInt(document.getElementById('percentage').value) || 100
+                    }
+                };
+
+                try {
+                    const response = await fetch('/api/profile/banking', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        alertSuccess.textContent = result.message || 'Banking information updated successfully!';
+                        alertSuccess.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                        // Reload page after 2 seconds
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                        alertError.textContent = result.error || 'Failed to update banking information';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alertError.textContent = 'An error occurred while saving';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } finally {
+                    saveBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnSpinner.style.display = 'none';
+                }
+            }
+
+            function editAccount(index) {
+                // TODO: Implement edit functionality
+                alert('Edit functionality coming soon');
+            }
+        </script>
+
+        <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

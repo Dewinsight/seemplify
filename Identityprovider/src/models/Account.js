@@ -7,7 +7,66 @@ const AccountSchema = new mongoose.Schema({
   emailVerified: { type: Boolean, default: false },
   profile: {
     name: String,
-    preferred_username: String
+    preferred_username: String,
+    // Extended personal information for employee self-service
+    personalInfo: {
+      mailingAddress: {
+        street: String,
+        street2: String,
+        city: String,
+        state: String,
+        zipCode: String,
+        country: { type: String, default: 'USA' }
+      },
+      phoneNumbers: {
+        mobile: String,
+        home: String,
+        work: String
+      },
+      emergencyContacts: [{
+        name: String,
+        relationship: String,
+        phone: String,
+        email: String,
+        isPrimary: { type: Boolean, default: false }
+      }]
+    },
+    // Tax information
+    taxInfo: {
+      w4Allowances: Number,
+      additionalWithholding: Number,
+      filingStatus: {
+        type: String,
+        enum: ['single', 'married_jointly', 'married_separately', 'head_of_household', 'widow']
+      },
+      lastUpdated: Date
+    },
+    // Banking information for direct deposit
+    banking: {
+      accounts: [{
+        accountType: {
+          type: String,
+          enum: ['checking', 'savings']
+        },
+        bankName: String,
+        routingNumber: String, // Should be encrypted in production
+        accountNumber: String, // Should be encrypted in production  
+        percentage: { type: Number, default: 100, min: 0, max: 100 },
+        isActive: { type: Boolean, default: true }
+      }]
+    },
+    // Dependents and beneficiaries
+    dependents: [{
+      name: String,
+      relationship: {
+        type: String,
+        enum: ['spouse', 'child', 'parent', 'sibling', 'other']
+      },
+      dateOfBirth: Date,
+      ssn: String, // Should be encrypted in production
+      isBeneficiary: { type: Boolean, default: false },
+      beneficiaryPercentage: { type: Number, min: 0, max: 100 }
+    }]
   },
   // Password reset fields
   resetPasswordToken: { type: String },

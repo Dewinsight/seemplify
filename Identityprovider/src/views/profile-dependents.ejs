@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dependents & Beneficiaries - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css">
+    <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>Dependents & Beneficiaries</h1>
+                    <div class="header-subtitle">
+                        Manage your dependents and beneficiary designations
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Navigation Tabs -->
+            <div class="profile-nav">
+                <a href="/profile">Dashboard</a>
+                <a href="/profile/personal">Personal Info</a>
+                <a href="/profile/documents">Documents</a>
+                <a href="/profile/tax">Tax Settings</a>
+                <a href="/profile/banking">Banking</a>
+                <a href="/profile/dependents" class="active">Dependents</a>
+            </div>
+
+            <div id="alertSuccess" class="alert alert-success"></div>
+            <div id="alertError" class="alert alert-error"></div>
+
+            <!-- Current Dependents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Your Dependents</h3>
+
+                <% if (user.profile?.dependents && user.profile.dependents.length> 0) { %>
+                    <% user.profile.dependents.forEach((dependent, index)=> { %>
+                        <div
+                            style="padding: 16px; background: var(--hover-bg); border-radius: 8px; margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">
+                                        <%= dependent.name || 'Unnamed' %>
+                                    </div>
+                                    <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                        Relationship: <%= dependent.relationship || 'N/A' %>
+                                    </div>
+                                    <% if (dependent.dateOfBirth) { %>
+                                        <div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">
+                                            Date of Birth: <%= new Date(dependent.dateOfBirth).toLocaleDateString() %>
+                                        </div>
+                                        <% } %>
+                                            <% if (dependent.isBeneficiary) { %>
+                                                <div style="font-size: 14px; color: var(--brand); margin-top: 8px;">
+                                                    ✓ Designated Beneficiary (<%= dependent.beneficiaryPercentage || 0
+                                                        %>%)
+                                                </div>
+                                                <% } %>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" class="btn btn-secondary"
+                                        onclick="editDependent(<%= index %>)">Edit</button>
+                                    <button type="button" class="btn btn-secondary"
+                                        onclick="removeDependent(<%= index %>)">Remove</button>
+                                </div>
+                            </div>
+                        </div>
+                        <% }) %>
+                            <% } else { %>
+                                <div style="text-align: center; padding: 40px; color: var(--muted);">
+                                    <div style="font-size: 48px; margin-bottom: 16px;">👨‍👩‍👧</div>
+                                    <p>No dependents added yet</p>
+                                    <p style="font-size: 14px;">Add your dependents below for benefits and tax purposes
+                                    </p>
+                                </div>
+                                <% } %>
+            </div>
+
+            <!-- Add Dependent Form -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Add Dependent</h3>
+
+                <form id="dependentForm">
+                    <div class="form-group">
+                        <label for="name">Full Name <span style="color: var(--error);">*</span></label>
+                        <input type="text" id="name" name="name" placeholder="Jane Doe" required>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label for="relationship">Relationship <span style="color: var(--error);">*</span></label>
+                            <select id="relationship" name="relationship" required>
+                                <option value="">Select relationship...</option>
+                                <option value="spouse">Spouse</option>
+                                <option value="child">Child</option>
+                                <option value="parent">Parent</option>
+                                <option value="sibling">Sibling</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dateOfBirth">Date of Birth <span style="color: var(--error);">*</span></label>
+                            <input type="date" id="dateOfBirth" name="dateOfBirth" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ssn">Social Security Number (Optional)</label>
+                        <input type="text" id="ssn" name="ssn" placeholder="XXX-XX-XXXX" pattern="\d{3}-\d{2}-\d{4}"
+                            maxlength="11">
+                        <div class="form-hint">Required for tax purposes. Format: XXX-XX-XXXX</div>
+                    </div>
+
+                    <hr style="margin: 24px 0;">
+
+                    <h4 style="font-size: 16px; margin-bottom: 16px;">Beneficiary Designation</h4>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="isBeneficiary" name="isBeneficiary">
+                            Designate as beneficiary for life insurance and retirement benefits
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="beneficiaryPercentageGroup" style="display: none;">
+                        <label for="beneficiaryPercentage">Beneficiary Percentage</label>
+                        <input type="number" id="beneficiaryPercentage" name="beneficiaryPercentage" min="0" max="100"
+                            value="100">
+                        <div class="form-hint">Percentage of benefits this person will receive (must total 100% across
+                            all beneficiaries)</div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Save Button -->
+            <div class="card">
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveDependent()">
+                        <span id="btnText">Add Dependent</span>
+                        <span id="btnSpinner" style="display:none;">Saving...</span>
+                    </button>
+                    <a href="/profile" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Show/hide beneficiary percentage based on checkbox
+            document.getElementById('isBeneficiary').addEventListener('change', function () {
+                const percentageGroup = document.getElementById('beneficiaryPercentageGroup');
+                percentageGroup.style.display = this.checked ? 'block' : 'none';
+            });
+
+            async function saveDependent() {
+                const alertSuccess = document.getElementById('alertSuccess');
+                const alertError = document.getElementById('alertError');
+                const saveBtn = document.getElementById('saveBtn');
+                const btnText = document.getElementById('btnText');
+                const btnSpinner = document.getElementById('btnSpinner');
+
+                // Hide previous alerts
+                alertSuccess.classList.remove('show');
+                alertError.classList.remove('show');
+
+                // Show loading
+                saveBtn.disabled = true;
+                btnText.style.display = 'none';
+                btnSpinner.style.display = 'inline';
+
+                // Collect data
+                const isBeneficiary = document.getElementById('isBeneficiary').checked;
+                const data = {
+                    dependent: {
+                        name: document.getElementById('name').value.trim(),
+                        relationship: document.getElementById('relationship').value,
+                        dateOfBirth: document.getElementById('dateOfBirth').value,
+                        ssn: document.getElementById('ssn').value.trim(),
+                        isBeneficiary: isBeneficiary,
+                        beneficiaryPercentage: isBeneficiary ? parseInt(document.getElementById('beneficiaryPercentage').value) : 0
+                    }
+                };
+
+                try {
+                    const response = await fetch('/api/profile/dependents', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        alertSuccess.textContent = result.message || 'Dependent added successfully!';
+                        alertSuccess.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                        // Reload page after 2 seconds
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                        alertError.textContent = result.error || 'Failed to add dependent';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alertError.textContent = 'An error occurred while saving';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } finally {
+                    saveBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnSpinner.style.display = 'none';
+                }
+            }
+
+            function editDependent(index) {
+                // TODO: Implement edit functionality
+                alert('Edit functionality coming soon');
+            }
+
+            function removeDependent(index) {
+                if (confirm('Are you sure you want to remove this dependent?')) {
+                    // TODO: Implement remove functionality
+                    alert('Remove functionality coming soon');
+                }
+            }
+        </script>
+
+        <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

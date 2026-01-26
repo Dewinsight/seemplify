@@ -1,5 +1,7 @@
 import express from 'express'
 import { requireAuth, requireOrganizationMember, requireOrganizationAdmin } from '../middleware/permissions.js'
+import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
+import { Organization } from '../models/Organization.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
@@ -351,13 +353,28 @@ router.get('/:orgId/subscription/can-add-members',
  * GET /api/organizations/:orgId/subscription/verify
  * Verify subscription status for external apps
  * Returns full subscription info for app-side verification
+ *
+ * Supports both session auth (UI) and Bearer token auth (external apps)
  */
 router.get('/:orgId/subscription/verify',
-  requireAuth,
-  requireOrganizationMember,
+  requireAuthOrAPIToken,
   async (req, res) => {
     try {
       const orgId = req.params.orgId
+
+      // Verify organization membership (works with both session and API token auth)
+      const organization = await Organization.findById(orgId)
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const member = organization.members.find(
+        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
+      )
+
+      if (!member) {
+        return res.status(403).json({ error: 'Not a member of this organization' })
+      }
 
       // Get subscription and details in parallel
       const [subscription, features, limits] = await Promise.all([
@@ -378,6 +395,7 @@ router.get('/:orgId/subscription/verify',
             leaveManagement: false,
             payrollManagement: false,
             performanceManagement: false,
+            timeAttendance: false,
             outlineDocs: false,
             aiChat: false,
             lms: false
@@ -393,7 +411,7 @@ router.get('/:orgId/subscription/verify',
       }
 
       // Determine which apps the org can access
-      const appKeys = ['recruiter', 'leaveManagement', 'payrollManagement', 'performanceManagement', 'outlineDocs', 'aiChat', 'lms']
+      const appKeys = ['recruiter', 'leaveManagement', 'payrollManagement', 'performanceManagement', 'timeAttendance', 'outlineDocs', 'aiChat', 'lms']
       const canAccessApps = appKeys.filter(key => features[key] === true)
 
       // Determine effective status
