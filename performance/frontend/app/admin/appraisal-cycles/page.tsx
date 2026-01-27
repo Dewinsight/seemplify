@@ -103,7 +103,7 @@ export default function AppraisalCyclesAdminPage() {
   const { cycles, isLoading, mutate } = useAppraisalCycles();
 
   const [selectedTab, setSelectedTab] = useState(0);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // const [createDialogOpen, setCreateDialogOpen] = useState(false); // Refactored to use /new page
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const [selectedCycle, setSelectedCycle] = useState<AppraisalCycle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -155,13 +155,8 @@ export default function AppraisalCyclesAdminPage() {
     severity: 'info'
   });
 
-  if (!isHRAdmin) {
-    return (
-      <Alert severity="error">
-        Access denied. This page is for HR Administrators only.
-      </Alert>
-    );
-  }
+  // Access check removed to allow Managers
+  // if (!isHRAdmin) ...
 
   const handleCreateCycle = async () => {
     setLoading(true);
@@ -443,7 +438,7 @@ export default function AppraisalCyclesAdminPage() {
         <Button
           variant="contained"
           startIcon={<Add />}
-          onClick={() => setCreateDialogOpen(true)}
+          onClick={() => router.push('/admin/appraisal-cycles/new')}
         >
           Create New Cycle
         </Button>

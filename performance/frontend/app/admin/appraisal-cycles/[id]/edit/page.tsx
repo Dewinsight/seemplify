@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useUserContext } from '@/lib/hooks';
+import { useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
     Box, Typography, Card, CardContent, Grid, Button, TextField,
@@ -31,7 +31,8 @@ const phaseLabels: Record<string, string> = {
 export default function EditAppraisalCyclePage() {
     const router = useRouter();
     const params = useParams();
-    const { isHRAdmin } = useUserContext();
+    const { isHRAdmin, user } = useUserContext();
+    const { managedTeams } = useDirectReports(); // Fetch teams managed by the user
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -49,6 +50,10 @@ export default function EditAppraisalCyclePage() {
         periodStart: '',
         periodEnd: '',
         okrWeight: 40,
+        scope: {
+            type: 'organization',
+            targetIds: [] as string[]
+        },
         phases: {
             goalSetting: { startDate: '', endDate: '' },
             selfAssessment: { startDate: '', endDate: '' },
@@ -69,7 +74,22 @@ export default function EditAppraisalCyclePage() {
     });
 
     useEffect(() => {
+        // Initialize scope based on role for new cycles
+        if (params.id === 'new' && !isHRAdmin && managedTeams.length > 0) {
+            setFormData(prev => ({
+                ...prev,
+                scope: { type: 'team', targetIds: [] }
+            }));
+        }
+    }, [isHRAdmin, managedTeams.length, params.id]);
+
+    useEffect(() => {
         const fetchCycle = async () => {
+            if (params.id === 'new') {
+                setLoading(false);
+                return;
+            }
+
             try {
                 const response = await api.get(`/appraisals/cycles/${params.id}`);
                 const cycle = response.data.data;
@@ -81,6 +101,7 @@ export default function EditAppraisalCyclePage() {
                     periodStart: formatDateForInput(cycle.periodStart),
                     periodEnd: formatDateForInput(cycle.periodEnd),
                     okrWeight: cycle.okrWeight,
+                    scope: cycle.scope || { type: 'organization', targetIds: [] },
                     phases: {
                         goalSetting: {
                             startDate: formatDateForInput(cycle.phases?.goalSetting?.startDate),
@@ -113,19 +134,21 @@ export default function EditAppraisalCyclePage() {
             }
         };
 
-        if (params.id) {
-            fetchCycle();
-        }
+        fetchCycle();
     }, [params.id]);
 
     const handleSave = async () => {
         setSaving(true);
         try {
-            await api.put(`/appraisals/cycles/${params.id}`, formData);
-            router.push(`/admin/appraisal-cycles/${params.id}`);
+            if (params.id === 'new') {
+                await api.post('/appraisals/cycles', formData);
+            } else {
+                await api.put(`/appraisals/cycles/${params.id}`, formData);
+            }
+            router.push('/admin/appraisal-cycles'); // Go back to list
         } catch (err: any) {
-            console.error('Update cycle error:', err);
-            setError(err.response?.data?.error || 'Failed to update cycle');
+            console.error('Save cycle error:', err);
+            setError(err.response?.data?.error || 'Failed to save cycle');
         } finally {
             setSaving(false);
         }
@@ -292,6 +315,79 @@ export default function EditAppraisalCyclePage() {
                 </Grid>
 
                 <Grid size={{ xs: 12, md: 4 }}>
+                    <Card sx={{ mb: 3 }}>
+                        <CardContent>
+                            <Typography variant="h6" gutterBottom>Scope Configuration</Typography>
+                            <Box sx={{ mt: 2 }}>
+                                {isHRAdmin && (
+                                    <FormControl fullWidth sx={{ mb: 2 }}>
+                                        <InputLabel>Appraisal Scope</InputLabel>
+                                        <Select
+                                            value={formData.scope?.type || 'organization'}
+                                            label="Appraisal Scope"
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                scope: {
+                                                    ...formData.scope,
+                                                    type: e.target.value as any,
+                                                    targetIds: [] // Clear targets when type changes
+                                                }
+                                            })}
+                                        >
+                                            <MenuItem value="organization">Entire Organization</MenuItem>
+                                            <MenuItem value="team">Specific Teams</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                )}
+
+                                {!isHRAdmin && (
+                                    <Alert severity="info" sx={{ mb: 2 }}>
+                                        Creating appraisal cycle for your team(s).
+                                    </Alert>
+                                )}
+
+                                {(formData.scope?.type === 'team' || !isHRAdmin) && (
+                                    <FormControl fullWidth>
+                                        <InputLabel>Select Teams</InputLabel>
+                                        <Select
+                                            multiple
+                                            value={formData.scope?.targetIds || []}
+                                            label="Select Teams"
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setFormData({
+                                                    ...formData,
+                                                    scope: {
+                                                        ...formData.scope,
+                                                        type: 'team',
+                                                        targetIds: typeof value === 'string' ? value.split(',') : value as string[]
+                                                    }
+                                                });
+                                            }}
+                                            renderValue={(selected) => {
+                                                if (selected.length === 0) return <em>Select teams...</em>;
+                                                return managedTeams
+                                                    .filter(t => selected.includes(t.teamId || t.id || t._id))
+                                                    .map(t => t.teamName || t.name)
+                                                    .join(', ');
+                                            }}
+                                        >
+                                            {managedTeams.length > 0 ? (
+                                                managedTeams.map((team: any) => (
+                                                    <MenuItem key={team.teamId || team.id || team._id} value={team.teamId || team.id || team._id}>
+                                                        {team.teamName || team.name}
+                                                    </MenuItem>
+                                                ))
+                                            ) : (
+                                                <MenuItem disabled>No managed teams found</MenuItem>
+                                            )}
+                                        </Select>
+                                    </FormControl>
+                                )}
+                            </Box>
+                        </CardContent>
+                    </Card>
+
                     <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Rating Configuration</Typography>
