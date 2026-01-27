@@ -103,6 +103,57 @@ router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
   }
 });
 
+// Update cycle (HR Admin)
+router.put('/cycles/:cycleId', requireAuth, requireHRAdmin, async (req, res) => {
+  try {
+    const { name, description, periodStart, periodEnd, phases, okrWeight, settings, cycleType } = req.body;
+
+    const cycle = await AppraisalCycle.findById(req.params.cycleId);
+    if (!cycle) {
+      return res.status(404).json({ success: false, error: 'Cycle not found' });
+    }
+
+    if (cycle.status === 'completed' || cycle.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: 'Cannot update completed or cancelled cycles' });
+    }
+
+    // Update fields
+    if (name) cycle.name = name;
+    if (description !== undefined) cycle.description = description;
+    if (cycleType) cycle.cycleType = cycleType;
+    if (periodStart) cycle.periodStart = periodStart;
+    if (periodEnd) cycle.periodEnd = periodEnd;
+    if (okrWeight !== undefined) cycle.okrWeight = okrWeight;
+
+    // Update settings
+    if (settings) {
+      cycle.settings = { ...cycle.settings, ...settings };
+    }
+
+    // Update phases - preserve current phase status
+    if (phases) {
+      Object.keys(phases).forEach(key => {
+        if (cycle.phases[key]) {
+          cycle.phases[key].startDate = phases[key].startDate;
+          cycle.phases[key].endDate = phases[key].endDate;
+        }
+      });
+    }
+
+    cycle.updatedBy = {
+      userId: req.session.user.id,
+      name: req.session.user.name,
+      email: req.session.user.email
+    };
+
+    await cycle.save();
+    res.json({ success: true, data: cycle });
+  } catch (error) {
+    console.error('Update cycle error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update cycle' });
+  }
+});
+
 // Update cycle phase (HR Admin)
 router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, res) => {
   try {
@@ -489,7 +540,7 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
         { 'manager.email': userEmail }
       ]
     };
-    
+
     // Filter by currentTeam if set
     const currentTeam = req.currentTeam;
     if (currentTeam && currentTeam.directReports && currentTeam.directReports.length > 0) {
@@ -500,7 +551,7 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
         { 'employee.userId': { $in: currentTeam.directReports } }
       ];
     }
-    
+
     if (cycleId) query.cycleId = cycleId;
     if (status) query.status = status;
 
