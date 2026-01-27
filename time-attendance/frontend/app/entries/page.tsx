@@ -24,8 +24,14 @@ export default function PunchLogPage() {
     const [showManualEntryModal, setShowManualEntryModal] = useState(false);
 
     // Check if user can add manual entries (HR admin or manager)
-    const canAddManualEntry = user?.currentOrganization?.role && 
-        ['owner', 'admin', 'hr_manager', 'manager'].includes(user.currentOrganization.role);
+    // Check both organization role and team roles (same logic as AppShell)
+    const currentOrgRole = user?.currentOrganization?.role;
+    const isManager = user?.teams?.some((t: any) =>
+        t.organizationId === user?.currentOrganization?.id &&
+        ['line_manager', 'team_lead'].includes(t.role)
+    );
+    const isAdmin = currentOrgRole && ['owner', 'admin', 'hr_manager', 'manager'].includes(currentOrgRole);
+    const canAddManualEntry = isAdmin || isManager;
 
     useEffect(() => {
         fetchEntries();
