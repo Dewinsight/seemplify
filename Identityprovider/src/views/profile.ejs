@@ -128,7 +128,7 @@
                         <div class="spinner">Loading...</div>
                     </div>
                     <div class="widget-footer">
-                        <a href="<%= process.env.TIME_ATTENDANCE_URL %>/timesheets" target="_blank">
+                        <a href="<%= process.env.TIME_ATTENDANCE_URL || 'https://time.seemplifyai.com' %>/timesheets" target="_blank">
                             View Timesheets
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M5 12h14M12 5l7 7-7 7" />

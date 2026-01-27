@@ -3646,7 +3646,7 @@ app.get('/launch/:appId', async (req, res) => {
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
         break;
       case 'time-attendance':
-        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'http://localhost:5010';
+        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com';
         break;
       default:
         // Fallback to smarthr API URL for unknown apps

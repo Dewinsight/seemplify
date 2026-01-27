@@ -14,7 +14,7 @@ class CrossModuleApiService {
             leave: process.env.LEAVE_MANAGEMENT_API_URL,
             payroll: process.env.PAYROLL_MANAGEMENT_API_URL,
             performance: process.env.PERFORMANCE_MANAGEMENT_API_URL,
-            timeAttendance: process.env.TIME_ATTENDANCE_API_URL,
+            timeAttendance: process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com',
             lms: process.env.LMS_API_URL
         };
 
