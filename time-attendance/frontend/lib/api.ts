@@ -1,7 +1,17 @@
 import axios from 'axios';
 import { redirectToLogin, isPublicRoute } from '@/services/authGuard';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010/api';
+// Get API URL - use production URL if in production, otherwise use env var or localhost
+const getApiUrl = () => {
+    // In production (seemplifyai.com domain), always use production API
+    if (typeof window !== 'undefined' && window.location.hostname.includes('seemplifyai.com')) {
+        return 'https://api-time.seemplifyai.com/api';
+    }
+    // Use env var if set, otherwise localhost for development
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010/api';
+};
+
+const API_URL = getApiUrl();
 
 // Create axios instance
 export const api = axios.create({

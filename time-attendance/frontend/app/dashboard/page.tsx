@@ -66,7 +66,9 @@ export default function Dashboard() {
                 </div>
 
                 <a
-                    href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                    href={typeof window !== 'undefined' && window.location.hostname.includes('seemplifyai.com') 
+                        ? 'https://auth.seemplifyai.com' 
+                        : (process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000')}
                     className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-300 transition-colors flex items-center gap-2 border border-zinc-700"
                 >
                     <div className="w-2 h-2 rounded-full bg-teal-500" />

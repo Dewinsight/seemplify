@@ -49,8 +49,16 @@ export default function LoginPage() {
 
     const handleLogin = () => {
         setIsProcessing(true);
+        // Get API URL - use production if on production domain
+        let apiUrl = process.env.NEXT_PUBLIC_API_URL;
+        if (typeof window !== 'undefined' && window.location.hostname.includes('seemplifyai.com')) {
+            apiUrl = 'https://api-time.seemplifyai.com/api';
+        }
+        if (!apiUrl) {
+            apiUrl = 'http://localhost:5010/api'; // Fallback for local dev only
+        }
         // Redirect to backend login endpoint which handles OIDC
-        window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010/api'}/auth/login`;
+        window.location.href = `${apiUrl}/auth/login`;
     };
 
     if (isProcessing) {
@@ -318,7 +326,9 @@ export default function LoginPage() {
                             <motion.a
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
-                                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                                href={typeof window !== 'undefined' && window.location.hostname.includes('seemplifyai.com') 
+                                    ? 'https://auth.seemplifyai.com' 
+                                    : (process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000')}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-4 py-3 text-left text-white shadow-lg transition-all hover:border-white/20 hover:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
