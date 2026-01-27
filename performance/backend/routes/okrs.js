@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const OKR = require('../models/OKR');
-const { 
-  requireAuth, 
-  requirePermission, 
+const {
+  requireAuth,
+  requirePermission,
   requireManager,
   getUserRole,
-  getDirectReports 
+  getDirectReports
 } = require('../middleware/rbac');
 
 /**
@@ -21,9 +21,9 @@ router.get('/', requireAuth, async (req, res) => {
     const userId = req.session.user.id || req.session.user.sub;
     const role = req.userRole;
     const { type, status, period, teamId, userId: queryUserId } = req.query;
-    
+
     let query = {};
-    
+
     // Build query based on role
     if (role === 'hr_admin') {
       // HR Admin can see all OKRs in organization
@@ -56,12 +56,12 @@ router.get('/', requireAuth, async (req, res) => {
       // Employee sees only own OKRs
       query.ownerId = userId;
     }
-    
+
     // Apply filters
     if (type) query.type = type;
     if (status) query.status = status;
     if (period) query.period = period;
-    
+
     // Filter by currentTeam if set (unless explicit teamId is provided)
     const currentTeam = req.currentTeam;
     if (currentTeam && !teamId) {
@@ -70,7 +70,7 @@ router.get('/', requireAuth, async (req, res) => {
       // For individual OKRs, filter by team members
       if (query.$or) {
         // Add team filter to existing $or query
-        query.$or.push({ 
+        query.$or.push({
           $or: [
             { type: 'team', 'teamHierarchy.teamId': currentTeam.id },
             { type: 'individual', ownerId: { $in: currentTeam.directReports || [] } }
@@ -85,7 +85,7 @@ router.get('/', requireAuth, async (req, res) => {
         ];
       }
     }
-    
+
     // Explicit teamId filter (overrides currentTeam)
     if (teamId && (role === 'line_manager' || role === 'hr_admin' || role === 'team_lead')) {
       query.teamId = teamId;
@@ -94,11 +94,11 @@ router.get('/', requireAuth, async (req, res) => {
         query = { ...query, $or: undefined, teamId };
       }
     }
-    
+
     const okrs = await OKR.find(query)
       .sort({ createdAt: -1 })
       .limit(100);
-    
+
     res.json({
       success: true,
       data: okrs.map(okr => ({
@@ -131,7 +131,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/direct-reports', requireManager, async (req, res) => {
   try {
     const directReports = req.directReports || [];
-    
+
     if (directReports.length === 0) {
       return res.json({
         success: true,
@@ -139,11 +139,11 @@ router.get('/direct-reports', requireManager, async (req, res) => {
         message: 'No direct reports found'
       });
     }
-    
+
     const okrs = await OKR.find({
       ownerId: { $in: directReports }
     }).sort({ createdAt: -1 });
-    
+
     // Group by owner
     const okrsByOwner = {};
     okrs.forEach(okr => {
@@ -158,7 +158,7 @@ router.get('/direct-reports', requireManager, async (req, res) => {
         period: okr.period
       });
     });
-    
+
     res.json({
       success: true,
       data: okrsByOwner,
@@ -176,27 +176,27 @@ router.get('/direct-reports', requireManager, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const okr = await OKR.findById(req.params.id);
-    
+
     if (!okr) {
       return res.status(404).json({ success: false, error: 'OKR not found' });
     }
-    
+
     // Check access
     const userId = req.session.user.id || req.session.user.sub;
     const role = req.userRole;
     const directReports = req.directReports || [];
-    
+
     const isOwner = okr.ownerId === userId;
     const isDirectReport = directReports.includes(okr.ownerId);
     const isHRAdmin = role === 'hr_admin';
-    
+
     if (!isOwner && !isDirectReport && !isHRAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Access denied to this OKR' 
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied to this OKR'
       });
     }
-    
+
     res.json({ success: true, data: okr });
   } catch (error) {
     console.error('Error fetching OKR:', error);
@@ -210,33 +210,46 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.post('/', requirePermission('okr:create:own'), async (req, res) => {
   try {
     const userId = req.session.user.id || req.session.user.sub;
-    const { title, objective, keyResults, type, period, teamId } = req.body;
-    
+    const { title, objective, keyResults, type, period, teamId, objectives, status } = req.body;
+
     // Validate type permissions
     if (type === 'team' && req.userRole !== 'line_manager' && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only managers can create team OKRs' 
+      return res.status(403).json({
+        success: false,
+        error: 'Only managers can create team OKRs'
       });
     }
-    
+
     if (type === 'organization' && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only HR Admin can create organization OKRs' 
+      return res.status(403).json({
+        success: false,
+        error: 'Only HR Admin can create organization OKRs'
       });
     }
-    
-    const newOKR = new OKR({
-      type: type || 'individual',
-      ownerId: userId,
-      organizationId: req.currentOrganization?.id,
-      teamId: teamId,
-      period: period || `Q${Math.ceil((new Date().getMonth() + 1) / 3)} ${new Date().getFullYear()}`,
-      status: 'draft',
-      objectives: [{
-        title: title || objective,
-        description: objective,
+
+    // Build objectives array - support both new and legacy formats
+    let okrObjectives;
+
+    if (objectives && Array.isArray(objectives) && objectives.length > 0) {
+      // New format: objectives array with nested keyResults
+      okrObjectives = objectives.map(obj => ({
+        title: obj.title,
+        description: obj.description || '',
+        weight: obj.weight || 0,
+        keyResults: (obj.keyResults || []).map(kr => ({
+          title: typeof kr === 'string' ? kr : kr.title,
+          metricType: kr.metricType || 'percentage',
+          startValue: kr.startValue || 0,
+          targetValue: kr.targetValue || 100,
+          currentValue: kr.currentValue || 0,
+          lastUpdated: new Date()
+        }))
+      }));
+    } else {
+      // Legacy format: flat title, objective, keyResults
+      okrObjectives = [{
+        title: title || objective || 'Untitled Objective',
+        description: objective || '',
         keyResults: (keyResults || []).map(kr => ({
           title: typeof kr === 'string' ? kr : kr.title,
           metricType: kr.metricType || 'percentage',
@@ -244,19 +257,29 @@ router.post('/', requirePermission('okr:create:own'), async (req, res) => {
           targetValue: kr.targetValue || 100,
           currentValue: kr.currentValue || 0
         }))
-      }]
+      }];
+    }
+
+    const newOKR = new OKR({
+      type: type || 'individual',
+      ownerId: userId,
+      organizationId: req.currentOrganization?.id,
+      teamId: teamId,
+      period: period || `Q${Math.ceil((new Date().getMonth() + 1) / 3)} ${new Date().getFullYear()}`,
+      status: status || 'active',
+      objectives: okrObjectives
     });
-    
+
     await newOKR.save();
-    
-    res.status(201).json({ 
-      success: true, 
+
+    res.status(201).json({
+      success: true,
       data: newOKR,
       message: 'OKR created successfully'
     });
   } catch (error) {
     console.error('Error creating OKR:', error);
-    res.status(500).json({ success: false, error: 'Failed to create OKR' });
+    res.status(500).json({ success: false, error: 'Failed to create OKR', details: error.message });
   }
 });
 
@@ -266,32 +289,32 @@ router.post('/', requirePermission('okr:create:own'), async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   try {
     const okr = await OKR.findById(req.params.id);
-    
+
     if (!okr) {
       return res.status(404).json({ success: false, error: 'OKR not found' });
     }
-    
+
     // Check access
     const userId = req.session.user.id || req.session.user.sub;
     const role = req.userRole;
     const isOwner = okr.ownerId === userId;
     const isHRAdmin = role === 'hr_admin';
-    
+
     if (!isOwner && !isHRAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only owner or HR Admin can update this OKR' 
+      return res.status(403).json({
+        success: false,
+        error: 'Only owner or HR Admin can update this OKR'
       });
     }
-    
+
     const { title, objective, keyResults, status } = req.body;
-    
+
     if (title || objective) {
       if (!okr.objectives) okr.objectives = [{}];
       if (title) okr.objectives[0].title = title;
       if (objective) okr.objectives[0].description = objective;
     }
-    
+
     if (keyResults) {
       if (!okr.objectives) okr.objectives = [{}];
       okr.objectives[0].keyResults = keyResults.map(kr => ({
@@ -302,12 +325,12 @@ router.put('/:id', requireAuth, async (req, res) => {
         currentValue: kr.currentValue || 0
       }));
     }
-    
+
     if (status) okr.status = status;
-    
+
     okr.progress = calculateProgress(okr);
     await okr.save();
-    
+
     res.json({ success: true, data: okr });
   } catch (error) {
     console.error('Error updating OKR:', error);
@@ -321,31 +344,31 @@ router.put('/:id', requireAuth, async (req, res) => {
 router.put('/:id/progress', requireAuth, async (req, res) => {
   try {
     const okr = await OKR.findById(req.params.id);
-    
+
     if (!okr) {
       return res.status(404).json({ success: false, error: 'OKR not found' });
     }
-    
+
     const userId = req.session.user.id || req.session.user.sub;
     const isOwner = okr.ownerId === userId;
-    
+
     if (!isOwner && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only owner can update progress' 
+      return res.status(403).json({
+        success: false,
+        error: 'Only owner can update progress'
       });
     }
-    
+
     const { keyResultIndex, currentValue } = req.body;
-    
+
     if (okr.objectives?.[0]?.keyResults?.[keyResultIndex]) {
       okr.objectives[0].keyResults[keyResultIndex].currentValue = currentValue;
       okr.objectives[0].keyResults[keyResultIndex].lastUpdated = new Date();
     }
-    
+
     okr.progress = calculateProgress(okr);
     await okr.save();
-    
+
     res.json({ success: true, data: okr });
   } catch (error) {
     console.error('Error updating OKR progress:', error);
@@ -359,23 +382,23 @@ router.put('/:id/progress', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const okr = await OKR.findById(req.params.id);
-    
+
     if (!okr) {
       return res.status(404).json({ success: false, error: 'OKR not found' });
     }
-    
+
     const userId = req.session.user.id || req.session.user.sub;
     const isOwner = okr.ownerId === userId;
-    
+
     if (!isOwner && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only owner or HR Admin can delete this OKR' 
+      return res.status(403).json({
+        success: false,
+        error: 'Only owner or HR Admin can delete this OKR'
       });
     }
-    
+
     await OKR.findByIdAndDelete(req.params.id);
-    
+
     res.json({ success: true, message: 'OKR deleted successfully' });
   } catch (error) {
     console.error('Error deleting OKR:', error);
@@ -393,30 +416,30 @@ router.get('/hierarchy', requireAuth, async (req, res) => {
   try {
     const { period, organizationId } = req.query;
     const orgId = organizationId || req.currentOrganization?.id;
-    
+
     let query = {};
     if (orgId) query.organizationId = orgId;
     if (period) query.period = period;
-    
+
     // Get all OKRs
     const allOkrs = await OKR.find(query)
       .populate('alignment.parentOKRId', 'objectives type ownerId')
       .sort({ type: 1, createdAt: -1 });
-    
+
     // Build hierarchy
     const orgOkrs = allOkrs.filter(o => o.type === 'organization');
     const teamOkrs = allOkrs.filter(o => o.type === 'team');
     const individualOkrs = allOkrs.filter(o => o.type === 'individual');
-    
+
     // Create hierarchy structure
     const hierarchy = {
       organization: orgOkrs.map(o => ({
         ...o.toObject(),
-        children: teamOkrs.filter(t => 
+        children: teamOkrs.filter(t =>
           t.alignment?.parentOKRId?.toString() === o._id.toString()
         ).map(t => ({
           ...t.toObject(),
-          children: individualOkrs.filter(i => 
+          children: individualOkrs.filter(i =>
             i.alignment?.parentOKRId?.toString() === t._id.toString()
           )
         }))
@@ -424,7 +447,7 @@ router.get('/hierarchy', requireAuth, async (req, res) => {
       unalignedTeam: teamOkrs.filter(t => !t.alignment?.parentOKRId),
       unalignedIndividual: individualOkrs.filter(i => !i.alignment?.parentOKRId)
     };
-    
+
     res.json({
       success: true,
       data: hierarchy,
@@ -450,7 +473,7 @@ router.get('/:id/children', requireAuth, async (req, res) => {
     const children = await OKR.find({
       'alignment.parentOKRId': req.params.id
     }).populate('alignment.parentOKRId', 'objectives type');
-    
+
     res.json({
       success: true,
       data: children,
@@ -468,30 +491,30 @@ router.get('/:id/children', requireAuth, async (req, res) => {
 router.put('/:id/align', requireAuth, async (req, res) => {
   try {
     const okr = await OKR.findById(req.params.id);
-    
+
     if (!okr) {
       return res.status(404).json({ success: false, error: 'OKR not found' });
     }
-    
+
     const userId = req.session.user.id || req.session.user.sub;
     const isOwner = okr.ownerId === userId;
-    
+
     if (!isOwner && req.userRole !== 'hr_admin' && req.userRole !== 'line_manager') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Not authorized to align this OKR' 
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to align this OKR'
       });
     }
-    
+
     const { parentOKRId, parentObjectiveIndex, alignmentType, alignmentNotes } = req.body;
-    
+
     // Verify parent exists and is a valid parent type
     if (parentOKRId) {
       const parent = await OKR.findById(parentOKRId);
       if (!parent) {
         return res.status(404).json({ success: false, error: 'Parent OKR not found' });
       }
-      
+
       // Validate hierarchy: org can't have parent, team parent must be org, individual parent must be team/org
       if (okr.type === 'organization') {
         return res.status(400).json({ success: false, error: 'Organization OKRs cannot have parents' });
@@ -503,16 +526,16 @@ router.put('/:id/align', requireAuth, async (req, res) => {
         return res.status(400).json({ success: false, error: 'Individual OKRs cannot align to other individual OKRs' });
       }
     }
-    
+
     okr.alignment = {
       parentOKRId: parentOKRId || null,
       parentObjectiveIndex: parentObjectiveIndex || 0,
       alignmentType: alignmentType || 'cascade',
       alignmentNotes
     };
-    
+
     await okr.save();
-    
+
     res.json({
       success: true,
       data: okr,
@@ -531,10 +554,10 @@ router.get('/alignable/list', requireAuth, async (req, res) => {
   try {
     const { childType } = req.query;
     const orgId = req.currentOrganization?.id;
-    
+
     let query = { status: { $ne: 'closed' } };
     if (orgId) query.organizationId = orgId;
-    
+
     // Filter by valid parent types
     if (childType === 'team') {
       query.type = 'organization';
@@ -543,11 +566,11 @@ router.get('/alignable/list', requireAuth, async (req, res) => {
     } else {
       query.type = { $in: ['organization', 'team'] };
     }
-    
+
     const okrs = await OKR.find(query)
       .select('_id type objectives ownerId period')
       .sort({ type: 1, createdAt: -1 });
-    
+
     res.json({
       success: true,
       data: okrs.map(o => ({
@@ -567,10 +590,10 @@ router.get('/alignable/list', requireAuth, async (req, res) => {
 // Helper function to calculate OKR progress
 function calculateProgress(okr) {
   if (!okr.objectives?.[0]?.keyResults?.length) return 0;
-  
+
   const krs = okr.objectives[0].keyResults;
   let totalProgress = 0;
-  
+
   krs.forEach(kr => {
     const range = kr.targetValue - kr.startValue;
     if (range > 0) {
@@ -578,7 +601,7 @@ function calculateProgress(okr) {
       totalProgress += Math.min(100, Math.max(0, progress));
     }
   });
-  
+
   return Math.round(totalProgress / krs.length);
 }
 
