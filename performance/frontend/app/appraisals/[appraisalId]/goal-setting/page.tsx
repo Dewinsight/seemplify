@@ -91,7 +91,7 @@ export default function GoalSettingPage() {
 
     const fetchOkrs = async () => {
         try {
-            const response = await api.get('/okrs/my-okrs');
+            const response = await api.get('/okrs');
             const data = response.data?.data || response.data || [];
             setOkrs(data);
         } catch (error) {
