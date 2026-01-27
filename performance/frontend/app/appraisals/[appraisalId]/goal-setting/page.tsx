@@ -272,6 +272,8 @@ export default function GoalSettingPage() {
             await api.post(`/appraisals/${appraisalId}/submit-goals`);
             mutate();
             setSnackbar({ open: true, message: 'Goals submitted for approval!', severity: 'success' });
+            // Redirect to appraisal detail page
+            router.push(`/appraisals/${appraisalId}`);
         } catch (error) {
             console.error('Submit error:', error);
             setSnackbar({ open: true, message: 'Failed to submit goals', severity: 'error' });

@@ -33,6 +33,7 @@ function TabPanel(props: TabPanelProps) {
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
   'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
+  'goal_approval_pending': { label: 'Goal Approval Pending', color: 'warning', icon: <Schedule /> },
   'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment /> },
   'self_assessment_in_progress': { label: 'Self-Assessment In Progress', color: 'info', icon: <Edit /> },
   'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle /> },
@@ -152,6 +153,16 @@ export default function AppraisalDetailPage() {
                 onClick={() => router.push(`/appraisals/${appraisalId}/goal-setting`)}
               >
                 Set Goals
+              </Button>
+            )}
+            {isEmployee && (appraisal.status === 'goal_approval_pending') && (
+              <Button
+                variant="outlined"
+                color="warning"
+                disabled
+                startIcon={<Schedule />}
+              >
+                Waiting for Goal Approval
               </Button>
             )}
             {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
