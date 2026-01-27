@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth, requireOrganization } = require('../middleware/auth');
 const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const geofenceService = require('../services/geofenceService');
+const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
 
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
@@ -484,10 +485,73 @@ router.post('/manual', async (req, res) => {
 
         console.log('✅ Manual entry created:', { userId: targetUser, entryType, timestamp });
 
+        // Find or create the timesheet for the week containing this entry
+        // and refresh it so the manual entry appears
+        try {
+            const entryDate = new Date(entryTimestamp);
+            const weekStart = startOfWeek(entryDate, { weekStartsOn: 1 }); // Monday
+            const weekEnd = endOfWeek(entryDate, { weekStartsOn: 1 });
+            const weekNumber = getISOWeek(entryDate);
+            const year = getYear(entryDate);
+
+            // Find existing timesheet for this week
+            let timesheet = await Timesheet.findOne({
+                userId: targetUser,
+                organizationId,
+                year,
+                weekNumber,
+            });
+
+            // If no timesheet exists, create one
+            if (!timesheet) {
+                const dailyEntries = [];
+                const currentDate = new Date(weekStart);
+
+                while (currentDate <= weekEnd) {
+                    dailyEntries.push({
+                        date: new Date(currentDate),
+                        dayOfWeek: currentDate.getDay(),
+                        status: currentDate.getDay() === 0 || currentDate.getDay() === 6 ? 'weekend' : 'absent',
+                    });
+                    currentDate.setDate(currentDate.getDate() + 1);
+                }
+
+                timesheet = new Timesheet({
+                    userId: targetUser,
+                    userEmail: targetUserEmail,
+                    userName: targetUserName,
+                    organizationId,
+                    organizationName: req.organizationName,
+                    teamId: userTeam?.id,
+                    teamName: userTeam?.name,
+                    periodType: 'weekly',
+                    startDate: weekStart,
+                    endDate: weekEnd,
+                    weekNumber,
+                    year,
+                    dailyEntries,
+                    summary: {},
+                });
+
+                timesheet.addAuditLog('created', userId, req.user.name, null, 'Created for manual entry');
+                await timesheet.save();
+            }
+
+            // Import and call refreshTimesheetEntries
+            const { refreshTimesheetEntries } = require('./timesheets');
+            await refreshTimesheetEntries(timesheet);
+
+            console.log('✅ Timesheet refreshed with manual entry');
+        } catch (timesheetError) {
+            // Log but don't fail - the entry was created successfully
+            console.warn('⚠️  Could not refresh timesheet:', timesheetError.message);
+        }
+
         res.json({
             success: true,
             entry,
             message: 'Manual time entry created successfully',
+            timesheetUpdated: true,
         });
     } catch (error) {
         console.error('Manual entry error:', error);

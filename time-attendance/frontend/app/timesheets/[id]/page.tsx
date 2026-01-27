@@ -15,7 +15,9 @@ import {
     History,
     CheckCircle2,
     XCircle,
-    MapPin
+    MapPin,
+    PenLine,
+    AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -299,14 +301,41 @@ export default function TimesheetDetailPage() {
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className={cn(
-                                                        "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-medium border",
+                                                        "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-medium border relative",
                                                         isWeekend ? "bg-zinc-900 border-zinc-800 text-zinc-600" : "bg-zinc-800 border-zinc-700 text-zinc-300"
                                                     )}>
                                                         <span>{format(date, 'EEE')}</span>
                                                         <span className="font-bold">{format(date, 'd')}</span>
+                                                        {/* Manual entry indicator */}
+                                                        {entry.exceptions?.some((e: any) => e.type === 'manual_entry') && (
+                                                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center" title="Contains manual entry">
+                                                                <PenLine className="h-2.5 w-2.5 text-white" />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <div>
-                                                        <div className="text-sm font-medium text-white">{format(date, 'MMMM d, yyyy')}</div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-white">{format(date, 'MMMM d, yyyy')}</span>
+                                                            {/* Exception badges */}
+                                                            {entry.exceptions?.map((exc: any, i: number) => (
+                                                                <span
+                                                                    key={i}
+                                                                    className={cn(
+                                                                        "px-1.5 py-0.5 text-[10px] font-medium rounded",
+                                                                        exc.type === 'manual_entry' ? "bg-amber-500/20 text-amber-400" :
+                                                                        exc.type === 'no_clock_out' ? "bg-red-500/20 text-red-400" :
+                                                                        exc.type === 'late_arrival' ? "bg-orange-500/20 text-orange-400" :
+                                                                        "bg-zinc-700 text-zinc-400"
+                                                                    )}
+                                                                    title={exc.description}
+                                                                >
+                                                                    {exc.type === 'manual_entry' ? 'Manual' :
+                                                                     exc.type === 'no_clock_out' ? 'Missing Out' :
+                                                                     exc.type === 'late_arrival' ? 'Late' :
+                                                                     exc.type}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                         <div className="text-xs text-zinc-500">{entry.clockIn ? 'Present' : 'Absent/Off'}</div>
                                                     </div>
                                                 </div>
@@ -360,7 +389,7 @@ export default function TimesheetDetailPage() {
                                                             )}
                                                         </div>
                                                     )}
-                                                    {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
+                                                            {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
                                                         <div className="flex items-center gap-2 text-xs">
                                                             <MapPin className="h-3.5 w-3.5 text-red-500" />
                                                             <span className="text-zinc-500">Out:</span>
@@ -384,6 +413,21 @@ export default function TimesheetDetailPage() {
                                                             )}
                                                         </div>
                                                     )}
+                                                </div>
+                                            )}
+
+                                            {/* Manual Entry Note */}
+                                            {entry.exceptions?.some((e: any) => e.type === 'manual_entry') && (
+                                                <div className="mt-3 pl-[3.25rem]">
+                                                    <div className="flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                                                        <PenLine className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
+                                                        <div>
+                                                            <span className="text-amber-400 font-medium">Manual Entry: </span>
+                                                            <span className="text-amber-200/80">
+                                                                {entry.exceptions?.find((e: any) => e.type === 'manual_entry')?.description || 'Time was manually adjusted'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>

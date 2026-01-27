@@ -321,6 +321,19 @@ async function refreshTimesheetEntries(timesheet) {
         }
         dailyEntry.breakDuration = Math.round(breakMinutes);
 
+        // Check if any manual entries exist for this day
+        const hasManualEntries = dayEntries.some(e => e.isManualEntry || e.source === 'manual');
+        if (hasManualEntries) {
+            dailyEntry.exceptions = dailyEntry.exceptions || [];
+            if (!dailyEntry.exceptions.some(e => e.type === 'manual_entry')) {
+                const manualEntry = dayEntries.find(e => e.isManualEntry || e.source === 'manual');
+                dailyEntry.exceptions.push({ 
+                    type: 'manual_entry', 
+                    description: manualEntry?.note || 'Contains manual time entries'
+                });
+            }
+        }
+
         // Calculate total time
         if (clockIn && clockOut) {
             const totalMinutes = (clockOut.timestamp - clockIn.timestamp) / (1000 * 60) - breakMinutes;
@@ -352,4 +365,6 @@ async function refreshTimesheetEntries(timesheet) {
     return timesheet;
 }
 
+// Export both router and helper function
 module.exports = router;
+module.exports.refreshTimesheetEntries = refreshTimesheetEntries;
