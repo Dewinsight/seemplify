@@ -144,22 +144,35 @@ export default function PunchLogPage() {
                     <p className="text-zinc-400 mt-1">View your clock in/out history</p>
                 </div>
 
-                {/* Filter Buttons */}
-                <div className="flex items-center gap-2 bg-zinc-800/50 rounded-lg p-1">
-                    {['today', 'week', 'month'].map((filter) => (
+                <div className="flex items-center gap-3">
+                    {/* Filter Buttons */}
+                    <div className="flex items-center gap-2 bg-zinc-800/50 rounded-lg p-1">
+                        {['today', 'week', 'month'].map((filter) => (
+                            <button
+                                key={filter}
+                                onClick={() => setDateFilter(filter)}
+                                className={cn(
+                                    'px-4 py-2 rounded-md text-sm font-medium transition-all',
+                                    dateFilter === filter
+                                        ? 'bg-teal-500 text-white'
+                                        : 'text-zinc-400 hover:text-white hover:bg-zinc-700'
+                                )}
+                            >
+                                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Add Manual Entry Button */}
+                    {canAddManualEntry && (
                         <button
-                            key={filter}
-                            onClick={() => setDateFilter(filter)}
-                            className={cn(
-                                'px-4 py-2 rounded-md text-sm font-medium transition-all',
-                                dateFilter === filter
-                                    ? 'bg-teal-500 text-white'
-                                    : 'text-zinc-400 hover:text-white hover:bg-zinc-700'
-                            )}
+                            onClick={() => setShowManualEntryModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-medium transition-colors"
                         >
-                            {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                            <Plus className="h-4 w-4" />
+                            Add Manual Entry
                         </button>
-                    ))}
+                    )}
                 </div>
             </div>
 
@@ -195,9 +208,16 @@ export default function PunchLogPage() {
                                                 {getEntryIcon(entry.entryType)}
                                             </div>
                                             <div>
-                                                <p className="font-medium text-white">
-                                                    {getEntryLabel(entry.entryType)}
-                                                </p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-medium text-white">
+                                                        {getEntryLabel(entry.entryType)}
+                                                    </p>
+                                                    {entry.isManualEntry && (
+                                                        <span className="px-2 py-0.5 text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                                                            Manual
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {entry.note && (
                                                     <p className="text-sm text-zinc-400 mt-1">
                                                         {entry.note}
@@ -220,6 +240,15 @@ export default function PunchLogPage() {
                     ))}
                 </div>
             )}
+
+            {/* Manual Entry Modal */}
+            <ManualEntryModal
+                isOpen={showManualEntryModal}
+                onClose={() => setShowManualEntryModal(false)}
+                onSuccess={() => {
+                    fetchEntries();
+                }}
+            />
         </div>
     );
 }
