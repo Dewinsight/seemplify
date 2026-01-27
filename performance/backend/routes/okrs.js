@@ -307,23 +307,41 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    const { title, objective, keyResults, status } = req.body;
+    const { title, objective, keyResults, status, objectives } = req.body;
 
-    if (title || objective) {
-      if (!okr.objectives) okr.objectives = [{}];
-      if (title) okr.objectives[0].title = title;
-      if (objective) okr.objectives[0].description = objective;
-    }
-
-    if (keyResults) {
-      if (!okr.objectives) okr.objectives = [{}];
-      okr.objectives[0].keyResults = keyResults.map(kr => ({
-        title: typeof kr === 'string' ? kr : kr.title,
-        metricType: kr.metricType || 'percentage',
-        startValue: kr.startValue || 0,
-        targetValue: kr.targetValue || 100,
-        currentValue: kr.currentValue || 0
+    // Handle new nested objectives array format
+    if (objectives && Array.isArray(objectives)) {
+      okr.objectives = objectives.map(obj => ({
+        title: obj.title,
+        description: obj.description || '',
+        weight: obj.weight || 0,
+        keyResults: (obj.keyResults || []).map(kr => ({
+          title: typeof kr === 'string' ? kr : kr.title,
+          metricType: kr.metricType || 'percentage',
+          startValue: kr.startValue || 0,
+          targetValue: kr.targetValue || 100,
+          currentValue: kr.currentValue || 0,
+          lastUpdated: kr.lastUpdated || new Date()
+        }))
       }));
+    } else {
+      // Legacy format handling
+      if (title || objective) {
+        if (!okr.objectives) okr.objectives = [{}];
+        if (title) okr.objectives[0].title = title;
+        if (objective) okr.objectives[0].description = objective;
+      }
+
+      if (keyResults) {
+        if (!okr.objectives) okr.objectives = [{}];
+        okr.objectives[0].keyResults = keyResults.map(kr => ({
+          title: typeof kr === 'string' ? kr : kr.title,
+          metricType: kr.metricType || 'percentage',
+          startValue: kr.startValue || 0,
+          targetValue: kr.targetValue || 100,
+          currentValue: kr.currentValue || 0
+        }));
+      }
     }
 
     if (status) okr.status = status;
@@ -359,11 +377,14 @@ router.put('/:id/progress', requireAuth, async (req, res) => {
       });
     }
 
-    const { keyResultIndex, currentValue } = req.body;
+    const { objectiveIndex, keyResultIndex, currentValue } = req.body;
 
-    if (okr.objectives?.[0]?.keyResults?.[keyResultIndex]) {
-      okr.objectives[0].keyResults[keyResultIndex].currentValue = currentValue;
-      okr.objectives[0].keyResults[keyResultIndex].lastUpdated = new Date();
+    // Support objectiveIndex (default to 0 for legacy)
+    const objIdx = objectiveIndex || 0;
+
+    if (okr.objectives?.[objIdx]?.keyResults?.[keyResultIndex]) {
+      okr.objectives[objIdx].keyResults[keyResultIndex].currentValue = currentValue;
+      okr.objectives[objIdx].keyResults[keyResultIndex].lastUpdated = new Date();
     }
 
     okr.progress = calculateProgress(okr);
@@ -589,20 +610,27 @@ router.get('/alignable/list', requireAuth, async (req, res) => {
 
 // Helper function to calculate OKR progress
 function calculateProgress(okr) {
-  if (!okr.objectives?.[0]?.keyResults?.length) return 0;
+  if (!okr.objectives || okr.objectives.length === 0) return 0;
 
-  const krs = okr.objectives[0].keyResults;
   let totalProgress = 0;
+  let keyResultsCount = 0;
 
-  krs.forEach(kr => {
-    const range = kr.targetValue - kr.startValue;
-    if (range > 0) {
-      const progress = ((kr.currentValue - kr.startValue) / range) * 100;
-      totalProgress += Math.min(100, Math.max(0, progress));
+  // Calculate progress weighted by key results
+  okr.objectives.forEach(obj => {
+    if (obj.keyResults && obj.keyResults.length > 0) {
+      obj.keyResults.forEach(kr => {
+        keyResultsCount++;
+        const range = kr.targetValue - kr.startValue;
+        if (range !== 0) {
+          const progress = ((kr.currentValue - kr.startValue) / range) * 100;
+          totalProgress += Math.min(100, Math.max(0, progress));
+        }
+      });
     }
   });
 
-  return Math.round(totalProgress / krs.length);
+  if (keyResultsCount === 0) return 0;
+  return Math.round(totalProgress / keyResultsCount);
 }
 
 module.exports = router;
