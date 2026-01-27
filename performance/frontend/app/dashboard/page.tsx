@@ -16,7 +16,7 @@ import { authApi } from '@/lib/api';
 
 export default function DashboardPage() {
   const router = useRouter();
-  
+
   // Get auth state
   const { isAuthenticated, isLoading: authLoading, user: authUser } = useAuth();
 
@@ -34,7 +34,7 @@ export default function DashboardPage() {
     managerData,
     isLoading: contextLoading
   } = useUserContext();
-  
+
   // Team switching state
   const { currentTeam, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [mounted, setMounted] = useState(false);
   const [selectedTeamView, setSelectedTeamView] = useState<string>('current'); // 'current', 'all', or specific teamId
-  
+
   // Filter teams by current organization
   const { currentOrganization } = useAuth();
   const orgTeams = teams.filter((t: any) => {
@@ -51,16 +51,16 @@ export default function DashboardPage() {
     return t.organizationId === orgId;
   });
   const activeCurrentTeam = currentTeam || contextCurrentTeam;
-  
+
   // Dashboard data with team filter
   const dashboardTeamFilter = selectedTeamView === 'current' ? activeCurrentTeam?.id : selectedTeamView;
   const { dashboard, isLoading: dashboardLoading, isError } = useDashboardData(dashboardTeamFilter);
-  
+
   // Client-side mounting check for portal
   useEffect(() => {
     setMounted(true);
   }, []);
-  
+
   // Update dropdown position
   useEffect(() => {
     if (teamDropdownOpen && teamButtonRef.current) {
@@ -71,9 +71,9 @@ export default function DashboardPage() {
       });
     }
   }, [teamDropdownOpen]);
-  
+
   const showTeamSwitcher = orgTeams.length > 0;
-  
+
   // Get display name for selected view
   const getTeamViewDisplay = () => {
     if (selectedTeamView === 'all') return 'All Teams';
@@ -81,13 +81,13 @@ export default function DashboardPage() {
     const team = orgTeams.find((t: any) => t.id === selectedTeamView);
     return team?.name || 'Select Team';
   };
-  
+
   // Handle team view change (view specific team or all teams)
   const handleSwitchTeamView = async (teamId: string) => {
     if (switchingTeam) return;
     setSwitchingTeam(true);
     setTeamDropdownOpen(false);
-    
+
     try {
       if (teamId === 'all') {
         // View all teams - don't change current team, just the view
@@ -206,162 +206,164 @@ export default function DashboardPage() {
         {/* Welcome Header */}
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-8 shadow-2xl shadow-purple-500/10">
-            <div className="flex justify-between items-start flex-wrap gap-4">
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
-                  Welcome back, {userName.split(' ')[0]} 
-                  <Sparkles className="h-7 w-7 text-purple-400" />
-                </h1>
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  <span className="text-zinc-400">Performance overview for</span>
-                  <span className="text-zinc-300 font-medium">{organization?.name || 'your organization'}</span>
-                  {selectedTeamView === 'all' && (
-                    <>
-                      <span className="text-zinc-500">•</span>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 text-sm font-medium">
-                        <Users className="h-3.5 w-3.5" />
-                        Viewing {orgTeams.length} Teams
-                      </span>
-                    </>
-                  )}
-                </div>
-                {showTeamSwitcher && (
-                  <div className="mt-4 flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-purple-400" />
-                      <span className="text-sm text-zinc-400">Team View:</span>
-                    </div>
-                    <div className="relative">
-                      <button
-                        ref={teamButtonRef}
-                        onClick={() => {
-                          if (teamButtonRef.current) {
-                            const rect = teamButtonRef.current.getBoundingClientRect();
-                            setDropdownPosition({
-                              top: rect.bottom + 8, // 8px = mt-2 equivalent
-                              left: rect.left
-                            });
-                          }
-                          setTeamDropdownOpen(!teamDropdownOpen);
-                        }}
-                        disabled={switchingTeam}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 text-sm text-zinc-100 hover:from-purple-500/30 hover:to-pink-500/30 hover:border-purple-400/50 transition-all shadow-lg shadow-purple-500/10"
-                      >
-                        <Eye className="h-4 w-4 text-purple-400" />
-                        <div className="flex flex-col items-start">
-                          <span className="font-semibold">{getTeamViewDisplay()}</span>
-                          <span className="text-xs text-zinc-400">
-                            {selectedTeamView === 'all' 
-                              ? `Viewing ${orgTeams.length} teams` 
-                              : `${orgTeams.length} team${orgTeams.length !== 1 ? 's' : ''} available`
-                            }
-                          </span>
-                        </div>
-                        <ChevronDown className="h-4 w-4 text-zinc-400 ml-1" />
-                      </button>
-                      {teamDropdownOpen && mounted && createPortal(
-                        <>
-                          <div 
-                            className="fixed inset-0 z-[9998]"
-                            onClick={() => setTeamDropdownOpen(false)}
-                          />
-                          <div 
-                            className="fixed w-80 rounded-xl border border-white/[0.08] bg-zinc-950 shadow-2xl overflow-hidden z-[9999]"
-                            style={{
-                              top: `${dropdownPosition.top}px`,
-                              left: `${dropdownPosition.left}px`
-                            }}
-                          >
-                            <div className="px-4 py-3 border-b border-zinc-800/60 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Users className="h-4 w-4 text-purple-400" />
-                                  <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Team View</div>
-                                </div>
-                                <span className="text-xs text-zinc-500">{orgTeams.length + 1} options</span>
-                              </div>
-                            </div>
-                            
-                            {/* All Teams Option */}
-                            <button
-                              onClick={() => handleSwitchTeamView('all')}
-                              disabled={switchingTeam}
-                              className={`w-full text-left px-4 py-3 text-sm transition-all ${selectedTeamView === 'all' ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent hover:bg-purple-500/10 cursor-pointer'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className={`font-semibold ${selectedTeamView === 'all' ? 'text-purple-300' : 'text-zinc-200'} truncate`}>
-                                    All Teams
-                                  </div>
-                                  <div className="text-xs text-zinc-500 mt-0.5">
-                                    View aggregated data across {orgTeams.length} teams
-                                  </div>
-                                </div>
-                                {selectedTeamView === 'all' && (
-                                  <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
-                                    <Eye className="h-3 w-3" />
-                                    Viewing
-                                  </span>
-                                )}
-                              </div>
-                            </button>
+          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl shadow-purple-500/10 overflow-hidden">
 
-                            {/* Individual Teams */}
-                            {orgTeams.map((team: any) => {
-                              const isActiveTeam = selectedTeamView === 'current' && team.id === activeCurrentTeam?.id;
-                              const isSelectedTeam = selectedTeamView === team.id;
-                              const isActive = isActiveTeam || isSelectedTeam;
-                              
-                              return (
-                                <button
-                                  key={team.id}
-                                  onClick={() => !isActiveTeam && handleSwitchTeamView(team.id)}
-                                  disabled={switchingTeam || isActiveTeam}
-                                  className={`w-full text-left px-4 py-3 text-sm transition-all ${!isActive && 'hover:bg-purple-500/10 cursor-pointer'} ${isActive ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
-                                >
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                      <div className={`font-semibold ${isActive ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        {team.role && (
-                                          <span className={`text-xs truncate ${isActive ? 'text-purple-400' : 'text-zinc-500'}`}>
-                                            {team.roleDisplay || team.role}
-                                          </span>
-                                        )}
-                                        {!isActive && (
-                                          <span className="text-xs text-zinc-600">• Click to view</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    {isActive && (
-                                      <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
-                                        <Eye className="h-3 w-3" />
-                                        {isActiveTeam ? 'Active' : 'Viewing'}
-                                      </span>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </>,
-                        document.body
-                      )}
-                    </div>
-                  </div>
-                )}
+            {/* Top Section - Welcome + App Hub */}
+            <div className="flex justify-between items-center p-6 pb-4 border-b border-zinc-700/30">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
+                  Welcome back, {userName.split(' ')[0]}
+                  <Sparkles className="h-6 w-6 text-purple-400" />
+                </h1>
+                <p className="text-zinc-400 mt-1 text-sm">
+                  Performance overview for <span className="text-zinc-200 font-medium">{organization?.name || 'your organization'}</span>
+                </p>
               </div>
               <a
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
               >
                 <LayoutGrid className="h-4 w-4" />
                 App Hub
               </a>
             </div>
+
+            {/* Bottom Section - Team Selector */}
+            {showTeamSwitcher && (
+              <div className="flex items-center gap-4 px-6 py-4 bg-zinc-950/30">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center">
+                    <Users className="h-4 w-4 text-purple-400" />
+                  </div>
+                  <span className="text-sm text-zinc-400 hidden sm:inline">Viewing:</span>
+                </div>
+
+                {selectedTeamView === 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 text-sm font-medium">
+                    <Users className="h-3.5 w-3.5" />
+                    All {orgTeams.length} Teams
+                  </span>
+                )}
+
+                <div className="relative">
+                  <button
+                    ref={teamButtonRef}
+                    onClick={() => {
+                      if (teamButtonRef.current) {
+                        const rect = teamButtonRef.current.getBoundingClientRect();
+                        setDropdownPosition({
+                          top: rect.bottom + 8,
+                          left: rect.left
+                        });
+                      }
+                      setTeamDropdownOpen(!teamDropdownOpen);
+                    }}
+                    disabled={switchingTeam}
+                    className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-sm text-zinc-100 hover:bg-zinc-700/80 hover:border-zinc-600 transition-all shadow-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4 text-purple-400" />
+                      <span className="font-medium">{getTeamViewDisplay()}</span>
+                    </div>
+                    <div className="h-4 w-px bg-zinc-600"></div>
+                    <span className="text-xs text-zinc-500">
+                      {orgTeams.length} team{orgTeams.length !== 1 ? 's' : ''}
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-zinc-400" />
+                  </button>
+                  {teamDropdownOpen && mounted && createPortal(
+                    <>
+                      <div
+                        className="fixed inset-0 z-[9998]"
+                        onClick={() => setTeamDropdownOpen(false)}
+                      />
+                      <div
+                        className="fixed w-80 rounded-xl border border-white/[0.08] bg-zinc-950 shadow-2xl overflow-hidden z-[9999]"
+                        style={{
+                          top: `${dropdownPosition.top}px`,
+                          left: `${dropdownPosition.left}px`
+                        }}
+                      >
+                        <div className="px-4 py-3 border-b border-zinc-800/60 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Users className="h-4 w-4 text-purple-400" />
+                              <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Team View</div>
+                            </div>
+                            <span className="text-xs text-zinc-500">{orgTeams.length + 1} options</span>
+                          </div>
+                        </div>
+
+                        {/* All Teams Option */}
+                        <button
+                          onClick={() => handleSwitchTeamView('all')}
+                          disabled={switchingTeam}
+                          className={`w-full text-left px-4 py-3 text-sm transition-all ${selectedTeamView === 'all' ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent hover:bg-purple-500/10 cursor-pointer'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-semibold ${selectedTeamView === 'all' ? 'text-purple-300' : 'text-zinc-200'} truncate`}>
+                                All Teams
+                              </div>
+                              <div className="text-xs text-zinc-500 mt-0.5">
+                                View aggregated data across {orgTeams.length} teams
+                              </div>
+                            </div>
+                            {selectedTeamView === 'all' && (
+                              <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                                <Eye className="h-3 w-3" />
+                                Viewing
+                              </span>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Individual Teams */}
+                        {orgTeams.map((team: any) => {
+                          const isActiveTeam = selectedTeamView === 'current' && team.id === activeCurrentTeam?.id;
+                          const isSelectedTeam = selectedTeamView === team.id;
+                          const isActive = isActiveTeam || isSelectedTeam;
+
+                          return (
+                            <button
+                              key={team.id}
+                              onClick={() => !isActiveTeam && handleSwitchTeamView(team.id)}
+                              disabled={switchingTeam || isActiveTeam}
+                              className={`w-full text-left px-4 py-3 text-sm transition-all ${!isActive && 'hover:bg-purple-500/10 cursor-pointer'} ${isActive ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className={`font-semibold ${isActive ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    {team.role && (
+                                      <span className={`text-xs truncate ${isActive ? 'text-purple-400' : 'text-zinc-500'}`}>
+                                        {team.roleDisplay || team.role}
+                                      </span>
+                                    )}
+                                    {!isActive && (
+                                      <span className="text-xs text-zinc-600">• Click to view</span>
+                                    )}
+                                  </div>
+                                </div>
+                                {isActive && (
+                                  <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                                    <Eye className="h-3 w-3" />
+                                    {isActiveTeam ? 'Active' : 'Viewing'}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>,
+                    document.body
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
