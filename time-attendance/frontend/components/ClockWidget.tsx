@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Play, Square, Coffee, Clock } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Play, Square, Coffee, Loader2, Sparkles, Zap, Trophy, Sun, Moon, PartyPopper } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { clockApi } from '@/lib/api';
 
@@ -15,6 +15,45 @@ interface ClockWidgetProps {
     onStatusChange?: () => void;
 }
 
+// Confetti particle component
+const Particle = ({ delay, color }: { delay: number; color: string }) => (
+    <div
+        className={cn(
+            "absolute w-2 h-2 rounded-full animate-confetti",
+            color
+        )}
+        style={{
+            left: `${Math.random() * 100}%`,
+            animationDelay: `${delay}ms`,
+            animationDuration: `${1000 + Math.random() * 500}ms`,
+        }}
+    />
+);
+
+// Motivational messages
+const clockInMessages = [
+    "Let's crush it today! 💪",
+    "Ready to make magic happen!",
+    "Another great day begins!",
+    "You've got this! 🚀",
+    "Time to shine! ✨",
+];
+
+const clockOutMessages = [
+    "Great work today! 🎉",
+    "Well deserved rest!",
+    "You crushed it! 💪",
+    "See you tomorrow! 👋",
+    "Fantastic effort! ⭐",
+];
+
+const breakMessages = [
+    "Enjoy your break! ☕",
+    "Recharge time! 🔋",
+    "You deserve this! 🌟",
+    "Take it easy! 😌",
+];
+
 export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidgetProps) {
     const [status, setStatus] = useState(initialStatus || {
         isClockedIn: false,
@@ -22,28 +61,39 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         timeWorked: { hours: 0, minutes: 0 },
     });
     const [loading, setLoading] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+    const [loadingStep, setLoadingStep] = useState(0);
     const [elapsedTime, setElapsedTime] = useState('00:00:00');
     const [locationError, setLocationError] = useState<string | null>(null);
+    const [showCelebration, setShowCelebration] = useState(false);
+    const [celebrationMessage, setCelebrationMessage] = useState('');
+    const [celebrationType, setCelebrationType] = useState<'clockIn' | 'clockOut' | 'break'>('clockIn');
+    const [pulseEffect, setPulseEffect] = useState(false);
+
+    // Trigger celebration
+    const celebrate = useCallback((type: 'clockIn' | 'clockOut' | 'break') => {
+        setCelebrationType(type);
+        const messages = type === 'clockIn' ? clockInMessages : type === 'clockOut' ? clockOutMessages : breakMessages;
+        setCelebrationMessage(messages[Math.floor(Math.random() * messages.length)]);
+        setShowCelebration(true);
+        setPulseEffect(true);
+        
+        setTimeout(() => setShowCelebration(false), 3000);
+        setTimeout(() => setPulseEffect(false), 500);
+    }, []);
 
     // Update elapsed time every second
     useEffect(() => {
         let interval: NodeJS.Timeout;
 
-        // Use lastClockEntry from API (not lastEntry)
         const lastClockEntry = (status as any).lastClockEntry || status.lastEntry;
 
         if (status.isClockedIn && !status.isOnBreak && lastClockEntry) {
             const startTime = new Date(lastClockEntry.timestamp).getTime();
 
-            // Calculate initial offset based on previously worked time today
-            // This is a simplified estimation for the UI timer
-            // The backend remains the source of truth
-
             const updateTimer = () => {
                 const now = Date.now();
                 const currentSessionMs = now - startTime;
-
-                // Convert total worked minutes to ms and add current session
                 const totalMs = (status.timeWorked?.minutes || 0) * 60 * 1000 + currentSessionMs;
 
                 const h = Math.floor(totalMs / (1000 * 60 * 60));
@@ -58,7 +108,6 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             updateTimer();
             interval = setInterval(updateTimer, 1000);
         } else {
-            // Static display if not running
             const totalMinutes = status.timeWorked?.minutes || 0;
             const h = Math.floor(totalMinutes / 60);
             const m = Math.round(totalMinutes % 60);
@@ -68,7 +117,6 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         return () => clearInterval(interval);
     }, [status]);
 
-    // Fetch current status from server
     const refreshStatus = async () => {
         try {
             const newStatus = await clockApi.getStatus();
@@ -78,12 +126,10 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         }
     };
 
-    // Initial fetch on mount
     useEffect(() => {
         refreshStatus();
     }, []);
 
-    // Get user's current location
     const getCurrentLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {
         return new Promise((resolve) => {
             if (!navigator.geolocation) {
@@ -102,7 +148,6 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                 },
                 (error) => {
                     console.warn('Geolocation error:', error.message);
-                    // Don't block clock-in if location fails - backend will handle gracefully
                     resolve(null);
                 },
                 {
@@ -118,18 +163,25 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         try {
             setLoading(true);
             setLocationError(null);
+            setLoadingStep(1);
+            setLoadingMessage('📍 Getting your location...');
 
-            // Try to get location (but don't block if it fails)
             const location = await getCurrentLocation();
 
+            setLoadingStep(2);
+            setLoadingMessage('⚡ Clocking you in...');
             await clockApi.clockIn(undefined, location);
-            await refreshStatus(); // Refresh status after action
+            
+            setLoadingStep(3);
+            setLoadingMessage('✨ Almost there...');
+            await refreshStatus();
+            
+            celebrate('clockIn');
             if (onStatusChange) onStatusChange();
         } catch (error: any) {
             console.error('Clock in failed', error);
             const errorData = error.response?.data;
             
-            // Handle geofencing errors
             if (errorData?.code === 'OUTSIDE_GEOFENCE') {
                 setLocationError(`Clock-in blocked: ${errorData.details?.reason || 'You are outside the allowed office area'}`);
             } else {
@@ -137,6 +189,8 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             }
         } finally {
             setLoading(false);
+            setLoadingMessage(null);
+            setLoadingStep(0);
         }
     };
 
@@ -144,140 +198,353 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         try {
             setLoading(true);
             setLocationError(null);
+            setLoadingStep(1);
+            setLoadingMessage('📍 Getting your location...');
 
-            // Try to get location (optional for clock-out)
             const location = await getCurrentLocation();
 
+            setLoadingStep(2);
+            setLoadingMessage('🏁 Wrapping up your day...');
             await clockApi.clockOut(undefined, location);
-            await refreshStatus(); // Refresh status after action
+            
+            setLoadingStep(3);
+            setLoadingMessage('🎉 Finishing up...');
+            await refreshStatus();
+            
+            celebrate('clockOut');
             if (onStatusChange) onStatusChange();
         } catch (error: any) {
             console.error('Clock out failed', error);
             setLocationError(error.response?.data?.error || 'Failed to clock out');
         } finally {
             setLoading(false);
+            setLoadingMessage(null);
+            setLoadingStep(0);
         }
     };
 
     const handleBreak = async () => {
         try {
             setLoading(true);
+            setLoadingStep(1);
+            setLoadingMessage(status.isOnBreak ? '💪 Getting back to work...' : '☕ Starting your break...');
+            
             if (status.isOnBreak) {
                 await clockApi.endBreak();
             } else {
                 await clockApi.startBreak();
             }
-            await refreshStatus(); // Refresh status after action
+            
+            setLoadingStep(2);
+            setLoadingMessage('✨ Updating...');
+            await refreshStatus();
+            
+            if (!status.isOnBreak) celebrate('break');
             if (onStatusChange) onStatusChange();
         } catch (error) {
             console.error('Break toggle failed', error);
         } finally {
             setLoading(false);
+            setLoadingMessage(null);
+            setLoadingStep(0);
         }
     };
 
+    const getTimeOfDayGreeting = () => {
+        const hour = new Date().getHours();
+        if (hour < 12) return { text: 'Good morning', icon: Sun };
+        if (hour < 17) return { text: 'Good afternoon', icon: Sun };
+        return { text: 'Good evening', icon: Moon };
+    };
+
+    const greeting = getTimeOfDayGreeting();
+    const GreetingIcon = greeting.icon;
+
     return (
         <div className="relative group w-full max-w-md mx-auto">
-            {/* Background Glow */}
+            {/* Celebration Confetti */}
+            {showCelebration && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none z-50 rounded-2xl">
+                    {[...Array(20)].map((_, i) => (
+                        <Particle
+                            key={i}
+                            delay={i * 50}
+                            color={
+                                celebrationType === 'clockIn' 
+                                    ? ['bg-teal-400', 'bg-emerald-400', 'bg-cyan-400'][i % 3]
+                                    : celebrationType === 'clockOut'
+                                        ? ['bg-purple-400', 'bg-pink-400', 'bg-indigo-400'][i % 3]
+                                        : ['bg-amber-400', 'bg-orange-400', 'bg-yellow-400'][i % 3]
+                            }
+                        />
+                    ))}
+                </div>
+            )}
+
+            {/* Background Glow - Enhanced */}
             <div className={cn(
-                "absolute inset-0 rounded-2xl blur-xl transition-all duration-500 opacity-50",
+                "absolute inset-0 rounded-2xl blur-xl transition-all duration-700",
+                pulseEffect && "animate-pulse",
                 status.isClockedIn && !status.isOnBreak
-                    ? "bg-gradient-to-r from-teal-500/30 to-emerald-500/30 group-hover:from-teal-500/40 group-hover:to-emerald-500/40"
+                    ? "bg-gradient-to-r from-teal-500/40 to-emerald-500/40 opacity-60"
                     : status.isOnBreak
-                        ? "bg-gradient-to-r from-amber-500/20 to-orange-500/20"
+                        ? "bg-gradient-to-r from-amber-500/30 to-orange-500/30 opacity-50"
                         : "bg-gradient-to-r from-zinc-800 to-zinc-700 opacity-20"
             )} />
 
-            <div className="relative bg-zinc-900/80 backdrop-blur-xl border border-white/5 rounded-2xl p-8 shadow-2xl">
+            <div className={cn(
+                "relative bg-zinc-900/80 backdrop-blur-xl border rounded-2xl p-8 shadow-2xl transition-all duration-500",
+                pulseEffect ? "border-teal-500/50 scale-[1.02]" : "border-white/5"
+            )}>
+                {/* Celebration Message */}
+                {showCelebration && (
+                    <div className={cn(
+                        "absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-bounce-in",
+                        celebrationType === 'clockIn' 
+                            ? "bg-gradient-to-r from-teal-500 to-emerald-500 text-white"
+                            : celebrationType === 'clockOut'
+                                ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                                : "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
+                    )}>
+                        <span className="flex items-center gap-2">
+                            <PartyPopper className="h-4 w-4" />
+                            {celebrationMessage}
+                        </span>
+                    </div>
+                )}
+
                 {/* Header Status */}
                 <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-3">
                         <div className={cn(
-                            "h-3 w-3 rounded-full shadow-[0_0_10px_currentColor]",
-                            status.isClockedIn && !status.isOnBreak ? "bg-emerald-500 text-emerald-500 animate-pulse" :
-                                status.isOnBreak ? "bg-amber-500 text-amber-500" :
-                                    "bg-zinc-600 text-zinc-600"
-                        )} />
+                            "relative h-3 w-3 rounded-full",
+                            status.isClockedIn && !status.isOnBreak 
+                                ? "bg-emerald-500" 
+                                : status.isOnBreak 
+                                    ? "bg-amber-500" 
+                                    : "bg-zinc-600"
+                        )}>
+                            {(status.isClockedIn || status.isOnBreak) && (
+                                <span className={cn(
+                                    "absolute inset-0 rounded-full animate-ping",
+                                    status.isOnBreak ? "bg-amber-500" : "bg-emerald-500"
+                                )} />
+                            )}
+                        </div>
                         <span className="font-medium text-zinc-300">
                             {status.isOnBreak ? 'On Break' :
                                 status.isClockedIn ? 'Currently Working' : 'Not Clocked In'}
                         </span>
                     </div>
-                    <div className="text-xs text-zinc-500 font-mono">
-                        {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                        <GreetingIcon className="h-3.5 w-3.5" />
+                        <span className="font-mono">
+                            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </span>
                     </div>
                 </div>
 
-                {/* Timer Display */}
+                {/* Timer Display - Enhanced */}
                 <div className="text-center mb-10">
                     <div className={cn(
-                        "text-6xl font-bold font-mono tracking-wider bg-clip-text text-transparent transition-all duration-300",
+                        "text-6xl font-bold font-mono tracking-wider bg-clip-text text-transparent transition-all duration-500",
+                        pulseEffect && "scale-110",
                         status.isClockedIn && !status.isOnBreak
-                            ? "bg-gradient-to-r from-teal-400 to-emerald-400 drop-shadow-[0_0_15px_rgba(45,212,191,0.3)]"
+                            ? "bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400"
                             : status.isOnBreak
-                                ? "bg-gradient-to-r from-amber-400 to-orange-400"
-                                : "bg-zinc-700 from-zinc-500 to-zinc-600"
+                                ? "bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400"
+                                : "bg-gradient-to-r from-zinc-500 to-zinc-600"
                     )}>
                         {elapsedTime}
                     </div>
-                    <p className="text-sm text-zinc-500 mt-2">Total time today</p>
+                    <p className="text-sm text-zinc-500 mt-2 flex items-center justify-center gap-2">
+                        {status.isClockedIn && <Zap className="h-3.5 w-3.5 text-teal-400 animate-pulse" />}
+                        Total time today
+                        {status.isClockedIn && <Zap className="h-3.5 w-3.5 text-teal-400 animate-pulse" />}
+                    </p>
                 </div>
+
+                {/* Loading Status - Enhanced with steps */}
+                {loading && loadingMessage && (
+                    <div className="mb-4 p-4 bg-gradient-to-r from-teal-500/10 to-emerald-500/10 border border-teal-500/30 rounded-xl">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="relative">
+                                <Loader2 className="h-5 w-5 text-teal-400 animate-spin" />
+                                <Sparkles className="absolute -top-1 -right-1 h-3 w-3 text-yellow-400 animate-pulse" />
+                            </div>
+                            <p className="text-sm text-teal-400 font-medium">{loadingMessage}</p>
+                        </div>
+                        {/* Progress Steps */}
+                        <div className="flex gap-2">
+                            {[1, 2, 3].map((step) => (
+                                <div
+                                    key={step}
+                                    className={cn(
+                                        "h-1.5 flex-1 rounded-full transition-all duration-300",
+                                        loadingStep >= step 
+                                            ? "bg-gradient-to-r from-teal-400 to-emerald-400" 
+                                            : "bg-zinc-700"
+                                    )}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Location Error */}
                 {locationError && (
-                    <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl animate-shake">
                         <p className="text-sm text-red-400">{locationError}</p>
                     </div>
                 )}
 
-                {/* Action Buttons */}
+                {/* Action Buttons - Enhanced */}
                 <div className="grid grid-cols-2 gap-4">
                     {!status.isClockedIn ? (
                         <button
                             onClick={handleClockIn}
                             disabled={loading}
-                            className="col-span-2 py-4 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-bold text-lg shadow-lg shadow-teal-500/20 hover:shadow-teal-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                            className={cn(
+                                "col-span-2 py-5 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group/btn",
+                                loading 
+                                    ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" 
+                                    : "bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-500 bg-[length:200%_100%] hover:bg-right text-white shadow-teal-500/30 hover:shadow-teal-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                            )}
                         >
-                            <Play className="h-5 w-5 fill-current" />
-                            Clock In
+                            {!loading && (
+                                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
+                            )}
+                            {loading ? (
+                                <>
+                                    <Loader2 className="h-6 w-6 animate-spin" />
+                                    <span>Processing...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Play className="h-6 w-6 fill-current" />
+                                    <span>Clock In</span>
+                                    <Sparkles className="h-5 w-5 animate-pulse" />
+                                </>
+                            )}
                         </button>
                     ) : (
                         <>
                             <button
                                 onClick={handleClockOut}
                                 disabled={loading}
-                                className="py-4 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white font-bold shadow-lg shadow-red-500/20 hover:shadow-red-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                className={cn(
+                                    "py-4 rounded-xl font-bold shadow-lg transition-all duration-300 flex items-center justify-center gap-2 relative overflow-hidden group/btn",
+                                    loading 
+                                        ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" 
+                                        : "bg-gradient-to-r from-red-500 via-rose-500 to-red-500 bg-[length:200%_100%] hover:bg-right text-white shadow-red-500/30 hover:shadow-red-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                                )}
                             >
-                                <Square className="h-5 w-5 fill-current" />
-                                Clock Out
+                                {!loading && (
+                                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
+                                )}
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span className="text-sm">Processing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Square className="h-5 w-5 fill-current" />
+                                        <span>Clock Out</span>
+                                        <Trophy className="h-4 w-4 animate-bounce" />
+                                    </>
+                                )}
                             </button>
 
                             <button
                                 onClick={handleBreak}
                                 disabled={loading}
                                 className={cn(
-                                    "py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]",
-                                    status.isOnBreak
-                                        ? "bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-700"
-                                        : "bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/20 hover:shadow-amber-500/40"
+                                    "py-4 rounded-xl font-bold shadow-lg transition-all duration-300 flex items-center justify-center gap-2 relative overflow-hidden group/btn",
+                                    loading 
+                                        ? "bg-zinc-800 text-zinc-400 cursor-not-allowed border border-zinc-700"
+                                        : status.isOnBreak
+                                            ? "bg-gradient-to-r from-zinc-700 to-zinc-800 text-white border border-zinc-600 hover:border-zinc-500 hover:scale-[1.02] active:scale-[0.98]"
+                                            : "bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 bg-[length:200%_100%] hover:bg-right text-white shadow-amber-500/30 hover:shadow-amber-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
                                 )}
                             >
-                                {status.isOnBreak ? (
+                                {!loading && !status.isOnBreak && (
+                                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
+                                )}
+                                {loading ? (
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                ) : status.isOnBreak ? (
                                     <>
-                                        <Play className="h-5 w-5 fill-current" />
-                                        Resume
+                                        <Play className="h-5 w-5 fill-current animate-pulse" />
+                                        <span>Resume</span>
                                     </>
                                 ) : (
                                     <>
                                         <Coffee className="h-5 w-5" />
-                                        Take Break
+                                        <span>Break</span>
                                     </>
                                 )}
                             </button>
                         </>
                     )}
                 </div>
+
+                {/* Quick Stats Hint */}
+                {status.isClockedIn && !loading && (
+                    <div className="mt-6 pt-4 border-t border-zinc-800/50 flex items-center justify-center gap-4 text-xs text-zinc-500">
+                        <span className="flex items-center gap-1">
+                            <Zap className="h-3 w-3 text-teal-400" />
+                            Keep going!
+                        </span>
+                        <span className="text-zinc-700">•</span>
+                        <span className="flex items-center gap-1">
+                            <Trophy className="h-3 w-3 text-amber-400" />
+                            Great progress today
+                        </span>
+                    </div>
+                )}
             </div>
+
+            {/* CSS for animations */}
+            <style jsx>{`
+                @keyframes confetti {
+                    0% {
+                        transform: translateY(0) rotate(0deg);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: translateY(300px) rotate(720deg);
+                        opacity: 0;
+                    }
+                }
+                .animate-confetti {
+                    animation: confetti 1s ease-out forwards;
+                }
+                @keyframes bounce-in {
+                    0% {
+                        transform: translateX(-50%) scale(0);
+                        opacity: 0;
+                    }
+                    50% {
+                        transform: translateX(-50%) scale(1.1);
+                    }
+                    100% {
+                        transform: translateX(-50%) scale(1);
+                        opacity: 1;
+                    }
+                }
+                .animate-bounce-in {
+                    animation: bounce-in 0.4s ease-out forwards;
+                }
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    25% { transform: translateX(-5px); }
+                    75% { transform: translateX(5px); }
+                }
+                .animate-shake {
+                    animation: shake 0.3s ease-in-out;
+                }
+            `}</style>
         </div>
     );
 }
