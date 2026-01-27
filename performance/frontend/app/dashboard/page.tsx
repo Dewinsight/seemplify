@@ -20,8 +20,7 @@ export default function DashboardPage() {
   // Get auth state
   const { isAuthenticated, isLoading: authLoading, user: authUser } = useAuth();
 
-  // SWR hooks
-  const { dashboard, isLoading: dashboardLoading, isError } = useDashboardData();
+  // User context and teams
   const {
     user: contextUser,
     role,
@@ -36,13 +35,26 @@ export default function DashboardPage() {
     isLoading: contextLoading
   } = useUserContext();
   
-  // Team switching
+  // Team switching state
   const { currentTeam, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
   const teamButtonRef = useRef<HTMLButtonElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [mounted, setMounted] = useState(false);
+  const [selectedTeamView, setSelectedTeamView] = useState<string>('current'); // 'current', 'all', or specific teamId
+  
+  // Filter teams by current organization
+  const { currentOrganization } = useAuth();
+  const orgTeams = teams.filter((t: any) => {
+    const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
+    return t.organizationId === orgId;
+  });
+  const activeCurrentTeam = currentTeam || contextCurrentTeam;
+  
+  // Dashboard data with team filter
+  const dashboardTeamFilter = selectedTeamView === 'current' ? activeCurrentTeam?.id : selectedTeamView;
+  const { dashboard, isLoading: dashboardLoading, isError } = useDashboardData(dashboardTeamFilter);
   
   // Client-side mounting check for portal
   useEffect(() => {
@@ -60,26 +72,38 @@ export default function DashboardPage() {
     }
   }, [teamDropdownOpen]);
   
-  // Filter teams by current organization
-  const { currentOrganization } = useAuth();
-  const orgTeams = teams.filter((t: any) => {
-    const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
-    return t.organizationId === orgId;
-  });
-  const showTeamSwitcher = orgTeams.length > 1;
-  const activeCurrentTeam = currentTeam || contextCurrentTeam;
+  const showTeamSwitcher = orgTeams.length > 0;
   
-  // Handle team switch
-  const handleSwitchTeam = async (teamId: string) => {
+  // Get display name for selected view
+  const getTeamViewDisplay = () => {
+    if (selectedTeamView === 'all') return 'All Teams';
+    if (selectedTeamView === 'current') return activeCurrentTeam?.name || orgTeams[0]?.name || 'Select Team';
+    const team = orgTeams.find((t: any) => t.id === selectedTeamView);
+    return team?.name || 'Select Team';
+  };
+  
+  // Handle team view change (view specific team or all teams)
+  const handleSwitchTeamView = async (teamId: string) => {
     if (switchingTeam) return;
     setSwitchingTeam(true);
     setTeamDropdownOpen(false);
+    
     try {
-      await authApi.switchTeam(teamId);
-      if (mutateCurrentTeam) {
-        mutateCurrentTeam();
+      if (teamId === 'all') {
+        // View all teams - don't change current team, just the view
+        setSelectedTeamView('all');
+        setSwitchingTeam(false);
+        // Optionally refresh dashboard data with all teams filter
+        // The dashboard will show aggregated data across all teams
+      } else {
+        // Switch to specific team
+        await authApi.switchTeam(teamId);
+        setSelectedTeamView('current');
+        if (mutateCurrentTeam) {
+          mutateCurrentTeam();
+        }
+        window.location.reload();
       }
-      window.location.reload();
     } catch (error) {
       console.error('Failed to switch team:', error);
       setSwitchingTeam(false);
@@ -190,8 +214,17 @@ export default function DashboardPage() {
                   <Sparkles className="h-7 w-7 text-purple-400" />
                 </h1>
                 <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  <span className="text-zinc-400">Here's your performance overview for</span>
+                  <span className="text-zinc-400">Performance overview for</span>
                   <span className="text-zinc-300 font-medium">{organization?.name || 'your organization'}</span>
+                  {selectedTeamView === 'all' && (
+                    <>
+                      <span className="text-zinc-500">•</span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 text-sm font-medium">
+                        <Users className="h-3.5 w-3.5" />
+                        Viewing {orgTeams.length} Teams
+                      </span>
+                    </>
+                  )}
                 </div>
                 {showTeamSwitcher && (
                   <div className="mt-4 flex items-center gap-3">
@@ -217,8 +250,13 @@ export default function DashboardPage() {
                       >
                         <Eye className="h-4 w-4 text-purple-400" />
                         <div className="flex flex-col items-start">
-                          <span className="font-semibold">{activeCurrentTeam?.name || orgTeams[0]?.name || 'Select Team'}</span>
-                          <span className="text-xs text-zinc-400">{orgTeams.length} team{orgTeams.length !== 1 ? 's' : ''} available</span>
+                          <span className="font-semibold">{getTeamViewDisplay()}</span>
+                          <span className="text-xs text-zinc-400">
+                            {selectedTeamView === 'all' 
+                              ? `Viewing ${orgTeams.length} teams` 
+                              : `${orgTeams.length} team${orgTeams.length !== 1 ? 's' : ''} available`
+                            }
+                          </span>
                         </div>
                         <ChevronDown className="h-4 w-4 text-zinc-400 ml-1" />
                       </button>
@@ -239,38 +277,67 @@ export default function DashboardPage() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <Users className="h-4 w-4 text-purple-400" />
-                                  <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Switch Team</div>
+                                  <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Team View</div>
                                 </div>
-                                <span className="text-xs text-zinc-500">{orgTeams.length} available</span>
+                                <span className="text-xs text-zinc-500">{orgTeams.length + 1} options</span>
                               </div>
                             </div>
+                            
+                            {/* All Teams Option */}
+                            <button
+                              onClick={() => handleSwitchTeamView('all')}
+                              disabled={switchingTeam}
+                              className={`w-full text-left px-4 py-3 text-sm transition-all ${selectedTeamView === 'all' ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent hover:bg-purple-500/10 cursor-pointer'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className={`font-semibold ${selectedTeamView === 'all' ? 'text-purple-300' : 'text-zinc-200'} truncate`}>
+                                    All Teams
+                                  </div>
+                                  <div className="text-xs text-zinc-500 mt-0.5">
+                                    View aggregated data across {orgTeams.length} teams
+                                  </div>
+                                </div>
+                                {selectedTeamView === 'all' && (
+                                  <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                                    <Eye className="h-3 w-3" />
+                                    Viewing
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Individual Teams */}
                             {orgTeams.map((team: any) => {
-                              const isCurrentTeam = team.id === activeCurrentTeam?.id;
+                              const isActiveTeam = selectedTeamView === 'current' && team.id === activeCurrentTeam?.id;
+                              const isSelectedTeam = selectedTeamView === team.id;
+                              const isActive = isActiveTeam || isSelectedTeam;
+                              
                               return (
                                 <button
                                   key={team.id}
-                                  onClick={() => !isCurrentTeam && handleSwitchTeam(team.id)}
-                                  disabled={switchingTeam || isCurrentTeam}
-                                  className={`w-full text-left px-4 py-3 text-sm transition-all ${!isCurrentTeam && 'hover:bg-purple-500/10 cursor-pointer'} ${isCurrentTeam ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
+                                  onClick={() => !isActiveTeam && handleSwitchTeamView(team.id)}
+                                  disabled={switchingTeam || isActiveTeam}
+                                  className={`w-full text-left px-4 py-3 text-sm transition-all ${!isActive && 'hover:bg-purple-500/10 cursor-pointer'} ${isActive ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div className="flex-1 min-w-0">
-                                      <div className={`font-semibold ${isCurrentTeam ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
+                                      <div className={`font-semibold ${isActive ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
                                       <div className="flex items-center gap-2 mt-1">
                                         {team.role && (
-                                          <span className={`text-xs truncate ${isCurrentTeam ? 'text-purple-400' : 'text-zinc-500'}`}>
+                                          <span className={`text-xs truncate ${isActive ? 'text-purple-400' : 'text-zinc-500'}`}>
                                             {team.roleDisplay || team.role}
                                           </span>
                                         )}
-                                        {!isCurrentTeam && (
-                                          <span className="text-xs text-zinc-600">• Click to switch</span>
+                                        {!isActive && (
+                                          <span className="text-xs text-zinc-600">• Click to view</span>
                                         )}
                                       </div>
                                     </div>
-                                    {isCurrentTeam && (
+                                    {isActive && (
                                       <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
                                         <Eye className="h-3 w-3" />
-                                        Active
+                                        {isActiveTeam ? 'Active' : 'Viewing'}
                                       </span>
                                     )}
                                   </div>

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const User = require('../models/User');
 const OKR = require('../models/OKR');
 const { PerformanceReview } = require('../models/PerformanceReview');
@@ -801,13 +802,17 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
 /**
  * GET /api/user/my-team-members - Get team members for a line manager
  * Used by managers to see their direct reports and team structure
+ * 
+ * Strategy: Fetch team member details directly from IDP API (like time-attendance does)
  */
 router.get('/my-team-members', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
-    const directReportIds = req.directReports || [];
     const managedTeams = req.managedTeams || [];
     const sessionUser = req.session.user;
+    const accessToken = sessionUser.accessToken;
+    
+    console.log('🔍 my-team-members: role=', role, 'managedTeams=', managedTeams.length);
 
     if (role !== 'line_manager' && role !== 'hr_admin') {
       return res.json({
@@ -821,51 +826,126 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
       });
     }
 
-    // Get direct report details from database
+    // Fetch team member details from IDP
+    const idpUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+    
     let directReports = [];
-    if (directReportIds.length > 0) {
-      const dbUsers = await User.find({
-        _id: { $in: directReportIds }
-      }).select('email profile idpTeams');
-
-      directReports = dbUsers.map(u => {
-        const primaryTeam = u.idpTeams?.find(t => 
-          managedTeams.some(mt => mt.id === t.id)
-        ) || u.idpTeams?.[0];
-
-        return {
-          userId: u._id?.toString(),
-          email: u.email,
-          name: u.profile?.displayName ||
-                `${u.profile?.firstName || ''} ${u.profile?.lastName || ''}`.trim() ||
-                u.email?.split('@')[0],
-          jobTitle: u.profile?.title || primaryTeam?.role || 'Team Member',
-          avatar: u.profile?.avatar,
-          teamId: primaryTeam?.id,
-          teamName: primaryTeam?.name,
-          teamRole: primaryTeam?.role,
-          // Check if this person is also a manager (has their own direct reports)
-          isAlsoManager: primaryTeam?.isManager || primaryTeam?.role === 'line_manager',
-          directReportCount: primaryTeam?.directReports?.length || 0
-        };
+    const seenMembers = new Set(); // Avoid duplicates
+    const currentUserId = sessionUser.id || sessionUser.sub;
+    
+    // Get all directReport IDs from managed teams
+    const allDirectReportIds = new Set();
+    managedTeams.forEach(team => {
+      if (team.directReports) {
+        team.directReports.forEach(id => allDirectReportIds.add(id));
+      }
+    });
+    console.log('🔍 All direct report IDs:', Array.from(allDirectReportIds));
+    
+    // Get current organization ID
+    const currentOrgId = sessionUser.currentOrganization?.id || 
+                         sessionUser.organizations?.[0]?.id ||
+                         managedTeams[0]?.organizationId;
+    
+    // Try to fetch all organization members to get names/emails
+    let orgMembersMap = new Map();
+    if (currentOrgId && accessToken) {
+      try {
+        console.log(`📡 Fetching org members from IDP for org: ${currentOrgId}`);
+        const response = await axios.get(`${idpUrl}/api/organizations/${currentOrgId}/members`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        });
+        
+        if (response.data?.members) {
+          console.log(`✅ Got ${response.data.members.length} org members from IDP`);
+          response.data.members.forEach(member => {
+            // Store by both id and string id for matching
+            orgMembersMap.set(member.id.toString(), member);
+            orgMembersMap.set(member.id, member);
+          });
+        }
+      } catch (orgError) {
+        console.warn(`⚠️ Could not fetch org members:`, orgError.message);
+      }
+    }
+    
+    // Build direct reports list
+    for (const team of managedTeams) {
+      if (!team.directReports || team.directReports.length === 0) continue;
+      
+      team.directReports.forEach((memberId, idx) => {
+        // Skip manager and duplicates
+        if (memberId === currentUserId || seenMembers.has(memberId)) return;
+        seenMembers.add(memberId);
+        
+        // Try to find member details from org members list
+        const memberDetails = orgMembersMap.get(memberId) || orgMembersMap.get(memberId.toString());
+        
+        if (memberDetails) {
+          console.log(`✅ Found member details for ${memberId}: ${memberDetails.name || memberDetails.email}`);
+          directReports.push({
+            userId: memberId,
+            email: memberDetails.email,
+            name: memberDetails.name || memberDetails.email?.split('@')[0] || `Team Member ${idx + 1}`,
+            jobTitle: memberDetails.role === 'hr_manager' ? 'HR Manager' :
+                     memberDetails.role === 'admin' ? 'Administrator' : 'Team Member',
+            avatar: null,
+            teamId: team.id,
+            teamName: team.name,
+            teamRole: 'member',
+            isAlsoManager: false,
+            directReportCount: 0,
+            source: 'idp',
+            orgRole: memberDetails.role
+          });
+        } else {
+          // Fallback: create placeholder for unknown member
+          console.log(`⚠️ No details found for member ${memberId}, using placeholder`);
+          directReports.push({
+            userId: memberId,
+            email: null,
+            name: `Team Member ${idx + 1}`,
+            jobTitle: 'Team Member',
+            avatar: null,
+            teamId: team.id,
+            teamName: team.name,
+            teamRole: 'member',
+            isAlsoManager: false,
+            directReportCount: 0,
+            source: 'session',
+            needsLogin: true
+          });
+        }
       });
     }
+    
+    console.log(`📊 Total team members found: ${directReports.length}`);
 
+    const responseData = {
+      isManager: true,
+      managerId: currentUserId,
+      managerName: sessionUser.name,
+      teams: managedTeams.map(t => ({
+        id: t.id,
+        name: t.name,
+        role: t.role,
+        memberCount: t.directReports?.length || 0
+      })),
+      directReports: directReports,
+      totalDirectReports: directReports.length
+    };
+    
+    console.log('📊 /api/user/my-team-members response:', {
+      totalDirectReports: directReports.length,
+      teams: responseData.teams.length,
+      sampleMember: directReports[0]
+    });
+    
     res.json({
       success: true,
-      data: {
-        isManager: true,
-        managerId: sessionUser.id || sessionUser.sub,
-        managerName: sessionUser.name,
-        teams: managedTeams.map(t => ({
-          id: t.id,
-          name: t.name,
-          role: t.role,
-          memberCount: t.directReports?.length || 0
-        })),
-        directReports: directReports,
-        totalDirectReports: directReports.length
-      }
+      data: responseData
     });
   } catch (error) {
     console.error('Error fetching team members:', error);

@@ -189,6 +189,8 @@
       "redirect_uri_patterns": [
         "http://localhost:5010/api/auth/oidc/callback",
         "http://127.0.0.1:5010/api/auth/oidc/callback",
+        "https://api-time.seemplifyai.com/api/auth/oidc/callback",
+        "https://time.seemplifyai.com/api/auth/callback",
         "https://api-timeattendance.seemplifyai.com/api/auth/oidc/callback",
         "https://api-timeattendance-dev.seemplifyai.com/api/auth/oidc/callback",
         "https://*.timeattendance.smarthr.com/api/auth/oidc/callback"
@@ -198,6 +200,8 @@
         "http://localhost:5011",
         "http://127.0.0.1:5010",
         "http://127.0.0.1:5011",
+        "https://time.seemplifyai.com",
+        "https://api-time.seemplifyai.com",
         "https://timeattendance.seemplifyai.com",
         "https://api-timeattendance.seemplifyai.com",
         "https://auth.seemplifyai.com",

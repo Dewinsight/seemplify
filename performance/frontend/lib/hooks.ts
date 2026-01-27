@@ -134,10 +134,10 @@ export function useOrganizations() {
  * Get direct reports for managers
  */
 export function useDirectReports() {
-  const { data, error, isLoading } = useSWR('/user/direct-reports', fetcher);
+  const { data, error, isLoading } = useSWR('/user/my-team-members', fetcher);
   return {
     isManager: data?.isManager || false,
-    managedTeams: data?.managedTeams || [],
+    managedTeams: data?.teams || [],
     directReports: data?.directReports || [],
     totalDirectReports: data?.totalDirectReports || 0,
     isLoading,
@@ -165,8 +165,14 @@ export function useUserSearch(query: string) {
 /**
  * Get dashboard summary data
  */
-export function useDashboardData() {
-  const { data, error, isLoading } = useSWR('/dashboard/summary', fetcher, defaultConfig);
+export function useDashboardData(teamId?: string) {
+  const url = teamId && teamId !== 'all' 
+    ? `/dashboard/summary?teamId=${teamId}` 
+    : teamId === 'all'
+      ? '/dashboard/summary?allTeams=true'
+      : '/dashboard/summary';
+  
+  const { data, error, isLoading } = useSWR(url, fetcher, defaultConfig);
   return {
     dashboard: data,
     isLoading,

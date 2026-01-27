@@ -284,6 +284,7 @@ const requireAuth = async (req, res, next) => {
       req.userRole = getUserRole(req.session.user);
       req.directReports = getDirectReports(req.session.user);
       req.managedTeams = getManagedTeams(req.session.user);
+      req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
       req.currentOrganization = getCurrentOrganization(req.session.user);
       req.currentTeam = getCurrentTeam(req.session.user);
       return next();
@@ -316,6 +317,7 @@ const requireAuth = async (req, res, next) => {
         req.userRole = getUserRole(req.session.user);
         req.directReports = getDirectReports(req.session.user);
         req.managedTeams = getManagedTeams(req.session.user);
+        req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
         req.currentOrganization = getCurrentOrganization(req.session.user);
         req.currentTeam = getCurrentTeam(req.session.user);
 
