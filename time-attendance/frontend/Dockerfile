@@ -22,6 +22,9 @@ COPY . .
 # Remove any .env files that might have been copied
 RUN rm -f .env .env.local .env.production .env.development 2>/dev/null || true
 
+# Create public directory if it doesn't exist
+RUN mkdir -p public
+
 # Build the application with production env vars
 RUN npm run build
 
@@ -31,6 +34,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=5011
 
 # Copy necessary files from builder
 COPY --from=builder /app/package*.json ./
