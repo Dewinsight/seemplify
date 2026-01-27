@@ -99,11 +99,11 @@ export default function ApprovalsPage() {
                                     {/* User & Timesheet Info */}
                                     <div className="flex items-start gap-4">
                                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-lg font-bold text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                                            {item.user.name.charAt(0)}
+                                            {(item.userName || 'U').charAt(0)}
                                         </div>
                                         <div className="space-y-1">
                                             <div className="flex items-center gap-2">
-                                                <h3 className="font-semibold text-white">{item.user.name}</h3>
+                                                <h3 className="font-semibold text-white">{item.userName || 'Unknown User'}</h3>
                                                 <div className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] text-zinc-400 uppercase tracking-wider">
                                                     Week {item.weekNumber}
                                                 </div>

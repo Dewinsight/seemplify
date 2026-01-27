@@ -61,8 +61,38 @@ router.get('/', requireAuth, async (req, res) => {
     if (type) query.type = type;
     if (status) query.status = status;
     if (period) query.period = period;
+    
+    // Filter by currentTeam if set (unless explicit teamId is provided)
+    const currentTeam = req.currentTeam;
+    if (currentTeam && !teamId) {
+      // If user has selected a current team, filter by that team
+      // For team OKRs, filter by teamId
+      // For individual OKRs, filter by team members
+      if (query.$or) {
+        // Add team filter to existing $or query
+        query.$or.push({ 
+          $or: [
+            { type: 'team', 'teamHierarchy.teamId': currentTeam.id },
+            { type: 'individual', ownerId: { $in: currentTeam.directReports || [] } }
+          ]
+        });
+      } else {
+        // Add team-based filtering
+        query.$or = [
+          { ownerId: userId },
+          { type: 'team', 'teamHierarchy.teamId': currentTeam.id },
+          { type: 'individual', ownerId: { $in: currentTeam.directReports || [] } }
+        ];
+      }
+    }
+    
+    // Explicit teamId filter (overrides currentTeam)
     if (teamId && (role === 'line_manager' || role === 'hr_admin' || role === 'team_lead')) {
       query.teamId = teamId;
+      // Remove $or if teamId is explicitly set
+      if (query.$or) {
+        query = { ...query, $or: undefined, teamId };
+      }
     }
     
     const okrs = await OKR.find(query)

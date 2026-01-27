@@ -9,7 +9,8 @@ const {
   getUserRole,
   getDirectReports,
   getManagedTeams,
-  getCurrentOrganization
+  getCurrentOrganization,
+  getCurrentTeam
 } = require('../middleware/rbac');
 const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
 
@@ -31,8 +32,9 @@ router.get('/context', requireAuth, async (req, res) => {
     const managedTeams = req.managedTeams;
     const currentOrganization = req.currentOrganization;
     
-    // Get teams from session or DB
-    const teams = dbUser?.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || [];
+    // Get teams from IDP session FIRST (freshest data), then fallback to DB cache
+    // Priority: session.idpTeams > session.teams > userinfo.teams > DB cache
+    const teams = sessionUser.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || dbUser?.idpTeams || [];
     const teamPermissions = dbUser?.idpTeamPermissions || sessionUser.userinfo?.team_permissions || [];
     
     // Find primary team (first team with highest role)
@@ -137,7 +139,10 @@ router.get('/context', requireAuth, async (req, res) => {
           role: t.role,
           roleDisplay: formatTeamRole(t.role),
           isManager: t.isManager,
+          organizationId: t.organizationId,
+          organizationName: t.organizationName,
           hierarchyPath: t.hierarchyPath,
+          parentTeamId: t.parentTeamId,
           parentTeamName: t.parentTeamName
         })),
         primaryTeam: primaryTeam ? {
@@ -145,6 +150,19 @@ router.get('/context', requireAuth, async (req, res) => {
           name: primaryTeam.name,
           role: primaryTeam.role,
           roleDisplay: formatTeamRole(primaryTeam.role)
+        } : null,
+        // Current Team (for team switching within organization)
+        currentTeam: req.currentTeam ? {
+          id: req.currentTeam.id,
+          name: req.currentTeam.name,
+          role: req.currentTeam.role,
+          roleDisplay: formatTeamRole(req.currentTeam.role),
+          isManager: req.currentTeam.isManager || req.currentTeam.role === 'line_manager',
+          organizationId: req.currentTeam.organizationId,
+          organizationName: req.currentTeam.organizationName,
+          parentTeamId: req.currentTeam.parentTeamId,
+          parentTeamName: req.currentTeam.parentTeamName,
+          hierarchyPath: req.currentTeam.hierarchyPath || []
         } : null,
         
         // Manager-specific data
@@ -637,6 +655,18 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
         teams: teams,
         rootTeams: rootTeams,
         employeesWithManagers: employeesWithManagers,
+        currentTeam: currentTeam ? {
+          id: currentTeam.id,
+          name: currentTeam.name,
+          role: currentTeam.role,
+          roleDisplay: formatTeamRole(currentTeam.role),
+          isManager: currentTeam.isManager || currentTeam.role === 'line_manager',
+          organizationId: currentTeam.organizationId,
+          organizationName: currentTeam.organizationName,
+          parentTeamId: currentTeam.parentTeamId,
+          parentTeamName: currentTeam.parentTeamName,
+          hierarchyPath: currentTeam.hierarchyPath || []
+        } : null,
         summary: {
           totalTeams: teams.length,
           totalEmployees: employeesWithManagers.length,
@@ -879,6 +909,165 @@ function calculateOkrProgress(okr) {
   
   return Math.round(totalProgress / krs.length);
 }
+
+/**
+ * POST /api/user/switch-team - Switch current team (within current organization)
+ * Different from switching organizations - this allows switching between teams in the same org
+ * Available to: managers, admins, and staff employees
+ */
+router.post('/switch-team', requireAuth, async (req, res) => {
+  try {
+    const { teamId } = req.body;
+    const sessionUser = req.session.user;
+    const currentOrganization = req.currentOrganization;
+
+    if (!teamId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Team ID is required'
+      });
+    }
+
+    // Get user's teams from IDP claims
+    const teams = sessionUser.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || [];
+
+    // Filter teams by current organization
+    const orgTeams = teams.filter(t => {
+      const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
+      return t.organizationId === orgId || 
+             t.organizationId === currentOrganization?.id ||
+             t.organizationId === currentOrganization;
+    });
+
+    // Find the requested team
+    const requestedTeam = orgTeams.find(t => t.id === teamId);
+
+    if (!requestedTeam) {
+      return res.status(403).json({
+        success: false,
+        error: 'Team not found or you are not a member of this team',
+        code: 'TEAM_NOT_FOUND'
+      });
+    }
+
+    // Verify user is a member of this team (any role is fine)
+    // This allows managers, admins, and staff employees to switch teams
+    const isMember = orgTeams.some(t => t.id === teamId);
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        error: 'You are not a member of this team',
+        code: 'NOT_TEAM_MEMBER'
+      });
+    }
+
+    // Update session with current team
+    req.session.user.currentTeam = requestedTeam;
+    
+    // Also update in database if user exists
+    const User = require('../models/User');
+    const dbUser = await User.findOne({ email: sessionUser.email });
+    if (dbUser) {
+      dbUser.currentTeamId = teamId;
+      await dbUser.save();
+    }
+
+    console.log(`✅ User ${sessionUser.email} switched to team: ${requestedTeam.name} (${teamId})`);
+
+    res.json({
+      success: true,
+      data: {
+        currentTeam: {
+          id: requestedTeam.id,
+          name: requestedTeam.name,
+          role: requestedTeam.role,
+          roleDisplay: formatTeamRole(requestedTeam.role),
+          isManager: requestedTeam.isManager || requestedTeam.role === 'line_manager',
+          organizationId: requestedTeam.organizationId,
+          organizationName: requestedTeam.organizationName,
+          parentTeamId: requestedTeam.parentTeamId,
+          parentTeamName: requestedTeam.parentTeamName,
+          hierarchyPath: requestedTeam.hierarchyPath || []
+        },
+        availableTeams: orgTeams.map(t => ({
+          id: t.id,
+          name: t.name,
+          role: t.role,
+          roleDisplay: formatTeamRole(t.role),
+          isManager: t.isManager || t.role === 'line_manager'
+        }))
+      },
+      message: `Switched to team: ${requestedTeam.name}`
+    });
+  } catch (error) {
+    console.error('Error switching team:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to switch team'
+    });
+  }
+});
+
+/**
+ * GET /api/user/current-team - Get current team information
+ */
+router.get('/current-team', requireAuth, async (req, res) => {
+  try {
+    const currentTeam = req.currentTeam || getCurrentTeam(req.session.user);
+    const sessionUser = req.session.user;
+    const currentOrganization = req.currentOrganization;
+
+    if (!currentTeam) {
+      // Return available teams if no current team set
+      const teams = sessionUser.idpTeams || sessionUser.teams || sessionUser.userinfo?.teams || [];
+      const orgTeams = teams.filter(t => {
+        const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
+        return t.organizationId === orgId;
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          currentTeam: null,
+          availableTeams: orgTeams.map(t => ({
+            id: t.id,
+            name: t.name,
+            role: t.role,
+            roleDisplay: formatTeamRole(t.role),
+            isManager: t.isManager || t.role === 'line_manager'
+          }))
+        },
+        message: 'No current team set. Please select a team.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        currentTeam: {
+          id: currentTeam.id,
+          name: currentTeam.name,
+          role: currentTeam.role,
+          roleDisplay: formatTeamRole(currentTeam.role),
+          isManager: currentTeam.isManager || currentTeam.role === 'line_manager',
+          organizationId: currentTeam.organizationId,
+          organizationName: currentTeam.organizationName,
+          parentTeamId: currentTeam.parentTeamId,
+          parentTeamName: currentTeam.parentTeamName,
+          hierarchyPath: currentTeam.hierarchyPath || [],
+          directReports: currentTeam.directReports || []
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching current team:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch current team'
+    });
+  }
+});
 
 module.exports = router;
 

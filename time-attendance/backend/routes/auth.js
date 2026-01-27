@@ -12,6 +12,58 @@ const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../ser
 // Store PKCE verifiers temporarily (in production, use Redis or similar)
 const pkceStore = new Map();
 
+// OIDC Start - Hub-initiated or direct login
+router.get('/oidc/start', (req, res) => {
+    try {
+        const { hub_token, idp_initiated } = req.query;
+        // Generate state/nonce
+        const state = uuidv4();
+        const nonce = uuidv4();
+
+        // Pass specialized implementation of pkce if needed, or null to auto-generate
+        const { codeVerifier, codeChallenge } = generatePKCE();
+
+        // Store state, nonce, and PKCE verifier in session
+        if (req.session) {
+            req.session.authState = state;
+            req.session.authNonce = nonce;
+            req.session.codeVerifier = codeVerifier;
+        }
+
+        // Also store in memory for callback
+        pkceStore.set(state, {
+            nonce,
+            codeVerifier,
+            createdAt: Date.now(),
+        });
+
+        // Parameters for authorization request
+        const additionalParams = {};
+        if (hub_token) {
+            additionalParams.hub_token = hub_token;
+        }
+
+        // If it's NOT IdP initiated (e.g. manual login), force login prompt
+        // If it IS IdP initiated (has hub_token), we might want prompt='none' or let IDP decide
+        if (!hub_token && !idp_initiated) {
+            additionalParams.prompt = 'login';
+        }
+
+        const { url } = generateAuthUrl(state, nonce, codeVerifier, additionalParams);
+
+        console.log('🚀 OIDC Auth Start:', {
+            hasHubToken: !!hub_token,
+            isIdpInitiated: !!idp_initiated,
+            redirectUri: process.env.OIDC_REDIRECT_URI
+        });
+
+        res.redirect(url);
+    } catch (error) {
+        console.error('OIDC Start error:', error);
+        res.status(500).json({ error: 'Failed to initiate OIDC login' });
+    }
+});
+
 // Initiate login - redirect to Identity Provider
 router.get('/login', (req, res) => {
     try {

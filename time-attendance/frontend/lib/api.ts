@@ -99,8 +99,12 @@ export const attendanceApi = {
         const response = await api.get('/attendance/dashboard');
         return response.data;
     },
-    getTeamStatus: async () => {
-        const response = await api.get('/attendance/team');
+    getTeamStatus: async (teamId?: string) => {
+        const response = await api.get('/attendance/team', { params: { teamId } });
+        return response.data;
+    },
+    getSummary: async (params?: any) => {
+        const response = await api.get('/attendance/summary', { params });
         return response.data;
     },
 };
@@ -136,8 +140,8 @@ export const adminApi = {
 // Approvals API helpers
 export const approvalsApi = {
     getPending: async () => {
-        const response = await api.get('/approvals/pending');
-        return response.data;
+        const response = await api.get('/approvals');
+        return response.data.timesheets || response.data;
     },
     approve: async (id: string, note?: string) => {
         const response = await api.post(`/approvals/${id}/approve`, { note });

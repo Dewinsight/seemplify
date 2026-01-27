@@ -2,15 +2,17 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect } from 'react';
-import { useUserContext, useDashboardData } from '@/lib/hooks';
+import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useUserContext, useDashboardData, useCurrentTeam } from '@/lib/hooks';
 import Link from 'next/link';
 import {
-  TrendingUp, Target, MessageSquare, BarChart3, Users, LayoutGrid, Sparkles, Flag, AlertCircle
+  TrendingUp, Target, MessageSquare, BarChart3, Users, LayoutGrid, Sparkles, Flag, AlertCircle, ChevronDown, Eye
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import { authApi } from '@/lib/api';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -28,9 +30,61 @@ export default function DashboardPage() {
     isHRAdmin,
     organization,
     primaryTeam,
+    teams,
+    currentTeam: contextCurrentTeam,
     managerData,
     isLoading: contextLoading
   } = useUserContext();
+  
+  // Team switching
+  const { currentTeam, mutate: mutateCurrentTeam } = useCurrentTeam();
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
+  const [switchingTeam, setSwitchingTeam] = useState(false);
+  const teamButtonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [mounted, setMounted] = useState(false);
+  
+  // Client-side mounting check for portal
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  // Update dropdown position
+  useEffect(() => {
+    if (teamDropdownOpen && teamButtonRef.current) {
+      const rect = teamButtonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY + 8,
+        left: rect.left + window.scrollX
+      });
+    }
+  }, [teamDropdownOpen]);
+  
+  // Filter teams by current organization
+  const { currentOrganization } = useAuth();
+  const orgTeams = teams.filter((t: any) => {
+    const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
+    return t.organizationId === orgId;
+  });
+  const showTeamSwitcher = orgTeams.length > 1;
+  const activeCurrentTeam = currentTeam || contextCurrentTeam;
+  
+  // Handle team switch
+  const handleSwitchTeam = async (teamId: string) => {
+    if (switchingTeam) return;
+    setSwitchingTeam(true);
+    setTeamDropdownOpen(false);
+    try {
+      await authApi.switchTeam(teamId);
+      if (mutateCurrentTeam) {
+        mutateCurrentTeam();
+      }
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to switch team:', error);
+      setSwitchingTeam(false);
+    }
+  };
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -135,10 +189,101 @@ export default function DashboardPage() {
                   Welcome back, {userName.split(' ')[0]} 
                   <Sparkles className="h-7 w-7 text-purple-400" />
                 </h1>
-                <p className="text-zinc-400 mt-2">
-                  Here's your performance overview for{' '}
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <span className="text-zinc-400">Here's your performance overview for</span>
                   <span className="text-zinc-300 font-medium">{organization?.name || 'your organization'}</span>
-                </p>
+                </div>
+                {showTeamSwitcher && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-purple-400" />
+                      <span className="text-sm text-zinc-400">Team View:</span>
+                    </div>
+                    <div className="relative">
+                      <button
+                        ref={teamButtonRef}
+                        onClick={() => {
+                          if (teamButtonRef.current) {
+                            const rect = teamButtonRef.current.getBoundingClientRect();
+                            setDropdownPosition({
+                              top: rect.bottom + 8, // 8px = mt-2 equivalent
+                              left: rect.left
+                            });
+                          }
+                          setTeamDropdownOpen(!teamDropdownOpen);
+                        }}
+                        disabled={switchingTeam}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 text-sm text-zinc-100 hover:from-purple-500/30 hover:to-pink-500/30 hover:border-purple-400/50 transition-all shadow-lg shadow-purple-500/10"
+                      >
+                        <Eye className="h-4 w-4 text-purple-400" />
+                        <div className="flex flex-col items-start">
+                          <span className="font-semibold">{activeCurrentTeam?.name || orgTeams[0]?.name || 'Select Team'}</span>
+                          <span className="text-xs text-zinc-400">{orgTeams.length} team{orgTeams.length !== 1 ? 's' : ''} available</span>
+                        </div>
+                        <ChevronDown className="h-4 w-4 text-zinc-400 ml-1" />
+                      </button>
+                      {teamDropdownOpen && mounted && createPortal(
+                        <>
+                          <div 
+                            className="fixed inset-0 z-[9998]"
+                            onClick={() => setTeamDropdownOpen(false)}
+                          />
+                          <div 
+                            className="fixed w-80 rounded-xl border border-white/[0.08] bg-zinc-950 shadow-2xl overflow-hidden z-[9999]"
+                            style={{
+                              top: `${dropdownPosition.top}px`,
+                              left: `${dropdownPosition.left}px`
+                            }}
+                          >
+                            <div className="px-4 py-3 border-b border-zinc-800/60 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-4 w-4 text-purple-400" />
+                                  <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Switch Team</div>
+                                </div>
+                                <span className="text-xs text-zinc-500">{orgTeams.length} available</span>
+                              </div>
+                            </div>
+                            {orgTeams.map((team: any) => {
+                              const isCurrentTeam = team.id === activeCurrentTeam?.id;
+                              return (
+                                <button
+                                  key={team.id}
+                                  onClick={() => !isCurrentTeam && handleSwitchTeam(team.id)}
+                                  disabled={switchingTeam || isCurrentTeam}
+                                  className={`w-full text-left px-4 py-3 text-sm transition-all ${!isCurrentTeam && 'hover:bg-purple-500/10 cursor-pointer'} ${isCurrentTeam ? 'bg-purple-500/20 border-l-4 border-l-purple-500 cursor-default' : 'border-l-4 border-l-transparent'} ${switchingTeam ? 'opacity-50 cursor-wait' : ''}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className={`font-semibold ${isCurrentTeam ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        {team.role && (
+                                          <span className={`text-xs truncate ${isCurrentTeam ? 'text-purple-400' : 'text-zinc-500'}`}>
+                                            {team.roleDisplay || team.role}
+                                          </span>
+                                        )}
+                                        {!isCurrentTeam && (
+                                          <span className="text-xs text-zinc-600">• Click to switch</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isCurrentTeam && (
+                                      <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                                        <Eye className="h-3 w-3" />
+                                        Active
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>,
+                        document.body
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <a
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}

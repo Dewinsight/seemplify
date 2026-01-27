@@ -475,7 +475,7 @@ router.get('/my', requireAuth, async (req, res) => {
   }
 });
 
-// Get team appraisals (as manager)
+// Get team appraisals (as manager) - filtered by currentTeam if set
 router.get('/team', requireAuth, requireManager, async (req, res) => {
   try {
     const userId = req.session?.user?.id;
@@ -489,6 +489,18 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
         { 'manager.email': userEmail }
       ]
     };
+    
+    // Filter by currentTeam if set
+    const currentTeam = req.currentTeam;
+    if (currentTeam && currentTeam.directReports && currentTeam.directReports.length > 0) {
+      // Only show appraisals for direct reports in current team
+      query.$or = [
+        { 'manager.userId': userId },
+        { 'manager.email': userEmail },
+        { 'employee.userId': { $in: currentTeam.directReports } }
+      ];
+    }
+    
     if (cycleId) query.cycleId = cycleId;
     if (status) query.status = status;
 

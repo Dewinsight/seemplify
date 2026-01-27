@@ -40,6 +40,17 @@ router.get('/', requireAuth, async (req, res) => {
         { managerId: userId }, // Reviews they need to conduct
         { userId: { $in: directReports } } // Direct reports' reviews
       ];
+      
+      // Filter by currentTeam if set
+      const currentTeam = req.currentTeam;
+      if (currentTeam && currentTeam.directReports && currentTeam.directReports.length > 0) {
+        // Only show reviews for direct reports in current team
+        query.$or = [
+          { userId: userId },
+          { managerId: userId },
+          { userId: { $in: currentTeam.directReports } }
+        ];
+      }
     } else {
       // Employee sees only own reviews
       query.userId = userId;
@@ -48,6 +59,18 @@ router.get('/', requireAuth, async (req, res) => {
     // Apply filters
     if (cycleId) query.cycleId = cycleId;
     if (status) query.status = status;
+    
+    // Filter by currentTeam for HR Admin if set
+    if (role === 'hr_admin' && req.currentTeam) {
+      const currentTeam = req.currentTeam;
+      // For HR Admin, filter by team members if currentTeam is set
+      if (currentTeam.directReports && currentTeam.directReports.length > 0) {
+        query.$or = [
+          { userId: { $in: currentTeam.directReports } },
+          { managerId: { $in: currentTeam.directReports } }
+        ];
+      }
+    }
     
     const reviews = await PerformanceReview.find(query)
       .populate('cycleId', 'title type startDate endDate status')

@@ -8,14 +8,24 @@ const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOf
 router.use(requireAuth);
 router.use(requireOrganization);
 
-// Get current user's timesheets
+// Get current user's timesheets (or specific user for managers)
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user.id;
         const organizationId = req.organizationId;
-        const { limit = 10, status, year } = req.query;
+        const { limit = 10, status, year, userId } = req.query;
 
-        const query = { userId, organizationId };
+        // Default to current user if not specified
+        let targetUserId = req.user.id;
+
+        if (userId && userId !== req.user.id) {
+            // Permission check: HR or Manager can view others
+            if (!isHRAdmin(req) && !isLineManager(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            targetUserId = userId;
+        }
+
+        const query = { userId: targetUserId, organizationId };
         if (status) query.status = status;
         if (year) query.year = parseInt(year);
 
@@ -117,12 +127,16 @@ router.post('/:id/submit', async (req, res) => {
         timesheet.calculateSummary();
 
         // Find line manager for approval
+        // Note: IdP returns managerId/managerName directly on the team object
         const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
-        if (userTeam && userTeam.lineManager) {
+
+        if (userTeam && userTeam.managerId) {
             timesheet.assignedApprover = {
-                userId: userTeam.lineManager.id,
-                userName: userTeam.lineManager.name,
-                userEmail: userTeam.lineManager.email,
+                userId: userTeam.managerId,
+                userName: userTeam.managerName,
+                // Email might not be available directly in team claim, rely on userId lookup or store what we have
+                // Ideally we'd have managerEmail too, but managerName is available
+                userEmail: null, // We'll need to fetch this or just store ID/Name
                 teamId: userTeam.id,
                 assignedAt: new Date(),
             };

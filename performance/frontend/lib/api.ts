@@ -95,6 +95,18 @@ export const authApi = {
     const response = await api.post('/auth/switch-organization', { organizationId });
     return response.data;
   },
+
+  // Switch team (within current organization)
+  switchTeam: async (teamId: string) => {
+    const response = await api.post('/user/switch-team', { teamId });
+    return response.data;
+  },
+
+  // Get current team
+  getCurrentTeam: async () => {
+    const response = await api.get('/user/current-team');
+    return response.data;
+  },
 };
 
 // Helper to extract and store access token from URL hash after OIDC callback

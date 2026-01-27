@@ -42,6 +42,7 @@ export function useUserContext() {
     // Teams
     teams: data?.teams || [],
     primaryTeam: data?.primaryTeam,
+    currentTeam: data?.currentTeam,
 
     // Manager-specific data
     managerData: data?.managerData,
@@ -71,6 +72,20 @@ export function useUserTeams() {
     currentOrganization: data?.currentOrganization,
     isLoading,
     isError: error,
+  };
+}
+
+/**
+ * Get current team information
+ */
+export function useCurrentTeam() {
+  const { data, error, isLoading, mutate } = useSWR('/user/current-team', fetcher, defaultConfig);
+  return {
+    currentTeam: data?.currentTeam,
+    availableTeams: data?.availableTeams || [],
+    isLoading,
+    isError: error,
+    mutate,
   };
 }
 

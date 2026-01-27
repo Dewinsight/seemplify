@@ -3645,6 +3645,9 @@ app.get('/launch/:appId', async (req, res) => {
       case 'payroll-management':
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
         break;
+      case 'time-attendance':
+        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'http://localhost:5010';
+        break;
       default:
         // Fallback to smarthr API URL for unknown apps
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';

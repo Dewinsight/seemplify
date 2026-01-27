@@ -25,7 +25,8 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-import { useUserContext } from '@/lib/hooks';
+import { useUserContext, useCurrentTeam } from '@/lib/hooks';
+import { authApi } from '@/lib/api';
 
 type NavItem = {
   name: string;
@@ -42,11 +43,31 @@ function cn(...classes: (string | boolean | undefined)[]) {
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout, isLoading: authLoading } = useAuth();
-  const { user, role, isManager, isHRAdmin } = useUserContext();
+  const { user, role, isManager, isHRAdmin, teams, currentTeam: contextCurrentTeam } = useUserContext();
+  const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
+  const [switchingTeam, setSwitchingTeam] = useState(false);
+  
+  // Get current team (from hook or context)
+  const activeCurrentTeam = currentTeam || contextCurrentTeam;
+  
+  // Get organizations from auth user - includes IDP data
+  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
+  
+  // Current organization from AuthContext (synced with IDP)
+  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
+  const showOrgSwitcher = orgs.length > 1;
+  
+  // Filter teams by current organization
+  const orgTeams = teams.filter((t: any) => {
+    const orgId = authCurrentOrg?.id || authCurrentOrg?._id?.toString() || authCurrentOrg;
+    return t.organizationId === orgId;
+  });
+  const showTeamSwitcher = orgTeams.length > 1 && currentOrganization;
 
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
@@ -85,18 +106,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setOrgDropdownOpen(false);
     try {
       await switchOrganization(orgId);
+      // Reset team when switching org (teams are org-specific)
+      if (mutateCurrentTeam) {
+        mutateCurrentTeam();
+      }
     } catch (error) {
       console.error('Failed to switch organization:', error);
       setSwitchingOrg(false);
     }
   };
 
-  // Get organizations from auth user - includes IDP data
-  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
-  
-  // Current organization from AuthContext (synced with IDP)
-  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
-  const showOrgSwitcher = orgs.length > 1;
+  // Handle team switch (within current organization)
+  const handleSwitchTeam = async (teamId: string) => {
+    if (switchingTeam) return;
+    setSwitchingTeam(true);
+    setTeamDropdownOpen(false);
+    try {
+      await authApi.switchTeam(teamId);
+      // Refresh current team data
+      if (mutateCurrentTeam) {
+        mutateCurrentTeam();
+      }
+      // Refresh user context to get updated team info
+      window.location.reload(); // Simple reload to refresh all data
+    } catch (error) {
+      console.error('Failed to switch team:', error);
+      setSwitchingTeam(false);
+    }
+  };
   
   const { mode, toggleColorMode } = useThemeMode();
   const isDarkMode = mode === 'dark';

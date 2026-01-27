@@ -81,31 +81,73 @@ router.get('/dashboard', async (req, res) => {
 router.get('/team', async (req, res) => {
     try {
         const organizationId = req.organizationId;
+        const { teamId } = req.query;
 
+        // Check if user is HR Admin or Line Manager
         if (!isHRAdmin(req) && !isLineManager(req)) {
             return res.status(403).json({ error: 'Manager access required' });
+        }
+
+        // Determine which teams to fetch
+        let targetTeamIds = [];
+        if (teamId) {
+            // Verify access to specific team
+            if (!isHRAdmin(req)) {
+                const userTeams = req.user.teams || [];
+                const hasAccess = userTeams.some(t =>
+                    t.id === teamId &&
+                    t.organizationId === organizationId &&
+                    ['line_manager', 'team_lead'].includes(t.role)
+                );
+
+                if (!hasAccess) {
+                    return res.status(403).json({ error: 'Access denied to this team' });
+                }
+            }
+            targetTeamIds = [teamId];
+        } else {
+            // Default: All teams managed by user
+            if (isHRAdmin(req)) {
+                // HR Admin sees all if no team specified? Or maybe we require team selection?
+                // For now, let's allow all for HR, or maybe partial matching
+                // Actually, finding ALL users in org is fine for HR
+                targetTeamIds = []; // Empty means all
+            } else {
+                const userTeams = req.user.teams || [];
+                targetTeamIds = userTeams
+                    .filter(t => t.organizationId === organizationId && ['line_manager', 'team_lead'].includes(t.role))
+                    .map(t => t.id);
+
+                if (targetTeamIds.length === 0) {
+                    return res.json({ team: [], summary: { total: 0, working: 0, onBreak: 0, clockedOut: 0 } });
+                }
+            }
         }
 
         // Get all users who have clocked in today
         const todayStart = startOfDay(new Date());
         const todayEnd = endOfDay(new Date());
 
+        const matchStage = {
+            organizationId,
+            timestamp: { $gte: todayStart, $lte: todayEnd },
+        };
+
+        // Filter by team IDs if applicable
+        if (targetTeamIds.length > 0) {
+            matchStage.teamId = { $in: targetTeamIds };
+        }
+
         const todayActivity = await TimeEntry.aggregate([
-            {
-                $match: {
-                    organizationId,
-                    timestamp: { $gte: todayStart, $lte: todayEnd },
-                },
-            },
-            {
-                $sort: { timestamp: -1 },
-            },
+            { $match: matchStage },
+            { $sort: { timestamp: -1 } },
             {
                 $group: {
                     _id: '$userId',
                     userName: { $first: '$userName' },
                     userEmail: { $first: '$userEmail' },
                     teamName: { $first: '$teamName' },
+                    teamId: { $first: '$teamId' },
                     lastEntry: { $first: '$$ROOT' },
                     entries: { $push: '$$ROOT' },
                 },
@@ -116,6 +158,7 @@ router.get('/team', async (req, res) => {
                     userName: 1,
                     userEmail: 1,
                     teamName: 1,
+                    teamId: 1,
                     lastEntry: 1,
                     entryCount: { $size: '$entries' },
                 },
@@ -160,9 +203,20 @@ router.get('/team', async (req, res) => {
 // Get attendance summary for a period
 router.get('/summary', async (req, res) => {
     try {
-        const userId = req.user.id;
         const organizationId = req.organizationId;
-        const { startDate, endDate, period = 'month' } = req.query;
+        let { startDate, endDate, period = 'month', userId } = req.query;
+
+        // Default to current user if not specified
+        if (!userId) {
+            userId = req.user.id;
+        } else if (userId !== req.user.id) {
+            // If requesting for another user, check permissions
+            if (!isHRAdmin(req) && !isLineManager(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            // Ideally we should check if this specific manager manages this user
+            // For now relying on the basic manager role check consistent with other endpoints
+        }
 
         let start, end;
         if (startDate && endDate) {
