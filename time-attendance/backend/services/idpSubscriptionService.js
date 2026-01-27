@@ -5,7 +5,7 @@
  * Used to check if an organization has access to Time & Attendance
  */
 
-const IDP_URL = process.env.IDP_URL || process.env.OIDC_ISSUER || 'http://localhost:4000'
+const IDP_URL = process.env.IDP_URL || process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'http://localhost:4000'
 const FEATURE_KEY = 'timeAttendance'
 
 /**
