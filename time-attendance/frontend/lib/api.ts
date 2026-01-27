@@ -127,6 +127,24 @@ export const reportsApi = {
         const response = await api.get('/reports/lateness', { params: { start, end } });
         return response.data;
     },
+    getGeofenceViolations: async (startDate?: string, endDate?: string, userId?: string) => {
+        const response = await api.get('/reports/geofence-violations', { 
+            params: { startDate, endDate, userId } 
+        });
+        return response.data;
+    },
+    getLocationAccuracy: async (startDate?: string, endDate?: string) => {
+        const response = await api.get('/reports/location-accuracy', { 
+            params: { startDate, endDate } 
+        });
+        return response.data;
+    },
+    getLocationHistory: async (userId: string, startDate?: string, endDate?: string, limit?: number) => {
+        const response = await api.get('/reports/location-history', { 
+            params: { userId, startDate, endDate, limit } 
+        });
+        return response.data;
+    },
 };
 
 // Admin API helpers

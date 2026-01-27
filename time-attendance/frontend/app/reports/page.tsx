@@ -8,19 +8,23 @@ import {
     Calendar,
     Users,
     Clock,
-    AlertTriangle
+    AlertTriangle,
+    MapPin,
+    Shield,
+    TrendingUp
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function ReportsPage() {
-    const [activeTab, setActiveTab] = useState<'attendance' | 'overtime' | 'lateness'>('attendance');
+    const [activeTab, setActiveTab] = useState<'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history'>('attendance');
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [month, setMonth] = useState(new Date());
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
 
     useEffect(() => {
         fetchReport();
-    }, [activeTab, month]);
+    }, [activeTab, month, selectedUserId]);
 
     const fetchReport = async () => {
         try {
@@ -38,6 +42,19 @@ export default function ReportsPage() {
                     break;
                 case 'lateness':
                     response = await reportsApi.getLateness(start, end);
+                    break;
+                case 'geofence-violations':
+                    response = await reportsApi.getGeofenceViolations(start, end, selectedUserId || undefined);
+                    break;
+                case 'location-accuracy':
+                    response = await reportsApi.getLocationAccuracy(start, end);
+                    break;
+                case 'location-history':
+                    if (!selectedUserId) {
+                        setData(null);
+                        return;
+                    }
+                    response = await reportsApi.getLocationHistory(selectedUserId, start, end);
                     break;
             }
             setData(response);
@@ -71,22 +88,39 @@ export default function ReportsPage() {
 
             {/* Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-900/50 border border-white/5 p-2 rounded-xl">
-                <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800 w-full sm:w-auto">
-                    {(['attendance', 'overtime', 'lateness'] as const).map((tab) => (
+                <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800 w-full sm:w-auto overflow-x-auto">
+                    {([
+                        { key: 'attendance', label: 'Attendance' },
+                        { key: 'overtime', label: 'Overtime' },
+                        { key: 'lateness', label: 'Lateness' },
+                        { key: 'geofence-violations', label: 'Geofence Violations', icon: Shield },
+                        { key: 'location-accuracy', label: 'Location Accuracy', icon: TrendingUp },
+                        { key: 'location-history', label: 'Location History', icon: MapPin },
+                    ] as const).map(({ key, label, icon: Icon }) => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize ${activeTab === tab
+                            key={key}
+                            onClick={() => setActiveTab(key as any)}
+                            className={`flex items-center gap-1.5 flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === key
                                     ? 'bg-zinc-800 text-white shadow-sm'
                                     : 'text-zinc-400 hover:text-white'
                                 }`}
                         >
-                            {tab}
+                            {Icon && <Icon className="h-3.5 w-3.5" />}
+                            <span className="whitespace-nowrap">{label}</span>
                         </button>
                     ))}
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {activeTab === 'location-history' && (
+                        <input
+                            type="text"
+                            placeholder="User ID (required)"
+                            value={selectedUserId}
+                            onChange={(e) => setSelectedUserId(e.target.value)}
+                            className="w-full sm:w-auto bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                        />
+                    )}
                     <div className="relative w-full sm:w-auto">
                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
                         <input
@@ -105,7 +139,7 @@ export default function ReportsPage() {
                     <div className="flex items-center justify-center h-full min-h-[300px]">
                         <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
                     </div>
-                ) : !data || (Array.isArray(data) && data.length === 0) ? (
+                ) : !data || (Array.isArray(data) && data.length === 0) || (data.report && data.report.length === 0) || (data.violations && data.violations.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-zinc-500 gap-4">
                         <div className="p-4 rounded-full bg-zinc-800/50">
                             <BarChart3 className="h-8 w-8 text-zinc-600" />
@@ -130,7 +164,7 @@ export default function ReportsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-800/50">
-                                        {data.map((row: any, i: number) => (
+                                        {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 font-medium text-white">{row.user?.name || 'Unknown'}</td>
                                                 <td className="px-4 py-3 text-zinc-400">{row.user?.department || 'N/A'}</td>
@@ -157,7 +191,7 @@ export default function ReportsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-800/50">
-                                        {data.map((row: any, i: number) => (
+                                        {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 font-medium text-white">{row.user?.name}</td>
                                                 <td className="px-4 py-3 text-right text-amber-400 font-bold">{Math.round(row.totalOvertimeMinutes / 60)}h</td>
@@ -172,7 +206,7 @@ export default function ReportsPage() {
 
                         {activeTab === 'lateness' && (
                             <div className="grid grid-cols-1 gap-4">
-                                {data.map((row: any, i: number) => (
+                                {(data.report || data || []).map((row: any, i: number) => (
                                     <div key={i} className="flex items-center justify-between p-4 bg-zinc-950/50 border border-zinc-800 rounded-lg">
                                         <div className="flex items-center gap-4">
                                             <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
@@ -189,6 +223,136 @@ export default function ReportsPage() {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {activeTab === 'geofence-violations' && data && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                    <div>
+                                        <div className="text-sm font-medium text-amber-400">Total Violations</div>
+                                        <div className="text-2xl font-bold text-white mt-1">{data.totalViolations || 0}</div>
+                                    </div>
+                                    <Shield className="h-8 w-8 text-amber-400" />
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-zinc-500 uppercase bg-zinc-950/50 border-b border-zinc-800">
+                                            <tr>
+                                                <th className="px-4 py-3">Employee</th>
+                                                <th className="px-4 py-3">Team</th>
+                                                <th className="px-4 py-3 text-right">Violations</th>
+                                                <th className="px-4 py-3">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-800/50">
+                                            {data.violations?.map((violation: any, i: number) => (
+                                                <tr key={i} className="hover:bg-zinc-800/30">
+                                                    <td className="px-4 py-3 font-medium text-white">{violation.userName || violation.userEmail}</td>
+                                                    <td className="px-4 py-3 text-zinc-400">{violation.teamName || 'N/A'}</td>
+                                                    <td className="px-4 py-3 text-right text-amber-400 font-bold">{violation.violationCount}</td>
+                                                    <td className="px-4 py-3">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedUserId(violation._id);
+                                                                setActiveTab('location-history');
+                                                            }}
+                                                            className="text-xs text-teal-400 hover:text-teal-300 underline"
+                                                        >
+                                                            View Details
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'location-accuracy' && data && (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                                        <div className="text-xs text-zinc-500 mb-1">Total Entries</div>
+                                        <div className="text-xl font-bold text-white">{data.summary?.totalEntries || 0}</div>
+                                    </div>
+                                    <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                                        <div className="text-xs text-zinc-500 mb-1">Avg Accuracy</div>
+                                        <div className="text-xl font-bold text-white">{data.summary?.avgAccuracy ? `${Math.round(data.summary.avgAccuracy)}m` : 'N/A'}</div>
+                                    </div>
+                                    <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                                        <div className="text-xs text-zinc-500 mb-1">Poor Accuracy</div>
+                                        <div className="text-xl font-bold text-red-400">{data.summary?.poorAccuracyCount || 0}</div>
+                                    </div>
+                                    <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                                        <div className="text-xs text-zinc-500 mb-1">Verified</div>
+                                        <div className="text-xl font-bold text-green-400">{data.summary?.verifiedCount || 0}</div>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-zinc-500 uppercase bg-zinc-950/50 border-b border-zinc-800">
+                                            <tr>
+                                                <th className="px-4 py-3">Employee</th>
+                                                <th className="px-4 py-3 text-right">Avg Accuracy</th>
+                                                <th className="px-4 py-3 text-right">Entries</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-800/50">
+                                            {data.byUser?.map((user: any, i: number) => (
+                                                <tr key={i} className="hover:bg-zinc-800/30">
+                                                    <td className="px-4 py-3 font-medium text-white">{user.userName || user.userEmail}</td>
+                                                    <td className="px-4 py-3 text-right text-zinc-300">{Math.round(user.avgAccuracy)}m</td>
+                                                    <td className="px-4 py-3 text-right text-zinc-400">{user.entryCount}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'location-history' && data && (
+                            <div className="space-y-4">
+                                <div className="text-sm text-zinc-400">
+                                    Showing {data.totalEntries} location entries
+                                </div>
+                                <div className="space-y-2">
+                                    {Object.entries(data.groupedByDate || {}).map(([date, entries]: [string, any]) => (
+                                        <div key={date} className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                                            <div className="text-sm font-medium text-zinc-300 mb-3">{format(new Date(date), 'MMMM d, yyyy')}</div>
+                                            <div className="space-y-2">
+                                                {entries.map((entry: any, i: number) => (
+                                                    <div key={i} className="flex items-center justify-between p-2 bg-zinc-900/50 rounded">
+                                                        <div className="flex items-center gap-3">
+                                                            <MapPin className="h-4 w-4 text-teal-400" />
+                                                            <div>
+                                                                <div className="text-sm text-white capitalize">{entry.entryType.replace('_', ' ')}</div>
+                                                                {entry.location?.address && (
+                                                                    <div className="text-xs text-zinc-400">{entry.location.address}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <a
+                                                                href={`https://www.google.com/maps?q=${entry.location?.latitude},${entry.location?.longitude}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-teal-400 hover:text-teal-300 underline"
+                                                            >
+                                                                {entry.location?.latitude?.toFixed(6)}, {entry.location?.longitude?.toFixed(6)}
+                                                            </a>
+                                                            <div className="text-xs text-zinc-500 mt-1">
+                                                                {format(new Date(entry.timestamp), 'HH:mm')}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Clock, Play, Square, Coffee, Calendar, Filter, Plus } from 'lucide-react';
+import { Clock, Play, Square, Coffee, Calendar, Filter, Plus, MapPin, CheckCircle2, XCircle } from 'lucide-react';
 import { clockApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -14,6 +14,13 @@ interface TimeEntry {
     note?: string;
     source: string;
     isManualEntry?: boolean;
+    location?: {
+        latitude?: number;
+        longitude?: number;
+        address?: string;
+        accuracy?: number;
+        verified?: boolean;
+    };
 }
 
 export default function PunchLogPage() {
@@ -228,6 +235,34 @@ export default function PunchLogPage() {
                                                     <p className="text-sm text-zinc-400 mt-1">
                                                         {entry.note}
                                                     </p>
+                                                )}
+                                                {/* Location Display */}
+                                                {entry.location?.latitude && entry.location?.longitude && (
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <MapPin className="h-3.5 w-3.5 text-zinc-500" />
+                                                        <div className="flex items-center gap-2">
+                                                            <a
+                                                                href={`https://www.google.com/maps?q=${entry.location.latitude},${entry.location.longitude}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-teal-400 hover:text-teal-300 underline"
+                                                            >
+                                                                {entry.location.address || `${entry.location.latitude.toFixed(6)}, ${entry.location.longitude.toFixed(6)}`}
+                                                            </a>
+                                                            {entry.location.verified !== undefined && (
+                                                                entry.location.verified ? (
+                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
+                                                                ) : (
+                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
+                                                                )
+                                                            )}
+                                                            {entry.location.accuracy && (
+                                                                <span className="text-xs text-zinc-500">
+                                                                    (±{Math.round(entry.location.accuracy)}m)
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
