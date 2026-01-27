@@ -7,29 +7,26 @@ import {
     MapPin,
     Clock,
     Save,
-    BellRing
+    BellRing,
+    Plus,
+    Trash2,
+    Edit2,
+    CheckCircle2,
+    XCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [policy, setPolicy] = useState<any>({
-        workSchedule: {
-            workDays: [1, 2, 3, 4, 5],
-            startTime: '09:00',
-            endTime: '17:00'
-        },
-        overtime: {
-            enabled: false,
-            thresholdMinutes: 60,
-            dailyLimitMinutes: 240
-        },
-        geofencing: {
-            enabled: false,
-            radiusMeters: 100,
-            allowedLocations: []
-        }
+    const [policy, setPolicy] = useState<any>(null);
+    const [showAddLocation, setShowAddLocation] = useState(false);
+    const [newLocation, setNewLocation] = useState({
+        name: '',
+        address: '',
+        latitude: 0,
+        longitude: 0,
+        radius: 100
     });
 
     useEffect(() => {
@@ -40,7 +37,7 @@ export default function SettingsPage() {
         try {
             setLoading(true);
             const data = await adminApi.getPolicy();
-            if (data) setPolicy(data);
+            if (data?.policy) setPolicy(data.policy);
         } catch (error) {
             console.error('Failed to fetch settings', error);
         } finally {
@@ -62,7 +59,7 @@ export default function SettingsPage() {
     };
 
     const toggleDay = (dayIndex: number) => {
-        const currentDays = policy.workSchedule.workDays || [];
+        const currentDays = policy.workSchedule?.workDays || [];
         let newDays;
         if (currentDays.includes(dayIndex)) {
             newDays = currentDays.filter((d: number) => d !== dayIndex);
@@ -75,7 +72,59 @@ export default function SettingsPage() {
         });
     };
 
-    if (loading) {
+    const handleAddLocation = async () => {
+        if (!newLocation.name || !newLocation.latitude || !newLocation.longitude) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        try {
+            setSaving(true);
+            await adminApi.addGeofenceLocation(newLocation);
+            await fetchSettings(); // Refresh to get updated policy
+            setShowAddLocation(false);
+            setNewLocation({ name: '', address: '', latitude: 0, longitude: 0, radius: 100 });
+        } catch (error: any) {
+            console.error('Failed to add location', error);
+            alert(error.response?.data?.error || 'Failed to add location');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteLocation = async (index: number) => {
+        if (!confirm('Are you sure you want to delete this location?')) return;
+
+        try {
+            setSaving(true);
+            await adminApi.deleteGeofenceLocation(index);
+            await fetchSettings();
+        } catch (error: any) {
+            console.error('Failed to delete location', error);
+            alert(error.response?.data?.error || 'Failed to delete location');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleToggleLocation = async (index: number) => {
+        const location = policy.geofencing.locations[index];
+        try {
+            setSaving(true);
+            await adminApi.updateGeofenceLocation(index, {
+                ...location,
+                isActive: !location.isActive
+            });
+            await fetchSettings();
+        } catch (error: any) {
+            console.error('Failed to toggle location', error);
+            alert(error.response?.data?.error || 'Failed to update location');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading || !policy) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
                 <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
@@ -208,19 +257,217 @@ export default function SettingsPage() {
                 </section>
 
                 {/* Geofencing */}
-                <section className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6 opacity-60">
-                    <div className="flex items-center justify-between mb-4">
+                <section className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-red-500/10 text-red-400">
+                            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
                                 <MapPin className="h-5 w-5" />
                             </div>
-                            <h2 className="text-lg font-semibold text-white">Geofencing</h2>
+                            <div>
+                                <h2 className="text-lg font-semibold text-white">Geofencing</h2>
+                                <p className="text-sm text-zinc-500">Restrict clock-in to specific locations</p>
+                            </div>
                         </div>
-                        <span className="text-xs font-medium px-2 py-1 bg-zinc-800 rounded text-zinc-400">Coming Soon (v2)</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-zinc-400">Enabled</span>
+                            <button
+                                onClick={() => setPolicy({ 
+                                    ...policy, 
+                                    geofencing: { 
+                                        ...policy.geofencing, 
+                                        enabled: !policy.geofencing?.enabled 
+                                    } 
+                                })}
+                                className={cn(
+                                    "w-12 h-6 rounded-full p-1 transition-colors relative",
+                                    policy.geofencing?.enabled ? "bg-purple-500" : "bg-zinc-700"
+                                )}
+                            >
+                                <div className={cn(
+                                    "w-4 h-4 rounded-full bg-white transition-transform",
+                                    policy.geofencing?.enabled ? "translate-x-6" : "translate-x-0"
+                                )} />
+                            </button>
+                        </div>
                     </div>
-                    <p className="text-sm text-zinc-500">
-                        Restrict clock-in capability to specific physical locations. This feature will be available in the next release.
-                    </p>
+
+                    {policy.geofencing?.enabled && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
+                            {/* Enforce Toggle */}
+                            <div className="flex items-center justify-between p-4 bg-zinc-800/50 rounded-lg">
+                                <div>
+                                    <p className="font-medium text-white">Enforce Geofencing</p>
+                                    <p className="text-sm text-zinc-400">Block clock-in if outside allowed locations</p>
+                                </div>
+                                <button
+                                    onClick={() => setPolicy({ 
+                                        ...policy, 
+                                        geofencing: { 
+                                            ...policy.geofencing, 
+                                            enforced: !policy.geofencing?.enforced 
+                                        } 
+                                    })}
+                                    className={cn(
+                                        "w-12 h-6 rounded-full p-1 transition-colors relative",
+                                        policy.geofencing?.enforced ? "bg-red-500" : "bg-zinc-700"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-4 h-4 rounded-full bg-white transition-transform",
+                                        policy.geofencing?.enforced ? "translate-x-6" : "translate-x-0"
+                                    )} />
+                                </button>
+                            </div>
+
+                            {/* Locations List */}
+                            <div>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-sm font-medium text-zinc-300">Office Locations</h3>
+                                    <button
+                                        onClick={() => setShowAddLocation(!showAddLocation)}
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                        Add Location
+                                    </button>
+                                </div>
+
+                                {/* Add Location Form */}
+                                {showAddLocation && (
+                                    <div className="p-4 bg-zinc-800/50 rounded-lg mb-4 space-y-3 border border-purple-500/30">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input
+                                                type="text"
+                                                placeholder="Location Name *"
+                                                value={newLocation.name}
+                                                onChange={(e) => setNewLocation({ ...newLocation, name: e.target.value })}
+                                                className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Address"
+                                                value={newLocation.address}
+                                                onChange={(e) => setNewLocation({ ...newLocation, address: e.target.value })}
+                                                className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <input
+                                                type="number"
+                                                step="0.000001"
+                                                placeholder="Latitude *"
+                                                value={newLocation.latitude || ''}
+                                                onChange={(e) => setNewLocation({ ...newLocation, latitude: parseFloat(e.target.value) || 0 })}
+                                                className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            />
+                                            <input
+                                                type="number"
+                                                step="0.000001"
+                                                placeholder="Longitude *"
+                                                value={newLocation.longitude || ''}
+                                                onChange={(e) => setNewLocation({ ...newLocation, longitude: parseFloat(e.target.value) || 0 })}
+                                                className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            />
+                                            <input
+                                                type="number"
+                                                placeholder="Radius (m)"
+                                                value={newLocation.radius}
+                                                onChange={(e) => setNewLocation({ ...newLocation, radius: parseInt(e.target.value) || 100 })}
+                                                className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={handleAddLocation}
+                                                disabled={saving}
+                                                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                                            >
+                                                Add Location
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowAddLocation(false);
+                                                    setNewLocation({ name: '', address: '', latitude: 0, longitude: 0, radius: 100 });
+                                                }}
+                                                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm rounded-lg transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-zinc-500">
+                                            Tip: Use Google Maps to find exact coordinates. Right-click on a location and select the coordinates to copy.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Locations List */}
+                                {(!policy.geofencing?.locations || policy.geofencing.locations.length === 0) ? (
+                                    <div className="p-6 bg-zinc-800/30 border border-dashed border-zinc-700 rounded-lg text-center">
+                                        <MapPin className="h-8 w-8 text-zinc-600 mx-auto mb-2" />
+                                        <p className="text-sm text-zinc-400">No office locations configured</p>
+                                        <p className="text-xs text-zinc-500 mt-1">Add at least one location to enable geofencing</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {policy.geofencing.locations.map((location: any, index: number) => (
+                                            <div
+                                                key={index}
+                                                className={cn(
+                                                    "p-4 rounded-lg border transition-all",
+                                                    location.isActive
+                                                        ? "bg-zinc-800/50 border-zinc-700"
+                                                        : "bg-zinc-800/20 border-zinc-800 opacity-50"
+                                                )}
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h4 className="font-medium text-white">{location.name}</h4>
+                                                            {location.isActive ? (
+                                                                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                                                            ) : (
+                                                                <XCircle className="h-4 w-4 text-zinc-600" />
+                                                            )}
+                                                        </div>
+                                                        {location.address && (
+                                                            <p className="text-sm text-zinc-400">{location.address}</p>
+                                                        )}
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
+                                                            <span>Lat: {location.latitude.toFixed(6)}</span>
+                                                            <span>Lng: {location.longitude.toFixed(6)}</span>
+                                                            <span className="text-purple-400">Radius: {location.radius}m</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => handleToggleLocation(index)}
+                                                            disabled={saving}
+                                                            className="p-2 hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+                                                            title={location.isActive ? 'Disable' : 'Enable'}
+                                                        >
+                                                            {location.isActive ? (
+                                                                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                                                            ) : (
+                                                                <XCircle className="h-4 w-4 text-zinc-600" />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteLocation(index)}
+                                                            disabled={saving}
+                                                            className="p-2 hover:bg-red-500/10 text-red-400 rounded-lg transition-colors disabled:opacity-50"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </section>
 
             </div>

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Clock, Play, Square, Coffee, Calendar, Filter } from 'lucide-react';
+import { Clock, Play, Square, Coffee, Calendar, Filter, Plus } from 'lucide-react';
 import { clockApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
+import ManualEntryModal from '@/components/ManualEntryModal';
 
 interface TimeEntry {
     _id: string;
@@ -11,12 +13,19 @@ interface TimeEntry {
     timestamp: string;
     note?: string;
     source: string;
+    isManualEntry?: boolean;
 }
 
 export default function PunchLogPage() {
+    const { user } = useAuth();
     const [entries, setEntries] = useState<TimeEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [dateFilter, setDateFilter] = useState('today');
+    const [showManualEntryModal, setShowManualEntryModal] = useState(false);
+
+    // Check if user can add manual entries (HR admin or manager)
+    const canAddManualEntry = user?.currentOrganization?.role && 
+        ['owner', 'admin', 'hr_manager', 'manager'].includes(user.currentOrganization.role);
 
     useEffect(() => {
         fetchEntries();

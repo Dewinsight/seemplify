@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, requireManager, isHRAdmin } = require('../middleware/auth');
-const { Timesheet } = require('../models');
+const { Timesheet, AttendancePolicy } = require('../models');
+const emailService = require('../services/emailService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -107,6 +108,12 @@ router.post('/:id/approve', async (req, res) => {
 
         await timesheet.save();
 
+        // Send email notification to employee
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        if (policy?.notifications?.emailOnApproval && timesheet.userEmail) {
+            await emailService.sendTimesheetApproved(timesheet, timesheet.userEmail);
+        }
+
         res.json({
             success: true,
             timesheet,
@@ -155,6 +162,12 @@ router.post('/:id/reject', async (req, res) => {
         timesheet.addAuditLog('rejected', userId, req.user.name, reason);
 
         await timesheet.save();
+
+        // Send email notification to employee
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        if (policy?.notifications?.emailOnRejection && timesheet.userEmail) {
+            await emailService.sendTimesheetRejected(timesheet, timesheet.userEmail);
+        }
 
         res.json({
             success: true,

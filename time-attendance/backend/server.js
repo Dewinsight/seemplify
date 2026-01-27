@@ -10,6 +10,9 @@ const morgan = require('morgan');
 
 const connectDatabase = require('./config/database');
 const { initializeOIDC } = require('./config/oidc');
+const { startAutoClockOutScheduler } = require('./services/autoClockOutService');
+const { initializeEmailService } = require('./services/emailService');
+const { startReminderScheduler } = require('./services/reminderService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -104,10 +107,19 @@ const startServer = async () => {
         // Initialize OIDC client
         await initializeOIDC();
 
+        // Initialize email service
+        initializeEmailService();
+
         // Start server
         app.listen(PORT, () => {
             console.log(`Time & Attendance Backend running on port ${PORT}`);
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+            
+            // Start auto clock-out scheduler
+            startAutoClockOutScheduler();
+            
+            // Start reminder scheduler
+            startReminderScheduler();
         });
     } catch (error) {
         console.error('Failed to start server:', error);

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization } = require('../middleware/auth');
-const { TimeEntry, Timesheet } = require('../models');
+const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
+const geofenceService = require('../services/geofenceService');
 
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
@@ -92,6 +93,39 @@ router.post('/in', async (req, res) => {
             });
         }
 
+        // Validate geofencing if location provided
+        let locationVerified = false;
+        if (location?.latitude && location?.longitude) {
+            const validation = await geofenceService.validateLocation(
+                location.latitude,
+                location.longitude,
+                organizationId
+            );
+
+            // Check if geofencing is enforced
+            const policy = await AttendancePolicy.findOne({ organizationId });
+            const isEnforced = policy?.geofencing?.enabled && policy?.geofencing?.enforced;
+
+            if (!validation.isValid) {
+                if (isEnforced) {
+                    // Enforcement enabled - reject clock-in
+                    console.warn('❌ Clock-in blocked (outside geofence):', validation);
+                    return res.status(403).json({
+                        error: 'Clock-in not allowed from this location',
+                        code: 'OUTSIDE_GEOFENCE',
+                        details: validation,
+                    });
+                } else {
+                    // Warning only - allow but log
+                    console.warn('⚠️  Clock-in outside geofence (warning only):', validation);
+                }
+            } else {
+                console.log('✅ Location verified:', validation.message);
+            }
+
+            locationVerified = validation.isValid;
+        }
+
         // Get user's team info
         const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
 
@@ -109,7 +143,10 @@ router.post('/in', async (req, res) => {
             timezone: req.body.timezone || 'UTC',
             source: 'web',
             note,
-            location,
+            location: location ? {
+                ...location,
+                verified: locationVerified,
+            } : undefined,
         });
 
         await entry.save();
@@ -167,6 +204,21 @@ router.post('/out', async (req, res) => {
             await breakEndEntry.save();
         }
 
+        // Validate geofencing if location provided (optional for clock-out)
+        let locationVerified = false;
+        if (location?.latitude && location?.longitude) {
+            const validation = await geofenceService.validateLocation(
+                location.latitude,
+                location.longitude,
+                organizationId
+            );
+            locationVerified = validation.isValid;
+            
+            if (!validation.isValid) {
+                console.warn('⚠️  Clock-out outside geofence:', validation);
+            }
+        }
+
         // Create clock out entry
         const entry = new TimeEntry({
             userId,
@@ -179,7 +231,10 @@ router.post('/out', async (req, res) => {
             timezone: req.body.timezone || 'UTC',
             source: 'web',
             note,
-            location,
+            location: location ? {
+                ...location,
+                verified: locationVerified,
+            } : undefined,
         });
 
         await entry.save();
@@ -317,6 +372,126 @@ router.get('/entries', async (req, res) => {
     } catch (error) {
         console.error('Get entries error:', error);
         res.status(500).json({ error: 'Failed to get entries' });
+    }
+});
+
+// Manual Time Entry (for corrections or when GPS/system fails)
+router.post('/manual', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const organizationId = req.organizationId;
+        const { entryType, timestamp, note, targetUserId } = req.body;
+
+        console.log('✏️  Manual entry attempt:', { userId, entryType, timestamp });
+
+        // 1. Validate entry type
+        const validTypes = ['clock_in', 'clock_out', 'break_start', 'break_end'];
+        if (!validTypes.includes(entryType)) {
+            return res.status(400).json({ error: 'Invalid entry type' });
+        }
+
+        // 2. Validate timestamp
+        if (!timestamp) {
+            return res.status(400).json({ error: 'Timestamp is required' });
+        }
+
+        const entryTimestamp = new Date(timestamp);
+        if (isNaN(entryTimestamp.getTime())) {
+            return res.status(400).json({ error: 'Invalid timestamp format' });
+        }
+
+        // Cannot add future entries
+        if (entryTimestamp > new Date()) {
+            return res.status(400).json({ 
+                error: 'Cannot add future entries',
+                code: 'FUTURE_ENTRY'
+            });
+        }
+
+        // 3. Require explanation note (min 10 characters)
+        if (!note || note.trim().length < 10) {
+            return res.status(400).json({ 
+                error: 'Explanation note required (minimum 10 characters)',
+                code: 'NOTE_REQUIRED'
+            });
+        }
+
+        // 4. Check authorization
+        const { AttendancePolicy } = require('../models');
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        
+        // Check if user is HR admin or manager
+        const isAdmin = req.user.roles?.includes('hr_admin');
+        const isManager = req.user.roles?.includes('manager');
+        const canManualEntry = policy?.clockSettings?.allowManualEntry || false;
+
+        // Determine target user
+        let targetUser = userId;
+        let targetUserEmail = req.user.email;
+        let targetUserName = req.user.name;
+
+        if (targetUserId && targetUserId !== userId) {
+            // Trying to add entry for someone else - must be admin or manager
+            if (!isAdmin && !isManager) {
+                return res.status(403).json({ 
+                    error: 'Only HR admins and managers can add entries for other users',
+                    code: 'INSUFFICIENT_PERMISSIONS'
+                });
+            }
+            
+            targetUser = targetUserId;
+            // Note: We don't have full user details for targetUserId
+            // In a real system, we'd fetch from IdP or user cache
+            targetUserEmail = `user-${targetUserId}@unknown`;
+            targetUserName = `User ${targetUserId}`;
+        } else {
+            // Adding entry for self - check if policy allows it
+            if (!canManualEntry && !isAdmin && !isManager) {
+                return res.status(403).json({ 
+                    error: 'Manual time entry is not allowed',
+                    code: 'MANUAL_ENTRY_DISABLED'
+                });
+            }
+        }
+
+        // 5. Get user's team info
+        const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
+
+        // 6. Create manual entry
+        const entry = new TimeEntry({
+            userId: targetUser,
+            userEmail: targetUserEmail,
+            userName: targetUserName,
+            organizationId,
+            organizationName: req.organizationName,
+            teamId: userTeam?.id,
+            teamName: userTeam?.name,
+            entryType,
+            timestamp: entryTimestamp,
+            timezone: req.body.timezone || 'UTC',
+            source: 'manual',
+            note,
+            isManualEntry: true,
+            modifiedBy: {
+                userId,
+                userName: req.user.name,
+                modifiedAt: new Date(),
+                reason: note,
+            },
+        });
+
+        await entry.save();
+
+        console.log('✅ Manual entry created:', { userId: targetUser, entryType, timestamp });
+
+        res.json({
+            success: true,
+            entry,
+            message: 'Manual time entry created successfully',
+        });
+    } catch (error) {
+        console.error('Manual entry error:', error);
+        res.status(500).json({ error: 'Failed to create manual entry' });
     }
 });
 

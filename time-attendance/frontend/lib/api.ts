@@ -63,6 +63,10 @@ export const clockApi = {
         const response = await api.get('/clock/entries', { params: { startDate, endDate } });
         return response.data;
     },
+    createManualEntry: async (data: { entryType: string; timestamp: string; note: string; timezone?: string; targetUserId?: string }) => {
+        const response = await api.post('/clock/manual', data);
+        return response.data;
+    },
 };
 
 // Timesheet API helpers
@@ -128,11 +132,23 @@ export const reportsApi = {
 // Admin API helpers
 export const adminApi = {
     getPolicy: async () => {
-        const response = await api.get('/admin/attendance-policy');
+        const response = await api.get('/admin/policy');
         return response.data;
     },
     updatePolicy: async (policy: any) => {
-        const response = await api.post('/admin/attendance-policy', policy);
+        const response = await api.put('/admin/policy', policy);
+        return response.data;
+    },
+    addGeofenceLocation: async (location: any) => {
+        const response = await api.post('/admin/geofence-locations', location);
+        return response.data;
+    },
+    updateGeofenceLocation: async (index: number, location: any) => {
+        const response = await api.put(`/admin/geofence-locations/${index}`, location);
+        return response.data;
+    },
+    deleteGeofenceLocation: async (index: number) => {
+        const response = await api.delete(`/admin/geofence-locations/${index}`);
         return response.data;
     },
 };

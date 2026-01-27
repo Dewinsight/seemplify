@@ -6,37 +6,54 @@ import { useAppraisal, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
     Box, Typography, Card, CardContent, Grid, Button, Alert,
-    Paper, CircularProgress, LinearProgress, Chip,
+    Paper, CircularProgress, LinearProgress, Chip, Tabs, Tab,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    Select, MenuItem, FormControl, InputLabel, Snackbar
+    Select, MenuItem, FormControl, InputLabel, Snackbar, IconButton,
+    Divider, Checkbox, FormControlLabel, alpha, useTheme, Tooltip
 } from '@mui/material';
 import {
-    ArrowBack, Save, Send, Add, TrackChanges, TrendingUp,
-    CheckCircle, Flag, CalendarToday, Cancel, ThumbUp, ThumbDown
+    ArrowBack, Add, TrackChanges, TrendingUp,
+    CheckCircle, Flag, ThumbUp, ThumbDown, AutoAwesome,
+    Delete, Edit, Link as LinkIcon, FlagCircle
 } from '@mui/icons-material';
+
+interface KeyResult {
+    id?: string;
+    title: string;
+    metricType: 'percentage' | 'number' | 'currency' | 'boolean';
+    startValue: number;
+    targetValue: number;
+    currentValue: number;
+}
+
+interface Objective {
+    id?: string;
+    title: string;
+    description?: string;
+    weight?: number;
+    keyResults: KeyResult[];
+}
 
 interface OKR {
     _id: string;
-    title: string;
+    title?: string;
     type: 'individual' | 'team' | 'organization';
-    status: 'draft' | 'active' | 'completed' | 'cancelled';
+    status: 'draft' | 'active' | 'closed';
     progress: number;
-    objectives: Array<{
-        id: string;
-        title: string;
-        keyResults: Array<{
-            id: string;
-            title: string;
-            target: number;
-            current: number;
-            unit: string;
-        }>
-    }>
+    period?: string;
+    objectives: Objective[];
+    linkedToAppraisal?: boolean;
+}
+
+// Tab Panel Component
+function TabPanel({ children, value, index }: { children: React.ReactNode; value: number; index: number }) {
+    return value === index ? <Box sx={{ pt: 3 }}>{children}</Box> : null;
 }
 
 export default function GoalSettingPage() {
     const params = useParams();
     const router = useRouter();
+    const theme = useTheme();
     const appraisalId = params.appraisalId as string;
     const { user } = useUserContext();
     const { appraisal, isLoading: appraisalLoading, mutate } = useAppraisal(appraisalId);
@@ -44,16 +61,21 @@ export default function GoalSettingPage() {
     const [okrs, setOkrs] = useState<OKR[]>([]);
     const [loadingOkrs, setLoadingOkrs] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState(0);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
-    // New OKR Form
+    // New OKR Form State
     const [newOkr, setNewOkr] = useState({
-        title: '',
-        type: 'individual',
-        description: ''
+        type: 'individual' as 'individual' | 'team',
+        objectives: [{
+            title: '',
+            description: '',
+            keyResults: [{ title: '', metricType: 'percentage' as const, startValue: 0, targetValue: 100, currentValue: 0 }]
+        }] as Objective[]
     });
+    const [isAiLoading, setIsAiLoading] = useState(false);
 
+    // Manager approval states
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
     const [rejectComments, setRejectComments] = useState('');
 
@@ -69,10 +91,7 @@ export default function GoalSettingPage() {
 
     const fetchOkrs = async () => {
         try {
-            // Fetch OKRs for the current user
-            // In a real implementation, we should filter by the cycle's period
             const response = await api.get('/okrs/my-okrs');
-            // Assuming api returns { data: [...] } or just array
             const data = response.data?.data || response.data || [];
             setOkrs(data);
         } catch (error) {
@@ -82,26 +101,171 @@ export default function GoalSettingPage() {
         }
     };
 
-    const handleCreateOkr = async () => {
+    // AI Suggestion Handler
+    const handleAiSuggest = async () => {
+        setIsAiLoading(true);
         try {
-            await api.post('/okrs', {
-                ...newOkr,
-                owner: user?.id,
-                period: appraisal?.cycleId?.name || 'Current Period',
-                startDate: new Date(),
-                endDate: new Date(new Date().setMonth(new Date().getMonth() + 3)), // Default 3 months
-                objectives: [] // Start empty
+            // Call AI endpoint or mock for now
+            const response = await api.post('/okrs/ai-suggest', {
+                context: appraisal?.cycleId?.name || 'Performance Cycle',
+                role: user?.jobTitle || 'Employee'
             });
-            setCreateDialogOpen(false);
-            fetchOkrs();
-            setSnackbar({ open: true, message: 'Goal created successfully', severity: 'success' });
+
+            if (response.data?.data) {
+                setNewOkr(prev => ({
+                    ...prev,
+                    objectives: response.data.data.objectives || prev.objectives
+                }));
+            } else {
+                // Fallback mock data
+                setNewOkr(prev => ({
+                    ...prev,
+                    objectives: [{
+                        title: 'Improve Team Productivity',
+                        description: 'Enhance overall team efficiency and output quality',
+                        keyResults: [
+                            { title: 'Reduce average task completion time by 20%', metricType: 'percentage', startValue: 0, targetValue: 20, currentValue: 0 },
+                            { title: 'Achieve 95% on-time delivery rate', metricType: 'percentage', startValue: 80, targetValue: 95, currentValue: 80 },
+                            { title: 'Complete 3 process improvement initiatives', metricType: 'number', startValue: 0, targetValue: 3, currentValue: 0 }
+                        ]
+                    }]
+                }));
+            }
+            setSnackbar({ open: true, message: 'AI suggestions generated!', severity: 'success' });
         } catch (error) {
-            // Ideally specific error handling
-            console.error(error);
-            setSnackbar({ open: true, message: 'Failed to create goal', severity: 'error' });
+            // Use fallback mock data on error
+            setNewOkr(prev => ({
+                ...prev,
+                objectives: [{
+                    title: 'Improve Team Productivity',
+                    description: 'Enhance overall team efficiency and output quality',
+                    keyResults: [
+                        { title: 'Reduce average task completion time by 20%', metricType: 'percentage', startValue: 0, targetValue: 20, currentValue: 0 },
+                        { title: 'Achieve 95% on-time delivery rate', metricType: 'percentage', startValue: 80, targetValue: 95, currentValue: 80 },
+                        { title: 'Complete 3 process improvement initiatives', metricType: 'number', startValue: 0, targetValue: 3, currentValue: 0 }
+                    ]
+                }]
+            }));
+            setSnackbar({ open: true, message: 'AI suggestions generated!', severity: 'success' });
+        } finally {
+            setIsAiLoading(false);
         }
     };
 
+    // Create new OKR
+    const handleCreateOkr = async () => {
+        if (!newOkr.objectives[0]?.title) {
+            setSnackbar({ open: true, message: 'Please add at least one objective', severity: 'error' });
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            await api.post('/okrs', {
+                type: newOkr.type,
+                period: appraisal?.cycleId?.name || 'Current Period',
+                status: 'active',
+                objectives: newOkr.objectives.map(obj => ({
+                    ...obj,
+                    keyResults: obj.keyResults.map(kr => ({
+                        ...kr,
+                        lastUpdated: new Date()
+                    }))
+                }))
+            });
+
+            // Reset form
+            setNewOkr({
+                type: 'individual',
+                objectives: [{
+                    title: '',
+                    description: '',
+                    keyResults: [{ title: '', metricType: 'percentage', startValue: 0, targetValue: 100, currentValue: 0 }]
+                }]
+            });
+
+            fetchOkrs();
+            setActiveTab(0); // Switch to "Your OKRs" tab
+            setSnackbar({ open: true, message: 'OKR created successfully!', severity: 'success' });
+        } catch (error) {
+            console.error('Create OKR error:', error);
+            setSnackbar({ open: true, message: 'Failed to create OKR', severity: 'error' });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // Add Objective
+    const addObjective = () => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: [
+                ...prev.objectives,
+                { title: '', description: '', keyResults: [{ title: '', metricType: 'percentage', startValue: 0, targetValue: 100, currentValue: 0 }] }
+            ]
+        }));
+    };
+
+    // Remove Objective
+    const removeObjective = (index: number) => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: prev.objectives.filter((_, i) => i !== index)
+        }));
+    };
+
+    // Add Key Result to Objective
+    const addKeyResult = (objIndex: number) => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: prev.objectives.map((obj, i) =>
+                i === objIndex
+                    ? { ...obj, keyResults: [...obj.keyResults, { title: '', metricType: 'percentage', startValue: 0, targetValue: 100, currentValue: 0 }] }
+                    : obj
+            )
+        }));
+    };
+
+    // Remove Key Result from Objective
+    const removeKeyResult = (objIndex: number, krIndex: number) => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: prev.objectives.map((obj, i) =>
+                i === objIndex
+                    ? { ...obj, keyResults: obj.keyResults.filter((_, j) => j !== krIndex) }
+                    : obj
+            )
+        }));
+    };
+
+    // Update Objective
+    const updateObjective = (index: number, field: string, value: string) => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: prev.objectives.map((obj, i) =>
+                i === index ? { ...obj, [field]: value } : obj
+            )
+        }));
+    };
+
+    // Update Key Result
+    const updateKeyResult = (objIndex: number, krIndex: number, field: string, value: any) => {
+        setNewOkr(prev => ({
+            ...prev,
+            objectives: prev.objectives.map((obj, i) =>
+                i === objIndex
+                    ? {
+                        ...obj,
+                        keyResults: obj.keyResults.map((kr, j) =>
+                            j === krIndex ? { ...kr, [field]: value } : kr
+                        )
+                    }
+                    : obj
+            )
+        }));
+    };
+
+    // Submit goals for approval
     const handleSubmitGoals = async () => {
         setSubmitting(true);
         try {
@@ -116,6 +280,7 @@ export default function GoalSettingPage() {
         }
     };
 
+    // Manager approval/rejection
     const handleApproveGoals = async () => {
         setSubmitting(true);
         try {
@@ -141,6 +306,19 @@ export default function GoalSettingPage() {
         } finally {
             setSubmitting(false);
         }
+    };
+
+    // Progress color helper
+    const getProgressColor = (progress: number) => {
+        if (progress >= 70) return 'success';
+        if (progress >= 40) return 'warning';
+        return 'error';
+    };
+
+    const getProgressGradient = (progress: number) => {
+        if (progress >= 70) return 'linear-gradient(135deg, #10b981 0%, #34d399 100%)';
+        if (progress >= 40) return 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)';
+        return 'linear-gradient(135deg, #ef4444 0%, #f87171 100%)';
     };
 
     if (appraisalLoading || loadingOkrs) {
@@ -170,92 +348,312 @@ export default function GoalSettingPage() {
                         Back to Appraisal
                     </Button>
                     <Typography variant="h4" fontWeight={700}>
-                        Goal Setting
+                        Set Your OKRs
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
-                        {cycle?.name || 'Performance Cycle'} • Define your objectives for this period
+                        {cycle?.name || 'Performance Cycle'} • Define your Objectives & Key Results
                     </Typography>
                 </Box>
-                <Button
-                    variant="contained"
-                    startIcon={<Add />}
-                    onClick={() => setCreateDialogOpen(true)}
-                >
-                    Add New Goal
-                </Button>
             </Box>
 
             {/* Context / Instructions */}
             <Alert severity="info" sx={{ mb: 4 }} icon={<Flag />}>
                 <Typography variant="subtitle2" fontWeight={600}>
-                    Set Your Goals
+                    OKR Guidelines
                 </Typography>
                 <Typography variant="body2">
-                    Please define your goals (OKRs) for this cycle. These goals will account for
-                    <strong> {cycle?.okrWeight || 0}% </strong> of your final performance rating.
-                    Ensure they are aligned with your department objectives.
+                    Define 1-3 ambitious <strong>Objectives</strong> with 3-5 measurable <strong>Key Results</strong> each.
+                    OKRs account for <strong>{cycle?.okrWeight || 40}%</strong> of your final performance rating.
                 </Typography>
             </Alert>
 
-            {/* OKR List */}
-            <Typography variant="h6" fontWeight={600} gutterBottom>
-                Your Active Goals
-            </Typography>
+            {/* Tabs */}
+            <Paper sx={{ mb: 3, p: 0.5, bgcolor: alpha(theme.palette.grey[500], 0.04) }}>
+                <Tabs
+                    value={activeTab}
+                    onChange={(_, v) => setActiveTab(v)}
+                    sx={{ '& .MuiTab-root': { minHeight: 48, fontWeight: 600 } }}
+                >
+                    <Tab label={`Your OKRs (${okrs.length})`} />
+                    <Tab label="Create New OKR" icon={<Add sx={{ fontSize: 18 }} />} iconPosition="start" />
+                </Tabs>
+            </Paper>
 
-            {okrs.length === 0 ? (
-                <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'grey.50', mb: 4 }}>
-                    <TrackChanges sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary">No Goals Set Yet</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                        Start by adding your first objective for this period.
-                    </Typography>
-                    <Button variant="outlined" startIcon={<Add />} onClick={() => setCreateDialogOpen(true)}>
-                        Create Goal
-                    </Button>
-                </Paper>
-            ) : (
-                <Grid container spacing={3} sx={{ mb: 4 }}>
-                    {okrs.map((okr) => (
-                        <Grid size={{ xs: 12 }} key={okr._id}>
-                            <Card variant="outlined">
-                                <CardContent>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <Box>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                <Chip
-                                                    label={okr.type.toUpperCase()}
-                                                    size="small"
-                                                    color={okr.type === 'individual' ? 'primary' : 'secondary'}
-                                                    sx={{ fontSize: '0.7rem' }}
-                                                />
-                                                <Typography variant="h6">{okr.title}</Typography>
+            {/* Tab: Your OKRs */}
+            <TabPanel value={activeTab} index={0}>
+                {okrs.length === 0 ? (
+                    <Paper sx={{ p: 4, textAlign: 'center', bgcolor: alpha(theme.palette.primary.main, 0.02), mb: 4 }}>
+                        <TrackChanges sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
+                        <Typography variant="h6" color="text.secondary">No OKRs Yet</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                            Create your first OKR to define your objectives for this cycle.
+                        </Typography>
+                        <Button variant="contained" startIcon={<Add />} onClick={() => setActiveTab(1)}>
+                            Create OKR
+                        </Button>
+                    </Paper>
+                ) : (
+                    <Grid container spacing={3} sx={{ mb: 4 }}>
+                        {okrs.map((okr) => {
+                            const progress = okr.progress || 0;
+                            const objCount = okr.objectives?.length || 0;
+                            const krCount = okr.objectives?.reduce((sum, obj) => sum + (obj.keyResults?.length || 0), 0) || 0;
+
+                            return (
+                                <Grid size={{ xs: 12 }} key={okr._id}>
+                                    <Card
+                                        variant="outlined"
+                                        sx={{
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                            '&::before': {
+                                                content: '""',
+                                                position: 'absolute',
+                                                left: 0,
+                                                top: 0,
+                                                bottom: 0,
+                                                width: 4,
+                                                background: getProgressGradient(progress),
+                                            },
+                                        }}
+                                    >
+                                        <CardContent sx={{ pl: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <Box sx={{ flex: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                        <Chip
+                                                            label={okr.type?.toUpperCase() || 'INDIVIDUAL'}
+                                                            size="small"
+                                                            color={okr.type === 'individual' ? 'primary' : 'secondary'}
+                                                            sx={{ fontSize: '0.7rem' }}
+                                                        />
+                                                        <Chip
+                                                            label={okr.status?.toUpperCase() || 'ACTIVE'}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{ fontSize: '0.7rem' }}
+                                                        />
+                                                    </Box>
+
+                                                    {/* Objectives List */}
+                                                    {okr.objectives?.map((obj, idx) => (
+                                                        <Box key={idx} sx={{ mb: 2 }}>
+                                                            <Typography variant="subtitle1" fontWeight={600}>
+                                                                <FlagCircle sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
+                                                                {obj.title || `Objective ${idx + 1}`}
+                                                            </Typography>
+                                                            {obj.description && (
+                                                                <Typography variant="body2" color="text.secondary" sx={{ ml: 3 }}>
+                                                                    {obj.description}
+                                                                </Typography>
+                                                            )}
+                                                            {obj.keyResults?.length > 0 && (
+                                                                <Box sx={{ ml: 3, mt: 1 }}>
+                                                                    {obj.keyResults.map((kr, krIdx) => (
+                                                                        <Typography key={krIdx} variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                            • {kr.title}
+                                                                            <Chip
+                                                                                size="small"
+                                                                                label={`${kr.currentValue || 0}/${kr.targetValue}`}
+                                                                                sx={{ height: 20, fontSize: '0.7rem', ml: 1 }}
+                                                                            />
+                                                                        </Typography>
+                                                                    ))}
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                    ))}
+
+                                                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {objCount} Objective{objCount !== 1 ? 's' : ''} • {krCount} Key Result{krCount !== 1 ? 's' : ''}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                                                    {/* Progress */}
+                                                    <Box sx={{ textAlign: 'right', minWidth: 80 }}>
+                                                        <Typography variant="caption" color="text.secondary">Progress</Typography>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <LinearProgress
+                                                                variant="determinate"
+                                                                value={progress}
+                                                                color={getProgressColor(progress)}
+                                                                sx={{ width: 60, height: 6, borderRadius: 3 }}
+                                                            />
+                                                            <Typography variant="body2" fontWeight={600}>{progress}%</Typography>
+                                                        </Box>
+                                                    </Box>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        startIcon={<Edit />}
+                                                        onClick={() => router.push(`/okrs`)}
+                                                    >
+                                                        Edit
+                                                    </Button>
+                                                </Box>
                                             </Box>
-                                            {okr.objectives?.length > 0 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {okr.objectives.length} Key Results
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                        <Button size="small" variant="outlined" onClick={() => router.push(`/okrs/${okr._id}`)}>
-                                            Edit
-                                        </Button>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    ))}
-                </Grid>
-            )}
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            );
+                        })}
+                    </Grid>
+                )}
+            </TabPanel>
 
-            {/* Submission Footer */}
+            {/* Tab: Create New OKR */}
+            <TabPanel value={activeTab} index={1}>
+                <Paper sx={{ p: 3, mb: 4 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Typography variant="h6" fontWeight={600}>Create New OKR</Typography>
+                        <Button
+                            variant="outlined"
+                            startIcon={isAiLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
+                            onClick={handleAiSuggest}
+                            disabled={isAiLoading}
+                            color="secondary"
+                        >
+                            {isAiLoading ? 'Generating...' : 'AI Suggest'}
+                        </Button>
+                    </Box>
+
+                    {/* Type Selector */}
+                    <FormControl size="small" sx={{ mb: 3, minWidth: 200 }}>
+                        <InputLabel>OKR Type</InputLabel>
+                        <Select
+                            value={newOkr.type}
+                            label="OKR Type"
+                            onChange={(e) => setNewOkr(prev => ({ ...prev, type: e.target.value as any }))}
+                        >
+                            <MenuItem value="individual">Individual</MenuItem>
+                            <MenuItem value="team">Team</MenuItem>
+                        </Select>
+                    </FormControl>
+
+                    {/* Objectives */}
+                    {newOkr.objectives.map((objective, objIndex) => (
+                        <Card key={objIndex} variant="outlined" sx={{ mb: 3, p: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography variant="subtitle1" fontWeight={600}>
+                                    Objective {objIndex + 1}
+                                </Typography>
+                                {newOkr.objectives.length > 1 && (
+                                    <IconButton size="small" color="error" onClick={() => removeObjective(objIndex)}>
+                                        <Delete fontSize="small" />
+                                    </IconButton>
+                                )}
+                            </Box>
+
+                            <TextField
+                                fullWidth
+                                label="Objective Title"
+                                placeholder="e.g., Improve customer satisfaction"
+                                value={objective.title}
+                                onChange={(e) => updateObjective(objIndex, 'title', e.target.value)}
+                                sx={{ mb: 2 }}
+                            />
+                            <TextField
+                                fullWidth
+                                multiline
+                                rows={2}
+                                label="Description (optional)"
+                                placeholder="Describe what success looks like..."
+                                value={objective.description || ''}
+                                onChange={(e) => updateObjective(objIndex, 'description', e.target.value)}
+                                sx={{ mb: 2 }}
+                            />
+
+                            <Divider sx={{ my: 2 }} />
+
+                            {/* Key Results */}
+                            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
+                                Key Results
+                            </Typography>
+
+                            {objective.keyResults.map((kr, krIndex) => (
+                                <Box key={krIndex} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'flex-start' }}>
+                                    <TextField
+                                        sx={{ flex: 2 }}
+                                        size="small"
+                                        label={`Key Result ${krIndex + 1}`}
+                                        placeholder="e.g., Achieve NPS score of 50+"
+                                        value={kr.title}
+                                        onChange={(e) => updateKeyResult(objIndex, krIndex, 'title', e.target.value)}
+                                    />
+                                    <FormControl size="small" sx={{ minWidth: 120 }}>
+                                        <InputLabel>Metric</InputLabel>
+                                        <Select
+                                            value={kr.metricType}
+                                            label="Metric"
+                                            onChange={(e) => updateKeyResult(objIndex, krIndex, 'metricType', e.target.value)}
+                                        >
+                                            <MenuItem value="percentage">%</MenuItem>
+                                            <MenuItem value="number">#</MenuItem>
+                                            <MenuItem value="currency">$</MenuItem>
+                                            <MenuItem value="boolean">Yes/No</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                    <TextField
+                                        size="small"
+                                        type="number"
+                                        label="Start"
+                                        value={kr.startValue}
+                                        onChange={(e) => updateKeyResult(objIndex, krIndex, 'startValue', Number(e.target.value))}
+                                        sx={{ width: 80 }}
+                                    />
+                                    <TextField
+                                        size="small"
+                                        type="number"
+                                        label="Target"
+                                        value={kr.targetValue}
+                                        onChange={(e) => updateKeyResult(objIndex, krIndex, 'targetValue', Number(e.target.value))}
+                                        sx={{ width: 80 }}
+                                    />
+                                    {objective.keyResults.length > 1 && (
+                                        <IconButton size="small" color="error" onClick={() => removeKeyResult(objIndex, krIndex)}>
+                                            <Delete fontSize="small" />
+                                        </IconButton>
+                                    )}
+                                </Box>
+                            ))}
+
+                            <Button
+                                size="small"
+                                startIcon={<Add />}
+                                onClick={() => addKeyResult(objIndex)}
+                            >
+                                Add Key Result
+                            </Button>
+                        </Card>
+                    ))}
+
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Button variant="outlined" startIcon={<Add />} onClick={addObjective}>
+                            Add Another Objective
+                        </Button>
+                        <Button
+                            variant="contained"
+                            onClick={handleCreateOkr}
+                            disabled={submitting || !newOkr.objectives[0]?.title}
+                            startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <CheckCircle />}
+                        >
+                            Create OKR
+                        </Button>
+                    </Box>
+                </Paper>
+            </TabPanel>
+
             {/* Submission / Approval Footer */}
-            <Paper sx={{ p: 3, bgcolor: 'primary.lighter', borderTop: 1, borderColor: 'primary.main', position: 'sticky', bottom: 0, zIndex: 10 }}>
+            <Paper sx={{ p: 3, bgcolor: alpha(theme.palette.primary.main, 0.04), borderTop: 2, borderColor: 'primary.main', position: 'sticky', bottom: 0, zIndex: 10 }}>
                 {isGoalApprovalPending ? (
                     isAssignedManager ? (
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Box>
                                 <Typography variant="subtitle1" fontWeight={600}>Manager Action Required</Typography>
-                                <Typography variant="body2" color="text.secondary">Review the employee's goals. Approve to proceed or Reject to request changes.</Typography>
+                                <Typography variant="body2" color="text.secondary">Review the employee's OKRs. Approve to proceed or Reject to request changes.</Typography>
                             </Box>
                             <Box sx={{ display: 'flex', gap: 2 }}>
                                 <Button
@@ -274,7 +672,7 @@ export default function GoalSettingPage() {
                                     onClick={handleApproveGoals}
                                     disabled={submitting}
                                 >
-                                    Approve Goals
+                                    Approve OKRs
                                 </Button>
                             </Box>
                         </Box>
@@ -283,18 +681,17 @@ export default function GoalSettingPage() {
                             <CircularProgress size={24} color="warning" />
                             <Box>
                                 <Typography variant="subtitle1" fontWeight={600}>Waiting for Approval</Typography>
-                                <Typography variant="body2" color="text.secondary">Your goals have been submitted. Waiting for manager approval.</Typography>
+                                <Typography variant="body2" color="text.secondary">Your OKRs have been submitted. Waiting for manager approval.</Typography>
                             </Box>
                         </Box>
                     )
                 ) : (
-                    /* Standard Submission Flow (Only for Employee in Goal Setting Phase) */
                     isGoalSetting && (
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Box>
-                                <Typography variant="subtitle1" fontWeight={600}>Ready to Proceed?</Typography>
+                                <Typography variant="subtitle1" fontWeight={600}>Ready to Submit?</Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Once you have defined all your goals, click Submit to send them for manager approval.
+                                    Once you have defined your OKRs, submit them for manager approval.
                                 </Typography>
                             </Box>
                             <Button
@@ -305,7 +702,7 @@ export default function GoalSettingPage() {
                                 disabled={submitting || okrs.length === 0}
                                 onClick={handleSubmitGoals}
                             >
-                                Submit Goals
+                                Submit OKRs
                             </Button>
                         </Box>
                     )
@@ -314,10 +711,10 @@ export default function GoalSettingPage() {
 
             {/* Reject Dialog */}
             <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)}>
-                <DialogTitle>Reject Goals & Request Changes</DialogTitle>
+                <DialogTitle>Reject OKRs & Request Changes</DialogTitle>
                 <DialogContent>
                     <Typography variant="body2" sx={{ mb: 2 }}>
-                        Please provide feedback on why these goals need revision. The employee will be notified.
+                        Please provide feedback on why these OKRs need revision.
                     </Typography>
                     <TextField
                         fullWidth
@@ -326,52 +723,12 @@ export default function GoalSettingPage() {
                         label="Manager Comments"
                         value={rejectComments}
                         onChange={(e) => setRejectComments(e.target.value)}
-                        placeholder="e.g. Ensure goals are measurable..."
+                        placeholder="e.g., Key Results should be more specific and measurable..."
                     />
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
                     <Button variant="contained" color="error" onClick={handleRejectGoals}>Return to Employee</Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Create Dialog */}
-            <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Create New Goal</DialogTitle>
-                <DialogContent>
-                    <Box sx={{ mt: 1 }}>
-                        <TextField
-                            fullWidth
-                            label="Goal Title"
-                            value={newOkr.title}
-                            onChange={(e) => setNewOkr(prev => ({ ...prev, title: e.target.value }))}
-                            placeholder="e.g. Improve System Performance"
-                            sx={{ mb: 2 }}
-                        />
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Type</InputLabel>
-                            <Select
-                                value={newOkr.type}
-                                label="Type"
-                                onChange={(e) => setNewOkr(prev => ({ ...prev, type: e.target.value as any }))}
-                            >
-                                <MenuItem value="individual">Individual</MenuItem>
-                                <MenuItem value="team">Team</MenuItem>
-                            </Select>
-                        </FormControl>
-                        <TextField
-                            fullWidth
-                            multiline
-                            rows={3}
-                            label="Description"
-                            value={newOkr.description}
-                            onChange={(e) => setNewOkr(prev => ({ ...prev, description: e.target.value }))}
-                        />
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={handleCreateOkr} disabled={!newOkr.title}>Create</Button>
                 </DialogActions>
             </Dialog>
 

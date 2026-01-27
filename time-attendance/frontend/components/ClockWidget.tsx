@@ -23,6 +23,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     });
     const [loading, setLoading] = useState(false);
     const [elapsedTime, setElapsedTime] = useState('00:00:00');
+    const [locationError, setLocationError] = useState<string | null>(null);
 
     // Update elapsed time every second
     useEffect(() => {
@@ -82,14 +83,58 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         refreshStatus();
     }, []);
 
+    // Get user's current location
+    const getCurrentLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                console.warn('Geolocation not supported');
+                resolve(null);
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                    });
+                },
+                (error) => {
+                    console.warn('Geolocation error:', error.message);
+                    // Don't block clock-in if location fails - backend will handle gracefully
+                    resolve(null);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0,
+                }
+            );
+        });
+    };
+
     const handleClockIn = async () => {
         try {
             setLoading(true);
-            await clockApi.clockIn();
+            setLocationError(null);
+
+            // Try to get location (but don't block if it fails)
+            const location = await getCurrentLocation();
+
+            await clockApi.clockIn(undefined, location);
             await refreshStatus(); // Refresh status after action
             if (onStatusChange) onStatusChange();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Clock in failed', error);
+            const errorData = error.response?.data;
+            
+            // Handle geofencing errors
+            if (errorData?.code === 'OUTSIDE_GEOFENCE') {
+                setLocationError(`Clock-in blocked: ${errorData.details?.reason || 'You are outside the allowed office area'}`);
+            } else {
+                setLocationError(errorData?.error || 'Failed to clock in');
+            }
         } finally {
             setLoading(false);
         }
@@ -98,11 +143,17 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     const handleClockOut = async () => {
         try {
             setLoading(true);
-            await clockApi.clockOut();
+            setLocationError(null);
+
+            // Try to get location (optional for clock-out)
+            const location = await getCurrentLocation();
+
+            await clockApi.clockOut(undefined, location);
             await refreshStatus(); // Refresh status after action
             if (onStatusChange) onStatusChange();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Clock out failed', error);
+            setLocationError(error.response?.data?.error || 'Failed to clock out');
         } finally {
             setLoading(false);
         }
@@ -171,6 +222,13 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                     </div>
                     <p className="text-sm text-zinc-500 mt-2">Total time today</p>
                 </div>
+
+                {/* Location Error */}
+                {locationError && (
+                    <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <p className="text-sm text-red-400">{locationError}</p>
+                    </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-4">

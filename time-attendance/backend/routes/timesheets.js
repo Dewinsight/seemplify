@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
-const { Timesheet, TimeEntry } = require('../models');
+const { Timesheet, TimeEntry, AttendancePolicy } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
+const emailService = require('../services/emailService');
 
 // Apply auth middleware
 router.use(requireAuth);

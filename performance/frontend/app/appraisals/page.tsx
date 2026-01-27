@@ -99,6 +99,10 @@ export default function AppraisalsPage() {
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
 
+  const handleStartGoalSetting = (appraisalId: string) => {
+    router.push(`/appraisals/${appraisalId}/goal-setting`);
+  };
+
   const handleStartSelfAssessment = (appraisalId: string) => {
     router.push(`/appraisals/${appraisalId}/self-assessment`);
   };
@@ -279,6 +283,33 @@ export default function AppraisalsPage() {
                 )}
 
                 {/* Action Buttons */}
+                {/* Goal Setting Button - for employees */}
+                {isEmployee && (appraisal.status === 'goal_setting' || appraisal.status === 'goal_approval_pending') && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<PlayArrow />}
+                    onClick={() => handleStartGoalSetting(appraisal._id)}
+                    sx={{ ml: 1 }}
+                  >
+                    {appraisal.status === 'goal_approval_pending' ? 'View Goals' : 'Set Goals'}
+                  </Button>
+                )}
+
+                {/* Goal Approval Button - for managers when employee submits goals */}
+                {!isEmployee && appraisal.status === 'goal_approval_pending' && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="warning"
+                    startIcon={<PlayArrow />}
+                    onClick={() => handleStartGoalSetting(appraisal._id)}
+                    sx={{ ml: 1 }}
+                  >
+                    Review Goals
+                  </Button>
+                )}
+
                 {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
                   <Button
                     variant="contained"
