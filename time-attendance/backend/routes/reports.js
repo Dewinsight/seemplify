@@ -309,7 +309,7 @@ router.get('/location-history', async (req, res) => {
             .lean();
 
         // Group by date for easier display
-        const groupedByDate = history.reduce((acc: any, entry: any) => {
+        const groupedByDate = history.reduce((acc, entry) => {
             const dateKey = format(entry.timestamp, 'yyyy-MM-dd');
             if (!acc[dateKey]) {
                 acc[dateKey] = [];
