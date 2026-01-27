@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth, requireOrganization } = require('../middleware/auth');
 const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const geofenceService = require('../services/geofenceService');
+const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
 
 // Apply auth middleware to all clock routes
@@ -130,6 +131,16 @@ router.post('/in', async (req, res) => {
         // Get user's team info
         const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
 
+        // Enrich location with address (reverse geocoding)
+        let enrichedLocation = null;
+        if (location?.latitude && location?.longitude) {
+            enrichedLocation = await enrichLocationWithAddress({
+                ...location,
+                verified: locationVerified,
+            });
+            console.log('📍 Location enriched:', enrichedLocation?.address || 'No address found');
+        }
+
         // Create clock in entry
         const entry = new TimeEntry({
             userId,
@@ -144,10 +155,7 @@ router.post('/in', async (req, res) => {
             timezone: req.body.timezone || 'UTC',
             source: 'web',
             note,
-            location: location ? {
-                ...location,
-                verified: locationVerified,
-            } : undefined,
+            location: enrichedLocation,
         });
 
         await entry.save();
@@ -220,6 +228,16 @@ router.post('/out', async (req, res) => {
             }
         }
 
+        // Enrich location with address (reverse geocoding)
+        let enrichedLocation = null;
+        if (location?.latitude && location?.longitude) {
+            enrichedLocation = await enrichLocationWithAddress({
+                ...location,
+                verified: locationVerified,
+            });
+            console.log('📍 Clock-out location enriched:', enrichedLocation?.address || 'No address found');
+        }
+
         // Create clock out entry
         const entry = new TimeEntry({
             userId,
@@ -232,10 +250,7 @@ router.post('/out', async (req, res) => {
             timezone: req.body.timezone || 'UTC',
             source: 'web',
             note,
-            location: location ? {
-                ...location,
-                verified: locationVerified,
-            } : undefined,
+            location: enrichedLocation,
         });
 
         await entry.save();

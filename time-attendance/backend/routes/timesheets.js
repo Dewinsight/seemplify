@@ -290,6 +290,11 @@ async function refreshTimesheetEntries(timesheet) {
                 latitude: clockIn.location.latitude,
                 longitude: clockIn.location.longitude,
                 address: clockIn.location.address,
+                area: clockIn.location.area,
+                city: clockIn.location.city,
+                state: clockIn.location.state,
+                country: clockIn.location.country,
+                displayName: clockIn.location.displayName,
                 accuracy: clockIn.location.accuracy,
                 verified: clockIn.location.verified,
             };
@@ -302,6 +307,11 @@ async function refreshTimesheetEntries(timesheet) {
                 latitude: clockOut.location.latitude,
                 longitude: clockOut.location.longitude,
                 address: clockOut.location.address,
+                area: clockOut.location.area,
+                city: clockOut.location.city,
+                state: clockOut.location.state,
+                country: clockOut.location.country,
+                displayName: clockOut.location.displayName,
                 accuracy: clockOut.location.accuracy,
                 verified: clockOut.location.verified,
             };

@@ -364,53 +364,113 @@ export default function TimesheetDetailPage() {
 
                                             {/* Location Display */}
                                             {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (
-                                                <div className="mt-3 pl-[3.25rem] space-y-1.5">
+                                                <div className="mt-3 pl-[3.25rem] space-y-3">
                                                     {entry.clockInLocation?.latitude && entry.clockInLocation?.longitude && (
-                                                        <div className="flex items-center gap-2 text-xs">
-                                                            <MapPin className="h-3.5 w-3.5 text-emerald-500" />
-                                                            <span className="text-zinc-500">In:</span>
-                                                            <a
-                                                                href={`https://www.google.com/maps?q=${entry.clockInLocation.latitude},${entry.clockInLocation.longitude}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-teal-400 hover:text-teal-300 underline"
-                                                            >
-                                                                {entry.clockInLocation.address || `${entry.clockInLocation.latitude.toFixed(6)}, ${entry.clockInLocation.longitude.toFixed(6)}`}
-                                                            </a>
-                                                            {entry.clockInLocation.verified !== undefined && (
-                                                                entry.clockInLocation.verified ? (
-                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
-                                                                ) : (
-                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
-                                                                )
-                                                            )}
-                                                            {entry.clockInLocation.accuracy && (
-                                                                <span className="text-zinc-500">(±{Math.round(entry.clockInLocation.accuracy)}m)</span>
-                                                            )}
+                                                        <div className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-700/50">
+                                                            <div className="flex items-center gap-2 text-xs mb-1.5">
+                                                                <MapPin className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                                                <span className="text-emerald-400 font-medium">Clock In Location</span>
+                                                                {entry.clockInLocation.verified !== undefined && (
+                                                                    entry.clockInLocation.verified ? (
+                                                                        <span className="flex items-center gap-1 text-green-400">
+                                                                            <CheckCircle2 className="h-3 w-3" />
+                                                                            <span className="text-[10px]">Verified</span>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="flex items-center gap-1 text-amber-400">
+                                                                            <XCircle className="h-3 w-3" />
+                                                                            <span className="text-[10px]">Outside geofence</span>
+                                                                        </span>
+                                                                    )
+                                                                )}
+                                                            </div>
+                                                            <div className="space-y-1 text-xs pl-5">
+                                                                {/* Coordinates */}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-zinc-500 w-20">Coordinates:</span>
+                                                                    <a
+                                                                        href={`https://www.google.com/maps?q=${entry.clockInLocation.latitude},${entry.clockInLocation.longitude}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-teal-400 hover:text-teal-300 underline font-mono"
+                                                                    >
+                                                                        {entry.clockInLocation.latitude.toFixed(6)}, {entry.clockInLocation.longitude.toFixed(6)}
+                                                                    </a>
+                                                                    {entry.clockInLocation.accuracy && (
+                                                                        <span className="text-zinc-500">(±{Math.round(entry.clockInLocation.accuracy)}m)</span>
+                                                                    )}
+                                                                </div>
+                                                                {/* Address */}
+                                                                {entry.clockInLocation.address && (
+                                                                    <div className="flex items-start gap-2">
+                                                                        <span className="text-zinc-500 w-20 shrink-0">Address:</span>
+                                                                        <span className="text-white">{entry.clockInLocation.address}</span>
+                                                                    </div>
+                                                                )}
+                                                                {/* Area/City */}
+                                                                {(entry.clockInLocation.area || entry.clockInLocation.city) && (
+                                                                    <div className="flex items-start gap-2">
+                                                                        <span className="text-zinc-500 w-20 shrink-0">Area:</span>
+                                                                        <span className="text-zinc-300">
+                                                                            {[entry.clockInLocation.area, entry.clockInLocation.city, entry.clockInLocation.state, entry.clockInLocation.country].filter(Boolean).join(', ')}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     )}
-                                                            {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
-                                                        <div className="flex items-center gap-2 text-xs">
-                                                            <MapPin className="h-3.5 w-3.5 text-red-500" />
-                                                            <span className="text-zinc-500">Out:</span>
-                                                            <a
-                                                                href={`https://www.google.com/maps?q=${entry.clockOutLocation.latitude},${entry.clockOutLocation.longitude}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-teal-400 hover:text-teal-300 underline"
-                                                            >
-                                                                {entry.clockOutLocation.address || `${entry.clockOutLocation.latitude.toFixed(6)}, ${entry.clockOutLocation.longitude.toFixed(6)}`}
-                                                            </a>
-                                                            {entry.clockOutLocation.verified !== undefined && (
-                                                                entry.clockOutLocation.verified ? (
-                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
-                                                                ) : (
-                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
-                                                                )
-                                                            )}
-                                                            {entry.clockOutLocation.accuracy && (
-                                                                <span className="text-zinc-500">(±{Math.round(entry.clockOutLocation.accuracy)}m)</span>
-                                                            )}
+                                                    {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
+                                                        <div className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-700/50">
+                                                            <div className="flex items-center gap-2 text-xs mb-1.5">
+                                                                <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                                                                <span className="text-red-400 font-medium">Clock Out Location</span>
+                                                                {entry.clockOutLocation.verified !== undefined && (
+                                                                    entry.clockOutLocation.verified ? (
+                                                                        <span className="flex items-center gap-1 text-green-400">
+                                                                            <CheckCircle2 className="h-3 w-3" />
+                                                                            <span className="text-[10px]">Verified</span>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="flex items-center gap-1 text-amber-400">
+                                                                            <XCircle className="h-3 w-3" />
+                                                                            <span className="text-[10px]">Outside geofence</span>
+                                                                        </span>
+                                                                    )
+                                                                )}
+                                                            </div>
+                                                            <div className="space-y-1 text-xs pl-5">
+                                                                {/* Coordinates */}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-zinc-500 w-20">Coordinates:</span>
+                                                                    <a
+                                                                        href={`https://www.google.com/maps?q=${entry.clockOutLocation.latitude},${entry.clockOutLocation.longitude}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-teal-400 hover:text-teal-300 underline font-mono"
+                                                                    >
+                                                                        {entry.clockOutLocation.latitude.toFixed(6)}, {entry.clockOutLocation.longitude.toFixed(6)}
+                                                                    </a>
+                                                                    {entry.clockOutLocation.accuracy && (
+                                                                        <span className="text-zinc-500">(±{Math.round(entry.clockOutLocation.accuracy)}m)</span>
+                                                                    )}
+                                                                </div>
+                                                                {/* Address */}
+                                                                {entry.clockOutLocation.address && (
+                                                                    <div className="flex items-start gap-2">
+                                                                        <span className="text-zinc-500 w-20 shrink-0">Address:</span>
+                                                                        <span className="text-white">{entry.clockOutLocation.address}</span>
+                                                                    </div>
+                                                                )}
+                                                                {/* Area/City */}
+                                                                {(entry.clockOutLocation.area || entry.clockOutLocation.city) && (
+                                                                    <div className="flex items-start gap-2">
+                                                                        <span className="text-zinc-500 w-20 shrink-0">Area:</span>
+                                                                        <span className="text-zinc-300">
+                                                                            {[entry.clockOutLocation.area, entry.clockOutLocation.city, entry.clockOutLocation.state, entry.clockOutLocation.country].filter(Boolean).join(', ')}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>

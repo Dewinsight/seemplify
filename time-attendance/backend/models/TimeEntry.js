@@ -62,11 +62,16 @@ const TimeEntrySchema = new Schema({
         default: 'UTC'
     },
 
-    // Location Data (for GPS geofencing - future feature)
+    // Location Data (for GPS geofencing)
     location: {
         latitude: Number,
         longitude: Number,
-        address: String,
+        address: String,         // Short address (e.g., "123 Main St, Downtown")
+        area: String,            // Suburb/neighbourhood
+        city: String,            // City/town
+        state: String,           // State/region
+        country: String,         // Country
+        displayName: String,     // Full address from geocoding
         accuracy: Number,        // GPS accuracy in meters
         verified: {
             type: Boolean,
