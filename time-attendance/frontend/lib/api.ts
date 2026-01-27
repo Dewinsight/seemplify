@@ -132,11 +132,11 @@ export const reportsApi = {
 // Admin API helpers
 export const adminApi = {
     getPolicy: async () => {
-        const response = await api.get('/admin/policy');
+        const response = await api.get('/admin/attendance-policy');
         return response.data;
     },
     updatePolicy: async (policy: any) => {
-        const response = await api.put('/admin/policy', policy);
+        const response = await api.put('/admin/attendance-policy', policy);
         return response.data;
     },
     addGeofenceLocation: async (location: any) => {

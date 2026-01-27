@@ -27,8 +27,8 @@ router.get('/policy', async (req, res) => {
     }
 });
 
-// Update policy
-router.put('/policy', async (req, res) => {
+// Update attendance policy  
+router.put('/attendance-policy', async (req, res) => {
     try {
         const organizationId = req.organizationId;
         const updates = req.body;
