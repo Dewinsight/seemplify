@@ -39,7 +39,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle /> },
   'manager_review_pending': { label: 'Manager Review Pending', color: 'warning', icon: <Person /> },
   'manager_review_in_progress': { label: 'Manager Review In Progress', color: 'info', icon: <Edit /> },
-  'manager_review_submitted': { label: 'Manager Review Submitted', color: 'success', icon: <CheckCircle /> },
+  'manager_review_submitted': { label: 'Review Submitted - Ready for Discussion', color: 'success', icon: <CheckCircle /> },
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
   'calibration_pending': { label: 'Calibration Pending', color: 'warning', icon: <TrendingUp /> },
@@ -175,7 +175,7 @@ export default function AppraisalDetailPage() {
               </Button>
             )}
 
-            {(activeStep === 3) && (
+            {(activeStep === 3 || appraisal.status === 'manager_review_submitted') && (
               <Button
                 variant="contained"
                 startIcon={<Groups />}

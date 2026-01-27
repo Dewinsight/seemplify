@@ -140,7 +140,7 @@ export default function SelfAssessmentPage() {
       });
       mutate();
       setSnackbar({ open: true, message: 'Self-assessment submitted successfully!', severity: 'success' });
-      setTimeout(() => router.push('/appraisals'), 1500);
+      setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
       setSnackbar({ open: true, message: 'Failed to submit self-assessment', severity: 'error' });

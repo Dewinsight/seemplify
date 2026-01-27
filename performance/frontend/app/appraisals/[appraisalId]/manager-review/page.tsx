@@ -207,7 +207,7 @@ export default function ManagerReviewPage() {
       });
       mutate();
       setSnackbar({ open: true, message: 'Manager review submitted successfully!', severity: 'success' });
-      setTimeout(() => router.push('/appraisals'), 1500);
+      setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
       setSnackbar({ open: true, message: 'Failed to submit review', severity: 'error' });
