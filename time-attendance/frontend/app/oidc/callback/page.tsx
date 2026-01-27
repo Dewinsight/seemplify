@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import { resetRedirectFlag } from '@/services/authGuard';
 
 export default function OidcCallbackPage() {
     const router = useRouter();
@@ -26,14 +27,20 @@ export default function OidcCallbackPage() {
             if (token) {
                 // Store token in localStorage
                 localStorage.setItem('access_token', token);
+                
+                // Reset redirect flag after successful login
+                resetRedirectFlag();
 
                 // Clear the hash from URL to clean up
                 window.history.replaceState(null, '', window.location.pathname);
 
-                // Redirect to dashboard
+                // Get redirect URL from query params or default to dashboard
+                const redirectUrl = searchParams.get('redirect') || '/dashboard';
+
+                // Redirect to dashboard or original destination
                 // Small timeout to ensure storage is set
                 setTimeout(() => {
-                    router.push('/dashboard');
+                    router.push(redirectUrl);
                 }, 100);
             } else if (error) {
                 router.push(`/login?error=${encodeURIComponent(error)}`);

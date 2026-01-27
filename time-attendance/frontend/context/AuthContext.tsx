@@ -1,8 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { api, authApi } from '@/lib/api';
+import { redirectToLogin, isPublicRoute, resetRedirectFlag } from '@/services/authGuard';
 
 interface User {
     id: string;
@@ -33,22 +34,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
+    const pathname = usePathname();
 
-    // Check for hash token on mount
+    // Check for hash token on mount and validate auth
     useEffect(() => {
         const handleInitialAuth = async () => {
-            // Check for token in URL hash
+            // Check for token in URL hash (OIDC callback)
             if (typeof window !== 'undefined') {
                 const hash = window.location.hash;
                 if (hash.includes('access_token=')) {
                     const accessToken = hash.split('access_token=')[1].split('&')[0];
                     localStorage.setItem('access_token', accessToken);
                     window.history.replaceState(null, '', window.location.pathname);
+                    resetRedirectFlag(); // Reset flag after successful login
                 }
             }
 
             const token = localStorage.getItem('access_token');
+            const isPublic = pathname ? isPublicRoute(pathname) : false;
 
+            // If no token and not on public route, redirect to login
+            if (!token && !isPublic) {
+                setLoading(false);
+                redirectToLogin();
+                return;
+            }
+
+            // If on public route, don't try to fetch user
+            if (isPublic) {
+                setLoading(false);
+                return;
+            }
+
+            // Validate token by fetching user
             if (token) {
                 try {
                     const response = await authApi.getMe();
@@ -57,9 +75,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         ...response.user,
                         currentOrganization: response.currentOrganization,
                     });
-                } catch (error) {
+                    resetRedirectFlag(); // Reset flag after successful auth
+                } catch (error: any) {
                     console.error('Failed to fetch user:', error);
+                    
+                    // Token expired or invalid - clear and redirect
                     localStorage.removeItem('access_token');
+                    setUser(null);
+                    
+                    // Only redirect if not already on login page
+                    if (!isPublic) {
+                        redirectToLogin();
+                    }
                 }
             }
 
@@ -67,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         handleInitialAuth();
-    }, []);
+    }, [pathname]);
 
     const logout = async () => {
         try {

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { redirectToLogin, isPublicRoute } from '@/services/authGuard';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010/api';
 
@@ -21,6 +22,28 @@ api.interceptors.request.use((config) => {
     }
     return config;
 });
+
+// Handle response errors - auto redirect on 401/403
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        // Only handle auth errors if we're not already on a public route
+        if (typeof window !== 'undefined') {
+            const currentPath = window.location.pathname;
+            
+            // Check for authentication errors
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                // Don't redirect if we're already on login page or OIDC callback
+                if (!isPublicRoute(currentPath)) {
+                    console.warn('Authentication error - redirecting to login');
+                    redirectToLogin();
+                }
+            }
+        }
+        
+        return Promise.reject(error);
+    }
+);
 
 // Auth API helpers
 export const authApi = {

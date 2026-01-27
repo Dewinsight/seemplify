@@ -38,16 +38,14 @@ export default function LoginPage() {
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
-    // Handle immediate redirect if already logged in? 
-    // Maybe not immediate to allow seeing the nice UI, but generally good practice.
-    // The original file didn't seem to force redirect immediately in the effect, 
-    // but let's keep it safe.
+    // Handle immediate redirect if already logged in
     useEffect(() => {
-        // If we have a user, we should probably be in the app.
+        // If we have a user, redirect to dashboard or the redirect URL
         if (user) {
-            router.push('/dashboard');
+            const redirectUrl = searchParams.get('redirect') || '/dashboard';
+            router.push(redirectUrl);
         }
-    }, [user, router]);
+    }, [user, router, searchParams]);
 
     const handleLogin = () => {
         setIsProcessing(true);

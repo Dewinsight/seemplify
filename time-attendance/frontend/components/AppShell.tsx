@@ -29,10 +29,33 @@ interface NavItem {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const { user, logout, switchOrganization } = useAuth();
+    const { user, logout, switchOrganization, isLoading, isAuthenticated } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [orgMenuOpen, setOrgMenuOpen] = useState(false);
+
+    // Public routes that don't require authentication
+    const publicRoutes = ['/login', '/oidc/callback'];
+    const isPublicRoute = publicRoutes.some(route => pathname?.startsWith(route));
+
+    // Show loading state while checking auth
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500"></div>
+            </div>
+        );
+    }
+
+    // If not authenticated and not on public route, don't render shell (redirect will happen)
+    if (!isAuthenticated && !isPublicRoute) {
+        return null;
+    }
+
+    // If on public route, render children without shell
+    if (isPublicRoute) {
+        return <>{children}</>;
+    }
 
     // Determine if user has admin/manager access
     const currentOrgRole = user?.currentOrganization?.role;
