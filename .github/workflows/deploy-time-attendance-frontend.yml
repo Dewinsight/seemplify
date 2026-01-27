@@ -22,6 +22,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate Production URLs
+        run: |
+          echo "🔍 Checking for localhost references in production code..."
+          if grep -r "localhost" time-attendance/frontend/lib/api.ts time-attendance/frontend/app/login/page.tsx time-attendance/frontend/app/dashboard/page.tsx 2>/dev/null | grep -v "isLocalDevelopment\|localhost:5010\|localhost:4000" | grep -v "//\|/\*"; then
+            echo "❌ Found hardcoded localhost in production code!"
+            echo "   Use @/lib/env utility functions instead."
+            exit 1
+          fi
+          echo "✅ No hardcoded localhost found in production code"
+
       - name: Trigger Dokploy Deployment
         run: |
           response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \

@@ -5,8 +5,10 @@
     "scripts": {
         "dev": "next dev -p 5011",
         "build": "next build",
+        "build:validate": "next build && node scripts/validate-production-build.js",
         "start": "next start -p 5011",
-        "lint": "next lint"
+        "lint": "next lint",
+        "validate:production": "node scripts/validate-production-build.js"
     },
     "dependencies": {
         "@radix-ui/react-avatar": "^1.0.4",
