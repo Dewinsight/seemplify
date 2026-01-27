@@ -263,6 +263,144 @@ router.post('/:id/request-revision', async (req, res) => {
     }
 });
 
+// Revert an approved/rejected timesheet back to draft (undo approval)
+router.post('/:id/revert', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const organizationId = req.organizationId;
+        const { reason } = req.body;
+
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ 
+                error: 'Reason is required (minimum 5 characters)',
+                code: 'REASON_REQUIRED'
+            });
+        }
+
+        const timesheet = await Timesheet.findOne({
+            _id: req.params.id,
+            organizationId,
+        });
+
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        // Only allow reverting approved, rejected, or revision_requested timesheets
+        if (!['approved', 'rejected', 'revision_requested'].includes(timesheet.status)) {
+            return res.status(400).json({
+                error: 'Can only revert approved, rejected, or revision-requested timesheets',
+                code: 'INVALID_STATUS',
+                currentStatus: timesheet.status,
+            });
+        }
+
+        // Only HR admin can revert timesheets
+        if (!isHRAdmin(req)) {
+            return res.status(403).json({ 
+                error: 'Only HR administrators can revert timesheets',
+                code: 'INSUFFICIENT_PERMISSIONS'
+            });
+        }
+
+        const previousStatus = timesheet.status;
+
+        // Reset to draft status
+        timesheet.status = 'draft';
+        timesheet.submittedAt = null;
+        timesheet.submittedNote = null;
+        
+        // Clear approval/rejection data but keep in audit log
+        timesheet.approvedBy = null;
+        timesheet.rejectedBy = null;
+        timesheet.revisionRequestedBy = null;
+
+        // Add audit log entry
+        timesheet.addAuditLog(
+            'updated', 
+            userId, 
+            req.user.name, 
+            reason,
+            `Reverted from ${previousStatus} to draft`
+        );
+
+        await timesheet.save();
+
+        res.json({
+            success: true,
+            timesheet,
+            message: `Timesheet reverted from ${previousStatus} to draft`,
+            previousStatus,
+        });
+    } catch (error) {
+        console.error('Revert timesheet error:', error);
+        res.status(500).json({ error: 'Failed to revert timesheet' });
+    }
+});
+
+// Delete a timesheet entirely (HR admin only)
+router.delete('/:id', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const organizationId = req.organizationId;
+        const { reason } = req.body;
+
+        // Only HR admin can delete timesheets
+        if (!isHRAdmin(req)) {
+            return res.status(403).json({ 
+                error: 'Only HR administrators can delete timesheets',
+                code: 'INSUFFICIENT_PERMISSIONS'
+            });
+        }
+
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ 
+                error: 'Reason is required (minimum 5 characters)',
+                code: 'REASON_REQUIRED'
+            });
+        }
+
+        const timesheet = await Timesheet.findOne({
+            _id: req.params.id,
+            organizationId,
+        });
+
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        // Store info for response before deletion
+        const deletedInfo = {
+            id: timesheet._id,
+            userId: timesheet.userId,
+            userName: timesheet.userName,
+            weekNumber: timesheet.weekNumber,
+            year: timesheet.year,
+            status: timesheet.status,
+        };
+
+        // Delete the timesheet
+        await Timesheet.deleteOne({ _id: req.params.id, organizationId });
+
+        console.log(`🗑️ Timesheet deleted by ${req.user.name}: Week ${deletedInfo.weekNumber}/${deletedInfo.year} for ${deletedInfo.userName}. Reason: ${reason}`);
+
+        res.json({
+            success: true,
+            message: 'Timesheet deleted successfully',
+            deleted: deletedInfo,
+            deletedBy: {
+                userId,
+                userName: req.user.name,
+                reason,
+                deletedAt: new Date(),
+            },
+        });
+    } catch (error) {
+        console.error('Delete timesheet error:', error);
+        res.status(500).json({ error: 'Failed to delete timesheet' });
+    }
+});
+
 // Bulk approve timesheets
 router.post('/bulk-approve', async (req, res) => {
     try {

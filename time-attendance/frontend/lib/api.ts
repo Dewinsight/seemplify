@@ -214,6 +214,14 @@ export const approvalsApi = {
         const response = await api.post(`/approvals/${id}/reject`, { reason });
         return response.data;
     },
+    revert: async (id: string, reason: string) => {
+        const response = await api.post(`/approvals/${id}/revert`, { reason });
+        return response.data;
+    },
+    delete: async (id: string, reason: string) => {
+        const response = await api.delete(`/approvals/${id}`, { data: { reason } });
+        return response.data;
+    },
 };
 
 export default api;

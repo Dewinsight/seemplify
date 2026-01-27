@@ -13,7 +13,10 @@ import {
     Calendar,
     ChevronRight,
     Filter,
-    History
+    History,
+    Undo2,
+    Trash2,
+    MoreVertical
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -83,6 +86,51 @@ export default function ApprovalsPage() {
         } catch (error) {
             console.error('Action failed', error);
             alert('Failed to process request.');
+        } finally {
+            setSubmitting(null);
+        }
+    };
+
+    const handleRevert = async (id: string, userName: string, weekNumber: number) => {
+        const reason = prompt(`Revert timesheet for ${userName} (Week ${weekNumber}) back to draft?\n\nPlease provide a reason:`);
+        if (!reason || reason.trim().length < 5) {
+            if (reason !== null) alert('Reason must be at least 5 characters.');
+            return;
+        }
+
+        try {
+            setSubmitting(id);
+            await approvalsApi.revert(id, reason);
+            // Remove from history list
+            setHistory(prev => prev.filter(t => t._id !== id));
+            alert('Timesheet reverted to draft successfully.');
+        } catch (error: any) {
+            console.error('Revert failed', error);
+            alert(error.response?.data?.error || 'Failed to revert timesheet.');
+        } finally {
+            setSubmitting(null);
+        }
+    };
+
+    const handleDelete = async (id: string, userName: string, weekNumber: number) => {
+        const confirmed = confirm(`Are you sure you want to DELETE the timesheet for ${userName} (Week ${weekNumber})?\n\nThis action cannot be undone!`);
+        if (!confirmed) return;
+
+        const reason = prompt('Please provide a reason for deletion:');
+        if (!reason || reason.trim().length < 5) {
+            if (reason !== null) alert('Reason must be at least 5 characters.');
+            return;
+        }
+
+        try {
+            setSubmitting(id);
+            await approvalsApi.delete(id, reason);
+            // Remove from history list
+            setHistory(prev => prev.filter(t => t._id !== id));
+            alert('Timesheet deleted successfully.');
+        } catch (error: any) {
+            console.error('Delete failed', error);
+            alert(error.response?.data?.error || 'Failed to delete timesheet.');
         } finally {
             setSubmitting(null);
         }
@@ -243,15 +291,32 @@ export default function ApprovalsPage() {
                                         </div>
                                     </div>
 
-                                    {/* View Details Link */}
-                                    <div className="flex items-center gap-3">
+                                    {/* Actions */}
+                                    <div className="flex items-center gap-2">
                                         <Link
                                             href={`/timesheets/${item._id}`}
-                                            className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-2"
+                                            className="px-3 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
                                         >
-                                            View Details
-                                            <ChevronRight className="h-4 w-4" />
+                                            View
                                         </Link>
+                                        <button
+                                            onClick={() => handleRevert(item._id, item.userName, item.weekNumber)}
+                                            disabled={submitting === item._id}
+                                            className="px-3 py-2 rounded-lg text-sm font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors flex items-center gap-1.5 border border-amber-500/20"
+                                            title="Revert to draft"
+                                        >
+                                            <Undo2 className="h-4 w-4" />
+                                            Undo
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(item._id, item.userName, item.weekNumber)}
+                                            disabled={submitting === item._id}
+                                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors flex items-center gap-1.5 border border-red-500/20"
+                                            title="Delete timesheet"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                            Delete
+                                        </button>
                                     </div>
 
                                 </div>
