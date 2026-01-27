@@ -202,6 +202,10 @@ export const approvalsApi = {
         const response = await api.get('/approvals');
         return response.data.timesheets || response.data;
     },
+    getHistory: async () => {
+        const response = await api.get('/approvals/history');
+        return response.data.timesheets || response.data;
+    },
     approve: async (id: string, note?: string) => {
         const response = await api.post(`/approvals/${id}/approve`, { note });
         return response.data;

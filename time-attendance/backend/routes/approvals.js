@@ -40,6 +40,41 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get approval history (approved/rejected timesheets)
+router.get('/history', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const organizationId = req.organizationId;
+        const { limit = 50 } = req.query;
+
+        const query = {
+            organizationId,
+            status: { $in: ['approved', 'rejected', 'revision_requested'] },
+        };
+
+        // If not HR admin, only show timesheets this manager processed
+        if (!isHRAdmin(req)) {
+            query.$or = [
+                { 'approvedBy.userId': userId },
+                { 'rejectedBy.userId': userId },
+                { 'revisionRequestedBy.userId': userId },
+            ];
+        }
+
+        const timesheets = await Timesheet.find(query)
+            .sort({ updatedAt: -1 })
+            .limit(parseInt(limit));
+
+        res.json({
+            timesheets,
+            count: timesheets.length,
+        });
+    } catch (error) {
+        console.error('Get approval history error:', error);
+        res.status(500).json({ error: 'Failed to get approval history' });
+    }
+});
+
 // Get approval counts by status
 router.get('/counts', async (req, res) => {
     try {

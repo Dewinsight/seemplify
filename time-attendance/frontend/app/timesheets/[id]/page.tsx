@@ -14,7 +14,8 @@ import {
     FileText,
     History,
     CheckCircle2,
-    XCircle
+    XCircle,
+    MapPin
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -320,17 +321,71 @@ export default function TimesheetDetailPage() {
                                             <div className="flex gap-4 text-xs text-zinc-400 pl-[3.25rem]">
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                                    In: <span className="text-white font-mono">{safeFormatDate(entry.startTime, 'HH:mm', '--:--')}</span>
+                                                    In: <span className="text-white font-mono">{safeFormatDate(entry.clockIn, 'HH:mm', '--:--')}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
-                                                    Out: <span className="text-white font-mono">{safeFormatDate(entry.endTime, 'HH:mm', '--:--')}</span>
+                                                    Out: <span className="text-white font-mono">{safeFormatDate(entry.clockOut, 'HH:mm', '--:--')}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
                                                     Breaks: <span className="text-white font-mono">{entry.breakDuration}m</span>
                                                 </div>
                                             </div>
+
+                                            {/* Location Display */}
+                                            {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (
+                                                <div className="mt-3 pl-[3.25rem] space-y-1.5">
+                                                    {entry.clockInLocation?.latitude && entry.clockInLocation?.longitude && (
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <MapPin className="h-3.5 w-3.5 text-emerald-500" />
+                                                            <span className="text-zinc-500">In:</span>
+                                                            <a
+                                                                href={`https://www.google.com/maps?q=${entry.clockInLocation.latitude},${entry.clockInLocation.longitude}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-teal-400 hover:text-teal-300 underline"
+                                                            >
+                                                                {entry.clockInLocation.address || `${entry.clockInLocation.latitude.toFixed(6)}, ${entry.clockInLocation.longitude.toFixed(6)}`}
+                                                            </a>
+                                                            {entry.clockInLocation.verified !== undefined && (
+                                                                entry.clockInLocation.verified ? (
+                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
+                                                                ) : (
+                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
+                                                                )
+                                                            )}
+                                                            {entry.clockInLocation.accuracy && (
+                                                                <span className="text-zinc-500">(±{Math.round(entry.clockInLocation.accuracy)}m)</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <MapPin className="h-3.5 w-3.5 text-red-500" />
+                                                            <span className="text-zinc-500">Out:</span>
+                                                            <a
+                                                                href={`https://www.google.com/maps?q=${entry.clockOutLocation.latitude},${entry.clockOutLocation.longitude}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-teal-400 hover:text-teal-300 underline"
+                                                            >
+                                                                {entry.clockOutLocation.address || `${entry.clockOutLocation.latitude.toFixed(6)}, ${entry.clockOutLocation.longitude.toFixed(6)}`}
+                                                            </a>
+                                                            {entry.clockOutLocation.verified !== undefined && (
+                                                                entry.clockOutLocation.verified ? (
+                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
+                                                                ) : (
+                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
+                                                                )
+                                                            )}
+                                                            {entry.clockOutLocation.accuracy && (
+                                                                <span className="text-zinc-500">(±{Math.round(entry.clockOutLocation.accuracy)}m)</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )
                                 })}

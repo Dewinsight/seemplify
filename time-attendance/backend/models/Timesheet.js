@@ -8,6 +8,18 @@ const Schema = mongoose.Schema;
  * Used for approval workflow and reporting.
  */
 
+// Location schema for clock-in/out geolocation
+const LocationSchema = new Schema({
+    latitude: Number,
+    longitude: Number,
+    address: String,
+    accuracy: Number,        // GPS accuracy in meters
+    verified: {
+        type: Boolean,
+        default: false
+    },
+}, { _id: false });
+
 // Daily entry within a timesheet
 const DailyEntrySchema = new Schema({
     date: {
@@ -19,6 +31,9 @@ const DailyEntrySchema = new Schema({
     },
     clockIn: Date,
     clockOut: Date,
+    // Geolocation data for clock-in/out
+    clockInLocation: LocationSchema,
+    clockOutLocation: LocationSchema,
     breakDuration: {
         type: Number,
         default: 0  // in minutes

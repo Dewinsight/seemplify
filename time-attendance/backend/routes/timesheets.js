@@ -284,6 +284,31 @@ async function refreshTimesheetEntries(timesheet) {
         dailyEntry.clockOut = clockOut?.timestamp;
         dailyEntry.timeEntryIds = dayEntries.map(e => e._id);
 
+        // Copy geolocation data from time entries to daily entry
+        if (clockIn?.location) {
+            dailyEntry.clockInLocation = {
+                latitude: clockIn.location.latitude,
+                longitude: clockIn.location.longitude,
+                address: clockIn.location.address,
+                accuracy: clockIn.location.accuracy,
+                verified: clockIn.location.verified,
+            };
+        } else {
+            dailyEntry.clockInLocation = null;
+        }
+
+        if (clockOut?.location) {
+            dailyEntry.clockOutLocation = {
+                latitude: clockOut.location.latitude,
+                longitude: clockOut.location.longitude,
+                address: clockOut.location.address,
+                accuracy: clockOut.location.accuracy,
+                verified: clockOut.location.verified,
+            };
+        } else {
+            dailyEntry.clockOutLocation = null;
+        }
+
         // Calculate break duration
         let breakMinutes = 0;
         for (let i = 0; i < dayEntries.length; i++) {
