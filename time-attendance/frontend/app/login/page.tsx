@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getApiUrl, getIdpUrl } from '@/lib/env';
 import { motion } from 'framer-motion';
 import {
     ArrowRight,

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getIdpUrl } from '@/lib/env';
 import { attendanceApi, clockApi } from '@/lib/api';
 import ClockWidget from '@/components/ClockWidget';
 import Link from 'next/link';
