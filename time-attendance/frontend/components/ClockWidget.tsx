@@ -28,8 +28,11 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     useEffect(() => {
         let interval: NodeJS.Timeout;
 
-        if (status.isClockedIn && !status.isOnBreak && status.lastEntry) {
-            const startTime = new Date(status.lastEntry.timestamp).getTime();
+        // Use lastClockEntry from API (not lastEntry)
+        const lastClockEntry = (status as any).lastClockEntry || status.lastEntry;
+
+        if (status.isClockedIn && !status.isOnBreak && lastClockEntry) {
+            const startTime = new Date(lastClockEntry.timestamp).getTime();
 
             // Calculate initial offset based on previously worked time today
             // This is a simplified estimation for the UI timer
@@ -64,10 +67,26 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         return () => clearInterval(interval);
     }, [status]);
 
+    // Fetch current status from server
+    const refreshStatus = async () => {
+        try {
+            const newStatus = await clockApi.getStatus();
+            setStatus(newStatus);
+        } catch (error) {
+            console.error('Failed to refresh status', error);
+        }
+    };
+
+    // Initial fetch on mount
+    useEffect(() => {
+        refreshStatus();
+    }, []);
+
     const handleClockIn = async () => {
         try {
             setLoading(true);
             await clockApi.clockIn();
+            await refreshStatus(); // Refresh status after action
             if (onStatusChange) onStatusChange();
         } catch (error) {
             console.error('Clock in failed', error);
@@ -80,6 +99,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         try {
             setLoading(true);
             await clockApi.clockOut();
+            await refreshStatus(); // Refresh status after action
             if (onStatusChange) onStatusChange();
         } catch (error) {
             console.error('Clock out failed', error);
@@ -96,6 +116,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             } else {
                 await clockApi.startBreak();
             }
+            await refreshStatus(); // Refresh status after action
             if (onStatusChange) onStatusChange();
         } catch (error) {
             console.error('Break toggle failed', error);

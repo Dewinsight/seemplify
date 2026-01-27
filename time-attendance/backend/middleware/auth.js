@@ -18,13 +18,16 @@ const requireAuth = async (req, res, next) => {
                 // Verify token with Identity Provider
                 const userinfo = await getUserInfo(accessToken);
 
+                // Check both possible field names for current organization
+                const currentOrg = userinfo.currentOrganization || userinfo.current_organization;
+
                 req.user = {
                     id: userinfo.sub,
                     email: userinfo.email,
                     name: userinfo.name,
                     organizations: userinfo.organizations || [],
                     teams: userinfo.teams || [],
-                    currentOrganization: userinfo.currentOrganization,
+                    currentOrganization: currentOrg,
                     accessToken,
                     userinfo,
                 };
@@ -66,13 +69,14 @@ const optionalAuth = async (req, res, next) => {
 
             try {
                 const userinfo = await getUserInfo(accessToken);
+                const currentOrg = userinfo.currentOrganization || userinfo.current_organization;
                 req.user = {
                     id: userinfo.sub,
                     email: userinfo.email,
                     name: userinfo.name,
                     organizations: userinfo.organizations || [],
                     teams: userinfo.teams || [],
-                    currentOrganization: userinfo.currentOrganization,
+                    currentOrganization: currentOrg,
                     accessToken,
                     userinfo,
                 };

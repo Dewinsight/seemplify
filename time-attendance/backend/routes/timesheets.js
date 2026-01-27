@@ -102,11 +102,13 @@ router.post('/:id/submit', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found' });
         }
 
-        if (timesheet.status !== 'draft' && timesheet.status !== 'revision_requested') {
+        // Treat undefined/null status as 'draft'
+        const currentStatus = timesheet.status || 'draft';
+        if (currentStatus !== 'draft' && currentStatus !== 'revision_requested') {
             return res.status(400).json({
                 error: 'Timesheet cannot be submitted',
                 code: 'INVALID_STATUS',
-                currentStatus: timesheet.status,
+                currentStatus,
             });
         }
 

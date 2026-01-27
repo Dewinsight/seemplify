@@ -41,7 +41,7 @@ router.get('/login', (req, res) => {
 });
 
 // Auth callback from Identity Provider
-router.get('/callback', async (req, res) => {
+router.get('/oidc/callback', async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5011';
 
     try {
@@ -152,8 +152,16 @@ router.get('/me', async (req, res) => {
         const accessToken = authHeader.substring(7);
         const userinfo = await getUserInfo(accessToken);
 
-        // Find current organization
-        let currentOrganization = userinfo.currentOrganization;
+        console.log('📋 Userinfo claims:', JSON.stringify({
+            sub: userinfo.sub,
+            email: userinfo.email,
+            organizations: userinfo.organizations?.map(o => ({ id: o.id, name: o.name })),
+            currentOrganization: userinfo.currentOrganization,
+            current_organization: userinfo.current_organization,
+        }, null, 2));
+
+        // Find current organization - check both field names
+        let currentOrganization = userinfo.currentOrganization || userinfo.current_organization;
         if (!currentOrganization && userinfo.organizations?.length > 0) {
             currentOrganization = userinfo.organizations[0];
         }

@@ -79,8 +79,11 @@ router.post('/in', async (req, res) => {
         const organizationId = req.organizationId;
         const { note, location } = req.body;
 
+        console.log('🕐 Clock in attempt:', { userId, organizationId, email: req.user.email });
+
         // Check if already clocked in
         const currentStatus = await TimeEntry.getCurrentStatus(userId, organizationId);
+        console.log('📊 Current status:', currentStatus);
         if (currentStatus.isClockedIn) {
             return res.status(400).json({
                 error: 'Already clocked in',

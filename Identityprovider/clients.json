@@ -17,8 +17,13 @@
         "https://auth.seemplifyai.com",
         "https://auth-dev.seemplifyai.com"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_post"
     },
     {
@@ -38,8 +43,13 @@
         "https://auth.seemplifyai.com",
         "https://auth-dev.seemplifyai.com"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_post"
     },
     {
@@ -68,8 +78,13 @@
         "https://smarthr.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_post"
     },
     {
@@ -95,8 +110,13 @@
         "https://auth-dev.seemplifyai.com",
         "https://smarthr-leave-management.netlify.app"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
@@ -122,8 +142,13 @@
         "https://auth-dev.seemplifyai.com",
         "https://smarthr-performance.netlify.app"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
@@ -149,8 +174,44 @@
         "https://auth-dev.seemplifyai.com",
         "https://smarthr-payroll.netlify.app"
       ],
-      "response_types": ["code"],
-      "grant_types": ["authorization_code", "refresh_token"],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
+      "client_id": "time-attendance",
+      "client_secret": "time-attendance-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:5010/api/auth/oidc/callback",
+        "http://127.0.0.1:5010/api/auth/oidc/callback",
+        "https://api-timeattendance.seemplifyai.com/api/auth/oidc/callback",
+        "https://api-timeattendance-dev.seemplifyai.com/api/auth/oidc/callback",
+        "https://*.timeattendance.smarthr.com/api/auth/oidc/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:5010",
+        "http://localhost:5011",
+        "http://127.0.0.1:5010",
+        "http://127.0.0.1:5011",
+        "https://timeattendance.seemplifyai.com",
+        "https://api-timeattendance.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://timeattendance-dev.seemplifyai.com",
+        "https://api-timeattendance-dev.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
       "token_endpoint_auth_method": "client_secret_basic"
     }
   ]

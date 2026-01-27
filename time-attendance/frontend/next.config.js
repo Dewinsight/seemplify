@@ -1,6 +1,5 @@
-import { type NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
     // Output standalone for Docker builds
     output: "standalone",
     // Ignore typescript errors during build to avoid blocking deployment
@@ -13,4 +12,4 @@ const nextConfig: NextConfig = {
     },
 };
 
-export default nextConfig;
+module.exports = nextConfig;

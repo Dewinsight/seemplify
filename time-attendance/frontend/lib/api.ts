@@ -59,6 +59,10 @@ export const clockApi = {
         const response = await api.post('/clock/break/end', { note });
         return response.data;
     },
+    getEntries: async (startDate?: string, endDate?: string) => {
+        const response = await api.get('/clock/entries', { params: { startDate, endDate } });
+        return response.data;
+    },
 };
 
 // Timesheet API helpers
@@ -68,6 +72,10 @@ export const timesheetApi = {
         return response.data;
     },
     getList: async (params?: any) => {
+        const response = await api.get('/timesheets', { params });
+        return response.data;
+    },
+    list: async (params?: any) => {
         const response = await api.get('/timesheets', { params });
         return response.data;
     },
@@ -125,4 +133,21 @@ export const adminApi = {
     },
 };
 
+// Approvals API helpers
+export const approvalsApi = {
+    getPending: async () => {
+        const response = await api.get('/approvals/pending');
+        return response.data;
+    },
+    approve: async (id: string, note?: string) => {
+        const response = await api.post(`/approvals/${id}/approve`, { note });
+        return response.data;
+    },
+    reject: async (id: string, reason: string) => {
+        const response = await api.post(`/approvals/${id}/reject`, { reason });
+        return response.data;
+    },
+};
+
 export default api;
+

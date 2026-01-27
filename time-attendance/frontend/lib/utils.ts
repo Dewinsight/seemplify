@@ -11,7 +11,10 @@ export function formatDuration(minutes: number): string {
     return `${h}h ${m}m`;
 }
 
-export function getStatusColor(status: string) {
+export function getStatusColor(status: string | undefined | null) {
+    if (!status) {
+        return 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20';
+    }
     switch (status.toLowerCase()) {
         case 'approved':
             return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';

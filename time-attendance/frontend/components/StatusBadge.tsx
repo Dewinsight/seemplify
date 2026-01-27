@@ -1,18 +1,19 @@
 import { cn, getStatusColor } from "@/lib/utils";
 
 interface StatusBadgeProps {
-    status: string;
+    status?: string;
     className?: string;
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
+    const displayStatus = status || 'unknown';
     return (
         <span className={cn(
             "px-2.5 py-0.5 rounded-full text-xs font-medium border",
-            getStatusColor(status),
+            getStatusColor(displayStatus),
             className
         )}>
-            {status.charAt(0).toUpperCase() + status.slice(1)}
+            {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
         </span>
     );
 }

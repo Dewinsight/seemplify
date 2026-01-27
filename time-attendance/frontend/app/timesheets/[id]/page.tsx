@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { timesheetApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatDuration } from '@/lib/utils';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isValid, startOfWeek, endOfWeek, getISOWeek, getYear } from 'date-fns';
 import {
     ArrowLeft,
     Clock,
@@ -17,6 +17,42 @@ import {
     XCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Safe date parsing - handles ISO strings, Date objects, and invalid dates
+const safeParseDate = (dateValue: any): Date | null => {
+    if (!dateValue) return null;
+    try {
+        const date = typeof dateValue === 'string' ? parseISO(dateValue) : new Date(dateValue);
+        return isValid(date) ? date : null;
+    } catch {
+        return null;
+    }
+};
+
+const safeFormatDate = (dateValue: any, formatStr: string, fallback = '--'): string => {
+    const date = safeParseDate(dateValue);
+    return date ? format(date, formatStr) : fallback;
+};
+
+// Calculate week dates from weekNumber and year
+const getWeekDatesFromWeekNumber = (weekNumber: number, year: number): { startDate: Date; endDate: Date } | null => {
+    if (!weekNumber || !year) return null;
+    try {
+        // Create a date in the given year and week
+        const jan4 = new Date(year, 0, 4); // January 4 is always in week 1
+        const jan4Week = getISOWeek(jan4);
+        const weekDiff = weekNumber - jan4Week;
+        const dateInWeek = new Date(jan4);
+        dateInWeek.setDate(jan4.getDate() + (weekDiff * 7));
+        
+        const start = startOfWeek(dateInWeek, { weekStartsOn: 1 }); // Monday
+        const end = endOfWeek(dateInWeek, { weekStartsOn: 1 });
+        
+        return { startDate: start, endDate: end };
+    } catch {
+        return null;
+    }
+};
 
 export default function TimesheetDetailPage() {
     const { id } = useParams();
@@ -59,7 +95,21 @@ export default function TimesheetDetailPage() {
         try {
             setLoading(true);
             const data = await timesheetApi.getById(timesheetId);
-            setTimesheet(data);
+            // Handle API response structure - could be { timesheet } or direct timesheet object
+            const timesheetData = data.timesheet || data;
+            
+            // If startDate/endDate are missing, calculate from weekNumber
+            if (timesheetData && (!timesheetData.startDate || !timesheetData.endDate)) {
+                if (timesheetData.weekNumber && timesheetData.year) {
+                    const weekDates = getWeekDatesFromWeekNumber(timesheetData.weekNumber, timesheetData.year);
+                    if (weekDates) {
+                        timesheetData.startDate = weekDates.startDate;
+                        timesheetData.endDate = weekDates.endDate;
+                    }
+                }
+            }
+            
+            setTimesheet(timesheetData);
         } catch (error) {
             console.error('Failed to fetch timesheet details', error);
             // router.push('/timesheets'); // Redirect on error?
@@ -71,10 +121,16 @@ export default function TimesheetDetailPage() {
     const handleSubmit = async () => {
         if (!confirm('Are you sure you want to submit this timesheet for approval? You won\'t be able to edit entries while it is pending.')) return;
 
+        const timesheetId = timesheet._id || timesheet.id || id as string;
+        if (!timesheetId) {
+            alert('Unable to submit: timesheet ID not found');
+            return;
+        }
+
         try {
             setSubmitting(true);
-            await timesheetApi.submit(timesheet._id);
-            await fetchTimesheet(timesheet._id); // Refresh data
+            await timesheetApi.submit(timesheetId);
+            await fetchTimesheet(timesheetId); // Refresh data
         } catch (error) {
             console.error('Failed to submit timesheet', error);
             alert('Failed to submit timesheet. Please try again.');
@@ -86,10 +142,16 @@ export default function TimesheetDetailPage() {
     const handleRecall = async () => {
         if (!confirm('Are you sure you want to recall this timesheet? This will return it to Draft status.')) return;
 
+        const timesheetId = timesheet._id || timesheet.id || id as string;
+        if (!timesheetId) {
+            alert('Unable to recall: timesheet ID not found');
+            return;
+        }
+
         try {
             setSubmitting(true);
-            await timesheetApi.recall(timesheet._id);
-            await fetchTimesheet(timesheet._id);
+            await timesheetApi.recall(timesheetId);
+            await fetchTimesheet(timesheetId);
         } catch (error) {
             console.error('Recall failed', error);
             alert('Failed to recall timesheet.');
@@ -127,13 +189,31 @@ export default function TimesheetDetailPage() {
                             <StatusBadge status={timesheet.status} />
                         </div>
                         <p className="text-zinc-400">
-                            {format(parseISO(timesheet.startDate), 'MMMM d')} - {format(parseISO(timesheet.endDate), 'MMMM d, yyyy')}
+                            {(() => {
+                                const startDate = safeParseDate(timesheet.startDate);
+                                const endDate = safeParseDate(timesheet.endDate);
+                                
+                                if (startDate && endDate) {
+                                    return `${format(startDate, 'MMMM d')} - ${format(endDate, 'MMMM d, yyyy')}`;
+                                }
+                                
+                                // Fallback: try to calculate from weekNumber
+                                if (timesheet.weekNumber && timesheet.year) {
+                                    const weekDates = getWeekDatesFromWeekNumber(timesheet.weekNumber, timesheet.year);
+                                    if (weekDates) {
+                                        return `${format(weekDates.startDate, 'MMMM d')} - ${format(weekDates.endDate, 'MMMM d, yyyy')}`;
+                                    }
+                                }
+                                
+                                // Final fallback
+                                return timesheet.weekNumber ? `Week ${timesheet.weekNumber}, ${timesheet.year || ''}` : 'Date range unavailable';
+                            })()}
                         </p>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {timesheet.status === 'draft' && (
+                    {(!timesheet.status || timesheet.status === 'draft') && (
                         <button
                             onClick={handleSubmit}
                             disabled={submitting}
@@ -210,7 +290,7 @@ export default function TimesheetDetailPage() {
                         ) : (
                             <div className="divide-y divide-zinc-800/50">
                                 {timesheet.dailyEntries?.map((entry: any, index: number) => {
-                                    const date = parseISO(entry.date);
+                                    const date = safeParseDate(entry.date) || new Date();
                                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
                                     return (
@@ -240,11 +320,11 @@ export default function TimesheetDetailPage() {
                                             <div className="flex gap-4 text-xs text-zinc-400 pl-[3.25rem]">
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                                    In: <span className="text-white font-mono">{entry.startTime ? format(parseISO(entry.startTime), 'HH:mm') : '--:--'}</span>
+                                                    In: <span className="text-white font-mono">{safeFormatDate(entry.startTime, 'HH:mm', '--:--')}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
-                                                    Out: <span className="text-white font-mono">{entry.endTime ? format(parseISO(entry.endTime), 'HH:mm') : '--:--'}</span>
+                                                    Out: <span className="text-white font-mono">{safeFormatDate(entry.endTime, 'HH:mm', '--:--')}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
@@ -268,7 +348,7 @@ export default function TimesheetDetailPage() {
                             <div className="relative">
                                 <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-zinc-900" />
                                 <div className="text-sm font-medium text-white">You</div>
-                                <div className="text-xs text-zinc-500">Submitted on {timesheet.submittedAt ? format(parseISO(timesheet.submittedAt), 'MMM d, HH:mm') : 'Not yet submitted'}</div>
+                                <div className="text-xs text-zinc-500">Submitted on {timesheet.submittedAt ? safeFormatDate(timesheet.submittedAt, 'MMM d, HH:mm') : 'Not yet submitted'}</div>
                             </div>
 
                             {/* Approver */}
@@ -281,7 +361,7 @@ export default function TimesheetDetailPage() {
                                 )} />
                                 <div className="text-sm font-medium text-white">Line Manager</div>
                                 <div className="text-xs text-zinc-500">
-                                    {timesheet.status === 'approved' ? `Approved on ${format(parseISO(timesheet.updatedAt), 'MMM d')}` :
+                                    {timesheet.status === 'approved' ? `Approved on ${safeFormatDate(timesheet.updatedAt, 'MMM d')}` :
                                         timesheet.status === 'pending' ? 'Pending Review' :
                                             'Waiting for submission'}
                                 </div>

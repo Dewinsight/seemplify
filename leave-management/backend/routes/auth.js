@@ -329,6 +329,8 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
 
       if (!subscriptionCheck.allowed) {
         console.log('❌ Subscription access denied:', subscriptionCheck.reason);
+        // Save organization ID before destroying session
+        const orgId = req.session.currentOrganizationId;
         // Clear session since we're not allowing access
         req.session.destroy((err) => {
           if (err) console.error('Session destroy error:', err);
@@ -336,7 +338,7 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
         // Redirect to IDP subscription required page
         const subscriptionUrl = getSubscriptionRequiredUrl(
           'leave-management',
-          req.session.currentOrganizationId,
+          orgId,
           subscriptionCheck.reason
         );
         return res.redirect(subscriptionUrl);
