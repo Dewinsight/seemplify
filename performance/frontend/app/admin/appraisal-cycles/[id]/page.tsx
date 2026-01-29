@@ -82,10 +82,12 @@ export default function AppraisalCycleDetailsPage() {
             }
         };
 
-        if (params.id) {
+        if (params.id && params.id !== 'new') {
             fetchCycle();
+        } else if (params.id === 'new') {
+            router.replace('/admin/appraisal-cycles/new/edit');
         }
-    }, [params.id]);
+    }, [params.id, router]);
 
     if (loading) {
         return (

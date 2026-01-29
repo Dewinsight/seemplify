@@ -63,6 +63,16 @@ export default function GoalSettingPage() {
     const [submitting, setSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+    const [selectedOkrIds, setSelectedOkrIds] = useState<Set<string>>(new Set());
+
+    // Initialize selected OKRs from appraisal
+    useEffect(() => {
+        if (appraisal?.goals && Array.isArray(appraisal.goals)) {
+            // Handle both populated objects and ID strings
+            const ids = appraisal.goals.map((g: any) => typeof g === 'string' ? g : g._id);
+            setSelectedOkrIds(new Set(ids));
+        }
+    }, [appraisal]);
 
     // New OKR Form State
     const [newOkr, setNewOkr] = useState({
@@ -269,11 +279,13 @@ export default function GoalSettingPage() {
     const handleSubmitGoals = async () => {
         setSubmitting(true);
         try {
-            await api.post(`/appraisals/${appraisalId}/submit-goals`);
+            await api.post(`/appraisals/${appraisalId}/submit-goals`, {
+                okrIds: Array.from(selectedOkrIds)
+            });
             mutate();
-            setSnackbar({ open: true, message: 'Goals submitted for approval!', severity: 'success' });
-            // Redirect to appraisal detail page
-            router.push(`/appraisals/${appraisalId}`);
+            setSnackbar({ open: true, message: 'Goals submitted! Proceeding to Self-Assessment.', severity: 'success' });
+            // Redirect to self-assessment page
+            router.push(`/appraisals/${appraisalId}/self-assessment`);
         } catch (error) {
             console.error('Submit error:', error);
             setSnackbar({ open: true, message: 'Failed to submit goals', severity: 'error' });
@@ -436,6 +448,25 @@ export default function GoalSettingPage() {
                                                             sx={{ fontSize: '0.7rem' }}
                                                         />
                                                     </Box>
+
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Checkbox
+                                                                checked={selectedOkrIds.has(okr._id)}
+                                                                onChange={(e) => {
+                                                                    const newSet = new Set(selectedOkrIds);
+                                                                    if (e.target.checked) {
+                                                                        newSet.add(okr._id);
+                                                                    } else {
+                                                                        newSet.delete(okr._id);
+                                                                    }
+                                                                    setSelectedOkrIds(newSet);
+                                                                }}
+                                                            />
+                                                        }
+                                                        label="Include in this Appraisal"
+                                                        sx={{ mb: 1, display: 'block' }}
+                                                    />
 
                                                     {/* Objectives List */}
                                                     {okr.objectives?.map((obj, idx) => (
@@ -701,10 +732,10 @@ export default function GoalSettingPage() {
                                 color="success"
                                 size="large"
                                 startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircle />}
-                                disabled={submitting || okrs.length === 0}
+                                disabled={submitting || selectedOkrIds.size === 0}
                                 onClick={handleSubmitGoals}
                             >
-                                Submit OKRs
+                                Submit OKRs ({selectedOkrIds.size})
                             </Button>
                         </Box>
                     )

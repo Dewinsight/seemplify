@@ -134,6 +134,9 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
 // Get cycle by ID
 router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
   try {
+    if (req.params.cycleId === 'new') {
+      return res.status(400).json({ success: false, error: 'Invalid cycle ID' });
+    }
     const cycle = await AppraisalCycle.findById(req.params.cycleId);
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });
@@ -385,7 +388,8 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
             name: managerName,
             email: managerEmail
           },
-          status: 'goal_setting',
+          // Skip goal setting, start directly at self-assessment
+          status: 'self_assessment_pending',
           deadlines: {
             selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
             managerReviewDue: cycle.phases?.managerReview?.endDate
@@ -412,8 +416,9 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
     if (createdAppraisals.length > 0) {
       console.log('Updating cycle status to active:', cycle._id);
       cycle.status = 'active';
-      cycle.currentPhase = 'goalSetting';
-      cycle.phases.goalSetting.isActive = true;
+      // Skip goalSetting, start at selfAssessment
+      cycle.currentPhase = 'selfAssessment';
+      cycle.phases.selfAssessment.isActive = true;
       cycle.markModified('phases'); // Ensure nested changes are detected
       await cycle.save();
       console.log('Cycle updated successfully');
@@ -497,7 +502,8 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
             name: managerName,
             email: managerEmail
           },
-          status: cycle.currentPhase === 'goalSetting' ? 'goal_setting' : 'self_assessment_pending',
+          // Skip goal setting, start directly at self-assessment
+          status: 'self_assessment_pending',
           deadlines: {
             selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
             managerReviewDue: cycle.phases?.managerReview?.endDate
@@ -629,19 +635,20 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
       ]
     };
 
-    // Filter by currentTeam if set
-    const currentTeam = req.currentTeam;
-    if (currentTeam && currentTeam.directReports && currentTeam.directReports.length > 0) {
-      // Only show appraisals for direct reports in current team
-      query.$or = [
-        { 'manager.userId': userId },
-        { 'manager.email': userEmail },
-        { 'employee.userId': { $in: currentTeam.directReports } }
-      ];
-    }
+    // Optional: If we want to strictly enforce "Direct Reports Only" regardless of who is set as manager
+    // We could use req.directReports, but usually if I am set as the manager on the appraisal document, I should see it.
+    // The previous logic was too restrictive by requiring `currentTeam` to be set in session.
 
     if (cycleId) query.cycleId = cycleId;
     if (status) query.status = status;
+
+    if (status) query.status = status;
+
+    // DEBUG: Log user identity and query
+    console.log('--- DEBUG TEAM APPRAISALS ---');
+    console.log('Manager ID:', userId);
+    console.log('Manager Email:', userEmail);
+    console.log('Query:', JSON.stringify(query));
 
     const appraisals = await Appraisal.find(query)
       .populate('cycleId', 'name periodStart periodEnd currentPhase status')
@@ -695,6 +702,138 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
 });
 
 // =============================================
+// APPRAISAL LIFECYCLE ACTIONS
+// =============================================
+
+/**
+ * POST /:appraisalId/start - Start the appraisal process
+ * Moves appraisal from 'not_started' to 'goal_setting' phase
+ * Employee or Manager can start
+ */
+router.post('/:appraisalId/start', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    const userId = req.session.user.id || req.session.user.sub;
+    const isOwner = appraisal.employee.userId === userId || appraisal.employee.email === req.session.user.email;
+    const isManager = appraisal.manager.userId === userId || appraisal.manager.email === req.session.user.email;
+    const isHRAdmin = req.userRole === 'hr_admin';
+
+    if (!isOwner && !isManager && !isHRAdmin) {
+      return res.status(403).json({ success: false, error: 'Not authorized to start this appraisal' });
+    }
+
+    // Only allow starting from not_started or goal_setting status
+    if (appraisal.status !== 'not_started' && appraisal.status !== 'goal_setting') {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot start appraisal from '${appraisal.status}' status. Already in progress.`
+      });
+    }
+
+    // Move to goal_setting phase (or self_assessment_pending if no goal setting phase)
+    appraisal.status = 'goal_setting';
+    appraisal.addAuditLog('appraisal_started', req.session.user, { previousStatus: 'not_started' });
+
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: appraisal,
+      message: 'Appraisal started successfully. You can now set your goals.'
+    });
+  } catch (error) {
+    console.error('Start appraisal error:', error);
+    res.status(500).json({ success: false, error: 'Failed to start appraisal' });
+  }
+});
+
+/**
+ * POST /:appraisalId/reset - Reset the appraisal to initial state
+ * Only Manager or HR Admin can reset
+ */
+router.post('/:appraisalId/reset', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    const userId = req.session.user.id || req.session.user.sub;
+    const isManager = appraisal.manager.userId === userId || appraisal.manager.email === req.session.user.email;
+    const isHRAdmin = req.userRole === 'hr_admin';
+
+    if (!isManager && !isHRAdmin) {
+      return res.status(403).json({ success: false, error: 'Only the assigned manager or HR Admin can reset this appraisal' });
+    }
+
+    // Cannot reset completed appraisals
+    if (appraisal.status === 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot reset a completed appraisal. Contact HR Admin for assistance.'
+      });
+    }
+
+    const previousStatus = appraisal.status;
+    const { resetLevel = 'full' } = req.body; // 'full' or 'goals_only' or 'self_assessment_only'
+
+    if (resetLevel === 'full') {
+      // Full reset - back to not_started
+      appraisal.status = 'not_started';
+      appraisal.goals = [];
+      appraisal.selfAssessment = {
+        competencyRatings: [],
+        achievements: '',
+        challenges: '',
+        developmentAreas: '',
+        comments: ''
+      };
+      appraisal.managerReview = {
+        competencyRatings: [],
+        achievements: '',
+        areasForImprovement: '',
+        comments: ''
+      };
+    } else if (resetLevel === 'goals_only') {
+      // Reset only goals phase
+      appraisal.status = 'goal_setting';
+      appraisal.goals = [];
+    } else if (resetLevel === 'self_assessment_only') {
+      // Reset self-assessment
+      appraisal.status = 'self_assessment_pending';
+      appraisal.selfAssessment = {
+        competencyRatings: [],
+        achievements: '',
+        challenges: '',
+        developmentAreas: '',
+        comments: ''
+      };
+    }
+
+    appraisal.addAuditLog('appraisal_reset', req.session.user, {
+      previousStatus,
+      resetLevel,
+      reason: req.body.reason || 'No reason provided'
+    });
+
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: appraisal,
+      message: `Appraisal reset successfully (${resetLevel})`
+    });
+  } catch (error) {
+    console.error('Reset appraisal error:', error);
+    res.status(500).json({ success: false, error: 'Failed to reset appraisal' });
+  }
+});
+
+// =============================================
 // GOAL SETTING
 // =============================================
 
@@ -712,10 +851,15 @@ router.post('/:appraisalId/submit-goals', requireAuth, async (req, res) => {
     }
 
     // appraisal.status = 'self_assessment_pending';
-    // CHANGE: Move to goal_approval_pending instead of self_assessment_pending
-    appraisal.status = 'goal_approval_pending';
+    // CHANGE: Move to self_assessment_pending directly (Skip Approval)
+    appraisal.status = 'self_assessment_pending';
 
-    appraisal.addAuditLog('goals_submitted', req.session.user, {});
+    // Update goals if provided
+    if (req.body.okrIds && Array.isArray(req.body.okrIds)) {
+      appraisal.goals = req.body.okrIds;
+    }
+
+    appraisal.addAuditLog('goals_submitted', req.session.user, { goalsCount: appraisal.goals?.length || 0 });
     await appraisal.save();
 
     // Notify Manager

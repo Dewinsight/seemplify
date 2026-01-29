@@ -21,7 +21,6 @@ const cycleTypeLabels: Record<string, string> = {
 };
 
 const phaseLabels: Record<string, string> = {
-    'goalSetting': 'Goal Setting',
     'selfAssessment': 'Self-Assessment',
     'managerReview': 'Manager Review',
     'calibration': 'Calibration',
@@ -55,7 +54,6 @@ export default function EditAppraisalCyclePage() {
             targetIds: [] as string[]
         },
         phases: {
-            goalSetting: { startDate: '', endDate: '' },
             selfAssessment: { startDate: '', endDate: '' },
             managerReview: { startDate: '', endDate: '' },
             calibration: { startDate: '', endDate: '' },
@@ -103,10 +101,6 @@ export default function EditAppraisalCyclePage() {
                     okrWeight: cycle.okrWeight,
                     scope: cycle.scope || { type: 'organization', targetIds: [] },
                     phases: {
-                        goalSetting: {
-                            startDate: formatDateForInput(cycle.phases?.goalSetting?.startDate),
-                            endDate: formatDateForInput(cycle.phases?.goalSetting?.endDate)
-                        },
                         selfAssessment: {
                             startDate: formatDateForInput(cycle.phases?.selfAssessment?.startDate),
                             endDate: formatDateForInput(cycle.phases?.selfAssessment?.endDate)

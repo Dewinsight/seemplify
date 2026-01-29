@@ -1,79 +1,92 @@
 const mongoose = require('mongoose');
 
 const OKRSchema = new mongoose.Schema({
-  type: { 
-    type: String, 
-    enum: ['individual', 'team', 'organization'], 
-    required: true 
+  type: {
+    type: String,
+    enum: ['individual', 'team', 'organization'],
+    required: true
   },
-  ownerId: { 
-    type: String, 
-    required: true 
+  ownerId: {
+    type: String,
+    required: true
   }, // UserId or TeamId from IdP
-  organizationId: { 
-    type: String, 
-    required: true 
+  organizationId: {
+    type: String,
+    required: true
   },
-  period: { 
-    type: String, 
-    required: true 
+  period: {
+    type: String,
+    required: true
   }, // e.g., "Q1 2025"
-  status: { 
-    type: String, 
-    enum: ['draft', 'active', 'closed'], 
-    default: 'draft' 
+  title: String, // Optional top-level title
+  status: {
+    type: String,
+    enum: ['draft', 'active', 'closed'],
+    default: 'draft'
   },
-  
+
+  // Approval Workflow
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved'],
+    default: 'pending'
+  },
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  approvedAt: Date,
+
   // AI-Enhanced Objectives
   objectives: [{
-    title: { 
-      type: String, 
-      required: true 
+    title: {
+      type: String,
+      required: true
     },
     description: String,
     weight: Number, // Percentage
     keyResults: [{
-      title: { 
-        type: String, 
-        required: true 
+      title: {
+        type: String,
+        required: true
       },
-      metricType: { 
-        type: String, 
-        enum: ['percentage', 'number', 'currency', 'boolean'] 
+      metricType: {
+        type: String,
+        enum: ['percentage', 'number', 'currency', 'boolean']
       },
-      startValue: { 
-        type: Number, 
-        default: 0 
+      startValue: {
+        type: Number,
+        default: 0
       },
-      targetValue: { 
-        type: Number, 
-        required: true 
+      targetValue: {
+        type: Number,
+        required: true
       },
-      currentValue: { 
-        type: Number, 
-        default: 0 
+      currentValue: {
+        type: Number,
+        default: 0
       },
       lastUpdated: Date,
       aiSuggestions: String, // GPT-4.1 generated suggestions
     }],
-    aiGenerated: { 
-      type: Boolean, 
-      default: false 
+    aiGenerated: {
+      type: Boolean,
+      default: false
     }, // Flag for AI-created objectives
-    aiConfidence: { 
-      type: Number, 
-      min: 0, 
-      max: 100 
+    aiConfidence: {
+      type: Number,
+      min: 0,
+      max: 100
     } // Confidence score
   }],
-  
+
   // Team Integration
   teamHierarchy: {
     teamId: String,
     teamPath: [String], // Derived from Team hierarchy path
     managedTeams: [String] // For team-level OKRs
   },
-  
+
   // OKR Alignment / Cascading
   alignment: {
     parentOKRId: {
@@ -88,13 +101,13 @@ const OKRSchema = new mongoose.Schema({
     },
     alignmentNotes: String
   },
-  
+
   // Children OKRs (populated dynamically)
   childOKRIds: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OKR'
   }],
-  
+
   // Overall progress (calculated)
   progress: {
     type: Number,
@@ -102,14 +115,14 @@ const OKRSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
-  
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
+
+  createdAt: {
+    type: Date,
+    default: Date.now
   },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 });
 
@@ -119,14 +132,14 @@ OKRSchema.index({ 'teamHierarchy.teamId': 1 });
 OKRSchema.index({ 'alignment.parentOKRId': 1 });
 
 // Pre-save middleware to calculate progress
-OKRSchema.pre('save', function(next) {
+OKRSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
-  
+
   // Calculate overall progress from key results
   if (this.objectives && this.objectives.length > 0) {
     let totalProgress = 0;
     let krCount = 0;
-    
+
     this.objectives.forEach(obj => {
       if (obj.keyResults && obj.keyResults.length > 0) {
         obj.keyResults.forEach(kr => {
@@ -143,15 +156,15 @@ OKRSchema.pre('save', function(next) {
         });
       }
     });
-    
+
     this.progress = krCount > 0 ? Math.round(totalProgress / krCount) : 0;
   }
-  
+
   next();
 });
 
 // Virtual for alignment depth (how many levels up to root)
-OKRSchema.virtual('alignmentDepth').get(function() {
+OKRSchema.virtual('alignmentDepth').get(function () {
   // This would need to be calculated via populate in real queries
   return this.alignment?.parentOKRId ? 1 : 0;
 });

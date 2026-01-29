@@ -13,6 +13,7 @@ const appraisalSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  goals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }],
   organizationId: {
     type: String,
     required: true,
@@ -329,7 +330,7 @@ appraisalSchema.index({ 'manager.userId': 1, status: 1 });
 appraisalSchema.index({ cycleId: 1, status: 1 });
 
 // Virtual for computing if overdue
-appraisalSchema.virtual('isCurrentlyOverdue').get(function() {
+appraisalSchema.virtual('isCurrentlyOverdue').get(function () {
   const now = new Date();
   if (this.status === 'self_assessment_pending' || this.status === 'self_assessment_in_progress') {
     return this.deadlines.selfAssessmentDue && now > this.deadlines.selfAssessmentDue;
@@ -341,7 +342,7 @@ appraisalSchema.virtual('isCurrentlyOverdue').get(function() {
 });
 
 // Add to audit log
-appraisalSchema.methods.addAuditLog = function(action, user, details) {
+appraisalSchema.methods.addAuditLog = function (action, user, details) {
   this.auditLog.push({
     action,
     performedBy: {
@@ -355,7 +356,7 @@ appraisalSchema.methods.addAuditLog = function(action, user, details) {
 };
 
 // Add chat message
-appraisalSchema.methods.addChatMessage = function(sender, message, messageType = 'text', attachments = []) {
+appraisalSchema.methods.addChatMessage = function (sender, message, messageType = 'text', attachments = []) {
   this.chatThread.push({
     sender: {
       userId: sender.userId || sender.id,

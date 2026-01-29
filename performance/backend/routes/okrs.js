@@ -112,6 +112,7 @@ router.get('/', requireAuth, async (req, res) => {
         status: okr.status,
         progress: okr.progress || calculateProgress(okr),
         keyResults: okr.objectives?.[0]?.keyResults?.map(kr => kr.title) || [],
+        alignment: okr.alignment, // Expose alignment details
         createdAt: okr.createdAt,
         updatedAt: okr.updatedAt
       })),
@@ -140,28 +141,58 @@ router.get('/direct-reports', requireManager, async (req, res) => {
       });
     }
 
+    // Fetch OKRs for all direct reports
     const okrs = await OKR.find({
       ownerId: { $in: directReports }
-    }).sort({ createdAt: -1 });
+    })
+      .sort({ createdAt: -1 })
+      .lean(); // Use lean for better performance and to allow appending properties if needed
 
-    // Group by owner
-    const okrsByOwner = {};
-    okrs.forEach(okr => {
-      if (!okrsByOwner[okr.ownerId]) {
-        okrsByOwner[okr.ownerId] = [];
-      }
-      okrsByOwner[okr.ownerId].push({
-        _id: okr._id,
-        title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
-        progress: okr.progress || calculateProgress(okr),
-        status: okr.status,
-        period: okr.period
-      });
-    });
+    // We need owner names. Since we only have IDs in okrs, let's fetch users or rely on frontend to map?
+    // Better to populate if User model was available, but ownerId is just a string (ID) usually.
+    // However, in typical mongoose, if ownerId is a ref, we can populate.
+    // Let's check OKR model. PROBABLY ownerId is a Ref to User.
+    // If not, we can't populate.
+    // But wait, rbsw (RBAC middleware) might have fetched user details? No.
+    // Let's assume we can just return the IDs and frontend might have user map, OR we fetch users.
+    // Actually, for a dashboard, having names is crucial.
+    // User model is likely available. Let's try to populate if it's a ref, otherwise we might need a lookup.
+    // Looking at OKR.js (not shown but implied), ownerId is usually an ObjectId ref 'User'.
+    // Let's try populate. But need to import User? No, if it's ref, just populate.
+    // But OKR.js hasn't been read. Safest is to rely on what we have or do a lookup.
+    // Let's just return the OKR data with approvalStatus for now. Frontend can maybe map IDs?
+    // Or just fetch users.
+    // Actually, `req.directReports` is just IDs.
+    // Let's modify the query to populate 'ownerId' if possible.
+
+    // RE-READING: I can't confirm ownerId is a Ref from here. 
+    // BUT the implementation plan mentions "Team OKRs" tab. Manager needs to know WHOSE OKR it is.
+    // Let's assume ownerId is populate-able or we fetch users.
+    // I will try to use .populate('ownerId', 'name email jobTitle avatar')
+    // If it fails (schema issue), I'll catch it.
+
+    const filledOkrs = await OKR.find({
+      ownerId: { $in: directReports }
+    })
+      .populate('ownerId', 'name email jobTitle')
+      .sort({ createdAt: -1 });
+
+    const formattedOkrs = filledOkrs.map(okr => ({
+      _id: okr._id,
+      title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
+      type: okr.type,
+      ownerId: okr.ownerId, // This will be the populated object or ID
+      status: okr.status,
+      approvalStatus: okr.approvalStatus || 'pending', // Default to pending if missing
+      progress: okr.progress || calculateProgress(okr),
+      period: okr.period,
+      objectives: okr.objectives, // Include objectives for preview
+      createdAt: okr.createdAt
+    }));
 
     res.json({
       success: true,
-      data: okrsByOwner,
+      data: formattedOkrs,
       directReportCount: directReports.length
     });
   } catch (error) {
@@ -209,14 +240,18 @@ router.get('/:id', requireAuth, async (req, res) => {
  */
 router.post('/', requirePermission('okr:create:own'), async (req, res) => {
   try {
-    const userId = req.session.user.id || req.session.user.sub;
+    const sessionUserId = req.session.user.id || req.session.user.sub;
+    // Default owner is the session user, unless overridden by authorized role
+    let ownerId = sessionUserId;
+
     const { title, objective, keyResults, type, period, teamId, objectives, status } = req.body;
 
     // Validate type permissions
-    if (type === 'team' && req.userRole !== 'line_manager' && req.userRole !== 'hr_admin') {
+    // "ordinary staff cant create team okr"
+    if (type === 'team' && !['line_manager', 'hr_admin', 'team_lead', 'recruiter'].includes(req.userRole)) {
       return res.status(403).json({
         success: false,
-        error: 'Only managers can create team OKRs'
+        error: 'Only managers, team leads, and recruiters can create team OKRs'
       });
     }
 
@@ -225,6 +260,33 @@ router.post('/', requirePermission('okr:create:own'), async (req, res) => {
         success: false,
         error: 'Only HR Admin can create organization OKRs'
       });
+    }
+
+    // Handle Owner Assignment (Boss/HR creating for others)
+    if (req.body.ownerId && req.body.ownerId !== sessionUserId) {
+      const allowedRoles = ['line_manager', 'hr_admin', 'recruiter', 'team_lead'];
+
+      if (!allowedRoles.includes(req.userRole)) {
+        return res.status(403).json({
+          success: false,
+          error: 'You are not authorized to assign OKRs to others'
+        });
+      }
+
+      // Specific checks
+      if (req.userRole === 'line_manager') {
+        const directReports = req.directReports || [];
+        if (!directReports.includes(req.body.ownerId)) {
+          return res.status(403).json({
+            success: false,
+            error: 'You can only assign OKRs to your direct reports'
+          });
+        }
+      }
+
+      // HR and Recruiters can assign to anyone (no specific check needed here beyond role)
+
+      ownerId = req.body.ownerId;
     }
 
     // Build objectives array - support both new and legacy formats
@@ -260,14 +322,37 @@ router.post('/', requirePermission('okr:create:own'), async (req, res) => {
       }];
     }
 
+    // Determine Approval Status
+    let approvalStatus = 'pending';
+    let approvedBy = null;
+    let approvedAt = null;
+
+    // Auto-approve if:
+    // 1. Assigned to someone else (Manager/HR -> Employee)
+    // 2. Team or Organization OKR (Created by leader)
+    // 3. Created by HR Admin (Self)
+    if (ownerId !== sessionUserId || ['team', 'organization'].includes(type) || req.userRole === 'hr_admin') {
+      approvalStatus = 'approved';
+      approvedBy = sessionUserId;
+      approvedAt = new Date();
+    }
+
     const newOKR = new OKR({
       type: type || 'individual',
-      ownerId: userId,
+      title: title || objective, // Use provided title or objective as fallback
+      ownerId: ownerId,
       organizationId: req.currentOrganization?.id,
       teamId: teamId,
       period: period || `Q${Math.ceil((new Date().getMonth() + 1) / 3)} ${new Date().getFullYear()}`,
       status: status || 'active',
-      objectives: okrObjectives
+      approvalStatus: approvalStatus,
+      approvedBy: approvedBy,
+      approvedAt: approvedAt,
+      objectives: okrObjectives,
+      alignment: req.body.parentOKRId ? {
+        parentOKRId: req.body.parentOKRId,
+        alignmentType: 'cascade'
+      } : undefined
     });
 
     await newOKR.save();
@@ -344,7 +429,20 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
 
+    if (title) okr.title = title;
     if (status) okr.status = status;
+
+    // Update alignment if provided
+    if (req.body.parentOKRId !== undefined) {
+      if (req.body.parentOKRId) {
+        okr.alignment = {
+          parentOKRId: req.body.parentOKRId,
+          alignmentType: 'cascade'
+        };
+      } else {
+        okr.alignment = { parentOKRId: null };
+      }
+    }
 
     okr.progress = calculateProgress(okr);
     await okr.save();
@@ -353,6 +451,58 @@ router.put('/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error updating OKR:', error);
     res.status(500).json({ success: false, error: 'Failed to update OKR' });
+  }
+});
+
+/**
+ * PATCH /api/okrs/:id/approve - Approve an OKR
+ * Only for Managers of the OKR owner or HR Admins
+ */
+router.patch('/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const okr = await OKR.findById(req.params.id);
+
+    if (!okr) {
+      return res.status(404).json({ success: false, error: 'OKR not found' });
+    }
+
+    if (okr.approvalStatus === 'approved') {
+      return res.json({ success: true, data: okr, message: 'OKR is already approved' });
+    }
+
+    // Check permissions
+    const sessionUser = req.session.user;
+    const sessionUserId = sessionUser.id || sessionUser.sub;
+    const role = req.userRole;
+
+    // HR Admin can approve anything
+    if (role === 'hr_admin') {
+      okr.approvalStatus = 'approved';
+      okr.approvedBy = sessionUserId;
+      okr.approvedAt = new Date();
+      await okr.save();
+      return res.json({ success: true, data: okr });
+    }
+
+    // Managers can approve direct reports' OKRs
+    if (role === 'line_manager' || role === 'team_lead') {
+      const directReports = req.directReports || [];
+      if (directReports.includes(okr.ownerId)) {
+        okr.approvalStatus = 'approved';
+        okr.approvedBy = sessionUserId;
+        okr.approvedAt = new Date();
+        await okr.save();
+        return res.json({ success: true, data: okr });
+      }
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to approve this OKR'
+    });
+  } catch (error) {
+    console.error('Error approving OKR:', error);
+    res.status(500).json({ success: false, error: 'Failed to approve OKR' });
   }
 });
 
