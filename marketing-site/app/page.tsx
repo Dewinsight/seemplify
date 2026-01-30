@@ -9,6 +9,9 @@ import SeemplifyLogo from '@/components/SeemplifyLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 import BookDemoModal from '@/components/BookDemoModal'
 
+import HeroBannerBeautiful from '../public/hero-banner-beautiful.png'
+import HeroBannerDark from '../public/hero-banner-dark.png'
+
 const IDP_URL = 'https://auth.seemplifyai.com'
 
 type ModuleCardProps = {
@@ -509,20 +512,22 @@ export default function HomePage() {
                 transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
                 <Image
-                  src="/hero-banner-beautiful.png"
+                  src={HeroBannerBeautiful}
                   alt="Seemplify Platform Overview"
                   width={1000}
                   height={800}
                   className="block w-full h-auto object-contain dark:hidden"
                   priority
+                  placeholder="blur"
                 />
                 <Image
-                  src="/hero-banner-dark.png"
+                  src={HeroBannerDark}
                   alt="Seemplify Platform Overview (Dark Mode)"
                   width={1000}
                   height={800}
                   className="hidden w-full h-auto object-contain dark:block"
                   priority
+                  placeholder="blur"
                 />
               </motion.div>
             </div>
