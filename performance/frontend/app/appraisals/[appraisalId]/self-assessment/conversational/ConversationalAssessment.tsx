@@ -292,6 +292,19 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
     }
   };
 
+  const handleOkrSelect = (index: number) => {
+    if (!conversationState || conversationState.currentOkrIndex === index) return;
+
+    const okr = okrSummary[index];
+    if (okr) {
+      // Optimistically update UI
+      setConversationState(prev => prev ? ({ ...prev, currentOkrIndex: index }) : null);
+
+      // Send message to switch context
+      handleSendMessage(`I want to discuss the OKR: "${okr.title}"`);
+    }
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -378,22 +391,23 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           okrs={okrSummary}
           extractedData={conversationState?.extractedData || { achievements: [], challenges: [], skills: [], goals: [] }}
           currentOkrIndex={conversationState?.currentOkrIndex || 0}
+          onOkrSelect={handleOkrSelect}
         />
 
         {/* Quick Actions */}
         <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
           {conversationState?.currentPhase !== 'report_generation' &&
-           conversationState?.currentPhase !== 'review' &&
-           conversationState?.currentPhase !== 'completed' && (
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={() => handleAdvancePhase('report_generation')}
-              disabled={isProcessing}
-            >
-              Generate Report Now
-            </Button>
-          )}
+            conversationState?.currentPhase !== 'review' &&
+            conversationState?.currentPhase !== 'completed' && (
+              <Button
+                fullWidth
+                variant="outlined"
+                onClick={() => handleAdvancePhase('report_generation')}
+                disabled={isProcessing}
+              >
+                Generate Report Now
+              </Button>
+            )}
           {conversationState?.currentPhase === 'review' && (
             <Button
               fullWidth

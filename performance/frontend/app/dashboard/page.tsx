@@ -205,18 +205,18 @@ export default function DashboardPage() {
       <div className="space-y-8">
         {/* Welcome Header */}
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl shadow-purple-500/10 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl opacity-50 dark:opacity-100"></div>
+          <div className="relative glass-card rounded-2xl p-0 overflow-hidden">
 
             {/* Top Section - Welcome + App Hub */}
             <div className="flex justify-between items-center p-6 pb-4 border-b border-zinc-700/30">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
+                <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-500 dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
                   Welcome back, {userName.split(' ')[0]}
-                  <Sparkles className="h-6 w-6 text-purple-400" />
+                  <Sparkles className="h-6 w-6 text-purple-500 dark:text-purple-400" />
                 </h1>
-                <p className="text-zinc-400 mt-1 text-sm">
-                  Performance overview for <span className="text-zinc-200 font-medium">{organization?.name || 'your organization'}</span>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Performance overview for <span className="text-foreground font-medium">{organization?.name || 'your organization'}</span>
                 </p>
               </div>
               <a
@@ -232,12 +232,12 @@ export default function DashboardPage() {
 
             {/* Bottom Section - Team Selector */}
             {showTeamSwitcher && (
-              <div className="flex items-center gap-4 px-6 py-4 bg-zinc-950/30">
+              <div className="flex items-center gap-4 px-6 py-4 bg-muted/30 border-t border-border">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center">
-                    <Users className="h-4 w-4 text-purple-400" />
+                    <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   </div>
-                  <span className="text-sm text-zinc-400 hidden sm:inline">Viewing:</span>
+                  <span className="text-sm text-muted-foreground hidden sm:inline">Viewing:</span>
                 </div>
 
                 {selectedTeamView === 'all' && (
@@ -375,7 +375,7 @@ export default function DashboardPage() {
               href={stat.href}
               className="group block"
             >
-              <div className={`bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 hover:border-purple-500/30 p-6 transition-all duration-300 hover:scale-105 hover:shadow-purple-500/10 relative overflow-hidden`}>
+              <div className={`glass-card rounded-xl p-6 transition-all duration-300 hover:scale-105 relative overflow-hidden`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-5 transition-opacity`}></div>
                 <div className="relative">
                   <div className="flex items-start justify-between mb-4">
@@ -384,10 +384,10 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-bold text-zinc-100 mb-1">{stat.value}</div>
-                    <div className="text-sm font-medium text-zinc-400 mb-1">{stat.title}</div>
+                    <div className="text-3xl font-bold text-foreground mb-1">{stat.value}</div>
+                    <div className="text-sm font-medium text-muted-foreground mb-1">{stat.title}</div>
                     {stat.subtitle && (
-                      <div className="text-xs text-zinc-500">{stat.subtitle}</div>
+                      <div className="text-xs text-muted-foreground/80">{stat.subtitle}</div>
                     )}
                     {stat.showProgress && (
                       <div className="mt-3 w-full bg-zinc-800/70 rounded-full h-2 overflow-hidden">
@@ -405,14 +405,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 p-6">
-          <h2 className="text-lg font-bold text-zinc-100 mb-4">Quick Actions</h2>
+        <div className="glass-card rounded-xl p-6">
+          <h2 className="text-lg font-bold text-foreground mb-4">Quick Actions</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {quickActions.map((action) => (
               <Link
                 key={action.name}
                 href={action.href}
-                className="group flex flex-col items-center p-4 bg-zinc-800/60 rounded-lg border border-zinc-700/50 hover:border-purple-500/30 hover:bg-zinc-800 transition-all duration-200 hover:scale-105"
+                className="group flex flex-col items-center p-4 bg-muted/40 rounded-lg border border-border hover:border-purple-500/30 hover:bg-muted transition-all duration-200 hover:scale-105"
               >
                 <div className={`h-12 w-12 rounded-lg bg-gradient-to-br ${action.color} flex items-center justify-center mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
                   <action.icon className="h-6 w-6 text-white" />
@@ -425,7 +425,7 @@ export default function DashboardPage() {
 
         {/* Role-specific sections */}
         {isManager && managerData && managerData.directReportCount > 0 && (
-          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 p-6">
+          <div className="glass-card rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
                 <Users className="h-5 w-5 text-indigo-400" />
@@ -439,9 +439,9 @@ export default function DashboardPage() {
               </Link>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg bg-zinc-800/60 border border-zinc-700/50">
-                <div className="text-2xl font-bold text-zinc-100">{managerData.directReportCount}</div>
-                <div className="text-sm text-zinc-400">Direct Reports</div>
+              <div className="p-4 rounded-lg bg-muted/40 border border-border">
+                <div className="text-2xl font-bold text-foreground">{managerData.directReportCount}</div>
+                <div className="text-sm text-muted-foreground">Direct Reports</div>
               </div>
               {managerData.pendingReviews > 0 && (
                 <div className="p-4 rounded-lg bg-zinc-800/60 border border-amber-500/20">

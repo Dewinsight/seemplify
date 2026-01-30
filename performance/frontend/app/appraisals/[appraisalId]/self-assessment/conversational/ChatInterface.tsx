@@ -40,8 +40,9 @@ interface ChatInterfaceProps {
 }
 
 const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean }) => {
-  const isAI = message.sender.role === 'ai';
-  const isSystem = message.sender.role === 'system';
+  const sender = message.sender || { role: 'system', name: 'System', userId: 'system' };
+  const isAI = sender.role === 'ai';
+  const isSystem = sender.role === 'system';
 
   if (isSystem) {
     return (
@@ -50,7 +51,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
           <Chip
             size="small"
             icon={<Description fontSize="small" />}
-            label={message.message}
+            label={message.message || ''}
             variant="outlined"
             sx={{ bgcolor: 'grey.100' }}
           />
@@ -86,8 +87,10 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
             elevation={1}
             sx={{
               p: 2,
-              bgcolor: isUser ? 'primary.main' : isAI ? 'grey.50' : 'background.paper',
+              bgcolor: isUser ? 'primary.main' : isAI ? 'background.paper' : 'background.default',
               color: isUser ? 'white' : 'text.primary',
+              border: isAI ? 1 : 0,
+              borderColor: 'divider',
               borderRadius: 2,
               borderTopLeftRadius: isUser ? 16 : 4,
               borderTopRightRadius: isUser ? 4 : 16
@@ -100,7 +103,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
 
           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center' }}>
             <Typography variant="caption" color="text.secondary">
-              {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
             </Typography>
             {message.phase && (
               <Chip size="small" label={message.phase.replace('_', ' ')} sx={{ height: 18, fontSize: '0.65rem' }} />

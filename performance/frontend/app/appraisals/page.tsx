@@ -206,14 +206,14 @@ export default function AppraisalsPage() {
                     boxShadow: '0 4px 14px -4px rgba(99, 102, 241, 0.4)',
                   }}
                 >
-                  {isEmployee ? appraisal.manager.name[0] : appraisal.employee.name[0]}
+                  {isEmployee ? (appraisal.manager?.name?.[0] || 'M') : (appraisal.employee?.name?.[0] || 'E')}
                 </Avatar>
                 <Box>
                   <Typography variant="subtitle1" fontWeight={600}>
-                    {isEmployee ? 'Your Appraisal' : appraisal.employee.name}
+                    {isEmployee ? 'Your Appraisal' : (appraisal.employee?.name || 'Unknown Employee')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {isEmployee ? `Manager: ${appraisal.manager.name}` : appraisal.employee.jobTitle || 'Team Member'}
+                    {isEmployee ? `Manager: ${appraisal.manager?.name || 'Unassigned'}` : (appraisal.employee?.jobTitle || 'Team Member')}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {appraisal.cycleId?.name || 'Performance Cycle'}

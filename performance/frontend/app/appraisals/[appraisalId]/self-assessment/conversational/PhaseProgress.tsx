@@ -49,14 +49,21 @@ const PHASES = [
   { id: 'completed', label: 'Complete', icon: <CheckCircle /> }
 ];
 
-const OKRCard = ({ okr, isActive }: { okr: OKRSummary; isActive: boolean }) => (
+const OKRCard = ({ okr, isActive, onClick }: { okr: OKRSummary; isActive: boolean; onClick: () => void }) => (
   <Card
     variant="outlined"
+    onClick={onClick}
     sx={{
       mb: 1,
+      cursor: 'pointer',
       border: isActive ? 2 : 1,
       borderColor: isActive ? 'primary.main' : 'divider',
-      bgcolor: isActive ? 'primary.lighter' : 'background.paper'
+      bgcolor: isActive ? 'primary.lighter' : 'background.paper',
+      transition: 'all 0.2s',
+      '&:hover': {
+        borderColor: 'primary.main',
+        bgcolor: isActive ? 'primary.lighter' : 'action.hover'
+      }
     }}
   >
     <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
@@ -135,8 +142,9 @@ export default function PhaseProgress({
   completedPhases,
   okrs,
   extractedData,
-  currentOkrIndex
-}: PhaseProgressProps) {
+  currentOkrIndex,
+  onOkrSelect
+}: PhaseProgressProps & { onOkrSelect?: (index: number) => void }) {
   const getStepStatus = (phaseId: string) => {
     if (completedPhases.includes(phaseId)) return 'completed';
     if (currentPhase === phaseId) return 'active';
@@ -185,7 +193,12 @@ export default function PhaseProgress({
             Your OKRs ({okrs.length})
           </Typography>
           {okrs.map((okr, index) => (
-            <OKRCard key={okr.id} okr={okr} isActive={index === currentOkrIndex} />
+            <OKRCard
+              key={okr.id}
+              okr={okr}
+              isActive={index === currentOkrIndex}
+              onClick={() => onOkrSelect?.(index)}
+            />
           ))}
         </Box>
       )}
