@@ -17,7 +17,10 @@
       "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\")",
       "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\payroll\\\\backend\")",
       "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\time-attendance\")",
-      "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\time-attendance\\\\backend\")"
+      "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\time-attendance\\\\backend\")",
+      "Bash(npm run lint:*)",
+      "Bash(npx next lint:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

@@ -1525,4 +1525,756 @@ router.post('/:appraisalId/check-bias', requireAuth, requireManager, async (req,
   }
 });
 
+// =============================================
+// CONVERSATIONAL SELF-ASSESSMENT ENDPOINTS
+// =============================================
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/start
+ * Initialize the conversational self-assessment session
+ * Returns initial AI greeting with OKR summary
+ */
+router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Only the employee can start the conversation' });
+    }
+
+    // Get employee's OKRs
+    const okrs = await OKR.find({
+      ownerId: appraisal.employee.userId,
+      status: { $in: ['active', 'closed'] }
+    });
+
+    // Start conversation via AI service
+    const result = await appraisalAIService.startSelfAssessmentConversation(
+      appraisal,
+      okrs,
+      appraisal.employee
+    );
+
+    // Initialize conversation state
+    appraisal.conversationAssessment = {
+      mode: 'conversation',
+      currentPhase: result.phase || 'okr_reflection',
+      currentOkrIndex: result.currentOkrIndex || 0,
+      completedPhases: [],
+      extractedData: {
+        achievements: [],
+        challenges: [],
+        skills: [],
+        goals: []
+      },
+      startedAt: new Date(),
+      lastActivityAt: new Date(),
+      totalTokensUsed: result.tokensUsed || 0,
+      messageCount: 1
+    };
+
+    // Add initial AI message to chat thread
+    appraisal.chatThread.push({
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: result.greeting,
+      messageType: 'prompt',
+      phase: result.phase,
+      aiContext: {
+        isAiGenerated: true,
+        modelUsed: 'gpt-4.1',
+        tokensUsed: result.tokensUsed
+      },
+      createdAt: new Date()
+    });
+
+    // Update status
+    if (appraisal.status === 'self_assessment_pending') {
+      appraisal.status = 'self_assessment_in_progress';
+    }
+
+    appraisal.addAuditLog('conversation_started', req.session.user, { mode: 'conversation' });
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: {
+        greeting: result.greeting,
+        okrSummary: result.okrSummary,
+        conversationState: appraisal.conversationAssessment,
+        chatThread: appraisal.chatThread.slice(-20) // Last 20 messages
+      }
+    });
+  } catch (error) {
+    console.error('Start conversation error:', error);
+    res.status(500).json({ success: false, error: 'Failed to start conversation' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/message
+ * Send a message in the conversation and get AI response
+ */
+router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userName = req.session?.user?.name;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Only the employee can participate in the conversation' });
+    }
+
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, error: 'Message is required' });
+    }
+
+    // Get employee's OKRs for context
+    const okrs = await OKR.find({
+      ownerId: appraisal.employee.userId,
+      status: { $in: ['active', 'closed'] }
+    });
+
+    const currentPhase = appraisal.conversationAssessment?.currentPhase || 'okr_reflection';
+
+    // Add user message to chat thread
+    appraisal.chatThread.push({
+      sender: { userId, name: userName, role: 'employee' },
+      message: message.trim(),
+      messageType: 'text',
+      phase: currentPhase,
+      createdAt: new Date()
+    });
+
+    // Get AI response
+    const result = await appraisalAIService.continueConversation(
+      appraisal,
+      message.trim(),
+      okrs,
+      null // documentContext - can be added later
+    );
+
+    // Add AI response to chat thread
+    appraisal.chatThread.push({
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: result.response,
+      messageType: 'prompt',
+      phase: result.currentPhase,
+      structuredData: result.extractedData,
+      aiContext: {
+        isAiGenerated: true,
+        modelUsed: 'gpt-4.1',
+        tokensUsed: result.tokensUsed,
+        confidence: result.confidence
+      },
+      createdAt: new Date()
+    });
+
+    // Update conversation state
+    appraisal.conversationAssessment.currentPhase = result.currentPhase;
+    appraisal.conversationAssessment.currentOkrIndex = result.currentOkrIndex;
+    appraisal.conversationAssessment.lastActivityAt = new Date();
+    appraisal.conversationAssessment.totalTokensUsed = (appraisal.conversationAssessment.totalTokensUsed || 0) + (result.tokensUsed || 0);
+    appraisal.conversationAssessment.messageCount = (appraisal.conversationAssessment.messageCount || 0) + 2;
+
+    // Track phase completion
+    if (result.currentPhase !== currentPhase) {
+      if (!appraisal.conversationAssessment.completedPhases.includes(currentPhase)) {
+        appraisal.conversationAssessment.completedPhases.push(currentPhase);
+      }
+    }
+
+    // Store extracted data
+    if (result.extractedData && result.extractedData.type && result.extractedData.data) {
+      const dataType = result.extractedData.type;
+      const dataValue = result.extractedData.data;
+
+      switch (dataType) {
+        case 'achievement':
+          appraisal.conversationAssessment.extractedData.achievements.push({
+            text: dataValue.text,
+            confidence: result.confidence,
+            extractedFrom: 'conversation'
+          });
+          break;
+        case 'challenge':
+          appraisal.conversationAssessment.extractedData.challenges.push({
+            text: dataValue.text,
+            resolution: dataValue.resolution,
+            learnings: dataValue.learnings
+          });
+          break;
+        case 'learning':
+        case 'skill':
+          appraisal.conversationAssessment.extractedData.skills.push({
+            skill: dataValue.text || dataValue.skill,
+            evidence: dataValue.context || dataValue.evidence
+          });
+          break;
+        case 'goal':
+          appraisal.conversationAssessment.extractedData.goals.push({
+            goal: dataValue.text || dataValue.goal,
+            measurable: dataValue.measurable || false,
+            timeframe: dataValue.timeframe
+          });
+          break;
+      }
+    }
+
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: {
+        response: result.response,
+        currentPhase: result.currentPhase,
+        extractedData: result.extractedData,
+        conversationState: appraisal.conversationAssessment,
+        chatThread: appraisal.chatThread.slice(-20)
+      }
+    });
+  } catch (error) {
+    console.error('Conversation message error:', error);
+    res.status(500).json({ success: false, error: 'Failed to process message' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/upload
+ * Upload a document mid-conversation
+ */
+router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+
+    const fileType = path.extname(file.originalname).slice(1).toLowerCase();
+
+    // Create document record
+    const document = new AppraisalDocument({
+      appraisalId: appraisal._id,
+      organizationId: appraisal.organizationId,
+      fileName: file.filename,
+      originalName: file.originalname,
+      fileType,
+      mimeType: file.mimetype,
+      fileSize: file.size,
+      storageProvider: 'local',
+      storagePath: file.path,
+      category: req.body.category || 'achievement_evidence',
+      description: req.body.description,
+      uploadedBy: {
+        userId,
+        name: req.session.user.name,
+        email: req.session.user.email,
+        role: 'employee'
+      }
+    });
+
+    // Extract text
+    if (documentExtractionService.isSupported(fileType)) {
+      try {
+        document.textExtraction.status = 'processing';
+        const extraction = await documentExtractionService.extractText(file.path, fileType);
+
+        document.textExtraction = {
+          status: 'completed',
+          extractedText: extraction.text,
+          extractedAt: new Date(),
+          pageCount: extraction.pageCount,
+          wordCount: extraction.wordCount
+        };
+
+        // AI analysis
+        if (extraction.text && extraction.text.length > 100) {
+          document.aiAnalysis.status = 'processing';
+          const analysis = await appraisalAIService.analyzeDocument(extraction.text, {
+            employeeName: appraisal.employee.name,
+            department: appraisal.employee.department
+          });
+
+          document.aiAnalysis = {
+            status: 'completed',
+            analyzedAt: new Date(),
+            ...analysis
+          };
+        }
+      } catch (extractError) {
+        console.error('Text extraction error:', extractError);
+        document.textExtraction.status = 'failed';
+        document.textExtraction.error = extractError.message;
+      }
+    }
+
+    await document.save();
+
+    // Link to appraisal
+    appraisal.documents.push(document._id);
+
+    // Incorporate into conversation
+    const incorporationResult = await appraisalAIService.incorporateDocumentIntoConversation(document, appraisal);
+
+    // Add system message about document
+    appraisal.chatThread.push({
+      sender: { userId: 'system', name: 'System', role: 'system' },
+      message: `Document uploaded: ${file.originalname}`,
+      messageType: 'document_analysis',
+      linkedDocumentId: document._id,
+      createdAt: new Date()
+    });
+
+    // Add AI response about document
+    appraisal.chatThread.push({
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: incorporationResult.message,
+      messageType: 'document_analysis',
+      linkedDocumentId: document._id,
+      phase: appraisal.conversationAssessment?.currentPhase,
+      aiContext: {
+        isAiGenerated: true,
+        modelUsed: 'gpt-4.1',
+        tokensUsed: incorporationResult.tokensUsed
+      },
+      createdAt: new Date()
+    });
+
+    // Store document achievements in extracted data
+    if (incorporationResult.insights?.extractedAchievements) {
+      incorporationResult.insights.extractedAchievements.forEach(achievement => {
+        appraisal.conversationAssessment.extractedData.achievements.push({
+          text: achievement.description,
+          linkedOkrId: null,
+          confidence: achievement.confidence,
+          extractedFrom: 'document'
+        });
+      });
+    }
+
+    appraisal.conversationAssessment.lastActivityAt = new Date();
+    await appraisal.save();
+
+    res.status(201).json({
+      success: true,
+      data: {
+        document,
+        aiMessage: incorporationResult.message,
+        insights: incorporationResult.insights,
+        chatThread: appraisal.chatThread.slice(-20)
+      }
+    });
+  } catch (error) {
+    console.error('Conversation upload error:', error);
+    res.status(500).json({ success: false, error: 'Failed to upload document' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/advance
+ * Manually advance to the next conversation phase
+ */
+router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { targetPhase } = req.body;
+    const phases = ['initialized', 'okr_reflection', 'achievements', 'challenges', 'learnings', 'future_goals', 'competencies', 'report_generation', 'review', 'completed'];
+
+    if (!targetPhase || !phases.includes(targetPhase)) {
+      return res.status(400).json({ success: false, error: 'Invalid target phase' });
+    }
+
+    const currentPhase = appraisal.conversationAssessment?.currentPhase || 'initialized';
+    const currentIndex = phases.indexOf(currentPhase);
+    const targetIndex = phases.indexOf(targetPhase);
+
+    if (targetIndex <= currentIndex) {
+      return res.status(400).json({ success: false, error: 'Can only advance to future phases' });
+    }
+
+    // Mark current phase as completed
+    if (!appraisal.conversationAssessment.completedPhases.includes(currentPhase)) {
+      appraisal.conversationAssessment.completedPhases.push(currentPhase);
+    }
+
+    appraisal.conversationAssessment.currentPhase = targetPhase;
+    appraisal.conversationAssessment.lastActivityAt = new Date();
+
+    // Add phase transition message
+    const phaseMessages = {
+      achievements: "Let's discuss your key achievements and accomplishments during this period.",
+      challenges: "Now let's talk about the challenges you faced and how you addressed them.",
+      learnings: "What new skills or knowledge did you develop during this period?",
+      future_goals: "Let's set some goals for the next period. What do you want to achieve?",
+      competencies: "Let's assess your competencies. How would you rate yourself on the key skills for your role?",
+      report_generation: "I have enough information to generate your self-assessment report. Let me compile everything we discussed."
+    };
+
+    if (phaseMessages[targetPhase]) {
+      appraisal.chatThread.push({
+        sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+        message: phaseMessages[targetPhase],
+        messageType: 'phase_transition',
+        phase: targetPhase,
+        aiContext: { isAiGenerated: true },
+        createdAt: new Date()
+      });
+    }
+
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: {
+        currentPhase: targetPhase,
+        conversationState: appraisal.conversationAssessment,
+        chatThread: appraisal.chatThread.slice(-20)
+      }
+    });
+  } catch (error) {
+    console.error('Advance phase error:', error);
+    res.status(500).json({ success: false, error: 'Failed to advance phase' });
+  }
+});
+
+/**
+ * GET /api/appraisals/:appraisalId/conversation/context
+ * Get full conversation context and state
+ */
+router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId)
+      .populate('cycleId')
+      .populate('documents');
+
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isManager = appraisal.manager.userId === userId || appraisal.manager.email === userEmail;
+    const isHR = req.userRole === 'hr_admin';
+
+    if (!isEmployee && !isManager && !isHR) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // Get OKRs
+    const okrs = await OKR.find({
+      ownerId: appraisal.employee.userId,
+      status: { $in: ['active', 'closed'] }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        conversationState: appraisal.conversationAssessment,
+        chatThread: appraisal.chatThread,
+        okrs,
+        documents: appraisal.documents,
+        selfAssessment: appraisal.selfAssessment,
+        employee: appraisal.employee,
+        cycle: appraisal.cycleId
+      }
+    });
+  } catch (error) {
+    console.error('Get conversation context error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get conversation context' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/generate-report
+ * Generate the self-assessment report from conversation data
+ */
+router.post('/:appraisalId/conversation/generate-report', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId)
+      .populate('cycleId')
+      .populate('documents');
+
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Only the employee can generate the report' });
+    }
+
+    // Get OKRs
+    const okrs = await OKR.find({
+      ownerId: appraisal.employee.userId,
+      status: { $in: ['active', 'closed'] }
+    });
+
+    // Generate report
+    const report = await appraisalAIService.generateSelfAssessmentReport(
+      appraisal,
+      okrs,
+      appraisal.documents
+    );
+
+    // Update conversation phase
+    appraisal.conversationAssessment.currentPhase = 'review';
+    if (!appraisal.conversationAssessment.completedPhases.includes('report_generation')) {
+      appraisal.conversationAssessment.completedPhases.push('report_generation');
+    }
+
+    // Add report draft message
+    appraisal.chatThread.push({
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: "I've generated your self-assessment report based on our conversation. Please review it below and let me know if you'd like any changes before submitting.",
+      messageType: 'report_draft',
+      phase: 'review',
+      structuredData: {
+        type: 'report',
+        data: report
+      },
+      aiContext: {
+        isAiGenerated: true,
+        modelUsed: 'gpt-4.1',
+        tokensUsed: report.tokensUsed
+      },
+      createdAt: new Date()
+    });
+
+    await appraisal.save();
+
+    res.json({
+      success: true,
+      data: {
+        report,
+        conversationState: appraisal.conversationAssessment,
+        chatThread: appraisal.chatThread.slice(-5)
+      }
+    });
+  } catch (error) {
+    console.error('Generate report error:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate report' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/conversation/finalize-report
+ * Finalize and submit the generated report
+ */
+router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify employee access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    if (!isEmployee) {
+      return res.status(403).json({ success: false, error: 'Only the employee can finalize the report' });
+    }
+
+    const { report, edits } = req.body;
+
+    if (!report) {
+      return res.status(400).json({ success: false, error: 'Report data is required' });
+    }
+
+    // Apply any edits
+    const finalReport = edits ? { ...report, ...edits } : report;
+
+    // Update self-assessment with report data
+    appraisal.selfAssessment = {
+      ...appraisal.selfAssessment,
+      overallSummary: finalReport.overallSummary,
+      okrAssessment: finalReport.okrAssessment || appraisal.selfAssessment?.okrAssessment || [],
+      overallSelfRating: finalReport.suggestedOverallRating || 3,
+      aiInsights: finalReport.aiInsights,
+      submittedAt: new Date(),
+      lastSavedAt: new Date()
+    };
+
+    // Update conversation state
+    appraisal.conversationAssessment.currentPhase = 'completed';
+    if (!appraisal.conversationAssessment.completedPhases.includes('review')) {
+      appraisal.conversationAssessment.completedPhases.push('review');
+    }
+
+    // Update status
+    appraisal.status = 'self_assessment_submitted';
+
+    // Add completion message
+    appraisal.chatThread.push({
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: "Your self-assessment has been submitted successfully! Your manager will be notified to begin their review. Thank you for taking the time to reflect on your performance.",
+      messageType: 'system',
+      phase: 'completed',
+      aiContext: { isAiGenerated: true },
+      createdAt: new Date()
+    });
+
+    appraisal.addAuditLog('self_assessment_submitted', req.session.user, { mode: 'conversation' });
+    await appraisal.save();
+
+    // Notify manager
+    try {
+      if (appraisal.manager && appraisal.manager.email) {
+        await notificationService.notifySelfAssessmentSubmitted(appraisal.manager, appraisal.employee);
+      }
+    } catch (notifyErr) {
+      console.error('Notification error:', notifyErr);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        appraisal,
+        message: 'Self-assessment submitted successfully'
+      }
+    });
+  } catch (error) {
+    console.error('Finalize report error:', error);
+    res.status(500).json({ success: false, error: 'Failed to finalize report' });
+  }
+});
+
+// =============================================
+// SCORING ENDPOINTS
+// =============================================
+
+/**
+ * GET /api/appraisals/:appraisalId/scoring
+ * Get calculated scores for an appraisal
+ */
+router.get('/:appraisalId/scoring', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify access (manager or HR)
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isManager = appraisal.manager.userId === userId || appraisal.manager.email === userEmail;
+    const isHR = req.userRole === 'hr_admin';
+    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+
+    if (!isManager && !isHR && !isEmployee) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // Calculate scores
+    const scores = appraisalAIService.calculateCompositeScore(appraisal, appraisal.cycleId);
+
+    res.json({
+      success: true,
+      data: {
+        ...scores,
+        selfRating: appraisal.selfAssessment?.overallSelfRating,
+        managerRating: appraisal.managerReview?.overallManagerRating,
+        finalRating: appraisal.finalRating?.overall
+      }
+    });
+  } catch (error) {
+    console.error('Get scoring error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get scoring' });
+  }
+});
+
+/**
+ * POST /api/appraisals/:appraisalId/ai-rating-suggestion
+ * Get AI-suggested overall rating with justification
+ */
+router.post('/:appraisalId/ai-rating-suggestion', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    // Verify manager access
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isManager = appraisal.manager.userId === userId || appraisal.manager.email === userEmail;
+    const isHR = req.userRole === 'hr_admin';
+
+    if (!isManager && !isHR) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // Get OKRs
+    const okrs = await OKR.find({
+      ownerId: appraisal.employee.userId,
+      status: { $in: ['active', 'closed'] }
+    });
+
+    // Get AI suggestion
+    const suggestion = await appraisalAIService.generateAISuggestedRating(appraisal, okrs);
+
+    // Also get calculated score for comparison
+    const calculatedScore = appraisalAIService.calculateCompositeScore(appraisal, appraisal.cycleId);
+
+    res.json({
+      success: true,
+      data: {
+        aiSuggestion: suggestion,
+        calculatedScore,
+        selfRating: appraisal.selfAssessment?.overallSelfRating,
+        comparison: {
+          aiVsSelf: suggestion.suggestedRating - (appraisal.selfAssessment?.overallSelfRating || 0),
+          aiVsCalculated: suggestion.suggestedRating - calculatedScore.suggestedRating
+        }
+      }
+    });
+  } catch (error) {
+    console.error('AI rating suggestion error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get AI rating suggestion' });
+  }
+});
+
 module.exports = router;
