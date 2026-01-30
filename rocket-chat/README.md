@@ -7,6 +7,7 @@ Rocket.Chat is pulled into the Seemplify project via this folder (Docker Compose
 ```bash
 cp .env.example .env
 # Edit .env: ROOT_URL=http://localhost:3000, HOST_PORT=3000
+# Optional: set Brevo SMTP (same as IDP) – BREVO_SMTP_PASS from access/BREVO-CONFIGURATION.md, BREVO_FROM_* from Identityprovider/.env
 docker compose up -d
 # Open http://localhost:3000 and complete setup wizard (create first admin).
 ```
@@ -17,6 +18,7 @@ docker compose up -d
    - Project: e.g. `seemplify`  
    - Application type: **Docker Compose**  
    - Connect repo: this repo; path `rocket-chat` (or upload `docker-compose.yml` + `.env`)  
+   - **Env:** Set `ROOT_URL`, and Brevo SMTP (same as IDP): copy `BREVO_SMTP_*` and `BREVO_FROM_*` from `Identityprovider/.env` and `access/BREVO-CONFIGURATION.md` (SMTP Key = `BREVO_SMTP_PASS`).  
    - Build/Deploy so Rocket.Chat and MongoDB start.
 
 2. **DNS**
@@ -82,3 +84,4 @@ Then users in that IDP group get added to the corresponding Rocket.Chat room on 
 - **Publish**: Deploy with Dokploy (Compose app) and optional GitHub workflow; DNS `chat.seemplifyai.com`.
 - **Identity Provider hub**: Rocket.Chat is added in `Identityprovider` (`clients.json` + `hubApps.js`).
 - **Members from OIDC**: Users appear automatically on first “Login with Seemplify”; optional group→channel mapping for auto-rooms.
+- **Email**: Brevo SMTP using the same credentials as the IDP (IDP env + `access/BREVO-CONFIGURATION.md`).

@@ -13,6 +13,7 @@ Use this after you have Dokploy running (e.g. on `4.180.153.209:3000`). Credenti
 4. Set environment variables (or use `.env`):
    - `ROOT_URL=https://chat.seemplifyai.com`
    - `RELEASE=8.0.1` (or desired version)
+   - **Brevo SMTP (same as IDP):** From `Identityprovider/.env`: `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`. From `access/BREVO-CONFIGURATION.md` (SMTP section): `BREVO_SMTP_HOST=smtp-relay.brevo.com`, `BREVO_SMTP_PORT=587`, `BREVO_SMTP_USER=93ea9d001@smtp-brevo.com`, `BREVO_SMTP_PASS=<SMTP Key from access doc>`.
 5. Deploy. Note the **Application ID** (from URL or settings).
 
 ## 2. DNS (Cloudflare)

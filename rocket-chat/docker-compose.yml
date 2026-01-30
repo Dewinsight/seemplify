@@ -49,6 +49,13 @@ services:
       DEPLOY_PLATFORM: compose
       MONGO_URL: mongodb://mongodb:27017/rocketchat?replicaSet=rs0
       REG_TOKEN: ${REG_TOKEN:-}
+      # Brevo SMTP (same credentials as IDP – from Identityprovider env + access/BREVO-CONFIGURATION.md)
+      OVERWRITE_SETTING_SMTP_Host: ${BREVO_SMTP_HOST:-smtp-relay.brevo.com}
+      OVERWRITE_SETTING_SMTP_Port: ${BREVO_SMTP_PORT:-587}
+      OVERWRITE_SETTING_SMTP_Username: ${BREVO_SMTP_USER:-}
+      OVERWRITE_SETTING_SMTP_Password: ${BREVO_SMTP_PASS:-}
+      OVERWRITE_SETTING_From_Email: ${BREVO_FROM_EMAIL:-no-reply@seemplifyai.com}
+      OVERWRITE_SETTING_From_Name: ${BREVO_FROM_NAME:-Rocket.Chat Seemplify}
     entrypoint: sh
     command:
       - -c
