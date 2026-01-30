@@ -9,6 +9,7 @@ import { Account } from './models/Account.js'
 import { Organization } from './models/Organization.js'
 import { OrganizationInvite } from './models/OrganizationInvite.js'
 import { Team } from './models/Team.js'
+import { Notification } from './models/Notification.js'
 import { getHubApps, getAppById, getAppApiUrl } from './config/hubApps.js'
 import bcrypt from 'bcrypt'
 import { readFileSync } from 'fs'
@@ -4093,6 +4094,81 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
   } catch (error) {
     console.error('Invitations page error:', error)
     res.redirect('/organizations?error=Failed to load invitations')
+  }
+})
+
+// Notifications page - Send email notifications to teams, members, or organization
+app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'email profile.name')
+
+    if (!organization) {
+      return res.redirect('/organizations?error=Organization not found')
+    }
+
+    const member = organization.members.find(
+      m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
+    )
+
+    if (!member) {
+      return res.redirect('/organizations?error=Not a member of this organization')
+    }
+
+    // Get teams for the dropdown
+    const teams = await Team.find({ organization: req.params.orgId })
+      .select('name members')
+      .sort({ name: 1 })
+
+    const mappedTeams = teams.map(t => ({
+      _id: t._id,
+      name: t.name,
+      memberCount: t.members.filter(m => m.status === 'active').length
+    }))
+
+    // Get members for the dropdown
+    const mappedMembers = organization.members
+      .filter(m => m.status === 'active')
+      .map(m => ({
+        id: m.account._id,
+        name: m.account.profile?.name || m.account.email?.split('@')[0] || 'Unknown',
+        email: m.account.email
+      }))
+
+    // Get notification history (paginated)
+    const page = parseInt(req.query.page) || 1
+    const limit = 10
+    const skip = (page - 1) * limit
+
+    const [notifications, totalNotifications] = await Promise.all([
+      Notification.find({ organization: req.params.orgId })
+        .populate('sentBy', 'email profile.name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('-recipients -htmlContent -textContent'),
+      Notification.countDocuments({ organization: req.params.orgId })
+    ])
+
+    res.render('notifications', {
+      organization,
+      teams: mappedTeams,
+      members: mappedMembers,
+      notifications,
+      pagination: {
+        page,
+        limit,
+        total: totalNotifications,
+        pages: Math.ceil(totalNotifications / limit)
+      },
+      yourRole: member.role,
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Notifications page error:', error)
+    res.redirect('/organizations?error=Failed to load notifications')
   }
 })
 

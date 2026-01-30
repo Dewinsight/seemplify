@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Notifications - <%= organization.name %> - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .notification-composer {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+
+    .notification-composer h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 640px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--input-bg, var(--bg));
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .form-group textarea {
+      min-height: 150px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .form-help {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+    }
+
+    .checkbox-group label {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .recipient-preview {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .recipient-preview strong {
+      color: var(--text);
+    }
+
+    .notification-history {
+      margin-top: 40px;
+    }
+
+    .notification-history h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .notification-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+
+    .notification-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .notification-subject {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .notification-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .notification-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-completed {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+    }
+
+    .status-partial {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+    }
+
+    .status-failed {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .status-sending {
+      background: rgba(99, 102, 241, 0.15);
+      color: #6366f1;
+    }
+
+    .target-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--brand);
+      color: white;
+      text-transform: uppercase;
+    }
+
+    .delivery-stats {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    .delivery-stats .sent {
+      color: #22c55e;
+    }
+
+    .delivery-stats .failed {
+      color: #ef4444;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .pagination a,
+    .pagination span {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .pagination a {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+
+    .pagination a:hover {
+      border-color: var(--brand);
+    }
+
+    .pagination .current {
+      background: var(--brand);
+      color: white;
+    }
+
+    .btn-send {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-send:hover {
+      opacity: 0.9;
+    }
+
+    .btn-send:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #22c55e;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'organizations' }) %>
+
+  <div class="container">
+    <a href="/organizations" class="back-link">← Back to Organizations</a>
+
+    <div class="header">
+      <div>
+        <h1>Email Notifications</h1>
+        <div class="header-subtitle">
+          <%= organization.name %>
+        </div>
+      </div>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error">
+        <%= error %>
+      </div>
+    <% } %>
+
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success">
+        <%= success %>
+      </div>
+    <% } %>
+
+    <!-- Notification Composer -->
+    <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+    <div class="notification-composer">
+      <h2>Send Notification</h2>
+      <form id="notificationForm" onsubmit="sendNotification(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="targetType">Send To</label>
+            <select id="targetType" name="targetType" onchange="updateTargetOptions()" required>
+              <option value="organization">Entire Organization</option>
+              <option value="team">Specific Team</option>
+              <option value="member">Individual Member</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="targetIdGroup" style="display: none;">
+            <label for="targetId" id="targetIdLabel">Select</label>
+            <select id="targetId" name="targetId">
+              <option value="">-- Select --</option>
+            </select>
+            <div class="checkbox-group" id="includeSubTeamsGroup" style="display: none;">
+              <input type="checkbox" id="includeSubTeams" name="includeSubTeams">
+              <label for="includeSubTeams">Include sub-teams</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="subject">Subject</label>
+          <input type="text" id="subject" name="subject" placeholder="Enter email subject..." maxlength="200" required>
+          <div class="form-help">Maximum 200 characters</div>
+        </div>
+
+        <div class="form-group">
+          <label for="htmlContent">Message</label>
+          <textarea id="htmlContent" name="htmlContent" placeholder="Enter your message here. HTML is supported for formatting." required></textarea>
+          <div class="form-help">You can use HTML tags like &lt;p&gt;, &lt;strong&gt;, &lt;ul&gt;, &lt;li&gt;, etc.</div>
+        </div>
+
+        <div id="recipientPreview" class="recipient-preview" style="display: none;">
+          This will be sent to <strong id="recipientCount">0</strong> recipient(s)
+        </div>
+
+        <div style="margin-top: 20px;">
+          <button type="submit" class="btn-send" id="sendBtn">
+            <span id="sendBtnText">Send Notification</span>
+            <span id="sendBtnSpinner" class="loading-spinner" style="display: none;"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+    <% } else { %>
+    <div class="notification-composer">
+      <p style="color: var(--muted); text-align: center; padding: 20px;">
+        You need Admin, Owner, or HR Manager role to send notifications.
+      </p>
+    </div>
+    <% } %>
+
+    <!-- Notification History -->
+    <div class="notification-history">
+      <h2>Notification History</h2>
+
+      <% if (notifications.length === 0) { %>
+        <div class="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          <p>No notifications sent yet</p>
+        </div>
+      <% } else { %>
+        <% notifications.forEach(notification => { %>
+          <div class="notification-card">
+            <div class="notification-header">
+              <div>
+                <div class="notification-subject"><%= notification.subject %></div>
+                <div class="notification-meta">
+                  <span>
+                    <span class="target-badge"><%= notification.targetType %></span>
+                  </span>
+                  <span>by <%= notification.sentBy?.profile?.name || notification.sentBy?.email || 'Unknown' %></span>
+                  <span><%= new Date(notification.createdAt).toLocaleString() %></span>
+                </div>
+              </div>
+              <span class="status-badge status-<%= notification.status %>">
+                <%= notification.status %>
+              </span>
+            </div>
+            <div class="delivery-stats">
+              <span class="sent"><%= notification.sentCount %> sent</span>
+              <% if (notification.failedCount > 0) { %>
+                <span class="failed"><%= notification.failedCount %> failed</span>
+              <% } %>
+              <span>of <%= notification.recipientCount %> total</span>
+            </div>
+          </div>
+        <% }) %>
+
+        <% if (pagination.pages > 1) { %>
+          <div class="pagination">
+            <% if (pagination.page > 1) { %>
+              <a href="?page=<%= pagination.page - 1 %>">&laquo; Prev</a>
+            <% } %>
+            <% for (let i = 1; i <= pagination.pages; i++) { %>
+              <% if (i === pagination.page) { %>
+                <span class="current"><%= i %></span>
+              <% } else { %>
+                <a href="?page=<%= i %>"><%= i %></a>
+              <% } %>
+            <% } %>
+            <% if (pagination.page < pagination.pages) { %>
+              <a href="?page=<%= pagination.page + 1 %>">Next &raquo;</a>
+            <% } %>
+          </div>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+
+  <script>
+    const orgId = '<%= organization._id %>';
+    const teams = <%- JSON.stringify(teams) %>;
+    const members = <%- JSON.stringify(members) %>;
+
+    function updateTargetOptions() {
+      const targetType = document.getElementById('targetType').value;
+      const targetIdGroup = document.getElementById('targetIdGroup');
+      const targetIdSelect = document.getElementById('targetId');
+      const targetIdLabel = document.getElementById('targetIdLabel');
+      const includeSubTeamsGroup = document.getElementById('includeSubTeamsGroup');
+
+      // Clear options
+      targetIdSelect.innerHTML = '<option value="">-- Select --</option>';
+
+      if (targetType === 'organization') {
+        targetIdGroup.style.display = 'none';
+        includeSubTeamsGroup.style.display = 'none';
+        updateRecipientPreview(members.length);
+      } else if (targetType === 'team') {
+        targetIdGroup.style.display = 'block';
+        targetIdLabel.textContent = 'Select Team';
+        includeSubTeamsGroup.style.display = 'block';
+
+        teams.forEach(team => {
+          const option = document.createElement('option');
+          option.value = team._id;
+          option.textContent = team.name + ' (' + team.memberCount + ' members)';
+          option.dataset.memberCount = team.memberCount;
+          targetIdSelect.appendChild(option);
+        });
+
+        updateRecipientPreview(0);
+      } else if (targetType === 'member') {
+        targetIdGroup.style.display = 'block';
+        targetIdLabel.textContent = 'Select Member';
+        includeSubTeamsGroup.style.display = 'none';
+
+        members.forEach(member => {
+          const option = document.createElement('option');
+          option.value = member.id;
+          option.textContent = (member.name || member.email);
+          targetIdSelect.appendChild(option);
+        });
+
+        updateRecipientPreview(0);
+      }
+    }
+
+    function updateRecipientPreview(count) {
+      const preview = document.getElementById('recipientPreview');
+      const countSpan = document.getElementById('recipientCount');
+
+      if (count > 0) {
+        countSpan.textContent = count;
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+      }
+    }
+
+    document.getElementById('targetId')?.addEventListener('change', function() {
+      const targetType = document.getElementById('targetType').value;
+
+      if (targetType === 'team') {
+        const selected = this.options[this.selectedIndex];
+        const count = parseInt(selected.dataset.memberCount) || 0;
+        updateRecipientPreview(count);
+      } else if (targetType === 'member' && this.value) {
+        updateRecipientPreview(1);
+      } else {
+        updateRecipientPreview(0);
+      }
+    });
+
+    async function sendNotification(event) {
+      event.preventDefault();
+
+      const form = document.getElementById('notificationForm');
+      const sendBtn = document.getElementById('sendBtn');
+      const sendBtnText = document.getElementById('sendBtnText');
+      const sendBtnSpinner = document.getElementById('sendBtnSpinner');
+
+      const targetType = document.getElementById('targetType').value;
+      const targetId = document.getElementById('targetId')?.value;
+      const subject = document.getElementById('subject').value;
+      const htmlContent = document.getElementById('htmlContent').value;
+      const includeSubTeams = document.getElementById('includeSubTeams')?.checked || false;
+
+      // Validate
+      if (targetType !== 'organization' && !targetId) {
+        alert('Please select a ' + (targetType === 'team' ? 'team' : 'member'));
+        return;
+      }
+
+      if (!subject.trim()) {
+        alert('Please enter a subject');
+        return;
+      }
+
+      if (!htmlContent.trim()) {
+        alert('Please enter a message');
+        return;
+      }
+
+      // Disable button and show spinner
+      sendBtn.disabled = true;
+      sendBtnText.textContent = 'Sending...';
+      sendBtnSpinner.style.display = 'inline-block';
+
+      try {
+        const payload = {
+          targetType,
+          subject: subject.trim(),
+          htmlContent: htmlContent.trim(),
+          includeSubTeams
+        };
+
+        if (targetType !== 'organization') {
+          payload.targetId = targetId;
+        }
+
+        const response = await fetch(`/api/organizations/${orgId}/notifications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok || response.status === 207) {
+          alert(`Notification sent! ${data.sent} of ${data.recipientCount} emails delivered successfully.`);
+          window.location.reload();
+        } else {
+          alert(data.error || 'Failed to send notification');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to send notification. Please try again.');
+      } finally {
+        sendBtn.disabled = false;
+        sendBtnText.textContent = 'Send Notification';
+        sendBtnSpinner.style.display = 'none';
+      }
+    }
+
+    // Initialize on page load
+    updateTargetOptions();
+  </script>
+
+  <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

@@ -87,6 +87,7 @@
                         <a href="/organizations/<%= org.id %>/teams" class="btn btn-secondary">Teams</a>
                         <% if (['owner', 'admin' ].includes(org.role)) { %>
                           <a href="/organizations/<%= org.id %>/invitations" class="btn btn-secondary">Invitations</a>
+                          <a href="/organizations/<%= org.id %>/notifications" class="btn btn-secondary">Notifications</a>
                           <% } %>
                             <% if (org.role==='owner' ) { %>
                               <button class="btn btn-danger"

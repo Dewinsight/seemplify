@@ -27,6 +27,9 @@
       </div>
       <div class="header-actions">
         <% if (['owner', 'admin' ].includes(yourRole)) { %>
+          <a href="/organizations/<%= organization._id %>/notifications" class="btn btn-secondary">
+            Send Notification
+          </a>
           <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">
             + Invite Member
           </a>
