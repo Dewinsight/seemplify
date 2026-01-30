@@ -48,6 +48,17 @@ services:
         condition: service_healthy
       mongodb-init:
         condition: service_completed_successfully
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.seemplify-chat.rule=Host(`chat.seemplifyai.com`)"
+      - "traefik.http.routers.seemplify-chat.entrypoints=websecure"
+      - "traefik.http.routers.seemplify-chat.tls=true"
+      - "traefik.http.routers.seemplify-chat.tls.certresolver=letsencrypt"
+      - "traefik.http.services.seemplify-chat.loadbalancer.server.port=3000"
+      - "traefik.docker.network=dokploy-network"
     environment:
       ROOT_URL: ${ROOT_URL:-http://localhost:3000}
       PORT: 3000
@@ -93,3 +104,9 @@ services:
 
 volumes:
   mongodb_data:
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME}_default
+  dokploy-network:
+    external: true
