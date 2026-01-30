@@ -130,6 +130,20 @@ const developmentApps = [
     isPublic: true,
     category: 'productivity',
     order: 7
+  },
+  {
+    appId: 'rocket-chat',
+    name: 'Team Chat',
+    description: 'Team messaging and collaboration',
+    icon: 'chat-bubble-left-right',
+    color: '#f5455c',
+    url: process.env.ROCKET_CHAT_URL || 'http://localhost:3000',
+    apiUrl: process.env.ROCKET_CHAT_URL || 'http://localhost:3000',
+    clientId: 'rocket-chat',
+    isActive: true,
+    isPublic: true,
+    category: 'communication',
+    order: 8
   }
 ]
 
@@ -248,6 +262,20 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 7
+  },
+  {
+    appId: 'rocket-chat',
+    name: 'Team Chat',
+    description: 'Team messaging and collaboration',
+    icon: 'chat-bubble-left-right',
+    color: '#f5455c',
+    url: process.env.ROCKET_CHAT_URL || 'https://chat.seemplifyai.com',
+    apiUrl: process.env.ROCKET_CHAT_URL || 'https://chat.seemplifyai.com',
+    clientId: 'rocket-chat',
+    isActive: true,
+    isPublic: true,
+    category: 'communication',
+    order: 8
   }
 ]
 

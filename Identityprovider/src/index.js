@@ -3571,6 +3571,27 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(openwebuiAuthUrl)
     }
 
+    // Special handling for Rocket.Chat - Custom OAuth; redirect to IDP then Rocket.Chat callback
+    if (app.appId === 'rocket-chat') {
+      const rocketChatCallback = `${app.url.replace(/\/+$/, '')}/_oauth/seemplify`
+      const state = Buffer.from(JSON.stringify({
+        site: app.url,
+        token: crypto.randomBytes(16).toString('hex'),
+        redirect_to: '/'
+      })).toString('base64')
+      const authParams = new URLSearchParams({
+        client_id: 'rocket-chat',
+        redirect_uri: rocketChatCallback,
+        response_type: 'code',
+        scope: 'openid email profile offline_access',
+        state: state
+      })
+      const rocketChatAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
+      console.log('  📍 ROCKET.CHAT OIDC REDIRECT TO:', rocketChatAuthUrl)
+      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      return res.redirect(rocketChatAuthUrl)
+    }
+
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
     // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
     // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify

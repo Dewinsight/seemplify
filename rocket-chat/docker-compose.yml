@@ -1,0 +1,71 @@
+# Rocket.Chat + MongoDB for Seemplify
+# Based on https://github.com/RocketChat/rocketchat-compose
+# Use with: docker compose up -d
+
+services:
+  mongodb:
+    image: docker.io/mongodb/mongodb-community-server:${MONGODB_VERSION:-8.2}-ubi8
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGODB_REPLICA_SET_NAME: rs0
+    command: mongod --replSet rs0 --bind_ip_all
+    healthcheck:
+      test: ["CMD", "mongosh", "mongodb://localhost:27017", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mongodb-init:
+    image: docker.io/mongodb/mongodb-community-server:${MONGODB_VERSION:-8.2}-ubi8
+    restart: on-failure
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/?directConnection=true
+      MONGODB_REPLICA_SET_NAME: rs0
+    entrypoint: |
+      sh -ec '
+      echo "=====> Initiating replica set rs0...";
+      mongosh "$$MONGODB_URI" --eval "rs.initiate({_id: \"$$MONGODB_REPLICA_SET_NAME\", members: [{ _id: 0, host: \"mongodb:27017\" }]})";
+      echo "=====> Replica set initiated.";
+      '
+
+  rocketchat:
+    image: ${IMAGE:-registry.rocket.chat/rocketchat/rocket.chat}:${RELEASE:-8.0.1}
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
+    environment:
+      ROOT_URL: ${ROOT_URL:-http://localhost:3000}
+      PORT: 3000
+      DEPLOY_METHOD: docker
+      DEPLOY_PLATFORM: compose
+      MONGO_URL: mongodb://mongodb:27017/rocketchat?replicaSet=rs0
+      REG_TOKEN: ${REG_TOKEN:-}
+    entrypoint: sh
+    command:
+      - -c
+      - |
+        echo "=====> Waiting for MongoDB to be ready...";
+        for i in $(seq 1 60); do
+          if nc -z mongodb 27017 >/dev/null 2>&1; then
+            echo "=====> MongoDB is up - starting Rocket.Chat";
+            exec node main.js;
+          fi;
+          echo "=====> MongoDB not ready yet, retrying in 5 seconds...";
+          sleep 5;
+        done;
+        echo "=====> Giving up waiting for MongoDB";
+        exit 1
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+
+volumes:
+  mongodb_data:
