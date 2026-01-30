@@ -1,4 +1,4 @@
-const { AzureOpenAI } = require('@azure/openai');
+const { AzureOpenAI } = require('openai');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -264,9 +264,9 @@ Employee's Self-Rating: ${selfAssessment?.overallSelfRating}/5
 
 Competency Rating Gaps:
 ${managerReview.competencyRatings?.map(c => {
-  const selfRating = selfAssessment?.competencyRatings?.find(s => s.competencyId === c.competencyId);
-  return `- ${c.competencyName}: Manager ${c.managerRating}/5, Self ${selfRating?.selfRating || 'N/A'}/5`;
-}).join('\n') || 'No data'}
+      const selfRating = selfAssessment?.competencyRatings?.find(s => s.competencyId === c.competencyId);
+      return `- ${c.competencyName}: Manager ${c.managerRating}/5, Self ${selfRating?.selfRating || 'N/A'}/5`;
+    }).join('\n') || 'No data'}
 
 ${context.tenure ? `Employee Tenure: ${context.tenure}` : ''}
 ${context.previousRating ? `Previous Rating: ${context.previousRating}` : ''}
