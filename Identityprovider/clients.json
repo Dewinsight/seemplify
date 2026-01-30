@@ -187,6 +187,8 @@
       "client_id": "zulip",
       "client_secret": "zulip-seemplify-secret-2026",
       "redirect_uri_patterns": [
+        "https://auth.chat.seemplifyai.com/complete/oidc/",
+        "https://*.chat.seemplifyai.com/complete/oidc/",
         "https://chat.seemplifyai.com/complete/oidc/",
         "https://chat.seemplifyai.com/complete/saml/",
         "https://chat-dev.seemplifyai.com/complete/oidc/",
@@ -195,6 +197,8 @@
         "https://auth-dev.seemplifyai.com"
       ],
       "allowed_origins": [
+        "https://auth.chat.seemplifyai.com",
+        "https://*.chat.seemplifyai.com",
         "https://chat.seemplifyai.com",
         "https://chat-dev.seemplifyai.com",
         "http://localhost",
