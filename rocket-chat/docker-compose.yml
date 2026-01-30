@@ -84,6 +84,26 @@ services:
       OVERWRITE_SETTING_Jitsi_Domain: ${JITSI_DOMAIN:-meet.jit.si}
       OVERWRITE_SETTING_Jitsi_URL_Room_Prefix: ${JITSI_ROOM_PREFIX:-SeemplifyChat}
       OVERWRITE_SETTING_Jitsi_Open_New_Window: ${JITSI_NEW_WINDOW:-false}
+      # Custom CSS to hide Rocket.Chat branding
+      OVERWRITE_SETTING_CSS: |
+        /* Hide Rocket.Chat logo/branding in footer */
+        a[href*="rocket.chat"],
+        a[href="https://rocket.chat"],
+        .rcx-box--with-inline-elements > a[href]:has(svg),
+        footer a[href*="rocket.chat"],
+        .sidebar-footer a[href*="rocket.chat"],
+        [data-qa="sidebar-footer"] a,
+        .rcx-sidebar-footer a {
+          display: none !important;
+        }
+        
+        /* Hide "Powered by" text if present */
+        .powered-by,
+        .rcx-sidebar-footer__watermark,
+        [class*="watermark"],
+        [class*="PoweredBy"] {
+          display: none !important;
+        }
     entrypoint: sh
     command:
       - -c
