@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Personal Information - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css">
+    <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>Personal Information</h1>
+                    <div class="header-subtitle">
+                        Update your address, phone numbers, and emergency contacts
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Navigation Tabs -->
+            <div class="profile-nav">
+                <a href="/profile">Dashboard</a>
+                <a href="/profile/personal" class="active">Personal Info</a>
+                <a href="/profile/documents">Documents</a>
+                <a href="/profile/banking">Banking</a>
+                <a href="/profile/dependents">Dependents</a>
+            </div>
+
+            <div id="alertSuccess" class="alert alert-success"></div>
+            <div id="alertError" class="alert alert-error"></div>
+
+            <!-- Mailing Address -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Mailing Address</h3>
+                <form id="addressForm">
+                    <div class="form-group">
+                        <label for="street">Street Address</label>
+                        <input type="text" id="street" name="street"
+                            value="<%= user.profile?.personalInfo?.mailingAddress?.street || '' %>"
+                            placeholder="123 Main Street">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="street2">Apartment, Suite, Unit (Optional)</label>
+                        <input type="text" id="street2" name="street2"
+                            value="<%= user.profile?.personalInfo?.mailingAddress?.street2 || '' %>"
+                            placeholder="Apt 4B">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label for="city">City</label>
+                            <input type="text" id="city" name="city"
+                                value="<%= user.profile?.personalInfo?.mailingAddress?.city || '' %>"
+                                placeholder="New York">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="state">State</label>
+                            <input type="text" id="state" name="state"
+                                value="<%= user.profile?.personalInfo?.mailingAddress?.state || '' %>" placeholder="NY">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label for="zipCode">ZIP Code</label>
+                            <input type="text" id="zipCode" name="zipCode"
+                                value="<%= user.profile?.personalInfo?.mailingAddress?.zipCode || '' %>"
+                                placeholder="10001">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="country">Country</label>
+                            <input type="text" id="country" name="country"
+                                value="<%= user.profile?.personalInfo?.mailingAddress?.country || 'USA' %>"
+                                placeholder="USA">
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Phone Numbers -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Phone Numbers</h3>
+                <form id="phoneForm">
+                    <div class="form-group">
+                        <label for="mobile">Mobile Phone</label>
+                        <input type="tel" id="mobile" name="mobile"
+                            value="<%= user.profile?.personalInfo?.phoneNumbers?.mobile || '' %>"
+                            placeholder="(555) 123-4567">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="home">Home Phone (Optional)</label>
+                        <input type="tel" id="home" name="home"
+                            value="<%= user.profile?.personalInfo?.phoneNumbers?.home || '' %>"
+                            placeholder="(555) 987-6543">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="work">Work Phone (Optional)</label>
+                        <input type="tel" id="work" name="work"
+                            value="<%= user.profile?.personalInfo?.phoneNumbers?.work || '' %>"
+                            placeholder="(555) 555-5555">
+                    </div>
+                </form>
+            </div>
+
+            <!-- Emergency Contacts -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Emergency Contacts</h3>
+                <form id="emergencyForm">
+                    <div id="emergencyContactsList">
+                        <% if (user.profile?.personalInfo?.emergencyContacts &&
+                            user.profile.personalInfo.emergencyContacts.length> 0) { %>
+                            <% user.profile.personalInfo.emergencyContacts.forEach((contact, index)=> { %>
+                                <div class="emergency-contact-item" data-index="<%= index %>">
+                                    <div
+                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                        <div class="form-group">
+                                            <label>Contact Name</label>
+                                            <input type="text" name="ec_name_<%= index %>"
+                                                value="<%= contact.name || '' %>" placeholder="Jane Doe">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Relationship</label>
+                                            <input type="text" name="ec_relationship_<%= index %>"
+                                                value="<%= contact.relationship || '' %>" placeholder="Spouse">
+                                        </div>
+                                    </div>
+                                    <div
+                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                        <div class="form-group">
+                                            <label>Phone Number</label>
+                                            <input type="tel" name="ec_phone_<%= index %>"
+                                                value="<%= contact.phone || '' %>" placeholder="(555) 123-4567">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Email (Optional)</label>
+                                            <input type="email" name="ec_email_<%= index %>"
+                                                value="<%= contact.email || '' %>" placeholder="jane@example.com">
+                                        </div>
+                                    </div>
+                                    <% if (index> 0) { %>
+                                        <button type="button" class="btn btn-secondary"
+                                            onclick="removeEmergencyContact(<%= index %>)">Remove Contact</button>
+                                        <% } %>
+                                            <hr style="margin: 24px 0;">
+                                </div>
+                                <% }) %>
+                                    <% } else { %>
+                                        <div class="emergency-contact-item" data-index="0">
+                                            <div
+                                                style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                                <div class="form-group">
+                                                    <label>Contact Name</label>
+                                                    <input type="text" name="ec_name_0" placeholder="Jane Doe">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Relationship</label>
+                                                    <input type="text" name="ec_relationship_0" placeholder="Spouse">
+                                                </div>
+                                            </div>
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                                <div class="form-group">
+                                                    <label>Phone Number</label>
+                                                    <input type="tel" name="ec_phone_0" placeholder="(555) 123-4567">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Email (Optional)</label>
+                                                    <input type="email" name="ec_email_0"
+                                                        placeholder="jane@example.com">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <% } %>
+                    </div>
+
+                    <button type="button" class="btn btn-secondary" onclick="addEmergencyContact()"
+                        style="margin-top: 16px;">
+                        + Add Another Emergency Contact
+                    </button>
+                </form>
+            </div>
+
+            <!-- Save Button -->
+            <div class="card">
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="saveBtn" onclick="savePersonalInfo()">
+                        <span id="btnText">Save All Changes</span>
+                        <span id="btnSpinner" style="display:none;">Saving...</span>
+                    </button>
+                    <a href="/profile" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let emergencyContactCount = <%= user.profile?.personalInfo?.emergencyContacts?.length || 1 %>;
+
+            function addEmergencyContact() {
+                const list = document.getElementById('emergencyContactsList');
+                const newContact = document.createElement('div');
+                newContact.className = 'emergency-contact-item';
+                newContact.dataset.index = emergencyContactCount;
+                newContact.innerHTML = `
+        <hr style="margin: 24px 0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div class="form-group">
+            <label>Contact Name</label>
+            <input type="text" name="ec_name_${emergencyContactCount}" placeholder="Jane Doe">
+          </div>
+          <div class="form-group">
+            <label>Relationship</label>
+            <input type="text" name="ec_relationship_${emergencyContactCount}" placeholder="Spouse">
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" name="ec_phone_${emergencyContactCount}" placeholder="(555) 123-4567">
+          </div>
+          <div class="form-group">
+            <label>Email (Optional)</label>
+            <input type="email" name="ec_email_${emergencyContactCount}" placeholder="jane@example.com">
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="removeEmergencyContact(${emergencyContactCount})">Remove Contact</button>
+      `;
+                list.appendChild(newContact);
+                emergencyContactCount++;
+            }
+
+            function removeEmergencyContact(index) {
+                const item = document.querySelector(`[data-index="${index}"]`);
+                if (item) item.remove();
+            }
+
+            async function savePersonalInfo() {
+                const alertSuccess = document.getElementById('alertSuccess');
+                const alertError = document.getElementById('alertError');
+                const saveBtn = document.getElementById('saveBtn');
+                const btnText = document.getElementById('btnText');
+                const btnSpinner = document.getElementById('btnSpinner');
+
+                // Hide previous alerts
+                alertSuccess.classList.remove('show');
+                alertError.classList.remove('show');
+
+                // Show loading
+                saveBtn.disabled = true;
+                btnText.style.display = 'none';
+                btnSpinner.style.display = 'inline';
+
+                // Collect all data
+                const data = {
+                    mailingAddress: {
+                        street: document.getElementById('street').value.trim(),
+                        street2: document.getElementById('street2').value.trim(),
+                        city: document.getElementById('city').value.trim(),
+                        state: document.getElementById('state').value.trim(),
+                        zipCode: document.getElementById('zipCode').value.trim(),
+                        country: document.getElementById('country').value.trim() || 'USA'
+                    },
+                    phoneNumbers: {
+                        mobile: document.getElementById('mobile').value.trim(),
+                        home: document.getElementById('home').value.trim(),
+                        work: document.getElementById('work').value.trim()
+                    },
+                    emergencyContacts: []
+                };
+
+                // Collect emergency contacts
+                const contacts = document.querySelectorAll('.emergency-contact-item');
+                contacts.forEach(contact => {
+                    const index = contact.dataset.index;
+                    const name = document.querySelector(`[name="ec_name_${index}"]`)?.value.trim();
+                    const relationship = document.querySelector(`[name="ec_relationship_${index}"]`)?.value.trim();
+                    const phone = document.querySelector(`[name="ec_phone_${index}"]`)?.value.trim();
+                    const email = document.querySelector(`[name="ec_email_${index}"]`)?.value.trim();
+
+                    if (name && phone) {
+                        data.emergencyContacts.push({ name, relationship, phone, email });
+                    }
+                });
+
+                try {
+                    const response = await fetch('/api/profile/personal', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        alertSuccess.textContent = result.message || 'Personal information updated successfully!';
+                        alertSuccess.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    } else {
+                        alertError.textContent = result.error || 'Failed to update personal information';
+                        alertError.classList.add('show');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alertError.textContent = 'An error occurred while saving';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } finally {
+                    saveBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnSpinner.style.display = 'none';
+                }
+            }
+        </script>
+
+        <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

@@ -10,6 +10,9 @@ const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 
+// Screening questions routes
+const screeningQuestionsRouter = require('./screeningQuestions');
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -29,8 +32,13 @@ const upload = multer({
   }
 });
 
-// Public endpoint to get all public, active jobs (no authentication required)
-// IMPORTANT: This route MUST come before /public/:id to avoid route conflicts
+// Apply authentication middleware
+router.use(authMiddleware);
+
+// Screening questions routes
+router.use('/jobs/:id', screeningQuestionsRouter);
+
+// Public endpoint to get all public jobs (no authentication required)
 router.get('/public', async (req, res) => {
   try {
     const {
@@ -372,7 +380,13 @@ router.post('/public/apply', async (req, res) => {
         changedBy: statusHistoryChangedBy,
         changedAt: new Date(),
         notes: 'Applied through public job page'
-      }]
+      }],
+      // Save screening question answers if provided
+      screeningAnswers: req.body.screeningAnswers ? req.body.screeningAnswers.map(answer => ({
+        questionId: answer.questionId,
+        answer: answer.answer,
+        answeredAt: new Date()
+      })) : []
     };
     
     // If pipeline stages exist, assign the first stage
@@ -588,6 +602,6 @@ router.post('/admin/fix-public-counts', authMiddleware, requireOrganization, asy
       error: error.message 
     });
   }
-});
+  });
 
-module.exports = router; 
+module.exports = router;

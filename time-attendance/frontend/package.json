@@ -1,0 +1,47 @@
+{
+    "name": "time-attendance-frontend",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "next dev -p 5011",
+        "build": "next build",
+        "build:validate": "next build && node scripts/validate-production-build.js",
+        "start": "next start -p 5011",
+        "lint": "next lint",
+        "validate:production": "node scripts/validate-production-build.js"
+    },
+    "dependencies": {
+        "@radix-ui/react-avatar": "^1.0.4",
+        "@radix-ui/react-dialog": "^1.0.5",
+        "@radix-ui/react-dropdown-menu": "^2.0.6",
+        "@radix-ui/react-popover": "^1.0.7",
+        "@radix-ui/react-slot": "^1.0.2",
+        "@radix-ui/react-toast": "^1.1.5",
+        "axios": "^1.6.2",
+        "class-variance-authority": "^0.7.0",
+        "clsx": "^2.0.0",
+        "date-fns": "^2.30.0",
+        "framer-motion": "^12.29.2",
+        "lucide-react": "^0.294.0",
+        "next": "14.0.3",
+        "react": "^18.2.0",
+        "react-day-picker": "^8.9.1",
+        "react-dom": "^18.2.0",
+        "tailwind-merge": "^2.1.0",
+        "tailwindcss-animate": "^1.0.7"
+    },
+    "devDependencies": {
+        "@types/lodash": "^4.17.23",
+        "@types/node": "^20.10.0",
+        "@types/qrcode": "^1.5.6",
+        "@types/quill": "^2.0.14",
+        "@types/react": "^18.2.39",
+        "@types/react-dom": "^18.2.17",
+        "autoprefixer": "^10.4.16",
+        "eslint": "^8.54.0",
+        "eslint-config-next": "14.0.3",
+        "postcss": "^8.4.31",
+        "tailwindcss": "^3.3.5",
+        "typescript": "^5.3.2"
+    }
+}

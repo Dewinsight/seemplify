@@ -21,10 +21,12 @@ import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
+import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
 import { samlIdPService as samlService } from './services/samlService.js'
+import { subscriptionService } from './services/subscriptionService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -60,9 +62,10 @@ async function getCachedClaims(acc) {
   console.log(`🔨 [PERF] Building claims for ${acc.email}...`)
 
   // Build claims in PARALLEL for performance
-  const [organizationClaims, teamClaims] = await Promise.all([
+  const [organizationClaims, teamClaims, subscriptionClaims] = await Promise.all([
     buildOrganizationClaims(acc),
-    getTeamClaims(acc)
+    getTeamClaims(acc),
+    buildSubscriptionClaims(acc)
   ])
 
   const claims = {
@@ -77,6 +80,8 @@ async function getCachedClaims(acc) {
       id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
       name: acc.currentOrganization.name
     } : null,
+    // Subscription claims (for current organization)
+    subscription: subscriptionClaims,
     // Team claims (with hierarchy)
     teams: teamClaims,
     // Team-based permissions across all organizations
@@ -107,6 +112,122 @@ async function getCachedClaims(acc) {
   console.log(`✅ [PERF] Claims built for ${acc.email} in ${Date.now() - startTime}ms (orgs: ${organizationClaims.length}, teams: ${teamClaims.length})`)
 
   return claims
+}
+
+/**
+ * Build subscription claims for the current organization
+ * Returns subscription status, features, and limits for apps to verify access
+ */
+async function buildSubscriptionClaims(acc) {
+  // No current organization = no subscription claims
+  if (!acc.currentOrganization) {
+    return {
+      status: 'none',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
+
+  try {
+    const orgId = acc.currentOrganization._id?.toString() || acc.currentOrganization.toString()
+
+    // Get subscription info from service
+    const subscription = await subscriptionService.getSubscriptionForOrg(orgId)
+
+    if (!subscription) {
+      return {
+        status: 'none',
+        planId: null,
+        planName: null,
+        features: {
+          recruiter: false,
+          leaveManagement: false,
+          payrollManagement: false,
+          performanceManagement: false,
+          outlineDocs: false,
+          aiChat: false,
+          lms: false
+        },
+        limits: {
+          maxMembers: 0,
+          maxTeams: 0
+        },
+        expiresAt: null,
+        isInGracePeriod: false
+      }
+    }
+
+    // Get effective features and limits (merges plan + custom overrides)
+    const [features, limits] = await Promise.all([
+      subscriptionService.getEffectiveFeatures(orgId),
+      subscriptionService.getEffectiveLimits(orgId)
+    ])
+
+    // Determine effective status
+    let effectiveStatus = subscription.status
+    if (subscription.status === 'expired' && subscription.isInGracePeriod) {
+      effectiveStatus = 'grace_period'
+    }
+
+    return {
+      status: effectiveStatus,
+      planId: subscription.plan?._id?.toString() || null,
+      planName: subscription.plan?.name || null,
+      features: {
+        recruiter: features.recruiter || false,
+        leaveManagement: features.leaveManagement || false,
+        payrollManagement: features.payrollManagement || false,
+        performanceManagement: features.performanceManagement || false,
+        outlineDocs: features.outlineDocs || false,
+        aiChat: features.aiChat || false,
+        lms: features.lms || false
+      },
+      limits: {
+        maxMembers: limits.maxMembers,
+        maxTeams: limits.maxTeams
+      },
+      expiresAt: subscription.endDate?.toISOString() || null,
+      isInGracePeriod: subscription.isInGracePeriod || false
+    }
+  } catch (error) {
+    console.error('Error building subscription claims:', error)
+    // Return safe defaults on error
+    return {
+      status: 'error',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
 }
 
 // =============================================================================
@@ -164,6 +285,15 @@ import organizationsRouter from './routes/organizations.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
+// Subscription Management Routes
+import adminPlansRouter from './routes/adminPlans.js'
+import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
+import adminSubscriptionsRouter from './routes/adminSubscriptions.js'
+import adminViewsRouter from './routes/adminViews.js'
+import publicPlansRouter from './routes/publicPlans.js'
+import organizationSubscriptionRouter from './routes/organizationSubscription.js'
+import adminUsersRouter from './routes/adminUsers.js'
+import profileRouter from './routes/profile.js'
 
 dotenv.config()
 
@@ -391,11 +521,11 @@ provider.on('interaction.ended', (ctx) => {
 provider.on('grant.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   // Account ID can be in session, grant, or entities.Account
-  const accountId = ctx.oidc.session?.accountId || 
-                    ctx.oidc.account?.accountId ||
-                    ctx.oidc.entities?.Account?.accountId ||
-                    ctx.oidc.grant?.accountId
-  
+  const accountId = ctx.oidc.session?.accountId ||
+    ctx.oidc.account?.accountId ||
+    ctx.oidc.entities?.Account?.accountId ||
+    ctx.oidc.grant?.accountId
+
   console.log('✅ Grant success:', {
     client_id: clientId,
     grant_type: ctx.oidc.params?.grant_type,
@@ -433,7 +563,7 @@ provider.on('server_error', (ctx, err) => {
 provider.on('userinfo.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   const account = ctx.oidc.account
-  
+
   console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
 })
 
@@ -2881,6 +3011,231 @@ async function getSessionFromCookies(req) {
   }
 }
 
+// Public Plans Page - View available subscription plans
+app.get('/plans', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const plans = await subscriptionService.getPublicPlans()
+
+    // If user is logged in, get their organization subscription info
+    let currentSubscription = null
+    let organization = null
+
+    if (sessionAccount) {
+      const account = await Account.findOne({ sub: sessionAccount.sub })
+        .populate('currentOrganization')
+
+      if (account?.currentOrganization) {
+        organization = account.currentOrganization
+        currentSubscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      }
+    }
+
+    res.render('plans', {
+      user: sessionAccount,
+      plans,
+      currentSubscription,
+      organization,
+      activePage: 'plans'
+    })
+  } catch (err) {
+    console.error('Plans page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Subscription Required Page - Redirect destination when app denies access due to subscription
+app.get('/subscription-required', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const { app: appName, org: orgId, reason } = req.query
+
+    // App name display mapping
+    const appDisplayNames = {
+      'recruiter': 'SmartHR Recruiter',
+      'smarthr': 'SmartHR Recruiter',
+      'leave-management': 'Leave Management',
+      'payroll-management': 'Payroll Management',
+      'performance-management': 'Performance Management',
+      'time-attendance': 'Time & Attendance'
+    }
+
+    // Reason display mapping
+    const reasonMessages = {
+      'no_subscription': 'Your organization does not have an active subscription.',
+      'subscription_inactive': 'Your organization\'s subscription has expired or been cancelled.',
+      'feature_not_included': 'Your current plan does not include access to this application.',
+      'verification_failed': 'We could not verify your subscription status. Please try again.',
+      'verification_error': 'There was an error checking your subscription. Please try again later.',
+      'no_organization': 'You need to be part of an organization to access this application.'
+    }
+
+    let organization = null
+    let subscription = null
+    let plans = []
+
+    // Get plans for the user to see upgrade options
+    plans = await subscriptionService.getPublicPlans()
+
+    if (sessionAccount && orgId) {
+      // Try to get organization info
+      try {
+        organization = await Organization.findById(orgId).lean()
+
+        if (organization) {
+          subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+        }
+      } catch (e) {
+        console.error('Error fetching org for subscription-required:', e.message)
+      }
+    }
+
+    res.render('subscription-required', {
+      user: sessionAccount,
+      appName: appDisplayNames[appName] || appName || 'the application',
+      appKey: appName,
+      organization,
+      subscription,
+      reason,
+      reasonMessage: reasonMessages[reason] || reasonMessages['no_subscription'],
+      plans,
+      plansUrl: '/plans',
+      subscriptionUrl: '/subscription',
+      hubUrl: '/',
+      activePage: null
+    })
+  } catch (err) {
+    console.error('Subscription required page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Subscription Status Page - View current subscription and requests
+app.get('/subscription', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/subscription')
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    // Get user's organizations for the org selector
+    const userOrganizations = await Organization.find({
+      'members.account': account._id,
+      'members.status': 'active'
+    }).lean()
+
+    // Determine which organization to show
+    let organization = null
+    const orgIdParam = req.query.org
+
+    if (orgIdParam) {
+      // Check if user is member of requested org
+      organization = userOrganizations.find(o => o._id.toString() === orgIdParam)
+    }
+
+    if (!organization && account.currentOrganization) {
+      organization = userOrganizations.find(o => o._id.toString() === account.currentOrganization._id.toString())
+    }
+
+    if (!organization && userOrganizations.length > 0) {
+      organization = userOrganizations[0]
+    }
+
+    let subscription = null
+    let features = null
+    let limits = null
+    let requests = []
+    let isAdmin = false
+
+    if (organization) {
+      // Get subscription info
+      subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      features = await subscriptionService.getEffectiveFeatures(organization._id)
+      limits = await subscriptionService.getEffectiveLimits(organization._id)
+
+      // Get subscription requests
+      const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+      requests = await SubscriptionRequest.findAllForOrg(organization._id)
+
+      // Check if user is admin of this org
+      const member = organization.members?.find(m => m.account.toString() === account._id.toString())
+      isAdmin = member?.role === 'admin' || member?.role === 'owner'
+    }
+
+    res.render('subscription', {
+      user: sessionAccount,
+      organization,
+      organizations: userOrganizations,
+      subscription,
+      features,
+      limits,
+      requests,
+      isAdmin,
+      requested: req.query.requested === 'true',
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Subscription page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Request Plan Page - Form to request a subscription
+app.get('/request-plan/:planId', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/request-plan/' + req.params.planId)
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    if (!account.currentOrganization) {
+      return res.redirect('/organizations?error=select_org_first')
+    }
+
+    // Get the plan
+    const Plan = (await import('./models/Plan.js')).default
+    const plan = await Plan.findById(req.params.planId)
+
+    if (!plan || !plan.isActive || !plan.isPublic) {
+      return res.redirect('/plans?error=plan_not_found')
+    }
+
+    // Check if there's already a pending request
+    const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+    const pendingRequest = await SubscriptionRequest.findOne({
+      organization: account.currentOrganization._id,
+      status: 'pending'
+    })
+
+    res.render('request-plan', {
+      user: sessionAccount,
+      plan,
+      organization: account.currentOrganization,
+      hasPendingRequest: !!pendingRequest,
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Request plan page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
 // Hub Homepage - Main app launcher (root route)
 app.get('/', async (req, res) => {
   try {
@@ -2917,11 +3272,19 @@ app.get('/', async (req, res) => {
       }
     })
 
-    // Get all active apps
-    const apps = getHubApps()
+    // Get all active apps and add iconSvg for the template
+    const apps = getHubApps().map(app => ({
+      ...app,
+      iconSvg: getAppIcon(app.icon)
+    }))
 
-    // Render the hub homepage
-    res.send(renderHubPage(account, apps, organizations))
+    // Render the hub homepage using EJS template
+    res.render('home', {
+      user: account,
+      apps,
+      organizations,
+      activePage: 'home'
+    })
   } catch (err) {
     console.error('Hub error:', err)
     res.status(500).send('Internal server error')
@@ -3134,6 +3497,38 @@ app.get('/launch/:appId', async (req, res) => {
       return res.status(404).send('App not found')
     }
 
+    // Check subscription access for apps that require it
+    // Map app IDs to subscription feature keys
+    const appFeatureMap = {
+      'smarthr': 'recruiter',
+      'recruiter': 'recruiter',
+      'leave-management': 'leaveManagement',
+      'payroll-management': 'payrollManagement',
+      'performance-management': 'performanceManagement',
+      'time-attendance': 'timeAttendance',
+      'outline': 'outlineDocs',
+      'openwebui': 'aiChat',
+      'lms': 'lms'
+    }
+
+    const featureKey = appFeatureMap[appId]
+    if (!featureKey) {
+      console.warn(`⚠️ No subscription feature mapping for appId: ${appId} - subscription check skipped`)
+    }
+    if (featureKey && account.currentOrganization) {
+      const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
+      const canAccess = await subscriptionService.canAccessApp(orgId, featureKey)
+
+      if (!canAccess) {
+        console.log(`🚫 Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
+        return res.render('subscription-required', {
+          appName: app.name,
+          organization: account.currentOrganization,
+          user: account
+        })
+      }
+    }
+
     console.log('🚀 Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
@@ -3183,7 +3578,7 @@ app.get('/launch/:appId', async (req, res) => {
       // Generate SSO token to enable auto-login from hub session
       const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
       const secretKey = new TextEncoder().encode(ssoSecret)
-      
+
       const hubToken = await new SignJWT({
         sub: account.sub,
         email: account.email,
@@ -3194,14 +3589,14 @@ app.get('/launch/:appId', async (req, res) => {
         .setIssuedAt()
         .setExpirationTime('5m') // Short-lived token
         .sign(secretKey)
-      
+
       // Build the OAuth authorization URL with proper parameters
       const state = Buffer.from(JSON.stringify({
         site: app.url,
         token: crypto.randomBytes(16).toString('hex'),
         redirect_to: '/lms'
       })).toString('base64')
-      
+
       const redirectUri = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/Seemplify`
       const authParams = new URLSearchParams({
         client_id: 'lms',
@@ -3211,7 +3606,7 @@ app.get('/launch/:appId', async (req, res) => {
         state: state,
         hub_token: hubToken // Include SSO token for auto-login
       })
-      
+
       const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
       console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
       console.log('  🔑 Hub SSO token included for auto-login')
@@ -3249,6 +3644,9 @@ app.get('/launch/:appId', async (req, res) => {
         break;
       case 'payroll-management':
         apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
+        break;
+      case 'time-attendance':
+        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com';
         break;
       default:
         // Fallback to smarthr API URL for unknown apps
@@ -3341,6 +3739,88 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+
+// Subscription Management API Routes
+app.use('/api/admin/plans', adminPlansRouter)
+app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
+app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
+app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/plans', publicPlansRouter)
+app.use('/api/organizations', organizationSubscriptionRouter)
+
+// Admin Login Routes (must come before admin views router)
+app.get('/admin/login', (req, res) => {
+  const errorMessages = {
+    auth_required: 'Authentication required. Please login.',
+    account_not_found: 'Account not found or does not have admin privileges.',
+    invalid_password: 'Invalid password. Please try again.',
+    login_failed: 'Login failed. Please try again.',
+    admin_access_required: 'Admin access required. You must be a system or super admin.'
+  }
+
+  const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+  const message = req.query.message || ''
+
+  res.render('admin/login', { error: errorMsg, message })
+})
+
+app.post('/admin/login', async (req, res) => {
+  try {
+    const { email, password, remember, redirect } = req.body
+
+    // Find account by email
+    const account = await Account.findOne({ email: email.toLowerCase() })
+
+    if (!account) {
+      return res.redirect('/admin/login?error=account_not_found')
+    }
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, account.passwordHash)
+    if (!validPassword) {
+      return res.redirect('/admin/login?error=invalid_password')
+    }
+
+    // Check admin access
+    if (!account.hasAdminAccess()) {
+      console.warn(`Non-admin login attempt: ${email}`)
+      return res.redirect('/admin/login?error=admin_access_required')
+    }
+
+    console.log(`✅ Admin login successful: ${email} (${account.isSuperAdmin ? 'Super Admin' : 'System Admin'})`)
+
+    // Set session
+    req.session.accountId = account.sub
+
+    // Redirect to requested page or admin dashboard
+    if (redirect && redirect.startsWith('/admin')) {
+      res.redirect(redirect)
+    } else {
+      res.redirect('/admin')
+    }
+  } catch (error) {
+    console.error('Admin login error:', error)
+    res.redirect('/admin/login?error=login_failed')
+  }
+})
+
+app.get('/admin/logout', (req, res, next) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err)
+      return next(err)
+    }
+
+    // Clear session cookie
+    res.clearCookie('_session')
+
+    console.log('✅ Admin logged out')
+    res.redirect('/admin/login?message=You have been logged out')
+  })
+})
+
+// Admin Panel View Routes
+app.use('/admin', adminViewsRouter)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
@@ -4213,40 +4693,50 @@ function renderHubPage(account, apps, organizations = []) {
         }
       </style>
       <script src="/js/theme.js?v=2"></script>
+      <script src="/js/invitation-gatekeeper.js"></script>
     </head>
     <body>
+      <!-- Mobile Nav Checkbox (CSS-only toggle) -->
+      <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
+
       <nav class="top-nav">
         <a href="/" class="top-nav-brand">
           ${seemplifyMarkSvg}
           <span>Seemplify</span>
         </a>
+        <!-- Mobile Nav Toggle Label -->
+        <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
         <div class="top-nav-links">
-          <a href="/" class="top-nav-link">Home</a>
+          <a href="/" class="top-nav-link active">Home</a>
           <a href="/organizations" class="top-nav-link">Organizations</a>
           <a href="/invitations/pending" class="top-nav-link">Invitations</a>
           <a href="/profile" class="top-nav-link">Profile</a>
         </div>
         <div class="top-nav-user">
-      <div class="theme-dropdown">
-        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
-        <div class="theme-menu" id="theme-menu">
-          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            Light
-          </button>
-          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            Dark
-          </button>
-          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            System
-          </button>
-        </div>
-      </div>
+          <div class="theme-dropdown">
+            <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+              <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="theme-menu" id="theme-menu">
+              <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                Light
+              </button>
+              <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                Dark
+              </button>
+              <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                System
+              </button>
+            </div>
+          </div>
           <div class="top-nav-user-info">
             <div class="top-nav-user-name">${account.profile?.name || account.email.split('@')[0]}</div>
             <div class="top-nav-user-email">${account.email}</div>
@@ -4254,6 +4744,8 @@ function renderHubPage(account, apps, organizations = []) {
           <a href="/logout" class="top-nav-logout">Sign out</a>
         </div>
       </nav>
+      <!-- Mobile Nav Overlay (closes menu when clicked) -->
+      <label for="mobile-nav-toggle" class="mobile-nav-overlay"></label>
 
       <div class="container hub-content">
 
@@ -4905,14 +5397,109 @@ function getAppIcon(iconName) {
     briefcase: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>',
     users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
     chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
+    'chart-bar': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
     mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>',
     calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>',
+    'document-text': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
+    'currency-dollar': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>',
+    'academic-cap': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path><line x1="22" y1="10" x2="22" y2="16"></line></svg>',
     default: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>'
   }
 
   return icons[iconName] || icons.default
 }
+
+// ==============================================================
+// PROFILE ROUTES - Employee Self-Service Hub
+// ==============================================================
+
+// Register profile API routes
+app.use(profileRouter)
+
+// Profile page GET routes
+app.get('/profile/personal', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-personal', { user: account })
+  } catch (error) {
+    console.error('Error loading personal page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/tax', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-tax', { user: account })
+  } catch (error) {
+    console.error('Error loading tax page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/banking', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-banking', { user: account })
+  } catch (error) {
+    console.error('Error loading banking page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/dependents', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-dependents', { user: account })
+  } catch (error) {
+    console.error('Error loading dependents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/documents', async (req, res) => {
+  try {
+    if (!req.session || !req.session.accountId) {
+      return res.redirect('/interaction/' + req.params.uid)
+    }
+    const account = await Account.findOne({ sub: req.session.accountId })
+    if (!account) {
+      return res.status(404).send('Account not found')
+    }
+    res.render('profile-documents', { user: account })
+  } catch (error) {
+    console.error('Error loading documents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+// ==============================================================
 
 // Provider callback MUST come AFTER custom routes
 // Wrap provider callback to ensure HTTPS is detected in production
@@ -4967,9 +5554,17 @@ app.listen(PORT, async () => {
   // Initialize background jobs
   try {
     await initializeCleanupJobs()
-    console.log('✅ Background jobs initialized')
+    console.log('✅ Cleanup jobs initialized')
   } catch (error) {
-    console.error('⚠️ Failed to initialize background jobs:', error)
+    console.error('⚠️ Failed to initialize cleanup jobs:', error)
+  }
+
+  // Initialize subscription lifecycle jobs (runs every 6 hours)
+  try {
+    startSubscriptionLifecycleJobs(6)
+    console.log('✅ Subscription lifecycle jobs initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize subscription lifecycle jobs:', error)
   }
 })
 

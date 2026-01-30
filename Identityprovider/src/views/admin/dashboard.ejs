@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'dashboard' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Dashboard</h1>
+        <div class="admin-header-actions">
+          <a href="/admin/subscriptions/lifecycle/run" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Run Lifecycle Jobs
+          </a>
+        </div>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Total Organizations</div>
+          <div class="admin-stat-value"><%= stats.organizations.total %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Active Subscriptions</div>
+          <div class="admin-stat-value"><%= stats.subscriptions.active %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Pending Requests</div>
+          <div class="admin-stat-value" style="color: <%= stats.requests.pending > 0 ? '#f59e0b' : 'var(--text)' %>">
+            <%= stats.requests.pending %>
+          </div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Orgs Without Subscription</div>
+          <div class="admin-stat-value"><%= stats.organizations.withoutSubscription %></div>
+        </div>
+      </div>
+
+      <!-- Recent Requests -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div class="admin-card-title">Recent Subscription Requests</div>
+          <a href="/admin/requests" class="btn btn-sm btn-secondary">View All</a>
+        </div>
+
+        <% if (recentRequests && recentRequests.length > 0) { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Organization</th>
+                  <th>Plan</th>
+                  <th>Contact</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% recentRequests.forEach(request => { %>
+                  <tr>
+                    <td>
+                      <div style="font-weight: 600;"><%= request.organization?.name || 'Unknown' %></div>
+                    </td>
+                    <td>
+                      <div><%= request.plan?.name || 'Unknown' %></div>
+                      <div style="font-size: 12px; color: var(--muted);"><%= request.billingCycle %></div>
+                    </td>
+                    <td>
+                      <div><%= request.contactInfo?.name %></div>
+                      <div style="font-size: 12px; color: var(--muted);"><%= request.contactInfo?.email %></div>
+                    </td>
+                    <td>
+                      <span class="status-badge status-badge--<%= request.status %>">
+                        <%= request.status %>
+                      </span>
+                    </td>
+                    <td>
+                      <div><%= new Date(request.createdAt).toLocaleDateString() %></div>
+                    </td>
+                    <td>
+                      <a href="/admin/requests/<%= request._id %>" class="btn btn-sm btn-secondary">View</a>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            </svg>
+            <h3>No recent requests</h3>
+            <p>When organizations request subscriptions, they will appear here.</p>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- Plan Overview -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div class="admin-card-title">Plan Overview</div>
+          <a href="/admin/plans" class="btn btn-sm btn-secondary">Manage Plans</a>
+        </div>
+
+        <% if (stats.plans && stats.plans.length > 0) { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Plan</th>
+                  <th>Active Subscriptions</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% stats.plans.forEach(plan => { %>
+                  <tr>
+                    <td style="font-weight: 600;"><%= plan.name %></td>
+                    <td><%= plan.activeSubscriptions %></td>
+                    <td>
+                      <% if (plan.isActive && plan.isPublic) { %>
+                        <span class="status-badge status-badge--active">Active</span>
+                      <% } else if (plan.isActive) { %>
+                        <span class="status-badge status-badge--pending">Private</span>
+                      <% } else { %>
+                        <span class="status-badge status-badge--expired">Inactive</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            </svg>
+            <h3>No plans created yet</h3>
+            <p>Create your first plan to get started.</p>
+            <a href="/admin/plans" class="btn btn-primary" style="margin-top: 16px;">Manage Plans</a>
+          </div>
+        <% } %>
+      </div>
+    </main>
+  </div>
+</body>
+
+</html>

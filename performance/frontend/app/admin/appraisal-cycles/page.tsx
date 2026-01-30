@@ -103,42 +103,10 @@ export default function AppraisalCyclesAdminPage() {
   const { cycles, isLoading, mutate } = useAppraisalCycles();
 
   const [selectedTab, setSelectedTab] = useState(0);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // const [createDialogOpen, setCreateDialogOpen] = useState(false); // Refactored to use /new page
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const [selectedCycle, setSelectedCycle] = useState<AppraisalCycle | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Helper to format date for input
-  const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
-  const today = new Date();
-  const nextYear = new Date(today.setMonth(today.getMonth() + 12));
-
-  // Create cycle form
-  const [newCycle, setNewCycle] = useState({
-    name: '',
-    description: '',
-    cycleType: 'annual' as const,
-    periodStart: formatDateForInput(new Date()),
-    periodEnd: formatDateForInput(new Date(new Date().setMonth(new Date().getMonth() + 12))),
-    okrWeight: 40,
-    phases: {
-      goalSetting: { startDate: '', endDate: '' },
-      selfAssessment: { startDate: '', endDate: '' },
-      managerReview: { startDate: '', endDate: '' },
-      calibration: { startDate: '', endDate: '' },
-      finalReview: { startDate: '', endDate: '' }
-    },
-    settings: {
-      allowSelfRating: true,
-      requireDocumentUpload: false,
-      requireOkrAlignment: true,
-      enablePeerFeedback: true,
-      enable360Feedback: false,
-      enableAiAssist: true,
-      enableChat: true,
-      requireSignOff: true
-    }
-  });
 
   // Launch dialog state
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -154,52 +122,6 @@ export default function AppraisalCyclesAdminPage() {
     message: '',
     severity: 'info'
   });
-
-  if (!isHRAdmin) {
-    return (
-      <Alert severity="error">
-        Access denied. This page is for HR Administrators only.
-      </Alert>
-    );
-  }
-
-  const handleCreateCycle = async () => {
-    setLoading(true);
-    try {
-      await api.post('/appraisals/cycles', newCycle);
-      mutate();
-      setCreateDialogOpen(false);
-      setNewCycle({
-        name: '',
-        description: '',
-        cycleType: 'annual',
-        periodStart: formatDateForInput(new Date()),
-        periodEnd: formatDateForInput(new Date(new Date().setMonth(new Date().getMonth() + 12))),
-        okrWeight: 40,
-        phases: {
-          goalSetting: { startDate: '', endDate: '' },
-          selfAssessment: { startDate: '', endDate: '' },
-          managerReview: { startDate: '', endDate: '' },
-          calibration: { startDate: '', endDate: '' },
-          finalReview: { startDate: '', endDate: '' }
-        },
-        settings: {
-          allowSelfRating: true,
-          requireDocumentUpload: false,
-          requireOkrAlignment: true,
-          enablePeerFeedback: true,
-          enable360Feedback: false,
-          enableAiAssist: true,
-          enableChat: true,
-          requireSignOff: true
-        }
-      });
-    } catch (error) {
-      console.error('Create cycle error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleOpenLaunchDialog = async (cycle: AppraisalCycle) => {
     setSelectedCycle(cycle);
@@ -443,7 +365,7 @@ export default function AppraisalCyclesAdminPage() {
         <Button
           variant="contained"
           startIcon={<Add />}
-          onClick={() => setCreateDialogOpen(true)}
+          onClick={() => router.push('/admin/appraisal-cycles/new')}
         >
           Create New Cycle
         </Button>
@@ -554,124 +476,6 @@ export default function AppraisalCyclesAdminPage() {
           )}
         </>
       )}
-
-      {/* Create Cycle Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Create New Appraisal Cycle</DialogTitle>
-        <DialogContent>
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Cycle Name"
-                placeholder="e.g., Annual Review 2025"
-                value={newCycle.name}
-                onChange={(e) => setNewCycle(prev => ({ ...prev, name: e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <FormControl fullWidth>
-                <InputLabel>Cycle Type</InputLabel>
-                <Select
-                  value={newCycle.cycleType}
-                  label="Cycle Type"
-                  onChange={(e) => setNewCycle(prev => ({ ...prev, cycleType: e.target.value as any }))}
-                >
-                  {Object.entries(cycleTypeLabels).map(([value, label]) => (
-                    <MenuItem key={value} value={value}>{label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={12}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                label="Description"
-                value={newCycle.description}
-                onChange={(e) => setNewCycle(prev => ({ ...prev, description: e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                type="date"
-                label="Period Start"
-                value={newCycle.periodStart}
-                onChange={(e) => setNewCycle(prev => ({ ...prev, periodStart: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                type="date"
-                label="Period End"
-                value={newCycle.periodEnd}
-                onChange={(e) => setNewCycle(prev => ({ ...prev, periodEnd: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-            </Grid>
-            <Grid size={12}>
-              <Typography variant="subtitle2" gutterBottom>OKR Weight in Final Rating: {newCycle.okrWeight}%</Typography>
-              <Slider
-                value={newCycle.okrWeight}
-                onChange={(_, value) => setNewCycle(prev => ({ ...prev, okrWeight: value as number }))}
-                min={0}
-                max={100}
-                valueLabelDisplay="auto"
-                marks={[
-                  { value: 0, label: '0% (Competency only)' },
-                  { value: 50, label: '50/50' },
-                  { value: 100, label: '100% (OKR only)' }
-                ]}
-              />
-            </Grid>
-            <Grid size={12}>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="subtitle1" fontWeight={600} gutterBottom>Settings</Typography>
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 6 }}>
-                  <FormControlLabel
-                    control={<Switch checked={newCycle.settings.enableAiAssist} onChange={(e) => setNewCycle(prev => ({ ...prev, settings: { ...prev.settings, enableAiAssist: e.target.checked } }))} />}
-                    label="Enable AI Assistance"
-                  />
-                </Grid>
-                <Grid size={{ xs: 6 }}>
-                  <FormControlLabel
-                    control={<Switch checked={newCycle.settings.enableChat} onChange={(e) => setNewCycle(prev => ({ ...prev, settings: { ...prev.settings, enableChat: e.target.checked } }))} />}
-                    label="Enable Chat/Discussion"
-                  />
-                </Grid>
-                <Grid size={{ xs: 6 }}>
-                  <FormControlLabel
-                    control={<Switch checked={newCycle.settings.enablePeerFeedback} onChange={(e) => setNewCycle(prev => ({ ...prev, settings: { ...prev.settings, enablePeerFeedback: e.target.checked } }))} />}
-                    label="Enable Peer Feedback"
-                  />
-                </Grid>
-                <Grid size={{ xs: 6 }}>
-                  <FormControlLabel
-                    control={<Switch checked={newCycle.settings.requireSignOff} onChange={(e) => setNewCycle(prev => ({ ...prev, settings: { ...prev.settings, requireSignOff: e.target.checked } }))} />}
-                    label="Require Employee Sign-off"
-                  />
-                </Grid>
-              </Grid>
-            </Grid>
-          </Grid>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreateCycle}
-            disabled={loading || !newCycle.name}
-            startIcon={loading ? <CircularProgress size={16} /> : <Add />}
-          >
-            Create Cycle
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Launch Cycle Dialog */}
       <Dialog open={launchDialogOpen} onClose={() => setLaunchDialogOpen(false)} maxWidth="md" fullWidth>

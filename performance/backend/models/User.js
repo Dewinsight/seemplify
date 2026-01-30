@@ -74,6 +74,10 @@ const UserSchema = new mongoose.Schema({
   currentOrganization: {
     type: String
   },
+  // Current team within current organization (for team switching)
+  currentTeamId: {
+    type: String
+  },
   hasCompletedOrganizationSetup: {
     type: Boolean,
     default: false

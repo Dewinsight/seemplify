@@ -9,13 +9,15 @@ import {
   Paper, Stepper, Step, StepLabel, StepContent, Rating, LinearProgress,
   Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress,
   Accordion, AccordionSummary, AccordionDetails, Divider, Tooltip, IconButton,
-  Snackbar, Slider, FormControl, FormLabel, RadioGroup, FormControlLabel, Radio
+  Snackbar, Slider, FormControl, FormLabel, RadioGroup, FormControlLabel, Radio,
+  ToggleButton, ToggleButtonGroup, Fade
 } from '@mui/material';
 import {
   Save, Send, ArrowBack, ArrowForward, Psychology, Lightbulb, Star,
   ExpandMore, CheckCircle, Edit, Refresh, AutoAwesome, TipsAndUpdates,
-  EmojiObjects, Assignment, Flag, TrendingUp
+  EmojiObjects, Assignment, Flag, TrendingUp, Chat, ListAlt
 } from '@mui/icons-material';
+import ConversationalAssessment from './conversational/ConversationalAssessment';
 
 interface Competency {
   competencyId: string;
@@ -62,12 +64,21 @@ export default function SelfAssessmentPage() {
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
 
+  // Mode state: 'conversation' or 'form'
+  const [mode, setMode] = useState<'conversation' | 'form'>('conversation');
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+
+  // Initialize mode from appraisal state if available
+  useEffect(() => {
+    if (appraisal?.conversationAssessment?.mode) {
+      setMode(appraisal.conversationAssessment.mode === 'form' ? 'form' : 'conversation');
+    }
+  }, [appraisal]);
 
   // Form data
   const [formData, setFormData] = useState<SelfAssessmentData>({
@@ -140,7 +151,7 @@ export default function SelfAssessmentPage() {
       });
       mutate();
       setSnackbar({ open: true, message: 'Self-assessment submitted successfully!', severity: 'success' });
-      setTimeout(() => router.push('/appraisals'), 1500);
+      setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
       setSnackbar({ open: true, message: 'Failed to submit self-assessment', severity: 'error' });
@@ -611,6 +622,17 @@ export default function SelfAssessmentPage() {
     </Box>
   );
 
+  const handleModeChange = (_: any, newMode: 'conversation' | 'form' | null) => {
+    if (newMode) {
+      setMode(newMode);
+    }
+  };
+
+  const handleConversationComplete = () => {
+    mutate();
+    router.push(`/appraisals/${appraisalId}`);
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -630,14 +652,44 @@ export default function SelfAssessmentPage() {
             {appraisal.cycleId?.name || 'Performance Review'}
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={saving ? <CircularProgress size={16} /> : <Save />}
-          onClick={() => handleSave()}
-          disabled={saving}
-        >
-          Save Progress
-        </Button>
+
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {/* Mode Toggle */}
+          <ToggleButtonGroup
+            value={mode}
+            exclusive
+            onChange={handleModeChange}
+            size="small"
+          >
+            <ToggleButton value="conversation">
+              <Tooltip title="AI Conversation Mode">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Chat fontSize="small" />
+                  <Typography variant="caption">Chat</Typography>
+                </Box>
+              </Tooltip>
+            </ToggleButton>
+            <ToggleButton value="form">
+              <Tooltip title="Traditional Form Mode">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <ListAlt fontSize="small" />
+                  <Typography variant="caption">Form</Typography>
+                </Box>
+              </Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+
+          {mode === 'form' && (
+            <Button
+              variant="outlined"
+              startIcon={saving ? <CircularProgress size={16} /> : <Save />}
+              onClick={() => handleSave()}
+              disabled={saving}
+            >
+              Save Progress
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {/* Deadline Warning */}
@@ -651,6 +703,19 @@ export default function SelfAssessmentPage() {
         </Alert>
       )}
 
+      {/* Mode-specific content */}
+      {mode === 'conversation' ? (
+        <Fade in>
+          <Box>
+            <ConversationalAssessment
+              appraisalId={appraisalId}
+              onComplete={handleConversationComplete}
+            />
+          </Box>
+        </Fade>
+      ) : (
+        <Fade in>
+          <Box>
       {/* Stepper */}
       <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 4 }}>
         {steps.map((step, index) => (
@@ -729,6 +794,9 @@ export default function SelfAssessmentPage() {
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         message={snackbar.message}
       />
+          </Box>
+        </Fade>
+      )}
     </Box>
   );
 }

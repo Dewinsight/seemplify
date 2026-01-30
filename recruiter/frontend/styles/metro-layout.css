@@ -91,6 +91,11 @@
   border: 1px solid hsl(var(--border) / 0.5);
 }
 
+/* Light mode - slightly darker tiles */
+:root:not(.dark) .metro-tile {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .metro-tile::before {
   content: '';
   position: absolute;
@@ -525,6 +530,24 @@
 .metro-tile-slate {
   --tile-from: #475569;
   --tile-to: #334155;
+}
+
+/* Light mode emphasis for key dashboard tiles */
+:root:not(.dark) .metro-tile-emphasis {
+  background-color: hsl(var(--foreground) / 0.1);
+  border-color: hsl(var(--border) / 0.7);
+}
+
+:root:not(.dark) .metro-tile-emphasis::before {
+  opacity: 0.3;
+}
+
+:root:not(.dark) .metro-tile-emphasis:hover::before {
+  opacity: 0.4;
+}
+
+:root:not(.dark) .metro-tile-emphasis .metro-tile-overlay {
+  opacity: 0.55;
 }
 
 /* Animation */

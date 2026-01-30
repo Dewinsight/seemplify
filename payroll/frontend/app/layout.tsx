@@ -117,12 +117,46 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   const isLoginPage = pathname === '/login';
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const hasOrganizations = Array.isArray(organizations) && organizations.length > 0;
+  const showNoOrganizations = !contextLoading && !orgsLoading && user && !hasOrganizations;
 
   if (isLoginPage) {
     return (
       <html lang="en">
         <body>
           {children}
+        </body>
+      </html>
+    );
+  }
+
+  if (showNoOrganizations) {
+    return (
+      <html lang="en">
+        <body className="bg-[rgb(var(--background-start-rgb))]">
+          <div className="bg-noise" />
+          <div className="min-h-screen flex items-center justify-center px-4 py-16">
+            <div className="w-full max-w-xl rounded-2xl border border-zinc-700/50 bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 p-8 text-center shadow-2xl">
+              <div className="mx-auto mb-6 h-16 w-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center">
+                <Building2 className="h-8 w-8 text-amber-400" />
+              </div>
+              <h1 className="text-2xl font-semibold text-white">No organizations yet</h1>
+              <p className="mt-3 text-sm text-zinc-400">
+                To use Payroll Management, you need to belong to an organization.
+              </p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Return to the hub to join or create one.
+              </p>
+              <a
+                href={hubUrl}
+                className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition-all hover:shadow-amber-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Return to Hub
+              </a>
+            </div>
+          </div>
         </body>
       </html>
     );

@@ -13,6 +13,7 @@ const appraisalSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  goals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }],
   organizationId: {
     type: String,
     required: true,
@@ -73,6 +74,68 @@ const appraisalSchema = new mongoose.Schema({
       'cancelled'
     ],
     default: 'not_started'
+  },
+
+  // === CONVERSATIONAL ASSESSMENT STATE ===
+  conversationAssessment: {
+    mode: {
+      type: String,
+      enum: ['conversation', 'form', 'hybrid'],
+      default: 'conversation'
+    },
+    currentPhase: {
+      type: String,
+      enum: [
+        'initialized',
+        'okr_reflection',
+        'achievements',
+        'challenges',
+        'learnings',
+        'future_goals',
+        'competencies',
+        'report_generation',
+        'review',
+        'completed'
+      ],
+      default: 'initialized'
+    },
+    currentOkrIndex: { type: Number, default: 0 },
+    completedPhases: [String],
+
+    // Extracted data from conversation
+    extractedData: {
+      achievements: [{
+        text: String,
+        linkedOkrId: { type: mongoose.Schema.Types.ObjectId, ref: 'OKR' },
+        confidence: { type: Number, min: 0, max: 1 },
+        extractedFrom: { type: String, enum: ['conversation', 'document'] }
+      }],
+      challenges: [{
+        text: String,
+        resolution: String,
+        learnings: String
+      }],
+      skills: [{
+        skill: String,
+        evidence: String,
+        selfRating: { type: Number, min: 1, max: 5 }
+      }],
+      goals: [{
+        goal: String,
+        measurable: { type: Boolean, default: false },
+        timeframe: String
+      }]
+    },
+
+    // Context for AI (summarized to manage token usage)
+    conversationSummary: String,
+    lastContextUpdate: Date,
+    totalTokensUsed: { type: Number, default: 0 },
+
+    // Conversation metadata
+    startedAt: Date,
+    lastActivityAt: Date,
+    messageCount: { type: Number, default: 0 }
   },
 
   // === SELF ASSESSMENT SECTION ===
@@ -252,12 +315,12 @@ const appraisalSchema = new mongoose.Schema({
     sender: {
       userId: String,
       name: String,
-      role: { type: String, enum: ['employee', 'manager', 'hr', 'ai'] }
+      role: { type: String, enum: ['employee', 'manager', 'hr', 'ai', 'system'] }
     },
     message: String,
     messageType: {
       type: String,
-      enum: ['text', 'suggestion', 'question', 'feedback', 'system', 'ai_insight'],
+      enum: ['text', 'suggestion', 'question', 'feedback', 'system', 'ai_insight', 'prompt', 'document_analysis', 'phase_transition', 'report_draft'],
       default: 'text'
     },
     attachments: [{
@@ -269,10 +332,21 @@ const appraisalSchema = new mongoose.Schema({
       byEmployee: { type: Boolean, default: false },
       byManager: { type: Boolean, default: false }
     },
+    // Conversation tracking fields
+    phase: String, // Which phase this message belongs to
+    linkedOkrId: { type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }, // If discussing specific OKR
+    linkedDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'AppraisalDocument' }, // If referencing uploaded document
+    structuredData: {
+      // Extracted structured information from this exchange
+      type: { type: String, enum: ['achievement', 'challenge', 'learning', 'goal', 'skill', 'competency'] },
+      data: mongoose.Schema.Types.Mixed
+    },
     aiContext: {
       isAiGenerated: { type: Boolean, default: false },
       promptUsed: String,
-      modelUsed: String
+      modelUsed: String,
+      tokensUsed: Number,
+      confidence: { type: Number, min: 0, max: 1 }
     },
     createdAt: { type: Date, default: Date.now }
   }],
@@ -329,7 +403,7 @@ appraisalSchema.index({ 'manager.userId': 1, status: 1 });
 appraisalSchema.index({ cycleId: 1, status: 1 });
 
 // Virtual for computing if overdue
-appraisalSchema.virtual('isCurrentlyOverdue').get(function() {
+appraisalSchema.virtual('isCurrentlyOverdue').get(function () {
   const now = new Date();
   if (this.status === 'self_assessment_pending' || this.status === 'self_assessment_in_progress') {
     return this.deadlines.selfAssessmentDue && now > this.deadlines.selfAssessmentDue;
@@ -341,7 +415,7 @@ appraisalSchema.virtual('isCurrentlyOverdue').get(function() {
 });
 
 // Add to audit log
-appraisalSchema.methods.addAuditLog = function(action, user, details) {
+appraisalSchema.methods.addAuditLog = function (action, user, details) {
   this.auditLog.push({
     action,
     performedBy: {
@@ -355,7 +429,7 @@ appraisalSchema.methods.addAuditLog = function(action, user, details) {
 };
 
 // Add chat message
-appraisalSchema.methods.addChatMessage = function(sender, message, messageType = 'text', attachments = []) {
+appraisalSchema.methods.addChatMessage = function (sender, message, messageType = 'text', attachments = []) {
   this.chatThread.push({
     sender: {
       userId: sender.userId || sender.id,

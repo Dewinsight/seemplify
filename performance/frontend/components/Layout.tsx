@@ -20,11 +20,13 @@ import {
   X,
   ChevronDown,
   Building2,
+  LayoutGrid,
   Sparkles,
   Sun,
   Moon,
 } from 'lucide-react';
-import { useUserContext } from '@/lib/hooks';
+import { useUserContext, useCurrentTeam } from '@/lib/hooks';
+import { authApi } from '@/lib/api';
 
 type NavItem = {
   name: string;
@@ -40,12 +42,32 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout } = useAuth();
-  const { user, role, isManager, isHRAdmin } = useUserContext();
+  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout, isLoading: authLoading } = useAuth();
+  const { user, role, isManager, isHRAdmin, teams, currentTeam: contextCurrentTeam } = useUserContext();
+  const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
+  const [switchingTeam, setSwitchingTeam] = useState(false);
+
+  // Get current team (from hook or context)
+  const activeCurrentTeam = currentTeam || contextCurrentTeam;
+
+  // Get organizations from auth user - includes IDP data
+  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
+
+  // Current organization from AuthContext (synced with IDP)
+  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
+  const showOrgSwitcher = orgs.length > 1;
+
+  // Filter teams by current organization
+  const orgTeams = teams.filter((t: any) => {
+    const orgId = authCurrentOrg?.id || authCurrentOrg?._id?.toString() || authCurrentOrg;
+    return t.organizationId === orgId;
+  });
+  const showTeamSwitcher = orgTeams.length > 1 && currentOrganization;
 
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
@@ -60,14 +82,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     const manager: NavItem[] = isManager
       ? [
-          { name: 'My Team', href: '/team', icon: Users, section: 'manager' },
-        ]
+        { name: 'My Team', href: '/team', icon: Users, section: 'manager' },
+      ]
       : [];
 
     const admin: NavItem[] = isHRAdmin
       ? [
-          { name: 'Admin Panel', href: '/admin/appraisal-cycles', icon: Settings, section: 'admin' },
-        ]
+        { name: 'Admin Panel', href: '/admin/appraisal-cycles', icon: Settings, section: 'admin' },
+      ]
       : [];
 
     return [...main, ...manager, ...admin];
@@ -84,21 +106,92 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setOrgDropdownOpen(false);
     try {
       await switchOrganization(orgId);
+      // Reset team when switching org (teams are org-specific)
+      if (mutateCurrentTeam) {
+        mutateCurrentTeam();
+      }
     } catch (error) {
       console.error('Failed to switch organization:', error);
       setSwitchingOrg(false);
     }
   };
 
-  // Get organizations from auth user - includes IDP data
-  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
-  
-  // Current organization from AuthContext (synced with IDP)
-  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
-  const showOrgSwitcher = orgs.length > 1;
-  
+  // Handle team switch (within current organization)
+  const handleSwitchTeam = async (teamId: string) => {
+    if (switchingTeam) return;
+    setSwitchingTeam(true);
+    setTeamDropdownOpen(false);
+    try {
+      await authApi.switchTeam(teamId);
+      // Refresh current team data
+      if (mutateCurrentTeam) {
+        mutateCurrentTeam();
+      }
+      // Refresh user context to get updated team info
+      window.location.reload(); // Simple reload to refresh all data
+    } catch (error) {
+      console.error('Failed to switch team:', error);
+      setSwitchingTeam(false);
+    }
+  };
+
   const { mode, toggleColorMode } = useThemeMode();
   const isDarkMode = mode === 'dark';
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const showNoOrganizations = !authLoading && !!authUser && orgs.length === 0;
+
+  if (showNoOrganizations) {
+    return (
+      <div className={cn(
+        "min-h-screen transition-colors duration-300",
+        isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+      )}>
+        {isDarkMode && <div className="bg-noise" />}
+        <div className="relative mx-auto px-4 py-16 lg:px-8 max-w-3xl">
+          <div className={cn(
+            "rounded-2xl border p-8 text-center shadow-2xl",
+            isDarkMode
+              ? "bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 border-zinc-700/50"
+              : "bg-white border-gray-200"
+          )}>
+            <div className={cn(
+              "mx-auto mb-6 h-16 w-16 rounded-2xl flex items-center justify-center",
+              isDarkMode
+                ? "bg-zinc-800/70 text-purple-300"
+                : "bg-purple-50 text-purple-600"
+            )}>
+              <Building2 className="h-8 w-8" />
+            </div>
+            <h1 className={cn(
+              "text-2xl font-semibold",
+              isDarkMode ? "text-white" : "text-gray-900"
+            )}>
+              No organizations yet
+            </h1>
+            <p className={cn(
+              "mt-3 text-sm",
+              isDarkMode ? "text-zinc-400" : "text-gray-600"
+            )}>
+              To use Performance Management, you need to belong to an organization.
+            </p>
+            <p className={cn(
+              "mt-1 text-sm",
+              isDarkMode ? "text-zinc-500" : "text-gray-500"
+            )}>
+              Return to the hub to join or create one.
+            </p>
+            <a
+              href={hubUrl}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Return to Hub
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(
@@ -107,12 +200,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     )}>
       {/* Background Noise */}
       {isDarkMode && <div className="bg-noise" />}
-      
+
       {/* Top Navbar */}
       <nav className={cn(
         "fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-colors duration-300",
-        isDarkMode 
-          ? "border-zinc-800/40 bg-zinc-950/80" 
+        isDarkMode
+          ? "border-zinc-800/40 bg-zinc-950/80"
           : "border-gray-200/60 bg-white/80"
       )}>
         <div className="mx-auto px-4 lg:px-8">
@@ -145,11 +238,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     className={cn(
                       'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                       active
-                        ? isDarkMode 
-                          ? 'bg-zinc-800/80 text-white' 
+                        ? isDarkMode
+                          ? 'bg-zinc-800/80 text-white'
                           : 'bg-gray-100 text-gray-900'
-                        : isDarkMode 
-                          ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                        : isDarkMode
+                          ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     )}
                   >
@@ -172,8 +265,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 onClick={toggleColorMode}
                 className={cn(
                   'p-2 rounded-lg transition-all duration-200',
-                  isDarkMode 
-                    ? 'hover:bg-zinc-800/50 text-zinc-400 hover:text-yellow-400' 
+                  isDarkMode
+                    ? 'hover:bg-zinc-800/50 text-zinc-400 hover:text-yellow-400'
                     : 'hover:bg-gray-200 text-gray-600 hover:text-yellow-500'
                 )}
                 aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -182,64 +275,142 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
 
-              {/* Organization Switcher */}
-              {showOrgSwitcher && (
-                <div className="hidden md:block relative">
-                  <button
-                    onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
-                      isDarkMode 
-                        ? "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800/70" 
-                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              {/* Organization & Team Switcher */}
+              <div className="hidden md:block relative">
+                <button
+                  onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                    isDarkMode
+                      ? "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800/70"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  )}
+                >
+                  <Building2 className="h-4 w-4" />
+                  <div className="flex flex-col items-start">
+                    <span className="max-w-[120px] truncate text-xs font-medium">{currentOrganization?.name || 'Organization'}</span>
+                    {activeCurrentTeam && (
+                      <span className={cn("max-w-[120px] truncate text-[10px]", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                        {activeCurrentTeam.name || 'Team'}
+                      </span>
                     )}
-                  >
-                    <Building2 className="h-4 w-4" />
-                    <span className="max-w-[120px] truncate">{currentOrganization?.name || 'Org'}</span>
-                    <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
-                  </button>
-                  {orgDropdownOpen && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-40"
-                        onClick={() => setOrgDropdownOpen(false)}
-                      />
+                  </div>
+                  <ChevronDown className={cn("h-4 w-4", isDarkMode ? "text-zinc-500" : "text-gray-400")} />
+                </button>
+                {orgDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setOrgDropdownOpen(false)}
+                    />
+                    <div className={cn(
+                      "absolute right-0 top-12 w-72 rounded-xl border shadow-2xl overflow-hidden z-50",
+                      isDarkMode
+                        ? "border-white/[0.08] bg-zinc-950"
+                        : "border-gray-200 bg-white"
+                    )}>
+                      {/* Current Organization Header */}
                       <div className={cn(
-                        "absolute right-0 top-12 w-64 rounded-xl border shadow-2xl overflow-hidden z-50",
-                        isDarkMode 
-                          ? "border-white/[0.08] bg-zinc-950" 
-                          : "border-gray-200 bg-white"
+                        "px-4 py-3 border-b",
+                        isDarkMode ? "border-zinc-800/60 bg-zinc-900/50" : "border-gray-100 bg-gray-50"
                       )}>
-                        {orgs.map((org: any) => {
-                          const isCurrentOrg = org.id === currentOrganization?.id;
-                          return (
+                        <div className="flex items-center gap-2">
+                          <Building2 className={cn("h-4 w-4", isDarkMode ? "text-purple-400" : "text-purple-600")} />
+                          <span className={cn("text-sm font-semibold", isDarkMode ? "text-white" : "text-gray-900")}>
+                            {currentOrganization?.name || 'Organization'}
+                          </span>
+                        </div>
+                        {showOrgSwitcher && (
+                          <span className={cn("text-xs mt-1 block", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                            {orgs.length} organizations available
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Teams Section */}
+                      <div className={cn("py-2", isDarkMode ? "border-b border-zinc-800/60" : "border-b border-gray-100")}>
+                        <div className={cn("px-4 py-1 text-xs font-medium uppercase tracking-wider", isDarkMode ? "text-zinc-500" : "text-gray-400")}>
+                          Teams
+                        </div>
+                        {orgTeams.length > 0 ? (
+                          orgTeams.map((team: any) => {
+                            const isCurrentTeam = team.id === activeCurrentTeam?.id;
+                            return (
+                              <button
+                                key={team.id}
+                                onClick={() => !isCurrentTeam && handleSwitchTeam(team.id)}
+                                disabled={switchingTeam || isCurrentTeam}
+                                className={cn(
+                                  'w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between',
+                                  isDarkMode
+                                    ? cn('hover:bg-zinc-800/70', isCurrentTeam && 'bg-zinc-800/70')
+                                    : cn('hover:bg-gray-50', isCurrentTeam && 'bg-gray-100'),
+                                  isCurrentTeam && 'cursor-default',
+                                  switchingTeam && 'opacity-50 cursor-wait'
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-3.5 w-3.5" />
+                                  <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{team.name}</span>
+                                </div>
+                                <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                                  {isCurrentTeam ? '✓' : team.role}
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className={cn("px-4 py-4 text-center", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                            <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm mb-2">No teams yet</p>
+                            <a
+                              href={`${hubUrl}/teams`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                "inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                                isDarkMode
+                                  ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+                                  : "bg-purple-100 text-purple-700 hover:bg-purple-200"
+                              )}
+                              onClick={() => setOrgDropdownOpen(false)}
+                            >
+                              Create First Team →
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Switch Organization (if multiple orgs) */}
+                      {showOrgSwitcher && (
+                        <div className="py-2">
+                          <div className={cn("px-4 py-1 text-xs font-medium uppercase tracking-wider", isDarkMode ? "text-zinc-500" : "text-gray-400")}>
+                            Switch Organization
+                          </div>
+                          {orgs.filter((org: any) => org.id !== currentOrganization?.id).map((org: any) => (
                             <button
                               key={org.id}
-                              onClick={() => !isCurrentOrg && handleSwitchOrganization(org.id)}
-                              disabled={switchingOrg || isCurrentOrg}
+                              onClick={() => handleSwitchOrganization(org.id)}
+                              disabled={switchingOrg}
                               className={cn(
-                                'w-full text-left px-4 py-3 text-sm transition-colors',
-                                isDarkMode 
-                                  ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
-                                  : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
-                                isCurrentOrg && 'cursor-default',
+                                'w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between',
+                                isDarkMode ? 'hover:bg-zinc-800/70' : 'hover:bg-gray-50',
                                 switchingOrg && 'opacity-50 cursor-wait'
                               )}
                             >
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-3.5 w-3.5" />
                                 <span className={cn("truncate", isDarkMode ? "text-zinc-200" : "text-gray-900")}>{org.name}</span>
-                                <span className={cn("text-xs flex-shrink-0", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
-                                  {isCurrentOrg ? '✓ Current' : org.role}
-                                </span>
                               </div>
+                              <span className={cn("text-xs", isDarkMode ? "text-zinc-500" : "text-gray-500")}>{org.role}</span>
                             </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* User Menu */}
               <div className="relative">
@@ -270,7 +441,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </button>
                 {userDropdownOpen && (
                   <>
-                    <div 
+                    <div
                       className="fixed inset-0 z-40"
                       onClick={() => setUserDropdownOpen(false)}
                     />
@@ -356,7 +527,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile Slide-out Menu */}
       {mobileOpen && (
         <>
-          <div 
+          <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
@@ -397,8 +568,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 onClick={toggleColorMode}
                 className={cn(
                   "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm mb-4 transition-colors",
-                  isDarkMode 
-                    ? "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800" 
+                  isDarkMode
+                    ? "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 )}
               >
@@ -421,8 +592,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
                     className={cn(
                       "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm",
-                      isDarkMode 
-                        ? "border-zinc-800 bg-zinc-900/50" 
+                      isDarkMode
+                        ? "border-zinc-800 bg-zinc-900/50"
                         : "border-gray-200 bg-gray-50"
                     )}
                   >
@@ -451,7 +622,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             disabled={switchingOrg || isCurrentOrg}
                             className={cn(
                               'w-full text-left px-3 py-2.5 text-sm transition-colors',
-                              isDarkMode 
+                              isDarkMode
                                 ? cn('hover:bg-zinc-800/70', isCurrentOrg && 'bg-zinc-800/70')
                                 : cn('hover:bg-gray-50', isCurrentOrg && 'bg-gray-100'),
                               isCurrentOrg && 'cursor-default',
@@ -488,11 +659,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                         active
-                          ? isDarkMode 
-                            ? 'bg-zinc-800/80 text-white' 
+                          ? isDarkMode
+                            ? 'bg-zinc-800/80 text-white'
                             : 'bg-gray-100 text-gray-900'
-                          : isDarkMode 
-                            ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' 
+                          : isDarkMode
+                            ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       )}
                     >

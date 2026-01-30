@@ -189,7 +189,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                       "rounded-xl transition-all duration-300 ease-out",
                       "border",
                       isActive
-                        ? "bg-blue-600/20 text-blue-100 shadow-lg shadow-blue-500/10 border-blue-500/50 backdrop-blur-md"
+                        ? "bg-blue-600/20 text-blue-700 dark:text-blue-100 shadow-lg shadow-blue-500/10 border-blue-500/50 backdrop-blur-md"
                         : "bg-transparent text-gray-400 hover:bg-white/5 border-transparent hover:border-white/10"
                     )}
                   >
@@ -197,13 +197,13 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                       "transition-colors duration-200",
                       isActive ? "text-blue-400" : "text-gray-400"
                     )}>
-                      {React.cloneElement(tab.icon as React.ReactElement, {
+                      {React.cloneElement(tab.icon as React.ReactElement<any>, {
                         className: "h-5 w-5"
                       })}
                     </div>
                     <span className={cn(
                       "text-xs font-medium leading-tight text-center",
-                      isActive ? "text-blue-100" : "text-gray-400"
+                      isActive ? "text-blue-700 dark:text-blue-100" : "text-gray-400"
                     )}>
                       {tab.shortLabel}
                     </span>
@@ -267,7 +267,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 "simple-tab-transition simple-tab-hover simple-tab-focus",
                 "focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-transparent",
                 activeTab === tab.id
-                  ? "border-blue-500/50 bg-blue-600/10 text-blue-100 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+                  ? "border-blue-500/50 bg-blue-600/10 text-blue-700 dark:text-blue-100 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                   : "border-transparent hover:border-white/10 hover:bg-white/5 text-gray-400"
               )}
             >
@@ -284,7 +284,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 {/* Label */}
                 <div className={cn(
                   "text-sm font-medium leading-tight",
-                  activeTab === tab.id ? "text-blue-100" : "text-gray-400"
+                  activeTab === tab.id ? "text-blue-700 dark:text-blue-100" : "text-gray-400"
                 )}>
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">{tab.shortLabel}</span>

@@ -63,7 +63,7 @@ export default function PerformanceCycleFlow() {
           cy="150"
           r="90"
           fill="none"
-          stroke="#27272a"
+          className="stroke-zinc-200 dark:stroke-zinc-800"
           strokeWidth="1"
         />
 
@@ -108,15 +108,15 @@ export default function PerformanceCycleFlow() {
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className={`
-              px-4 py-3 rounded-xl border backdrop-blur
-              ${isActive ? `border-zinc-600 bg-gradient-to-br ${stage.color} shadow-lg` : 'border-zinc-800 bg-zinc-900/90'}
+              px-4 py-3 rounded-xl border backdrop-blur shadow-sm dark:shadow-none
+              ${isActive ? `border-zinc-400 dark:border-zinc-600 bg-gradient-to-br ${stage.color} shadow-lg` : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90'}
               transition-all duration-300
             `}>
               <div className="flex items-center gap-2.5">
-                <div className={`${isActive ? 'text-white' : 'text-zinc-500'} transition-colors duration-300`}>
+                <div className={`${isActive ? 'text-white' : 'text-zinc-500 dark:text-zinc-500'} transition-colors duration-300`}>
                   {stage.icon}
                 </div>
-                <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-zinc-400'} transition-colors duration-300`}>
+                <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-zinc-700 dark:text-zinc-400'} transition-colors duration-300`}>
                   {stage.label}
                 </span>
               </div>

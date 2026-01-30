@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>My Documents - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css">
+    <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>My Documents</h1>
+                    <div class="header-subtitle">
+                        View and download your HR documents
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Navigation Tabs -->
+            <div class="profile-nav">
+                <a href="/profile">Dashboard</a>
+                <a href="/profile/personal">Personal Info</a>
+                <a href="/profile/documents" class="active">Documents</a>
+                <a href="/profile/tax">Tax Settings</a>
+                <a href="/profile/banking">Banking</a>
+                <a href="/profile/dependents">Dependents</a>
+            </div>
+
+            <!-- Tax Documents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">📋 Tax Documents</h3>
+                <div style="display: grid; gap: 12px;">
+                    <% if (user.profile?.taxInfo?.lastUpdated) { %>
+                        <div
+                            style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px;">
+                            <div style="font-size: 32px;">📄</div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: var(--text);">Form W-4 (Current)</div>
+                                <div style="font-size: 14px; color: var(--muted);">
+                                    Completed on <%= new Date(user.profile.taxInfo.lastUpdated).toLocaleDateString() %>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="downloadDocument('w4')">
+                                Download PDF
+                            </button>
+                        </div>
+                        <% } else { %>
+                            <div style="text-align: center; padding: 32px; color: var(--muted);">
+                                <p>No W-4 form on file</p>
+                                <a href="/profile/tax" class="btn btn-secondary" style="margin-top: 12px;">Complete W-4
+                                    Form</a>
+                            </div>
+                            <% } %>
+                </div>
+            </div>
+
+            <!-- Payroll Documents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">💰 Payroll Documents</h3>
+                <div id="payrollDocuments">
+                    <div style="text-align: center; padding: 32px; color: var(--muted);">
+                        <p>Loading payroll documents...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Banking Documents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">🏦 Banking Documents</h3>
+                <div style="display: grid; gap: 12px;">
+                    <% if (user.profile?.banking?.accounts && user.profile.banking.accounts.length> 0) { %>
+                        <div
+                            style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px;">
+                            <div style="font-size: 32px;">📄</div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: var(--text);">Direct Deposit Authorization</div>
+                                <div style="font-size: 14px; color: var(--muted);">
+                                    Current accounts on file
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-secondary"
+                                onclick="downloadDocument('direct-deposit')">
+                                Download PDF
+                            </button>
+                        </div>
+                        <% } else { %>
+                            <div style="text-align: center; padding: 32px; color: var(--muted);">
+                                <p>No direct deposit authorization on file</p>
+                                <a href="/profile/banking" class="btn btn-secondary" style="margin-top: 12px;">Set Up
+                                    Direct Deposit</a>
+                            </div>
+                            <% } %>
+                </div>
+            </div>
+
+            <!-- Onboarding Documents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">📝 Onboarding Documents</h3>
+                <div style="display: grid; gap: 12px;">
+                    <div style="text-align: center; padding: 32px; color: var(--muted);">
+                        <p>No onboarding documents yet</p>
+                        <p style="font-size: 14px;">Onboarding documents will appear here once completed</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Personal Documents -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">📎 Personal Documents</h3>
+                <div style="margin-bottom: 16px;">
+                    <button type="button" class="btn btn-secondary"
+                        onclick="document.getElementById('fileUpload').click()">
+                        + Upload Document
+                    </button>
+                    <input type="file" id="fileUpload" style="display: none;" onchange="uploadDocument()"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                </div>
+
+                <div id="personalDocuments">
+                    <div style="text-align: center; padding: 32px; color: var(--muted);">
+                        <p>No personal documents uploaded</p>
+                        <p style="font-size: 14px;">Upload documents like certifications, licenses, or other files</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Load payroll documents
+            async function loadPayrollDocuments() {
+                try {
+                    const response = await fetch('/api/profile/documents/payroll');
+                    const result = await response.json();
+
+                    const container = document.getElementById('payrollDocuments');
+
+                    if (result.success && result.documents.length > 0) {
+                        container.innerHTML = result.documents.map(doc => `
+            <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px;">
+              <div style="font-size: 32px;">💰</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; color: var(--text);">${doc.title}</div>
+                <div style="font-size: 14px; color: var(--muted);">
+                  ${new Date(doc.date).toLocaleDateString()}
+                </div>
+              </div>
+              <button type="button" class="btn btn-secondary" onclick="downloadDocument('payslip', '${doc.id}')">
+                Download PDF
+              </button>
+            </div>
+          `).join('');
+                    } else {
+                        container.innerHTML = `
+            <div style="text-align: center; padding: 32px; color: var(--muted);">
+              <p>No payroll documents available yet</p>
+              <p style="font-size: 14px;">Payslips will appear here after your first pay period</p>
+            </div>
+          `;
+                    }
+                } catch (error) {
+                    console.error('Error loading payroll documents:', error);
+                    document.getElementById('payrollDocuments').innerHTML = `
+          <div style="text-align: center; padding: 32px; color: var(--error);">
+            <p>Error loading payroll documents</p>
+          </div>
+        `;
+                }
+            }
+
+            function downloadDocument(type, id) {
+                let url = '';
+                switch (type) {
+                    case 'w4':
+                        url = '/api/profile/tax/download-w4';
+                        break;
+                    case 'direct-deposit':
+                        url = '/api/profile/banking/download-authorization';
+                        break;
+                    case 'payslip':
+                        url = `/api/profile/documents/payslip/${id}`;
+                        break;
+                }
+                window.location.href = url;
+            }
+
+            async function uploadDocument() {
+                const fileInput = document.getElementById('fileUpload');
+                const file = fileInput.files[0];
+
+                if (!file) return;
+
+                const formData = new FormData();
+                formData.append('document', file);
+
+                try {
+                    const response = await fetch('/api/profile/documents/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        alert('Document uploaded successfully!');
+                        window.location.reload();
+                    } else {
+                        alert(result.error || 'Failed to upload document');
+                    }
+                } catch (error) {
+                    console.error('Error uploading:', error);
+                    alert('An error occurred while uploading');
+                }
+            }
+
+            // Load payroll documents on page load
+            document.addEventListener('DOMContentLoaded', loadPayrollDocuments);
+        </script>
+
+        <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

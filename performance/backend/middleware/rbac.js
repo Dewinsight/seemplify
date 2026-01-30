@@ -205,6 +205,43 @@ function getCurrentOrganization(user) {
 }
 
 /**
+ * Get user's current team (within current organization)
+ * Different from switching organizations - this is for switching teams within an org
+ */
+function getCurrentTeam(user) {
+  if (!user) return null;
+
+  // Check if currentTeam is explicitly set in session
+  if (user.currentTeam) {
+    return user.currentTeam;
+  }
+
+  // Fallback: Get primary team (first team in current organization, or first team with line_manager role)
+  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  
+  if (!currentOrg) return null;
+
+  // Filter teams by current organization
+  const orgTeams = teams.filter(t => 
+    t.organizationId === currentOrg.id || 
+    t.organizationId === currentOrg._id?.toString() ||
+    t.organizationId === currentOrg
+  );
+
+  if (orgTeams.length === 0) return null;
+
+  // Priority: line_manager team > team_lead team > first team
+  const lineManagerTeam = orgTeams.find(t => t.role === 'line_manager' || t.isManager);
+  if (lineManagerTeam) return lineManagerTeam;
+
+  const teamLeadTeam = orgTeams.find(t => t.role === 'team_lead');
+  if (teamLeadTeam) return teamLeadTeam;
+
+  return orgTeams[0];
+}
+
+/**
  * Check if user has a specific permission
  */
 function hasPermission(role, permission) {
@@ -247,7 +284,9 @@ const requireAuth = async (req, res, next) => {
       req.userRole = getUserRole(req.session.user);
       req.directReports = getDirectReports(req.session.user);
       req.managedTeams = getManagedTeams(req.session.user);
+      req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
       req.currentOrganization = getCurrentOrganization(req.session.user);
+      req.currentTeam = getCurrentTeam(req.session.user);
       return next();
     }
 
@@ -278,7 +317,9 @@ const requireAuth = async (req, res, next) => {
         req.userRole = getUserRole(req.session.user);
         req.directReports = getDirectReports(req.session.user);
         req.managedTeams = getManagedTeams(req.session.user);
+        req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
         req.currentOrganization = getCurrentOrganization(req.session.user);
+        req.currentTeam = getCurrentTeam(req.session.user);
 
         return next();
       } catch (tokenError) {
@@ -507,6 +548,7 @@ module.exports = {
   getDirectReports,
   getManagedTeams,
   getCurrentOrganization,
+  getCurrentTeam,
   hasPermission,
   canAccessUserData,
   requireAuth,

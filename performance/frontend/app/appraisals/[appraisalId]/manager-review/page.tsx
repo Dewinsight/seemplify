@@ -14,7 +14,8 @@ import {
 import {
   Save, Send, ArrowBack, ArrowForward, Psychology, Lightbulb, Star,
   ExpandMore, CheckCircle, Warning, AutoAwesome, Compare, Person,
-  TrendingUp, TrendingDown, Balance, EmojiObjects, Flag, Visibility, Comment
+  TrendingUp, TrendingDown, Balance, EmojiObjects, Flag, Visibility, Comment,
+  PieChart, Calculate, SmartToy
 } from '@mui/icons-material';
 
 interface ManagerReviewData {
@@ -42,6 +43,31 @@ interface ManagerReviewData {
     employeeCompletion?: number;
   }>;
   overallManagerRating: number;
+}
+
+interface ScoringData {
+  okrScore: number;
+  competencyScore: number;
+  compositeScore: number;
+  breakdown: {
+    okrWeight: number;
+    competencyWeight: number;
+    okrContribution: number;
+    competencyContribution: number;
+  };
+  ratingLabel: string;
+}
+
+interface AISuggestion {
+  suggestedRating: number;
+  ratingJustification: string;
+  keyStrengths?: string[];
+  developmentAreas?: string[];
+  calibrationNotes?: string;
+  ratingGaps?: {
+    selfVsObjective?: string;
+    concerns?: string[];
+  };
 }
 
 const ratingLabels: Record<number, string> = {
@@ -90,6 +116,9 @@ export default function ManagerReviewPage() {
   });
 
   const [feedbackList, setFeedbackList] = useState<any[]>([]);
+  const [scoringData, setScoringData] = useState<ScoringData | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
+  const [scoringLoading, setScoringLoading] = useState(false);
 
   // Initialize form data from appraisal
   useEffect(() => {
@@ -142,6 +171,7 @@ export default function ManagerReviewPage() {
   useEffect(() => {
     if (appraisal) {
       fetchFeedback();
+      fetchScoringData();
     }
   }, [appraisal]);
 
@@ -157,6 +187,39 @@ export default function ManagerReviewPage() {
       }
     } catch (e) {
       console.error('Failed to fetch feedback context', e);
+    }
+  };
+
+  const fetchScoringData = async () => {
+    setScoringLoading(true);
+    try {
+      const res = await api.get(`/appraisals/${appraisalId}/scoring`);
+      if (res.data?.success && res.data?.data) {
+        setScoringData(res.data.data);
+      } else if (res.data && !res.data.success) {
+        // Direct response without wrapper
+        setScoringData(res.data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch scoring data', e);
+    } finally {
+      setScoringLoading(false);
+    }
+  };
+
+  const fetchAISuggestion = async () => {
+    setScoringLoading(true);
+    try {
+      const res = await api.post(`/appraisals/${appraisalId}/ai-rating-suggestion`);
+      if (res.data?.success && res.data?.data?.aiSuggestion) {
+        setAiSuggestion(res.data.data.aiSuggestion);
+      } else if (res.data?.aiSuggestion) {
+        setAiSuggestion(res.data.aiSuggestion);
+      }
+    } catch (e) {
+      console.error('Failed to fetch AI suggestion', e);
+    } finally {
+      setScoringLoading(false);
     }
   };
   const handleSave = async (showNotification = true) => {
@@ -207,7 +270,7 @@ export default function ManagerReviewPage() {
       });
       mutate();
       setSnackbar({ open: true, message: 'Manager review submitted successfully!', severity: 'success' });
-      setTimeout(() => router.push('/appraisals'), 1500);
+      setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
       setSnackbar({ open: true, message: 'Failed to submit review', severity: 'error' });
@@ -691,6 +754,233 @@ export default function ManagerReviewPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Provide your overall evaluation and recommendations for {appraisal.employee.name}.
       </Typography>
+
+      {/* Score Breakdown Card */}
+      {scoringData && (
+        <Card sx={{ mb: 3, border: 2, borderColor: 'primary.main' }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <PieChart color="primary" />
+              <Typography variant="h6" fontWeight={600}>
+                Composite Score Breakdown
+              </Typography>
+            </Box>
+
+            <Grid container spacing={3}>
+              {/* Main Score */}
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: 'primary.lighter' }}>
+                  <Typography variant="h2" fontWeight={700} color="primary.main">
+                    {scoringData.compositeScore.toFixed(1)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Composite Score (out of 5)
+                  </Typography>
+                  <Chip
+                    label={scoringData.ratingLabel}
+                    color={scoringData.compositeScore >= 4 ? 'success' : scoringData.compositeScore >= 3 ? 'info' : 'warning'}
+                    sx={{ mt: 1 }}
+                  />
+                </Paper>
+              </Grid>
+
+              {/* Score Components */}
+              <Grid size={{ xs: 12, md: 8 }}>
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      OKR Achievement ({scoringData.breakdown.okrWeight}% weight)
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600} color="success.main">
+                      {scoringData.okrScore.toFixed(1)}/5
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(scoringData.okrScore / 5) * 100}
+                    color="success"
+                    sx={{ height: 10, borderRadius: 5, mb: 1 }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Contributes {scoringData.breakdown.okrContribution.toFixed(2)} to composite score
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      Competency Ratings ({scoringData.breakdown.competencyWeight}% weight)
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600} color="info.main">
+                      {scoringData.competencyScore.toFixed(1)}/5
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(scoringData.competencyScore / 5) * 100}
+                    color="info"
+                    sx={{ height: 10, borderRadius: 5, mb: 1 }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Contributes {scoringData.breakdown.competencyContribution.toFixed(2)} to composite score
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Calculate fontSize="small" color="action" />
+              <Typography variant="caption" color="text.secondary">
+                Formula: (OKR Score × {scoringData.breakdown.okrWeight}%) + (Competency Score × {scoringData.breakdown.competencyWeight}%) = {scoringData.compositeScore.toFixed(2)}
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Suggested Rating Card */}
+      <Card sx={{ mb: 3, bgcolor: 'secondary.lighter', border: 1, borderColor: 'secondary.main' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SmartToy color="secondary" />
+              <Typography variant="h6" fontWeight={600}>
+                AI Rating Suggestion
+              </Typography>
+            </Box>
+            {!aiSuggestion && (
+              <Button
+                variant="outlined"
+                color="secondary"
+                size="small"
+                startIcon={scoringLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
+                onClick={fetchAISuggestion}
+                disabled={scoringLoading}
+              >
+                Get AI Suggestion
+              </Button>
+            )}
+          </Box>
+
+          {aiSuggestion ? (
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.paper' }}>
+                  <Typography variant="h3" fontWeight={700} color="secondary.main">
+                    {aiSuggestion.suggestedRating}
+                  </Typography>
+                  <Typography variant="caption">Suggested Rating</Typography>
+                </Paper>
+                <Box sx={{ flex: 1 }}>
+                  <Chip
+                    label={ratingLabels[aiSuggestion.suggestedRating] || 'N/A'}
+                    color={aiSuggestion.suggestedRating >= 4 ? 'success' : aiSuggestion.suggestedRating >= 3 ? 'info' : 'warning'}
+                    size="small"
+                    sx={{ mb: 1 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {aiSuggestion.ratingJustification}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Key Strengths & Development Areas */}
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                {aiSuggestion.keyStrengths && aiSuggestion.keyStrengths.length > 0 && (
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography variant="caption" fontWeight={600} color="success.main">
+                      Key Strengths
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {aiSuggestion.keyStrengths.map((strength, idx) => (
+                        <Chip
+                          key={idx}
+                          label={strength}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          icon={<TrendingUp fontSize="small" />}
+                        />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+                {aiSuggestion.developmentAreas && aiSuggestion.developmentAreas.length > 0 && (
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography variant="caption" fontWeight={600} color="warning.main">
+                      Development Areas
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {aiSuggestion.developmentAreas.map((area, idx) => (
+                        <Chip
+                          key={idx}
+                          label={area}
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          icon={<TrendingDown fontSize="small" />}
+                        />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+
+              {/* Rating Gaps & Concerns */}
+              {aiSuggestion.ratingGaps && (
+                <Accordion>
+                  <AccordionSummary expandIcon={<ExpandMore />}>
+                    <Typography variant="body2" fontWeight={600}>Rating Analysis</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    {aiSuggestion.ratingGaps.selfVsObjective && (
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" fontWeight={600}>Self vs Objective Performance</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {aiSuggestion.ratingGaps.selfVsObjective}
+                        </Typography>
+                      </Box>
+                    )}
+                    {aiSuggestion.ratingGaps.concerns && aiSuggestion.ratingGaps.concerns.length > 0 && (
+                      <Box>
+                        <Typography variant="caption" fontWeight={600} color="warning.main">Concerns</Typography>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {aiSuggestion.ratingGaps.concerns.map((concern, idx) => (
+                            <li key={idx}>
+                              <Typography variant="body2">{concern}</Typography>
+                            </li>
+                          ))}
+                        </ul>
+                      </Box>
+                    )}
+                  </AccordionDetails>
+                </Accordion>
+              )}
+
+              {/* Calibration Notes */}
+              {aiSuggestion.calibrationNotes && (
+                <Alert severity="info" sx={{ mt: 2 }} icon={<EmojiObjects />}>
+                  <Typography variant="caption" fontWeight={600}>Calibration Notes</Typography>
+                  <Typography variant="body2">{aiSuggestion.calibrationNotes}</Typography>
+                </Alert>
+              )}
+
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                <Typography variant="caption">
+                  This is a recommendation only. Your final rating should be based on your direct observations and judgment.
+                </Typography>
+              </Alert>
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Click "Get AI Suggestion" to receive an AI-powered rating recommendation based on OKR achievement,
+              competency ratings, and conversation analysis.
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Bias Check Alert */}
       {biasCheck?.hasPotentialBias && (

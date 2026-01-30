@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Building, ArrowRight, Loader2, Sparkles, Users, Zap, Shield } from "lucide-react";
@@ -10,7 +9,19 @@ import { motion } from "framer-motion";
 
 export default function SignupSuccessPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  // Check authentication status from localStorage directly (no AuthContext needed)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check localStorage for tokens on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hasJwtToken = localStorage.getItem('jwt');
+      const hasRefreshToken = localStorage.getItem('refreshToken');
+      setIsAuthenticated(!!hasJwtToken && !!hasRefreshToken);
+      setIsLoading(false);
+    }
+  }, []);
   const [countdown, setCountdown] = useState(10);
   const [manualRedirect, setManualRedirect] = useState(false);
   const [isValidSignupSuccess, setIsValidSignupSuccess] = useState<boolean | null>(null);

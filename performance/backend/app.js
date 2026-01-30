@@ -116,15 +116,42 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     const OKR = require('./models/OKR');
     const { PerformanceReview } = require('./models/PerformanceReview');
     const Feedback = require('./models/Feedback');
+    const User = require('./models/User');
 
     const userId = req.session?.user?.id;
+    const { teamId, allTeams } = req.query;
+    const userTeams = req.userTeams || [];
+    const directReports = req.directReports || [];
+    
+    // Determine which users to get data for
+    let targetUserIds = [userId];
+    
+    if (allTeams === 'true') {
+      // Get all team members from all managed teams
+      const managedTeams = userTeams.filter(t => t.isManager || t.role === 'line_manager');
+      const allMemberIds = new Set(directReports);
+      
+      managedTeams.forEach(team => {
+        if (team.members) {
+          team.members.forEach(m => {
+            allMemberIds.add(m.userId || m.id);
+          });
+        }
+      });
+      
+      targetUserIds = Array.from(allMemberIds);
+    } else if (teamId) {
+      // Get members from specific team
+      const team = userTeams.find(t => t.id === teamId);
+      if (team && team.members) {
+        targetUserIds = team.members.map(m => m.userId || m.id);
+      }
+    }
 
     // Get OKRs from database
     let okrs = [];
-    if (userId) {
-      okrs = await OKR.find({ ownerId: userId });
-    } else {
-      okrs = await OKR.find({}).limit(10);
+    if (targetUserIds.length > 0) {
+      okrs = await OKR.find({ ownerId: { $in: targetUserIds } });
     }
 
     // Calculate OKR progress
@@ -136,25 +163,21 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
 
     // Get pending reviews
     let reviews = [];
-    if (userId) {
+    if (targetUserIds.length > 0) {
       reviews = await PerformanceReview.find({
-        $or: [{ userId }, { managerId: userId }],
+        userId: { $in: targetUserIds },
         status: { $nin: ['completed'] }
       });
-    } else {
-      reviews = await PerformanceReview.find({ status: { $nin: ['completed'] } }).limit(10);
     }
 
     // Get recent feedback (last 30 days)
     let feedback = [];
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    if (userId) {
+    if (targetUserIds.length > 0) {
       feedback = await Feedback.find({
-        receiverId: userId,
+        receiverId: { $in: targetUserIds },
         createdAt: { $gte: thirtyDaysAgo }
       });
-    } else {
-      feedback = await Feedback.find({ createdAt: { $gte: thirtyDaysAgo } }).limit(10);
     }
 
     // Count upcoming deadlines
@@ -173,7 +196,9 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
       recentFeedback: feedback.length,
       totalOkrs: okrs.length,
       completedOkrs: okrs.filter(o => o.status === 'closed').length,
-      upcomingDeadlines: upcomingDeadlines
+      upcomingDeadlines: upcomingDeadlines,
+      teamView: allTeams === 'true' ? 'all' : teamId || 'current',
+      memberCount: targetUserIds.length
     });
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
@@ -388,12 +413,21 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     let user = await User.findOne({ email: userinfo.email });
 
     if (user) {
-      // Only update profile and current org preference - organizations come from IDP session
+      // Update profile, current org preference, AND idpTeams on every login
       user.lastGrantRefresh = new Date();
       if (userinfo.currentOrganization?.id) {
         user.currentOrganizationId = userinfo.currentOrganization.id;
       }
+      // IMPORTANT: Sync idpTeams from IDP on every login
+      user.idpTeams = userinfo.teams || [];
+      user.idpOrganizations = userinfo.organizations || [];
+      user.idpTeamPermissions = userinfo.team_permissions || [];
+      if (userinfo.name) {
+        user.profile = user.profile || {};
+        user.profile.displayName = userinfo.name;
+      }
       await user.save();
+      console.log('✅ Updated user teams:', user.email, 'teams:', user.idpTeams?.length || 0);
     } else {
       user = new User({
         email: userinfo.email,
@@ -404,9 +438,14 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
         },
         lastGrantRefresh: new Date(),
         currentOrganizationId: userinfo.currentOrganization?.id || (userinfo.organizations?.[0]?.id) || null,
-        hasCompletedOrganizationSetup: true
+        hasCompletedOrganizationSetup: true,
+        // IMPORTANT: Save idpTeams for new users
+        idpTeams: userinfo.teams || [],
+        idpOrganizations: userinfo.organizations || [],
+        idpTeamPermissions: userinfo.team_permissions || []
       });
       await user.save();
+      console.log('✅ Created new user:', user.email, 'teams:', user.idpTeams?.length || 0);
     }
     
     console.log('✅ User synced (orgs from IDP):', userinfo.email, 'orgs:', userinfo.organizations?.length || 0);

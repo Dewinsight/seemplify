@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const planService = require('../services/planService');
 const idpService = require('../services/idpService');
+const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -368,6 +369,24 @@ exports.switchOrganization = async (req, res) => {
         console.log('❌ Access denied - user is not a member in IdP:', localOrg.idpOrganizationId);
         return res.status(403).json({ msg: 'Access denied to this organization' });
       }
+
+      // Verify subscription access for the target organization
+      console.log('🔒 Verifying subscription access for org:', localOrg.idpOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        localOrg.idpOrganizationId,
+        user.idpAccessToken
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+        return res.status(403).json({
+          msg: 'This organization does not have access to SmartHR/Recruiter',
+          code: 'SUBSCRIPTION_REQUIRED',
+          reason: subscriptionCheck.reason,
+          subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.OIDC_ISSUER || 'http://localhost:4000'}/plans`
+        });
+      }
+      console.log('✅ Subscription access verified for recruiter');
 
       console.log('✅ User is member of organization in IdP, switching...');
 

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Plans - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'plans' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Subscription Plans</h1>
+        <div class="admin-header-actions">
+          <button onclick="openPlanModal()" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Create Plan
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter buttons -->
+      <div class="admin-filters">
+        <button class="admin-filter-btn active" onclick="filterPlans('all')">All</button>
+        <button class="admin-filter-btn" onclick="filterPlans('active')">Active</button>
+        <button class="admin-filter-btn" onclick="filterPlans('inactive')">Inactive</button>
+      </div>
+
+      <% if (plans && plans.length > 0) { %>
+        <div class="admin-table-container">
+          <table class="admin-table" id="plansTable">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Pricing</th>
+                <th>Features</th>
+                <th>Limits</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% plans.forEach(plan => { %>
+                <tr data-status="<%= plan.isActive ? 'active' : 'inactive' %>">
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <div style="width: 40px; height: 40px; border-radius: 8px; background: <%= plan.color || '#3b82f6' %>; display: flex; align-items: center; justify-content: center;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div style="font-weight: 600;"><%= plan.name %></div>
+                        <div style="font-size: 12px; color: var(--muted);"><%= plan.slug %></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div><%= plan.formattedMonthlyPrice %>/mo</div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= plan.formattedYearlyPrice %>/yr</div>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                      <% const features = plan.features.toObject ? plan.features.toObject() : plan.features; %>
+                      <% Object.entries(features).forEach(([key, enabled]) => { %>
+                        <% if (enabled) { %>
+                          <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(34,197,94,0.1); color: #22c55e;"><%= key %></span>
+                        <% } %>
+                      <% }) %>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-size: 13px;">
+                      <% const limits = plan.limits.toObject ? plan.limits.toObject() : plan.limits; %>
+                      <div>Members: <%= limits.maxMembers === null ? 'Unlimited' : limits.maxMembers %></div>
+                      <div>Teams: <%= limits.maxTeams === null ? 'Unlimited' : limits.maxTeams %></div>
+                    </div>
+                  </td>
+                  <td>
+                    <% if (plan.isActive && plan.isPublic) { %>
+                      <span class="status-badge status-badge--active">Active</span>
+                    <% } else if (plan.isActive) { %>
+                      <span class="status-badge status-badge--pending">Private</span>
+                    <% } else { %>
+                      <span class="status-badge status-badge--expired">Inactive</span>
+                    <% } %>
+                    <% if (plan.isFeatured) { %>
+                      <span class="status-badge" style="background: rgba(245,158,11,0.1); color: #f59e0b; margin-left: 4px;">Featured</span>
+                    <% } %>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 8px;">
+                      <button onclick="editPlan('<%= plan._id %>')" class="btn btn-sm btn-secondary">Edit</button>
+                      <% if (plan.isActive) { %>
+                        <button onclick="deactivatePlan('<%= plan._id %>')" class="btn btn-sm btn-secondary" style="color: #ef4444;">Deactivate</button>
+                      <% } else { %>
+                        <button onclick="activatePlan('<%= plan._id %>')" class="btn btn-sm btn-success">Activate</button>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="admin-card">
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            </svg>
+            <h3>No plans created yet</h3>
+            <p>Create your first subscription plan to get started.</p>
+            <button onclick="openPlanModal()" class="btn btn-primary" style="margin-top: 16px;">Create Your First Plan</button>
+          </div>
+        </div>
+      <% } %>
+    </main>
+  </div>
+
+  <!-- Create/Edit Plan Modal -->
+  <div id="planModal" class="admin-modal-overlay" onclick="closePlanModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title" id="planModalTitle">Create New Plan</div>
+        <button class="admin-modal-close" onclick="closePlanModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="planForm" onsubmit="submitPlanForm(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="planId" name="planId">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Plan Name *</label>
+            <input type="text" id="planName" name="name" class="admin-form-input" required placeholder="e.g., Professional">
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Slug (URL-friendly identifier) *</label>
+            <input type="text" id="planSlug" name="slug" class="admin-form-input" required placeholder="e.g., professional" pattern="[a-z0-9-]+" style="text-transform: lowercase;">
+            <small style="color: var(--muted);">Only lowercase letters, numbers, and hyphens</small>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Description</label>
+            <textarea id="planDescription" name="description" class="admin-form-textarea" rows="2" placeholder="Brief description of the plan"></textarea>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Monthly Price (kobo) *</label>
+              <input type="number" id="pricingMonthly" name="pricingMonthly" class="admin-form-input" required placeholder="500000">
+              <small style="color: var(--muted);">Enter amount in kobo (100 kobo = 1 NGN)</small>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Yearly Price (kobo) *</label>
+              <input type="number" id="pricingYearly" name="pricingYearly" class="admin-form-input" required placeholder="5000000">
+            </div>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Members</label>
+              <input type="number" id="maxMembers" name="maxMembers" class="admin-form-input" placeholder="Leave empty for unlimited">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Teams</label>
+              <input type="number" id="maxTeams" name="maxTeams" class="admin-form-input" placeholder="Leave empty for unlimited">
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Features</label>
+            <div class="feature-grid">
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureRecruiter" name="features.recruiter">
+                <span class="feature-toggle-label">Recruiter (SmartHR)</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureLeaveManagement" name="features.leaveManagement">
+                <span class="feature-toggle-label">Leave Management</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featurePayrollManagement" name="features.payrollManagement">
+                <span class="feature-toggle-label">Payroll Management</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featurePerformanceManagement" name="features.performanceManagement">
+                <span class="feature-toggle-label">Performance Management</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureTimeAttendance" name="features.timeAttendance">
+                <span class="feature-toggle-label">Time & Attendance</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureOutlineDocs" name="features.outlineDocs">
+                <span class="feature-toggle-label">Outline Docs</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureAiChat" name="features.aiChat">
+                <span class="feature-toggle-label">AI Chat</span>
+              </label>
+              <label class="feature-toggle">
+                <input type="checkbox" id="featureLms" name="features.lms">
+                <span class="feature-toggle-label">LMS</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Display Order</label>
+              <input type="number" id="displayOrder" name="displayOrder" class="admin-form-input" value="0">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Brand Color</label>
+              <input type="color" id="planColor" name="color" class="admin-form-input" value="#3b82f6" style="height: 42px;">
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Badge Text (optional)</label>
+            <input type="text" id="badgeText" name="badgeText" class="admin-form-input" placeholder="e.g., Most Popular">
+          </div>
+
+          <div class="admin-form-group" style="display: flex; gap: 24px;">
+            <label class="admin-form-checkbox">
+              <input type="checkbox" id="isActive" name="isActive" checked>
+              <span>Active</span>
+            </label>
+            <label class="admin-form-checkbox">
+              <input type="checkbox" id="isPublic" name="isPublic" checked>
+              <span>Public</span>
+            </label>
+            <label class="admin-form-checkbox">
+              <input type="checkbox" id="isFeatured" name="isFeatured">
+              <span>Featured</span>
+            </label>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closePlanModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="planSubmitBtn">Create Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Store plans data for editing
+    const plansData = <%- JSON.stringify(plans) %>;
+
+    // Auto-generate slug from plan name
+    document.addEventListener('DOMContentLoaded', function() {
+      const planNameInput = document.getElementById('planName');
+      const planSlugInput = document.getElementById('planSlug');
+      
+      if (planNameInput && planSlugInput) {
+        planNameInput.addEventListener('input', function() {
+          // Only auto-generate if slug field is empty or matches the previous name
+          if (!planSlugInput.value || planSlugInput.dataset.autoGenerated === 'true') {
+            const slug = this.value
+              .toLowerCase()
+              .trim()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
+            planSlugInput.value = slug;
+            planSlugInput.dataset.autoGenerated = 'true';
+          }
+        });
+        
+        // Mark slug as manually edited if user types in it
+        planSlugInput.addEventListener('input', function() {
+          planSlugInput.dataset.autoGenerated = 'false';
+        });
+      }
+    });
+
+    function filterPlans(filter) {
+      const buttons = document.querySelectorAll('.admin-filter-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const rows = document.querySelectorAll('#plansTable tbody tr');
+      rows.forEach(row => {
+        if (filter === 'all') {
+          row.style.display = '';
+        } else {
+          row.style.display = row.dataset.status === filter ? '' : 'none';
+        }
+      });
+    }
+
+    function openPlanModal(planId = null) {
+      const modal = document.getElementById('planModal');
+      const form = document.getElementById('planForm');
+      const title = document.getElementById('planModalTitle');
+      const submitBtn = document.getElementById('planSubmitBtn');
+
+      form.reset();
+      document.getElementById('planId').value = '';
+
+      if (planId) {
+        const plan = plansData.find(p => p._id === planId);
+        if (plan) {
+          title.textContent = 'Edit Plan';
+          submitBtn.textContent = 'Save Changes';
+          document.getElementById('planId').value = plan._id;
+          document.getElementById('planName').value = plan.name;
+          document.getElementById('planSlug').value = plan.slug || '';
+          document.getElementById('planSlug').dataset.autoGenerated = 'false'; // Don't auto-update when editing
+          document.getElementById('planDescription').value = plan.description || '';
+          document.getElementById('pricingMonthly').value = plan.pricing?.monthly || 0;
+          document.getElementById('pricingYearly').value = plan.pricing?.yearly || 0;
+          document.getElementById('maxMembers').value = plan.limits?.maxMembers || '';
+          document.getElementById('maxTeams').value = plan.limits?.maxTeams || '';
+          document.getElementById('displayOrder').value = plan.displayOrder || 0;
+          document.getElementById('planColor').value = plan.color || '#3b82f6';
+          document.getElementById('badgeText').value = plan.badgeText || '';
+          document.getElementById('isActive').checked = plan.isActive;
+          document.getElementById('isPublic').checked = plan.isPublic;
+          document.getElementById('isFeatured').checked = plan.isFeatured;
+
+          const features = plan.features || {};
+          document.getElementById('featureRecruiter').checked = features.recruiter;
+          document.getElementById('featureLeaveManagement').checked = features.leaveManagement;
+          document.getElementById('featurePayrollManagement').checked = features.payrollManagement;
+          document.getElementById('featurePerformanceManagement').checked = features.performanceManagement;
+          document.getElementById('featureTimeAttendance').checked = features.timeAttendance;
+          document.getElementById('featureOutlineDocs').checked = features.outlineDocs;
+          document.getElementById('featureAiChat').checked = features.aiChat;
+          document.getElementById('featureLms').checked = features.lms;
+        }
+      } else {
+        title.textContent = 'Create New Plan';
+        submitBtn.textContent = 'Create Plan';
+        // Reset slug field for new plans
+        const slugInput = document.getElementById('planSlug');
+        if (slugInput) {
+          slugInput.value = '';
+          slugInput.dataset.autoGenerated = 'true';
+        }
+      }
+
+      modal.classList.add('active');
+    }
+
+    function editPlan(planId) {
+      openPlanModal(planId);
+    }
+
+    function closePlanModal() {
+      document.getElementById('planModal').classList.remove('active');
+    }
+
+    async function submitPlanForm(e) {
+      e.preventDefault();
+
+      const planId = document.getElementById('planId').value;
+      const isEdit = !!planId;
+
+      const data = {
+        name: document.getElementById('planName').value,
+        slug: document.getElementById('planSlug').value.toLowerCase().trim(),
+        description: document.getElementById('planDescription').value,
+        pricing: {
+          monthly: parseInt(document.getElementById('pricingMonthly').value) || 0,
+          yearly: parseInt(document.getElementById('pricingYearly').value) || 0,
+          currency: 'NGN'
+        },
+        limits: {
+          maxMembers: document.getElementById('maxMembers').value ? parseInt(document.getElementById('maxMembers').value) : null,
+          maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null
+        },
+        features: {
+          recruiter: document.getElementById('featureRecruiter').checked,
+          leaveManagement: document.getElementById('featureLeaveManagement').checked,
+          payrollManagement: document.getElementById('featurePayrollManagement').checked,
+          performanceManagement: document.getElementById('featurePerformanceManagement').checked,
+          timeAttendance: document.getElementById('featureTimeAttendance').checked,
+          outlineDocs: document.getElementById('featureOutlineDocs').checked,
+          aiChat: document.getElementById('featureAiChat').checked,
+          lms: document.getElementById('featureLms').checked
+        },
+        displayOrder: parseInt(document.getElementById('displayOrder').value) || 0,
+        color: document.getElementById('planColor').value,
+        badgeText: document.getElementById('badgeText').value,
+        isActive: document.getElementById('isActive').checked,
+        isPublic: document.getElementById('isPublic').checked,
+        isFeatured: document.getElementById('isFeatured').checked
+      };
+
+      try {
+        const url = isEdit ? `/api/admin/plans/${planId}` : '/api/admin/plans';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert(result.error || 'Failed to save plan');
+        }
+      } catch (error) {
+        console.error('Error saving plan:', error);
+        alert('Failed to save plan');
+      }
+    }
+
+    async function deactivatePlan(planId) {
+      if (!confirm('Are you sure you want to deactivate this plan?')) return;
+
+      try {
+        const response = await fetch(`/api/admin/plans/${planId}`, { method: 'DELETE' });
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to deactivate plan');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to deactivate plan');
+      }
+    }
+
+    async function activatePlan(planId) {
+      try {
+        const response = await fetch(`/api/admin/plans/${planId}/activate`, { method: 'POST' });
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to activate plan');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to activate plan');
+      }
+    }
+  </script>
+</body>
+
+</html>

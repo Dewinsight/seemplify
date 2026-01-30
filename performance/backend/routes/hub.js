@@ -3,6 +3,7 @@ const router = express.Router();
 
 const { validateHubToken } = require('../middleware/hubAuth');
 const User = require('../models/User');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 // Hub launch endpoint - handles IdP-initiated SSO
 router.get('/launch', validateHubToken, async (req, res) => {
@@ -38,6 +39,27 @@ router.get('/launch', validateHubToken, async (req, res) => {
       req.session.currentOrganizationId = hubUser.currentOrganization.id;
     } else if (hubUser.organizations?.length > 0) {
       req.session.currentOrganizationId = hubUser.organizations[0].id;
+    }
+
+    // Verify subscription access for the current organization
+    if (req.session.currentOrganizationId) {
+      console.log('🔒 Verifying subscription access for org:', req.session.currentOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        req.session.currentOrganizationId,
+        req.headers['authorization']?.replace('Bearer ', '') || hubUser.accessToken
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied for performance-management:', subscriptionCheck.reason);
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'performance-management',
+          req.session.currentOrganizationId,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for performance-management');
     }
 
     // Sync user profile and teams with local database

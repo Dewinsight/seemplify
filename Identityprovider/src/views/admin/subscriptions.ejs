@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Subscriptions - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'subscriptions' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Subscriptions</h1>
+        <div class="admin-header-actions">
+          <button onclick="openSubscriptionModal()" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="8.5" cy="7" r="4" />
+              <line x1="20" y1="8" x2="20" y2="14" />
+              <line x1="23" y1="11" x2="17" y2="11" />
+            </svg>
+            Assign Subscription
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter buttons -->
+      <div class="admin-filters">
+        <button class="admin-filter-btn <%= !currentFilter || currentFilter === 'all' ? 'active' : '' %>" onclick="location.href='/admin/subscriptions'">All</button>
+        <button class="admin-filter-btn <%= currentFilter === 'active' ? 'active' : '' %>" onclick="location.href='/admin/subscriptions?status=active'">Active</button>
+        <button class="admin-filter-btn <%= currentFilter === 'expired' ? 'active' : '' %>" onclick="location.href='/admin/subscriptions?status=expired'">Expired</button>
+        <button class="admin-filter-btn <%= currentFilter === 'suspended' ? 'active' : '' %>" onclick="location.href='/admin/subscriptions?status=suspended'">Suspended</button>
+      </div>
+
+      <% if (subscriptions && subscriptions.length > 0) { %>
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Plan</th>
+                <th>Billing</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% subscriptions.forEach(sub => { %>
+                <tr>
+                  <td>
+                    <div style="font-weight: 600;"><%= sub.organization?.name || 'Unknown' %></div>
+                  </td>
+                  <td>
+                    <div><%= sub.plan?.name || 'Unknown' %></div>
+                  </td>
+                  <td>
+                    <div><%= sub.billingCycle %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= sub.formattedPrice %></div>
+                  </td>
+                  <td>
+                    <div><%= new Date(sub.startDate).toLocaleDateString() %></div>
+                    <div style="font-size: 12px; color: var(--muted);">to <%= new Date(sub.endDate).toLocaleDateString() %></div>
+                    <% if (sub.daysUntilExpiry <= 7 && sub.daysUntilExpiry > 0 && sub.status === 'active') { %>
+                      <div style="font-size: 11px; color: #f59e0b; font-weight: 600;"><%= sub.daysUntilExpiry %> days left</div>
+                    <% } %>
+                  </td>
+                  <td>
+                    <span class="status-badge status-badge--<%= sub.status %>">
+                      <%= sub.status %>
+                    </span>
+                    <% if (sub.isInGracePeriod) { %>
+                      <span class="status-badge status-badge--pending" style="margin-left: 4px;">Grace Period</span>
+                    <% } %>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button onclick="extendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary">Extend</button>
+                      <% if (sub.status === 'active') { %>
+                        <button onclick="suspendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #f59e0b;">Suspend</button>
+                      <% } else if (sub.status === 'suspended') { %>
+                        <button onclick="reactivateSubscription('<%= sub._id %>')" class="btn btn-sm btn-success">Reactivate</button>
+                      <% } %>
+                      <% if (sub.status !== 'cancelled') { %>
+                        <button onclick="cancelSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #ef4444;">Cancel</button>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="admin-card">
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            <h3>No subscriptions found</h3>
+            <p>Create a subscription to give organizations access to plans.</p>
+            <button onclick="openSubscriptionModal()" class="btn btn-primary" style="margin-top: 16px;">Create Subscription</button>
+          </div>
+        </div>
+      <% } %>
+    </main>
+  </div>
+
+  <!-- Create Subscription Modal -->
+  <div id="subscriptionModal" class="admin-modal-overlay" onclick="closeSubscriptionModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Assign Subscription</div>
+        <button class="admin-modal-close" onclick="closeSubscriptionModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="subscriptionForm" onsubmit="submitSubscription(event)">
+        <div class="admin-modal-body">
+          <div class="admin-form-group">
+            <label class="admin-form-label">Organization *</label>
+            <select id="organizationId" class="admin-form-select" required>
+              <option value="">Select organization...</option>
+              <% organizations.forEach(org => { %>
+                <option value="<%= org._id %>"><%= org.name %></option>
+              <% }) %>
+            </select>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Plan *</label>
+            <select id="planId" class="admin-form-select" required>
+              <option value="">Select plan...</option>
+              <% plans.forEach(plan => { %>
+                <option value="<%= plan._id %>"><%= plan.name %> - <%= plan.formattedMonthlyPrice %>/mo</option>
+              <% }) %>
+            </select>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Billing Cycle *</label>
+            <select id="billingCycle" class="admin-form-select" required>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Start Date</label>
+              <input type="date" id="startDate" class="admin-form-input">
+              <small style="color: var(--muted);">Leave empty for today</small>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">End Date</label>
+              <input type="date" id="endDate" class="admin-form-input">
+              <small style="color: var(--muted);">Leave empty for auto-calculation</small>
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Notes (optional)</label>
+            <textarea id="notes" class="admin-form-textarea" rows="2" placeholder="Internal notes"></textarea>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeSubscriptionModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Subscription</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Extend Modal -->
+  <div id="extendModal" class="admin-modal-overlay" onclick="closeExtendModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Extend Subscription</div>
+        <button class="admin-modal-close" onclick="closeExtendModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="extendForm" onsubmit="submitExtension(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="extendSubId">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Days to Extend *</label>
+            <input type="number" id="extendDays" class="admin-form-input" required min="1" placeholder="e.g., 30">
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Notes (optional)</label>
+            <textarea id="extendNotes" class="admin-form-textarea" rows="2" placeholder="Reason for extension"></textarea>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeExtendModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Extend Subscription</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openSubscriptionModal() {
+      document.getElementById('subscriptionForm').reset();
+      document.getElementById('subscriptionModal').classList.add('active');
+    }
+
+    function closeSubscriptionModal() {
+      document.getElementById('subscriptionModal').classList.remove('active');
+    }
+
+    async function submitSubscription(e) {
+      e.preventDefault();
+
+      const data = {
+        organizationId: document.getElementById('organizationId').value,
+        planId: document.getElementById('planId').value,
+        billingCycle: document.getElementById('billingCycle').value,
+        startDate: document.getElementById('startDate').value || undefined,
+        endDate: document.getElementById('endDate').value || undefined,
+        notes: document.getElementById('notes').value
+      };
+
+      try {
+        const response = await fetch('/api/admin/subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert(result.error || 'Failed to create subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to create subscription');
+      }
+    }
+
+    function extendSubscription(subId) {
+      document.getElementById('extendSubId').value = subId;
+      document.getElementById('extendForm').reset();
+      document.getElementById('extendModal').classList.add('active');
+    }
+
+    function closeExtendModal() {
+      document.getElementById('extendModal').classList.remove('active');
+    }
+
+    async function submitExtension(e) {
+      e.preventDefault();
+
+      const subId = document.getElementById('extendSubId').value;
+      const data = {
+        days: parseInt(document.getElementById('extendDays').value),
+        notes: document.getElementById('extendNotes').value
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/extend`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to extend subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to extend subscription');
+      }
+    }
+
+    async function suspendSubscription(subId) {
+      const reason = prompt('Reason for suspension (optional):');
+      if (reason === null) return;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/suspend`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to suspend subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to suspend subscription');
+      }
+    }
+
+    async function reactivateSubscription(subId) {
+      if (!confirm('Are you sure you want to reactivate this subscription?')) return;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/reactivate`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to reactivate subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to reactivate subscription');
+      }
+    }
+
+    async function cancelSubscription(subId) {
+      const reason = prompt('Reason for cancellation (optional):');
+      if (reason === null) return;
+
+      if (!confirm('Are you sure you want to cancel this subscription? This cannot be undone.')) return;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to cancel subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to cancel subscription');
+      }
+    }
+  </script>
+</body>
+
+</html>

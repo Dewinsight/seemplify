@@ -1,0 +1,228 @@
+import axios from 'axios';
+import { redirectToLogin, isPublicRoute } from '@/services/authGuard';
+import { getApiUrl } from '@/lib/env';
+
+// Use centralized environment detection to prevent localhost in production
+const API_URL = getApiUrl();
+
+// Create axios instance
+export const api = axios.create({
+    baseURL: API_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    withCredentials: true,
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+    }
+    return config;
+});
+
+// Handle response errors - auto redirect on 401/403
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        // Only handle auth errors if we're not already on a public route
+        if (typeof window !== 'undefined') {
+            const currentPath = window.location.pathname;
+            
+            // Check for authentication errors
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                // Don't redirect if we're already on login page or OIDC callback
+                if (!isPublicRoute(currentPath)) {
+                    console.warn('Authentication error - redirecting to login');
+                    redirectToLogin();
+                }
+            }
+        }
+        
+        return Promise.reject(error);
+    }
+);
+
+// Auth API helpers
+export const authApi = {
+    getMe: async () => {
+        const response = await api.get('/auth/me');
+        return response.data;
+    },
+    logout: async () => {
+        return api.post('/auth/logout');
+    },
+    switchOrganization: async (organizationId: string) => {
+        const response = await api.post('/auth/switch-organization', { organizationId });
+        return response.data;
+    },
+};
+
+// Clock API helpers
+export const clockApi = {
+    getStatus: async () => {
+        const response = await api.get('/clock/status');
+        return response.data;
+    },
+    clockIn: async (note?: string, location?: any) => {
+        const response = await api.post('/clock/in', { note, location });
+        return response.data;
+    },
+    clockOut: async (note?: string, location?: any) => {
+        const response = await api.post('/clock/out', { note, location });
+        return response.data;
+    },
+    startBreak: async (note?: string) => {
+        const response = await api.post('/clock/break/start', { note });
+        return response.data;
+    },
+    endBreak: async (note?: string) => {
+        const response = await api.post('/clock/break/end', { note });
+        return response.data;
+    },
+    getEntries: async (startDate?: string, endDate?: string) => {
+        const response = await api.get('/clock/entries', { params: { startDate, endDate } });
+        return response.data;
+    },
+    createManualEntry: async (data: { entryType: string; timestamp: string; note: string; timezone?: string; targetUserId?: string }) => {
+        const response = await api.post('/clock/manual', data);
+        return response.data;
+    },
+};
+
+// Timesheet API helpers
+export const timesheetApi = {
+    getCurrent: async () => {
+        const response = await api.get('/timesheets/current');
+        return response.data;
+    },
+    getList: async (params?: any) => {
+        const response = await api.get('/timesheets', { params });
+        return response.data;
+    },
+    list: async (params?: any) => {
+        const response = await api.get('/timesheets', { params });
+        return response.data;
+    },
+    getById: async (id: string) => {
+        const response = await api.get(`/timesheets/${id}`);
+        return response.data;
+    },
+    submit: async (id: string, note?: string) => {
+        const response = await api.post(`/timesheets/${id}/submit`, { note });
+        return response.data;
+    },
+    recall: async (id: string) => {
+        const response = await api.post(`/timesheets/${id}/recall`);
+        return response.data;
+    },
+};
+
+// Attendance API helpers
+export const attendanceApi = {
+    getDashboard: async () => {
+        const response = await api.get('/attendance/dashboard');
+        return response.data;
+    },
+    getTeamStatus: async (teamId?: string) => {
+        const response = await api.get('/attendance/team', { params: { teamId } });
+        return response.data;
+    },
+    getSummary: async (params?: any) => {
+        const response = await api.get('/attendance/summary', { params });
+        return response.data;
+    },
+};
+
+// Report API helpers
+export const reportsApi = {
+    getMonthlyAttendance: async (start: string, end: string) => {
+        const response = await api.get('/reports/attendance', { params: { start, end } });
+        return response.data;
+    },
+    getOvertime: async (start: string, end: string) => {
+        const response = await api.get('/reports/overtime', { params: { start, end } });
+        return response.data;
+    },
+    getLateness: async (start: string, end: string) => {
+        const response = await api.get('/reports/lateness', { params: { start, end } });
+        return response.data;
+    },
+    getGeofenceViolations: async (startDate?: string, endDate?: string, userId?: string) => {
+        const response = await api.get('/reports/geofence-violations', { 
+            params: { startDate, endDate, userId } 
+        });
+        return response.data;
+    },
+    getLocationAccuracy: async (startDate?: string, endDate?: string) => {
+        const response = await api.get('/reports/location-accuracy', { 
+            params: { startDate, endDate } 
+        });
+        return response.data;
+    },
+    getLocationHistory: async (userId: string, startDate?: string, endDate?: string, limit?: number) => {
+        const response = await api.get('/reports/location-history', { 
+            params: { userId, startDate, endDate, limit } 
+        });
+        return response.data;
+    },
+};
+
+// Admin API helpers
+export const adminApi = {
+    getPolicy: async () => {
+        const response = await api.get('/admin/attendance-policy');
+        return response.data;
+    },
+    updatePolicy: async (policy: any) => {
+        const response = await api.put('/admin/attendance-policy', policy);
+        return response.data;
+    },
+    addGeofenceLocation: async (location: any) => {
+        const response = await api.post('/admin/geofence-locations', location);
+        return response.data;
+    },
+    updateGeofenceLocation: async (index: number, location: any) => {
+        const response = await api.put(`/admin/geofence-locations/${index}`, location);
+        return response.data;
+    },
+    deleteGeofenceLocation: async (index: number) => {
+        const response = await api.delete(`/admin/geofence-locations/${index}`);
+        return response.data;
+    },
+};
+
+// Approvals API helpers
+export const approvalsApi = {
+    getPending: async () => {
+        const response = await api.get('/approvals');
+        return response.data.timesheets || response.data;
+    },
+    getHistory: async () => {
+        const response = await api.get('/approvals/history');
+        return response.data.timesheets || response.data;
+    },
+    approve: async (id: string, note?: string) => {
+        const response = await api.post(`/approvals/${id}/approve`, { note });
+        return response.data;
+    },
+    reject: async (id: string, reason: string) => {
+        const response = await api.post(`/approvals/${id}/reject`, { reason });
+        return response.data;
+    },
+    revert: async (id: string, reason: string) => {
+        const response = await api.post(`/approvals/${id}/revert`, { reason });
+        return response.data;
+    },
+    delete: async (id: string, reason: string) => {
+        const response = await api.delete(`/approvals/${id}`, { data: { reason } });
+        return response.data;
+    },
+};
+
+export default api;
+

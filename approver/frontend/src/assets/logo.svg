@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 80" fill="none">
+  <!-- Symbol: Abstract Check/Shield integrated into text -->
+  
+  <!-- "STERLING" Text - Bold Modern Sans - Uses CSS Variable for Dynamic Color -->
+  <path fill="var(--text-primary)" d="M20,55 L20,25 L50,25 L50,32 L28,32 L28,36 L48,36 L48,43 L28,43 L28,48 L50,48 L50,55 L20,55 Z" /> <!-- S (simplified block) -->
+  <text x="10" y="55" font-family="Arial, sans-serif" font-weight="900" font-size="40" fill="var(--text-primary)" letter-spacing="2">STERLING</text>
+  
+  <!-- "APPROVER" Text with integrated Logo at 'O' -->
+  <text x="230" y="55" font-family="Arial, sans-serif" font-weight="900" font-size="40" fill="var(--text-primary)" letter-spacing="2">APPR</text>
+  
+  <!-- Stylized 'O' (Shield/Check) -->
+  <g transform="translate(355, 18) scale(0.6)">
+    <path fill="#E1A777" d="M25 0 C10 5, 0 15, 0 35 C5 55, 25 65, 25 65 C25 65, 45 55, 50 35 L50 15 L25 5 Z" /> <!-- Shield Base -->
+    <path fill="#D63637" d="M15 30 L22 40 L40 15 L45 20 L22 50 L10 35 Z" /> <!-- Checkmark -->
+  </g>
+
+  <text x="395" y="55" font-family="Arial, sans-serif" font-weight="900" font-size="40" fill="var(--text-primary)" letter-spacing="2">VER</text>
+</svg>

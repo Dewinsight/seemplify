@@ -1,5 +1,19 @@
 const { AzureOpenAI } = require('@azure/openai');
 
+// Conversation phases in order
+const CONVERSATION_PHASES = [
+  'initialized',
+  'okr_reflection',
+  'achievements',
+  'challenges',
+  'learnings',
+  'future_goals',
+  'competencies',
+  'report_generation',
+  'review',
+  'completed'
+];
+
 /**
  * Appraisal AI Service
  * Provides AI-powered analysis for performance appraisals
@@ -8,7 +22,7 @@ const { AzureOpenAI } = require('@azure/openai');
 class AppraisalAIService {
   constructor() {
     this.client = null;
-    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
+    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
     this.initialized = false;
   }
 
@@ -549,6 +563,650 @@ Suggest SMART goals that are:
       goals: 'Set 2-3 goals that align with your career aspirations and team objectives.'
     };
     return suggestions[field] || 'AI suggestions are currently unavailable. Please write your own response.';
+  }
+
+  // =========================================
+  // CONVERSATIONAL SELF-ASSESSMENT METHODS
+  // =========================================
+
+  /**
+   * Start a conversational self-assessment session
+   * @param {Object} appraisal - The appraisal document
+   * @param {Array} okrs - Employee's OKRs for the period
+   * @param {Object} employee - Employee info
+   * @returns {Object} Initial greeting and conversation state
+   */
+  async startSelfAssessmentConversation(appraisal, okrs, employee) {
+    await this.initialize();
+
+    const okrSummary = okrs.map(okr => {
+      const avgProgress = okr.objectives?.reduce((sum, obj) => {
+        const krProgress = obj.keyResults?.reduce((krSum, kr) => {
+          const progress = kr.targetValue > 0
+            ? Math.min(100, (kr.currentValue / kr.targetValue) * 100)
+            : 0;
+          return krSum + progress;
+        }, 0) / (obj.keyResults?.length || 1);
+        return sum + krProgress;
+      }, 0) / (okr.objectives?.length || 1);
+
+      return {
+        id: okr._id,
+        title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
+        progress: Math.round(avgProgress || okr.progress || 0),
+        objectives: okr.objectives?.map(obj => ({
+          title: obj.title,
+          keyResults: obj.keyResults?.map(kr => ({
+            title: kr.title,
+            target: kr.targetValue,
+            current: kr.currentValue,
+            progress: kr.targetValue > 0 ? Math.round((kr.currentValue / kr.targetValue) * 100) : 0
+          }))
+        }))
+      };
+    });
+
+    if (!this.client) {
+      return this.getFallbackConversationStart(employee, okrSummary);
+    }
+
+    const prompt = `You are starting a conversational self-assessment session with an employee.
+
+Employee: ${employee.name}
+Role: ${employee.jobTitle || 'Not specified'}
+Department: ${employee.department || 'Not specified'}
+Review Period: ${appraisal.cycleId?.name || 'Current Period'}
+
+Their OKRs for this period:
+${okrSummary.map((okr, i) => `
+${i + 1}. ${okr.title} - ${okr.progress}% complete
+${okr.objectives?.map(obj => `   - ${obj.title}
+${obj.keyResults?.map(kr => `     • ${kr.title}: ${kr.current}/${kr.target} (${kr.progress}%)`).join('\n') || ''}`).join('\n') || '   No objectives defined'}`).join('\n') || 'No OKRs found for this period.'}
+
+Generate a warm, professional greeting that:
+1. Addresses them by name
+2. Explains this will be a conversational self-assessment
+3. Briefly summarizes their OKRs and overall progress
+4. Asks them to start by reflecting on their first/highest-priority OKR
+
+Keep the tone friendly but professional. Be encouraging about their progress.
+Format your response as natural conversation text (not JSON).`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a supportive HR assistant guiding an employee through their performance self-assessment. Be warm, professional, and encouraging. Help them articulate their achievements effectively.'
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 600
+      });
+
+      const greeting = response.choices[0]?.message?.content;
+      const tokensUsed = response.usage?.total_tokens || 0;
+
+      return {
+        greeting,
+        okrSummary,
+        phase: 'okr_reflection',
+        currentOkrIndex: 0,
+        tokensUsed,
+        success: true
+      };
+    } catch (error) {
+      console.error('Conversation start error:', error);
+      return this.getFallbackConversationStart(employee, okrSummary);
+    }
+  }
+
+  /**
+   * Continue the conversation based on user input
+   * @param {Object} appraisal - The appraisal document with conversation state
+   * @param {string} userMessage - The user's message
+   * @param {Array} okrs - Employee's OKRs
+   * @param {Object} documentContext - Optional context from uploaded documents
+   * @returns {Object} AI response and updated state
+   */
+  async continueConversation(appraisal, userMessage, okrs, documentContext = null) {
+    await this.initialize();
+
+    const convState = appraisal.conversationAssessment || {};
+    const currentPhase = convState.currentPhase || 'okr_reflection';
+    const currentOkrIndex = convState.currentOkrIndex || 0;
+    const extractedData = convState.extractedData || {};
+
+    // Build conversation history (last 10 messages for context)
+    const recentMessages = (appraisal.chatThread || [])
+      .slice(-10)
+      .map(m => ({
+        role: m.sender?.role === 'ai' ? 'assistant' : 'user',
+        content: m.message
+      }));
+
+    // Build context about current state
+    const currentOkr = okrs[currentOkrIndex];
+    const phaseContext = this.buildPhaseContext(currentPhase, currentOkr, extractedData);
+
+    if (!this.client) {
+      return this.getFallbackConversationResponse(currentPhase, userMessage);
+    }
+
+    const systemPrompt = `You are guiding ${appraisal.employee?.name || 'the employee'} through their performance self-assessment.
+
+Current Phase: ${currentPhase}
+${phaseContext}
+
+${documentContext ? `\nRecently uploaded document analysis:\n${JSON.stringify(documentContext, null, 2)}` : ''}
+
+Guidelines:
+- Acknowledge their input positively
+- Extract specific achievements, challenges, or learnings from their response
+- Ask follow-up questions to get more detail if needed
+- When you have enough information for the current topic, guide them to the next
+- Be conversational and supportive, not interrogative
+- If they mention quantifiable results, acknowledge those specifically
+
+After processing their message, you should:
+1. Respond naturally to what they said
+2. Either ask a follow-up question OR transition to the next topic
+3. Keep responses concise (2-4 sentences typically)`;
+
+    const userPrompt = `The employee just said: "${userMessage}"
+
+Respond to them and continue the conversation. If appropriate, extract any structured data (achievements, challenges, learnings, goals) from their response.
+
+Return a JSON object:
+{
+  "response": "Your conversational response to the employee",
+  "extractedData": {
+    "type": "achievement|challenge|learning|goal|skill|null",
+    "data": { "text": "...", "context": "..." } // or null if nothing to extract
+  },
+  "suggestedNextPhase": "${currentPhase}" or "next phase name if ready to move on",
+  "shouldAdvanceOkr": false, // true if done with current OKR and should move to next
+  "confidence": 0.0-1.0
+}`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...recentMessages,
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.6,
+        max_tokens: 800,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      const parsed = JSON.parse(content);
+      const tokensUsed = response.usage?.total_tokens || 0;
+
+      // Determine next phase
+      let nextPhase = currentPhase;
+      let nextOkrIndex = currentOkrIndex;
+
+      if (parsed.shouldAdvanceOkr && currentOkrIndex < okrs.length - 1) {
+        nextOkrIndex = currentOkrIndex + 1;
+      } else if (parsed.suggestedNextPhase && parsed.suggestedNextPhase !== currentPhase) {
+        const phaseIndex = CONVERSATION_PHASES.indexOf(parsed.suggestedNextPhase);
+        if (phaseIndex > CONVERSATION_PHASES.indexOf(currentPhase)) {
+          nextPhase = parsed.suggestedNextPhase;
+        }
+      }
+
+      return {
+        response: parsed.response,
+        extractedData: parsed.extractedData,
+        currentPhase: nextPhase,
+        currentOkrIndex: nextOkrIndex,
+        confidence: parsed.confidence || 0.7,
+        tokensUsed,
+        success: true
+      };
+    } catch (error) {
+      console.error('Conversation continue error:', error);
+      return this.getFallbackConversationResponse(currentPhase, userMessage);
+    }
+  }
+
+  /**
+   * Incorporate uploaded document into conversation context
+   * @param {Object} document - The AppraisalDocument with AI analysis
+   * @param {Object} appraisal - The appraisal document
+   * @returns {Object} Summary message and extracted insights
+   */
+  async incorporateDocumentIntoConversation(document, appraisal) {
+    await this.initialize();
+
+    const analysis = document.aiAnalysis || {};
+    const currentPhase = appraisal.conversationAssessment?.currentPhase || 'achievements';
+
+    if (!this.client || !analysis.summary) {
+      return {
+        message: `I've received your document "${document.originalName}". Let me know how this relates to your work this period.`,
+        insights: analysis,
+        success: true
+      };
+    }
+
+    const prompt = `An employee uploaded a document during their self-assessment conversation.
+
+Document: ${document.originalName}
+AI Analysis Summary: ${analysis.summary}
+Key Points: ${analysis.keyPoints?.join(', ') || 'None identified'}
+Extracted Achievements: ${analysis.extractedAchievements?.map(a => a.description).join('; ') || 'None'}
+Identified Skills: ${analysis.identifiedSkills?.map(s => s.skill).join(', ') || 'None'}
+Current Conversation Phase: ${currentPhase}
+
+Generate a brief, conversational acknowledgment that:
+1. Confirms you've reviewed the document
+2. Highlights 1-2 relevant insights from it
+3. Asks how they'd like to incorporate this into their self-assessment
+
+Keep it to 2-3 sentences.`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: [
+          { role: 'system', content: 'You are a supportive HR assistant. Acknowledge uploaded documents warmly and help connect them to the self-assessment.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 300
+      });
+
+      return {
+        message: response.choices[0]?.message?.content,
+        insights: analysis,
+        tokensUsed: response.usage?.total_tokens || 0,
+        success: true
+      };
+    } catch (error) {
+      console.error('Document incorporation error:', error);
+      return {
+        message: `I've reviewed "${document.originalName}". ${analysis.summary || 'How would you like to incorporate this into your self-assessment?'}`,
+        insights: analysis,
+        success: true
+      };
+    }
+  }
+
+  /**
+   * Generate the final self-assessment report from conversation data
+   * @param {Object} appraisal - The appraisal with full conversation history
+   * @param {Array} okrs - Employee's OKRs
+   * @param {Array} documents - Uploaded documents with analysis
+   * @returns {Object} Generated report matching selfAssessment schema
+   */
+  async generateSelfAssessmentReport(appraisal, okrs, documents = []) {
+    await this.initialize();
+
+    const convState = appraisal.conversationAssessment || {};
+    const extractedData = convState.extractedData || {};
+    const chatThread = appraisal.chatThread || [];
+
+    // Compile conversation highlights
+    const employeeMessages = chatThread
+      .filter(m => m.sender?.role === 'employee')
+      .map(m => m.message)
+      .join('\n\n');
+
+    // Compile document insights
+    const documentInsights = documents
+      .filter(d => d.aiAnalysis?.summary)
+      .map(d => ({
+        name: d.originalName,
+        summary: d.aiAnalysis.summary,
+        achievements: d.aiAnalysis.extractedAchievements || [],
+        skills: d.aiAnalysis.identifiedSkills || []
+      }));
+
+    // OKR performance summary
+    const okrPerformance = okrs.map(okr => ({
+      id: okr._id,
+      title: okr.title || okr.objectives?.[0]?.title,
+      progress: okr.progress || 0,
+      objectives: okr.objectives?.map(obj => ({
+        title: obj.title,
+        keyResults: obj.keyResults?.map(kr => ({
+          title: kr.title,
+          achievement: kr.targetValue > 0 ? Math.round((kr.currentValue / kr.targetValue) * 100) : 0
+        }))
+      }))
+    }));
+
+    if (!this.client) {
+      return this.getFallbackReport(extractedData, okrPerformance);
+    }
+
+    const prompt = `Generate a comprehensive self-assessment report based on this conversation data.
+
+Employee: ${appraisal.employee?.name}
+Role: ${appraisal.employee?.jobTitle || 'Not specified'}
+Review Period: ${appraisal.cycleId?.name || 'Current Period'}
+
+OKR Performance:
+${okrPerformance.map(okr => `- ${okr.title}: ${okr.progress}% overall`).join('\n')}
+
+Employee's Conversation Highlights:
+${employeeMessages.substring(0, 4000)}
+
+Extracted Data from Conversation:
+- Achievements: ${extractedData.achievements?.map(a => a.text).join('; ') || 'None extracted'}
+- Challenges: ${extractedData.challenges?.map(c => c.text).join('; ') || 'None extracted'}
+- Skills: ${extractedData.skills?.map(s => s.skill).join(', ') || 'None extracted'}
+- Goals: ${extractedData.goals?.map(g => g.goal).join('; ') || 'None extracted'}
+
+Document Evidence:
+${documentInsights.map(d => `- ${d.name}: ${d.summary}`).join('\n') || 'No documents uploaded'}
+
+Generate a complete self-assessment report in JSON format:
+{
+  "overallSummary": {
+    "achievements": "2-3 paragraphs summarizing key achievements with specific examples and metrics",
+    "challenges": "1-2 paragraphs describing challenges faced and how they were addressed",
+    "learnings": "1-2 paragraphs about skills developed and knowledge gained",
+    "improvements": "1-2 paragraphs on areas for improvement, framed constructively",
+    "goals": "2-3 specific, measurable goals for the next period"
+  },
+  "okrAssessment": [
+    {
+      "okrId": "okr_id_here",
+      "okrTitle": "title",
+      "completionPercentage": 85,
+      "selfComments": "Specific commentary on this OKR's progress and outcomes"
+    }
+  ],
+  "suggestedOverallRating": 3,
+  "ratingJustification": "Brief explanation for the suggested rating",
+  "aiInsights": {
+    "strengths": ["strength1", "strength2"],
+    "developmentAreas": ["area1", "area2"],
+    "suggestions": ["suggestion1", "suggestion2"],
+    "sentiment": "positive|neutral|negative|mixed"
+  }
+}`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert HR analyst creating employee self-assessment reports. Write professionally, highlighting achievements with specifics while being honest about challenges. Frame everything constructively.'
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 3000,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      const report = JSON.parse(content);
+
+      // Map OKR IDs back
+      if (report.okrAssessment) {
+        report.okrAssessment = report.okrAssessment.map((assessment, index) => ({
+          ...assessment,
+          okrId: okrs[index]?._id || assessment.okrId
+        }));
+      }
+
+      return {
+        ...report,
+        tokensUsed: response.usage?.total_tokens || 0,
+        success: true
+      };
+    } catch (error) {
+      console.error('Report generation error:', error);
+      return this.getFallbackReport(extractedData, okrPerformance);
+    }
+  }
+
+  /**
+   * Calculate composite score for manager review
+   * @param {Object} appraisal - The appraisal with manager review data
+   * @param {Object} cycle - The appraisal cycle with weights
+   * @returns {Object} Score breakdown
+   */
+  calculateCompositeScore(appraisal, cycle) {
+    const okrWeight = (cycle?.okrWeight || 40) / 100;
+    const competencyWeight = 1 - okrWeight;
+
+    // OKR Score Calculation
+    const okrAssessment = appraisal.managerReview?.okrAssessment || appraisal.selfAssessment?.okrAssessment || [];
+    const avgOkrCompletion = okrAssessment.length > 0
+      ? okrAssessment.reduce((sum, o) => sum + (o.managerVerifiedCompletion || o.completionPercentage || 0), 0) / okrAssessment.length
+      : 0;
+
+    // Convert percentage to 1-5 scale
+    const okrScore = this.percentageToRating(avgOkrCompletion);
+
+    // Competency Score Calculation
+    const competencyRatings = appraisal.managerReview?.competencyRatings || [];
+    const avgCompetencyScore = competencyRatings.length > 0
+      ? competencyRatings.reduce((sum, c) => sum + (c.managerRating || 3), 0) / competencyRatings.length
+      : 3;
+
+    // Composite Score
+    const compositeScore = (okrScore * okrWeight) + (avgCompetencyScore * competencyWeight);
+
+    return {
+      okrScore: Math.round(okrScore * 10) / 10,
+      okrCompletion: Math.round(avgOkrCompletion),
+      competencyScore: Math.round(avgCompetencyScore * 10) / 10,
+      compositeScore: Math.round(compositeScore * 10) / 10,
+      suggestedRating: Math.round(compositeScore),
+      breakdown: {
+        okrWeight: cycle?.okrWeight || 40,
+        okrContribution: Math.round(okrScore * okrWeight * 10) / 10,
+        competencyWeight: 100 - (cycle?.okrWeight || 40),
+        competencyContribution: Math.round(avgCompetencyScore * competencyWeight * 10) / 10
+      },
+      ratingLabel: this.getRatingLabel(Math.round(compositeScore))
+    };
+  }
+
+  /**
+   * Convert percentage to 1-5 rating scale
+   */
+  percentageToRating(percentage) {
+    if (percentage >= 120) return 5;      // Outstanding
+    if (percentage >= 100) return 4;      // Exceeds Expectations
+    if (percentage >= 80) return 3;       // Meets Expectations
+    if (percentage >= 60) return 2;       // Partially Meets
+    return 1;                             // Needs Improvement
+  }
+
+  /**
+   * Get rating label from numeric rating
+   */
+  getRatingLabel(rating) {
+    const labels = {
+      1: 'Needs Improvement',
+      2: 'Partially Meets Expectations',
+      3: 'Meets Expectations',
+      4: 'Exceeds Expectations',
+      5: 'Outstanding'
+    };
+    return labels[rating] || 'Meets Expectations';
+  }
+
+  /**
+   * Generate AI-suggested rating with justification for manager review
+   */
+  async generateAISuggestedRating(appraisal, okrs) {
+    await this.initialize();
+
+    const selfAssessment = appraisal.selfAssessment || {};
+    const okrPerformance = okrs.map(okr => ({
+      title: okr.title || okr.objectives?.[0]?.title,
+      progress: okr.progress || 0
+    }));
+
+    if (!this.client) {
+      const score = this.calculateCompositeScore(appraisal, appraisal.cycleId);
+      return {
+        suggestedRating: score.suggestedRating,
+        ratingJustification: `Based on ${score.okrCompletion}% OKR completion and competency scores.`,
+        keyStrengths: [],
+        developmentAreas: [],
+        calibrationNotes: 'AI analysis unavailable. Using calculated composite score.',
+        success: true
+      };
+    }
+
+    const prompt = `Analyze this performance data and suggest an overall rating (1-5) for manager review.
+
+Employee: ${appraisal.employee?.name}
+Role: ${appraisal.employee?.jobTitle || 'Not specified'}
+
+Self-Assessment Summary:
+- Achievements: ${selfAssessment.overallSummary?.achievements?.substring(0, 500) || 'Not provided'}
+- Challenges: ${selfAssessment.overallSummary?.challenges?.substring(0, 300) || 'Not provided'}
+- Self-Rating: ${selfAssessment.overallSelfRating || 'Not provided'}/5
+
+OKR Performance:
+${okrPerformance.map(o => `- ${o.title}: ${o.progress}%`).join('\n')}
+
+Competency Self-Ratings:
+${selfAssessment.competencyRatings?.map(c => `- ${c.competencyName}: ${c.selfRating}/5`).join('\n') || 'No ratings'}
+
+Provide a recommendation in JSON format:
+{
+  "suggestedRating": 1-5,
+  "ratingJustification": "2-3 sentence explanation for this rating",
+  "keyStrengths": ["strength1", "strength2", "strength3"],
+  "developmentAreas": ["area1", "area2"],
+  "ratingGaps": {
+    "selfVsObjective": "Analysis of gap between self-rating and objective performance",
+    "concerns": ["any concerns about rating accuracy"]
+  },
+  "calibrationNotes": "Notes for calibration session if applicable"
+}`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: [
+          { role: 'system', content: 'You are an HR analytics expert providing objective rating recommendations. Base ratings on evidence and avoid bias. Be fair but honest.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      const result = JSON.parse(content);
+
+      return {
+        ...result,
+        tokensUsed: response.usage?.total_tokens || 0,
+        success: true
+      };
+    } catch (error) {
+      console.error('AI rating suggestion error:', error);
+      const score = this.calculateCompositeScore(appraisal, appraisal.cycleId);
+      return {
+        suggestedRating: score.suggestedRating,
+        ratingJustification: `Based on ${score.okrCompletion}% OKR completion and competency assessment.`,
+        keyStrengths: [],
+        developmentAreas: [],
+        calibrationNotes: 'AI analysis encountered an error. Using calculated composite score.',
+        success: false
+      };
+    }
+  }
+
+  // =========================================
+  // CONVERSATION HELPER METHODS
+  // =========================================
+
+  buildPhaseContext(phase, currentOkr, extractedData) {
+    const contexts = {
+      okr_reflection: `Discussing OKR: "${currentOkr?.title || currentOkr?.objectives?.[0]?.title || 'Current OKR'}" (${currentOkr?.progress || 0}% complete)`,
+      achievements: `Discussing key achievements and accomplishments. Already captured: ${extractedData.achievements?.length || 0} achievements.`,
+      challenges: `Discussing challenges faced. Already captured: ${extractedData.challenges?.length || 0} challenges.`,
+      learnings: `Discussing skills developed and lessons learned.`,
+      future_goals: `Discussing goals for the next period. Already captured: ${extractedData.goals?.length || 0} goals.`,
+      competencies: `Discussing competency self-assessment.`,
+      report_generation: `Ready to generate the self-assessment report.`
+    };
+    return contexts[phase] || '';
+  }
+
+  getFallbackConversationStart(employee, okrSummary) {
+    const okrList = okrSummary.map((okr, i) => `${i + 1}. ${okr.title} (${okr.progress}% complete)`).join('\n');
+
+    return {
+      greeting: `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI see you have ${okrSummary.length} OKR(s) for this period:\n${okrList}\n\nLet's start by discussing your progress on the first one. What were your key accomplishments related to "${okrSummary[0]?.title || 'your objectives'}"?`,
+      okrSummary,
+      phase: 'okr_reflection',
+      currentOkrIndex: 0,
+      tokensUsed: 0,
+      success: true,
+      fallback: true
+    };
+  }
+
+  getFallbackConversationResponse(phase, userMessage) {
+    const responses = {
+      okr_reflection: "Thank you for sharing that. Can you tell me more about the specific results or metrics you achieved?",
+      achievements: "That's great progress. Were there any other notable accomplishments you'd like to mention?",
+      challenges: "I appreciate you sharing that challenge. How did you address it, and what did you learn from the experience?",
+      learnings: "Those are valuable insights. What skills would you like to develop further?",
+      future_goals: "Good goals. Can you make them more specific with measurable outcomes and timeframes?",
+      competencies: "Thank you for that self-assessment. Are there any competencies you'd like to focus on improving?",
+      report_generation: "I have enough information to generate your self-assessment report. Would you like me to proceed?"
+    };
+
+    return {
+      response: responses[phase] || "Thank you for sharing. Please continue with your thoughts.",
+      extractedData: null,
+      currentPhase: phase,
+      confidence: 0.5,
+      tokensUsed: 0,
+      success: true,
+      fallback: true
+    };
+  }
+
+  getFallbackReport(extractedData, okrPerformance) {
+    return {
+      overallSummary: {
+        achievements: extractedData.achievements?.map(a => a.text).join('\n\n') || 'Please add your key achievements.',
+        challenges: extractedData.challenges?.map(c => c.text).join('\n\n') || 'Please describe challenges you faced.',
+        learnings: 'Please describe what you learned during this period.',
+        improvements: 'Please identify areas for improvement.',
+        goals: extractedData.goals?.map(g => g.goal).join('\n') || 'Please set goals for the next period.'
+      },
+      okrAssessment: okrPerformance.map(okr => ({
+        okrId: okr.id,
+        okrTitle: okr.title,
+        completionPercentage: okr.progress,
+        selfComments: ''
+      })),
+      suggestedOverallRating: 3,
+      ratingJustification: 'Please review and adjust based on your assessment.',
+      aiInsights: {
+        strengths: [],
+        developmentAreas: [],
+        suggestions: ['AI analysis was not available. Please review and complete manually.'],
+        sentiment: 'neutral'
+      },
+      success: true,
+      fallback: true
+    };
   }
 }
 

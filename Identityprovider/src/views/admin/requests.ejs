@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Subscription Requests - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'requests' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Subscription Requests</h1>
+      </div>
+
+      <!-- Stats -->
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Pending</div>
+          <div class="admin-stat-value" style="color: #f59e0b;"><%= stats.pending %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Approved</div>
+          <div class="admin-stat-value" style="color: #22c55e;"><%= stats.approved %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Rejected</div>
+          <div class="admin-stat-value" style="color: #ef4444;"><%= stats.rejected %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Approval Rate</div>
+          <div class="admin-stat-value"><%= stats.approvalRate %>%</div>
+        </div>
+      </div>
+
+      <!-- Filter buttons -->
+      <div class="admin-filters">
+        <button class="admin-filter-btn <%= !currentFilter || currentFilter === 'all' ? 'active' : '' %>" onclick="location.href='/admin/requests'">All</button>
+        <button class="admin-filter-btn <%= currentFilter === 'pending' ? 'active' : '' %>" onclick="location.href='/admin/requests?status=pending'">Pending</button>
+        <button class="admin-filter-btn <%= currentFilter === 'approved' ? 'active' : '' %>" onclick="location.href='/admin/requests?status=approved'">Approved</button>
+        <button class="admin-filter-btn <%= currentFilter === 'rejected' ? 'active' : '' %>" onclick="location.href='/admin/requests?status=rejected'">Rejected</button>
+      </div>
+
+      <% if (requests && requests.length > 0) { %>
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Plan</th>
+                <th>Contact</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% requests.forEach(request => { %>
+                <tr>
+                  <td>
+                    <div style="font-weight: 600;"><%= request.organization?.name || 'Unknown' %></div>
+                  </td>
+                  <td>
+                    <div><%= request.plan?.name || 'Unknown' %></div>
+                    <div style="font-size: 12px; color: var(--muted);">
+                      <%= request.billingCycle %> - <%= request.formattedPrice %>
+                    </div>
+                  </td>
+                  <td>
+                    <div><%= request.contactInfo?.name %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= request.contactInfo?.email %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= request.contactInfo?.phone %></div>
+                  </td>
+                  <td>
+                    <span style="font-size: 13px; text-transform: capitalize;"><%= request.requestType %></span>
+                  </td>
+                  <td>
+                    <span class="status-badge status-badge--<%= request.status %>">
+                      <%= request.status %>
+                    </span>
+                    <% if (request.isExpired && request.status === 'pending') { %>
+                      <span class="status-badge status-badge--expired" style="margin-left: 4px;">Expired</span>
+                    <% } %>
+                  </td>
+                  <td>
+                    <div><%= new Date(request.createdAt).toLocaleDateString() %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= new Date(request.createdAt).toLocaleTimeString() %></div>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 8px;">
+                      <% if (request.status === 'pending' && !request.isExpired) { %>
+                        <button onclick="openApproveModal('<%= request._id %>')" class="btn btn-sm btn-success">Approve</button>
+                        <button onclick="openRejectModal('<%= request._id %>')" class="btn btn-sm btn-danger">Reject</button>
+                      <% } else { %>
+                        <button onclick="viewRequest('<%= request._id %>')" class="btn btn-sm btn-secondary">View</button>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="admin-card">
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            </svg>
+            <h3>No requests found</h3>
+            <p>When organizations submit subscription requests, they will appear here.</p>
+          </div>
+        </div>
+      <% } %>
+    </main>
+  </div>
+
+  <!-- Approve Modal -->
+  <div id="approveModal" class="admin-modal-overlay" onclick="closeApproveModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Approve Subscription Request</div>
+        <button class="admin-modal-close" onclick="closeApproveModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="approveForm" onsubmit="submitApproval(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="approveRequestId">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Admin Notes (optional)</label>
+            <textarea id="approveNotes" class="admin-form-textarea" rows="3" placeholder="Internal notes about this approval"></textarea>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Custom Start Date (optional)</label>
+              <input type="date" id="customStartDate" class="admin-form-input">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Custom End Date (optional)</label>
+              <input type="date" id="customEndDate" class="admin-form-input">
+            </div>
+          </div>
+
+          <p style="font-size: 13px; color: var(--muted); margin-top: 16px;">
+            Leave dates empty to use the standard billing period based on the selected plan.
+          </p>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeApproveModal()">Cancel</button>
+          <button type="submit" class="btn btn-success">Approve Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reject Modal -->
+  <div id="rejectModal" class="admin-modal-overlay" onclick="closeRejectModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Reject Subscription Request</div>
+        <button class="admin-modal-close" onclick="closeRejectModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="rejectForm" onsubmit="submitRejection(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="rejectRequestId">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Rejection Reason *</label>
+            <textarea id="rejectionReason" class="admin-form-textarea" rows="3" required placeholder="This reason will be sent to the organization"></textarea>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Admin Notes (optional)</label>
+            <textarea id="rejectNotes" class="admin-form-textarea" rows="2" placeholder="Internal notes (not visible to organization)"></textarea>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeRejectModal()">Cancel</button>
+          <button type="submit" class="btn btn-danger">Reject Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openApproveModal(requestId) {
+      document.getElementById('approveRequestId').value = requestId;
+      document.getElementById('approveForm').reset();
+      document.getElementById('approveModal').classList.add('active');
+    }
+
+    function closeApproveModal() {
+      document.getElementById('approveModal').classList.remove('active');
+    }
+
+    function openRejectModal(requestId) {
+      document.getElementById('rejectRequestId').value = requestId;
+      document.getElementById('rejectForm').reset();
+      document.getElementById('rejectModal').classList.add('active');
+    }
+
+    function closeRejectModal() {
+      document.getElementById('rejectModal').classList.remove('active');
+    }
+
+    async function submitApproval(e) {
+      e.preventDefault();
+
+      const requestId = document.getElementById('approveRequestId').value;
+      const data = {
+        notes: document.getElementById('approveNotes').value,
+        customStartDate: document.getElementById('customStartDate').value || undefined,
+        customEndDate: document.getElementById('customEndDate').value || undefined
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscription-requests/${requestId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert(result.error || 'Failed to approve request');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to approve request');
+      }
+    }
+
+    async function submitRejection(e) {
+      e.preventDefault();
+
+      const requestId = document.getElementById('rejectRequestId').value;
+      const data = {
+        reason: document.getElementById('rejectionReason').value,
+        notes: document.getElementById('rejectNotes').value
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscription-requests/${requestId}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert(result.error || 'Failed to reject request');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to reject request');
+      }
+    }
+
+    function viewRequest(requestId) {
+      // For now, just show an alert. In a full implementation, this would open a detail modal
+      window.location.href = `/admin/requests/${requestId}`;
+    }
+  </script>
+</body>
+
+</html>

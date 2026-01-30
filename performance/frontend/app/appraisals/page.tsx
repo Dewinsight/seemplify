@@ -46,8 +46,7 @@ interface AppraisalCycle {
 
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode; gradient?: string }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
-  'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
-  'goal_approval_pending': { label: 'Goals Pending Approval', color: 'warning', icon: <Assignment />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
+
   'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
   'self_assessment_in_progress': { label: 'Self-Assessment In Progress', color: 'info', icon: <Edit /> },
   'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle />, gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
@@ -66,7 +65,6 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
 };
 
 const workflowSteps = [
-  { key: 'goalSetting', label: 'Goal Setting' },
   { key: 'selfAssessment', label: 'Self-Assessment' },
   { key: 'managerReview', label: 'Manager Review' },
   { key: 'calibration', label: 'Calibration' },
@@ -99,6 +97,8 @@ export default function AppraisalsPage() {
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
 
+
+
   const handleStartSelfAssessment = (appraisalId: string) => {
     router.push(`/appraisals/${appraisalId}/self-assessment`);
   };
@@ -107,12 +107,45 @@ export default function AppraisalsPage() {
     router.push(`/appraisals/${appraisalId}/manager-review`);
   };
 
+  // NEW: Start appraisal from not_started status
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleStartAppraisal = async (appraisalId: string) => {
+    setActionLoading(appraisalId);
+    try {
+      await api.post(`/appraisals/${appraisalId}/start`);
+      // Refresh data
+      router.push(`/appraisals/${appraisalId}/goal-setting`);
+    } catch (error: any) {
+      console.error('Failed to start appraisal:', error);
+      alert(error.response?.data?.error || 'Failed to start appraisal');
+      setActionLoading(null);
+    }
+  };
+
+  // NEW: Reset appraisal (Manager/HR only)
+  const handleResetAppraisal = async (appraisalId: string, resetLevel: 'full' | 'goals_only' | 'self_assessment_only' = 'full') => {
+    if (!confirm(`Are you sure you want to reset this appraisal? This will clear ${resetLevel === 'full' ? 'all progress' : resetLevel === 'goals_only' ? 'goals' : 'self-assessment'}.`)) {
+      return;
+    }
+    setActionLoading(appraisalId);
+    try {
+      await api.post(`/appraisals/${appraisalId}/reset`, { resetLevel });
+      // Refresh appraisals list
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Failed to reset appraisal:', error);
+      alert(error.response?.data?.error || 'Failed to reset appraisal');
+      setActionLoading(null);
+    }
+  };
+
   const handleViewAppraisal = (appraisalId: string) => {
     router.push(`/appraisals/${appraisalId}`);
   };
 
   const getStepStatus = (status: string, stepKey: string): 'completed' | 'active' | 'pending' => {
-    const stepOrder = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
+    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'];
     const currentStepIndex = stepOrder.indexOf(status.split('_')[0]) || 0;
     const stepIndex = stepOrder.indexOf(stepKey);
 
@@ -279,6 +312,25 @@ export default function AppraisalsPage() {
                 )}
 
                 {/* Action Buttons */}
+
+                {/* NEW: Start Appraisal button for not_started or goal_setting status */}
+                {(appraisal.status === 'not_started' || appraisal.status === 'goal_setting') && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<Rocket />}
+                    onClick={() => handleStartAppraisal(appraisal._id)}
+                    disabled={actionLoading === appraisal._id}
+                    sx={{
+                      ml: 1,
+                      background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
+                      '&:hover': { background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }
+                    }}
+                  >
+                    {actionLoading === appraisal._id ? 'Starting...' : 'Start Appraisal'}
+                  </Button>
+                )}
+
                 {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
                   <Button
                     variant="contained"
@@ -301,6 +353,25 @@ export default function AppraisalsPage() {
                   >
                     {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
                   </Button>
+                )}
+
+                {/* NEW: Reset button for managers (not for employees viewing their own) */}
+                {!isEmployee && appraisal.status !== 'completed' && appraisal.status !== 'not_started' && (
+                  <Tooltip title="Reset Appraisal">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleResetAppraisal(appraisal._id, 'full')}
+                      disabled={actionLoading === appraisal._id}
+                      sx={{
+                        ml: 1,
+                        bgcolor: alpha(theme.palette.error.main, 0.08),
+                        '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.15) },
+                        color: theme.palette.error.main
+                      }}
+                    >
+                      <Refresh fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 )}
 
                 <IconButton
