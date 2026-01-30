@@ -1,4 +1,4 @@
-# Rocket.Chat + MongoDB for Seemplify
+# Seemplify Chat (powered by Rocket.Chat) + MongoDB
 # Based on https://github.com/RocketChat/rocketchat-compose
 # Use with: docker compose up -d
 
@@ -29,9 +29,15 @@ services:
       MONGODB_REPLICA_SET_NAME: rs0
     entrypoint: |
       sh -ec '
-      echo "=====> Initiating replica set rs0...";
-      mongosh "$$MONGODB_URI" --eval "rs.initiate({_id: \"$$MONGODB_REPLICA_SET_NAME\", members: [{ _id: 0, host: \"mongodb:27017\" }]})";
-      echo "=====> Replica set initiated.";
+      echo "=====> Checking replica set rs0...";
+      if mongosh "$$MONGODB_URI" --quiet --eval "rs.status().ok" 2>/dev/null | grep -q "1"; then
+        echo "=====> Replica set already initiated, skipping...";
+        exit 0;
+      else
+        echo "=====> Initiating replica set rs0...";
+        mongosh "$$MONGODB_URI" --eval "rs.initiate({_id: \"$$MONGODB_REPLICA_SET_NAME\", members: [{ _id: 0, host: \"mongodb:27017\" }]})" || true;
+        echo "=====> Replica set initiated.";
+      fi
       '
 
   rocketchat:
@@ -49,13 +55,24 @@ services:
       DEPLOY_PLATFORM: compose
       MONGO_URL: mongodb://mongodb:27017/rocketchat?replicaSet=rs0
       REG_TOKEN: ${REG_TOKEN:-}
+      # Seemplify Chat Branding
+      OVERWRITE_SETTING_Site_Name: ${SITE_NAME:-Seemplify Chat}
+      OVERWRITE_SETTING_Site_Url: ${ROOT_URL:-http://localhost:3000}
+      OVERWRITE_SETTING_Organization_Name: ${ORGANIZATION_NAME:-Seemplify}
+      OVERWRITE_SETTING_Organization_Email: ${ORGANIZATION_EMAIL:-support@seemplifyai.com}
+      OVERWRITE_SETTING_Show_Setup_Wizard: ${SHOW_SETUP_WIZARD:-completed}
       # Brevo SMTP (same credentials as IDP – from Identityprovider env + access/BREVO-CONFIGURATION.md)
       OVERWRITE_SETTING_SMTP_Host: ${BREVO_SMTP_HOST:-smtp-relay.brevo.com}
       OVERWRITE_SETTING_SMTP_Port: ${BREVO_SMTP_PORT:-587}
       OVERWRITE_SETTING_SMTP_Username: ${BREVO_SMTP_USER:-}
       OVERWRITE_SETTING_SMTP_Password: ${BREVO_SMTP_PASS:-}
       OVERWRITE_SETTING_From_Email: ${BREVO_FROM_EMAIL:-no-reply@seemplifyai.com}
-      OVERWRITE_SETTING_From_Name: ${BREVO_FROM_NAME:-Rocket.Chat Seemplify}
+      OVERWRITE_SETTING_From_Name: ${BREVO_FROM_NAME:-Seemplify Chat}
+      # Jitsi Video Conferencing
+      OVERWRITE_SETTING_Jitsi_Enabled: ${JITSI_ENABLED:-true}
+      OVERWRITE_SETTING_Jitsi_Domain: ${JITSI_DOMAIN:-meet.jit.si}
+      OVERWRITE_SETTING_Jitsi_URL_Room_Prefix: ${JITSI_ROOM_PREFIX:-SeemplifyChat}
+      OVERWRITE_SETTING_Jitsi_Open_New_Window: ${JITSI_NEW_WINDOW:-false}
     entrypoint: sh
     command:
       - -c

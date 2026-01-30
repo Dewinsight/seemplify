@@ -133,8 +133,8 @@ const developmentApps = [
   },
   {
     appId: 'rocket-chat',
-    name: 'Team Chat',
-    description: 'Team messaging and collaboration',
+    name: 'Seemplify Chat',
+    description: 'Team messaging, video calls, and collaboration',
     icon: 'chat-bubble-left-right',
     color: '#f5455c',
     url: process.env.ROCKET_CHAT_URL || 'http://localhost:3000',
@@ -265,8 +265,8 @@ const productionApps = [
   },
   {
     appId: 'rocket-chat',
-    name: 'Team Chat',
-    description: 'Team messaging and collaboration',
+    name: 'Seemplify Chat',
+    description: 'Team messaging, video calls, and collaboration',
     icon: 'chat-bubble-left-right',
     color: '#f5455c',
     url: process.env.ROCKET_CHAT_URL || 'https://chat.seemplifyai.com',
