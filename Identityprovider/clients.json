@@ -184,22 +184,20 @@
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
-      "client_id": "rocket-chat",
-      "client_secret": "rocket-chat-seemplify-secret-2026",
+      "client_id": "zulip",
+      "client_secret": "zulip-seemplify-secret-2026",
       "redirect_uri_patterns": [
-        "https://chat.seemplifyai.com/_oauth/seemplify",
-        "https://chat.seemplifyai.com/*",
-        "https://chat-dev.seemplifyai.com/_oauth/seemplify",
-        "https://chat-dev.seemplifyai.com/*",
-        "http://localhost:3000/_oauth/seemplify",
-        "http://localhost:3000/*",
+        "https://chat.seemplifyai.com/complete/oidc/",
+        "https://chat.seemplifyai.com/complete/saml/",
+        "https://chat-dev.seemplifyai.com/complete/oidc/",
+        "http://localhost/complete/oidc/",
         "https://auth.seemplifyai.com",
         "https://auth-dev.seemplifyai.com"
       ],
       "allowed_origins": [
         "https://chat.seemplifyai.com",
         "https://chat-dev.seemplifyai.com",
-        "http://localhost:3000",
+        "http://localhost",
         "https://auth.seemplifyai.com",
         "https://auth-dev.seemplifyai.com"
       ],
