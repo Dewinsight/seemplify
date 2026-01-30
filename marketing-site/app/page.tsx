@@ -1,11 +1,13 @@
 'use client'
 
-import { type ReactNode } from 'react'
+import { type ReactNode, useState, useEffect } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { motion } from 'framer-motion'
 import HeroBackground from '@/components/HeroBackground'
-import SeemplifyLogo, { SeemplifyIcon } from '@/components/SeemplifyLogo'
+import SeemplifyLogo from '@/components/SeemplifyLogo'
 import ThemeToggle from '@/components/ThemeToggle'
+import BookDemoModal from '@/components/BookDemoModal'
 
 const IDP_URL = 'https://auth.seemplifyai.com'
 
@@ -25,10 +27,7 @@ type InfoCardProps = {
   variant?: 'default' | 'inverse'
 }
 
-type AvatarCardProps = {
-  className?: string
-  gradient: string
-}
+
 
 const ModuleCard = ({ title, description, tag, accent, className = '', visual }: ModuleCardProps) => (
   <motion.div
@@ -43,7 +42,7 @@ const ModuleCard = ({ title, description, tag, accent, className = '', visual }:
     <div className="relative z-10 flex h-full flex-col">
       <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.28em] text-zinc-600 dark:text-white/60">
         <span>{tag}</span>
-      <span className="text-zinc-400 dark:text-white/40">Module</span>
+        <span className="text-zinc-400 dark:text-white/40">Module</span>
       </div>
       <div className={`mt-4 h-[2px] w-10 rounded-full bg-gradient-to-r ${accent}`} />
       <h3 className="mt-4 font-display text-2xl text-zinc-900 dark:text-white">{title}</h3>
@@ -58,17 +57,15 @@ const InfoCard = ({ title, description, eyebrow, variant = 'default' }: InfoCard
 
   return (
     <div
-      className={`rounded-2xl border p-6 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.3)] ${
-        isInverse
-          ? 'border-white/15 bg-white/5 text-white shadow-[0_20px_45px_-25px_rgba(0,0,0,0.45)]'
-          : 'border-black/10 bg-white dark:border-white/20 dark:bg-white/[0.05] dark:shadow-none'
-      }`}
+      className={`rounded-2xl border p-6 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.3)] ${isInverse
+        ? 'border-white/15 bg-white/5 text-white shadow-[0_20px_45px_-25px_rgba(0,0,0,0.45)]'
+        : 'border-black/10 bg-white dark:border-white/20 dark:bg-white/[0.05] dark:shadow-none'
+        }`}
     >
       {eyebrow && (
         <p
-          className={`text-xs uppercase tracking-[0.3em] ${
-            isInverse ? 'text-white/60' : 'text-zinc-700 dark:text-white/60'
-          }`}
+          className={`text-xs uppercase tracking-[0.3em] ${isInverse ? 'text-white/60' : 'text-zinc-700 dark:text-white/60'
+            }`}
         >
           {eyebrow}
         </p>
@@ -83,19 +80,7 @@ const InfoCard = ({ title, description, eyebrow, variant = 'default' }: InfoCard
   )
 }
 
-const AvatarCard = ({ className = '', gradient }: AvatarCardProps) => (
-  <motion.div
-    className={`relative rounded-[28px] border border-black/10 bg-white/90 p-3 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-md dark:border-white/20 dark:bg-white/10 dark:shadow-none ${className}`}
-    whileHover={{ y: -4 }}
-    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-  >
-    <div className={`relative h-24 w-24 overflow-hidden rounded-2xl ${gradient}`}>
-      <div className="absolute left-1/2 top-6 h-6 w-6 -translate-x-1/2 rounded-full bg-white/70" />
-      <div className="absolute bottom-3 left-1/2 h-8 w-12 -translate-x-1/2 rounded-full bg-white/55" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
-    </div>
-  </motion.div>
-)
+
 
 const RecruitingKanban = () => (
   <div className="relative h-32 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-black/30">
@@ -192,26 +177,25 @@ const LeaveCalendar = () => {
         return (
           <motion.div
             key={day}
-            className={`flex h-6 items-center justify-center rounded-md border text-zinc-600 dark:text-white/70 ${
-              isApproved
-                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-700 dark:text-emerald-200'
-                : 'border-black/10 bg-white/70 dark:border-white/20 dark:bg-white/[0.04]'
-            }`}
+            className={`flex h-6 items-center justify-center rounded-md border text-zinc-600 dark:text-white/70 ${isApproved
+              ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-700 dark:text-emerald-200'
+              : 'border-black/10 bg-white/70 dark:border-white/20 dark:bg-white/[0.04]'
+              }`}
             animate={
               isApproved
                 ? {
-                    opacity: [0.4, 1, 0.4],
-                    scale: [1, 1.05, 1],
-                  }
+                  opacity: [0.4, 1, 0.4],
+                  scale: [1, 1.05, 1],
+                }
                 : undefined
             }
             transition={
               isApproved
                 ? {
-                    duration: 2.4,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                  }
+                  duration: 2.4,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                }
                 : undefined
             }
           >
@@ -309,63 +293,23 @@ const LMSChecklist = () => {
   )
 }
 
-const HeroConsole = () => (
-  <div className="relative h-[360px] w-full">
-    <motion.div
-      className="absolute left-4 top-6"
-      animate={{ y: [0, -6, 0] }}
-      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <AvatarCard gradient="bg-gradient-to-br from-sky-200 via-blue-100 to-emerald-100" />
-    </motion.div>
 
-    <motion.div
-      className="absolute right-6 top-2"
-      animate={{ y: [0, 8, 0] }}
-      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <AvatarCard gradient="bg-gradient-to-br from-orange-200 via-rose-100 to-amber-100" />
-    </motion.div>
 
-    <motion.div
-      className="absolute right-0 bottom-6"
-      animate={{ y: [0, -6, 0] }}
-      transition={{ duration: 6.5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <AvatarCard gradient="bg-gradient-to-br from-fuchsia-200 via-indigo-100 to-cyan-100" />
-    </motion.div>
-
-    <motion.div
-      className="absolute left-20 bottom-4 hidden md:block"
-      animate={{ y: [0, 6, 0] }}
-      transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <div className="h-28 w-28 rounded-[26px] border border-black/10 bg-gradient-to-br from-emerald-200 via-lime-100 to-amber-100 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.4)] dark:border-white/20 dark:bg-gradient-to-br dark:from-emerald-500/30 dark:via-cyan-400/20 dark:to-indigo-500/30 dark:shadow-none" />
-    </motion.div>
-
-    <motion.div
-      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-      animate={{ y: [0, -4, 0] }}
-      transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <div className="h-40 w-40 rounded-[34px] border border-black/10 bg-gradient-to-br from-emerald-400 via-teal-400 to-indigo-500 p-6 shadow-[0_40px_90px_-50px_rgba(15,23,42,0.45)] dark:border-white/20 dark:from-emerald-500/40 dark:via-cyan-400/30 dark:to-indigo-500/40 dark:shadow-none">
-        <div className="flex h-full w-full items-center justify-center rounded-[26px] bg-white/80 shadow-inner dark:bg-white/10">
-          <SeemplifyIcon size="lg" className="opacity-90" />
-        </div>
-      </div>
-    </motion.div>
-
-    <div className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
-      HR information system
-    </div>
-    <div className="absolute right-12 top-20 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
-      Applicant tracking system
-    </div>
-    <div className="absolute left-10 bottom-16 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
-      Candidate sourcing suite
-    </div>
-    <div className="absolute right-8 bottom-0 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
-      Time & attendance system
+const MarqueeStrip = () => (
+  <div className="relative z-20 w-full overflow-hidden border-y border-black/5 bg-white py-5 dark:border-white/10 dark:bg-[#0b0b11]">
+    <div className="flex whitespace-nowrap">
+      <motion.div
+        animate={{ x: ["0%", "-50%"] }}
+        transition={{ repeat: Infinity, ease: "linear", duration: 30 }}
+        className="flex items-center gap-24"
+      >
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="flex items-center gap-4 text-3xl text-zinc-900 dark:text-white md:text-4xl">
+            <span className="font-sans italic font-light tracking-wide opacity-40">Run Smart.</span>
+            <span className="font-display font-medium tracking-tight bg-gradient-to-r from-emerald-500 to-cyan-600 bg-clip-text text-transparent dark:from-emerald-400 dark:to-cyan-400">Run Seemple.</span>
+          </div>
+        ))}
+      </motion.div>
     </div>
   </div>
 )
@@ -430,12 +374,27 @@ const modules: ModuleCardProps[] = [
 ]
 
 export default function HomePage() {
+  const [isScrolled, setIsScrolled] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 20)
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
   return (
     <div className="relative min-h-screen bg-[#f7f7fb] text-zinc-900 dark:bg-[#020205] dark:text-white">
+      <BookDemoModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       <div className="bg-noise" />
       <HeroBackground />
 
-      <header className="fixed top-0 z-50 w-full border-b border-black/5 bg-white/70 backdrop-blur-xl dark:border-white/15 dark:bg-[#020205]/80">
+      <header
+        className={`fixed top-0 z-50 w-full transition-all duration-300 ${isScrolled
+          ? 'border-b border-black/5 bg-white/70 backdrop-blur-xl dark:border-white/15 dark:bg-[#020205]/80'
+          : 'border-b border-transparent bg-transparent'
+          }`}
+      >
         <nav className="container mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3">
             <SeemplifyLogo size="sm" animated={false} />
@@ -454,12 +413,12 @@ export default function HomePage() {
             <Link href={IDP_URL} className="text-sm text-zinc-700 transition hover:text-zinc-900 dark:text-white/80 dark:hover:text-white">
               Sign In
             </Link>
-            <Link
-              href={IDP_URL}
+            <button
+              onClick={() => setIsModalOpen(true)}
               className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white shadow-[0_0_30px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_40px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_30px_rgba(255,255,255,0.2)] dark:hover:shadow-[0_0_40px_rgba(255,255,255,0.35)]"
             >
-              Start Free Trial
-            </Link>
+              Book Demo
+            </button>
           </div>
 
           <Link
@@ -522,12 +481,12 @@ export default function HomePage() {
                   >
                     Start Free Trial
                   </Link>
-                  <Link
-                    href="#modules"
+                  <button
+                    onClick={() => setIsModalOpen(true)}
                     className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
                   >
-                    Explore Modules
-                  </Link>
+                    Book a Demo
+                  </button>
                 </motion.div>
 
                 <div className="mt-10 grid gap-6 text-sm text-zinc-700 dark:text-white/70 sm:grid-cols-3">
@@ -549,11 +508,28 @@ export default function HomePage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
-                <HeroConsole />
+                <Image
+                  src="/hero-banner-beautiful.png"
+                  alt="Seemplify Platform Overview"
+                  width={1000}
+                  height={800}
+                  className="block w-full h-auto object-contain dark:hidden"
+                  priority
+                />
+                <Image
+                  src="/hero-banner-dark.png"
+                  alt="Seemplify Platform Overview (Dark Mode)"
+                  width={1000}
+                  height={800}
+                  className="hidden w-full h-auto object-contain dark:block"
+                  priority
+                />
               </motion.div>
             </div>
           </div>
         </section>
+
+        <MarqueeStrip />
 
         <section id="modules" className="relative py-24">
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#f0f1f6] to-transparent dark:via-[#06060b]" />
@@ -660,7 +636,7 @@ export default function HomePage() {
                       variant: 'default',
                     },
                   ].map((item) => (
-                    <InfoCard key={item.title} {...item} />
+                    <InfoCard key={item.title} {...item} variant={item.variant as "default" | "inverse" | undefined} />
                   ))}
                 </div>
               </div>
@@ -740,16 +716,16 @@ export default function HomePage() {
                 <div className="mt-6 flex flex-wrap justify-center gap-4">
                   <Link
                     href={IDP_URL}
-                  className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
-                >
-                  Start Free Trial
-                </Link>
-                  <Link
-                    href={IDP_URL}
+                    className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
+                  >
+                    Start Free Trial
+                  </Link>
+                  <button
+                    onClick={() => setIsModalOpen(true)}
                     className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
                   >
                     Book a Demo
-                  </Link>
+                  </button>
                 </div>
               </div>
             </div>
@@ -770,7 +746,7 @@ export default function HomePage() {
             <Link href="/terms" className="transition hover:text-zinc-900 dark:hover:text-white">
               Terms
             </Link>
-            <Link href="mailto:hello@seemplifyai.com" className="transition hover:text-zinc-900 dark:hover:text-white">
+            <Link href="mailto:michael.egbo@aiinnigeria.com" className="transition hover:text-zinc-900 dark:hover:text-white">
               Contact
             </Link>
           </div>

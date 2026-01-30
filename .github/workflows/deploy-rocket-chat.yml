@@ -24,11 +24,11 @@ jobs:
 
       - name: Trigger Dokploy Deployment
         run: |
-          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/compose.deploy" \
             -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -H "accept: application/json" \
-            -d '{"applicationId": "${{ secrets.ROCKET_CHAT_APP_ID }}"}')
+            -d '{"composeId": "${{ secrets.ROCKET_CHAT_APP_ID }}"}')
           
           if [ "$response" -eq 200 ]; then
             echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"

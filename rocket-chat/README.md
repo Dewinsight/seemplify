@@ -2,6 +2,8 @@
 
 Rocket.Chat is pulled into the Seemplify project via this folder (Docker Compose from [RocketChat/rocketchat-compose](https://github.com/RocketChat/rocketchat-compose)). It is connected to the Seemplify Identity Provider (OIDC) so members show automatically when they log in with Seemplify.
 
+<!-- Auto-deploy test - 2026-01-30 -->
+
 ## Quick start (local)
 
 ```bash
