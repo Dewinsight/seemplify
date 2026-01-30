@@ -3571,25 +3571,17 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(openwebuiAuthUrl)
     }
 
-    // Special handling for Rocket.Chat - Custom OAuth; redirect to IDP then Rocket.Chat callback
+    // Special handling for Rocket.Chat - redirect to Rocket.Chat and let it initiate OAuth
+    // Rocket.Chat's custom OAuth requires the user to click the OAuth button to properly
+    // initialize its internal state (loginStyle, credentialToken). We redirect to the home
+    // page which shows the login page with the "Login with Seemplify" button.
     if (app.appId === 'rocket-chat') {
-      const rocketChatCallback = `${app.url.replace(/\/+$/, '')}/_oauth/seemplify`
-      const state = Buffer.from(JSON.stringify({
-        site: app.url,
-        token: crypto.randomBytes(16).toString('hex'),
-        redirect_to: '/'
-      })).toString('base64')
-      const authParams = new URLSearchParams({
-        client_id: 'rocket-chat',
-        redirect_uri: rocketChatCallback,
-        response_type: 'code',
-        scope: 'openid email profile offline_access',
-        state: state
-      })
-      const rocketChatAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
-      console.log('  📍 ROCKET.CHAT OIDC REDIRECT TO:', rocketChatAuthUrl)
+      // Redirect to Rocket.Chat home - if not logged in, user sees login page with OAuth button
+      const rocketChatUrl = app.url.replace(/\/+$/, '')
+      console.log('  📍 ROCKET.CHAT REDIRECT TO:', rocketChatUrl)
+      console.log('  Note: User will click "Login with Seemplify" button to start OAuth flow')
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
-      return res.redirect(rocketChatAuthUrl)
+      return res.redirect(rocketChatUrl)
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
