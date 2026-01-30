@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: "zulip"
       POSTGRES_USER: "zulip"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-SeemplifyZulipDB2026!}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
       - "postgresql-14:/var/lib/postgresql/data:rw"
     networks:
@@ -28,7 +28,7 @@ services:
     environment:
       SASL_CONF_PATH: "/home/memcache/memcached.conf"
       MEMCACHED_SASL_PWDB: "/home/memcache/memcached-sasl-db"
-      MEMCACHED_PASSWORD: "${MEMCACHED_PASSWORD:-SeemplifyMemcached2026!}"
+      MEMCACHED_PASSWORD: "${MEMCACHED_PASSWORD}"
     networks:
       - zulip-internal
 
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: "zulip"
-      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:-SeemplifyRabbit2026!}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
     volumes:
       - "rabbitmq:/var/lib/rabbitmq:rw"
     networks:
@@ -53,7 +53,7 @@ services:
         echo "requirepass '$$REDIS_PASSWORD'" > /etc/redis.conf
         exec redis-server /etc/redis.conf
     environment:
-      REDIS_PASSWORD: "${REDIS_PASSWORD:-SeemplifyRedis2026!}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
     volumes:
       - "redis:/data:rw"
     networks:
@@ -76,39 +76,32 @@ services:
       SETTING_RABBITMQ_HOST: "rabbitmq"
       SETTING_REDIS_HOST: "redis"
       
-      # Secrets - must match service passwords above
-      SECRETS_rabbitmq_password: "${RABBITMQ_PASSWORD:-SeemplifyRabbit2026!}"
-      SECRETS_postgres_password: "${POSTGRES_PASSWORD:-SeemplifyZulipDB2026!}"
-      SECRETS_memcached_password: "${MEMCACHED_PASSWORD:-SeemplifyMemcached2026!}"
-      SECRETS_redis_password: "${REDIS_PASSWORD:-SeemplifyRedis2026!}"
-      SECRETS_secret_key: "${SECRET_KEY:-SeemplifyZulipSecretKey2026SuperSecure!}"
+      # Secrets - must match service passwords above (set in Dokploy)
+      SECRETS_rabbitmq_password: "${RABBITMQ_PASSWORD}"
+      SECRETS_postgres_password: "${POSTGRES_PASSWORD}"
+      SECRETS_memcached_password: "${MEMCACHED_PASSWORD}"
+      SECRETS_redis_password: "${REDIS_PASSWORD}"
+      SECRETS_secret_key: "${SECRET_KEY}"
       SECRETS_email_password: "${BREVO_SMTP_PASSWORD}"
       
       # Site Configuration
       SETTING_EXTERNAL_HOST: "${EXTERNAL_HOST:-chat.seemplifyai.com}"
-      SETTING_ZULIP_ADMINISTRATOR: "${ADMIN_EMAIL:-michael.egbo@aiinnigeria.com}"
+      SETTING_ZULIP_ADMINISTRATOR: "${ADMIN_EMAIL}"
       
       # Brevo SMTP Configuration
       SETTING_EMAIL_HOST: "${BREVO_SMTP_HOST:-smtp-relay.brevo.com}"
-      SETTING_EMAIL_HOST_USER: "${BREVO_SMTP_USER:-93ea9d001@smtp-brevo.com}"
+      SETTING_EMAIL_HOST_USER: "${BREVO_SMTP_USER}"
       SETTING_EMAIL_PORT: "${BREVO_SMTP_PORT:-587}"
       SETTING_EMAIL_USE_SSL: "False"
       SETTING_EMAIL_USE_TLS: "True"
       SETTING_NOREPLY_EMAIL_ADDRESS: "${NOREPLY_EMAIL:-noreply@seemplifyai.com}"
       
       # Authentication - OIDC with Seemplify Identity Provider
+      # Note: Use Python syntax (True not true) as Zulip interprets this as Python
+      # oidc_url should be base URL only - Zulip appends /.well-known/openid-configuration automatically
+      # OIDC_CLIENT_SECRET is set in Dokploy environment variables
       ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
-      SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS: |
-        {
-          "seemplify": {
-            "display_name": "Seemplify",
-            "display_icon": null,
-            "oidc_url": "https://auth.seemplifyai.com/.well-known/openid-configuration",
-            "client_id": "zulip",
-            "secret": "${OIDC_CLIENT_SECRET:-zulip-seemplify-secret-2026}",
-            "auto_signup": true
-          }
-        }
+      SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS: '{"seemplify":{"display_name":"Seemplify","oidc_url":"https://auth.seemplifyai.com","client_id":"zulip","secret":"${OIDC_CLIENT_SECRET}","auto_signup":True}}'
       
       # Reverse Proxy Configuration (Traefik)
       LOADBALANCER_IPS: "172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
@@ -136,15 +129,14 @@ services:
       - zulip-internal
       - dokploy-network
     labels:
-      # Traefik Configuration for HTTPS
+      # Traefik Configuration for HTTPS (SSL termination at Traefik, HTTP to backend)
       - "traefik.enable=true"
       - "traefik.http.routers.zulip.rule=Host(`chat.seemplifyai.com`)"
       - "traefik.http.routers.zulip.entrypoints=websecure"
       - "traefik.http.routers.zulip.tls=true"
       - "traefik.http.routers.zulip.tls.certresolver=letsencrypt"
-      - "traefik.http.services.zulip.loadbalancer.server.port=443"
-      - "traefik.http.services.zulip.loadbalancer.server.scheme=https"
-      - "traefik.http.services.zulip.loadbalancer.serversTransport=insecureTransport@file"
+      - "traefik.http.services.zulip.loadbalancer.server.port=80"
+      - "traefik.http.services.zulip.loadbalancer.server.scheme=http"
       - "traefik.docker.network=dokploy-network"
 
 volumes:
