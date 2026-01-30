@@ -416,11 +416,11 @@ const config = {
     introspection: { enabled: true },
     userinfo: { enabled: true }
   },
-  // Make PKCE optional for clients that don't support it (like Outline)
+  // Make PKCE optional for clients that don't support it (like Outline, Zulip)
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline', 'openwebui'];
+      const noPkceClients = ['outline', 'openwebui', 'zulip'];
       return !noPkceClients.includes(client.clientId);
     }
   },
