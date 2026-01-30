@@ -1,540 +1,778 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { type ReactNode } from 'react'
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  TeamIllustration,
-  CalendarIllustration,
-  ChartIllustration,
-  PayrollIllustration,
-  LearningIllustration,
-  KnowledgeIllustration,
-  ChatIllustration,
-} from '@/components/AnimatedIllustrations'
-
+import { motion } from 'framer-motion'
+import HeroBackground from '@/components/HeroBackground'
 import SeemplifyLogo, { SeemplifyIcon } from '@/components/SeemplifyLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 
-// Dynamic imports
-const HiringPipelineFlow = dynamic(() => import('@/components/HiringPipelineFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[250px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-const LeaveApprovalFlow = dynamic(() => import('@/components/LeaveApprovalFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[180px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-const PerformanceCycleFlow = dynamic(() => import('@/components/PerformanceCycleFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-64 rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-const LearningFlow = dynamic(() => import('@/components/LearningFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-const KnowledgeFlow = dynamic(() => import('@/components/KnowledgeFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-const ChatFlow = dynamic(() => import('@/components/ChatFlow'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[220px] rounded-2xl bg-zinc-200 dark:bg-zinc-900/50 animate-pulse-subtle" />
-})
-
 const IDP_URL = 'https://auth.seemplifyai.com'
 
-// Minimal Geometric Icons
-const IconRecruiting = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="8.5" cy="7" r="4" />
-    <path d="M20 8v6M23 11h-6" />
-  </svg>
+type ModuleCardProps = {
+  title: string
+  description: string
+  tag: string
+  accent: string
+  className?: string
+  visual: ReactNode
+}
+
+type InfoCardProps = {
+  title: string
+  description: string
+  eyebrow?: string
+  variant?: 'default' | 'inverse'
+}
+
+type AvatarCardProps = {
+  className?: string
+  gradient: string
+}
+
+const ModuleCard = ({ title, description, tag, accent, className = '', visual }: ModuleCardProps) => (
+  <motion.div
+    className={`group relative h-full overflow-hidden rounded-3xl border border-black/10 bg-white p-6 shadow-[0_30px_60px_-50px_rgba(15,23,42,0.35)] backdrop-blur-xl transition dark:border-white/20 dark:bg-white/[0.04] dark:shadow-none ${className}`}
+    whileHover={{ y: -6 }}
+    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+  >
+    <div className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+      <div className="absolute inset-0 bg-gradient-to-br from-black/5 via-white/70 to-transparent dark:from-white/10 dark:via-white/5" />
+      <div className="absolute -top-12 left-1/2 h-24 w-24 -translate-x-1/2 rounded-full bg-black/10 blur-3xl dark:bg-white/20" />
+    </div>
+    <div className="relative z-10 flex h-full flex-col">
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.28em] text-zinc-600 dark:text-white/60">
+        <span>{tag}</span>
+      <span className="text-zinc-400 dark:text-white/40">Module</span>
+      </div>
+      <div className={`mt-4 h-[2px] w-10 rounded-full bg-gradient-to-r ${accent}`} />
+      <h3 className="mt-4 font-display text-2xl text-zinc-900 dark:text-white">{title}</h3>
+      <p className="mt-2 text-sm text-zinc-700 dark:text-white/75">{description}</p>
+      <div className="mt-6 flex-1">{visual}</div>
+    </div>
+  </motion.div>
 )
 
-const IconCalendar = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-    <line x1="16" y1="2" x2="16" y2="6" />
-    <line x1="8" y1="2" x2="8" y2="6" />
-    <line x1="3" y1="10" x2="21" y2="10" />
-  </svg>
+const InfoCard = ({ title, description, eyebrow, variant = 'default' }: InfoCardProps) => {
+  const isInverse = variant === 'inverse'
+
+  return (
+    <div
+      className={`rounded-2xl border p-6 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.3)] ${
+        isInverse
+          ? 'border-white/15 bg-white/5 text-white shadow-[0_20px_45px_-25px_rgba(0,0,0,0.45)]'
+          : 'border-black/10 bg-white dark:border-white/20 dark:bg-white/[0.05] dark:shadow-none'
+      }`}
+    >
+      {eyebrow && (
+        <p
+          className={`text-xs uppercase tracking-[0.3em] ${
+            isInverse ? 'text-white/60' : 'text-zinc-700 dark:text-white/60'
+          }`}
+        >
+          {eyebrow}
+        </p>
+      )}
+      <h3 className={`mt-3 font-display text-xl ${isInverse ? 'text-white' : 'text-zinc-900 dark:text-white'}`}>
+        {title}
+      </h3>
+      <p className={`mt-2 text-sm ${isInverse ? 'text-white/70' : 'text-zinc-800 dark:text-white/75'}`}>
+        {description}
+      </p>
+    </div>
+  )
+}
+
+const AvatarCard = ({ className = '', gradient }: AvatarCardProps) => (
+  <motion.div
+    className={`relative rounded-[28px] border border-black/10 bg-white/90 p-3 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-md dark:border-white/20 dark:bg-white/10 dark:shadow-none ${className}`}
+    whileHover={{ y: -4 }}
+    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+  >
+    <div className={`relative h-24 w-24 overflow-hidden rounded-2xl ${gradient}`}>
+      <div className="absolute left-1/2 top-6 h-6 w-6 -translate-x-1/2 rounded-full bg-white/70" />
+      <div className="absolute bottom-3 left-1/2 h-8 w-12 -translate-x-1/2 rounded-full bg-white/55" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
+    </div>
+  </motion.div>
 )
 
-const IconPerformance = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <line x1="12" y1="20" x2="12" y2="10" />
-    <line x1="18" y1="20" x2="18" y2="4" />
-    <line x1="6" y1="20" x2="6" y2="16" />
-  </svg>
+const RecruitingKanban = () => (
+  <div className="relative h-32 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-black/30">
+    <div className="grid grid-cols-3 text-[10px] uppercase tracking-[0.2em] text-zinc-700 dark:text-white/60">
+      <span>Screen</span>
+      <span>Interview</span>
+      <span>Hired</span>
+    </div>
+    <div className="mt-2 grid grid-cols-3 gap-2">
+      {[0, 1, 2].map((col) => (
+        <div key={col} className="space-y-2">
+          <div className="h-3 rounded-md bg-black/10 dark:bg-white/10" />
+          <div className="h-3 rounded-md bg-black/5 opacity-70 dark:bg-white/10 dark:opacity-80" />
+        </div>
+      ))}
+    </div>
+    <motion.div
+      className="absolute left-3 top-9 h-7 w-[28%] rounded-lg border border-sky-300/40 bg-gradient-to-r from-sky-400/40 to-indigo-400/40 p-1 shadow-[0_0_15px_rgba(99,102,241,0.4)]"
+      animate={{ x: ['0%', '36%', '72%'], opacity: [0.5, 1, 0.85] }}
+      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <div className="h-2 w-3/4 rounded-sm bg-white/80 dark:bg-white/90" />
+      <div className="mt-1 h-1 w-1/2 rounded-sm bg-white/60 dark:bg-white/70" />
+    </motion.div>
+    <motion.div
+      className="absolute left-3 top-[86px] h-6 w-[26%] rounded-lg border border-black/10 bg-black/5 p-1 dark:border-white/20 dark:bg-white/15"
+      animate={{ x: ['0%', '36%', '72%'], opacity: [0.35, 0.8, 0.5] }}
+      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}
+    >
+      <div className="h-1.5 w-2/3 rounded-sm bg-zinc-200/80 dark:bg-white/75" />
+      <div className="mt-1 h-1 w-1/3 rounded-sm bg-zinc-200/70 dark:bg-white/60" />
+    </motion.div>
+  </div>
 )
 
-const IconPayroll = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="2" y="5" width="20" height="14" rx="2" />
-    <line x1="2" y1="10" x2="22" y2="10" />
-  </svg>
+const IdentityOrbit = () => (
+  <div className="relative flex h-32 items-center justify-center">
+    <div className="absolute h-16 w-16 rounded-2xl border border-black/10 bg-white/70 backdrop-blur dark:border-white/25 dark:bg-white/10">
+      <div className="absolute inset-2 rounded-xl border border-black/10 dark:border-white/20" />
+      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-600 dark:text-white/75">
+        SSO
+      </div>
+    </div>
+    <motion.div
+      className="absolute h-28 w-28 rounded-full border border-black/10 dark:border-white/20"
+      animate={{ rotate: 360 }}
+      transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+    >
+      <div className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+      <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+      <div className="absolute right-1 top-1/3 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.7)]" />
+    </motion.div>
+    <motion.div
+      className="absolute h-40 w-40 rounded-full border border-black/5 dark:border-white/15"
+      animate={{ rotate: -360 }}
+      transition={{ duration: 26, repeat: Infinity, ease: 'linear' }}
+    >
+      <div className="absolute right-6 bottom-2 h-1.5 w-1.5 rounded-full bg-zinc-400/60 dark:bg-white/70" />
+      <div className="absolute left-6 top-4 h-1.5 w-1.5 rounded-full bg-zinc-400/50 dark:bg-white/60" />
+    </motion.div>
+  </div>
 )
 
-const IconLearning = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-  </svg>
-)
+const PerformanceBars = () => {
+  const bars = [52, 78, 64, 90]
+  return (
+    <div className="flex h-32 items-end gap-3">
+      {bars.map((height, index) => (
+        <div key={`${height}-${index}`} className="relative flex-1 h-full">
+          <div className="absolute inset-0 rounded-md bg-black/5 dark:bg-white/5" />
+          <motion.div
+            className="absolute inset-x-0 bottom-0 rounded-md bg-gradient-to-t from-violet-500/70 via-fuchsia-400/70 to-cyan-300/60"
+            animate={{ height: ['25%', `${height}%`] }}
+            transition={{
+              duration: 3 + index * 0.6,
+              repeat: Infinity,
+              repeatType: 'mirror',
+              ease: 'easeInOut',
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
 
-const IconKnowledge = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-  </svg>
-)
+const LeaveCalendar = () => {
+  const days = Array.from({ length: 28 }, (_, i) => i + 1)
+  const approved = new Set([3, 4, 11, 17, 24])
+  return (
+    <div className="grid grid-cols-7 gap-1 text-[10px]">
+      {days.map((day) => {
+        const isApproved = approved.has(day)
+        return (
+          <motion.div
+            key={day}
+            className={`flex h-6 items-center justify-center rounded-md border text-zinc-600 dark:text-white/70 ${
+              isApproved
+                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-700 dark:text-emerald-200'
+                : 'border-black/10 bg-white/70 dark:border-white/20 dark:bg-white/[0.04]'
+            }`}
+            animate={
+              isApproved
+                ? {
+                    opacity: [0.4, 1, 0.4],
+                    scale: [1, 1.05, 1],
+                  }
+                : undefined
+            }
+            transition={
+              isApproved
+                ? {
+                    duration: 2.4,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  }
+                : undefined
+            }
+          >
+            {day}
+          </motion.div>
+        )
+      })}
+    </div>
+  )
+}
 
-const IconChat = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
-  </svg>
-)
-
-export default function HomePage() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
-  const [activeProduct, setActiveProduct] = useState(0)
-
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20)
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  // Auto-rotate products
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveProduct(prev => (prev + 1) % 4)
-    }, 6000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const products = [
-    {
-      title: 'Recruiting',
-      tagline: 'Acquire Talent',
-      description: 'Advanced pipeline tracking and automated scheduling.',
-      icon: <IconRecruiting />,
-      illustration: <TeamIllustration />,
-      color: 'text-blue-400',
-      features: ['Pipeline tracking', 'Smart scheduling', 'Scorecards'],
-      url: 'https://app.seemplifyai.com',
-    },
-    {
-      title: 'Time Off',
-      tagline: 'Manage Leave',
-      description: 'Streamlined requests and automated balance calculations.',
-      icon: <IconCalendar />,
-      illustration: <CalendarIllustration />,
-      color: 'text-emerald-400',
-      features: ['One-click approval', 'Calendar sync', 'Balance audit'],
-      url: 'https://leave.seemplifyai.com',
-    },
-    {
-      title: 'Performance',
-      tagline: 'Drive Growth',
-      description: 'Data-driven review cycles and 360° feedback loops.',
-      icon: <IconPerformance />,
-      illustration: <ChartIllustration />,
-      color: 'text-purple-400',
-      features: ['OKR alignment', '360° cycles', 'Analytics'],
-      url: 'https://performance.seemplifyai.com',
-    },
-    {
-      title: 'Payroll',
-      tagline: 'Process Comp',
-      description: 'Automated payroll runs with real-time tax compliance.',
-      icon: <IconPayroll />,
-      illustration: <PayrollIllustration />,
-      color: 'text-amber-400',
-      features: ['Auto-run', 'Compliance', 'Reporting'],
-      url: 'https://payroll.seemplifyai.com',
-    },
-    {
-      title: 'Learning',
-      tagline: 'Upskill Talent',
-      description: 'Role-based courses and certifications.',
-      icon: <IconLearning />,
-      illustration: <LearningIllustration />,
-      color: 'text-sky-400',
-      features: ['Pathways', 'Assignments', 'Compliance'],
-      url: 'https://lms.seemplifyai.com',
-    },
-    {
-      title: 'Knowledge',
-      tagline: 'Centralize Intel',
-      description: 'Modern wiki for team documentation.',
-      icon: <IconKnowledge />,
-      illustration: <KnowledgeIllustration />,
-      color: 'text-blue-400',
-      features: ['Real-time collab', 'Rich text', 'Public share'],
-      url: 'https://docs.seemplifyai.com',
-    },
-    {
-      title: 'AI Assistant',
-      tagline: 'Automate Answers',
-      description: 'Intelligent chat for HR queries.',
-      icon: <IconChat />,
-      illustration: <ChatIllustration />,
-      color: 'text-violet-400',
-      features: ['Context award', 'Deep search', '24/7 Support'],
-      url: 'https://ai.seemplifyai.com',
-    },
+const PayrollLedger = () => {
+  const rows = [
+    { label: 'Base', value: '$4,800' },
+    { label: 'Bonus', value: '$620' },
+    { label: 'Tax', value: '-$940' },
+    { label: 'Net', value: '$4,480' },
   ]
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-[#050505] text-zinc-900 dark:text-white selection:bg-indigo-500/30 transition-colors duration-300">
-      <div className="bg-noise" />
-
-      {/* Ambient Lighting */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[1000px] h-[1000px] bg-indigo-200/30 dark:bg-indigo-900/20 rounded-full blur-[120px] opacity-40 dark:opacity-20" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[800px] h-[800px] bg-violet-200/30 dark:bg-violet-900/20 rounded-full blur-[120px] opacity-40 dark:opacity-20" />
-      </div>
-
-      {/* Header */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/80 dark:bg-[#050505]/80 backdrop-blur-xl border-b border-zinc-200 dark:border-white/[0.08]' : ''
-        }`}>
-        <nav className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center space-x-3 group">
-              <SeemplifyLogo size="sm" animated={false} />
-              <span className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-white/90">
-                Seemplify
-              </span>
-            </Link>
-
-            <div className="hidden lg:flex items-center space-x-8">
-              <Link href="#products" className="text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">Products</Link>
-              <Link href="#how-it-works" className="text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">Methodology</Link>
-              <Link href="#why-us" className="text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">Advantages</Link>
-            </div>
-
-            <div className="hidden md:flex items-center space-x-4">
-              <ThemeToggle />
-              <Link href={IDP_URL} className="text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
-                Sign In
-              </Link>
-              <Link href={IDP_URL} className="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-black rounded text-sm font-medium hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
-                Get Started
-              </Link>
-            </div>
-
-            {/* Mobile Toggle */}
-            <button className="lg:hidden p-2 text-zinc-600 dark:text-zinc-400" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              <div className="w-5 h-5 flex flex-col justify-center gap-1.5">
-                <span className={`block w-full h-0.5 bg-current transition-transform ${mobileMenuOpen ? 'rotate-45 translate-y-2' : ''}`} />
-                <span className={`block w-full h-0.5 bg-current transition-opacity ${mobileMenuOpen ? 'opacity-0' : ''}`} />
-                <span className={`block w-full h-0.5 bg-current transition-transform ${mobileMenuOpen ? '-rotate-45 -translate-y-2' : ''}`} />
-              </div>
-            </button>
+    <div className="relative h-32 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-white/[0.05]">
+      <div className="space-y-2 text-[11px] text-zinc-700 dark:text-white/80">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between">
+            <span className="text-zinc-700 dark:text-white/70">{row.label}</span>
+            <span className="font-mono text-zinc-800 dark:text-white/90">{row.value}</span>
           </div>
+        ))}
+      </div>
+      <motion.div
+        className="absolute left-3 right-3 bottom-4 h-px bg-gradient-to-r from-transparent via-amber-400/80 to-transparent"
+        animate={{ x: ['-30%', '30%'] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
+  )
+}
+
+const TimeClock = () => (
+  <div className="relative flex h-32 flex-col items-center justify-center">
+    <motion.div
+      className="absolute h-24 w-24 rounded-full border border-cyan-400/40"
+      animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.6, 0.2] }}
+      transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+    />
+    <div className="relative z-10 font-mono text-3xl tracking-[0.3em] text-zinc-900 dark:text-white">
+      09
+      <motion.span
+        className="text-cyan-600 dark:text-cyan-200"
+        animate={{ opacity: [0.3, 1, 0.3] }}
+        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        :
+      </motion.span>
+      41
+    </div>
+    <div className="relative z-10 mt-3 rounded-full border border-emerald-400/40 bg-emerald-400/15 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-emerald-700 dark:text-emerald-100">
+      Clocked In
+    </div>
+  </div>
+)
+
+const LMSChecklist = () => {
+  const courses = [
+    { title: 'Onboarding Core', progress: 92 },
+    { title: 'Security Compliance', progress: 68 },
+    { title: 'Leadership Tracks', progress: 44 },
+  ]
+
+  return (
+    <div className="space-y-3">
+      {courses.map((course, index) => (
+        <div key={course.title} className="flex items-center gap-3">
+          <div className="flex h-4 w-4 items-center justify-center rounded border border-black/10 bg-black/5 dark:border-white/25 dark:bg-white/15">
+            <motion.div
+              className="h-2 w-2 rounded-sm bg-emerald-400"
+              animate={{ scale: [0.6, 1, 0.6] }}
+              transition={{ duration: 2.4, repeat: Infinity, delay: index * 0.3 }}
+            />
+          </div>
+          <div className="flex-1">
+            <div className="text-[11px] text-zinc-700 dark:text-white/80">{course.title}</div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
+              <motion.div
+                className="h-full bg-gradient-to-r from-emerald-400/80 to-cyan-400/60"
+                animate={{ width: [`${Math.max(10, course.progress - 20)}%`, `${course.progress}%`] }}
+                transition={{ duration: 2.6, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+              />
+            </div>
+          </div>
+          <span className="text-[10px] text-zinc-600 dark:text-white/60">{course.progress}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const HeroConsole = () => (
+  <div className="relative h-[360px] w-full">
+    <motion.div
+      className="absolute left-4 top-6"
+      animate={{ y: [0, -6, 0] }}
+      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <AvatarCard gradient="bg-gradient-to-br from-sky-200 via-blue-100 to-emerald-100" />
+    </motion.div>
+
+    <motion.div
+      className="absolute right-6 top-2"
+      animate={{ y: [0, 8, 0] }}
+      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <AvatarCard gradient="bg-gradient-to-br from-orange-200 via-rose-100 to-amber-100" />
+    </motion.div>
+
+    <motion.div
+      className="absolute right-0 bottom-6"
+      animate={{ y: [0, -6, 0] }}
+      transition={{ duration: 6.5, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <AvatarCard gradient="bg-gradient-to-br from-fuchsia-200 via-indigo-100 to-cyan-100" />
+    </motion.div>
+
+    <motion.div
+      className="absolute left-20 bottom-4 hidden md:block"
+      animate={{ y: [0, 6, 0] }}
+      transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <div className="h-28 w-28 rounded-[26px] border border-black/10 bg-gradient-to-br from-emerald-200 via-lime-100 to-amber-100 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.4)] dark:border-white/20 dark:bg-gradient-to-br dark:from-emerald-500/30 dark:via-cyan-400/20 dark:to-indigo-500/30 dark:shadow-none" />
+    </motion.div>
+
+    <motion.div
+      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+      animate={{ y: [0, -4, 0] }}
+      transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <div className="h-40 w-40 rounded-[34px] border border-black/10 bg-gradient-to-br from-emerald-400 via-teal-400 to-indigo-500 p-6 shadow-[0_40px_90px_-50px_rgba(15,23,42,0.45)] dark:border-white/20 dark:from-emerald-500/40 dark:via-cyan-400/30 dark:to-indigo-500/40 dark:shadow-none">
+        <div className="flex h-full w-full items-center justify-center rounded-[26px] bg-white/80 shadow-inner dark:bg-white/10">
+          <SeemplifyIcon size="lg" className="opacity-90" />
+        </div>
+      </div>
+    </motion.div>
+
+    <div className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
+      HR information system
+    </div>
+    <div className="absolute right-12 top-20 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
+      Applicant tracking system
+    </div>
+    <div className="absolute left-10 bottom-16 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
+      Candidate sourcing suite
+    </div>
+    <div className="absolute right-8 bottom-0 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white/80">
+      Time & attendance system
+    </div>
+  </div>
+)
+
+const modules: ModuleCardProps[] = [
+  {
+    title: 'Recruiting',
+    tag: 'Talent',
+    description: 'Move candidates from signal to hire with precision routing and automation.',
+    accent: 'from-sky-400/80 via-indigo-400/70 to-transparent',
+    visual: <RecruitingKanban />,
+    className: 'md:col-span-7 min-h-[300px]',
+  },
+  {
+    title: 'Identity',
+    tag: 'Access',
+    description: 'Centralized SSO with policy enforcement and continuous trust scoring.',
+    accent: 'from-emerald-400/80 via-cyan-400/70 to-transparent',
+    visual: <IdentityOrbit />,
+    className: 'md:col-span-5 min-h-[300px]',
+  },
+  {
+    title: 'Performance',
+    tag: 'Growth',
+    description: 'Live OKR calibration and continuous feedback loops across teams.',
+    accent: 'from-violet-400/80 via-fuchsia-400/70 to-transparent',
+    visual: <PerformanceBars />,
+    className: 'md:col-span-4 min-h-[260px]',
+  },
+  {
+    title: 'Leave',
+    tag: 'Time Off',
+    description: 'Automated policy checks with real-time balance sync and approvals.',
+    accent: 'from-emerald-300/80 via-lime-300/60 to-transparent',
+    visual: <LeaveCalendar />,
+    className: 'md:col-span-4 min-h-[260px]',
+  },
+  {
+    title: 'Payroll',
+    tag: 'Finance',
+    description: 'Run payroll with audit-ready precision and instant reconciliation.',
+    accent: 'from-amber-300/80 via-orange-300/70 to-transparent',
+    visual: <PayrollLedger />,
+    className: 'md:col-span-4 min-h-[260px]',
+  },
+  {
+    title: 'Time',
+    tag: 'Attendance',
+    description: 'Pulse-accurate time tracking with automatic compliance alerts.',
+    accent: 'from-cyan-300/80 via-blue-300/70 to-transparent',
+    visual: <TimeClock />,
+    className: 'md:col-span-6 min-h-[260px]',
+  },
+  {
+    title: 'LMS',
+    tag: 'Learning',
+    description: 'Skill pathways that adapt to role changes and certification cadence.',
+    accent: 'from-emerald-300/80 via-teal-300/70 to-transparent',
+    visual: <LMSChecklist />,
+    className: 'md:col-span-6 min-h-[260px]',
+  },
+]
+
+export default function HomePage() {
+  return (
+    <div className="relative min-h-screen bg-[#f7f7fb] text-zinc-900 dark:bg-[#020205] dark:text-white">
+      <div className="bg-noise" />
+      <HeroBackground />
+
+      <header className="fixed top-0 z-50 w-full border-b border-black/5 bg-white/70 backdrop-blur-xl dark:border-white/15 dark:bg-[#020205]/80">
+        <nav className="container mx-auto flex items-center justify-between px-6 py-4">
+          <Link href="/" className="flex items-center gap-3">
+            <SeemplifyLogo size="sm" animated={false} />
+            <span className="font-display text-lg tracking-tight text-zinc-900 dark:text-white">Seemplify</span>
+          </Link>
+
+          <div className="hidden items-center gap-8 text-sm text-zinc-700 dark:text-white/80 lg:flex">
+            <Link href="#modules" className="transition hover:text-zinc-900 dark:hover:text-white">Modules</Link>
+            <Link href="#how-it-works" className="transition hover:text-zinc-900 dark:hover:text-white">How It Works</Link>
+            <Link href="#platform" className="transition hover:text-zinc-900 dark:hover:text-white">Platform</Link>
+            <Link href="#cta" className="transition hover:text-zinc-900 dark:hover:text-white">Demo</Link>
+          </div>
+
+          <div className="hidden items-center gap-3 md:flex">
+            <ThemeToggle />
+            <Link href={IDP_URL} className="text-sm text-zinc-700 transition hover:text-zinc-900 dark:text-white/80 dark:hover:text-white">
+              Sign In
+            </Link>
+            <Link
+              href={IDP_URL}
+              className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white shadow-[0_0_30px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_40px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_30px_rgba(255,255,255,0.2)] dark:hover:shadow-[0_0_40px_rgba(255,255,255,0.35)]"
+            >
+              Start Free Trial
+            </Link>
+          </div>
+
+          <Link
+            href={IDP_URL}
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/15 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/30 md:hidden"
+          >
+            Get Started
+          </Link>
         </nav>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-20 md:pt-48 md:pb-32">
-        <div className="container mx-auto px-6">
-          <div className="max-w-4xl mx-auto text-center">
+      <main className="relative z-10">
+        <section className="relative overflow-hidden pt-32 pb-24 bg-[#f8efe6] dark:bg-transparent">
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#f8efe6] via-[#f8efe6]/60 to-transparent dark:from-transparent dark:via-transparent" />
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-16 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+              <div>
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                  className="inline-flex items-center gap-3 rounded-full border border-black/10 bg-white px-4 py-2 text-xs uppercase tracking-[0.35em] text-zinc-700 dark:border-white/20 dark:bg-white/10 dark:text-white/75"
+                >
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
+                  Unified HR OS
+                </motion.div>
 
-            {/* Minimal Badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="inline-flex items-center px-3 py-1 rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 backdrop-blur-md mb-8 shadow-sm dark:shadow-none"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300 tracking-wide uppercase">Unified HR Operating System</span>
-            </motion.div>
+                <motion.h1
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+                  className="mt-6 font-display text-5xl leading-[1.05] tracking-tight text-[#0b2f29] dark:text-white md:text-7xl"
+                >
+                  The operating system
+                  <span className="block bg-gradient-to-r from-[#0b2f29] via-emerald-800 to-teal-700 bg-clip-text text-transparent dark:from-white dark:via-cyan-200 dark:to-emerald-200">
+                    for modern people ops.
+                  </span>
+                </motion.h1>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="text-5xl md:text-7xl font-bold tracking-tighter mb-8 bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-500 dark:from-white dark:via-white dark:to-zinc-500 bg-clip-text text-transparent"
-            >
-              Orchestrate your<br />entire workforce.
-            </motion.h1>
+                <motion.p
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="mt-6 max-w-xl text-lg text-[#294942] dark:text-white/75"
+                >
+                  Seemplify unifies recruiting, identity, performance, time, and payroll into one
+                  cinematic control surface. Precision workflows, continuous intelligence, and zero
+                  compromise execution.
+                </motion.p>
 
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="text-lg md:text-xl text-zinc-600 dark:text-zinc-400 max-w-xl mx-auto mb-12 leading-relaxed font-light"
-            >
-              A single, high-performance platform for recruiting, management, and compensation.
-              Designed for modern teams.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="flex flex-col sm:flex-row gap-4 justify-center mb-24"
-            >
-              <Link
-                href={IDP_URL}
-                className="inline-flex items-center justify-center px-8 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-lg font-medium hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-all duration-300 shadow-lg"
-              >
-                Start Free Trial
-              </Link>
-              <Link
-                href="#how-it-works"
-                className="inline-flex items-center justify-center px-8 py-3 border border-zinc-300 dark:border-zinc-800 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 transition-all duration-300"
-              >
-                View Architecture
-              </Link>
-            </motion.div>
-
-            {/* Architectural Product Showcase */}
-            <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, delay: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="relative"
-            >
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mb-6">
-                {products.map((product, index) => (
-                  <button
-                    key={product.title}
-                    onClick={() => setActiveProduct(index)}
-                    className={`group p-4 rounded-xl border transition-all duration-300 text-left relative overflow-hidden ${activeProduct === index
-                      ? 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900/50 shadow-sm dark:shadow-none'
-                      : 'border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 hover:bg-white/50 dark:hover:bg-zinc-900/20'
-                      }`}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.9, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className="mt-8 flex flex-wrap gap-4"
+                >
+                  <Link
+                    href={IDP_URL}
+                    className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
                   >
-                    <div className={`mb-3 ${activeProduct === index ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'}`}>
-                      {product.icon}
+                    Start Free Trial
+                  </Link>
+                  <Link
+                    href="#modules"
+                    className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
+                  >
+                    Explore Modules
+                  </Link>
+                </motion.div>
+
+                <div className="mt-10 grid gap-6 text-sm text-zinc-700 dark:text-white/70 sm:grid-cols-3">
+                  {[
+                    { label: 'Automation Coverage', value: '94%' },
+                    { label: 'Core Modules', value: '7' },
+                    { label: 'Avg. Launch Time', value: '14 days' },
+                  ].map((stat) => (
+                    <div key={stat.label} className="rounded-2xl border border-black/5 bg-white/70 p-4 dark:border-white/20 dark:bg-white/[0.05]">
+                      <div className="text-xs uppercase tracking-[0.25em] text-zinc-600 dark:text-white/40">{stat.label}</div>
+                      <div className="mt-2 font-display text-2xl text-zinc-900 dark:text-white">{stat.value}</div>
                     </div>
-                    <div className={`text-sm font-medium ${activeProduct === index ? 'text-zinc-900 dark:text-zinc-200' : 'text-zinc-600 dark:text-zinc-400'}`}>{product.title}</div>
-
-                    {/* Active Line Indicator */}
-                    {activeProduct === index && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute bottom-0 left-0 w-full h-[1px] bg-indigo-500"
-                      />
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Main Display Glass Card */}
-              <div className="glass-card rounded-2xl p-1">
-                <div className="rounded-xl bg-white/80 dark:bg-black/40 p-8 md:p-12 overflow-hidden relative min-h-[400px] flex items-center">
-
-                  {/* Content */}
-                  <div className="grid md:grid-cols-2 gap-12 items-center w-full relative z-10">
-                    <div className="text-left">
-                      <div className={`inline-block mb-4 px-2 py-1 rounded border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-xs font-mono uppercase tracking-widest ${products[activeProduct].color}`}>
-                        {products[activeProduct].tagline}
-                      </div>
-                      <h3 className="text-3xl font-semibold mb-4 text-zinc-900 dark:text-white tracking-tight">{products[activeProduct].description}</h3>
-                      <ul className="space-y-3">
-                        {products[activeProduct].features.map((feature) => (
-                          <li key={feature} className="flex items-center text-zinc-600 dark:text-zinc-400 text-sm">
-                            <div className="w-1 h-1 rounded-full bg-indigo-500 mr-3" />
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {/* Illustration Container */}
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={activeProduct}
-                        initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-                        animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                        exit={{ opacity: 0, scale: 1.05, filter: 'blur(10px)' }}
-                        transition={{ duration: 0.4 }}
-                        className="w-full h-full flex items-center justify-center p-4 rounded-xl border border-zinc-200 dark:border-white/5 bg-zinc-50/50 dark:bg-white/[0.02]"
-                      >
-                        {products[activeProduct].illustration}
-                      </motion.div>
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Bg Glow */}
-                  <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[100px] opacity-50 pointer-events-none" />
+                  ))}
                 </div>
               </div>
 
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Feature Deep Dive Sections */}
-      <div className="space-y-24 py-16 relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-indigo-100/20 dark:via-indigo-950/5 to-transparent pointer-events-none" />
-
-        {/* Recruiting */}
-        <section id="products" className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <IconRecruiting />
-                <span className="text-xs font-mono text-blue-600 dark:text-blue-400 uppercase tracking-widest">Recruiting Module</span>
-              </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">AI-Powered Precision Hiring.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
-                Identify top talent in seconds with 95% match accuracy. Eliminate bias, automate scheduling, and cut time-to-hire by 60% with our intelligent recruiting engine.
-              </p>
-              <ul className="mb-8 space-y-2">
-                <li className="flex items-center text-sm text-zinc-600 dark:text-zinc-400">
-                  <div className="w-1 h-1 rounded-full bg-blue-500 mr-3" />
-                  Deep Skill Analysis & Validation
-                </li>
-                <li className="flex items-center text-sm text-zinc-600 dark:text-zinc-400">
-                  <div className="w-1 h-1 rounded-full bg-blue-500 mr-3" />
-                  Automated Interview Scheduling
-                </li>
-                <li className="flex items-center text-sm text-zinc-600 dark:text-zinc-400">
-                  <div className="w-1 h-1 rounded-full bg-blue-500 mr-3" />
-                  Bias Elimination Protocols
-                </li>
-              </ul>
-              <Link href="https://app.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center group">
-                Explore SmartHR Recruiting <span className="ml-2 group-hover:translate-x-1 transition-transform">→</span>
-              </Link>
-            </div>
-            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
-              <HiringPipelineFlow />
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <HeroConsole />
+              </motion.div>
             </div>
           </div>
         </section>
 
-        {/* Leave */}
-        <section className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div className="order-2 md:order-1 glass rounded-2xl p-8 transform -rotate-1 hover:rotate-0 transition-transform duration-700">
-              <LeaveApprovalFlow />
-            </div>
-            <div className="order-1 md:order-2">
-              <div className="flex items-center gap-2 mb-6">
-                <IconCalendar />
-                <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Leave Module</span>
-              </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Autonomous time-off.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
-                Self-service requests that sync instantly with team calendars. Rules-based approvals and automatic balance calculations.
+        <section id="modules" className="relative py-24">
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#f0f1f6] to-transparent dark:via-[#06060b]" />
+          <div className="container mx-auto px-6">
+            <div className="max-w-3xl">
+              <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">Featured Modules</p>
+              <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
+                A unified suite, engineered as systems.
+              </h2>
+              <p className="mt-4 text-zinc-700 dark:text-white/75">
+                Every module speaks the same data language. Signals stay synchronized across the
+                platform so every action has context and intent.
               </p>
-              <Link href="https://leave.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center">
-                Explore Leave <span className="ml-2">→</span>
-              </Link>
+            </div>
+
+            <div className="mt-12 grid gap-6 md:grid-cols-12">
+              {modules.map((module) => (
+                <ModuleCard key={module.title} {...module} />
+              ))}
             </div>
           </div>
         </section>
 
-        {/* Performance */}
-        <section className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <IconPerformance />
-                <span className="text-xs font-mono text-purple-600 dark:text-purple-400 uppercase tracking-widest">Performance Module</span>
-              </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Continuous calibration.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
-                Move beyond annual reviews. Continuous feedback loops, OKR tracking, and 360-degree assessments that actually drive improvement.
-              </p>
-              <Link href="https://performance.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center">
-                Explore Performance <span className="ml-2">→</span>
-              </Link>
-            </div>
-            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
-              <PerformanceCycleFlow />
-            </div>
+        <section id="how-it-works" className="relative py-24 bg-[#0b0b11] text-white">
+          <div className="absolute inset-0 opacity-70">
+            <div className="absolute -top-24 left-10 h-72 w-72 rounded-full bg-indigo-500/20 blur-[140px]" />
+            <div className="absolute bottom-[-120px] right-0 h-80 w-80 rounded-full bg-emerald-400/15 blur-[160px]" />
           </div>
-        </section>
-        {/* Learning */}
-        <section className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <IconLearning />
-                <span className="text-xs font-mono text-sky-600 dark:text-sky-400 uppercase tracking-widest">LMS Module</span>
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-white/60">How It Works</p>
+                <h2 className="mt-4 font-display text-4xl text-white md:text-5xl">
+                  From signal to action in three steps.
+                </h2>
+                <p className="mt-4 text-white/70">
+                  Seemplify normalizes data across your workforce stack, then orchestrates automation
+                  through verified workflows. Every action is auditable and reversible.
+                </p>
               </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Upskill your workforce.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
-                Create role-based learning pathways. Automate compliance training, track progress, and issue certifications seamlessly.
-              </p>
-              <Link href="https://lms.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center">
-                Explore Learning <span className="ml-2">→</span>
-              </Link>
-            </div>
-            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
-              <LearningFlow />
-            </div>
-          </div>
-        </section>
-
-        {/* Knowledge */}
-        <section className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div className="order-2 md:order-1 glass rounded-2xl p-8 transform -rotate-1 hover:rotate-0 transition-transform duration-700">
-              <KnowledgeFlow />
-            </div>
-            <div className="order-1 md:order-2">
-              <div className="flex items-center gap-2 mb-6">
-                <IconKnowledge />
-                <span className="text-xs font-mono text-blue-600 dark:text-blue-400 uppercase tracking-widest">Knowledge Base</span>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {[
+                  {
+                    eyebrow: '01',
+                    title: 'Connect',
+                    description: 'Sync HRIS, payroll, ATS, and time signals into one secure graph.',
+                  },
+                  {
+                    eyebrow: '02',
+                    title: 'Orchestrate',
+                    description: 'Automate approvals, reviews, and compliance routing with guardrails.',
+                  },
+                  {
+                    eyebrow: '03',
+                    title: 'Measure',
+                    description: 'Track outcomes with live dashboards and continuous optimization.',
+                  },
+                ].map((item) => (
+                  <InfoCard key={item.title} variant="inverse" {...item} />
+                ))}
               </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">A single source of truth.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
-                Stop answering the same questions. Empower your team with a modern, collaborative knowledge base that organizes itself.
-              </p>
-              <Link href="https://docs.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center">
-                Explore Docs <span className="ml-2">→</span>
-              </Link>
             </div>
           </div>
         </section>
 
-        {/* AI Chat */}
-        <section className="container mx-auto px-6">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <IconChat />
-                <span className="text-xs font-mono text-violet-600 dark:text-violet-400 uppercase tracking-widest">AI Agent</span>
+        <section id="platform" className="relative py-24">
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent via-[#eef0f5] to-transparent dark:via-[#050509]" />
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-zinc-700 dark:text-white/60">Platform Layer</p>
+                <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
+                  A single operating surface for people ops.
+                </h2>
+                <p className="mt-4 text-zinc-900 dark:text-white/75">
+                  The platform connects identity, recruiting, performance, time, payroll, and learning
+                  so every team works from the same intelligence plane. Deploy modules independently
+                  or activate the full suite for full visibility.
+                </p>
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  {[
+                    {
+                      eyebrow: 'Signal Sync',
+                      title: 'Unified Data Spine',
+                      description: 'All workforce events resolve into a normalized timeline.',
+                      variant: 'default',
+                    },
+                    {
+                      eyebrow: 'Governance',
+                      title: 'Policy-First Automation',
+                      description: 'Guardrails enforce approvals, thresholds, and audit trails.',
+                      variant: 'default',
+                    },
+                    {
+                      eyebrow: 'Security',
+                      title: 'Zero-Trust Access',
+                      description: 'SSO, role scopes, and continuous access scoring.',
+                      variant: 'default',
+                    },
+                    {
+                      eyebrow: 'Analytics',
+                      title: 'Executive Clarity',
+                      description: 'Operational dashboards with predictive benchmarks.',
+                      variant: 'default',
+                    },
+                  ].map((item) => (
+                    <InfoCard key={item.title} {...item} />
+                  ))}
+                </div>
               </div>
-              <h2 className="text-4xl font-bold tracking-tighter mb-6 text-zinc-900 dark:text-white">Instant answers, 24/7.</h2>
-              <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8">
-                Your company policy, documentation, and data—instantly accessible through our intelligent AI assistant.
-              </p>
-              <Link href="https://ai.seemplifyai.com" className="text-sm font-medium text-zinc-900 dark:text-white hover:text-violet-600 dark:hover:text-violet-400 transition-colors flex items-center">
-                Explore AI <span className="ml-2">→</span>
-              </Link>
-            </div>
-            <div className="glass rounded-2xl p-8 transform rotate-1 hover:rotate-0 transition-transform duration-700">
-              <ChatFlow />
+              <div className="rounded-3xl border border-black/15 bg-white p-8 shadow-[0_30px_80px_-60px_rgba(15,23,42,0.35)] dark:border-white/20 dark:bg-white/[0.06] dark:shadow-none">
+                <div className="flex items-center justify-between text-xs text-zinc-700 dark:text-white/70">
+                  <span className="font-mono uppercase tracking-[0.35em]">System Map</span>
+                  <span className="text-zinc-400 dark:text-white/50">Live View</span>
+                </div>
+                <div className="mt-6 grid gap-4">
+                  {[
+                    { title: 'Identity', detail: 'Access & trust graph', value: '99.9% uptime' },
+                    { title: 'Recruiting', detail: 'Pipeline velocity', value: '−42% time‑to‑hire' },
+                    { title: 'Performance', detail: 'Feedback cadence', value: '+3.1x touchpoints' },
+                  ].map((row) => (
+                    <div key={row.title} className="rounded-2xl border border-black/15 bg-white p-4 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.35)] dark:border-white/20 dark:bg-white/[0.05] dark:shadow-none">
+                      <div className="flex items-center justify-between text-sm text-zinc-900 dark:text-white/80">
+                        <span className="font-medium text-zinc-900 dark:text-white">{row.title}</span>
+                        <span className="text-xs text-zinc-700 dark:text-white/60">{row.value}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-800 dark:text-white/65">{row.detail}</p>
+                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-cyan-400/80 to-emerald-400/70"
+                          animate={{ width: ['35%', '80%', '35%'] }}
+                          transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
-      </div>
 
-      {/* Footer */}
-      <footer className="py-20 border-t border-zinc-200 dark:border-white/5 bg-zinc-100 dark:bg-[#050505] relative z-10 transition-colors duration-300">
-        <div className="container mx-auto px-6 text-center">
-          <div className="mb-8">
-            <SeemplifyLogo size="md" />
+        <section id="cta" className="relative py-24">
+          <div className="container mx-auto px-6">
+            <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-center">
+              <div className="rounded-3xl border border-black/10 bg-white p-10 backdrop-blur-xl dark:border-white/20 dark:bg-white/[0.06] md:p-14">
+                <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">Why Seemplify</p>
+                <h3 className="mt-4 font-display text-3xl text-zinc-900 dark:text-white md:text-4xl">
+                  Explainable automation, measurable outcomes.
+                </h3>
+                <p className="mt-4 text-zinc-700 dark:text-white/75">
+                  Every workflow ships with a transparent rule set, audit trail, and live metrics.
+                  Teams move faster without losing control.
+                </p>
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  <InfoCard
+                    eyebrow="Trust"
+                    title="Full Audit Trails"
+                    description="Every change, approval, and override is logged and exportable."
+                  />
+                  <InfoCard
+                    eyebrow="Speed"
+                    title="Automation Coverage"
+                    description="Prebuilt workflows cover 90% of HR operations out of the box."
+                  />
+                  <InfoCard
+                    eyebrow="Quality"
+                    title="Decision Support"
+                    description="AI-assisted insights, always paired with human approvals."
+                  />
+                  <InfoCard
+                    eyebrow="Scale"
+                    title="Global Ready"
+                    description="Multi-region permissions, compliance, and localized policies."
+                  />
+                </div>
+              </div>
+              <div className="rounded-3xl border border-black/10 bg-white p-10 text-center backdrop-blur-xl dark:border-white/20 dark:bg-white/[0.06] md:p-14">
+                <h3 className="font-display text-3xl text-zinc-900 dark:text-white md:text-4xl">Ready to run a cinematic HR stack?</h3>
+                <p className="mt-4 text-zinc-700 dark:text-white/75">
+                  Book a walkthrough or jump straight into the platform. We will map your workforce
+                  workflows in days, not quarters.
+                </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-4">
+                  <Link
+                    href={IDP_URL}
+                  className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
+                >
+                  Start Free Trial
+                </Link>
+                  <Link
+                    href={IDP_URL}
+                    className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
+                  >
+                    Book a Demo
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="text-zinc-500 text-sm mb-8">
-            &copy; 2025 Seemplify AI. Engineered for growth.
-          </p>
-          <div className="flex justify-center gap-8 text-sm text-zinc-500 dark:text-zinc-400">
-            <Link href="/privacy-policy" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Terms</Link>
-            <Link href="mailto:hello@seemplifyai.com" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Contact</Link>
+        </section>
+      </main>
+
+      <footer className="relative z-10 border-t border-black/10 bg-white/90 py-12 backdrop-blur-xl dark:border-white/20 dark:bg-[#0b0b11]">
+        <div className="container mx-auto flex flex-col items-center justify-between gap-6 px-6 text-sm text-zinc-700 dark:text-white/80 md:flex-row">
+          <div className="flex items-center gap-3">
+            <SeemplifyLogo size="sm" animated={false} />
+            <span className="font-display text-zinc-900 dark:text-white">Seemplify</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <Link href="/privacy-policy" className="transition hover:text-zinc-900 dark:hover:text-white">
+              Privacy
+            </Link>
+            <Link href="/terms" className="transition hover:text-zinc-900 dark:hover:text-white">
+              Terms
+            </Link>
+            <Link href="mailto:hello@seemplifyai.com" className="transition hover:text-zinc-900 dark:hover:text-white">
+              Contact
+            </Link>
           </div>
         </div>
       </footer>
