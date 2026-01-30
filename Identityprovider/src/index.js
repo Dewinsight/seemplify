@@ -285,6 +285,7 @@ import organizationsRouter from './routes/organizations.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
+import notificationsRouter from './routes/notifications.js'
 // Subscription Management Routes
 import adminPlansRouter from './routes/adminPlans.js'
 import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
@@ -3571,17 +3572,16 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(openwebuiAuthUrl)
     }
 
-    // Special handling for Rocket.Chat - redirect to Rocket.Chat and let it initiate OAuth
-    // Rocket.Chat's custom OAuth requires the user to click the OAuth button to properly
-    // initialize its internal state (loginStyle, credentialToken). We redirect to the home
-    // page which shows the login page with the "Login with Seemplify" button.
-    if (app.appId === 'rocket-chat') {
-      // Redirect to Rocket.Chat home - if not logged in, user sees login page with OAuth button
-      const rocketChatUrl = app.url.replace(/\/+$/, '')
-      console.log('  📍 ROCKET.CHAT REDIRECT TO:', rocketChatUrl)
-      console.log('  Note: User will click "Login with Seemplify" button to start OAuth flow')
+    // Special handling for Zulip - redirect to Zulip's OIDC login endpoint
+    // Zulip handles OIDC internally - we redirect to the login page with the OIDC provider
+    if (app.appId === 'zulip') {
+      // Redirect to Zulip's OIDC login endpoint directly
+      // Zulip will handle the OAuth flow from here
+      const zulipUrl = app.url.replace(/\/+$/, '')
+      const zulipOidcUrl = `${zulipUrl}/login/oidc/?next=/`
+      console.log('  📍 ZULIP OIDC REDIRECT TO:', zulipOidcUrl)
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
-      return res.redirect(rocketChatUrl)
+      return res.redirect(zulipOidcUrl)
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
@@ -3752,6 +3752,7 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
 
 // Subscription Management API Routes
 app.use('/api/admin/plans', adminPlansRouter)
