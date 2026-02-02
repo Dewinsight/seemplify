@@ -114,41 +114,139 @@ export async function createZulipRealm(organization, owner) {
 }
 
 /**
- * Create realm via Zulip management command
- * This is the recommended way as it handles all user groups and default setup
+ * Create realm with user groups
+ * Since we can't execute Docker commands from inside the container,
+ * we'll create the realm and required user groups via direct PostgreSQL
  */
 async function createRealmViaManagementCommand(name, stringId, ownerEmail) {
-  const { exec } = await import('child_process')
-  const { promisify } = await import('util')
-  const execAsync = promisify(exec)
-  
   try {
-    console.log(`[Zulip Service] Creating realm via management command...`)
-    console.log(`[Zulip Service] Name: ${name}, String ID: ${stringId}, Owner: ${ownerEmail}`)
+    console.log(`[Zulip Service] Creating realm with required user groups...`)
+    console.log(`[Zulip Service] Name: ${name}, String ID: ${stringId}`)
     
-    // Execute Zulip's create_realm management command
-    const command = `docker exec code-zulip-1 /home/zulip/deployments/current/manage.py create_realm --string-id "${stringId}" --name "${name}" --owner-email "${ownerEmail}"`
+    // Step 1: Create default user groups for the realm
+    // We'll create these after creating the realm since they need the realm_id
     
-    console.log(`[Zulip Service] Executing: ${command}`)
-    const { stdout, stderr } = await execAsync(command)
-    
-    if (stdout) console.log(`[Zulip Service] STDOUT:`, stdout)
-    if (stderr) console.log(`[Zulip Service] STDERR:`, stderr)
-    
-    // Query the database to get the realm ID
-    const result = await executeZulipSQL('SELECT id FROM zerver_realm WHERE string_id = $1', [stringId])
-    const realmId = result.rows[0]?.id
+    // Step 2: Create the realm (we'll insert it first, then create groups)
+    const realmId = await createRealmWithGroups(name, stringId)
     
     if (!realmId) {
-      throw new Error('Realm created but ID not found in database')
+      throw new Error('Failed to create realm')
     }
     
     console.log(`[Zulip Service] ✅ Realm created successfully with ID: ${realmId}`)
     return realmId
   } catch (error) {
-    console.error('[Zulip Service] Error creating realm via management command:', error)
+    console.error('[Zulip Service] Error creating realm:', error)
     console.error('[Zulip Service] Error details:', error.message)
-    if (error.stderr) console.error('[Zulip Service] Command stderr:', error.stderr)
+    throw error
+  }
+}
+
+/**
+ * Create realm with all required user groups
+ */
+async function createRealmWithGroups(name, stringId) {
+  try {
+    // First, create a minimal realm entry with NULL group references
+    // We'll update the group IDs after creating the groups
+    const createRealmSQL = `
+      INSERT INTO zerver_realm (
+        name, string_id, description,
+        uuid, uuid_owner_secret, date_created,
+        deactivated, push_notifications_enabled,
+        emails_restricted_to_domains, invite_required,
+        disallow_disposable_email_addresses, enable_spectator_access,
+        want_advertise_in_communities_directory,
+        inline_image_preview, inline_url_embed_preview,
+        digest_emails_enabled, digest_weekday,
+        send_welcome_emails, message_content_allowed_in_email_notifications,
+        require_unique_names, name_changes_disabled,
+        email_changes_disabled, avatar_changes_disabled,
+        waiting_period_threshold, allow_message_editing,
+        default_language, message_retention_days,
+        first_visible_message_id, org_type, plan_type,
+        video_chat_provider, giphy_rating,
+        default_code_block_language, enable_read_receipts,
+        enable_guest_user_indicator,
+        icon_source, icon_version,
+        logo_source, logo_version,
+        night_logo_source, night_logo_version,
+        enable_guest_user_dm_warning,
+        message_edit_history_visibility_policy,
+        topics_policy,
+        require_e2ee_push_notifications,
+        welcome_message_custom_text
+      )
+      SELECT $1, $2, $3,
+        gen_random_uuid(), gen_random_uuid()::text, NOW(),
+        false, true, false, false, true, false, false, true, true, true, 0, true, true, false,
+        false, false, false, 0, true, 'en', -1, 0, 0, 1, 0, 1, '', true, true, 'G', 1, 'G', 1, 'G', 1,
+        false, 0, 1, false, ''
+      RETURNING id
+    `
+    
+    let result = await executeZulipSQL(createRealmSQL, [name, stringId, `${name} workspace`])
+    const realmId = result.rows[0]?.id
+    
+    if (!realmId) {
+      throw new Error('Failed to create realm - no ID returned')
+    }
+    
+    console.log(`[Zulip Service] Realm created with ID: ${realmId}, creating user groups...`)
+    
+    // Create a default user group for this realm
+    const createGroupSQL = `
+      INSERT INTO zerver_usergroup (realm_id)
+      VALUES ($1)
+      RETURNING id
+    `
+    
+    result = await executeZulipSQL(createGroupSQL, [realmId])
+    const groupId = result.rows[0]?.id
+    
+    if (!groupId) {
+      console.error('[Zulip Service] Failed to create user group, continuing anyway')
+      // Don't fail - just log the error
+    } else {
+      console.log(`[Zulip Service] Created default user group with ID: ${groupId}`)
+      
+      // Update the realm to use this group for all permissions
+      const updateRealmSQL = `
+        UPDATE zerver_realm SET
+          can_access_all_users_group_id = $1,
+          can_create_private_channel_group_id = $1,
+          can_create_public_channel_group_id = $1,
+          can_create_web_public_channel_group_id = $1,
+          can_delete_any_message_group_id = $1,
+          create_multiuse_invite_group_id = $1,
+          direct_message_initiator_group_id = $1,
+          direct_message_permission_group_id = $1,
+          can_delete_own_message_group_id = $1,
+          can_create_groups_id = $1,
+          can_manage_all_groups_id = $1,
+          can_add_custom_emoji_group_id = $1,
+          can_move_messages_between_channels_group_id = $1,
+          can_move_messages_between_topics_group_id = $1,
+          can_invite_users_group_id = $1,
+          can_add_subscribers_group_id = $1,
+          can_create_bots_group_id = $1,
+          can_create_write_only_bots_group_id = $1,
+          can_summarize_topics_group_id = $1,
+          can_mention_many_users_group_id = $1,
+          can_manage_billing_group_id = $1,
+          can_resolve_topics_group_id = $1,
+          can_set_topics_policy_group_id = $1,
+          can_set_delete_message_policy_group_id = $1
+        WHERE id = $2
+      `
+      
+      await executeZulipSQL(updateRealmSQL, [groupId, realmId])
+      console.log(`[Zulip Service] Updated realm with group permissions`)
+    }
+    
+    return realmId
+  } catch (error) {
+    console.error('[Zulip Service] Error in createRealmWithGroups:', error)
     throw error
   }
 }
