@@ -3578,35 +3578,14 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(openwebuiAuthUrl)
     }
 
-    // Special handling for Zulip - redirect to organization-specific subdomain
-    // Zulip uses subdomains for multi-organization support
+    // Zulip uses a single realm instance with multi-org support via OIDC claims
+    // The current_organization claim determines which organization the user accesses
     if (app.appId === 'zulip') {
-      // Get the user's current organization to determine subdomain
-      let zulipUrl = 'https://chat.seemplifyai.com'
-      
-      if (account.currentOrganization) {
-        // Convert organization name to URL-safe slug
-        const orgName = account.currentOrganization.name || ''
-        const orgSlug = orgName
-          .toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, '-')  // Replace non-alphanumeric with hyphens
-          .replace(/^-+|-+$/g, '')       // Remove leading/trailing hyphens
-        
-        if (orgSlug) {
-          // Use org-specific subdomain
-          zulipUrl = `https://${orgSlug}.chat.seemplifyai.com`
-          console.log('  🏢 Organization:', orgName, '→ Subdomain:', orgSlug)
-        }
-      } else {
-        console.log('  ⚠️ No current organization - using root domain')
-      }
-      
-      // Redirect to Zulip's OIDC login endpoint
-      const zulipOidcUrl = `${zulipUrl}/login/oidc/?next=/`
-      console.log('  📍 ZULIP OIDC REDIRECT TO:', zulipOidcUrl)
+      const zulipUrl = 'https://chat.seemplifyai.com/login/oidc/?next=/'
+      console.log('  🔗 Redirecting to Zulip:', zulipUrl)
+      console.log('  🏢 Organization context will be determined by OIDC claims')
       console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
-      return res.redirect(zulipOidcUrl)
+      return res.redirect(zulipUrl)
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
