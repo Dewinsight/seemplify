@@ -12,7 +12,6 @@ services:
     volumes:
       - "postgresql-14:/var/lib/postgresql/data:rw"
     networks:
-      - zulip-internal
       - dokploy-network
 
   memcached:
@@ -31,7 +30,7 @@ services:
       MEMCACHED_SASL_PWDB: "/home/memcache/memcached-sasl-db"
       MEMCACHED_PASSWORD: "${MEMCACHED_PASSWORD}"
     networks:
-      - zulip-internal
+      - dokploy-network
 
   rabbitmq:
     image: "rabbitmq:4.1"
@@ -42,7 +41,7 @@ services:
     volumes:
       - "rabbitmq:/var/lib/rabbitmq:rw"
     networks:
-      - zulip-internal
+      - dokploy-network
 
   redis:
     image: "redis:alpine"
@@ -58,7 +57,7 @@ services:
     volumes:
       - "redis:/data:rw"
     networks:
-      - zulip-internal
+      - dokploy-network
 
   zulip:
     image: "zulip/docker-zulip:11.4-0"
@@ -127,7 +126,6 @@ services:
       - rabbitmq
       - redis
     networks:
-      - zulip-internal
       - dokploy-network
     labels:
       # Traefik Configuration for HTTPS (SSL termination at Traefik, HTTP to backend)
@@ -147,7 +145,5 @@ volumes:
   redis:
 
 networks:
-  zulip-internal:
-    driver: bridge
   dokploy-network:
     external: true
