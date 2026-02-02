@@ -15,7 +15,7 @@ const { Pool } = pkg
 
 // Zulip database configuration
 const ZULIP_DB_CONFIG = {
-  host: process.env.ZULIP_DB_HOST || 'code-database-1',
+  host: process.env.ZULIP_DB_HOST || 'seemplify-chat-szo3p4-database-1',
   port: process.env.ZULIP_DB_PORT || 5432,
   user: process.env.ZULIP_DB_USER || 'zulip',
   password: process.env.ZULIP_DB_PASSWORD || 'SeemplifyZulipDB2026!',
