@@ -20,7 +20,10 @@
       "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\time-attendance\\\\backend\")",
       "Bash(npm run lint:*)",
       "Bash(npx next lint:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(xargs:*)",
+      "Bash(git status:*)",
+      "Bash(git check-ignore:*)"
     ]
   }
 }

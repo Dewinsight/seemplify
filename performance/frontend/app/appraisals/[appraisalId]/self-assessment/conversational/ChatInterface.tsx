@@ -34,9 +34,11 @@ interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (message: string) => Promise<void>;
   onUploadFile: (file: File) => Promise<void>;
+  onAdvancePhase?: () => void;
   isLoading: boolean;
   currentPhase: string;
   disabled?: boolean;
+  canAdvancePhase?: boolean;
 }
 
 const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean }) => {
@@ -164,9 +166,11 @@ export default function ChatInterface({
   messages,
   onSendMessage,
   onUploadFile,
+  onAdvancePhase,
   isLoading,
   currentPhase,
-  disabled = false
+  disabled = false,
+  canAdvancePhase = false
 }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -237,12 +241,25 @@ export default function ChatInterface({
       <Paper
         elevation={3}
         sx={{
-          p: 2,
           borderTop: 1,
           borderColor: 'divider'
         }}
       >
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+        {/* Next Phase Button */}
+        {canAdvancePhase && onAdvancePhase && (
+          <Box sx={{ p: 1.5, pb: 0, display: 'flex', justifyContent: 'center' }}>
+            <Chip
+              label="Click to move to next phase"
+              onClick={onAdvancePhase}
+              color="primary"
+              variant="outlined"
+              sx={{ cursor: 'pointer', fontWeight: 600 }}
+              disabled={disabled || isLoading}
+            />
+          </Box>
+        )}
+
+        <Box sx={{ p: 2, pt: canAdvancePhase ? 1.5 : 2 }}>
           <input
             type="file"
             ref={fileInputRef}

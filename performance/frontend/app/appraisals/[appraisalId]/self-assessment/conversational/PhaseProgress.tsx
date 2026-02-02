@@ -37,6 +37,7 @@ interface PhaseProgressProps {
   okrs: OKRSummary[];
   extractedData: ExtractedData;
   currentOkrIndex: number;
+  onPhaseClick?: (phaseId: string) => void;
 }
 
 const PHASES = [
@@ -143,7 +144,8 @@ export default function PhaseProgress({
   okrs,
   extractedData,
   currentOkrIndex,
-  onOkrSelect
+  onOkrSelect,
+  onPhaseClick
 }: PhaseProgressProps & { onOkrSelect?: (index: number) => void }) {
   const getStepStatus = (phaseId: string) => {
     if (completedPhases.includes(phaseId)) return 'completed';
@@ -158,6 +160,16 @@ export default function PhaseProgress({
     return <RadioButtonUnchecked color="disabled" />;
   };
 
+  const handlePhaseClick = (phaseId: string) => {
+    const currentIndex = PHASES.findIndex(p => p.id === currentPhase);
+    const targetIndex = PHASES.findIndex(p => p.id === phaseId);
+
+    // Only allow advancing forward or clicking current/completed phases
+    if (targetIndex > currentIndex && !completedPhases.includes(phaseId)) {
+      onPhaseClick?.(phaseId);
+    }
+  };
+
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h6" fontWeight={600} gutterBottom>
@@ -168,15 +180,24 @@ export default function PhaseProgress({
       <Stepper orientation="vertical" sx={{ mb: 3 }}>
         {PHASES.map((phase) => {
           const status = getStepStatus(phase.id);
+          const isClickable = status !== 'pending' || onPhaseClick;
+
           return (
             <Step key={phase.id} active={status === 'active'} completed={status === 'completed'}>
               <StepLabel
                 StepIconComponent={() => getStepIcon(phase.id, phase.icon)}
+                onClick={() => isClickable && handlePhaseClick(phase.id)}
                 sx={{
+                  cursor: isClickable ? 'pointer' : 'default',
                   '& .MuiStepLabel-label': {
                     fontWeight: status === 'active' ? 600 : 400,
                     color: status === 'pending' ? 'text.disabled' : 'text.primary'
-                  }
+                  },
+                  '&:hover': isClickable ? {
+                    '& .MuiStepLabel-label': {
+                      color: 'primary.main'
+                    }
+                  } : {}
                 }}
               >
                 {phase.label}

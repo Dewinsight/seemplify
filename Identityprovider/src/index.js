@@ -3002,7 +3002,12 @@ async function getSessionFromCookies(req) {
 
     if (sessionData && sessionData.accountId) {
       const accountLookupStart = Date.now()
+      // IMPORTANT: Populate currentOrganization to ensure organization context is available
+      // This is critical for tenant isolation - apps like Zulip use currentOrganization.name
+      // to determine which organization subdomain to redirect to
       const account = await Account.findOne({ sub: sessionData.accountId })
+        .populate('currentOrganization', 'name')
+        .populate('organizations.organization', 'name')
       console.log(`⏱️ Account.findOne took ${Date.now() - accountLookupStart}ms`)
       return account
     }

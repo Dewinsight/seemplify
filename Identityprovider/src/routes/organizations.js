@@ -9,6 +9,7 @@ import {
   rateLimit
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 
@@ -58,7 +59,7 @@ router.post('/',
         }]
       })
 
-      // Update user's organizations array
+      // Update user's organizations array and set as current organization
       await Account.updateOne(
         { _id: req.user._id },
         {
@@ -70,9 +71,15 @@ router.post('/',
               isActive: true
             }
           },
-          $set: { currentOrganization: organization._id }
+          $set: { 
+            currentOrganization: organization._id,
+            updatedAt: new Date() // Update timestamp for cache invalidation
+          }
         }
       )
+
+      // Invalidate claims cache for this user to ensure fresh organization context
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Organization created:', organization.name, 'by', req.user.email)
 
@@ -262,8 +269,16 @@ router.post('/:orgId/switch',
     try {
       await Account.updateOne(
         { _id: req.user._id },
-        { $set: { currentOrganization: req.params.orgId } }
+        { 
+          $set: { 
+            currentOrganization: req.params.orgId,
+            updatedAt: new Date() // Update timestamp for cache invalidation
+          } 
+        }
       )
+
+      // Invalidate claims cache for this user to ensure fresh organization context
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Switched to organization:', req.organization.name, 'by', req.user.email)
 

@@ -392,6 +392,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           extractedData={conversationState?.extractedData || { achievements: [], challenges: [], skills: [], goals: [] }}
           currentOkrIndex={conversationState?.currentOkrIndex || 0}
           onOkrSelect={handleOkrSelect}
+          onPhaseClick={handleAdvancePhase}
         />
 
         {/* Quick Actions */}
@@ -431,9 +432,21 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           messages={messages}
           onSendMessage={handleSendMessage}
           onUploadFile={handleUploadFile}
+          onAdvancePhase={() => {
+            const currentPhase = conversationState?.currentPhase || 'okr_reflection';
+            const phases = ['okr_reflection', 'achievements', 'challenges', 'learnings', 'future_goals', 'report_generation'];
+            const currentIndex = phases.indexOf(currentPhase);
+            if (currentIndex >= 0 && currentIndex < phases.length - 1) {
+              handleAdvancePhase(phases[currentIndex + 1]);
+            }
+          }}
           isLoading={isProcessing}
           currentPhase={conversationState?.currentPhase || 'okr_reflection'}
           disabled={conversationState?.currentPhase === 'completed'}
+          canAdvancePhase={
+            conversationState?.currentPhase &&
+            !['report_generation', 'review', 'completed'].includes(conversationState?.currentPhase)
+          }
         />
       </Box>
 

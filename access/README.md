@@ -6,9 +6,13 @@ This folder contains all access credentials and server information for the Sempl
 
 | File | Description |
 |------|-------------|
+| **CREDENTIALS-INDEX.md** | **Start here** – Master index of all passwords and secrets (Dokploy, GitHub, Zulip, Brevo, SSH, Cloudflare) and which file holds each |
 | **SERVER-ACCESS.md** | Complete server access guide with all credentials, URLs, and operational information |
 | **DOKPLOY-CREDENTIALS.md** | Quick reference card for Dokploy dashboard login |
 | **DOKPLOY-API-CREDENTIALS-COMPLETE.md** | Complete reference for all Dokploy API keys and application IDs (Updated: Jan 22, 2026) |
+| **ZULIP-CREDENTIALS.md** | Zulip (Seemplify Chat) environment variables and where to set them (Dokploy) |
+| **BREVO-CONFIGURATION.md** | Brevo (Sendinblue) API key, SMTP key, and SMTP settings |
+| **GITHUB-SECRETS-SETUP-GUIDE.md** | How to set GitHub Actions secrets for deployment |
 | **CREDENTIALS-UPDATE-SUMMARY.md** | Summary of latest credential retrieval and updates |
 
 ---

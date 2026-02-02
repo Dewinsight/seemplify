@@ -1668,12 +1668,11 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     );
 
     // Add AI response to chat thread
-    appraisal.chatThread.push({
+    const aiMessage = {
       sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
       message: result.response,
       messageType: 'prompt',
       phase: result.currentPhase,
-      structuredData: result.extractedData,
       aiContext: {
         isAiGenerated: true,
         modelUsed: 'gpt-4.1',
@@ -1681,7 +1680,14 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
         confidence: result.confidence
       },
       createdAt: new Date()
-    });
+    };
+
+    // Only add structuredData if extractedData has a valid type
+    if (result.extractedData && result.extractedData.type && result.extractedData.type !== 'null') {
+      aiMessage.structuredData = result.extractedData;
+    }
+
+    appraisal.chatThread.push(aiMessage);
 
     // Update conversation state
     appraisal.conversationAssessment.currentPhase = result.currentPhase;
@@ -2071,10 +2077,6 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       message: "I've generated your self-assessment report based on our conversation. Please review it below and let me know if you'd like any changes before submitting.",
       messageType: 'report_draft',
       phase: 'review',
-      structuredData: {
-        type: 'report',
-        data: report
-      },
       aiContext: {
         isAiGenerated: true,
         modelUsed: 'gpt-4.1',
