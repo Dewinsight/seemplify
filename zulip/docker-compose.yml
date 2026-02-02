@@ -127,16 +127,8 @@ services:
       - redis
     networks:
       - dokploy-network
-    labels:
-      # Traefik Configuration for HTTPS (SSL termination at Traefik, HTTP to backend)
-      - "traefik.enable=true"
-      - "traefik.http.routers.zulip.rule=Host(`chat.seemplifyai.com`)"
-      - "traefik.http.routers.zulip.entrypoints=websecure"
-      - "traefik.http.routers.zulip.tls=true"
-      - "traefik.http.routers.zulip.tls.certresolver=letsencrypt"
-      - "traefik.http.services.zulip.loadbalancer.server.port=80"
-      - "traefik.http.services.zulip.loadbalancer.server.scheme=http"
-      - "traefik.docker.network=dokploy-network"
+    # Traefik routing is managed via file configuration in /etc/dokploy/traefik/dynamic/zulip-traefik.yml
+    # No labels needed - file config takes precedence
 
 volumes:
   zulip:
