@@ -12,7 +12,7 @@
 import mongoose from 'mongoose'
 import pkg from 'pg'
 const { Pool } = pkg
-import Organization from '../models/Organization.js'
+import { Organization } from '../models/Organization.js'
 
 // Zulip database configuration
 const ZULIP_DB_CONFIG = {
