@@ -89,15 +89,13 @@ export async function createZulipRealm(organization, owner) {
   console.log(`[Zulip Service] Creating realm for organization: ${organization.name}`)
   console.log(`[Zulip Service] Realm string_id: ${realmStringId}`)
   
-  // Create realm via management command (preferred method)
-  // docker exec code-zulip-1 /home/zulip/deployments/current/manage.py create_realm --name "..." --string-id "..."
-  
-  // For now, we'll create the realm record directly in the database
-  const realmId = await createRealmRecord(organization.name, realmStringId)
+  // Create realm via Zulip management command (preferred method)
+  // This handles all user group creation and default setup
+  const realmId = await createRealmViaManagementCommand(organization.name, realmStringId, owner.email)
   
   if (realmId) {
     // Create default streams for the organization
-    await createDefaultStreams(realmId, organization.name, realmStringId)
+    await createDefaultStreamsViaManagementCommand(realmStringId, organization.name)
     
     // Store realm info on the organization document
     organization.zulipRealmId = realmId.toString()
@@ -110,70 +108,84 @@ export async function createZulipRealm(organization, owner) {
   return {
     realmId: realmId,
     realmStringId: realmStringId,
+    chatUrl: `https://chat.seemplifyai.com`,
     name: organization.name
   }
 }
 
 /**
- * Create realm record in database
+ * Create realm via Zulip management command
+ * This is the recommended way as it handles all user groups and default setup
  */
-async function createRealmRecord(name, stringId) {
-  const sql = `
-    INSERT INTO zerver_realm (
-      name, 
-      string_id, 
-      description, 
-      date_created, 
-      icon_url, 
-      avatar_url,
-      invite_required,
-      invite_by_admins_only,
-      name_changes_disabled,
-      email_changes_disabled,
-      password_auth_enabled,
-      dev_auth_enabled,
-      ldap_auth_enabled,
-      oidc_auth_enabled,
-      snipe,
-      allow_message_editing,
-      allow_community_topic_editing,
-      allow_access_control_beta,
-      default_language,
-      default_code_block_language,
-      waiting_period_threshold,
-      digest_weekday,
-      digest_sent_hour,
-      digest_canonical_hour,
-      last_message_full_edit_time,
-      max_message_length,
-      max_file_upload_size_mib,
-      max_avatar_file_size_mib,
-      unrestricted_access_accounts,
-      can_create_accounts,
-      can_create_public_streams,
-      can_create_private_streams,
-      can_create_web_public_streams,
-      message_content_allowed_in_email_notifications,
-      video_chat_provider,
-      waiting_period_ends,
-      default_display_recipient,
-      row_version
-    ) VALUES (
-      $1, $2, $3, NOW(), '', '', true, false, false, false, false, false, false, true, false,
-      true, true, false, 'en', NULL, 1000, 0, 16, 8, 4800, 10000, 100, 10,
-      true, true, true, true, true, true, '', NULL, $4, 1
-    )
-    RETURNING id
-  `
-  
-  const defaultDisplayRecip = stringId.replace(/-/g, ' ').toUpperCase()
+async function createRealmViaManagementCommand(name, stringId, ownerEmail) {
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
   
   try {
-    const result = await executeZulipSQL(sql, [name, stringId, `${name} workspace`, defaultDisplayRecip])
-    return result.rows[0]?.id
+    console.log(`[Zulip Service] Creating realm via management command...`)
+    console.log(`[Zulip Service] Name: ${name}, String ID: ${stringId}, Owner: ${ownerEmail}`)
+    
+    // Execute Zulip's create_realm management command
+    const command = `docker exec code-zulip-1 /home/zulip/deployments/current/manage.py create_realm --string-id "${stringId}" --name "${name}" --owner-email "${ownerEmail}"`
+    
+    console.log(`[Zulip Service] Executing: ${command}`)
+    const { stdout, stderr } = await execAsync(command)
+    
+    if (stdout) console.log(`[Zulip Service] STDOUT:`, stdout)
+    if (stderr) console.log(`[Zulip Service] STDERR:`, stderr)
+    
+    // Query the database to get the realm ID
+    const result = await executeZulipSQL('SELECT id FROM zerver_realm WHERE string_id = $1', [stringId])
+    const realmId = result.rows[0]?.id
+    
+    if (!realmId) {
+      throw new Error('Realm created but ID not found in database')
+    }
+    
+    console.log(`[Zulip Service] ✅ Realm created successfully with ID: ${realmId}`)
+    return realmId
   } catch (error) {
-    console.error('[Zulip Service] Error creating realm record:', error)
+    console.error('[Zulip Service] Error creating realm via management command:', error)
+    console.error('[Zulip Service] Error details:', error.message)
+    if (error.stderr) console.error('[Zulip Service] Command stderr:', error.stderr)
     throw error
+  }
+}
+
+/**
+ * Create default streams via management command
+ */
+async function createDefaultStreamsViaManagementCommand(realmStringId, orgName) {
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
+  
+  const defaultStreams = [
+    `${orgName} General`,
+    `${orgName} Announcements`,
+    `${orgName} Help`
+  ]
+  
+  try {
+    for (const streamName of defaultStreams) {
+      const command = `docker exec code-zulip-1 /home/zulip/deployments/current/manage.py create_stream --realm "${realmStringId}" --name "${streamName}"`
+      console.log(`[Zulip Service] Creating stream: ${streamName}`)
+      
+      try {
+        const { stdout, stderr } = await execAsync(command)
+        if (stdout) console.log(`[Zulip Service] Stream STDOUT:`, stdout)
+        if (stderr) console.log(`[Zulip Service] Stream STDERR:`, stderr)
+      } catch (streamError) {
+        console.error(`[Zulip Service] Failed to create stream ${streamName}:`, streamError.message)
+        // Continue with other streams even if one fails
+      }
+    }
+    
+    console.log(`[Zulip Service] ✅ Default streams created for realm ${realmStringId}`)
+  } catch (error) {
+    console.error('[Zulip Service] Error creating default streams:', error)
+    // Don't throw - stream creation is not critical
   }
 }
 
@@ -197,43 +209,42 @@ async function createDefaultStreams(realmId, orgName, realmStringId) {
 
 /**
  * Create a single stream in Zulip
+ * Note: Uses default group ID (1) for permissions which should exist in any Zulip installation
  */
 async function createStream(realmId, name, description, realmStringId) {
+  const defaultGroupId = 1 // Default group in Zulip
+  
   const sql = `
     INSERT INTO zerver_stream (
       name,
       description,
+      rendered_description,
       date_created,
-      realm,
+      deactivated,
+      realm_id,
       invite_only,
       history_public_to_subscribers,
-      history_public_to_domain,
       is_web_public,
-      stream_post_policy,
-      first_message_id,
-      announce,
-      color,
-      audible_notifications,
-      mobile_notifications,
-      email_notifications,
-      wildcard_mentions_notify,
-      default_language,
-      rendered_description,
-      is_muted,
-      can_subscribers_access,
-      can_administer_channel,
-      can_manage_subscribers,
-      policy_prefix,
-      name_changes_disabled
+      is_in_zephyr_realm,
+      can_remove_subscribers_group_id,
+      can_administer_channel_group_id,
+      can_send_message_group_id,
+      can_add_subscribers_group_id,
+      can_subscribe_group_id,
+      topics_policy,
+      can_move_messages_within_channel_group_id,
+      can_move_messages_out_of_channel_group_id,
+      can_resolve_topics_group_id,
+      can_delete_any_message_group_id,
+      can_delete_own_message_group_id
     ) VALUES (
-      $1, $2, NOW(), $3, false, false, false, false, 1, NULL, false, '#76ce90',
-      false, false, false, false, NULL, $4, false, true, false, true, NULL, false
+      $1, $2, $3, NOW(), false, $4, false, true, false, false, $5, $5, $5, $5, $5, 1, $5, $5, $5, $5, $5
     )
     RETURNING id
   `
   
   try {
-    const result = await executeZulipSQL(sql, [name, description, realmId, description])
+    const result = await executeZulipSQL(sql, [name, description, description, realmId, defaultGroupId])
     const streamId = result.rows[0]?.id
     
     if (streamId) {
