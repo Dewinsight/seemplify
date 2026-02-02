@@ -10,6 +10,8 @@
  */
 
 import mongoose from 'mongoose'
+import pkg from 'pg'
+const { Pool } = pkg
 
 // Zulip database configuration
 const ZULIP_DB_CONFIG = {
@@ -18,6 +20,19 @@ const ZULIP_DB_CONFIG = {
   user: process.env.ZULIP_DB_USER || 'zulip',
   password: process.env.ZULIP_DB_PASSWORD || 'SeemplifyZulipDB2026!',
   database: process.env.ZULIP_DB_NAME || 'zulip'
+}
+
+// Create PostgreSQL connection pool
+let zulipPool = null
+
+function getZulipPool() {
+  if (!zulipPool) {
+    zulipPool = new Pool(ZULIP_DB_CONFIG)
+    zulipPool.on('error', (err) => {
+      console.error('[Zulip Service] Unexpected error on idle PostgreSQL client:', err)
+    })
+  }
+  return zulipPool
 }
 
 /**
@@ -39,17 +54,20 @@ function generateRealmStringId(organizationName) {
 
 /**
  * Execute raw SQL on Zulip database
- * Uses docker exec for server-side execution
+ * Connects directly to Zulip PostgreSQL database
  */
 async function executeZulipSQL(sql, params = []) {
-  // Note: In production, this would connect directly to PostgreSQL
-  // For now, we return a mock result for development
-  // In production, use: pg.connect(ZULIP_DB_CONFIG, ...)
+  const pool = getZulipPool()
   
-  console.log('[Zulip Service] Would execute SQL:', sql.substring(0, 100), '...')
-  
-  // Return a mock successful result
-  return { rows: [], rowCount: 0 }
+  try {
+    console.log('[Zulip Service] Executing SQL:', sql.substring(0, 100), '...')
+    const result = await pool.query(sql, params)
+    console.log(`[Zulip Service] SQL executed successfully. Rows affected: ${result.rowCount}`)
+    return result
+  } catch (error) {
+    console.error('[Zulip Service] Error executing SQL:', error.message)
+    throw error
+  }
 }
 
 /**
@@ -155,8 +173,7 @@ async function createRealmRecord(name, stringId) {
     return result.rows[0]?.id
   } catch (error) {
     console.error('[Zulip Service] Error creating realm record:', error)
-    // Return a mock ID for development
-    return Math.floor(Math.random() * 100) + 10
+    throw error
   }
 }
 
