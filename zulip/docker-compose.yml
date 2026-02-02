@@ -13,6 +13,7 @@ services:
       - "postgresql-14:/var/lib/postgresql/data:rw"
     networks:
       - zulip-internal
+      - dokploy-network
 
   memcached:
     image: "memcached:alpine"

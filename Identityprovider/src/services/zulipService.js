@@ -10,16 +10,29 @@
  */
 
 import mongoose from 'mongoose'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-
-const execAsync = promisify(exec)
+import pkg from 'pg'
+const { Pool } = pkg
 
 // Zulip database configuration
 const ZULIP_DB_CONFIG = {
-  containerName: process.env.ZULIP_DB_CONTAINER || 'code-database-1',
+  host: process.env.ZULIP_DB_HOST || 'code-database-1',
+  port: process.env.ZULIP_DB_PORT || 5432,
   user: process.env.ZULIP_DB_USER || 'zulip',
+  password: process.env.ZULIP_DB_PASSWORD || 'SeemplifyZulipDB2026!',
   database: process.env.ZULIP_DB_NAME || 'zulip'
+}
+
+// Create PostgreSQL connection pool
+let zulipPool = null
+
+function getZulipPool() {
+  if (!zulipPool) {
+    zulipPool = new Pool(ZULIP_DB_CONFIG)
+    zulipPool.on('error', (err) => {
+      console.error('[Zulip Service] Unexpected error on idle PostgreSQL client:', err)
+    })
+  }
+  return zulipPool
 }
 
 /**
@@ -40,42 +53,17 @@ function generateRealmStringId(organizationName) {
 }
 
 /**
- * Execute raw SQL on Zulip database via docker exec
- * Uses docker exec to run psql commands on the Zulip PostgreSQL container
+ * Execute raw SQL on Zulip database
+ * Connects directly to Zulip PostgreSQL database (now in dokploy-network)
  */
 async function executeZulipSQL(sql, params = []) {
+  const pool = getZulipPool()
+  
   try {
-    // Escape SQL for shell execution
-    const escapedSQL = sql.replace(/'/g, "''")
-    
-    // Replace $1, $2, etc. with actual param values
-    let finalSQL = sql
-    params.forEach((param, index) => {
-      const placeholder = `$${index + 1}`
-      const escapedParam = String(param).replace(/'/g, "''")
-      finalSQL = finalSQL.replace(placeholder, `'${escapedParam}'`)
-    })
-    
-    console.log('[Zulip Service] Executing SQL via docker exec')
-    
-    const command = `docker exec ${ZULIP_DB_CONFIG.containerName} psql -U ${ZULIP_DB_CONFIG.user} -d ${ZULIP_DB_CONFIG.database} -t -c "${finalSQL}"`
-    
-    const { stdout, stderr } = await execAsync(command)
-    
-    if (stderr && !stderr.includes('NOTICE')) {
-      console.error('[Zulip Service] SQL stderr:', stderr)
-    }
-    
-    console.log(`[Zulip Service] SQL executed successfully`)
-    
-    // Parse the output to extract result
-    const lines = stdout.trim().split('\n').filter(line => line.trim())
-    const rows = lines.map(line => {
-      const values = line.trim().split('|').map(v => v.trim())
-      return { id: values[0] }
-    })
-    
-    return { rows, rowCount: rows.length }
+    console.log('[Zulip Service] Executing SQL:', sql.substring(0, 100), '...')
+    const result = await pool.query(sql, params)
+    console.log(`[Zulip Service] SQL executed successfully. Rows affected: ${result.rowCount}`)
+    return result
   } catch (error) {
     console.error('[Zulip Service] Error executing SQL:', error.message)
     throw error
