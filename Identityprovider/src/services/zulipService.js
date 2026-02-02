@@ -261,30 +261,33 @@ async function createRealmWithGroups(name, stringId) {
 }
 
 /**
- * Create default streams via management command
+ * Create default streams via direct PostgreSQL
  */
 async function createDefaultStreamsViaManagementCommand(realmStringId, orgName) {
-  const { exec } = await import('child_process')
-  const { promisify } = await import('util')
-  const execAsync = promisify(exec)
+  // Get realm ID from string_id
+  const realmResult = await executeZulipSQL('SELECT id FROM zerver_realm WHERE string_id = $1', [realmStringId])
+  const realmId = realmResult.rows[0]?.id
+  
+  if (!realmId) {
+    console.error(`[Zulip Service] Realm not found for string_id: ${realmStringId}`)
+    return
+  }
   
   const defaultStreams = [
-    `${orgName} General`,
-    `${orgName} Announcements`,
-    `${orgName} Help`
+    { name: `${orgName} General`, description: `General discussion for ${orgName}` },
+    { name: `${orgName} Announcements`, description: `Important announcements for ${orgName}` },
+    { name: `${orgName} Help`, description: 'Get help with using the platform' }
   ]
   
   try {
-    for (const streamName of defaultStreams) {
-      const command = `docker exec code-zulip-1 /home/zulip/deployments/current/manage.py create_stream --realm "${realmStringId}" --name "${streamName}"`
-      console.log(`[Zulip Service] Creating stream: ${streamName}`)
+    for (const stream of defaultStreams) {
+      console.log(`[Zulip Service] Creating stream: ${stream.name}`)
       
       try {
-        const { stdout, stderr } = await execAsync(command)
-        if (stdout) console.log(`[Zulip Service] Stream STDOUT:`, stdout)
-        if (stderr) console.log(`[Zulip Service] Stream STDERR:`, stderr)
+        await createStream(realmId, stream.name, stream.description, realmStringId)
+        console.log(`[Zulip Service] ✅ Stream created: ${stream.name}`)
       } catch (streamError) {
-        console.error(`[Zulip Service] Failed to create stream ${streamName}:`, streamError.message)
+        console.error(`[Zulip Service] Failed to create stream ${stream.name}:`, streamError.message)
         // Continue with other streams even if one fails
       }
     }
@@ -316,42 +319,52 @@ async function createDefaultStreams(realmId, orgName, realmStringId) {
 
 /**
  * Create a single stream in Zulip
- * Note: Uses default group ID (1) for permissions which should exist in any Zulip installation
+ * Gets the default user group from the realm for permissions
  */
 async function createStream(realmId, name, description, realmStringId) {
-  const defaultGroupId = 1 // Default group in Zulip
-  
-  const sql = `
-    INSERT INTO zerver_stream (
-      name,
-      description,
-      rendered_description,
-      date_created,
-      deactivated,
-      realm_id,
-      invite_only,
-      history_public_to_subscribers,
-      is_web_public,
-      is_in_zephyr_realm,
-      can_remove_subscribers_group_id,
-      can_administer_channel_group_id,
-      can_send_message_group_id,
-      can_add_subscribers_group_id,
-      can_subscribe_group_id,
-      topics_policy,
-      can_move_messages_within_channel_group_id,
-      can_move_messages_out_of_channel_group_id,
-      can_resolve_topics_group_id,
-      can_delete_any_message_group_id,
-      can_delete_own_message_group_id
-    ) VALUES (
-      $1, $2, $3, NOW(), false, $4, false, true, false, false, $5, $5, $5, $5, $5, 1, $5, $5, $5, $5, $5
-    )
-    RETURNING id
-  `
-  
   try {
-    const result = await executeZulipSQL(sql, [name, description, description, realmId, defaultGroupId])
+    // Get the realm's default user group
+    const groupResult = await executeZulipSQL(
+      'SELECT id FROM zerver_usergroup WHERE realm_id = $1 LIMIT 1',
+      [realmId]
+    )
+    const groupId = groupResult.rows[0]?.id
+    
+    if (!groupId) {
+      console.error(`[Zulip Service] No user group found for realm ${realmId}`)
+      throw new Error(`No user group found for realm ${realmId}`)
+    }
+    
+    const sql = `
+      INSERT INTO zerver_stream (
+        name,
+        description,
+        rendered_description,
+        date_created,
+        deactivated,
+        realm_id,
+        invite_only,
+        history_public_to_subscribers,
+        is_web_public,
+        is_in_zephyr_realm,
+        can_remove_subscribers_group_id,
+        can_administer_channel_group_id,
+        can_send_message_group_id,
+        can_add_subscribers_group_id,
+        can_subscribe_group_id,
+        topics_policy,
+        can_move_messages_within_channel_group_id,
+        can_move_messages_out_of_channel_group_id,
+        can_resolve_topics_group_id,
+        can_delete_any_message_group_id,
+        can_delete_own_message_group_id
+      ) VALUES (
+        $1, $2, $3, NOW(), false, $4, false, true, false, false, $5, $5, $5, $5, $5, 1, $5, $5, $5, $5, $5
+      )
+      RETURNING id
+    `
+    
+    const result = await executeZulipSQL(sql, [name, description, description, realmId, groupId])
     const streamId = result.rows[0]?.id
     
     if (streamId) {
@@ -362,7 +375,7 @@ async function createStream(realmId, name, description, realmStringId) {
     return streamId
   } catch (error) {
     console.error('[Zulip Service] Error creating stream:', error)
-    return null
+    throw error
   }
 }
 
