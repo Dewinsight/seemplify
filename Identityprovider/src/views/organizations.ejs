@@ -184,7 +184,9 @@
       const listContainer = document.getElementById('invitationsList');
 
       try {
-        const response = await fetch('/api/invitations/pending');
+        const response = await fetch('/api/invitations/pending', {
+          credentials: 'same-origin' // Include session cookies
+        });
         if (!response.ok) throw new Error('Failed to load invitations');
 
         const invitations = await response.json();
@@ -243,7 +245,8 @@
       try {
         const response = await fetch(`/api/invitations/accept/${inviteId}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -266,7 +269,8 @@
       try {
         const response = await fetch(`/api/invitations/${inviteId}/reject`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -288,7 +292,8 @@
 
       try {
         const response = await fetch(`/api/organizations/${orgId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -313,6 +318,7 @@
         const response = await fetch('/api/organizations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', // Include session cookies
           body: JSON.stringify({
             name: formData.get('name'),
             description: formData.get('description')
