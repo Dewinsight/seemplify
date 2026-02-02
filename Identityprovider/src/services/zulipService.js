@@ -381,22 +381,32 @@ async function createStream(realmId, name, description, realmStringId) {
 
 /**
  * Create recipient record for a stream
+ * Note: zerver_recipient only has (id, type, type_id) - no realm_id
  */
 async function createStreamRecipient(realmId, streamId, type) {
   const sql = `
     INSERT INTO zerver_recipient (
-      realm_id,
       type,
       type_id
     ) VALUES (
-      $1, $2, $3
+      $1, $2
     )
     RETURNING id
   `
   
   try {
-    const result = await executeZulipSQL(sql, [realmId, type, streamId])
-    return result.rows[0]?.id
+    const result = await executeZulipSQL(sql, [type, streamId])
+    const recipientId = result.rows[0]?.id
+    
+    if (recipientId) {
+      // Update the stream with the recipient_id
+      await executeZulipSQL(
+        'UPDATE zerver_stream SET recipient_id = $1 WHERE id = $2',
+        [recipientId, streamId]
+      )
+    }
+    
+    return recipientId
   } catch (error) {
     console.error('[Zulip Service] Error creating stream recipient:', error)
     return null
