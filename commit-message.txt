@@ -1,0 +1,9 @@
+fix(idp): Enable real PostgreSQL connection for Zulip realm provisioning
+
+- Add pg package dependency for PostgreSQL connection
+- Replace mock executeZulipSQL with real PostgreSQL query execution
+- Create connection pool to Zulip database
+- Enable actual realm creation instead of logging "Would execute"
+
+This fixes the issue where organizations created in IDP weren't being
+provisioned in Zulip's database, causing "sign up again" prompts.
