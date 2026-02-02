@@ -12,6 +12,7 @@
 import mongoose from 'mongoose'
 import pkg from 'pg'
 const { Pool } = pkg
+import Organization from '../models/Organization.js'
 
 // Zulip database configuration
 const ZULIP_DB_CONFIG = {
@@ -98,9 +99,22 @@ export async function createZulipRealm(organization, owner) {
     await createDefaultStreamsViaManagementCommand(realmStringId, organization.name)
     
     // Store realm info on the organization document
-    organization.zulipRealmId = realmId.toString()
-    organization.zulipRealmName = realmStringId
-    await organization.save()
+    try {
+      await Organization.updateOne(
+        { _id: organization._id },
+        {
+          $set: {
+            zulipRealmId: realmId,
+            zulipRealmStringId: realmStringId,
+            updatedAt: new Date()
+          }
+        }
+      )
+      console.log(`[Zulip Service] ✅ Saved realm info to organization document`)
+    } catch (saveError) {
+      console.error('[Zulip Service] ⚠️  Failed to save realm info to organization:', saveError.message)
+      // Don't throw - realm was created successfully, just log the error
+    }
     
     console.log(`[Zulip Service] Successfully created realm ${realmId} for ${organization.name}`)
   }
