@@ -599,10 +599,53 @@ a:hover {
 
 [data-theme='dark'] .data-table tbody tr {
   background: rgba(255, 255, 255, 0.03);
-  /* Glassy dark row */
-  color: white;
   box-shadow: none;
+  border-color: transparent;
 }
+
+[data-theme='dark'] .data-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* Mobile Table Responsiveness */
+.table-scroll-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* smooth scroll on iOS */
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  /* Optional rounded corners */
+}
+
+/* Ensure table has a min-width to force scrolling instead of crushing columns */
+.table-min-width {
+  min-width: 800px;
+}
+
+/* Mobile Stack Utility */
+@media (max-width: 768px) {
+  .mobile-stack {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 1rem !important;
+  }
+
+  .mobile-stack>* {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  /* Buttons in mobile stack should be full width */
+  .mobile-stack button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+
 
 [data-theme='dark'] .data-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.06);

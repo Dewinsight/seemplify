@@ -332,27 +332,29 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
 
     return (
         <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h2 style={{ margin: 0 }}>AI Initiative Intake</h2>
+            <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.8rem' }}>AI Initiative Intake</h2>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div className="mobile-stack" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     {activeTab === 'view' && (
                         <button onClick={handleDownload} style={{
                             background: 'var(--sterling-dark)', color: 'white', border: '1px solid var(--glass-border)',
-                            padding: '0.6rem 1.2rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+                            padding: '0.6rem 1.2rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
+                            whiteSpace: 'nowrap'
                         }}>
                             Download CSV
                         </button>
                     )}
-                    <div style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
+                    <div className="mobile-stack" style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
                         <button
                             onClick={() => setActiveTab('view')}
                             style={{
                                 background: activeTab === 'view' ? 'var(--brand-primary)' : 'transparent',
                                 color: activeTab === 'view' ? 'white' : 'var(--text-primary)',
                                 border: 'none', padding: '0.6rem 1.2rem',
-                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s',
+                                flex: 1
                             }}
                         >
                             View All Initiatives
@@ -363,7 +365,8 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 background: activeTab === 'new' ? 'var(--brand-primary)' : 'transparent',
                                 color: activeTab === 'new' ? 'white' : 'var(--text-primary)',
                                 border: 'none', padding: '0.6rem 1.2rem',
-                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s',
+                                flex: 1
                             }}
                         >
                             + New Initiative
@@ -375,24 +378,25 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             {activeTab === 'view' ? (
                 <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
                     {/* Search Bar */}
-                    <div style={{ padding: '1rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="mobile-stack" style={{ padding: '1rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                         <input
                             type="text"
-                            placeholder="🔍 Search by name, requester, department, or status..."
+                            placeholder="🔍 Search projects..."
                             value={searchQuery}
                             onChange={(e) => handleSearchChange(e.target.value)}
                             style={{
                                 flex: 1,
-                                maxWidth: '400px',
+                                width: '100%',
+                                minWidth: '200px',
                                 padding: '0.6rem 1rem',
                                 borderRadius: '6px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'var(--glass-border)', /* Subtle tint instead of hardcoded */
+                                background: 'var(--glass-border)',
                                 color: 'var(--text-primary)',
                                 fontSize: '0.9rem'
                             }}
                         />
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                             {filteredProjects.length} project{filteredProjects.length !== 1 ? 's' : ''} found
                         </span>
                     </div>

@@ -107,8 +107,16 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
         {/* Logo */}
-        <div className="sidebar-logo">
+        {/* Logo & Close Button Row */}
+        <div className="sidebar-logo" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Logo />
+          <button
+            className="show-mobile"
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.5rem', cursor: 'pointer', padding: '0.5rem' }}
+          >
+            ✕
+          </button>
         </div>
 
         {/* Navigation */}
