@@ -152,7 +152,7 @@ const Rules: React.FC = () => {
                                     value={form.name}
                                     onChange={e => setForm({ ...form, name: e.target.value })}
                                     required
-                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
+                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
                                 />
                             </div>
 
@@ -161,7 +161,7 @@ const Rules: React.FC = () => {
                                 <select
                                     value={form.category}
                                     onChange={e => setForm({ ...form, category: e.target.value })}
-                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.3)', color: 'white' }}
+                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
                                 >
                                     {Object.keys(CATEGORY_ICONS).map(cat => (
                                         <option key={cat} value={cat}>{CATEGORY_ICONS[cat]} {cat}</option>
@@ -177,7 +177,7 @@ const Rules: React.FC = () => {
                                     onChange={e => setForm({ ...form, criteria: e.target.value })}
                                     required
                                     rows={4}
-                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white', resize: 'vertical' }}
+                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', resize: 'vertical' }}
                                 />
                             </div>
 
@@ -216,7 +216,7 @@ const Rules: React.FC = () => {
 
                 <div style={{ flex: 1, minWidth: '300px' }}>
                     <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
-                        <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--glass-border)' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)' }}>
                             <h3 style={{ margin: 0 }}>Active Rules Library ({rules.length})</h3>
                         </div>
 
