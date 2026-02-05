@@ -122,9 +122,9 @@ const Rules: React.FC = () => {
                 )}
             </div>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', alignItems: 'start' }}>
+            <div className="rules-container">
                 {canEdit && (
-                    <div className="glass-panel" style={{ flex: '0 0 320px', minWidth: '300px', position: 'sticky', top: '2rem' }}>
+                    <div className="glass-panel rules-sidebar">
                         <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
                             + New Rule
                         </h3>
@@ -157,7 +157,7 @@ const Rules: React.FC = () => {
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Category</label>
+                                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>Category</label>
                                 <select
                                     value={form.category}
                                     onChange={e => setForm({ ...form, category: e.target.value })}
@@ -170,7 +170,7 @@ const Rules: React.FC = () => {
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Criteria Prompt</label>
+                                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>Criteria Prompt</label>
                                 <textarea
                                     placeholder="Describe what the AI should check for..."
                                     value={form.criteria}
@@ -183,7 +183,7 @@ const Rules: React.FC = () => {
 
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
                                 <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Weight (1-10)</label>
+                                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>Weight (1-10)</label>
                                     <input
                                         type="number"
                                         min={1}

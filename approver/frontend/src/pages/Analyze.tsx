@@ -345,12 +345,13 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             Download CSV
                         </button>
                     )}
-                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px' }}>
+                    <div style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
                         <button
                             onClick={() => setActiveTab('view')}
                             style={{
-                                background: activeTab === 'view' ? 'var(--sterling-red)' : 'transparent',
-                                color: 'white', border: 'none', padding: '0.6rem 1.2rem',
+                                background: activeTab === 'view' ? 'var(--brand-primary)' : 'transparent',
+                                color: activeTab === 'view' ? 'white' : 'var(--text-primary)',
+                                border: 'none', padding: '0.6rem 1.2rem',
                                 borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                             }}
                         >
@@ -359,8 +360,9 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                         <button
                             onClick={() => setActiveTab('new')}
                             style={{
-                                background: activeTab === 'new' ? 'var(--sterling-red)' : 'transparent',
-                                color: 'white', border: 'none', padding: '0.6rem 1.2rem',
+                                background: activeTab === 'new' ? 'var(--brand-primary)' : 'transparent',
+                                color: activeTab === 'new' ? 'white' : 'var(--text-primary)',
+                                border: 'none', padding: '0.6rem 1.2rem',
                                 borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                             }}
                         >
@@ -395,8 +397,8 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                         </span>
                     </div>
 
-                    <div style={{ overflowX: 'auto', paddingBottom: '1rem' }}>
-                        <table className="data-table">
+                    <div className="table-scroll-container">
+                        <table className="data-table table-min-width">
                             <thead>
                                 <tr>
                                     <th onClick={() => handleSort('name')} className={sortConfig?.key === 'name' ? 'sort-active' : ''}>

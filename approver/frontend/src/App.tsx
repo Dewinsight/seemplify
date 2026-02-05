@@ -51,20 +51,22 @@ const MenuIcon = () => (
 );
 
 const Logo = () => (
-  <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0', textDecoration: 'none' }}>
-    <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1.4rem', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>STERLING</span>
-    <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: '1.4rem', color: 'var(--logo-secondary)', letterSpacing: '-0.5px', marginLeft: '0.3rem' }}>APPR</span>
-    <svg viewBox="0 0 30 38" style={{ height: '1.2rem', margin: '0 -1px' }}>
+  <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <rect x="4" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" />
+      <rect x="18" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
+      <rect x="4" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
+      <rect x="18" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.6" />
       <defs>
-        <linearGradient id="shieldGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#E1A777" />
-          <stop offset="100%" stopColor="#D63637" />
+        <linearGradient id="mosaicGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#9B51E0" />
+          <stop offset="100%" stopColor="#7B3FC0" />
         </linearGradient>
       </defs>
-      <path fill="url(#shieldGrad)" d="M15 0 C7 0 2 5 2 15 C2 28 15 38 15 38 C15 38 28 28 28 15 C28 5 23 0 15 0 Z" />
-      <path fill="white" d="M9 18 L13 22 L22 11 L25 14 L13 27 L6 20 Z" />
     </svg>
-    <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: '1.4rem', color: 'var(--logo-secondary)', letterSpacing: '-0.5px' }}>VER</span>
+    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+      <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1.5rem', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>MOSAIC</span>
+    </div>
   </Link>
 );
 
@@ -128,7 +130,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
         <div className="sidebar-footer">
           {/* User Info */}
           <Link to="/profile" onClick={handleNavClick} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', color: 'inherit', marginBottom: '1rem' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--sterling-red)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>
               {user.username?.charAt(0).toUpperCase()}
             </div>
             <div style={{ flex: 1, lineHeight: 1.2 }}>
@@ -178,7 +180,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
             <button onClick={logout}
-              style={{ flex: 2, background: 'var(--sterling-red)', border: 'none', borderRadius: '8px', padding: '0.6rem', color: 'white', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
+              style={{ flex: 2, background: 'var(--brand-primary)', border: 'none', borderRadius: '8px', padding: '0.6rem', color: 'white', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
               Logout
             </button>
           </div>

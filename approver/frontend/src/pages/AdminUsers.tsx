@@ -156,13 +156,14 @@ const AdminUsers: React.FC = () => {
                 <h2 style={{ margin: 0 }}>⚙️ Organization Settings</h2>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px' }}>
+                <div style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
                     <button
                         onClick={() => setActiveTab('users')}
                         style={{
-                            background: activeTab === 'users' ? 'var(--sterling-red)' : 'transparent',
-                            color: 'white', border: 'none', padding: '0.6rem 1.2rem',
-                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+                            background: activeTab === 'users' ? 'var(--brand-primary)' : 'transparent',
+                            color: activeTab === 'users' ? 'white' : 'var(--text-primary)',
+                            border: 'none', padding: '0.6rem 1.2rem',
+                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                         }}
                     >
                         Users
@@ -170,9 +171,10 @@ const AdminUsers: React.FC = () => {
                     <button
                         onClick={() => setActiveTab('departments')}
                         style={{
-                            background: activeTab === 'departments' ? 'var(--sterling-red)' : 'transparent',
-                            color: 'white', border: 'none', padding: '0.6rem 1.2rem',
-                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+                            background: activeTab === 'departments' ? 'var(--brand-primary)' : 'transparent',
+                            color: activeTab === 'departments' ? 'white' : 'var(--text-primary)',
+                            border: 'none', padding: '0.6rem 1.2rem',
+                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
                         }}
                     >
                         Departments
@@ -183,27 +185,27 @@ const AdminUsers: React.FC = () => {
             {/* Content Area */}
             {activeTab === 'users' ? (
                 <div className="glass-panel">
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <div className="table-scroll-container">
+                        <table className="data-table table-min-width">
                             <thead>
-                                <tr style={{ borderBottom: '2px solid var(--glass-border)' }}>
-                                    <th style={{ padding: '1rem', textAlign: 'left' }}>User</th>
-                                    <th style={{ padding: '1rem', textAlign: 'left' }}>Global Admin</th>
-                                    <th style={{ padding: '1rem', textAlign: 'left' }}>Department Permissions</th>
-                                    <th style={{ padding: '1rem', textAlign: 'right' }}>Actions</th>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Global Admin</th>
+                                    <th>Department Permissions</th>
+                                    <th style={{ textAlign: 'right' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {users.map(user => (
-                                    <tr key={user._id} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                                        <td style={{ padding: '1rem' }}>
+                                    <tr key={user._id}>
+                                        <td>
                                             <div style={{ fontWeight: 'bold' }}>{user.username}</div>
                                             <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{user.email}</div>
                                         </td>
-                                        <td style={{ padding: '1rem' }}>
+                                        <td>
                                             {user.isAdmin ? <span style={{ color: 'var(--sterling-red)', fontWeight: 'bold' }}>YES</span> : <span style={{ opacity: 0.3 }}>-</span>}
                                         </td>
-                                        <td style={{ padding: '1rem' }}>
+                                        <td>
                                             {user.isAdmin ? <span style={{ opacity: 0.7 }}>All Access</span> : (
                                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                                                     {user.permissions?.length > 0 ? user.permissions.map((p, i) => {
@@ -218,7 +220,7 @@ const AdminUsers: React.FC = () => {
                                                 </div>
                                             )}
                                         </td>
-                                        <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                        <td style={{ textAlign: 'right' }}>
                                             <button className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleEditClick(user)}>
                                                 Manage
                                             </button>
@@ -233,7 +235,7 @@ const AdminUsers: React.FC = () => {
                 <>
                     <div className="glass-panel" style={{ marginBottom: '2rem' }}>
                         <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Add New Department</h3>
-                        <form onSubmit={handleCreateDept} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: '1.5rem', alignItems: 'end' }}>
+                        <form onSubmit={handleCreateDept} className="dept-form-grid">
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Department Name</label>
                                 <input
@@ -255,7 +257,7 @@ const AdminUsers: React.FC = () => {
                             </div>
                             <button
                                 type="submit"
-                                className="btn-primary"
+                                className="btn-primary btn-full-mobile"
                                 disabled={deptLoading}
                                 style={{ padding: '0.75rem 2rem', height: 'fit-content' }}
                             >
@@ -266,38 +268,44 @@ const AdminUsers: React.FC = () => {
 
                     <div className="glass-panel">
                         <h3 style={{ marginBottom: '1rem' }}>Existing Departments</h3>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
-                            <thead>
-                                <tr style={{ background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--glass-border)' }}>
-                                    <th style={{ padding: '1rem', textAlign: 'left' }}>Name</th>
-                                    <th style={{ padding: '1rem', textAlign: 'left' }}>Description</th>
-                                    <th style={{ padding: '1rem', textAlign: 'right' }}>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {departments.slice(deptPage * 5, (deptPage + 1) * 5).map(dept => (
-                                    <tr key={dept._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                        <td style={{ padding: '1rem', fontWeight: 600 }}>{dept.name}</td>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{dept.description}</td>
-                                        <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                            {dept.name !== 'General' && (
-                                                <button
-                                                    onClick={() => handleDeleteDept(dept._id)}
-                                                    style={{ background: 'rgba(244, 67, 54, 0.1)', border: '1px solid rgba(244, 67, 54, 0.3)', color: '#f44336', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
-                                                >
-                                                    Delete
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {departments.length === 0 && (
-                                    <tr>
-                                        <td colSpan={3} style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No departments found</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                        <div className="dept-card-grid" style={{ marginBottom: '1.5rem' }}>
+                            {departments.slice(deptPage * 5, (deptPage + 1) * 5).map(dept => (
+                                <div key={dept._id} style={{
+                                    padding: '1.5rem',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    borderRadius: '12px',
+                                    border: '1px solid var(--glass-border)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '1rem',
+                                    position: 'relative'
+                                }}>
+                                    <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--sterling-gold)' }}>{dept.name}</div>
+                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', flex: 1 }}>{dept.description}</div>
+
+                                    {dept.name !== 'General' && (
+                                        <button
+                                            onClick={() => handleDeleteDept(dept._id)}
+                                            style={{
+                                                alignSelf: 'flex-start',
+                                                background: 'rgba(244, 67, 54, 0.1)',
+                                                border: '1px solid rgba(244, 67, 54, 0.3)',
+                                                color: '#f44336',
+                                                padding: '0.4rem 0.8rem',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem'
+                                            }}
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        {departments.length === 0 && (
+                            <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No departments found</div>
+                        )}
 
                         {/* Pagination Controls */}
                         {departments.length > 5 && (
