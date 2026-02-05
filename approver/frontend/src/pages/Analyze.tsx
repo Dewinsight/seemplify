@@ -331,7 +331,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
     };
 
     return (
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '100%', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <h2 style={{ margin: 0 }}>AI Initiative Intake</h2>
 
@@ -375,7 +375,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             {activeTab === 'view' ? (
                 <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
                     {/* Search Bar */}
-                    <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ padding: '1rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <input
                             type="text"
                             placeholder="🔍 Search by name, requester, department, or status..."
@@ -387,8 +387,8 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 padding: '0.6rem 1rem',
                                 borderRadius: '6px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.05)',
-                                color: 'white',
+                                background: 'var(--glass-border)', /* Subtle tint instead of hardcoded */
+                                color: 'var(--text-primary)',
                                 fontSize: '0.9rem'
                             }}
                         />

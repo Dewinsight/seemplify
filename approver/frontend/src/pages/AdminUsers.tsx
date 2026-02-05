@@ -234,7 +234,7 @@ const AdminUsers: React.FC = () => {
             ) : (
                 <>
                     <div className="glass-panel" style={{ marginBottom: '2rem' }}>
-                        <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Add New Department</h3>
+                        <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', color: 'var(--text-primary)' }}>Add New Department</h3>
                         <form onSubmit={handleCreateDept} className="dept-form-grid">
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Department Name</label>
@@ -243,7 +243,7 @@ const AdminUsers: React.FC = () => {
                                     onChange={e => setDeptForm({ ...deptForm, name: e.target.value })}
                                     placeholder="e.g. Finance"
                                     required
-                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '6px' }}
+                                    style={{ width: '100%', padding: '0.75rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', borderRadius: '6px' }}
                                 />
                             </div>
                             <div>

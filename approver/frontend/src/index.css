@@ -558,13 +558,15 @@ a:hover {
 .data-table thead th {
   padding: 1rem 1.5rem;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   font-size: 0.75rem;
-  letter-spacing: 1px;
+  letter-spacing: 1.2px;
+  background: transparent;
+  /* Remove any grey background */
   border-bottom: 2px solid var(--glass-border);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: all 0.2s;
   user-select: none;
   white-space: nowrap;
 }
@@ -574,26 +576,37 @@ a:hover {
 }
 
 .data-table tbody tr {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(4px);
+  background: white;
+  /* Clean white for light mode */
+  border-radius: 8px;
+  /* Ensure radius is applied */
   transition: all 0.2s ease;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  /* Subtle shadow for depth */
+  border: 1px solid transparent;
 }
 
 .data-table tbody tr:hover {
   transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  background: white;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  /* Stronger hover lift */
   z-index: 10;
   position: relative;
+  border-color: rgba(155, 81, 224, 0.1);
+  /* Subtle purple hint on hover */
 }
 
 [data-theme='dark'] .data-table tbody tr {
-  background: rgba(42, 51, 69, 0.4);
+  background: rgba(255, 255, 255, 0.03);
+  /* Glassy dark row */
+  color: white;
+  box-shadow: none;
 }
 
 [data-theme='dark'] .data-table tbody tr:hover {
-  background: rgba(42, 51, 69, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
 .data-table td {
