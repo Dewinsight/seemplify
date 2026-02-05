@@ -1,19 +1,49 @@
 # Access Credentials & Server Information
 
-This folder contains all access credentials and server information for the Semplify production infrastructure.
+This folder contains all access credentials and server information for the Seemplify production infrastructure.
+
+---
+
+## New: Master Access Guide
+
+**Start here for complete service access documentation:**
+
+**[ACCESS-GUIDE.md](./ACCESS-GUIDE.md)** - Comprehensive guide to accessing all four primary services:
+- Dokploy Dashboard and API
+- Cloudflare DNS Management
+- Azure Virtual Machine (SSH)
+- GitHub Repository and Actions
+
+The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troubleshooting for all services.
+
+---
+
+## Quick Reference
+
+| Service | Where to Find |
+|---------|---------------|
+| Dokploy Dashboard | ACCESS-GUIDE.md Section 1 or DOKPLOY-CREDENTIALS.md |
+| Dokploy API | ACCESS-GUIDE.md Section 1 or DOKPLOY-API-CREDENTIALS-COMPLETE.md |
+| Cloudflare DNS | ACCESS-GUIDE.md Section 2 |
+| Azure VM (SSH) | ACCESS-GUIDE.md Section 3 or SERVER-ACCESS.md |
+| GitHub Repository | ACCESS-GUIDE.md Section 4 or GITHUB-SECRETS-SETUP-GUIDE.md |
+
+---
 
 ## 📁 Files in this Folder
 
-| File | Description |
-|------|-------------|
-| **CREDENTIALS-INDEX.md** | **Start here** – Master index of all passwords and secrets (Dokploy, GitHub, Zulip, Brevo, SSH, Cloudflare) and which file holds each |
-| **SERVER-ACCESS.md** | Complete server access guide with all credentials, URLs, and operational information |
-| **DOKPLOY-CREDENTIALS.md** | Quick reference card for Dokploy dashboard login |
-| **DOKPLOY-API-CREDENTIALS-COMPLETE.md** | Complete reference for all Dokploy API keys and application IDs (Updated: Jan 22, 2026) |
-| **ZULIP-CREDENTIALS.md** | Zulip (Seemplify Chat) environment variables and where to set them (Dokploy) |
-| **BREVO-CONFIGURATION.md** | Brevo (Sendinblue) API key, SMTP key, and SMTP settings |
-| **GITHUB-SECRETS-SETUP-GUIDE.md** | How to set GitHub Actions secrets for deployment |
-| **CREDENTIALS-UPDATE-SUMMARY.md** | Summary of latest credential retrieval and updates |
+|| File | Description |
+||------|-------------|
+|| **CREDENTIALS-INDEX.md** | Master index of all passwords and secrets |
+|| **ACCESS-GUIDE.md** | Comprehensive service access guide (NEW) |
+|| **SERVER-ACCESS.md** | Complete server access guide |
+|| **DOKPLOY-CREDENTIALS.md** | Dokploy dashboard quick login reference |
+|| **DOKPLOY-API-CREDENTIALS-COMPLETE.md** | Dokploy API keys and application IDs |
+|| **ZULIP-CREDENTIALS.md** | Zulip environment variables |
+|| **BREVO-CONFIGURATION.md** | Brevo API and SMTP settings |
+|| **GITHUB-SECRETS-SETUP-GUIDE.md** | GitHub Actions secrets configuration |
+|| **CREDENTIALS-UPDATE-SUMMARY.md** | Credentials update history |
+|| **CLOUDFLARE-API-ISSUE.md** | Cloudflare API troubleshooting |
 
 ---
 
@@ -22,7 +52,7 @@ This folder contains all access credentials and server information for the Sempl
 ### Dokploy Dashboard
 - **URL:** http://4.180.153.209:3000
 - **Email:** admin@seemplifyai.com
-- **Password:** Seemplify2026!
+- **Password:** See DOKPLOY-CREDENTIALS.md
 
 ### SSH Access
 ```bash
@@ -45,6 +75,14 @@ ssh seemplify@4.180.153.209
 
 ## 📋 What's Documented
 
+### ACCESS-GUIDE.md (New)
+Comprehensive guide to accessing all infrastructure services:
+- Dokploy Dashboard and API access
+- Cloudflare DNS management
+- Azure VM SSH access
+- GitHub repository and Actions
+- Quick reference card and troubleshooting
+
 ### SERVER-ACCESS.md
 - Complete infrastructure details
 - All production URLs
@@ -52,7 +90,6 @@ ssh seemplify@4.180.153.209
 - MongoDB database credentials
 - Application port mappings
 - Common operations and troubleshooting
-- CI/CD information
 
 ### DOKPLOY-CREDENTIALS.md
 - Quick login reference
@@ -75,27 +112,12 @@ If you change any credentials:
 ## 📞 Support
 
 For issues accessing the server or applications:
-1. Check SERVER-ACCESS.md troubleshooting section
+
+1. Check ACCESS-GUIDE.md troubleshooting section
 2. Verify credentials are correct
 3. Check if services are running
 4. Review application logs in Dokploy dashboard
 
 ---
 
-**Last Updated:** January 22, 2026
-
-## 🔐 Latest Credentials Update
-
-**Date:** January 22, 2026  
-**Action:** Retrieved and documented all Dokploy API credentials via SSH + PostgreSQL
-
-### What Was Retrieved:
-- ✅ 5 Active API Keys (including GitHub Actions deployment key)
-- ✅ 19 Application IDs (9 production + 9 dev + 1 marketing-site)
-- ✅ Project information
-
-### New Documents:
-- **[DOKPLOY-API-CREDENTIALS-COMPLETE.md](./DOKPLOY-API-CREDENTIALS-COMPLETE.md)** - Full credentials reference
-- **[CREDENTIALS-UPDATE-SUMMARY.md](./CREDENTIALS-UPDATE-SUMMARY.md)** - Update summary
-
-See the new documents for complete API keys, application IDs, and deployment credentials.
+**Last Updated:** February 3, 2026

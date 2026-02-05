@@ -349,17 +349,17 @@ const AdminUsers: React.FC = () => {
                     <div className="glass-panel" style={{ width: '100%', maxWidth: '1200px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1rem' }}>
                             <div>
-                                <h2 style={{ margin: 0, fontSize: '1.8rem' }}>Edit Permissions</h2>
-                                <p style={{ margin: '0.5rem 0 0 0', color: 'var(--text-secondary)', fontSize: '1rem' }}>User: <strong style={{ color: 'white' }}>{editingUser.username}</strong></p>
+                                <h2 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--text-primary)' }}>Edit Permissions</h2>
+                                <p style={{ margin: '0.5rem 0 0 0', color: 'var(--text-secondary)', fontSize: '1rem' }}>User: <strong style={{ color: 'var(--text-primary)' }}>{editingUser.username}</strong></p>
                             </div>
-                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
+                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
                         </div>
 
-                        <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                        <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={editIsAdmin} onChange={e => setEditIsAdmin(e.target.checked)} style={{ width: '1.5rem', height: '1.5rem', accentColor: 'var(--sterling-red)' }} />
                                 <div>
-                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', display: 'block' }}>Global Admin</span>
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', display: 'block', color: 'var(--text-primary)' }}>Global Admin</span>
                                     <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>Grants full access to all departments and system settings.</span>
                                 </div>
                             </label>
@@ -375,16 +375,12 @@ const AdminUsers: React.FC = () => {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
                                     {departments.map(dept => (
-                                        <div key={dept._id} style={{
-                                            padding: '1.5rem',
-                                            background: 'rgba(0,0,0,0.2)',
-                                            borderRadius: '12px',
-                                            border: '1px solid var(--glass-border)',
+                                        <div key={dept._id} className="glass-card" style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '1rem'
                                         }}>
-                                            <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--sterling-gold)' }}>{dept.name}</div>
+                                            <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{dept.name}</div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                                                 {AVAILABLE_ROLES.map(role => (
                                                     <label key={role} style={{
@@ -396,13 +392,14 @@ const AdminUsers: React.FC = () => {
                                                         padding: '0.5rem',
                                                         borderRadius: '6px',
                                                         transition: 'background 0.2s',
-                                                        background: (editPermissions[dept._id] || []).includes(role) ? 'rgba(255,255,255,0.05)' : 'transparent'
+                                                        color: 'var(--text-primary)',
+                                                        background: (editPermissions[dept._id] || []).includes(role) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
                                                     }}>
                                                         <input
                                                             type="checkbox"
                                                             checked={(editPermissions[dept._id] || []).includes(role)}
                                                             onChange={() => handleRoleToggle(dept._id, role)}
-                                                            style={{ width: '1.1rem', height: '1.1rem', accentColor: role === 'ExecutiveApprover' ? 'var(--sterling-red)' : role === 'GovernanceApprover' ? '#ff9800' : 'var(--primary-color)' }}
+                                                            style={{ width: '1.1rem', height: '1.1rem', accentColor: role === 'ExecutiveApprover' ? 'var(--sterling-red)' : role === 'GovernanceApprover' ? '#ff9800' : 'var(--brand-primary)' }}
                                                         />
                                                         <span style={{
                                                             fontWeight: (editPermissions[dept._id] || []).includes(role) ? 600 : 400,
@@ -422,7 +419,7 @@ const AdminUsers: React.FC = () => {
                         )}
 
                         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--glass-border)' }}>
-                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: '1px solid var(--glass-border)', color: 'white', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontSize: '1rem' }}>Cancel</button>
+                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontSize: '1rem' }}>Cancel</button>
                             <button onClick={savePermissions} className="btn-primary" style={{ padding: '0.8rem 2rem', fontSize: '1rem' }}>Save Changes</button>
                         </div>
                     </div>

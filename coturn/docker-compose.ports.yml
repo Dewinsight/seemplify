@@ -1,0 +1,51 @@
+# Alternative: Coturn with port mapping (no host network).
+# Use this if Dokploy/Swarm does not support network_mode: host for this stack.
+# Ensure host firewall and Azure NSG allow UDP 3478 and UDP 49152-49252 to this host.
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn
+    environment:
+      - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
+      - COTURN_EXTERNAL_IP=${COTURN_EXTERNAL_IP:-}
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49152-49252:49152-49252/udp"
+    restart: unless-stopped
+
+  turn-api:
+    image: ${TURN_API_IMAGE:-turn-api:latest}
+    build:
+      context: ./turn-api
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
+      - TURN_HOST=${TURN_HOST:-turn.seemplifyai.com}
+      - TURN_PORT=3478
+      - TURN_TTL=86400
+    networks:
+      - dokploy-network
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.turn-api-web.rule=Host(`turn.seemplifyai.com`)
+      - traefik.http.routers.turn-api-web.entrypoints=web
+      - traefik.http.services.turn-api.loadbalancer.server.port=3000
+      - traefik.http.routers.turn-api-web.service=turn-api
+      - traefik.http.routers.turn-api-websecure.rule=Host(`turn.seemplifyai.com`)
+      - traefik.http.routers.turn-api-websecure.entrypoints=websecure
+      - traefik.http.routers.turn-api-websecure.service=turn-api
+      - traefik.http.routers.turn-api-websecure.tls=true
+      - traefik.http.routers.turn-api-websecure.tls.certresolver=letsencrypt
+
+networks:
+  dokploy-network:
+    external: true

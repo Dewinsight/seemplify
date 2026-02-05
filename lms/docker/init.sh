@@ -1,13 +1,14 @@
 #!/bin/bash
-# LMS Vanilla Deployment - Factory Reset
+# LMS Vanilla Deployment - Safe Initialization
+#
+# This script initializes the LMS application
+# It will NOT delete existing data or configurations
+#
+# To reinitialize with a fresh database, manually remove:
+# 1. The site: bench --site lms.seemplifyai.com drop-site --force
+# 2. Then run this script
 
-# Force fresh installation by removing existing bench
-if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
-    echo "Removing existing bench for factory reset..."
-    rm -rf /home/frappe/frappe-bench
-fi
-
-echo "Creating new bench..."
+echo "Initializing LMS application..."
 
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
