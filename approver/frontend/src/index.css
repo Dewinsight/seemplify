@@ -56,7 +56,7 @@ body {
 
 #root {
   width: 100%;
-  max-width: 1200px;
+  max-width: 95%;
   padding: 2rem;
 }
 
@@ -410,4 +410,118 @@ a:hover {
   .page-header h2 {
     font-size: 1.5rem;
   }
+}
+
+/* Modern Data Table */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+  /* Row spacing */
+  margin-top: 1rem;
+}
+
+.data-table thead th {
+  padding: 1rem 1.5rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  border-bottom: 2px solid var(--glass-border);
+  cursor: pointer;
+  transition: color 0.2s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.data-table thead th:hover {
+  color: var(--text-primary);
+}
+
+.data-table tbody tr {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(4px);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+}
+
+.data-table tbody tr:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+  position: relative;
+}
+
+[data-theme='dark'] .data-table tbody tr {
+  background: rgba(42, 51, 69, 0.4);
+}
+
+[data-theme='dark'] .data-table tbody tr:hover {
+  background: rgba(42, 51, 69, 0.7);
+}
+
+.data-table td {
+  padding: 1.25rem 1.5rem;
+  vertical-align: middle;
+}
+
+.data-table td:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.data-table td:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+/* Status Badges */
+.status-badge {
+  padding: 0.35rem 1rem;
+  border-radius: 50px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-transform: capitalize;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.status-approved {
+  background: rgba(76, 175, 80, 0.15);
+  color: #2e7d32;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.status-rejected {
+  background: rgba(244, 67, 54, 0.15);
+  color: #c62828;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.status-pending {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ef6c00;
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+/* Sort Indicator */
+.sort-icon {
+  display: inline-block;
+  margin-left: 0.4rem;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+
+.sort-active .sort-icon {
+  opacity: 1;
+  color: var(--sterling-red);
+}
+
+.priority-score {
+  font-weight: 700;
+  font-size: 1rem;
 }

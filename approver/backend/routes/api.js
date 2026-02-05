@@ -47,6 +47,8 @@ router.get('/dashboard/stats', verifyToken, verifyRole(['Admin', 'GovernanceAppr
 router.post('/projects/governance-review', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.governanceReview);
 // Executive review  
 router.post('/projects/executive-review', verifyToken, verifyRole(['Admin', 'ExecutiveApprover']), mainController.executiveReview);
+// CoE review
+router.post('/projects/coe-review', verifyToken, verifyRole(['Admin', 'CenterOfExcellence']), mainController.centerOfExcellenceReview);
 // Get pending reviews for reviewer dashboard
 router.get('/projects/pending-reviews', verifyToken, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.getPendingReviews);
 

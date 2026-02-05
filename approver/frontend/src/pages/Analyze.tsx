@@ -47,6 +47,27 @@ const Analyze: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'view' | 'new'>('view');
     const [projects, setProjects] = useState<any[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+    // Calculate Priority Score
+    const calculatePriority = (project: any) => {
+        // Weighted logic: (Score * 0.4) + (Tier * 20 * 0.3) + (Urgency * 0.3)
+        // This is a simplified example logic
+        let urgencyScore = 0;
+        if (project.formData?.urgency === 'urgent_3months') urgencyScore = 100;
+        else if (project.formData?.urgency === 'important_6months') urgencyScore = 70;
+        else if (project.formData?.urgency === 'can_wait_1year') urgencyScore = 40;
+        else urgencyScore = 20;
+
+        const tierScore = (project.tier || 3) === 1 ? 100 : (project.tier || 3) === 2 ? 60 : 30;
+        const baseScore = project.score || 0;
+
+        // Formula: Score (40%) + Urgency (30%) + Tier Impact (30%)
+        // Result is 0-100, mapped to 1-5 stars if needed, or just 1-5 number
+        const weighted = (baseScore * 0.4) + (urgencyScore * 0.3) + (tierScore * 0.3);
+        // Normalize to 1-5
+        return (weighted / 20).toFixed(1);
+    };
 
     // Search and Pagination
     const [searchQuery, setSearchQuery] = useState('');
@@ -64,8 +85,94 @@ const Analyze: React.FC = () => {
         }
     };
 
+    // Enhanced Sort Handler
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // Helper to render sort arrow
+    const renderSortArrow = (columnKey: string) => {
+        const isActive = sortConfig?.key === columnKey;
+        const isAsc = sortConfig?.direction === 'asc';
+
+        return (
+            <span className={`sort-icon ${isActive ? 'active' : ''}`} style={{ opacity: isActive ? 1 : 0.3 }}>
+                {isActive ? (isAsc ? '↑' : '↓') : '↕'}
+            </span>
+        );
+    };
+
+    const sortedProjects = React.useMemo(() => {
+        // Enhance projects with priority score for sorting
+        let enhanced = projects.map(p => ({
+            ...p,
+            priorityScore: parseFloat(calculatePriority(p))
+        }));
+
+        let sortableItems = [...enhanced];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // Handle nested keys
+                if (sortConfig.key === 'requester') {
+                    aValue = a.requester?.username || '';
+                    bValue = b.requester?.username || '';
+                }
+                if (sortConfig.key === 'department') {
+                    aValue = a.department?.name || '';
+                    bValue = b.department?.name || '';
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [projects, sortConfig]);
+
+    const handleDownload = () => {
+        const headers = ['Project Name', 'Requester', 'Department', 'Status', 'Score', 'Priority Score', 'Tier', 'Date'];
+        const csvContent = [
+            headers.join(','),
+            ...sortedProjects.map(p => [
+                `"${p.name}"`,
+                `"${p.requester?.username || 'Unknown'}"`,
+                `"${p.department?.name || 'General'}"`,
+                `"${p.approvalStatus}"`,
+                p.score,
+                p.priorityScore || 'N/A',
+                p.tier || 'N/A',
+                `"${new Date(p.createdAt).toLocaleDateString()}"`
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'initiatives_export.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
     // Filter projects based on search query
-    const filteredProjects = projects.filter(p =>
+    // Filter projects based on search query
+    const filteredProjects = sortedProjects.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.requester?.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.department?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -240,27 +347,37 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                 <h2 style={{ margin: 0 }}>AI Initiative Intake</h2>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px' }}>
-                    <button
-                        onClick={() => setActiveTab('view')}
-                        style={{
-                            background: activeTab === 'view' ? 'var(--sterling-red)' : 'transparent',
-                            color: 'white', border: 'none', padding: '0.6rem 1.2rem',
-                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
-                        }}
-                    >
-                        View All Initiatives
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('new')}
-                        style={{
-                            background: activeTab === 'new' ? 'var(--sterling-red)' : 'transparent',
-                            color: 'white', border: 'none', padding: '0.6rem 1.2rem',
-                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
-                        }}
-                    >
-                        + New Initiative
-                    </button>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    {activeTab === 'view' && (
+                        <button onClick={handleDownload} style={{
+                            background: 'var(--sterling-dark)', color: 'white', border: '1px solid var(--glass-border)',
+                            padding: '0.6rem 1.2rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+                        }}>
+                            Download CSV
+                        </button>
+                    )}
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '4px' }}>
+                        <button
+                            onClick={() => setActiveTab('view')}
+                            style={{
+                                background: activeTab === 'view' ? 'var(--sterling-red)' : 'transparent',
+                                color: 'white', border: 'none', padding: '0.6rem 1.2rem',
+                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                            }}
+                        >
+                            View All Initiatives
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('new')}
+                            style={{
+                                background: activeTab === 'new' ? 'var(--sterling-red)' : 'transparent',
+                                color: 'white', border: 'none', padding: '0.6rem 1.2rem',
+                                borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                            }}
+                        >
+                            + New Initiative
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -289,67 +406,103 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                         </span>
                     </div>
 
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--glass-border)' }}>
-                                <th style={{ padding: '1rem', textAlign: 'left' }}>Project Name</th>
-                                <th style={{ padding: '1rem', textAlign: 'left' }}>Requester</th>
-                                <th style={{ padding: '1rem', textAlign: 'left' }}>Date</th>
-                                <th style={{ padding: '1rem', textAlign: 'center' }}>Score</th>
-                                <th style={{ padding: '1rem', textAlign: 'center' }}>Status</th>
-                                <th style={{ padding: '1rem', textAlign: 'right' }}>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginatedProjects.map(p => (
-                                <tr key={p._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '1rem', fontWeight: 600 }}>{p.name}</td>
-                                    <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>
-                                        {p.requester?.username || 'Unknown'}
-                                        {p.department && <span style={{ fontSize: '0.8rem', opacity: 0.7, marginLeft: '6px' }}>({p.department.name})</span>}
-                                    </td>
-                                    <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
-                                    <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                        <span style={{
-                                            background: p.score >= 80 ? 'rgba(76, 175, 80, 0.2)' : p.score >= 50 ? 'rgba(255, 152, 0, 0.2)' : 'rgba(244, 67, 54, 0.2)',
-                                            color: p.score >= 80 ? '#4caf50' : p.score >= 50 ? '#ff9800' : '#f44336',
-                                            padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold'
-                                        }}>
-                                            {p.score}/100
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                        <span style={{
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem',
-                                            background: p.approvalStatus === 'Approved' ? 'rgba(76, 175, 80, 0.2)' : p.approvalStatus === 'Rejected' ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 152, 0, 0.1)',
-                                            color: p.approvalStatus === 'Approved' ? '#4caf50' : p.approvalStatus === 'Rejected' ? '#f44336' : '#ff9800',
-                                            border: `1px solid ${p.approvalStatus === 'Approved' ? '#4caf50' : p.approvalStatus === 'Rejected' ? '#f44336' : '#ff9800'}`,
-                                            fontWeight: 600
-                                        }}>
-                                            {p.approvalStatus}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                        <Link to={`/projects/${p._id}`} style={{ color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--glass-border)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>View</Link>
-                                        {user?.isAdmin && (
-                                            <button
-                                                onClick={() => handleDelete(p._id)}
-                                                style={{ background: 'transparent', border: 'none', marginLeft: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}
-                                                title="Delete"
-                                            >
-                                                🗑️
-                                            </button>
-                                        )}
-                                    </td>
+                    <div style={{ overflowX: 'auto', paddingBottom: '1rem' }}>
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th onClick={() => handleSort('name')} className={sortConfig?.key === 'name' ? 'sort-active' : ''}>
+                                        Project Name {renderSortArrow('name')}
+                                    </th>
+                                    <th onClick={() => handleSort('requester')} className={sortConfig?.key === 'requester' ? 'sort-active' : ''}>
+                                        Requester {renderSortArrow('requester')}
+                                    </th>
+                                    <th onClick={() => handleSort('department')} className={sortConfig?.key === 'department' ? 'sort-active' : ''}>
+                                        Department {renderSortArrow('department')}
+                                    </th>
+                                    <th onClick={() => handleSort('createdAt')} className={sortConfig?.key === 'createdAt' ? 'sort-active' : ''}>
+                                        Date {renderSortArrow('createdAt')}
+                                    </th>
+                                    <th style={{ textAlign: 'center' }} onClick={() => handleSort('score')} className={sortConfig?.key === 'score' ? 'sort-active' : ''}>
+                                        AI Score {renderSortArrow('score')}
+                                    </th>
+                                    <th style={{ textAlign: 'center' }} onClick={() => handleSort('priorityScore')} className={sortConfig?.key === 'priorityScore' ? 'sort-active' : ''}>
+                                        Priority {renderSortArrow('priorityScore')}
+                                    </th>
+                                    <th style={{ textAlign: 'center' }} onClick={() => handleSort('approvalStatus')} className={sortConfig?.key === 'approvalStatus' ? 'sort-active' : ''}>
+                                        Status {renderSortArrow('approvalStatus')}
+                                    </th>
+                                    <th style={{ textAlign: 'right' }}>Action</th>
                                 </tr>
-                            ))}
-                            {paginatedProjects.length === 0 && !loadingProjects && (
-                                <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>
-                                    {searchQuery ? 'No projects match your search.' : 'No projects found.'}
-                                </td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {paginatedProjects.map(p => {
+                                    // Determine status class
+                                    const statusClass = p.approvalStatus?.toLowerCase().includes('approved') || p.approvalStatus === 'AI Approved' ? 'status-approved' :
+                                        p.approvalStatus?.toLowerCase().includes('rejected') || p.approvalStatus === 'AI Rejected' ? 'status-rejected' : 'status-pending';
+
+                                    return (
+                                        <tr key={p._id}>
+                                            <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.name}</td>
+                                            <td style={{ color: 'var(--text-secondary)' }}>
+                                                {p.requester?.username || 'Unknown'}
+                                            </td>
+                                            <td style={{ color: 'var(--text-secondary)' }}>
+                                                {p.department?.name || 'General'}
+                                            </td>
+                                            <td style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <div style={{
+                                                    display: 'inline-block',
+                                                    width: '40px',
+                                                    height: '40px',
+                                                    borderRadius: '50%',
+                                                    lineHeight: '40px',
+                                                    background: p.score >= 80 ? 'rgba(76, 175, 80, 0.1)' : p.score >= 50 ? 'rgba(255, 152, 0, 0.1)' : 'rgba(244, 67, 54, 0.1)',
+                                                    color: p.score >= 80 ? '#2e7d32' : p.score >= 50 ? '#ef6c00' : '#c62828',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '0.9rem'
+                                                }}>
+                                                    {p.score}
+                                                </div>
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                {p.priorityScore ? (
+                                                    <span className="priority-score" style={{ color: p.priorityScore > 3.5 ? '#f44336' : p.priorityScore > 2.5 ? '#ff9800' : '#4caf50' }}>
+                                                        {p.priorityScore}
+                                                    </span>
+                                                ) : <span style={{ opacity: 0.5 }}>-</span>}
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <span className={`status-badge ${statusClass}`}>
+                                                    {statusClass === 'status-approved' && '✅'}
+                                                    {statusClass === 'status-rejected' && '❌'}
+                                                    {statusClass === 'status-pending' && '⏳'}
+                                                    {p.approvalStatus}
+                                                </span>
+                                            </td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <Link to={`/projects/${p._id}`} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>View</Link>
+                                                {user?.isAdmin && (
+                                                    <button
+                                                        onClick={() => handleDelete(p._id)}
+                                                        style={{ background: 'transparent', border: 'none', marginLeft: '0.8rem', cursor: 'pointer', opacity: 0.5, fontSize: '1.1rem' }}
+                                                        title="Delete"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {paginatedProjects.length === 0 && !loadingProjects && (
+                                    <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', opacity: 0.6, fontStyle: 'italic' }}>
+                                        {searchQuery ? 'No projects match your search.' : 'No projects found. Start a new initiative!'}
+                                    </td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
 
                     {/* Pagination Controls */}
                     {totalPages > 1 && (

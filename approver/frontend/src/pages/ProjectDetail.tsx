@@ -42,7 +42,7 @@ interface FormData {
 }
 
 interface ApprovalHistoryItem {
-    stage: 'AI' | 'Governance' | 'Executive';
+    stage: 'AI' | 'CenterOfExcellence' | 'Governance' | 'Executive';
     action: 'Approved' | 'Rejected' | 'Escalated';
     by?: { username: string } | null;
     reason?: string;
@@ -175,6 +175,23 @@ const ProjectDetail: React.FC = () => {
         }
     };
 
+    const handleCoEReview = async (action: 'Approved' | 'Rejected') => {
+        setReviewLoading(true);
+        try {
+            await api.post('/projects/coe-review', {
+                projectId: id,
+                action,
+                reason: reviewReason || `Center of Excellence ${action.toLowerCase()}`
+            });
+            setReviewReason('');
+            fetchProject();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to submit CoE review');
+        } finally {
+            setReviewLoading(false);
+        }
+    };
+
     if (loading) return <div className="glass-panel">Loading...</div>;
     if (!project) return <div className="glass-panel">Project not found</div>;
 
@@ -183,6 +200,14 @@ const ProjectDetail: React.FC = () => {
             const roles = p.roles || (p.role ? [p.role] : []);
             return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
         })
+    );
+
+    // Check if user can perform CoE review
+    const canCoEReview = user?.isAdmin || user?.permissions?.some(
+        (p: any) => {
+            const roles = p.roles || (p.role ? [p.role] : []);
+            return roles.includes('CenterOfExcellence');
+        }
     );
 
     // Check if user can perform governance review
@@ -493,6 +518,37 @@ const ProjectDetail: React.FC = () => {
                                 {item.reason && <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', opacity: 0.8 }}>{item.reason}</p>}
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* CoE Review Panel */}
+            {project.approvalStatus === 'Pending Center of Excellence' && canCoEReview && (
+                <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #2196f3' }}>
+                    <h3 style={{ marginTop: 0, color: '#2196f3' }}>🏢 Center of Excellence Review Required</h3>
+                    <p style={{ opacity: 0.8 }}>This initiative requires Center of Excellence review before proceeding.</p>
+                    <textarea
+                        placeholder="Review notes (optional)"
+                        value={reviewReason}
+                        onChange={(e) => setReviewReason(e.target.value)}
+                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'white' }}
+                    />
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button
+                            className="btn-primary"
+                            onClick={() => handleCoEReview('Approved')}
+                            disabled={reviewLoading}
+                            style={{ background: '#4caf50', flex: 1 }}
+                        >
+                            ✅ Approve
+                        </button>
+                        <button
+                            onClick={() => handleCoEReview('Rejected')}
+                            disabled={reviewLoading}
+                            style={{ background: '#f44336', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
+                        >
+                            ❌ Reject
+                        </button>
                     </div>
                 </div>
             )}

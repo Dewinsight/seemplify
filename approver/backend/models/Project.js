@@ -13,8 +13,11 @@ const ProjectSchema = new mongoose.Schema({
         enum: [
             'Pending',              // Initial state
             'AI Analyzing',         // AI is processing
-            'AI Approved',          // AI approved - final for Tier 1
-            'AI Rejected',          // AI rejected - may escalate for Tier 2/3
+            'AI Approved',          // AI approved - routes to CoE
+            'AI Rejected',          // AI rejected - routes to CoE
+            'Pending Center of Excellence', // Waiting for CoE
+            'Center of Excellence Approved', // CoE Approved
+            'Center of Excellence Rejected', // CoE Rejected
             'Pending Governance',   // Waiting for Governance Committee
             'Governance Approved',  // Governance approved - final for Tier 2
             'Governance Rejected',  // Governance rejected - may escalate for Tier 3
@@ -38,13 +41,13 @@ const ProjectSchema = new mongoose.Schema({
     escalationTriggers: [{ type: String }], // List of triggered escalation reasons
     workflowStage: {
         type: String,
-        enum: ['Screening', 'Analysis', 'AI Review', 'Governance Committee', 'Executive Approval', 'Complete'],
+        enum: ['Screening', 'Analysis', 'AI Review', 'Center of Excellence Review', 'Governance Committee', 'Executive Approval', 'Complete'],
         default: 'Screening'
     },
 
     // Approval history for audit trail
     approvalHistory: [{
-        stage: { type: String, enum: ['AI', 'Governance', 'Executive'] },
+        stage: { type: String, enum: ['AI', 'CenterOfExcellence', 'Governance', 'Executive'] },
         action: { type: String, enum: ['Approved', 'Rejected', 'Escalated'] },
         by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         reason: String,

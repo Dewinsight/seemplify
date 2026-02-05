@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema({
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
         // Role hierarchy: Requester < GovernanceApprover < ExecutiveApprover
         // GovernanceApprover replaces the old "Approver" role and can approve Tier 1 & 2
-        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover'] }]
+        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'] }]
     }],
 
     // Legacy mapping helpers could be added, but field is enough

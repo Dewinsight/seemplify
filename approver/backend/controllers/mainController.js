@@ -170,29 +170,20 @@ exports.analyzeProject = async (req, res) => {
         let simpleStatus;
 
         if (aiApproved) {
-            if (tier === 1) {
-                // Tier 1 + AI Approved = Final Approved
-                approvalStatus = 'AI Approved';
-                workflowStage = 'Complete';
-                simpleStatus = 'Approved';
-            } else {
-                // Tier 2/3 + AI Approved = Still needs human review
-                approvalStatus = 'Pending Governance';
-                workflowStage = 'Governance Committee';
-                simpleStatus = 'Under Review';
-            }
+            // All AI Approved projects go to Center of Excellence first
+            approvalStatus = 'Pending Center of Excellence';
+            workflowStage = 'Center of Excellence Review';
+            simpleStatus = 'Under Review';
         } else {
-            if (tier === 1) {
-                // Tier 1 + AI Rejected = Final Rejected
-                approvalStatus = 'AI Rejected';
-                workflowStage = 'Complete';
-                simpleStatus = 'Rejected';
-            } else {
-                // Tier 2/3 + AI Rejected = Escalate to Governance
-                approvalStatus = 'Pending Governance';
-                workflowStage = 'Governance Committee';
-                simpleStatus = 'Under Review';
-            }
+            // AI Rejected projects also go to Center of Excellence (or could be final rejected, but plan says routing)
+            // Typically AI Rejection might be final, but let's stick to the flow where CoE can override or confirm.
+            // If AI rejects, it's usually flagged. Let's route to CoE for confirmation if it was an escalation.
+            // If it was a hard reject (score too low), maybe stay rejected?
+            // Plan says "Tier 1: AI -> CoE -> Approved".
+            // Let's route ALL to CoE for now as per "Center of Excellence Approval" requirement implying they oversee.
+            approvalStatus = 'Pending Center of Excellence';
+            workflowStage = 'Center of Excellence Review';
+            simpleStatus = 'Under Review';
         }
 
         // 6. Create project with tiered workflow data
@@ -397,8 +388,9 @@ const hasMinimumRole = (user, minRole, departmentId) => {
 
     const roleHierarchy = {
         'Requester': 1,
-        'GovernanceApprover': 2,
-        'ExecutiveApprover': 3
+        'CenterOfExcellence': 2,
+        'GovernanceApprover': 3,
+        'ExecutiveApprover': 4
     };
 
     const minLevel = roleHierarchy[minRole] || 0;
@@ -413,6 +405,74 @@ const hasMinimumRole = (user, minRole, departmentId) => {
 
         return deptMatch && maxRoleLevel >= minLevel;
     });
+};
+
+// Center of Excellence Review
+exports.centerOfExcellenceReview = async (req, res) => {
+    try {
+        const { projectId, action, reason } = req.body;
+
+        if (!['Approved', 'Rejected'].includes(action)) {
+            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        if (project.approvalStatus !== 'Pending Center of Excellence') {
+            return res.status(400).json({ error: `Project is not pending Center of Excellence review (Current: ${project.approvalStatus})` });
+        }
+
+        if (!hasMinimumRole(req.user, 'CenterOfExcellence', project.department)) {
+            return res.status(403).json({ error: 'You do not have permission to perform Center of Excellence review' });
+        }
+
+        project.approvalHistory.push({
+            stage: 'CenterOfExcellence',
+            action,
+            by: req.user.id,
+            reason: reason || `Center of Excellence ${action.toLowerCase()}`,
+            timestamp: new Date()
+        });
+
+        if (action === 'Approved') {
+            project.approvalStatus = 'Center of Excellence Approved';
+
+            if (project.tier === 1) {
+                // Tier 1 + CoE Approved = Final Approved
+                project.approvalStatus = 'Approved'; // Final status
+                project.status = 'Approved';
+                project.workflowStage = 'Complete';
+            } else {
+                // Tier 2/3 + CoE Approved = Send to Governance
+                project.approvalStatus = 'Pending Governance';
+                project.workflowStage = 'Governance Committee';
+            }
+        } else {
+            // CoE Rejected = Final Rejected
+            project.approvalStatus = 'Center of Excellence Rejected';
+            project.status = 'Rejected';
+            project.workflowStage = 'Complete';
+        }
+
+        await project.save();
+
+        const Audit = require('../models/Audit');
+        await Audit.create({
+            project: project._id,
+            action: 'coe_review',
+            performedBy: req.user.id,
+            previousStatus: 'Pending Center of Excellence',
+            newStatus: project.approvalStatus,
+            reason,
+        });
+
+        res.json(project);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 };
 
 // Governance Committee Review
@@ -565,8 +625,10 @@ exports.getPendingReviews = async (req, res) => {
             query.approvalStatus = 'Pending Governance';
         } else if (stage === 'executive') {
             query.approvalStatus = 'Pending Executive';
+        } else if (stage === 'center_of_excellence') {
+            query.approvalStatus = 'Pending Center of Excellence';
         } else {
-            query.approvalStatus = { $in: ['Pending Governance', 'Pending Executive'] };
+            query.approvalStatus = { $in: ['Pending Governance', 'Pending Executive', 'Pending Center of Excellence'] };
         }
 
         // Filter by department if not admin
@@ -574,7 +636,7 @@ exports.getPendingReviews = async (req, res) => {
             const userDepts = req.user.permissions
                 ?.filter(p => {
                     const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
                 })
                 .map(p => (p.department._id || p.department).toString());
 
