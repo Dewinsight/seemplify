@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const sampleInitiative = {
@@ -42,7 +42,7 @@ const sampleInitiative = {
 const Analyze: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { activeDepartment, user } = useAuth();
+    const { activeDepartment } = useAuth();
 
     const [activeTab, setActiveTab] = useState<'view' | 'new'>('view');
     const [projects, setProjects] = useState<any[]>([]);
@@ -73,17 +73,6 @@ const Analyze: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 5;
-
-    const handleDelete = async (id: string) => {
-        if (!window.confirm('Are you sure you want to delete this analysis?')) return;
-        try {
-            await api.delete(`/projects/${id}`);
-            setProjects(projects.filter(p => p._id !== id));
-        } catch (error) {
-            console.error(error);
-            alert('Failed to delete project');
-        }
-    };
 
     // Enhanced Sort Handler
     const handleSort = (key: string) => {
@@ -431,7 +420,6 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                     <th style={{ textAlign: 'center' }} onClick={() => handleSort('approvalStatus')} className={sortConfig?.key === 'approvalStatus' ? 'sort-active' : ''}>
                                         Status {renderSortArrow('approvalStatus')}
                                     </th>
-                                    <th style={{ textAlign: 'right' }}>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -441,7 +429,12 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                         p.approvalStatus?.toLowerCase().includes('rejected') || p.approvalStatus === 'AI Rejected' ? 'status-rejected' : 'status-pending';
 
                                     return (
-                                        <tr key={p._id}>
+                                        <tr
+                                            key={p._id}
+                                            onClick={() => navigate(`/projects/${p._id}`)}
+                                            style={{ cursor: 'pointer' }}
+                                            title="Click to view details"
+                                        >
                                             <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.name}</td>
                                             <td style={{ color: 'var(--text-secondary)' }}>
                                                 {p.requester?.username || 'Unknown'}
@@ -480,23 +473,11 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                                     {p.approvalStatus}
                                                 </span>
                                             </td>
-                                            <td style={{ textAlign: 'right' }}>
-                                                <Link to={`/projects/${p._id}`} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>View</Link>
-                                                {user?.isAdmin && (
-                                                    <button
-                                                        onClick={() => handleDelete(p._id)}
-                                                        style={{ background: 'transparent', border: 'none', marginLeft: '0.8rem', cursor: 'pointer', opacity: 0.5, fontSize: '1.1rem' }}
-                                                        title="Delete"
-                                                    >
-                                                        🗑️
-                                                    </button>
-                                                )}
-                                            </td>
                                         </tr>
                                     );
                                 })}
                                 {paginatedProjects.length === 0 && !loadingProjects && (
-                                    <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', opacity: 0.6, fontStyle: 'italic' }}>
+                                    <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', opacity: 0.6, fontStyle: 'italic' }}>
                                         {searchQuery ? 'No projects match your search.' : 'No projects found. Start a new initiative!'}
                                     </td></tr>
                                 )}
