@@ -10,6 +10,7 @@
   color-scheme: dark;
   --bg: #050505;
   --panel: rgba(18, 18, 22, 0.78);
+  --panel-solid: rgba(10, 10, 14, 0.96);
   --panel-strong: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.08);
   --text: #f8fafc;
@@ -47,6 +48,7 @@
   color-scheme: light;
   --bg: #f8fafc;
   --panel: rgba(255, 255, 255, 0.9);
+  --panel-solid: #ffffff;
   --panel-strong: rgba(0, 0, 0, 0.06);
   --border: rgba(0, 0, 0, 0.08);
   --text: #0f172a;
@@ -201,7 +203,7 @@ p {
   box-shadow: var(--card-shadow);
   position: sticky;
   top: 12px;
-  z-index: 5;
+  z-index: 1000;
 }
 
 .theme-toggle {
@@ -344,6 +346,87 @@ p {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+}
+
+.user-dropdown {
+  position: relative;
+}
+
+.user-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.user-toggle:hover {
+  border-color: var(--border);
+  background: var(--hover-bg);
+}
+
+.user-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.user-toggle-caret {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.user-dropdown[open] .user-toggle-caret {
+  transform: rotate(180deg);
+}
+
+.user-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 180px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: var(--card-shadow);
+  display: none;
+  z-index: 1100;
+  backdrop-filter: blur(16px);
+}
+
+.user-dropdown[open] .user-menu {
+  display: grid;
+  gap: 6px;
+}
+
+.user-menu-link {
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  display: block;
+}
+
+.user-menu-link:hover,
+.user-menu-link.active {
+  background: var(--hover-bg);
+}
+
+.user-menu-logout {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.user-menu-logout:hover {
+  background: rgba(239, 68, 68, 0.16);
 }
 
 .top-nav-user-info {
@@ -668,6 +751,31 @@ p {
   color: var(--badge-owner-text);
 }
 
+.onboarding-badge {
+  text-transform: uppercase;
+}
+
+.onboarding-not_started {
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
+}
+
+.onboarding-pending,
+.onboarding-in_progress {
+  background: var(--badge-warning-bg);
+  color: var(--badge-warning-text);
+}
+
+.onboarding-completed {
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
+}
+
+.onboarding-cancelled {
+  background: var(--badge-error-bg);
+  color: var(--badge-error-text);
+}
+
 .manager-badge,
 .current-badge {
   background: var(--badge-success-bg);
@@ -693,7 +801,7 @@ p {
 }
 
 .role-select option {
-  background: var(--card);
+  background-color: var(--panel-solid);
   color: var(--text);
 }
 
@@ -705,8 +813,8 @@ p {
 
 [data-theme="dark"] .role-select option,
 .dark .role-select option {
-  background-color: #1e293b;
-  color: #f1f5f9;
+  background-color: var(--panel-solid);
+  color: var(--text);
 }
 
 .back-link {
@@ -827,7 +935,7 @@ p {
   position: fixed;
   inset: 0;
   background: rgba(5, 5, 7, 0.75);
-  z-index: 20;
+  z-index: 1200;
   align-items: center;
   justify-content: center;
   padding: 16px;
@@ -864,6 +972,123 @@ p {
   cursor: pointer;
 }
 
+.pdf-viewer {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pdf-canvas-wrap {
+  position: relative;
+  width: 100%;
+  overflow: auto;
+  border-radius: 12px;
+  background: #0b0b0f;
+}
+
+.pdf-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pdf-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.esign-field {
+  position: absolute;
+  border: 2px dashed #6366f1;
+  background: rgba(99, 102, 241, 0.12);
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  box-sizing: border-box;
+  cursor: move;
+  user-select: none;
+}
+
+.esign-field.active {
+  border-color: #22c55e;
+}
+
+.esign-field-preview {
+  cursor: default;
+  pointer-events: none;
+  border-style: solid;
+}
+
+.esign-field-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.tab-button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+  color: var(--text);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.tab-button.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(236, 72, 153, 0.15));
+  border-color: rgba(99, 102, 241, 0.8);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+}
+
+.tab-panel {
+  display: block;
+}
+
+.esign-field-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .form-group {
   margin-bottom: 16px;
 }
@@ -890,6 +1115,25 @@ textarea {
   color: var(--text);
   font-size: 15px;
   transition: all 0.2s ease;
+}
+
+/* Native select dropdowns: make the opened menu/options match our theme. */
+:root:not([data-theme="light"]) select,
+html:not([data-theme="light"]) select,
+[data-theme="dark"] select,
+.dark select {
+  color-scheme: dark;
+}
+
+[data-theme="light"] select,
+.light select {
+  color-scheme: light;
+}
+
+select option,
+select optgroup {
+  background-color: var(--panel-solid);
+  color: var(--text);
 }
 
 input::placeholder,
@@ -1465,6 +1709,17 @@ textarea {
 
   .mobile-drawer-user .top-nav-user-info {
     text-align: left;
+  }
+
+  .mobile-drawer-account {
+    display: grid;
+    gap: 8px;
+  }
+
+  .mobile-drawer-account .top-nav-link {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--hover-bg);
   }
 
   .mobile-drawer-user .top-nav-logout {

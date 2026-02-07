@@ -1,6 +1,27 @@
 import { Organization } from '../models/Organization.js'
 import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
+import { MongoAdapter } from '../adapter/mongoAdapter.js'
+
+/**
+ * Fallback: resolve account from hub session cookie (_session)
+ * Mirrors logic in index.js getSessionFromCookies.
+ */
+const getAccountFromSessionCookie = async (req) => {
+  try {
+    const sessionCookie = req.cookies?._session
+    if (!sessionCookie) return null
+
+    const adapter = new MongoAdapter('Session')
+    const sessionData = await adapter.find(sessionCookie)
+    if (!sessionData?.accountId) return null
+
+    return await Account.findOne({ sub: sessionData.accountId })
+  } catch (error) {
+    console.error('Session cookie lookup error:', error.message)
+    return null
+  }
+}
 
 /**
  * Middleware to require authenticated user
@@ -9,6 +30,15 @@ import { Account } from '../models/Account.js'
 export const requireAuth = async (req, res, next) => {
   // Check for session user (set during login)
   if (!req.session || !req.session.accountId) {
+    // Fallback to hub session cookie
+    const cookieAccount = await getAccountFromSessionCookie(req)
+    if (cookieAccount) {
+      req.session = req.session || {}
+      req.session.accountId = cookieAccount.sub
+      req.user = cookieAccount
+      return next()
+    }
+
     return res.status(401).json({ error: 'Authentication required' })
   }
 

@@ -10,6 +10,8 @@ import { Organization } from './models/Organization.js'
 import { OrganizationInvite } from './models/OrganizationInvite.js'
 import { Team } from './models/Team.js'
 import { Notification } from './models/Notification.js'
+import { OnboardingTemplate } from './models/OnboardingTemplate.js'
+import { OnboardingAssignment } from './models/OnboardingAssignment.js'
 import { getHubApps, getAppById, getAppApiUrl } from './config/hubApps.js'
 import bcrypt from 'bcrypt'
 import { readFileSync } from 'fs'
@@ -287,6 +289,7 @@ import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
 import notificationsRouter from './routes/notifications.js'
+import onboardingRouter from './routes/onboarding.js'
 // Subscription Management Routes
 import adminPlansRouter from './routes/adminPlans.js'
 import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
@@ -644,7 +647,7 @@ app.use((req, res, next) => {
   if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
     return next()
   }
-  express.json()(req, res, next)
+  express.json({ limit: '5mb' })(req, res, next)
 })
 
 app.use((req, res, next) => {
@@ -652,13 +655,14 @@ app.use((req, res, next) => {
   if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
     return next()
   }
-  express.urlencoded({ extended: false })(req, res, next)
+  express.urlencoded({ extended: false, limit: '5mb' })(req, res, next)
 })
 
 // Static assets (shared theme, icons)
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: isProduction ? '7d' : 0
 }))
+app.use('/vendor/pdfjs', express.static(join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build')))
 
 // Session middleware for organization management routes
 app.use(session({
@@ -3285,11 +3289,21 @@ app.get('/', async (req, res) => {
       iconSvg: getAppIcon(app.icon)
     }))
 
+    const pendingOnboardingAssignments = await OnboardingAssignment.find({
+      member: account._id,
+      status: { $nin: ['completed', 'cancelled'] }
+    })
+      .populate('organization', 'name')
+      .sort({ createdAt: -1 })
+      .lean()
+
     // Render the hub homepage using EJS template
     res.render('home', {
       user: account,
       apps,
       organizations,
+      pendingOnboardingCount: pendingOnboardingAssignments.length,
+      pendingOnboardingAssignments,
       activePage: 'home'
     })
   } catch (err) {
@@ -3751,12 +3765,104 @@ const getSessionUser = async (req, res, next) => {
   next()
 }
 
+const updateOnboardingAssignmentStatus = (assignment) => {
+  if (assignment.status === 'cancelled') return
+  const requiredItems = assignment.items.filter(item => item.required !== false)
+  const completedRequired = requiredItems.length === 0
+    ? assignment.items.every(item => item.status === 'completed')
+    : requiredItems.every(item => item.status === 'completed')
+
+  if (completedRequired) {
+    assignment.status = 'completed'
+    assignment.completedAt = new Date()
+  } else if (assignment.items.some(item => item.status !== 'pending')) {
+    assignment.status = 'in_progress'
+  } else {
+    assignment.status = 'pending'
+  }
+}
+
+const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+
+const buildPersonalOnboardingQuery = (userId, organizationId) => {
+  const base = {
+    $or: [
+      { member: userId },
+      { 'items.config.signers.member': userId },
+      { 'items.data.esign.signers.member': userId }
+    ]
+  }
+
+  if (organizationId) {
+    base.organization = organizationId
+  }
+
+  return base
+}
+
+const getPersonalOnboardingAssignments = async (userId, organizationId) => {
+  return OnboardingAssignment.find(buildPersonalOnboardingQuery(userId, organizationId))
+    .populate('organization', 'name')
+    .sort({ createdAt: -1 })
+}
+
+const loadOnboardingAdminContext = async (req, organizationId) => {
+  const organization = await Organization.findById(organizationId)
+    .populate('members.account', 'email profile.name')
+
+  if (!organization) {
+    throw new Error('Organization not found')
+  }
+
+  const member = organization.members.find(
+    m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
+  )
+
+  if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
+    throw new Error('Admin, owner, or HR manager role required')
+  }
+
+  const templates = await OnboardingTemplate.find({ organization: organizationId }).sort({ createdAt: -1 })
+  const assignments = await OnboardingAssignment.find({ organization: organizationId })
+    .populate('member', 'email profile.name')
+    .populate('createdBy', 'email profile.name')
+    .sort({ createdAt: -1 })
+
+  const members = organization.members
+    .filter(m => m.status === 'active')
+    .map(m => ({
+      id: m.account?._id || m.account,
+      name: m.account?.profile?.name || m.account?.email?.split('@')[0] || 'Unknown',
+      email: m.account?.email || '',
+      role: m.role
+    }))
+
+  const onboardingStatusByMember = {}
+  assignments.forEach(assignment => {
+    const memberId = assignment.member?._id?.toString() || assignment.member?.toString()
+    if (!memberId) return
+    if (!onboardingStatusByMember[memberId]) {
+      onboardingStatusByMember[memberId] = assignment.status
+    }
+  })
+
+  return {
+    organization,
+    templates,
+    assignments,
+    members,
+    onboardingStatusByMember,
+    yourRole: member.role
+  }
+}
+
 // API Routes (JSON responses)
 app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
+app.use('/api', onboardingRouter)
 
 // Subscription Management API Routes
 app.use('/api/admin/plans', adminPlansRouter)
@@ -4039,6 +4145,20 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       return res.redirect('/organizations?error=Not a member of this organization')
     }
 
+    const assignments = await OnboardingAssignment.find({ organization: req.params.orgId })
+      .select('member status updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean()
+
+    const onboardingStatusByMember = {}
+    assignments.forEach(assignment => {
+      const memberId = assignment.member?.toString()
+      if (!memberId) return
+      if (!onboardingStatusByMember[memberId]) {
+        onboardingStatusByMember[memberId] = assignment.status
+      }
+    })
+
     const mappedMembers = organization.members
       .filter(m => m.status === 'active')
       .map(m => ({
@@ -4047,7 +4167,8 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         email: m.account?.email || '',
         role: m.role,
         joinedAt: m.joinedAt,
-        isOwner: m.role === 'owner'
+        isOwner: m.role === 'owner',
+        onboardingStatus: onboardingStatusByMember[(m.account?._id || m.account).toString()] || 'not_started'
       }))
 
     res.render('members', {
@@ -4097,6 +4218,27 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
   } catch (error) {
     console.error('Invitations page error:', error)
     res.redirect('/organizations?error=Failed to load invitations')
+  }
+})
+
+// Onboarding admin page
+app.get('/organizations/:orgId/onboarding', getSessionUser, async (req, res) => {
+  try {
+    const adminContext = await loadOnboardingAdminContext(req, req.params.orgId)
+    const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, req.params.orgId)
+
+    res.render('onboarding-admin', {
+      ...adminContext,
+      personalAssignments,
+      defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+      activePage: 'organizations',
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding admin page error:', error)
+    res.redirect('/organizations?error=Failed to load onboarding')
   }
 })
 
@@ -4172,6 +4314,44 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
   } catch (error) {
     console.error('Notifications page error:', error)
     res.redirect('/organizations?error=Failed to load notifications')
+  }
+})
+
+// Employee onboarding page
+app.get('/onboarding', getSessionUser, async (req, res) => {
+  try {
+    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+
+    if (currentOrgId) {
+      try {
+        const adminContext = await loadOnboardingAdminContext(req, currentOrgId)
+        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId)
+
+        return res.render('onboarding-admin', {
+          ...adminContext,
+          personalAssignments,
+          defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+          activePage: 'onboarding',
+          user: req.user,
+          error: req.query.error,
+          success: req.query.success
+        })
+      } catch (adminError) {
+        // Fall back to personal onboarding view if user isn't an admin/HR in the current org
+      }
+    }
+
+    const assignments = await getPersonalOnboardingAssignments(req.user._id)
+
+    res.render('onboarding', {
+      assignments,
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding page error:', error)
+    res.redirect('/?error=Failed to load onboarding')
   }
 })
 

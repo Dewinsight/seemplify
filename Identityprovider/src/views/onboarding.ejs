@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>My Onboarding - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'onboarding' }) %>
+
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>My Onboarding</h1>
+        <div class="header-subtitle">Complete required steps to finish setup.</div>
+      </div>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (!assignments || assignments.length === 0) { %>
+      <div class="empty-state">
+        <h3>No onboarding tasks</h3>
+        <p>You are all set.</p>
+      </div>
+    <% } else { %>
+      <% assignments.forEach(assignment => { %>
+        <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
+        <% const currentUserId = user._id.toString(); %>
+        <% const isAssignee = assignmentMemberId === currentUserId; %>
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <div style="font-weight:700; font-size:16px;">
+                <%= assignment.organization?.name || 'Organization' %>
+              </div>
+              <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">
+                Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+              </div>
+            </div>
+            <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+              <%= assignment.status.replace('_', ' ') %>
+            </span>
+          </div>
+
+          <div style="margin-top: 16px; display: grid; gap: 12px;">
+            <% if (assignment.status === 'cancelled') { %>
+              <div class="alert alert-error" style="margin:0;">This onboarding assignment was cancelled.</div>
+            <% } else { %>
+              <% assignment.items.forEach(item => { %>
+                <% const signerConfigList = item.config?.signers || []; %>
+                <% const signerStatusList = item.data?.esign?.signers || []; %>
+                <% const signerMatch = signerConfigList.some(signer => String(signer.member || signer.memberId || signer.key || signer) === currentUserId); %>
+                <% const signerStatusMatch = signerStatusList.some(signer => String(signer.member) === currentUserId); %>
+                <% const canViewItem = isAssignee || (item.type === 'esign' && (signerMatch || signerStatusMatch)); %>
+                <% if (canViewItem) { %>
+                <div class="card" style="margin:0; padding: 16px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
+                  <div>
+                    <div style="font-weight:700; font-size:15px;"><%= item.title %></div>
+                    <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
+                      <%= item.description || '' %>
+                    </div>
+                  </div>
+                  <span class="role-badge onboarding-badge onboarding-<%= item.status === 'completed' ? 'completed' : 'pending' %>">
+                    <%= item.status === 'completed' ? 'Completed' : 'Pending' %>
+                  </span>
+                </div>
+
+                <% if (item.type === 'form' && item.status !== 'completed') { %>
+                  <form data-form-item data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" style="margin-top: 12px;">
+                    <% if (item.config?.fields && item.config.fields.length > 0) { %>
+                      <% item.config.fields.forEach(field => { %>
+                        <div class="form-group">
+                          <label for="field-<%= item._id %>-<%= field.key %>"><%= field.label %></label>
+                          <% if (field.type === 'textarea') { %>
+                            <textarea id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>></textarea>
+                          <% } else if (field.type === 'select') { %>
+                            <select id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>>
+                              <option value="">Select...</option>
+                              <% (field.options || []).forEach(option => { %>
+                                <option value="<%= option %>"><%= option %></option>
+                              <% }) %>
+                            </select>
+                          <% } else { %>
+                            <input type="<%= field.type || 'text' %>" id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> />
+                          <% } %>
+                        </div>
+                      <% }) %>
+                    <% } else { %>
+                      <div class="form-group">
+                        <label for="field-<%= item._id %>-notes">Details</label>
+                        <textarea id="field-<%= item._id %>-notes" name="details"></textarea>
+                      </div>
+                    <% } %>
+                    <div class="form-actions">
+                      <button class="btn btn-primary" type="submit">Submit</button>
+                    </div>
+                  </form>
+                <% } %>
+
+                <% if (item.type === 'upload' && item.status !== 'completed') { %>
+                  <div style="margin-top: 12px;">
+                    <input type="file" data-upload-input data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" accept="<%= item.config?.accept || '.pdf,.jpg,.jpeg,.png' %>" />
+                    <button class="btn btn-secondary" type="button" style="margin-top: 8px;" onclick="uploadOnboardingFile('<%= assignment._id %>', '<%= item._id %>')">Upload</button>
+                  </div>
+                <% } %>
+
+                <% if (item.type === 'esign') { %>
+                  <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                  <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                  <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                  <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                  <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                    <span style="color: var(--muted); font-size: 13px;">
+                      Document: <%= item.config?.document?.fileName || 'Contract' %>
+                    </span>
+                    <% if (item.config?.document?.url) { %>
+                      <a class="btn btn-secondary btn-sm" href="<%= item.config.document.url %>" target="_blank" rel="noreferrer">View</a>
+                    <% } %>
+                    <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
+                      <button
+                        class="btn btn-primary btn-sm"
+                        type="button"
+                        data-esign-button
+                        data-assignment="<%= assignment._id %>"
+                        data-item="<%= item._id %>"
+                        data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
+                        data-doc-url="<%= item.config?.document?.url || '' %>"
+                        data-preview-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
+                        data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
+                      >Sign document</button>
+                    <% } else if (item.data?.esign?.signedUrl) { %>
+                      <a class="btn btn-secondary btn-sm" href="<%= item.data.esign.signedUrl %>" target="_blank" rel="noreferrer">Signed document</a>
+                    <% } %>
+                  </div>
+                  <% const displaySigners = signerStatusList.length
+                    ? signerStatusList
+                    : signerConfigList.map(signer => ({
+                        name: signer.name || signer.label,
+                        email: signer.email,
+                        status: 'pending'
+                      })); %>
+                  <% if (displaySigners.length) { %>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+                      <% displaySigners.forEach((signer, index) => { %>
+                        <span>
+                          <%= signer.name || signer.email %>: <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
+                        </span>
+                        <% if (index < displaySigners.length - 1) { %>
+                          <span> | </span>
+                        <% } %>
+                      <% }) %>
+                    </div>
+                  <% } %>
+                  <% if (hasSigned && item.status !== 'completed') { %>
+                    <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You have signed. Waiting on others.</div>
+                  <% } %>
+                <% } %>
+                </div>
+                <% } %>
+              <% }) %>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+
+  <div class="modal" id="esignModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Sign Document</h2>
+        <button class="modal-close" onclick="closeESignModal()">&times;</button>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+        <div id="esign-document-name" style="font-weight:600;">Document</div>
+        <a class="btn btn-secondary btn-sm" id="esign-document-link" target="_blank" rel="noreferrer" style="display:none;">View Document</a>
+      </div>
+      <div class="pdf-viewer" id="esign-pdf-viewer" style="display:none;">
+        <div class="pdf-toolbar">
+          <div style="display:flex; gap: 6px; align-items:center;">
+            <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(-1)">Prev</button>
+            <span id="esign-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(1)">Next</button>
+          </div>
+        </div>
+        <div class="pdf-canvas-wrap" id="esign-pdf-canvas-wrap">
+          <canvas id="esign-pdf-canvas"></canvas>
+          <div class="pdf-overlay" id="esign-pdf-overlay"></div>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top: 16px;">
+        <label for="esign-signer-name">Your name (optional)</label>
+        <input type="text" id="esign-signer-name" placeholder="Type your name" />
+      </div>
+      <div class="form-group">
+        <label>Signature</label>
+        <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
+          <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
+        </div>
+        <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+          <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="submitESignature()">Submit signature</button>
+        </div>
+        <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to the marked fields.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    async function submitForm(form) {
+      const assignmentId = form.dataset.assignment;
+      const itemId = form.dataset.item;
+      const data = {};
+      new FormData(form).forEach((value, key) => {
+        data[key] = value;
+      });
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit form');
+      }
+    }
+
+    document.querySelectorAll('[data-form-item]').forEach(form => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitForm(form);
+      });
+    });
+
+    async function uploadOnboardingFile(assignmentId, itemId) {
+      const input = document.querySelector(`[data-upload-input][data-assignment="${assignmentId}"][data-item="${itemId}"]`);
+      if (!input || !input.files.length) {
+        alert('Please select a file');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', input.files[0]);
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to upload file');
+      }
+    }
+
+    const esignModal = document.getElementById('esignModal');
+    const esignDocumentName = document.getElementById('esign-document-name');
+    const esignDocumentLink = document.getElementById('esign-document-link');
+    const esignPdfViewer = document.getElementById('esign-pdf-viewer');
+    const esignPdfCanvas = document.getElementById('esign-pdf-canvas');
+    const esignPdfOverlay = document.getElementById('esign-pdf-overlay');
+    const esignPdfPageLabel = document.getElementById('esign-pdf-page-label');
+    const esignSignerName = document.getElementById('esign-signer-name');
+    const signatureCanvas = document.getElementById('esign-canvas');
+    const signatureCtx = signatureCanvas.getContext('2d');
+    const currentUserId = '<%= user._id %>';
+    let activeAssignmentId = null;
+    let activeItemId = null;
+    let activeFields = [];
+    let signaturePreviewUrl = null;
+    let esignPdfUrl = null;
+    let isDrawing = false;
+    let hasSignature = false;
+    const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null };
+
+    function resizeSignatureCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = signatureCanvas.getBoundingClientRect();
+      signatureCanvas.width = rect.width * ratio;
+      signatureCanvas.height = rect.height * ratio;
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.scale(ratio, ratio);
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+      signatureCtx.strokeStyle = '#0f172a';
+      signatureCtx.lineWidth = 2;
+    }
+
+    function clearSignature(reset = true, preserveStored = false) {
+      signatureCtx.save();
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      signatureCtx.restore();
+      if (reset) {
+        hasSignature = false;
+        signaturePreviewUrl = null;
+        if (!preserveStored) {
+          localStorage.removeItem('esignSignatureDataUrl');
+        }
+      }
+      renderEsignOverlay();
+    }
+
+    function loadSignatureDataUrl(dataUrl) {
+      if (!dataUrl) return;
+      const image = new Image();
+      image.onload = () => {
+        clearSignature(false);
+        const rect = signatureCanvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        signatureCtx.drawImage(image, 0, 0, rect.width, rect.height);
+        hasSignature = true;
+        signaturePreviewUrl = dataUrl;
+        renderEsignOverlay();
+      };
+      image.src = dataUrl;
+    }
+
+    function storeSignatureToLocal() {
+      if (!hasSignature) return;
+      const dataUrl = signatureCanvas.toDataURL('image/png');
+      signaturePreviewUrl = dataUrl;
+      localStorage.setItem('esignSignatureDataUrl', dataUrl);
+      renderEsignOverlay();
+    }
+
+    async function loadEsignPdf(url) {
+      if (!url || !window.pdfjsLib) {
+        return;
+      }
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+      const loadingTask = pdfjsLib.getDocument(url);
+      const pdf = await loadingTask.promise;
+      esignPdfState.pdf = pdf;
+      esignPdfState.page = 1;
+      esignPdfState.totalPages = pdf.numPages;
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'block';
+      }
+      await renderEsignPdfPage();
+    }
+
+    async function renderEsignPdfPage() {
+      if (!esignPdfState.pdf) return;
+      const page = await esignPdfState.pdf.getPage(esignPdfState.page);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const wrapWidth = esignPdfCanvas.parentElement?.clientWidth || 600;
+      const scale = wrapWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      esignPdfCanvas.width = viewport.width;
+      esignPdfCanvas.height = viewport.height;
+      const ctx = esignPdfCanvas.getContext('2d');
+      ctx.clearRect(0, 0, esignPdfCanvas.width, esignPdfCanvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      esignPdfOverlay.style.width = `${viewport.width}px`;
+      esignPdfOverlay.style.height = `${viewport.height}px`;
+      esignPdfOverlay.innerHTML = '';
+
+      esignPdfState.scale = scale;
+      esignPdfState.viewport = viewport;
+
+      if (esignPdfPageLabel) {
+        esignPdfPageLabel.textContent = `Page ${esignPdfState.page} / ${esignPdfState.totalPages}`;
+      }
+
+      renderEsignOverlay();
+    }
+
+    function changeEsignPdfPage(delta) {
+      if (!esignPdfState.pdf) return;
+      const nextPage = Math.min(esignPdfState.totalPages, Math.max(1, esignPdfState.page + delta));
+      if (nextPage === esignPdfState.page) return;
+      esignPdfState.page = nextPage;
+      renderEsignPdfPage();
+    }
+
+    function renderEsignOverlay() {
+      if (!esignPdfState.viewport || !esignPdfOverlay) return;
+      esignPdfOverlay.innerHTML = '';
+      const scale = esignPdfState.scale || 1;
+      const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
+      const now = new Date().toLocaleDateString();
+      const signerName = esignSignerName.value.trim();
+
+      activeFields.forEach(field => {
+        if ((field.page || 1) !== esignPdfState.page) return;
+        const fieldEl = document.createElement('div');
+        fieldEl.className = 'esign-field esign-field-preview';
+
+        const topLeftY = field.origin === 'bottom-left'
+          ? (pdfHeight - field.y - field.height)
+          : field.y;
+        fieldEl.style.left = `${field.x * scale}px`;
+        fieldEl.style.top = `${topLeftY * scale}px`;
+        fieldEl.style.width = `${field.width * scale}px`;
+        fieldEl.style.height = `${field.height * scale}px`;
+
+        if (field.type === 'signature') {
+          if (signaturePreviewUrl) {
+            const img = document.createElement('img');
+            img.src = signaturePreviewUrl;
+            fieldEl.appendChild(img);
+          } else {
+            fieldEl.textContent = field.label || 'Signature';
+          }
+        } else if (field.type === 'date') {
+          fieldEl.textContent = now;
+        } else if (field.type === 'text') {
+          fieldEl.textContent = field.text || signerName || 'Text';
+        }
+
+        esignPdfOverlay.appendChild(fieldEl);
+      });
+    }
+
+    function getCanvasPoint(event) {
+      const rect = signatureCanvas.getBoundingClientRect();
+      return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      };
+    }
+
+    signatureCanvas.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      isDrawing = true;
+      hasSignature = true;
+      const point = getCanvasPoint(event);
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(point.x, point.y);
+      signatureCanvas.setPointerCapture(event.pointerId);
+    });
+
+    signatureCanvas.addEventListener('pointermove', (event) => {
+      if (!isDrawing) return;
+      const point = getCanvasPoint(event);
+      signatureCtx.lineTo(point.x, point.y);
+      signatureCtx.stroke();
+    });
+
+    signatureCanvas.addEventListener('pointerup', (event) => {
+      isDrawing = false;
+      signatureCtx.closePath();
+      if (signatureCanvas.hasPointerCapture(event.pointerId)) {
+        signatureCanvas.releasePointerCapture(event.pointerId);
+      }
+      storeSignatureToLocal();
+    });
+
+    signatureCanvas.addEventListener('pointerleave', () => {
+      isDrawing = false;
+    });
+
+    function openESignModal(button) {
+      const assignmentId = button.dataset.assignment;
+      const itemId = button.dataset.item;
+      const docName = button.dataset.docName;
+      const docUrl = button.dataset.docUrl;
+      const previewUrl = button.dataset.previewUrl || docUrl;
+      const fieldsRaw = button.dataset.fields ? decodeURIComponent(button.dataset.fields) : '[]';
+      let fields = [];
+
+      try {
+        fields = JSON.parse(fieldsRaw) || [];
+      } catch (error) {
+        console.error('Failed to parse signature fields:', error);
+      }
+
+      activeFields = fields
+        .map(field => ({
+          ...field,
+          page: Number(field.page) || 1,
+          x: Number(field.x) || 0,
+          y: Number(field.y) || 0,
+          width: Number(field.width) || 180,
+          height: Number(field.height) || 60
+        }))
+        .filter(field => !field.signerId || field.signerId === currentUserId);
+
+      if (!previewUrl) {
+        alert('Document is not available for signing');
+        return;
+      }
+      if (!activeFields.length) {
+        alert('No signature fields assigned to you');
+        return;
+      }
+      activeAssignmentId = assignmentId;
+      activeItemId = itemId;
+      esignDocumentName.textContent = docName || 'Document';
+      esignDocumentLink.href = docUrl || previewUrl;
+      esignDocumentLink.style.display = (docUrl || previewUrl) ? 'inline-flex' : 'none';
+      esignSignerName.value = '';
+      esignModal.classList.add('active');
+      esignPdfUrl = previewUrl;
+      setTimeout(() => {
+        resizeSignatureCanvas();
+        clearSignature(true, true);
+        const storedSignature = localStorage.getItem('esignSignatureDataUrl');
+        if (storedSignature) {
+          loadSignatureDataUrl(storedSignature);
+        }
+        loadEsignPdf(previewUrl);
+      }, 50);
+    }
+
+    function closeESignModal() {
+      esignModal.classList.remove('active');
+      activeAssignmentId = null;
+      activeItemId = null;
+      activeFields = [];
+      esignPdfState.pdf = null;
+      esignPdfState.page = 1;
+      esignPdfState.totalPages = 0;
+      esignPdfState.viewport = null;
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'none';
+      }
+    }
+
+    esignModal.addEventListener('click', (event) => {
+      if (event.target === esignModal) {
+        closeESignModal();
+      }
+    });
+
+    esignSignerName.addEventListener('input', () => {
+      renderEsignOverlay();
+    });
+
+    document.querySelectorAll('[data-esign-button]').forEach(button => {
+      button.addEventListener('click', () => {
+        openESignModal(button);
+      });
+    });
+
+    let esignResizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (!esignPdfState.pdf) return;
+      clearTimeout(esignResizeTimer);
+      esignResizeTimer = setTimeout(() => {
+        renderEsignPdfPage();
+      }, 150);
+    });
+
+    async function submitESignature() {
+      if (!activeAssignmentId || !activeItemId) return;
+      if (!hasSignature) {
+        alert('Please add your signature before submitting');
+        return;
+      }
+
+      const payload = {
+        signatureDataUrl: signatureCanvas.toDataURL('image/png')
+      };
+      const signerName = esignSignerName.value.trim();
+      if (signerName) {
+        payload.signerName = signerName;
+      }
+
+      const response = await fetch(`/api/onboarding/${activeAssignmentId}/items/${activeItemId}/esign/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit signature');
+      }
+    }
+  </script>
+
+  <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

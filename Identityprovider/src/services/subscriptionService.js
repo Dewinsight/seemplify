@@ -639,6 +639,10 @@ class SubscriptionService {
 
       // Send final access removal notification
       await this.notifyOrgOfAccessRemoval(subscription)
+
+      // Mark email as sent to prevent duplicate notifications
+      subscription.accessRemovalEmailSent = true
+      await subscription.save()
     }
 
     return pastGrace.length

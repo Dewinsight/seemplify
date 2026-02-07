@@ -26,6 +26,11 @@
         </div>
       </div>
       <div class="header-actions">
+        <% if (['owner', 'admin', 'hr_manager' ].includes(yourRole)) { %>
+          <a href="/organizations/<%= organization._id %>/onboarding" class="btn btn-secondary">
+            Onboarding
+          </a>
+        <% } %>
         <% if (['owner', 'admin' ].includes(yourRole)) { %>
           <a href="/organizations/<%= organization._id %>/notifications" class="btn btn-secondary">
             Send Notification
@@ -85,6 +90,9 @@
                   <div class="member-meta">
                     <span class="role-badge role-<%= member.role %>">
                       <%= member.role %>
+                    </span>
+                    <span class="role-badge onboarding-badge onboarding-<%= member.onboardingStatus %>">
+                      Onboarding: <%= member.onboardingStatus.replace('_', ' ') %>
                     </span>
                     <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
                   </div>

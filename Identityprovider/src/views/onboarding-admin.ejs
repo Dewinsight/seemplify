@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Onboarding - <%= organization.name %> - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: (typeof activePage !== 'undefined' ? activePage : 'organizations') }) %>
+
+  <div class="container">
+    <a href="/organizations/<%= organization._id %>/members" class="back-link">? Back to Members</a>
+
+    <div class="header">
+      <div>
+        <h1>Onboarding Center</h1>
+        <div class="header-subtitle">
+          <%= organization.name %>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="showTemplateModal()">+ Create Template</button>
+      </div>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (typeof personalAssignments !== 'undefined') { %>
+      <div class="tab-bar">
+        <button class="tab-button" data-onboarding-tab="my">My Onboarding</button>
+        <button class="tab-button" data-onboarding-tab="center">Onboarding Center</button>
+      </div>
+
+      <div class="tab-panel" id="tab-my-onboarding">
+        <div class="card">
+          <h2 style="margin-top:0">My Onboarding</h2>
+          <% if (!personalAssignments || personalAssignments.length === 0) { %>
+            <div class="empty-state" style="padding: 32px 16px;">
+              <h3>No onboarding tasks</h3>
+              <p>You are all set.</p>
+            </div>
+          <% } else { %>
+            <% personalAssignments.forEach(assignment => { %>
+              <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
+              <% const currentUserId = user._id.toString(); %>
+              <% const isAssignee = assignmentMemberId === currentUserId; %>
+              <div class="card" style="margin-top: 12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+                  <div>
+                    <div style="font-weight:700; font-size:16px;">
+                      <%= assignment.organization?.name || organization?.name || 'Organization' %>
+                    </div>
+                    <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">
+                      Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+                    </div>
+                  </div>
+                  <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                    <%= assignment.status.replace('_', ' ') %>
+                  </span>
+                </div>
+
+                <div style="margin-top: 16px; display: grid; gap: 12px;">
+                  <% if (assignment.status === 'cancelled') { %>
+                    <div class="alert alert-error" style="margin:0;">This onboarding assignment was cancelled.</div>
+                  <% } else { %>
+                    <% assignment.items.forEach(item => { %>
+                      <% const signerConfigList = item.config?.signers || []; %>
+                      <% const signerStatusList = item.data?.esign?.signers || []; %>
+                      <% const signerMatch = signerConfigList.some(signer => String(signer.member || signer.memberId || signer.key || signer) === currentUserId); %>
+                      <% const signerStatusMatch = signerStatusList.some(signer => String(signer.member) === currentUserId); %>
+                      <% const canViewItem = isAssignee || (item.type === 'esign' && (signerMatch || signerStatusMatch)); %>
+                      <% if (canViewItem) { %>
+                        <div class="card" style="margin:0; padding: 16px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
+                          <div>
+                            <div style="font-weight:700; font-size:15px;"><%= item.title %></div>
+                            <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
+                              <%= item.description || '' %>
+                            </div>
+                          </div>
+                          <span class="role-badge onboarding-badge onboarding-<%= item.status === 'completed' ? 'completed' : 'pending' %>">
+                            <%= item.status === 'completed' ? 'Completed' : 'Pending' %>
+                          </span>
+                        </div>
+
+                        <% if (item.type === 'form' && item.status !== 'completed') { %>
+                          <form data-form-item data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" style="margin-top: 12px;">
+                            <% if (item.config?.fields && item.config.fields.length > 0) { %>
+                              <% item.config.fields.forEach(field => { %>
+                                <div class="form-group">
+                                  <label for="field-<%= item._id %>-<%= field.key %>"><%= field.label %></label>
+                                  <% if (field.type === 'textarea') { %>
+                                    <textarea id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>></textarea>
+                                  <% } else if (field.type === 'select') { %>
+                                    <select id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>>
+                                      <option value="">Select...</option>
+                                      <% (field.options || []).forEach(option => { %>
+                                        <option value="<%= option %>"><%= option %></option>
+                                      <% }) %>
+                                    </select>
+                                  <% } else { %>
+                                    <input type="<%= field.type || 'text' %>" id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> />
+                                  <% } %>
+                                </div>
+                              <% }) %>
+                            <% } else { %>
+                              <div class="form-group">
+                                <label for="field-<%= item._id %>-notes">Details</label>
+                                <textarea id="field-<%= item._id %>-notes" name="details"></textarea>
+                              </div>
+                            <% } %>
+                            <div class="form-actions">
+                              <button class="btn btn-primary" type="submit">Submit</button>
+                            </div>
+                          </form>
+                        <% } %>
+
+                        <% if (item.type === 'upload' && item.status !== 'completed') { %>
+                          <div style="margin-top: 12px;">
+                            <input type="file" data-upload-input data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" accept="<%= item.config?.accept || '.pdf,.jpg,.jpeg,.png' %>" />
+                            <button class="btn btn-secondary" type="button" style="margin-top: 8px;" onclick="uploadOnboardingFile('<%= assignment._id %>', '<%= item._id %>')">Upload</button>
+                          </div>
+                        <% } %>
+
+                        <% if (item.type === 'esign') { %>
+                          <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                          <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                          <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                          <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                          <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                            <span style="color: var(--muted); font-size: 13px;">
+                              Document: <%= item.config?.document?.fileName || 'Contract' %>
+                            </span>
+                            <% if (item.config?.document?.url) { %>
+                              <a class="btn btn-secondary btn-sm" href="<%= item.config.document.url %>" target="_blank" rel="noreferrer">View</a>
+                            <% } %>
+                            <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
+                              <button
+                                class="btn btn-primary btn-sm"
+                                type="button"
+                                data-esign-button
+                                data-assignment="<%= assignment._id %>"
+                                data-item="<%= item._id %>"
+                                data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
+                                data-doc-url="<%= item.config?.document?.url || '' %>"
+                                data-preview-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
+                                data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
+                              >Sign document</button>
+                            <% } else if (item.data?.esign?.signedUrl) { %>
+                              <a class="btn btn-secondary btn-sm" href="<%= item.data.esign.signedUrl %>" target="_blank" rel="noreferrer">Signed document</a>
+                            <% } %>
+                          </div>
+                          <% const displaySigners = signerStatusList.length
+                            ? signerStatusList
+                            : signerConfigList.map(signer => ({
+                                name: signer.name || signer.label,
+                                email: signer.email,
+                                status: 'pending'
+                              })); %>
+                          <% if (displaySigners.length) { %>
+                            <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+                              <% displaySigners.forEach((signer, index) => { %>
+                                <span>
+                                  <%= signer.name || signer.email %>: <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
+                                </span>
+                                <% if (index < displaySigners.length - 1) { %>
+                                  <span> | </span>
+                                <% } %>
+                              <% }) %>
+                            </div>
+                          <% } %>
+                          <% if (hasSigned && item.status !== 'completed') { %>
+                            <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You have signed. Waiting on others.</div>
+                          <% } %>
+                        <% } %>
+                        </div>
+                      <% } %>
+                    <% }) %>
+                  <% } %>
+                </div>
+              </div>
+            <% }) %>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-onboarding-center">
+    <% } %>
+
+    <div class="card">
+      <h2 style="margin-top:0">Templates</h2>
+      <% if (templates && templates.length > 0) { %>
+        <% templates.forEach(template => { %>
+          <div class="card" style="margin-top: 12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+              <div>
+                <div style="font-weight:700; font-size:16px; display:flex; align-items:center; gap:8px;">
+                  <%= template.name %>
+                  <% if (template.isDefault) { %>
+                    <span class="role-badge onboarding-badge onboarding-completed">Default</span>
+                  <% } %>
+                </div>
+                <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">
+                  <%= template.description || 'No description' %>
+                </div>
+                <div style="color: var(--muted); font-size: 12px; margin-top: 6px;">
+                  <%= template.items.length %> item<%= template.items.length === 1 ? '' : 's' %>
+                </div>
+              </div>
+              <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+                <% if (!template.isDefault) { %>
+                  <button class="btn btn-secondary btn-sm" onclick="setDefaultTemplate('<%= template._id %>')">Set Default</button>
+                <% } %>
+                <button class="btn btn-danger btn-sm" onclick="deleteTemplate('<%= template._id %>')">Delete</button>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      <% } else { %>
+        <div class="empty-state">
+          <h3>No templates yet</h3>
+          <p>Create a template for general onboarding.</p>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Assign Onboarding</h2>
+      <div style="display:grid; gap: 16px;">
+        <div class="form-group">
+          <label for="assignmentMember">Member</label>
+          <select id="assignmentMember">
+            <option value="">Select member</option>
+            <% members.forEach(member => { %>
+              <option value="<%= member.id %>"><%= member.name %> (<%= member.email %>)</option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="assignmentTemplate">Template (optional)</label>
+          <select id="assignmentTemplate">
+            <option value="">No template</option>
+            <% templates.forEach(template => { %>
+              <option value="<%= template._id %>" <%= template.isDefault ? 'selected' : '' %>>
+                <%= template.name %><%= template.isDefault ? ' (Default)' : '' %>
+              </option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="assignmentDue">Due Date (optional)</label>
+          <input type="date" id="assignmentDue" />
+        </div>
+
+        <div class="card" style="margin:0;">
+          <h3 style="margin-top:0">Custom Items</h3>
+          <div id="custom-items-list" style="display:grid; gap: 10px;"></div>
+
+          <div style="display:grid; gap: 10px; margin-top: 14px;">
+            <div class="form-group">
+              <label for="custom-type">Type</label>
+              <select id="custom-type">
+                <option value="form">Form</option>
+                <option value="upload">Upload</option>
+                <option value="esign">E-Sign</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="custom-title">Title</label>
+              <input type="text" id="custom-title" placeholder="e.g. Employee Details" />
+            </div>
+            <div class="form-group">
+              <label for="custom-description">Description</label>
+              <textarea id="custom-description" placeholder="Instructions for the employee"></textarea>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="custom-required" checked /> Required
+              </label>
+            </div>
+            <div class="form-group" id="custom-form-fields">
+              <label for="custom-fields">Form fields (one per line: Label|type|required)</label>
+              <textarea id="custom-fields" placeholder="Full Name|text|required
+Phone Number|tel
+Start Date|date|required"></textarea>
+            </div>
+            <div class="form-group" id="custom-upload-accept" style="display:none;">
+              <label for="custom-accept">Accepted file types</label>
+              <input type="text" id="custom-accept" value=".pdf,.jpg,.jpeg,.png" />
+            </div>
+            <div class="form-group" id="custom-esign-document" style="display:none;">
+              <label for="custom-document">Contract PDF</label>
+              <input type="file" id="custom-document" accept=".pdf" />
+              <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items:center;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="prepareEsignDocument('custom')">Upload & Preview</button>
+                <span id="custom-document-status" style="color: var(--muted); font-size: 12px;">No document uploaded.</span>
+              </div>
+            </div>
+            <div class="form-group" id="custom-esign-signers" style="display:none;">
+              <label>Signers</label>
+              <div id="custom-signers-options" style="display:grid; gap: 6px;"></div>
+              <div class="form-hint">Select who must sign. "Onboarding member" will sign as the assignee.</div>
+            </div>
+            <div class="form-group" id="custom-esign-fields" style="display:none;">
+              <label>Signature Fields</label>
+              <div style="display:grid; gap: 10px;">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+                  <input type="text" id="custom-sign-label" placeholder="Label (Signature)" />
+                  <select id="custom-sign-type">
+                    <option value="signature">Signature</option>
+                    <option value="date">Date</option>
+                    <option value="text">Text</option>
+                  </select>
+                  <select id="custom-sign-signer"></select>
+                  <input type="number" id="custom-sign-page" placeholder="Page" value="1" min="1" />
+                  <input type="number" id="custom-sign-x" placeholder="X" value="50" />
+                  <input type="number" id="custom-sign-y" placeholder="Y" value="50" />
+                  <input type="number" id="custom-sign-width" placeholder="Width" value="180" />
+                  <input type="number" id="custom-sign-height" placeholder="Height" value="60" />
+                  <select id="custom-sign-origin">
+                    <option value="top-left">Top-left origin</option>
+                    <option value="bottom-left">Bottom-left origin</option>
+                  </select>
+                  <input type="text" id="custom-sign-text" placeholder="Text (if type=text)" />
+                </div>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('custom')">Add Field</button>
+                <div id="custom-signature-fields-list" style="display:grid; gap: 6px;"></div>
+                <div class="form-hint">Coordinates are in PDF points (72 = 1 inch). Origin defaults to top-left.</div>
+                <div class="pdf-viewer" id="custom-pdf-viewer" style="display:none;">
+                  <div class="pdf-toolbar">
+                    <div style="display:flex; gap: 6px; align-items:center;">
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', -1)">Prev</button>
+                      <span id="custom-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', 1)">Next</button>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" type="button" id="custom-place-toggle" onclick="togglePlaceMode('custom')">Click to place</button>
+                  </div>
+                  <div class="pdf-canvas-wrap" id="custom-pdf-canvas-wrap">
+                    <canvas id="custom-pdf-canvas"></canvas>
+                    <div class="pdf-overlay" id="custom-pdf-overlay"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <button class="btn btn-secondary" type="button" onclick="addCustomItem()">Add Custom Item</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" type="button" onclick="assignOnboarding()">Assign Onboarding</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Recent Assignments</h2>
+      <% if (assignments && assignments.length > 0) { %>
+        <% assignments.forEach(assignment => { %>
+          <div class="card" style="margin-top: 12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+              <div>
+                <div style="font-weight:700; font-size:15px;">
+                  <%= assignment.member?.profile?.name || assignment.member?.email || 'Member' %>
+                </div>
+                <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
+                  Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
+                <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                  <%= assignment.status.replace('_', ' ') %>
+                </span>
+                <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
+                  <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      <% } else { %>
+        <div class="empty-state">
+          <h3>No assignments yet</h3>
+          <p>Assign onboarding to get started.</p>
+        </div>
+      <% } %>
+    </div>
+    <% if (typeof personalAssignments !== 'undefined') { %>
+      </div>
+    <% } %>
+  </div>
+
+  <!-- Template Modal -->
+  <div class="modal" id="templateModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Template</h2>
+        <button class="modal-close" onclick="hideTemplateModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="template-name">Template name</label>
+        <input type="text" id="template-name" placeholder="General Onboarding" />
+      </div>
+      <div class="form-group">
+        <label for="template-description">Description</label>
+        <textarea id="template-description" placeholder="Standard onboarding for new hires"></textarea>
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="template-default" /> Set as default
+        </label>
+      </div>
+
+      <div class="card" style="margin:0;">
+        <h3 style="margin-top:0">Template Items</h3>
+        <div id="template-items-list" style="display:grid; gap: 10px;"></div>
+
+        <div style="display:grid; gap: 10px; margin-top: 14px;">
+          <div class="form-group">
+            <label for="template-type">Type</label>
+            <select id="template-type">
+              <option value="form">Form</option>
+              <option value="upload">Upload</option>
+              <option value="esign">E-Sign</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="template-title">Title</label>
+            <input type="text" id="template-title" placeholder="e.g. HR Details" />
+          </div>
+          <div class="form-group">
+            <label for="template-description-item">Description</label>
+            <textarea id="template-description-item" placeholder="Instructions for the employee"></textarea>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="template-required" checked /> Required
+            </label>
+          </div>
+          <div class="form-group" id="template-form-fields">
+            <label for="template-fields">Form fields (one per line: Label|type|required)</label>
+            <textarea id="template-fields" placeholder="Full Name|text|required
+Phone Number|tel
+Start Date|date|required"></textarea>
+          </div>
+          <div class="form-group" id="template-upload-accept" style="display:none;">
+            <label for="template-accept">Accepted file types</label>
+            <input type="text" id="template-accept" value=".pdf,.jpg,.jpeg,.png" />
+          </div>
+          <div class="form-group" id="template-esign-document" style="display:none;">
+            <label for="template-document">Contract PDF</label>
+            <input type="file" id="template-document" accept=".pdf" />
+            <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items:center;">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="prepareEsignDocument('template')">Upload & Preview</button>
+              <span id="template-document-status" style="color: var(--muted); font-size: 12px;">No document uploaded.</span>
+            </div>
+          </div>
+          <div class="form-group" id="template-esign-signers" style="display:none;">
+            <label>Signers</label>
+            <div id="template-signers-options" style="display:grid; gap: 6px;"></div>
+            <div class="form-hint">Select who must sign. "Onboarding member" will sign as the assignee.</div>
+          </div>
+          <div class="form-group" id="template-esign-fields" style="display:none;">
+            <label>Signature Fields</label>
+            <div style="display:grid; gap: 10px;">
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+                <input type="text" id="template-sign-label" placeholder="Label (Signature)" />
+                <select id="template-sign-type">
+                  <option value="signature">Signature</option>
+                  <option value="date">Date</option>
+                  <option value="text">Text</option>
+                </select>
+                <select id="template-sign-signer"></select>
+                <input type="number" id="template-sign-page" placeholder="Page" value="1" min="1" />
+                <input type="number" id="template-sign-x" placeholder="X" value="50" />
+                <input type="number" id="template-sign-y" placeholder="Y" value="50" />
+                <input type="number" id="template-sign-width" placeholder="Width" value="180" />
+                <input type="number" id="template-sign-height" placeholder="Height" value="60" />
+                <select id="template-sign-origin">
+                  <option value="top-left">Top-left origin</option>
+                  <option value="bottom-left">Bottom-left origin</option>
+                </select>
+                <input type="text" id="template-sign-text" placeholder="Text (if type=text)" />
+              </div>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('template')">Add Field</button>
+              <div id="template-signature-fields-list" style="display:grid; gap: 6px;"></div>
+              <div class="form-hint">Coordinates are in PDF points (72 = 1 inch). Origin defaults to top-left.</div>
+              <div class="pdf-viewer" id="template-pdf-viewer" style="display:none;">
+                <div class="pdf-toolbar">
+                  <div style="display:flex; gap: 6px; align-items:center;">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', -1)">Prev</button>
+                    <span id="template-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', 1)">Next</button>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" type="button" id="template-place-toggle" onclick="togglePlaceMode('template')">Click to place</button>
+                </div>
+                <div class="pdf-canvas-wrap" id="template-pdf-canvas-wrap">
+                  <canvas id="template-pdf-canvas"></canvas>
+                  <div class="pdf-overlay" id="template-pdf-overlay"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-secondary" type="button" onclick="addTemplateItem()">Add Template Item</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" onclick="hideTemplateModal()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="createTemplate()">Create Template</button>
+      </div>
+    </div>
+  </div>
+
+  <% if (typeof personalAssignments !== 'undefined') { %>
+    <div class="modal" id="esignModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Sign Document</h2>
+          <button class="modal-close" onclick="closeESignModal()">&times;</button>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+          <div id="esign-document-name" style="font-weight:600;">Document</div>
+          <a class="btn btn-secondary btn-sm" id="esign-document-link" target="_blank" rel="noreferrer" style="display:none;">View Document</a>
+        </div>
+        <div class="pdf-viewer" id="esign-pdf-viewer" style="display:none;">
+          <div class="pdf-toolbar">
+            <div style="display:flex; gap: 6px; align-items:center;">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(-1)">Prev</button>
+              <span id="esign-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(1)">Next</button>
+            </div>
+          </div>
+          <div class="pdf-canvas-wrap" id="esign-pdf-canvas-wrap">
+            <canvas id="esign-pdf-canvas"></canvas>
+            <div class="pdf-overlay" id="esign-pdf-overlay"></div>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="esign-signer-name">Your name (optional)</label>
+          <input type="text" id="esign-signer-name" placeholder="Type your name" />
+        </div>
+        <div class="form-group">
+          <label>Signature</label>
+          <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
+            <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
+          </div>
+          <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="submitESignature()">Submit signature</button>
+          </div>
+          <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to the marked fields.</div>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
+  <script src="/vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    const orgId = '<%= organization._id %>';
+    const orgMembers = <%- JSON.stringify(members || []) %>;
+    const templateItems = [];
+    const customItems = [];
+    const signatureFieldState = { template: [], custom: [] };
+    const signerSelectionState = { template: [], custom: [] };
+    const signatureDocumentState = { template: null, custom: null };
+    const pdfState = {
+      template: { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null },
+      custom: { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null }
+    };
+    const placeModeState = { template: false, custom: false };
+    const dragState = { active: false, prefix: null, index: -1, startX: 0, startY: 0, originX: 0, originY: 0, element: null };
+
+    function showTemplateModal() {
+      document.getElementById('templateModal').classList.add('active');
+    }
+
+    function hideTemplateModal() {
+      document.getElementById('templateModal').classList.remove('active');
+    }
+
+    function toggleItemInputs(prefix) {
+      const type = document.getElementById(`${prefix}-type`).value;
+      document.getElementById(`${prefix}-form-fields`).style.display = type === 'form' ? 'block' : 'none';
+      document.getElementById(`${prefix}-upload-accept`).style.display = type === 'upload' ? 'block' : 'none';
+      document.getElementById(`${prefix}-esign-document`).style.display = type === 'esign' ? 'block' : 'none';
+      document.getElementById(`${prefix}-esign-fields`).style.display = type === 'esign' ? 'block' : 'none';
+      document.getElementById(`${prefix}-esign-signers`).style.display = type === 'esign' ? 'block' : 'none';
+      const viewer = document.getElementById(`${prefix}-pdf-viewer`);
+      if (viewer) {
+        viewer.style.display = type === 'esign' && signatureDocumentState[prefix] ? 'block' : 'none';
+      }
+    }
+
+    ['template', 'custom'].forEach(prefix => {
+      document.getElementById(`${prefix}-type`).addEventListener('change', () => toggleItemInputs(prefix));
+    });
+
+    function parseFields(raw) {
+      return raw
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+          const [label, type, required] = line.split('|').map(p => p.trim());
+          return {
+            label,
+            key: label ? label.toLowerCase().replace(/\s+/g, '_') : '',
+            type: type || 'text',
+            required: required === 'required'
+          };
+        })
+        .filter(field => field.label);
+    }
+
+    function getSignerOptions() {
+      const options = [{
+        key: 'assignee',
+        label: 'Onboarding member',
+        type: 'assignee'
+      }];
+
+      orgMembers.forEach(member => {
+        options.push({
+          key: member.id?.toString() || '',
+          label: `${member.name} (${member.email})`,
+          type: 'member'
+        });
+      });
+
+      return options.filter(option => option.key);
+    }
+
+    function renderSignerOptions(prefix) {
+      const container = document.getElementById(`${prefix}-signers-options`);
+      if (!container) return;
+
+      const options = getSignerOptions();
+      const selectedKeys = signerSelectionState[prefix].length
+        ? signerSelectionState[prefix].map(item => item.key)
+        : ['assignee'];
+
+      container.innerHTML = options
+        .map(option => `
+          <label style="display:flex; gap: 8px; align-items:center; font-size: 13px;">
+            <input type="checkbox" value="${option.key}" ${selectedKeys.includes(option.key) ? 'checked' : ''} />
+            ${option.label}
+          </label>
+        `)
+        .join('');
+
+      container.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.addEventListener('change', () => {
+          const keys = Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+            .map(el => el.value);
+          updateSignerSelection(prefix, keys);
+        });
+      });
+
+      updateSignerSelection(prefix, selectedKeys, { silent: true });
+    }
+
+    function updateSignerSelection(prefix, selectedKeys, options = {}) {
+      const available = getSignerOptions();
+      let keys = selectedKeys && selectedKeys.length ? selectedKeys : ['assignee'];
+      if (!keys.length) {
+        keys = ['assignee'];
+      }
+
+      signerSelectionState[prefix] = available
+        .filter(option => keys.includes(option.key))
+        .map(option => ({
+          key: option.key,
+          label: option.label,
+          type: option.type
+        }));
+
+      populateSignerSelect(prefix);
+
+      const validKeys = new Set(signerSelectionState[prefix].map(option => option.key));
+      if (signatureFieldState[prefix].length) {
+        signatureFieldState[prefix].forEach(field => {
+          if (!field.signerKey || !validKeys.has(field.signerKey)) {
+            field.signerKey = signerSelectionState[prefix][0]?.key || 'assignee';
+          }
+        });
+        renderSignatureFields(prefix);
+        renderOverlayFields(prefix);
+      }
+
+      if (!options.silent) {
+        const container = document.getElementById(`${prefix}-signers-options`);
+        if (container) {
+          container.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            input.checked = validKeys.has(input.value);
+          });
+        }
+      }
+    }
+
+    function populateSignerSelect(prefix) {
+      const select = document.getElementById(`${prefix}-sign-signer`);
+      if (!select) return;
+
+      const signers = signerSelectionState[prefix].length
+        ? signerSelectionState[prefix]
+        : [{ key: 'assignee', label: 'Onboarding member', type: 'assignee' }];
+
+      select.innerHTML = signers
+        .map(signer => `<option value="${signer.key}">${signer.label}</option>`)
+        .join('');
+    }
+
+    function getSignerLabel(prefix, key) {
+      const signer = signerSelectionState[prefix].find(item => item.key === key);
+      return signer ? signer.label : 'Onboarding member';
+    }
+
+    function renderSignatureFields(prefix) {
+      const container = document.getElementById(`${prefix}-signature-fields-list`);
+      const fields = signatureFieldState[prefix] || [];
+
+      if (!fields.length) {
+        container.innerHTML = '<div style="color: var(--muted); font-size: 12px;">No signature fields added yet.</div>';
+        return;
+      }
+
+      container.innerHTML = fields
+        .map((field, index) => `
+          <div class="card" style="margin:0; padding: 10px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
+              <div style="font-size: 12px;">
+                <div style="font-weight:700;">${field.label} (${field.type}) - ${getSignerLabel(prefix, field.signerKey || 'assignee')}</div>
+                <div style="color: var(--muted); margin-top: 4px;">
+                  Page ${field.page} | x:${field.x} y:${field.y} | ${field.width}x${field.height} | ${field.origin}
+                </div>
+              </div>
+              <button class="btn btn-danger btn-sm" type="button" onclick="removeSignatureField('${prefix}', ${index})">Remove</button>
+            </div>
+          </div>
+        `)
+        .join('');
+    }
+
+    function setDocumentStatus(prefix, message, isError = false) {
+      const status = document.getElementById(`${prefix}-document-status`);
+      if (!status) return;
+      status.textContent = message;
+      status.style.color = isError ? '#f87171' : 'var(--muted)';
+    }
+
+    async function prepareEsignDocument(prefix) {
+      const fileInput = document.getElementById(`${prefix}-document`);
+      if (!fileInput || !fileInput.files.length) {
+        alert('Please select a PDF file first');
+        return;
+      }
+
+      setDocumentStatus(prefix, 'Uploading...');
+
+      try {
+        const documentData = await uploadDocument(fileInput.files[0]);
+        signatureDocumentState[prefix] = documentData;
+        setDocumentStatus(prefix, `Uploaded: ${documentData.fileName || fileInput.files[0].name}`);
+        resetSignatureFields(prefix);
+        await loadPdfPreview(prefix, documentData.url);
+      } catch (error) {
+        console.error('PDF upload error:', error);
+        setDocumentStatus(prefix, error.message || 'Upload failed', true);
+        alert(error.message || 'Failed to upload document');
+      }
+    }
+
+    async function loadPdfPreview(prefix, url) {
+      if (!window.pdfjsLib) {
+        alert('PDF preview library is not available');
+        return;
+      }
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+
+      const loadingTask = pdfjsLib.getDocument(url);
+      const pdf = await loadingTask.promise;
+      pdfState[prefix].pdf = pdf;
+      pdfState[prefix].page = 1;
+      pdfState[prefix].totalPages = pdf.numPages;
+
+      const viewer = document.getElementById(`${prefix}-pdf-viewer`);
+      if (viewer) {
+        viewer.style.display = 'block';
+      }
+
+      await renderPdfPage(prefix);
+    }
+
+    async function renderPdfPage(prefix) {
+      const state = pdfState[prefix];
+      if (!state.pdf) return;
+
+      const canvas = document.getElementById(`${prefix}-pdf-canvas`);
+      const overlay = document.getElementById(`${prefix}-pdf-overlay`);
+      const wrap = document.getElementById(`${prefix}-pdf-canvas-wrap`);
+      if (!canvas || !overlay || !wrap) return;
+
+      const page = await state.pdf.getPage(state.page);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const availableWidth = wrap.clientWidth || 600;
+      const scale = availableWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      overlay.style.width = `${viewport.width}px`;
+      overlay.style.height = `${viewport.height}px`;
+      overlay.innerHTML = '';
+
+      state.scale = scale;
+      state.viewport = viewport;
+
+      const label = document.getElementById(`${prefix}-pdf-page-label`);
+      if (label) {
+        label.textContent = `Page ${state.page} / ${state.pdf.numPages}`;
+      }
+
+      if (!overlay.dataset.bound) {
+        overlay.addEventListener('click', (event) => {
+          if (!placeModeState[prefix]) return;
+          if (event.target.closest('.esign-field')) return;
+          addFieldAtPoint(prefix, event);
+        });
+        overlay.dataset.bound = 'true';
+      }
+
+      renderOverlayFields(prefix);
+    }
+
+    function changePdfPage(prefix, delta) {
+      const state = pdfState[prefix];
+      if (!state.pdf) return;
+      const nextPage = Math.min(state.pdf.numPages, Math.max(1, state.page + delta));
+      if (nextPage === state.page) return;
+      state.page = nextPage;
+      renderPdfPage(prefix);
+    }
+
+    function togglePlaceMode(prefix) {
+      placeModeState[prefix] = !placeModeState[prefix];
+      const button = document.getElementById(`${prefix}-place-toggle`);
+      if (button) {
+        button.textContent = placeModeState[prefix] ? 'Click to place: ON' : 'Click to place';
+      }
+    }
+
+    function getDefaultFieldSize(type) {
+      if (type === 'date') {
+        return { width: 120, height: 30 };
+      }
+      if (type === 'text') {
+        return { width: 160, height: 30 };
+      }
+      return { width: 180, height: 60 };
+    }
+
+    function addFieldAtPoint(prefix, event) {
+      const state = pdfState[prefix];
+      const overlay = document.getElementById(`${prefix}-pdf-overlay`);
+      if (!overlay || !state.viewport) return;
+
+      const rect = overlay.getBoundingClientRect();
+      const xPx = event.clientX - rect.left;
+      const yPx = event.clientY - rect.top;
+      const scale = state.scale || 1;
+
+      const type = document.getElementById(`${prefix}-sign-type`).value;
+      const labelInput = document.getElementById(`${prefix}-sign-label`);
+      const textInput = document.getElementById(`${prefix}-sign-text`);
+      const signerSelect = document.getElementById(`${prefix}-sign-signer`);
+      const originInput = document.getElementById(`${prefix}-sign-origin`);
+      const { width, height } = getDefaultFieldSize(type);
+
+      const pdfWidth = state.viewport.viewBox[2] - state.viewport.viewBox[0];
+      const pdfHeight = state.viewport.viewBox[3] - state.viewport.viewBox[1];
+
+      let x = xPx / scale;
+      let y = yPx / scale;
+      x = Math.max(0, Math.min(x, pdfWidth - width));
+      y = Math.max(0, Math.min(y, pdfHeight - height));
+      const origin = originInput.value;
+      const storedY = origin === 'bottom-left'
+        ? Math.max(0, Math.min(pdfHeight - y - height, pdfHeight - height))
+        : y;
+
+      const field = {
+        label: labelInput.value.trim() || (type === 'date' ? 'Date' : 'Signature'),
+        type,
+        signerKey: signerSelect?.value || 'assignee',
+        page: state.page,
+        x,
+        y: storedY,
+        width,
+        height,
+        origin,
+        text: textInput.value.trim() || undefined
+      };
+
+      signatureFieldState[prefix].push(field);
+      renderSignatureFields(prefix);
+      renderOverlayFields(prefix);
+      renderOverlayFields(prefix);
+    }
+
+    function renderOverlayFields(prefix) {
+      const state = pdfState[prefix];
+      const overlay = document.getElementById(`${prefix}-pdf-overlay`);
+      if (!overlay || !state.viewport) return;
+
+      const scale = state.scale || 1;
+      overlay.innerHTML = '';
+
+      const pdfHeight = state.viewport.viewBox[3] - state.viewport.viewBox[1];
+
+      signatureFieldState[prefix].forEach((field, index) => {
+        if (field.page !== state.page) return;
+
+        const fieldEl = document.createElement('div');
+        fieldEl.className = 'esign-field';
+        fieldEl.style.left = `${field.x * scale}px`;
+        const topLeftY = field.origin === 'bottom-left'
+          ? (pdfHeight - field.y - field.height)
+          : field.y;
+        fieldEl.style.top = `${topLeftY * scale}px`;
+        fieldEl.style.width = `${field.width * scale}px`;
+        fieldEl.style.height = `${field.height * scale}px`;
+        fieldEl.textContent = field.label || field.type;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'esign-field-remove';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          removeSignatureField(prefix, index);
+          renderOverlayFields(prefix);
+        });
+        fieldEl.appendChild(removeBtn);
+
+        fieldEl.addEventListener('pointerdown', (event) => {
+          if (event.target.closest('.esign-field-remove')) return;
+          event.preventDefault();
+          const stateForDrag = pdfState[prefix];
+          const pdfHeightForDrag = stateForDrag?.viewport
+            ? stateForDrag.viewport.viewBox[3] - stateForDrag.viewport.viewBox[1]
+            : 0;
+          const startTopLeftY = field.origin === 'bottom-left'
+            ? (pdfHeightForDrag - field.y - field.height)
+            : field.y;
+          dragState.active = true;
+          dragState.prefix = prefix;
+          dragState.index = index;
+          dragState.startX = event.clientX;
+          dragState.startY = event.clientY;
+          dragState.originX = field.x;
+          dragState.originY = startTopLeftY;
+          dragState.element = fieldEl;
+          fieldEl.classList.add('active');
+          fieldEl.setPointerCapture(event.pointerId);
+        });
+
+        overlay.appendChild(fieldEl);
+      });
+    }
+
+    function addSignatureField(prefix) {
+      const labelInput = document.getElementById(`${prefix}-sign-label`);
+      const typeInput = document.getElementById(`${prefix}-sign-type`);
+      const pageInput = document.getElementById(`${prefix}-sign-page`);
+      const xInput = document.getElementById(`${prefix}-sign-x`);
+      const yInput = document.getElementById(`${prefix}-sign-y`);
+      const widthInput = document.getElementById(`${prefix}-sign-width`);
+      const heightInput = document.getElementById(`${prefix}-sign-height`);
+      const originInput = document.getElementById(`${prefix}-sign-origin`);
+      const textInput = document.getElementById(`${prefix}-sign-text`);
+
+      const page = Number(pageInput.value || 1);
+      const x = Number(xInput.value);
+      const y = Number(yInput.value);
+      const width = Number(widthInput.value || 180);
+      const height = Number(heightInput.value || 60);
+
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        alert('Please enter valid X and Y coordinates');
+        return;
+      }
+
+      const field = {
+        label: labelInput.value.trim() || 'Signature',
+        type: typeInput.value,
+        signerKey: signerSelect?.value || 'assignee',
+        page: Number.isFinite(page) && page > 0 ? page : 1,
+        x,
+        y,
+        width: Number.isFinite(width) && width > 0 ? width : 180,
+        height: Number.isFinite(height) && height > 0 ? height : 60,
+        origin: originInput.value,
+        text: textInput.value.trim() || undefined
+      };
+
+      signatureFieldState[prefix].push(field);
+      renderSignatureFields(prefix);
+
+      labelInput.value = '';
+      if (textInput) textInput.value = '';
+    }
+
+    function removeSignatureField(prefix, index) {
+      signatureFieldState[prefix].splice(index, 1);
+      renderSignatureFields(prefix);
+      renderOverlayFields(prefix);
+    }
+
+    function resetSignatureFields(prefix) {
+      signatureFieldState[prefix] = [];
+      renderSignatureFields(prefix);
+      renderOverlayFields(prefix);
+    }
+
+    if (!window.__esignDragBound) {
+      document.addEventListener('pointermove', (event) => {
+        if (!dragState.active) return;
+        const state = pdfState[dragState.prefix];
+        const scale = state.scale || 1;
+        const dx = (event.clientX - dragState.startX) / scale;
+        const dy = (event.clientY - dragState.startY) / scale;
+        const field = signatureFieldState[dragState.prefix][dragState.index];
+        if (!field) return;
+        const pdfHeight = state?.viewport
+          ? state.viewport.viewBox[3] - state.viewport.viewBox[1]
+          : 0;
+        const nextX = Math.max(0, dragState.originX + dx);
+        const nextTopLeftY = Math.max(0, dragState.originY + dy);
+        field.x = nextX;
+        field.y = field.origin === 'bottom-left'
+          ? Math.max(0, Math.min(pdfHeight - nextTopLeftY - field.height, pdfHeight - field.height))
+          : nextTopLeftY;
+        if (dragState.element) {
+          const drawY = field.origin === 'bottom-left'
+            ? (pdfHeight - field.y - field.height)
+            : field.y;
+          dragState.element.style.left = `${field.x * scale}px`;
+          dragState.element.style.top = `${drawY * scale}px`;
+        }
+      });
+
+      document.addEventListener('pointerup', () => {
+        if (!dragState.active) return;
+        if (dragState.element) {
+          dragState.element.classList.remove('active');
+        }
+        dragState.active = false;
+        dragState.element = null;
+        if (dragState.prefix) {
+          renderSignatureFields(dragState.prefix);
+        }
+      });
+
+      window.__esignDragBound = true;
+    }
+
+    let pdfResizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(pdfResizeTimer);
+      pdfResizeTimer = setTimeout(() => {
+        ['template', 'custom'].forEach(prefix => {
+          if (pdfState[prefix].pdf) {
+            renderPdfPage(prefix);
+          }
+        });
+      }, 150);
+    });
+
+    function setActiveOnboardingTab(tabKey) {
+      const tabs = document.querySelectorAll('[data-onboarding-tab]');
+      const panels = {
+        my: document.getElementById('tab-my-onboarding'),
+        center: document.getElementById('tab-onboarding-center')
+      };
+
+      tabs.forEach(button => {
+        const isActive = button.dataset.onboardingTab === tabKey;
+        button.classList.toggle('active', isActive);
+      });
+
+      if (panels.my) panels.my.style.display = tabKey === 'my' ? 'block' : 'none';
+      if (panels.center) panels.center.style.display = tabKey === 'center' ? 'block' : 'none';
+    }
+
+    document.querySelectorAll('[data-onboarding-tab]').forEach(button => {
+      button.addEventListener('click', () => {
+        setActiveOnboardingTab(button.dataset.onboardingTab);
+      });
+    });
+
+    async function uploadDocument(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/documents`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Upload failed');
+      }
+      return response.json();
+    }
+
+    function renderItems(list, containerId) {
+      const container = document.getElementById(containerId);
+      if (list.length === 0) {
+        container.innerHTML = '<div style="color: var(--muted); font-size: 13px;">No items added yet.</div>';
+        return;
+      }
+
+      container.innerHTML = list
+        .map((item, index) => `
+          <div class="card" style="margin:0; padding: 14px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
+              <div>
+                <div style="font-weight:700;">${item.title}</div>
+                <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">${item.type.toUpperCase()} - ${item.required ? 'Required' : 'Optional'}</div>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="removeItem('${containerId}', ${index})">Remove</button>
+            </div>
+          </div>
+        `)
+        .join('');
+    }
+
+    function removeItem(containerId, index) {
+      if (containerId === 'template-items-list') {
+        templateItems.splice(index, 1);
+        renderItems(templateItems, containerId);
+      } else {
+        customItems.splice(index, 1);
+        renderItems(customItems, containerId);
+      }
+    }
+
+    async function addItem(prefix, list, containerId) {
+      const type = document.getElementById(`${prefix}-type`).value;
+      const title = document.getElementById(`${prefix}-title`).value.trim();
+      const descriptionElement = document.getElementById(`${prefix}-description${prefix === 'template' ? '-item' : ''}`);
+      const description = descriptionElement ? descriptionElement.value.trim() : '';
+      const required = document.getElementById(`${prefix}-required`).checked;
+
+      if (!title) {
+        alert('Title is required');
+        return;
+      }
+
+      const item = { type, title, description, required, config: {} };
+
+      if (type === 'form') {
+        const fieldsRaw = document.getElementById(`${prefix}-fields`).value;
+        item.config.fields = parseFields(fieldsRaw);
+      }
+
+      if (type === 'upload') {
+        item.config.accept = document.getElementById(`${prefix}-accept`).value;
+      }
+
+      if (type === 'esign') {
+        const documentData = signatureDocumentState[prefix];
+        if (!documentData) {
+          alert('Upload and preview a contract PDF first');
+          return;
+        }
+        if (!signatureFieldState[prefix].length) {
+          alert('Add at least one signature field');
+          return;
+        }
+        item.config.document = documentData;
+        item.config.signatureFields = signatureFieldState[prefix].map(field => ({ ...field }));
+        item.config.signers = signerSelectionState[prefix].map(signer => ({
+          key: signer.key,
+          type: signer.type,
+          memberId: signer.key !== 'assignee' ? signer.key : undefined,
+          label: signer.label
+        }));
+      }
+
+      list.push(item);
+      renderItems(list, containerId);
+
+      if (type === 'esign') {
+        document.getElementById(`${prefix}-document`).value = '';
+        signatureDocumentState[prefix] = null;
+        pdfState[prefix] = { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null };
+        setDocumentStatus(prefix, 'No document uploaded.');
+        const viewer = document.getElementById(`${prefix}-pdf-viewer`);
+        if (viewer) viewer.style.display = 'none';
+        resetSignatureFields(prefix);
+      }
+    }
+
+    function addTemplateItem() {
+      addItem('template', templateItems, 'template-items-list');
+    }
+
+    function addCustomItem() {
+      addItem('custom', customItems, 'custom-items-list');
+    }
+
+    async function createTemplate() {
+      const name = document.getElementById('template-name').value.trim();
+      const description = document.getElementById('template-description').value.trim();
+      const isDefault = document.getElementById('template-default').checked;
+
+      if (!name || templateItems.length === 0) {
+        alert('Template name and at least one item are required');
+        return;
+      }
+
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description, isDefault, items: templateItems })
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create template');
+      }
+    }
+
+    async function setDefaultTemplate(templateId) {
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/templates/${templateId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDefault: true })
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update template');
+      }
+    }
+
+    async function deleteTemplate(templateId) {
+      if (!confirm('Delete this template?')) return;
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/templates/${templateId}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete template');
+      }
+    }
+
+    async function cancelAssignment(assignmentId) {
+      if (!confirm('Cancel this onboarding assignment?')) return;
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/assignments/${assignmentId}/cancel`, {
+        method: 'PATCH'
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to cancel assignment');
+      }
+    }
+
+    async function assignOnboarding() {
+      const memberId = document.getElementById('assignmentMember').value;
+      const templateId = document.getElementById('assignmentTemplate').value;
+      const dueAt = document.getElementById('assignmentDue').value;
+
+      if (!memberId) {
+        alert('Please select a member');
+        return;
+      }
+
+      const response = await fetch(`/api/organizations/${orgId}/onboarding/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId,
+          templateId: templateId || null,
+          customItems,
+          dueAt: dueAt || null
+        })
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to assign onboarding');
+      }
+    }
+
+    <% if (typeof personalAssignments !== 'undefined') { %>
+    async function submitForm(form) {
+      const assignmentId = form.dataset.assignment;
+      const itemId = form.dataset.item;
+      const data = {};
+      new FormData(form).forEach((value, key) => {
+        data[key] = value;
+      });
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit form');
+      }
+    }
+
+    document.querySelectorAll('[data-form-item]').forEach(form => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitForm(form);
+      });
+    });
+
+    async function uploadOnboardingFile(assignmentId, itemId) {
+      const input = document.querySelector(`[data-upload-input][data-assignment="${assignmentId}"][data-item="${itemId}"]`);
+      if (!input || !input.files.length) {
+        alert('Please select a file');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', input.files[0]);
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to upload file');
+      }
+    }
+
+    const esignModal = document.getElementById('esignModal');
+    const esignDocumentName = document.getElementById('esign-document-name');
+    const esignDocumentLink = document.getElementById('esign-document-link');
+    const esignPdfViewer = document.getElementById('esign-pdf-viewer');
+    const esignPdfCanvas = document.getElementById('esign-pdf-canvas');
+    const esignPdfOverlay = document.getElementById('esign-pdf-overlay');
+    const esignPdfPageLabel = document.getElementById('esign-pdf-page-label');
+    const esignSignerName = document.getElementById('esign-signer-name');
+    const signatureCanvas = document.getElementById('esign-canvas');
+    const signatureCtx = signatureCanvas.getContext('2d');
+    const currentUserId = '<%= user._id %>';
+    let activeAssignmentId = null;
+    let activeItemId = null;
+    let activeFields = [];
+    let signaturePreviewUrl = null;
+    let esignPdfUrl = null;
+    let isDrawing = false;
+    let hasSignature = false;
+    const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null };
+
+    function resizeSignatureCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = signatureCanvas.getBoundingClientRect();
+      signatureCanvas.width = rect.width * ratio;
+      signatureCanvas.height = rect.height * ratio;
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.scale(ratio, ratio);
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+      signatureCtx.strokeStyle = '#0f172a';
+      signatureCtx.lineWidth = 2;
+    }
+
+    function clearSignature(reset = true, preserveStored = false) {
+      signatureCtx.save();
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      signatureCtx.restore();
+      if (reset) {
+        hasSignature = false;
+        signaturePreviewUrl = null;
+        if (!preserveStored) {
+          localStorage.removeItem('esignSignatureDataUrl');
+        }
+      }
+      renderEsignOverlay();
+    }
+
+    function loadSignatureDataUrl(dataUrl) {
+      if (!dataUrl) return;
+      const image = new Image();
+      image.onload = () => {
+        clearSignature(false);
+        const rect = signatureCanvas.getBoundingClientRect();
+        signatureCtx.drawImage(image, 0, 0, rect.width, rect.height);
+        hasSignature = true;
+        signaturePreviewUrl = dataUrl;
+        renderEsignOverlay();
+      };
+      image.src = dataUrl;
+    }
+
+    function storeSignatureToLocal() {
+      if (!hasSignature) return;
+      const dataUrl = signatureCanvas.toDataURL('image/png');
+      signaturePreviewUrl = dataUrl;
+      localStorage.setItem('esignSignatureDataUrl', dataUrl);
+      renderEsignOverlay();
+    }
+
+    async function loadEsignPdf(url) {
+      if (!url || !window.pdfjsLib) {
+        return;
+      }
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+      const loadingTask = pdfjsLib.getDocument(url);
+      const pdf = await loadingTask.promise;
+      esignPdfState.pdf = pdf;
+      esignPdfState.page = 1;
+      esignPdfState.totalPages = pdf.numPages;
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'block';
+      }
+      await renderEsignPdfPage();
+    }
+
+    async function renderEsignPdfPage() {
+      if (!esignPdfState.pdf) return;
+      const page = await esignPdfState.pdf.getPage(esignPdfState.page);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const wrapWidth = esignPdfCanvas.parentElement?.clientWidth || 600;
+      const scale = wrapWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      esignPdfCanvas.width = viewport.width;
+      esignPdfCanvas.height = viewport.height;
+      const ctx = esignPdfCanvas.getContext('2d');
+      ctx.clearRect(0, 0, esignPdfCanvas.width, esignPdfCanvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      esignPdfOverlay.style.width = `${viewport.width}px`;
+      esignPdfOverlay.style.height = `${viewport.height}px`;
+      esignPdfOverlay.innerHTML = '';
+
+      esignPdfState.scale = scale;
+      esignPdfState.viewport = viewport;
+
+      if (esignPdfPageLabel) {
+        esignPdfPageLabel.textContent = `Page ${esignPdfState.page} / ${esignPdfState.totalPages}`;
+      }
+
+      renderEsignOverlay();
+    }
+
+    function changeEsignPdfPage(delta) {
+      if (!esignPdfState.pdf) return;
+      const nextPage = Math.min(esignPdfState.totalPages, Math.max(1, esignPdfState.page + delta));
+      if (nextPage === esignPdfState.page) return;
+      esignPdfState.page = nextPage;
+      renderEsignPdfPage();
+    }
+
+    function renderEsignOverlay() {
+      if (!esignPdfState.viewport || !esignPdfOverlay) return;
+      esignPdfOverlay.innerHTML = '';
+      const scale = esignPdfState.scale || 1;
+      const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
+      const now = new Date().toLocaleDateString();
+      const signerName = esignSignerName.value.trim();
+
+      activeFields.forEach(field => {
+        if ((field.page || 1) !== esignPdfState.page) return;
+        const fieldEl = document.createElement('div');
+        fieldEl.className = 'esign-field esign-field-preview';
+
+        const topLeftY = field.origin === 'bottom-left'
+          ? (pdfHeight - field.y - field.height)
+          : field.y;
+        fieldEl.style.left = `${field.x * scale}px`;
+        fieldEl.style.top = `${topLeftY * scale}px`;
+        fieldEl.style.width = `${field.width * scale}px`;
+        fieldEl.style.height = `${field.height * scale}px`;
+
+        if (field.type === 'signature') {
+          if (signaturePreviewUrl) {
+            const img = document.createElement('img');
+            img.src = signaturePreviewUrl;
+            fieldEl.appendChild(img);
+          } else {
+            fieldEl.textContent = field.label || 'Signature';
+          }
+        } else if (field.type === 'date') {
+          fieldEl.textContent = now;
+        } else if (field.type === 'text') {
+          fieldEl.textContent = field.text || signerName || 'Text';
+        }
+
+        esignPdfOverlay.appendChild(fieldEl);
+      });
+    }
+
+    function getCanvasPoint(event) {
+      const rect = signatureCanvas.getBoundingClientRect();
+      return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      };
+    }
+
+    signatureCanvas.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      isDrawing = true;
+      hasSignature = true;
+      const point = getCanvasPoint(event);
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(point.x, point.y);
+      signatureCanvas.setPointerCapture(event.pointerId);
+    });
+
+    signatureCanvas.addEventListener('pointermove', (event) => {
+      if (!isDrawing) return;
+      const point = getCanvasPoint(event);
+      signatureCtx.lineTo(point.x, point.y);
+      signatureCtx.stroke();
+    });
+
+    signatureCanvas.addEventListener('pointerup', (event) => {
+      isDrawing = false;
+      signatureCtx.closePath();
+      if (signatureCanvas.hasPointerCapture(event.pointerId)) {
+        signatureCanvas.releasePointerCapture(event.pointerId);
+      }
+      storeSignatureToLocal();
+    });
+
+    signatureCanvas.addEventListener('pointerleave', () => {
+      isDrawing = false;
+    });
+
+    function openESignModal(button) {
+      const assignmentId = button.dataset.assignment;
+      const itemId = button.dataset.item;
+      const docName = button.dataset.docName;
+      const docUrl = button.dataset.docUrl;
+      const previewUrl = button.dataset.previewUrl || docUrl;
+      const fieldsRaw = button.dataset.fields ? decodeURIComponent(button.dataset.fields) : '[]';
+      let fields = [];
+
+      try {
+        fields = JSON.parse(fieldsRaw) || [];
+      } catch (error) {
+        console.error('Failed to parse signature fields:', error);
+      }
+
+      activeFields = fields
+        .map(field => ({
+          ...field,
+          page: Number(field.page) || 1,
+          x: Number(field.x) || 0,
+          y: Number(field.y) || 0,
+          width: Number(field.width) || 180,
+          height: Number(field.height) || 60
+        }))
+        .filter(field => !field.signerId || field.signerId === currentUserId);
+
+      if (!previewUrl) {
+        alert('Document is not available for signing');
+        return;
+      }
+      if (!activeFields.length) {
+        alert('No signature fields assigned to you');
+        return;
+      }
+      activeAssignmentId = assignmentId;
+      activeItemId = itemId;
+      esignDocumentName.textContent = docName || 'Document';
+      esignDocumentLink.href = docUrl || previewUrl;
+      esignDocumentLink.style.display = (docUrl || previewUrl) ? 'inline-flex' : 'none';
+      esignSignerName.value = '';
+      esignModal.classList.add('active');
+      esignPdfUrl = previewUrl;
+      setTimeout(() => {
+        resizeSignatureCanvas();
+        clearSignature(true, true);
+        const storedSignature = localStorage.getItem('esignSignatureDataUrl');
+        if (storedSignature) {
+          loadSignatureDataUrl(storedSignature);
+        }
+        loadEsignPdf(previewUrl);
+      }, 50);
+    }
+
+    function closeESignModal() {
+      esignModal.classList.remove('active');
+      activeAssignmentId = null;
+      activeItemId = null;
+      activeFields = [];
+      esignPdfState.pdf = null;
+      esignPdfState.page = 1;
+      esignPdfState.totalPages = 0;
+      esignPdfState.viewport = null;
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'none';
+      }
+    }
+
+    esignModal?.addEventListener('click', (event) => {
+      if (event.target === esignModal) {
+        closeESignModal();
+      }
+    });
+
+    document.querySelectorAll('[data-esign-button]').forEach(button => {
+      button.addEventListener('click', () => {
+        openESignModal(button);
+      });
+    });
+
+    esignSignerName?.addEventListener('input', () => {
+      renderEsignOverlay();
+    });
+
+    async function submitESignature() {
+      if (!activeAssignmentId || !activeItemId) return;
+      if (!hasSignature) {
+        alert('Please add your signature before submitting');
+        return;
+      }
+
+      const payload = {
+        signatureDataUrl: signatureCanvas.toDataURL('image/png')
+      };
+      const signerName = esignSignerName.value.trim();
+      if (signerName) {
+        payload.signerName = signerName;
+      }
+
+      const response = await fetch(`/api/onboarding/${activeAssignmentId}/items/${activeItemId}/esign/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit signature');
+      }
+    }
+
+    let esignResizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (!esignPdfState.pdf) return;
+      clearTimeout(esignResizeTimer);
+      esignResizeTimer = setTimeout(() => {
+        renderEsignPdfPage();
+      }, 150);
+    });
+    <% } %>
+
+    renderItems(templateItems, 'template-items-list');
+    renderItems(customItems, 'custom-items-list');
+    renderSignerOptions('template');
+    renderSignerOptions('custom');
+    renderSignatureFields('template');
+    renderSignatureFields('custom');
+    toggleItemInputs('template');
+    toggleItemInputs('custom');
+    if (document.querySelector('[data-onboarding-tab]')) {
+      const defaultTab = '<%= (typeof activePage !== "undefined" && activePage === "onboarding") ? "my" : "center" %>';
+      setActiveOnboardingTab(defaultTab);
+    }
+  </script>
+
+  <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

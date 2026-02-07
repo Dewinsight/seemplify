@@ -15,8 +15,7 @@
     <a href="/" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'home' ? ' active' : '' %>">Home</a>
     <a href="/organizations" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'organizations' ? ' active' : '' %>">Organizations</a>
     <a href="/subscription" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'subscription' ? ' active' : '' %>">Subscription</a>
-    <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
-    <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+    <a href="/onboarding" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'onboarding' ? ' active' : '' %>">Onboarding</a>
   </div>
   <div class="mobile-drawer-user">
     <div class="top-nav-user-info">
@@ -26,6 +25,10 @@
       <div class="top-nav-user-email">
         <%= user.email %>
       </div>
+    </div>
+    <div class="mobile-drawer-account">
+      <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+      <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
     </div>
     <a href="/logout" class="top-nav-logout">Sign out</a>
   </div>
@@ -61,8 +64,7 @@
     <a href="/" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'home' ? ' active' : '' %>">Home</a>
     <a href="/organizations" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'organizations' ? ' active' : '' %>">Organizations</a>
     <a href="/subscription" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'subscription' ? ' active' : '' %>">Subscription</a>
-    <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
-    <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+    <a href="/onboarding" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'onboarding' ? ' active' : '' %>">Onboarding</a>
   </div>
   <div class="top-nav-user">
     <div class="theme-dropdown">
@@ -99,14 +101,25 @@
         </button>
       </div>
     </div>
-    <div class="top-nav-user-info">
-      <div class="top-nav-user-name">
-        <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+    <details class="user-dropdown">
+      <summary class="user-toggle">
+        <div class="top-nav-user-info">
+          <div class="top-nav-user-name">
+            <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+          </div>
+          <div class="top-nav-user-email">
+            <%= user.email %>
+          </div>
+        </div>
+        <svg class="user-toggle-caret" viewBox="0 0 20 20" fill="none">
+          <path d="M5 7l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </summary>
+      <div class="user-menu">
+        <a href="/profile" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+        <a href="/invitations/pending" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
+        <a href="/logout" class="user-menu-link user-menu-logout">Sign out</a>
       </div>
-      <div class="top-nav-user-email">
-        <%= user.email %>
-      </div>
-    </div>
-    <a href="/logout" class="top-nav-logout">Sign out</a>
+    </details>
   </div>
 </nav>

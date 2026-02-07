@@ -355,6 +355,28 @@
   <%- include('partials/nav', { activePage: 'home' }) %>
 
   <div class="container hub-content">
+    <% if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
+      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
+        <div>
+          <div style="font-weight: 700; font-size: 16px;">Complete your onboarding</div>
+          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+            You have <%= pendingOnboardingCount %> onboarding task<%= pendingOnboardingCount === 1 ? '' : 's' %> waiting.
+          </div>
+          <% if (pendingOnboardingAssignments && pendingOnboardingAssignments.length > 0) { %>
+            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+              <% pendingOnboardingAssignments.slice(0, 3).forEach(assignment => { %>
+                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px;">
+                  <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#f59e0b;"></span>
+                  <%= assignment.organization?.name || 'Organization' %>
+                </span>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+        <a href="/onboarding" class="btn btn-primary">Go to Onboarding</a>
+      </div>
+    <% } %>
+
     <section class="apps">
       <div class="section-title">Manage identity & access</div>
 

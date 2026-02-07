@@ -76,6 +76,10 @@ const SubscriptionSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  accessRemovalEmailSent: {
+    type: Boolean,
+    default: false
+  },
   lastRenewalDate: {
     type: Date
   },
@@ -335,11 +339,12 @@ SubscriptionSchema.statics.findExpiredNeedingUpdate = function() {
   }).populate(['plan', 'organization'])
 }
 
-// Static: Find subscriptions past grace period
+// Static: Find subscriptions past grace period (that haven't been notified yet)
 SubscriptionSchema.statics.findPastGracePeriod = function() {
   return this.find({
     status: 'expired',
-    gracePeriodEnd: { $lt: new Date() }
+    gracePeriodEnd: { $lt: new Date() },
+    accessRemovalEmailSent: false
   }).populate(['plan', 'organization'])
 }
 
