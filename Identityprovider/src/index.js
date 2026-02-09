@@ -809,7 +809,7 @@ app.get('/interaction/:uid', async (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="/css/idp-theme.css">
         <link rel="stylesheet" href="/css/login.css">
-        <script src="/js/theme.js"></script>
+        <script src="/js/theme.js?v=3"></script>
         <style>
           body { visibility: hidden; }
           body.light, body.dark, [data-theme] body { visibility: visible; }
@@ -818,11 +818,33 @@ app.get('/interaction/:uid', async (req, res) => {
       <body>
         <div class="grid-overlay"></div>
 
+        <!-- Theme Toggle -->
+        <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+
         <div class="login-split">
           <!-- LEFT: Form Panel -->
           <div class="login-form-panel">
             <a href="/" class="login-back-link">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
               Back to home
             </a>
 
@@ -1059,10 +1081,29 @@ app.get('/interaction/:uid', async (req, res) => {
 
           // Theme Toggle Logic
           function toggleTheme() {
-            const current = window.ThemeManager.getTheme();
+            const current = window.ThemeManager?.getTheme() || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
-            window.ThemeManager.setTheme(next);
+            window.ThemeManager?.setTheme(next);
+            updateThemeIcon(next);
           }
+
+          function updateThemeIcon(theme) {
+            const sunIcon = document.querySelector('.theme-icon-sun');
+            const moonIcon = document.querySelector('.theme-icon-moon');
+            if (theme === 'light') {
+              sunIcon.style.display = 'none';
+              moonIcon.style.display = 'block';
+            } else {
+              sunIcon.style.display = 'block';
+              moonIcon.style.display = 'none';
+            }
+          }
+
+          // Initialize theme icon on load
+          window.addEventListener('DOMContentLoaded', () => {
+            const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+            updateThemeIcon(currentTheme);
+          });
         </script>
       </body>
       </html>
@@ -5291,16 +5332,38 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
       <style>
         ${themeCss}
       </style>
-      <script src="/js/theme.js?v=2"></script>
+      <script src="/js/theme.js?v=3"></script>
     </head>
     <body>
       <div class="grid-overlay"></div>
+
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
 
       <div class="login-split">
         <!-- LEFT: Form Panel -->
         <div class="login-form-panel">
           <a href="/" class="login-back-link">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
             Back to home
           </a>
 
@@ -5325,8 +5388,8 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
               </div>
 
               <div class="form-group">
-                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                  <label for="password">Password</label>
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+                  <label for="password" style="margin: 0;">Password</label>
                   <a href="/forgot-password" class="link">Forgot password?</a>
                 </div>
                 <input type="password" id="password" name="password" placeholder="••••••••" required />
@@ -5341,7 +5404,9 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 
               <button type="submit" id="submitBtn">
                 <span id="btnText">${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
               </button>
             </form>
 
@@ -5372,7 +5437,9 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
             <div class="feature-cards">
               <div class="feature-card">
                 <div class="feature-icon feature-icon--blue">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
                 </div>
                 <div>
                   <div class="feature-title">Single Sign-On</div>
@@ -5382,7 +5449,9 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 
               <div class="feature-card">
                 <div class="feature-icon feature-icon--purple">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                  </svg>
                 </div>
                 <div>
                   <div class="feature-title">Instant Access</div>
@@ -5392,7 +5461,10 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 
               <div class="feature-card">
                 <div class="feature-icon feature-icon--green">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M9 12l2 2 4-4"/>
+                  </svg>
                 </div>
                 <div>
                   <div class="feature-title">Enterprise Security</div>
@@ -5413,10 +5485,32 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           submitBtn.disabled = true;
           btnText.innerHTML = '<span class="spinner"></span>Signing in...';
         });
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        // Initialize theme icon on load
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
+        });
       </script>
-    </body>
-    </html>
-  `
 }
 
 // Hub Signup Page Renderer
