@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile } from './pages';
+import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import api from './api';
@@ -42,6 +42,13 @@ const OrgIcon = () => (
   </svg>
 );
 
+const InvitesIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+    <polyline points="22,6 12,13 2,6" />
+  </svg>
+);
+
 const MenuIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <line x1="3" y1="12" x2="21" y2="12" />
@@ -71,27 +78,32 @@ const Logo = () => (
 );
 
 const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
-  const { user, logout, activeDepartment, switchDepartment } = useAuth();
+  const { user, logout, activeOrganization, organizations, switchOrganization, activeDepartment, switchDepartment } = useAuth();
   const { toggleTheme, theme } = useTheme();
   const [adminDepartments, setAdminDepartments] = useState<any[]>([]);
   const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+  const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
+  const isAdmin = activeOrganization?.isAdmin || false;
 
   useEffect(() => {
-    if (user?.isAdmin) {
+    if (isAdmin) {
       api.get('/departments').then(res => setAdminDepartments(res.data)).catch(console.error);
     }
-  }, [user]);
+  }, [isAdmin, activeOrganization]);
 
-  const availableDepartments = user?.isAdmin ? adminDepartments : (user?.permissions?.map((p: any) => p.department) || []);
+  const availableDepartments = isAdmin
+    ? adminDepartments
+    : (activeOrganization?.permissions?.map((p: any) => p.department) || []);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
     { path: '/analyze', label: 'Initiatives', icon: <InitiativesIcon /> },
     { path: '/rules', label: 'Rules', icon: <RulesIcon /> },
-    ...(user?.isAdmin ? [{ path: '/admin/organization', label: 'Organization', icon: <OrgIcon /> }] : []),
+    { path: '/invites', label: 'Invites', icon: <InvitesIcon /> },
+    ...(isAdmin ? [{ path: '/admin/organization', label: 'Organization', icon: <OrgIcon /> }] : []),
   ];
 
   const handleNavClick = () => {
@@ -106,7 +118,6 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
       <div className={`sidebar-overlay ${isOpen ? 'open' : ''}`} onClick={onClose} />
 
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-        {/* Logo */}
         {/* Logo & Close Button Row */}
         <div className="sidebar-logo" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Logo />
@@ -118,6 +129,45 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
             ✕
           </button>
         </div>
+
+        {/* Organization Switcher */}
+        {organizations.length > 1 && (
+          <div style={{ padding: '0 1rem', marginBottom: '0.5rem' }}>
+            <button
+              onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+              style={{
+                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
+                borderRadius: '8px', padding: '0.6rem 0.8rem', color: 'var(--text-primary)',
+                cursor: 'pointer', fontSize: '0.85rem'
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{activeOrganization?.name || 'Select Org'}</span>
+              <span style={{ fontSize: '0.7rem' }}>▼</span>
+            </button>
+            {orgDropdownOpen && (
+              <div style={{ marginTop: '0.5rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', overflow: 'hidden' }}>
+                {organizations.map((org) => (
+                  <div
+                    key={org._id}
+                    onClick={() => {
+                      switchOrganization(org);
+                      setOrgDropdownOpen(false);
+                    }}
+                    style={{
+                      padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem',
+                      fontWeight: activeOrganization?._id === org._id ? 'bold' : 'normal',
+                      background: activeOrganization?._id === org._id ? 'rgba(155, 81, 224, 0.15)' : 'transparent'
+                    }}
+                  >
+                    {org.name}
+                    {org.isAdmin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', opacity: 0.6 }}>Admin</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="sidebar-nav">
@@ -143,12 +193,12 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
             </div>
             <div style={{ flex: 1, lineHeight: 1.2 }}>
               <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.username}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.isAdmin ? 'Admin' : (activeDepartment?.name || 'No Dept')}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{isAdmin ? 'Admin' : (activeDepartment?.name || 'No Dept')}</div>
             </div>
           </Link>
 
           {/* Department Switcher */}
-          {(availableDepartments.length > 0 || user.isAdmin) && (
+          {(availableDepartments.length > 0 || isAdmin) && (
             <div style={{ marginBottom: '1rem' }}>
               <button
                 onClick={() => setDeptDropdownOpen(!deptDropdownOpen)}
@@ -159,12 +209,12 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                   cursor: 'pointer', fontSize: '0.85rem'
                 }}
               >
-                <span>{activeDepartment?.name || (user.isAdmin ? 'All Departments' : 'Select Dept')}</span>
+                <span>{activeDepartment?.name || (isAdmin ? 'All Departments' : 'Select Dept')}</span>
                 <span style={{ fontSize: '0.7rem' }}>▼</span>
               </button>
               {deptDropdownOpen && (
                 <div style={{ marginTop: '0.5rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', overflow: 'hidden' }}>
-                  {user.isAdmin && (
+                  {isAdmin && (
                     <div onClick={() => { switchDepartment(null); setDeptDropdownOpen(false); }}
                       style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: activeDepartment === null ? 'bold' : 'normal', background: activeDepartment === null ? 'rgba(214,54,55,0.1)' : 'transparent' }}>
                       All Departments
@@ -229,9 +279,18 @@ const AppLayout = () => {
 };
 
 const ProtectedRoute = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, needsOnboarding } = useAuth();
+  const location = useLocation();
+
   if (isLoading) return <div className="glass-panel">Loading...</div>;
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
+  if (!isAuthenticated) return <Navigate to="/login" />;
+
+  // If user needs onboarding and isn't already on /setup, redirect there
+  if (needsOnboarding && location.pathname !== '/setup') {
+    return <Navigate to="/setup" />;
+  }
+
+  return <Outlet />;
 };
 
 function App() {
@@ -245,12 +304,17 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/verify" element={<VerifyOtp />} />
 
-            {/* Protected Routes - With Sidebar Layout */}
+            {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
+              {/* Onboarding - NO sidebar */}
+              <Route path="/setup" element={<OnboardingPage />} />
+
+              {/* Main app - WITH sidebar */}
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/analyze" element={<Analyze />} />
                 <Route path="/rules" element={<Rules />} />
+                <Route path="/invites" element={<InvitesPage />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/admin/organization" element={<AdminUsers />} />

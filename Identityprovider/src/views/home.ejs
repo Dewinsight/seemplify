@@ -459,24 +459,45 @@
       <% if (apps && apps.length > 0) { %>
         <div class="app-grid">
           <% apps.forEach(app => { %>
-            <a href="/launch/<%= app.appId %>" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>">
-              <div class="app-card__icon"><%- app.iconSvg %></div>
-              <div class="app-card__body">
-                <div class="app-card__title">
-                  <%= app.name %>
-                  <% if (app.badge) { %><span class="app-card__badge"><%= app.badge %></span><% } %>
+            <% if (app.isBeta) { %>
+              <div onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>; cursor: pointer;">
+                <div class="app-card__icon"><%- app.iconSvg %></div>
+                <div class="app-card__body">
+                  <div class="app-card__title">
+                    <%= app.name %>
+                    <% if (app.badge) { %><span class="app-card__badge"><%= app.badge %></span><% } %>
+                  </div>
+                  <div class="app-card__desc"><%= app.description || 'Secure single sign-on' %></div>
+                  <div class="app-card__meta">
+                    <span class="pill pill--soft">Instant launch</span>
+                  </div>
                 </div>
-                <div class="app-card__desc"><%= app.description || 'Secure single sign-on' %></div>
-                <div class="app-card__meta">
-                  <span class="pill pill--soft">Instant launch</span>
+                <div class="app-card__arrow">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                  </svg>
                 </div>
               </div>
-              <div class="app-card__arrow">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-              </div>
-            </a>
+            <% } else { %>
+              <a href="/launch/<%= app.appId %>" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>">
+                <div class="app-card__icon"><%- app.iconSvg %></div>
+                <div class="app-card__body">
+                  <div class="app-card__title">
+                    <%= app.name %>
+                    <% if (app.badge) { %><span class="app-card__badge"><%= app.badge %></span><% } %>
+                  </div>
+                  <div class="app-card__desc"><%= app.description || 'Secure single sign-on' %></div>
+                  <div class="app-card__meta">
+                    <span class="pill pill--soft">Instant launch</span>
+                  </div>
+                </div>
+                <div class="app-card__arrow">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                  </svg>
+                </div>
+              </a>
+            <% } %>
           <% }) %>
         </div>
       <% } else { %>
@@ -517,6 +538,41 @@
   </div>
   <form id="org-switch-form" method="POST" style="display: none;"></form>
 
+  <!-- Beta Warning Modal -->
+  <div id="betaWarningModal" class="custom-modal-overlay">
+    <div class="custom-modal" onclick="event.stopPropagation()">
+      <div class="custom-modal-header">
+        <div class="custom-modal-title" style="display: flex; align-items: center; gap: 10px;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Beta Product Warning
+        </div>
+        <button class="custom-modal-close" onclick="closeBetaWarningModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="custom-modal-body">
+        <div style="text-align: center; padding: 8px 0;">
+          <p style="color: #e2e8f0; font-size: 15px; line-height: 1.6; margin-bottom: 16px;">
+            <strong><span id="betaAppName"></span></strong> is currently in <span style="color: #f59e0b; font-weight: 600;">Beta</span> and testing.
+          </p>
+          <p style="color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">
+            You may encounter bugs, experience slow performance, or see features that are still under development. Your feedback is valuable to us!
+          </p>
+          <div style="display: flex; gap: 12px; justify-content: center;">
+            <button onclick="closeBetaWarningModal()" class="ghost-btn" style="min-width: 100px;">
+              Cancel
+            </button>
+            <button onclick="proceedToBetaApp()" class="btn btn-primary" style="min-width: 100px;">
+              Proceed Anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     function openOrgModal() {
       const modal = document.getElementById('customOrgModal');
@@ -541,6 +597,36 @@
       const form = document.getElementById('org-switch-form');
       form.action = '/organizations/' + orgId + '/switch';
       form.submit();
+    }
+
+    let pendingBetaAppId = null;
+
+    function showBetaWarning(appId, appName) {
+      pendingBetaAppId = appId;
+      document.getElementById('betaAppName').textContent = appName;
+      const modal = document.getElementById('betaWarningModal');
+      modal.classList.add('active');
+
+      modal.onclick = (e) => {
+        if (e.target === modal) closeBetaWarningModal();
+      };
+
+      document.onkeydown = (e) => {
+        if (e.key === 'Escape') closeBetaWarningModal();
+      };
+    }
+
+    function closeBetaWarningModal() {
+      const modal = document.getElementById('betaWarningModal');
+      modal.classList.remove('active');
+      document.onkeydown = null;
+      pendingBetaAppId = null;
+    }
+
+    function proceedToBetaApp() {
+      if (pendingBetaAppId) {
+        window.location.href = '/launch/' + pendingBetaAppId;
+      }
     }
   </script>
 </body>

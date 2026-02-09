@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const ProjectSchema = new mongoose.Schema({
     name: { type: String, required: true },
     description: { type: String },
+    organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
     repoUrl: { type: String },
     filePath: { type: String }, // For local analysis if needed
     analysisResult: { type: Object }, // Store entire AI response

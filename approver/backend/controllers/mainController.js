@@ -1,12 +1,17 @@
 const Rule = require('../models/Rule');
 const Project = require('../models/Project');
+const Organization = require('../models/Organization');
 const openAIService = require('../services/OpenAIService');
 
 exports.createRule = async (req, res) => {
     try {
         // Ensure department is handled (null if empty)
         const { department } = req.body;
-        const rule = new Rule({ ...req.body, department: department || null });
+        const rule = new Rule({
+            ...req.body,
+            department: department || null,
+            organization: req.organization
+        });
         await rule.save();
         res.status(201).json(rule);
     } catch (error) {
@@ -17,17 +22,21 @@ exports.createRule = async (req, res) => {
 exports.getRules = async (req, res) => {
     try {
         const { department } = req.query;
-        let query = {};
+        let query = { organization: req.organization };
 
         if (department) {
             // Specific Context: Rules for this Dept + General Rules
-            query = { $or: [{ department: department }, { department: null }] };
+            query.$or = [{ department: department }, { department: null }];
+            query.organization = req.organization;
+            // Restructure for $or with org
+            query = {
+                organization: req.organization,
+                $or: [{ department: department }, { department: null }]
+            };
         } else if (!req.user.isAdmin) {
-            // Non-admin without context sees only General rules? 
-            // Or maybe they shouldn't see anything if no context? Default to General.
-            query = { department: null };
+            query.department = null;
         }
-        // If Admin and no department query, query remains {} (All rules)
+        // If Admin and no department query, query has just org filter (all rules in org)
 
         const rules = await Rule.find(query).populate('department', 'name');
         res.json(rules);
@@ -38,7 +47,18 @@ exports.getRules = async (req, res) => {
 
 exports.getDepartments = async (req, res) => {
     try {
-        const departments = await require('../models/Department').find({}, 'name description manager').populate('manager', 'username');
+        const Department = require('../models/Department');
+        let query = {};
+
+        // If authenticated user, scope to their org
+        if (req.user && req.organization) {
+            query.organization = req.organization;
+        } else if (req.query.organization) {
+            // Public route (registration) - filter by requested org
+            query.organization = req.query.organization;
+        }
+
+        const departments = await Department.find(query, 'name description manager organization').populate('manager', 'username');
         res.json(departments);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -49,7 +69,7 @@ exports.createDepartment = async (req, res) => {
     try {
         const { name, description } = req.body;
         const Department = require('../models/Department');
-        const dept = new Department({ name, description });
+        const dept = new Department({ name, description, organization: req.organization });
         await dept.save();
         res.status(201).json(dept);
     } catch (error) {
@@ -60,6 +80,11 @@ exports.createDepartment = async (req, res) => {
 exports.deleteDepartment = async (req, res) => {
     try {
         const Department = require('../models/Department');
+        // Verify department belongs to user's org before deleting
+        const dept = await Department.findOne({ _id: req.params.id, organization: req.organization });
+        if (!dept) {
+            return res.status(404).json({ error: 'Department not found in your organization' });
+        }
         await Department.findByIdAndDelete(req.params.id);
         res.json({ message: 'Department deleted' });
     } catch (error) {
@@ -91,14 +116,15 @@ exports.analyzeProject = async (req, res) => {
                 const firstDept = req.user.permissions[0].department;
                 department = firstDept._id || firstDept;
             } else {
-                const general = await require('../models/Department').findOne({ name: 'General' });
+                const general = await require('../models/Department').findOne({ name: 'General', organization: req.organization });
                 department = general?._id;
             }
         }
 
-        // 1. Fetch active rules for this scope (Dept + Global)
+        // 1. Fetch active rules for this scope (Dept + Global) within org
         const rules = await Rule.find({
             isActive: true,
+            organization: req.organization,
             $or: [{ department: department }, { department: null }]
         });
 
@@ -140,9 +166,8 @@ exports.analyzeProject = async (req, res) => {
         const minPassScore = process.env.MIN_PASS_SCORE ? parseInt(process.env.MIN_PASS_SCORE) : 70;
 
         // 4. Use AI's calculated priority score and tier (from new scoring parameters)
-        // Get scoring breakdown from AI analysis
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
-        let priorityScore = analysisResult.priorityScore || (score / 20); // Fallback to simple conversion
+        let priorityScore = analysisResult.priorityScore || (score / 20);
         let tier = analysisResult.calculatedTier;
 
         // Validate and default tier if not provided
@@ -170,17 +195,10 @@ exports.analyzeProject = async (req, res) => {
         let simpleStatus;
 
         if (aiApproved) {
-            // All AI Approved projects go to Center of Excellence first
             approvalStatus = 'Pending Center of Excellence';
             workflowStage = 'Center of Excellence Review';
             simpleStatus = 'Under Review';
         } else {
-            // AI Rejected projects also go to Center of Excellence (or could be final rejected, but plan says routing)
-            // Typically AI Rejection might be final, but let's stick to the flow where CoE can override or confirm.
-            // If AI rejects, it's usually flagged. Let's route to CoE for confirmation if it was an escalation.
-            // If it was a hard reject (score too low), maybe stay rejected?
-            // Plan says "Tier 1: AI -> CoE -> Approved".
-            // Let's route ALL to CoE for now as per "Center of Excellence Approval" requirement implying they oversee.
             approvalStatus = 'Pending Center of Excellence';
             workflowStage = 'Center of Excellence Review';
             simpleStatus = 'Under Review';
@@ -191,6 +209,7 @@ exports.analyzeProject = async (req, res) => {
             name,
             description,
             repoUrl,
+            organization: req.organization,
             analysisResult,
             approvalStatus,
             status: simpleStatus,
@@ -226,17 +245,12 @@ exports.analyzeProject = async (req, res) => {
 
 exports.getProjects = async (req, res) => {
     try {
-        let query = {};
+        let query = { organization: req.organization };
 
-        // Admin sees all
+        // Admin sees all within org
         if (req.user.isAdmin) {
-            // No filter
+            // Just org filter
         } else {
-            // Build filter based on permissions
-            // Can see if:
-            // 1. I am the requester
-            // 2. I have 'Approver' role in the project's department
-
             const approverDeptIds = (req.user.permissions || [])
                 .filter(p => {
                     const roles = p.roles || (p.role ? [p.role] : []);
@@ -245,6 +259,7 @@ exports.getProjects = async (req, res) => {
                 .map(p => (p.department._id || p.department).toString());
 
             query = {
+                organization: req.organization,
                 $or: [
                     { requester: req.user.id },
                     { department: { $in: approverDeptIds } }
@@ -274,7 +289,7 @@ exports.overrideProject = async (req, res) => {
         if (!['Approved', 'Rejected'].includes(newStatus)) {
             return res.status(400).json({ error: 'Invalid status for override.' });
         }
-        const project = await Project.findById(projectId);
+        const project = await Project.findOne({ _id: projectId, organization: req.organization });
         if (!project) {
             return res.status(404).json({ error: 'Project not found.' });
         }
@@ -288,6 +303,7 @@ exports.overrideProject = async (req, res) => {
         const Audit = require('../models/Audit');
         await Audit.create({
             project: project._id,
+            organization: req.organization,
             action: 'override',
             performedBy: req.user.id,
             previousStatus,
@@ -304,7 +320,7 @@ exports.overrideProject = async (req, res) => {
 exports.getProjectById = async (req, res) => {
     try {
         const projectId = req.params.id;
-        const project = await Project.findById(projectId)
+        const project = await Project.findOne({ _id: projectId, organization: req.organization })
             .populate('requester', 'username department')
             .populate('department', 'name');
         if (!project) {
@@ -319,9 +335,8 @@ exports.getProjectById = async (req, res) => {
 // Dashboard statistics for admin/approver view
 exports.getDashboardStats = async (req, res) => {
     try {
-        let query = {};
+        let query = { organization: req.organization };
         if (!req.user.isAdmin) {
-            // Stats for Approvers (Governance or Executive)
             const approverDepts = (req.user.permissions || [])
                 .filter(p => {
                     const roles = p.roles || (p.role ? [p.role] : []);
@@ -330,6 +345,7 @@ exports.getDashboardStats = async (req, res) => {
                 .map(p => (p.department._id || p.department).toString());
 
             query = {
+                organization: req.organization,
                 $or: [
                     { requester: req.user.id },
                     { department: { $in: approverDepts } }
@@ -363,6 +379,10 @@ exports.getDashboardStats = async (req, res) => {
 // Delete a rule
 exports.deleteRule = async (req, res) => {
     try {
+        const rule = await Rule.findOne({ _id: req.params.id, organization: req.organization });
+        if (!rule) {
+            return res.status(404).json({ error: 'Rule not found in your organization' });
+        }
         await Rule.findByIdAndDelete(req.params.id);
         res.json({ message: 'Rule deleted successfully' });
     } catch (error) {
@@ -373,9 +393,11 @@ exports.deleteRule = async (req, res) => {
 // Delete a project
 exports.deleteProject = async (req, res) => {
     try {
+        const project = await Project.findOne({ _id: req.params.id, organization: req.organization });
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found in your organization' });
+        }
         await Project.findByIdAndDelete(req.params.id);
-        // Also remove associated audit logs? Optional but good practice.
-        // await require('../models/Audit').deleteMany({ project: req.params.id }); 
         res.json({ message: 'Project deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -416,7 +438,7 @@ exports.centerOfExcellenceReview = async (req, res) => {
             return res.status(400).json({ error: 'Action must be Approved or Rejected' });
         }
 
-        const project = await Project.findById(projectId);
+        const project = await Project.findOne({ _id: projectId, organization: req.organization });
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -441,17 +463,14 @@ exports.centerOfExcellenceReview = async (req, res) => {
             project.approvalStatus = 'Center of Excellence Approved';
 
             if (project.tier === 1) {
-                // Tier 1 + CoE Approved = Final Approved
-                project.approvalStatus = 'Approved'; // Final status
+                project.approvalStatus = 'Approved';
                 project.status = 'Approved';
                 project.workflowStage = 'Complete';
             } else {
-                // Tier 2/3 + CoE Approved = Send to Governance
                 project.approvalStatus = 'Pending Governance';
                 project.workflowStage = 'Governance Committee';
             }
         } else {
-            // CoE Rejected = Final Rejected
             project.approvalStatus = 'Center of Excellence Rejected';
             project.status = 'Rejected';
             project.workflowStage = 'Complete';
@@ -462,6 +481,7 @@ exports.centerOfExcellenceReview = async (req, res) => {
         const Audit = require('../models/Audit');
         await Audit.create({
             project: project._id,
+            organization: req.organization,
             action: 'coe_review',
             performedBy: req.user.id,
             previousStatus: 'Pending Center of Excellence',
@@ -484,7 +504,7 @@ exports.governanceReview = async (req, res) => {
             return res.status(400).json({ error: 'Action must be Approved or Rejected' });
         }
 
-        const project = await Project.findById(projectId);
+        const project = await Project.findOne({ _id: projectId, organization: req.organization });
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -510,24 +530,19 @@ exports.governanceReview = async (req, res) => {
 
         if (action === 'Approved') {
             if (project.tier === 2) {
-                // Tier 2 + Governance Approved = Final Approved
                 project.approvalStatus = 'Governance Approved';
                 project.status = 'Approved';
                 project.workflowStage = 'Complete';
             } else if (project.tier === 3) {
-                // Tier 3 + Governance Approved = Send to Executive
                 project.approvalStatus = 'Pending Executive';
                 project.workflowStage = 'Executive Approval';
             }
         } else {
             if (project.tier === 3) {
-                // Tier 3 Governance Rejected = Can still escalate to Executive
                 project.approvalStatus = 'Pending Executive';
                 project.workflowStage = 'Executive Approval';
-                // Update history to show escalation
                 project.approvalHistory[project.approvalHistory.length - 1].action = 'Escalated';
             } else {
-                // Tier 2 Governance Rejected = Final Rejected
                 project.approvalStatus = 'Governance Rejected';
                 project.status = 'Rejected';
                 project.workflowStage = 'Complete';
@@ -540,6 +555,7 @@ exports.governanceReview = async (req, res) => {
         const Audit = require('../models/Audit');
         await Audit.create({
             project: project._id,
+            organization: req.organization,
             action: 'governance_review',
             performedBy: req.user.id,
             previousStatus: 'Pending Governance',
@@ -562,7 +578,7 @@ exports.executiveReview = async (req, res) => {
             return res.status(400).json({ error: 'Action must be Approved or Rejected' });
         }
 
-        const project = await Project.findById(projectId);
+        const project = await Project.findOne({ _id: projectId, organization: req.organization });
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -601,6 +617,7 @@ exports.executiveReview = async (req, res) => {
         const Audit = require('../models/Audit');
         await Audit.create({
             project: project._id,
+            organization: req.organization,
             action: 'executive_review',
             performedBy: req.user.id,
             previousStatus: 'Pending Executive',
@@ -617,9 +634,9 @@ exports.executiveReview = async (req, res) => {
 // Get projects pending review for specific role
 exports.getPendingReviews = async (req, res) => {
     try {
-        const { stage } = req.query; // 'governance' or 'executive'
+        const { stage } = req.query;
 
-        let query = {};
+        let query = { organization: req.organization };
 
         if (stage === 'governance') {
             query.approvalStatus = 'Pending Governance';
@@ -653,6 +670,108 @@ exports.getPendingReviews = async (req, res) => {
             .sort({ createdAt: -1 });
 
         res.json(projects);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// --- Organization Management ---
+exports.getOrganizations = async (req, res) => {
+    try {
+        const orgs = await Organization.find({}, 'name slug description');
+        res.json(orgs);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.createOrganization = async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        const org = new Organization({
+            name,
+            description,
+            createdBy: req.user.id
+        });
+        await org.save();
+        res.status(201).json(org);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Create org AND join it (onboarding flow — no org context needed)
+exports.createAndJoin = async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'Organization name is required' });
+        }
+
+        const UserOrganization = require('../models/UserOrganization');
+        const Department = require('../models/Department');
+
+        // Create the organization
+        const org = new Organization({
+            name,
+            description: description || '',
+            createdBy: req.user.id
+        });
+        await org.save();
+
+        // Create General department
+        const generalDept = await new Department({
+            name: 'General',
+            description: 'Default department',
+            organization: org._id
+        }).save();
+
+        // Create UserOrganization — creator becomes admin with ExecutiveApprover role
+        const membership = await UserOrganization.create({
+            user: req.user.id,
+            organization: org._id,
+            isAdmin: true,
+            permissions: [{ department: generalDept._id, roles: ['ExecutiveApprover'] }]
+        });
+
+        await membership.populate('organization', 'name slug');
+        await membership.populate('permissions.department', 'name');
+
+        res.status(201).json({
+            organization: {
+                _id: org._id,
+                name: org.name,
+                slug: org.slug,
+                isAdmin: membership.isAdmin,
+                permissions: membership.permissions
+            }
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ error: 'An organization with that name already exists.' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get all orgs the current user belongs to
+exports.getMyOrganizations = async (req, res) => {
+    try {
+        const UserOrganization = require('../models/UserOrganization');
+
+        const memberships = await UserOrganization.find({ user: req.user.id })
+            .populate('organization', 'name slug')
+            .populate('permissions.department', 'name');
+
+        const organizations = memberships.map(m => ({
+            _id: m.organization._id,
+            name: m.organization.name,
+            slug: m.organization.slug,
+            isAdmin: m.isAdmin,
+            permissions: m.permissions
+        }));
+
+        res.json(organizations);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -4,6 +4,8 @@ export { default as Rules } from './Rules';
 export { default as AdminUsers } from './AdminUsers';
 export { default as ProjectDetail } from './ProjectDetail';
 export { default as Profile } from './Profile';
+export { default as OnboardingPage } from './OnboardingPage';
+export { default as InvitesPage } from './InvitesPage';
 // export { default as Departments } from './Departments';
 export { default as Login } from './auth/Login';
 export { default as Register } from './auth/Register';

@@ -18,8 +18,14 @@ const Login: React.FC = () => {
 
         try {
             const response = await api.post('/auth/login', { email, password });
-            login(response.data.token, response.data.user);
-            navigate('/');
+            const { token, user, organizations, needsOnboarding } = response.data;
+            login(token, user, organizations || []);
+
+            if (needsOnboarding) {
+                navigate('/setup');
+            } else {
+                navigate('/');
+            }
         } catch (err: any) {
             console.error(err);
             if (err.response?.data?.needsVerification) {

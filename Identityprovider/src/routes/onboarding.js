@@ -6,7 +6,7 @@ import { Account } from '../models/Account.js'
 import { OnboardingTemplate } from '../models/OnboardingTemplate.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { emailService } from '../services/emailService.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 
 const router = express.Router()
@@ -420,6 +420,34 @@ router.post('/organizations/:orgId/onboarding/documents',
   }
 )
 
+router.post('/organizations/:orgId/onboarding/documents/delete', requireAuth, requireOrganizationMember, async (req, res) => {
+  if (!canManageOnboarding(req.memberRole)) {
+    return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
+  }
+
+  const { publicId } = req.body || {}
+  if (!publicId || typeof publicId !== 'string') {
+    return res.status(400).json({ error: 'publicId is required' })
+  }
+
+  const expectedPrefix = `seemplify/onboarding/${req.params.orgId}/`
+  if (!publicId.startsWith(expectedPrefix)) {
+    return res.status(400).json({ error: 'Invalid document reference' })
+  }
+
+  if (!isCloudinaryConfigured()) {
+    return res.status(500).json({ error: 'Cloudinary is not configured' })
+  }
+
+  try {
+    await deleteFromCloudinary({ publicId, resourceType: 'raw' })
+    res.json({ message: 'Document deleted' })
+  } catch (error) {
+    console.error('Onboarding document delete error:', error)
+    res.status(500).json({ error: 'Failed to delete document' })
+  }
+})
+
 // =========================
 // Admin: Assign onboarding
 // =========================
@@ -693,6 +721,8 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
       return res.status(400).json({ error: 'No document attached for signing' })
     }
 
+    const previousSignedPublicId = item.data?.esign?.signedPublicId
+
     const signerIdStr = req.user._id.toString()
     const configuredSigners = item.config?.signers?.length
       ? item.config.signers
@@ -733,9 +763,33 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
           signerId: signerIdStr
         }]
 
+    const normalizeSignerId = (value) => {
+      if (!value) return ''
+      if (typeof value === 'string') return value
+      if (typeof value === 'object') {
+        // Serialized ObjectId from some JSON formats.
+        if (typeof value.$oid === 'string') return value.$oid
+        // Native/Mongoose ObjectId.
+        if (typeof value.toHexString === 'function') return value.toHexString()
+        // Avoid accessing `value._id` here: Mongoose ObjectId defines `_id` as a getter
+        // that returns itself, which can cause infinite recursion.
+        if (Object.prototype.hasOwnProperty.call(value, '_id')) {
+          const next = value._id
+          if (next && next !== value) return normalizeSignerId(next)
+        }
+      }
+      try {
+        return String(value)
+      } catch (e) {
+        return ''
+      }
+    }
+
     const signatureFields = allSignatureFields.filter(field => {
-      if (!field.signerId) return true
-      return field.signerId.toString() === signerIdStr
+      const rawSigner = normalizeSignerId(field.signerKey || field.signerId || field.signer)
+      if (!rawSigner) return true
+      const resolvedSigner = rawSigner === 'assignee' ? assignment.member.toString() : rawSigner
+      return resolvedSigner === signerIdStr
     })
 
     if (signatureFields.length === 0) {
@@ -806,6 +860,7 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     item.data.esign = item.data.esign || {}
     item.data.esign.originalUrl = item.data.esign.originalUrl || document.url
     item.data.esign.signedUrl = uploadResult.secure_url
+    item.data.esign.signedPublicId = uploadResult.public_id
 
     const signersData = Array.isArray(item.data.esign.signers)
       ? item.data.esign.signers
@@ -847,6 +902,14 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     item.status = allSigned ? 'completed' : 'submitted'
     updateAssignmentStatus(assignment)
     await assignment.save()
+
+    if (previousSignedPublicId && previousSignedPublicId !== uploadResult.public_id) {
+      try {
+        await deleteFromCloudinary({ publicId: previousSignedPublicId, resourceType: 'raw' })
+      } catch (deleteError) {
+        console.error('Failed to delete old signed document from Cloudinary:', deleteError)
+      }
+    }
 
     res.json({ message: 'Document signed', signedUrl: uploadResult.secure_url, assignment })
   } catch (error) {

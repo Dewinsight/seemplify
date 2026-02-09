@@ -807,358 +807,149 @@ app.get('/interaction/:uid', async (req, res) => {
       <head>
         <title>AIIN Identity - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/css/idp-theme.css">
+        <link rel="stylesheet" href="/css/login.css">
+        <script src="/js/theme.js"></script>
         <style>
-          :root {
-            --brand: #60a5fa;
-            --brand-2: #a855f7;
-            --surface: #0b1224;
-            --surface-2: #0f172a;
-            --line: #1f2a44;
-            --text: #e2e8f0;
-            --muted: #94a3b8;
-            --glow1: rgba(59,130,246,0.16);
-            --glow2: rgba(168,85,247,0.18);
-            --shadow: 0 25px 70px rgba(0,0,0,0.35);
-          }
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-            background:
-              radial-gradient(circle at 20% 20%, var(--glow1), transparent 32%),
-              radial-gradient(circle at 80% 12%, var(--glow2), transparent 36%),
-              linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
-            min-height: 100vh;
-            color: var(--text);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 32px 16px;
-          }
-          .grid-overlay {
-            position: fixed;
-            inset: 0;
-            background-image:
-              linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-            background-size: 42px 42px;
-            opacity: 0.35;
-            pointer-events: none;
-          }
-          .page {
-            max-width: 1080px;
-            width: 100%;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 26px;
-            align-items: center;
-            position: relative;
-            z-index: 1;
-          }
-          .hero {
-            padding: 12px 8px;
-          }
-          .pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.06);
-            color: #c7d2fe;
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 0.01em;
-            border: 1px solid rgba(255,255,255,0.14);
-          }
-          .hero h1 {
-            margin: 14px 0 8px;
-            font-size: clamp(28px, 4vw, 38px);
-            letter-spacing: -0.02em;
-            color: #f8fafc;
-          }
-          .hero p {
-            color: var(--muted);
-            max-width: 520px;
-            line-height: 1.6;
-            font-size: 15px;
-          }
-          .chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 16px;
-          }
-          .chip {
-            padding: 8px 12px;
-            background: rgba(255,255,255,0.06);
-            color: #c7d2fe;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            font-weight: 600;
-            font-size: 13px;
-          }
-          .card {
-            background: linear-gradient(160deg, rgba(16,24,40,0.88), rgba(11,18,36,0.92));
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            padding: 26px;
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(16px);
-            width: 100%;
-            max-width: 460px;
-            margin-left: auto;
-            margin-right: auto;
-          }
-          .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 8px;
-          }
-          .brand-mark {
-            width: 48px;
-            height: 48px;
-            border-radius: 14px;
-            background: linear-gradient(135deg, var(--brand), var(--brand-2));
-            display: grid;
-            place-items: center;
-            color: #fff;
-            box-shadow: 0 10px 26px rgba(59,130,246,0.35);
-          }
-          .brand h2 {
-            margin: 0;
-            font-size: 22px;
-            letter-spacing: -0.01em;
-            color: #f8fafc;
-          }
-          .muted {
-            color: var(--muted);
-            font-size: 14px;
-          }
-          .error {
-            background: rgba(239,68,68,0.14);
-            border: 1px solid rgba(239,68,68,0.35);
-            color: #fecdd3;
-            padding: 12px;
-            border-radius: 12px;
-            font-size: 14px;
-            margin-bottom: 12px;
-            display: none;
-          }
-          .error.show { display: block; }
-          .form-group { margin-bottom: 14px; }
-          label {
-            display: block;
-            margin-bottom: 6px;
-            color: var(--muted);
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 0.01em;
-          }
-          input[type="email"],
-          input[type="password"] {
-            width: 100%;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.06);
-            color: #e5e7eb;
-            font-size: 15px;
-            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-          }
-          input::placeholder { color: #94a3b8; }
-          input:focus {
-            outline: none;
-            border-color: rgba(59,130,246,0.6);
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.25);
-            background: rgba(255,255,255,0.1);
-          }
-          .muted-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin: 8px 0 14px;
-            color: var(--muted);
-            font-size: 14px;
-          }
-          .muted-row label {
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #cbd5e1;
-            cursor: pointer;
-            font-weight: 600;
-          }
-          .muted-row input[type="checkbox"] { width: auto; }
-          .link {
-            color: #a5b4fc;
-            text-decoration: none;
-            font-weight: 700;
-          }
-          .link:hover { text-decoration: underline; }
-          button {
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--brand), var(--brand-2));
-            color: #fff;
-            font-weight: 700;
-            font-size: 16px;
-            cursor: pointer;
-            transition: transform 0.15s ease, box-shadow 0.2s ease;
-            margin-top: 6px;
-          }
-          button:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(59,130,246,0.35); }
-          button:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-          .secondary {
-            background: transparent;
-            border: 1px solid rgba(255,255,255,0.16);
-            color: #cbd5e1;
-          }
-          .divider {
-            text-align: center;
-            margin: 20px 0 10px;
-            position: relative;
-            color: var(--muted);
-            font-size: 13px;
-          }
-          .divider::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: rgba(255,255,255,0.08);
-          }
-          .divider span {
-            background: linear-gradient(135deg, rgba(15,23,42,0.85), rgba(11,18,36,0.9));
-            padding: 0 12px;
-            position: relative;
-          }
-          .signup-link {
-            text-align: center;
-            font-size: 14px;
-            color: var(--muted);
-            margin-top: 8px;
-          }
-          .spinner {
-            border: 2px solid rgba(255, 255, 255, 0.28);
-            border-top: 2px solid #fff;
-            border-radius: 50%;
-            width: 16px;
-            height: 16px;
-            animation: spin 0.6s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 8px;
-          }
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @media (max-width: 1024px) {
-            body { padding: 24px 16px; }
-            .page { grid-template-columns: 1fr; gap: 20px; }
-            .hero { text-align: center; }
-            .chips { justify-content: center; }
-          }
-          @media (max-width: 640px) {
-            .page { gap: 16px; }
-            .card { padding: 20px; }
-            .hero h1 { font-size: 26px; }
-            .hero p { font-size: 14px; }
-          }
+          body { visibility: hidden; }
+          body.light, body.dark, [data-theme] body { visibility: visible; }
         </style>
       </head>
       <body>
         <div class="grid-overlay"></div>
-        <div class="page">
-          <div class="hero">
-            <div class="pill">AIIN Identity</div>
-            <h1>Sign in to SmartHR</h1>
-            <p>Same identity look and feel as the SmartHR app login, with a focused sign-in experience.</p>
-            <div class="chips">
-              <span class="chip">SSO ready</span>
-              <span class="chip">Adaptive MFA</span>
-              <span class="chip">Session continuity</span>
+
+        <div class="login-split">
+          <!-- LEFT: Form Panel -->
+          <div class="login-form-panel">
+            <a href="/" class="login-back-link">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Back to home
+            </a>
+
+            <div class="login-form-inner">
+              <div class="login-brand">
+                <div class="brand-mark">${seemplifyMarkSvg}</div>
+                <span class="login-brand-name">Seemplify</span>
+              </div>
+
+              <h1 class="login-heading">Welcome back</h1>
+              <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+
+              ${lastLoggedInEmail ? `
+              <div id="quickLogin">
+                <div class="error" id="errorQuick"></div>
+                <div style="background: var(--surface-2, rgba(30,41,59,0.4)); border:1px solid var(--border); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
+                  <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #a855f7, #ec4899); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
+                      ${lastLoggedInEmail.charAt(0).toUpperCase()}
+                    </div>
+                    <div style="flex: 1;">
+                      <div style="font-weight: 700; color: var(--text); margin-bottom: 2px; font-size: 14px;">${lastLoggedInEmail}</div>
+                      <div style="font-size: 13px; color: var(--muted);">Continue with this account</div>
+                    </div>
+                    <a href="/interaction/${uid}/logout" class="link" style="font-size: 12px;">Not you?</a>
+                  </div>
+                  <button type="button" id="continueBtn">
+                    Continue as ${lastLoggedInEmail.split('@')[0]}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  </button>
+                </div>
+                <button type="button" id="useDifferentAccount" class="secondary">
+                  Use a different account
+                </button>
+              </div>
+              ` : ''}
+
+              <form id="loginForm" style="${lastLoggedInEmail ? 'display: none;' : ''}">
+                <div class="error" id="error"></div>
+
+                <div class="form-group">
+                  <label for="email">Email address</label>
+                  <input type="email" id="email" name="email" placeholder="name@example.com" required ${!lastLoggedInEmail ? 'autofocus' : ''} />
+                </div>
+
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <label for="password">Password</label>
+                    <a href="/forgot-password" class="link">Forgot password?</a>
+                  </div>
+                  <input type="password" id="password" name="password" placeholder="••••••••" required />
+                </div>
+
+                <div class="muted-row">
+                  <label>
+                    <input type="checkbox" id="remember" name="remember" />
+                    Remember me
+                  </label>
+                </div>
+
+                <button type="submit" id="submitBtn">
+                  <span id="btnText">Sign in</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </button>
+
+                ${lastLoggedInEmail ? `
+                <button type="button" id="backToQuick" class="secondary">
+                  Back to quick login
+                </button>
+                ` : ''}
+              </form>
+
+              <div class="divider"><span>or</span></div>
+
+              <div class="signup-link">
+                Don't have an account? <a class="link" href="/signup/${uid}">Create free account</a>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div class="brand">
-            <div class="brand-mark">
-              ${seemplifyMarkSvg}
-            </div>
-              <div>
-                <h2>Sign in</h2>
-                <div class="muted">Use your AIIN credentials to continue</div>
+          <!-- RIGHT: Marketing Panel -->
+          <div class="login-marketing-panel">
+            <div class="marketing-inner">
+              <div class="marketing-pill">
+                <span class="status-dot"></span>
+                Enterprise-ready &bull; SOC 2 Ready
               </div>
-            </div>
 
-            ${lastLoggedInEmail ? `
-            <div id="quickLogin">
-              <div class="error" id="errorQuick"></div>
-              <div style="background: var(--surface-2); border:1px solid var(--line); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
-                <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                  <div style="width: 48px; height: 48px; background: linear-gradient(135deg, var(--brand), var(--brand-2)); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 20px; font-weight: bold; margin-right: 12px;">
-                    ${lastLoggedInEmail.charAt(0).toUpperCase()}
+              <h2 class="marketing-heading">
+                Your Workforce,<br/><span class="highlight">Supercharged.</span>
+              </h2>
+
+              <p class="marketing-desc">
+                Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+              </p>
+
+              <div class="feature-cards">
+                <div class="feature-card">
+                  <div class="feature-icon feature-icon--blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   </div>
-                  <div style="flex: 1;">
-                    <div style="font-weight: 700; color: var(--text); margin-bottom: 2px;">${lastLoggedInEmail}</div>
-                    <div style="font-size: 13px; color: var(--muted);">Continue with this account</div>
+                  <div>
+                    <div class="feature-title">Single Sign-On</div>
+                    <div class="feature-desc">One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.</div>
                   </div>
-                  <a href="/interaction/${uid}/logout" class="link" style="font-size: 12px; font-weight: 700;">Not you?</a>
                 </div>
-                <button type="button" id="continueBtn">
-                  Continue as ${lastLoggedInEmail.split('@')[0]}
-                </button>
+
+                <div class="feature-card">
+                  <div class="feature-icon feature-icon--purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  </div>
+                  <div>
+                    <div class="feature-title">Instant Access</div>
+                    <div class="feature-desc">Adaptive MFA and session continuity for seamless, secure access across your tools.</div>
+                  </div>
+                </div>
+
+                <div class="feature-card">
+                  <div class="feature-icon feature-icon--green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+                  </div>
+                  <div>
+                    <div class="feature-title">Enterprise Security</div>
+                    <div class="feature-desc">SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.</div>
+                  </div>
+                </div>
               </div>
-              <button type="button" id="useDifferentAccount" class="secondary" style="margin-bottom: 12px;">
-                Use a different account
-              </button>
-            </div>
-            ` : ''}
-
-            <form id="loginForm" style="${lastLoggedInEmail ? 'display: none;' : ''}">
-              <div class="error" id="error"></div>
-
-              <div class="form-group">
-                <label for="email">Work email</label>
-                <input type="email" id="email" name="email" placeholder="you@company.com" required ${!lastLoggedInEmail ? 'autofocus' : ''} />
-              </div>
-
-              <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Enter your password" required />
-              </div>
-
-              <div class="muted-row">
-                <label>
-                  <input type="checkbox" id="remember" name="remember" />
-                  Remember my email
-                </label>
-                <a href="/forgot-password" class="link">Forgot password?</a>
-              </div>
-
-              <button type="submit" id="submitBtn">
-                <span id="btnText">Sign in</span>
-              </button>
-
-              ${lastLoggedInEmail ? `
-              <button type="button" id="backToQuick" class="secondary">
-                Back to quick login
-              </button>
-              ` : ''}
-            </form>
-
-            <div class="divider"><span>or</span></div>
-
-            <div class="signup-link">
-              Don't have an account? <a class="link" href="/signup/${uid}">Create one now</a>
             </div>
           </div>
         </div>
@@ -1261,9 +1052,17 @@ app.get('/interaction/:uid', async (req, res) => {
             rememberInput.value = rememberCheckbox && rememberCheckbox.checked ? 'true' : 'false';
             hiddenForm.appendChild(rememberInput);
             
+
             document.body.appendChild(hiddenForm);
             hiddenForm.submit();
           });
+
+          // Theme Toggle Logic
+          function toggleTheme() {
+            const current = window.ThemeManager.getTheme();
+            const next = current === 'dark' ? 'light' : 'dark';
+            window.ThemeManager.setTheme(next);
+          }
         </script>
       </body>
       </html>
@@ -4242,6 +4041,54 @@ app.get('/organizations/:orgId/onboarding', getSessionUser, async (req, res) => 
   }
 })
 
+// Onboarding assignment detail (admin/HR)
+app.get('/organizations/:orgId/onboarding/assignments/:assignmentId', getSessionUser, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'email profile.name')
+
+    if (!organization) {
+      return res.redirect('/organizations?error=Organization not found')
+    }
+
+    const member = organization.members.find(
+      m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
+    )
+
+    if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Admin or HR role required`)
+    }
+
+    const assignment = await OnboardingAssignment.findOne({
+      _id: req.params.assignmentId,
+      organization: req.params.orgId
+    })
+      .populate('member', 'email profile.name')
+      .populate('createdBy', 'email profile.name')
+      .populate('template', 'name')
+      .lean()
+
+    if (!assignment) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Assignment not found`)
+    }
+
+    assignment.templateName = assignment.template?.name || null
+
+    res.render('onboarding-assignment', {
+      organization,
+      assignment,
+      yourRole: member.role,
+      activePage: 'organizations',
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding assignment detail error:', error)
+    res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Failed to load assignment`)
+  }
+})
+
 // Notifications page - Send email notifications to teams, members, or organization
 app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) => {
   try {
@@ -4314,6 +4161,102 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
   } catch (error) {
     console.error('Notifications page error:', error)
     res.redirect('/organizations?error=Failed to load notifications')
+  }
+})
+
+// View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {
+  try {
+    const assignment = await OnboardingAssignment.findById(req.params.assignmentId)
+      .populate('organization', 'name')
+
+    if (!assignment) {
+      return res.redirect('/onboarding?error=Document not found')
+    }
+
+    const item = assignment.items.id(req.params.itemId)
+    if (!item || !['esign', 'upload'].includes(item.type)) {
+      return res.redirect('/onboarding?error=Document not found')
+    }
+
+    const organizationId = assignment.organization?._id || assignment.organization
+    const organization = await Organization.findById(organizationId).select('members')
+
+    const userIdStr = req.user._id.toString()
+    const member = organization?.members?.find(
+      m => m.account.toString() === userIdStr && m.status === 'active'
+    )
+
+    const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
+
+    const isAssignee = assignment.member?.toString() === userIdStr
+    const isConfiguredSigner = item.type === 'esign'
+      ? (item.config?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+      : false
+    const isSignerInStatus = item.type === 'esign'
+      ? (item.data?.esign?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+      : false
+
+    const backParam = (req.query.back || '').toString()
+    // Only allow same-site paths. Disallow protocol-relative URLs like "//evil.com".
+    const safeBackUrl = backParam && backParam.startsWith('/') && !backParam.startsWith('//') ? backParam : null
+    const defaultBackUrl = isManager
+      ? `/organizations/${organizationId.toString()}/onboarding`
+      : '/onboarding'
+    const backUrl = safeBackUrl || defaultBackUrl
+
+    if (!isManager && !isAssignee && !(isConfiguredSigner || isSignerInStatus)) {
+      return res.status(403).render('document-viewer', {
+        user: req.user,
+        activePage: isManager ? 'organizations' : 'onboarding',
+        title: 'Unauthorized',
+        subtitle: 'You do not have access to this document.',
+        docUrl: null,
+        docType: 'unknown',
+        backUrl
+      })
+    }
+
+    let docUrl = null
+    let docType = 'pdf'
+    let subtitle = 'Document'
+
+    if (item.type === 'esign') {
+      const version = (req.query.version || '').toString().toLowerCase()
+      const originalUrl = item.config?.document?.url
+      const signedUrl = item.data?.esign?.signedUrl
+      docUrl = version === 'original' ? originalUrl : (signedUrl || originalUrl)
+      subtitle = version === 'original'
+        ? 'Original document'
+        : (signedUrl ? 'Signed document' : 'Document')
+      docType = 'pdf'
+    } else if (item.type === 'upload') {
+      const upload = item.data?.upload || {}
+      docUrl = upload.url
+      const mimeType = (upload.mimeType || '').toString().toLowerCase()
+      const fileName = (upload.fileName || '').toString().toLowerCase()
+      const isPdf = mimeType.includes('pdf') || fileName.endsWith('.pdf')
+      const isImage = mimeType.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp)$/.test(fileName)
+      docType = isPdf ? 'pdf' : (isImage ? 'image' : 'unknown')
+      subtitle = 'Uploaded document'
+    }
+
+    if (!docUrl) {
+      return res.redirect('/onboarding?error=Document is not available')
+    }
+
+    res.render('document-viewer', {
+      user: req.user,
+      activePage: isManager ? 'organizations' : 'onboarding',
+      title: item.title || 'Document',
+      subtitle,
+      docUrl,
+      docType,
+      backUrl
+    })
+  } catch (error) {
+    console.error('Onboarding document viewer error:', error)
+    res.redirect('/onboarding?error=Failed to load document')
   }
 })
 
@@ -4675,6 +4618,8 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
         </style>
       </head>
       <body>
+        <div class="grid-overlay"></div>
+        
         <div class="container">
           <a href="/organizations" class="back-link">← Back to Organizations</a>
           <div class="card">

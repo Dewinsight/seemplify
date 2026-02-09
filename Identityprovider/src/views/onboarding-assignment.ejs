@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Onboarding Assignment - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: activePage || 'organizations' }) %>
+
+  <div class="container">
+    <a class="back-link" href="/organizations/<%= organization._id %>/onboarding">&larr; Back to onboarding</a>
+
+    <% const memberName = assignment.member?.profile?.name || assignment.member?.email?.split('@')[0] || 'Member'; %>
+    <% const memberEmail = assignment.member?.email || ''; %>
+    <% const createdByName = assignment.createdBy?.profile?.name || assignment.createdBy?.email || 'System'; %>
+    <% const createdAtLabel = assignment.createdAt ? new Date(assignment.createdAt).toLocaleString() : ''; %>
+    <% const dueAtLabel = assignment.dueAt ? new Date(assignment.dueAt).toLocaleDateString() : ''; %>
+    <% const completedAtLabel = assignment.completedAt ? new Date(assignment.completedAt).toLocaleString() : ''; %>
+    <% const cancelledAtLabel = assignment.cancelledAt ? new Date(assignment.cancelledAt).toLocaleString() : ''; %>
+
+    <% const totalItems = (assignment.items || []).length; %>
+    <% const completedItems = (assignment.items || []).filter(i => i.status === 'completed').length; %>
+    <% const requiredItems = (assignment.items || []).filter(i => i.required !== false); %>
+    <% const completedRequired = requiredItems.filter(i => i.status === 'completed').length; %>
+
+    <% const formatBytes = (bytes) => { %>
+      <% const n = Number(bytes || 0); %>
+      <% if (!Number.isFinite(n) || n <= 0) return ''; %>
+      <% const units = ['B', 'KB', 'MB', 'GB']; %>
+      <% let u = 0; let val = n; %>
+      <% while (val >= 1024 && u < units.length - 1) { val /= 1024; u++; } %>
+      <% return `${val.toFixed(val >= 10 || u === 0 ? 0 : 1)} ${units[u]}`; %>
+    <% } %>
+
+    <div class="header">
+      <div>
+        <h1 style="margin: 0;">Onboarding: <%= memberName %></h1>
+        <div class="header-subtitle">
+          <span><%= memberEmail %></span>
+          <span> | </span>
+          <span>Assigned <%= createdAtLabel %></span>
+          <% if (assignment.templateName) { %>
+            <span> | </span>
+            <span>Template: <%= assignment.templateName %></span>
+          <% } %>
+        </div>
+      </div>
+      <div class="header-actions" style="display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+        <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+          <%= String(assignment.status || 'pending').replace('_', ' ') %>
+        </span>
+        <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
+          <button class="btn btn-danger" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel assignment</button>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <div class="card" style="margin-top: 12px;">
+      <div style="display:grid; gap: 10px;">
+        <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+          <span style="color: var(--muted); font-size: 13px;">Created by:</span>
+          <span style="font-weight: 700;"><%= createdByName %></span>
+        </div>
+        <% if (dueAtLabel) { %>
+          <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+            <span style="color: var(--muted); font-size: 13px;">Due:</span>
+            <span style="font-weight: 700;"><%= dueAtLabel %></span>
+          </div>
+        <% } %>
+        <% if (completedAtLabel) { %>
+          <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+            <span style="color: var(--muted); font-size: 13px;">Completed:</span>
+            <span style="font-weight: 700;"><%= completedAtLabel %></span>
+          </div>
+        <% } %>
+        <% if (cancelledAtLabel) { %>
+          <div class="alert alert-error" style="margin: 0;">Cancelled on <%= cancelledAtLabel %></div>
+        <% } %>
+        <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+          <span style="color: var(--muted); font-size: 13px;">Progress:</span>
+          <span style="font-weight: 800;"><%= completedItems %>/<%= totalItems %> items completed</span>
+          <span style="color: var(--muted); font-size: 13px;">(required: <%= completedRequired %>/<%= requiredItems.length %>)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px;">
+      <h2 style="margin-top: 0;">Submitted Items</h2>
+
+      <% if (!assignment.items || assignment.items.length === 0) { %>
+        <div class="empty-state">
+          <h3>No items</h3>
+          <p>This onboarding assignment has no items.</p>
+        </div>
+      <% } else { %>
+        <div style="display:grid; gap: 12px;">
+          <% assignment.items.forEach(item => { %>
+            <div class="card" style="margin: 0; padding: 16px;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
+                <div style="min-width: 240px;">
+                  <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+                    <div style="font-weight:800; font-size: 15px;"><%= item.title %></div>
+                    <span class="role-badge" style="font-size: 11px; opacity: 0.9;"><%= (item.type || 'item').toUpperCase() %></span>
+                    <% if (item.required === false) { %>
+                      <span class="role-badge" style="font-size: 11px; opacity: 0.9;">OPTIONAL</span>
+                    <% } %>
+                  </div>
+                  <% if (item.description) { %>
+                    <div style="color: var(--muted); font-size: 12px; margin-top: 4px;"><%= item.description %></div>
+                  <% } %>
+                </div>
+                <span class="role-badge onboarding-badge onboarding-<%= item.status === 'completed' ? 'completed' : (item.status === 'submitted' ? 'in_progress' : 'pending') %>">
+                  <%= item.status === 'completed' ? 'Completed' : (item.status === 'submitted' ? 'In progress' : 'Pending') %>
+                </span>
+              </div>
+
+              <% if (item.type === 'form') { %>
+                <% const formData = item.data?.form || null; %>
+                <div style="margin-top: 12px;">
+                  <% if (!formData || (typeof formData === 'object' && Object.keys(formData).length === 0)) { %>
+                    <div class="empty-state" style="padding: 14px 12px;">
+                      <h3 style="margin: 0;">No form submission yet</h3>
+                      <p style="margin: 6px 0 0;">This form has not been submitted.</p>
+                    </div>
+                  <% } else { %>
+                    <div style="display:grid; gap: 8px;">
+                      <% Object.keys(formData).forEach(key => { %>
+                        <div style="display:grid; grid-template-columns: 180px 1fr; gap: 10px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.02);">
+                          <div style="color: var(--muted); font-size: 12px; font-weight: 700;"><%= key %></div>
+                          <div style="font-size: 13px;"><%= typeof formData[key] === 'string' ? formData[key] : JSON.stringify(formData[key]) %></div>
+                        </div>
+                      <% }) %>
+                    </div>
+                  <% } %>
+                </div>
+              <% } %>
+
+              <% if (item.type === 'upload') { %>
+                <% const uploadData = item.data?.upload || null; %>
+                <div style="margin-top: 12px;">
+                  <% if (!uploadData || !uploadData.url) { %>
+                    <div class="empty-state" style="padding: 14px 12px;">
+                      <h3 style="margin: 0;">No file uploaded yet</h3>
+                      <p style="margin: 6px 0 0;">The member has not uploaded a file.</p>
+                    </div>
+                  <% } else { %>
+                    <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                      <span style="color: var(--muted); font-size: 13px;">File:</span>
+                      <span style="font-weight: 800; font-size: 13px;"><%= uploadData.fileName || 'Uploaded file' %></span>
+                      <% if (uploadData.size) { %>
+                        <span style="color: var(--muted); font-size: 12px;">(<%= formatBytes(uploadData.size) %>)</span>
+                      <% } %>
+                      <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?back=<%= encodeURIComponent('/organizations/' + organization._id + '/onboarding/assignments/' + assignment._id) %>" target="_blank" rel="noreferrer">View</a>
+                      <a class="btn btn-secondary btn-sm" href="<%= uploadData.url %>" target="_blank" rel="noreferrer">Open/Download</a>
+                    </div>
+                    <% if (uploadData.uploadedAt) { %>
+                      <div style="margin-top: 6px; color: var(--muted); font-size: 12px;">
+                        Uploaded <%= new Date(uploadData.uploadedAt).toLocaleString() %>
+                      </div>
+                    <% } %>
+                  <% } %>
+                </div>
+              <% } %>
+
+              <% if (item.type === 'esign') { %>
+                <% const doc = item.config?.document || null; %>
+                <% const esign = item.data?.esign || {}; %>
+                <div style="margin-top: 12px; display:grid; gap: 10px;">
+                  <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                    <span style="color: var(--muted); font-size: 13px;">Document:</span>
+                    <span style="font-weight: 800; font-size: 13px;"><%= doc?.fileName || item.title || 'Document' %></span>
+                    <% if (doc?.url) { %>
+                      <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=original&back=<%= encodeURIComponent('/organizations/' + organization._id + '/onboarding/assignments/' + assignment._id) %>" target="_blank" rel="noreferrer">View original</a>
+                    <% } %>
+                    <% if (esign?.signedUrl) { %>
+                      <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=signed&back=<%= encodeURIComponent('/organizations/' + organization._id + '/onboarding/assignments/' + assignment._id) %>" target="_blank" rel="noreferrer">View signed</a>
+                    <% } %>
+                  </div>
+
+                  <% const signers = Array.isArray(esign.signers) && esign.signers.length ? esign.signers : []; %>
+                  <% if (signers.length) { %>
+                    <div style="border: 1px solid var(--border); border-radius: 12px; overflow: hidden;">
+                      <div style="padding: 10px 12px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); font-weight: 800;">
+                        Signers and audit trail
+                      </div>
+                      <div style="overflow:auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                          <thead>
+                            <tr style="text-align:left; color: var(--muted);">
+                              <th style="padding: 10px 12px; border-bottom: 1px solid var(--border);">Signer</th>
+                              <th style="padding: 10px 12px; border-bottom: 1px solid var(--border);">Status</th>
+                              <th style="padding: 10px 12px; border-bottom: 1px solid var(--border);">Signed at</th>
+                              <th style="padding: 10px 12px; border-bottom: 1px solid var(--border);">IP</th>
+                              <th style="padding: 10px 12px; border-bottom: 1px solid var(--border);">User agent</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <% signers.forEach(signer => { %>
+                              <tr>
+                                <td style="padding: 10px 12px; border-bottom: 1px solid var(--border);">
+                                  <div style="font-weight: 800;"><%= signer.name || signer.email || 'Signer' %></div>
+                                  <div style="color: var(--muted);"><%= signer.email || '' %></div>
+                                </td>
+                                <td style="padding: 10px 12px; border-bottom: 1px solid var(--border);">
+                                  <span class="role-badge onboarding-badge onboarding-<%= signer.status === 'signed' ? 'completed' : 'pending' %>">
+                                    <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
+                                  </span>
+                                </td>
+                                <td style="padding: 10px 12px; border-bottom: 1px solid var(--border);">
+                                  <%= signer.signedAt ? new Date(signer.signedAt).toLocaleString() : '-' %>
+                                </td>
+                                <td style="padding: 10px 12px; border-bottom: 1px solid var(--border);">
+                                  <%= signer.ipAddress || '-' %>
+                                </td>
+                                <td style="padding: 10px 12px; border-bottom: 1px solid var(--border); max-width: 340px;">
+                                  <span style="color: var(--muted); word-break: break-word;"><%= signer.userAgent || '-' %></span>
+                                </td>
+                              </tr>
+                            <% }) %>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  <% } else { %>
+                    <div style="color: var(--muted); font-size: 12px;">No signer activity yet.</div>
+                  <% } %>
+                </div>
+              <% } %>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <script>
+    async function cancelAssignment(assignmentId) {
+      if (!assignmentId) return;
+      if (!confirm('Cancel this onboarding assignment?')) return;
+      const orgId = '<%= organization._id %>';
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/onboarding/assignments/${assignmentId}/cancel`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          alert(data.error || 'Failed to cancel assignment');
+          return;
+        }
+        window.location.href = `/organizations/${orgId}/onboarding/assignments/${assignmentId}?success=${encodeURIComponent('Assignment cancelled')}`;
+      } catch (e) {
+        alert('Failed to cancel assignment');
+      }
+    }
+  </script>
+</body>
+
+</html>
+

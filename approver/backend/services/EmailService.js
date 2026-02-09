@@ -38,8 +38,48 @@ class EmailService {
 
         } catch (error) {
             console.error('Failed to send email:', error.response ? error.response.data : error.message);
-            // Fallback for dev/debug
             console.log(`[FALLBACK] OTP for ${email}: ${otp}`);
+        }
+    }
+
+    async sendInvite(email, orgName, invitedByName) {
+        if (!this.apiKey) {
+            console.warn('BREVO_API_KEY is missing. Invite will only be logged to console.');
+            console.log(`[DEV MODE] Invite for ${email} to join "${orgName}" (invited by ${invitedByName})`);
+            return;
+        }
+
+        try {
+            const data = {
+                sender: { name: 'Mosaic Approver', email: 'no-reply@seemplify.com' },
+                to: [{ email: email }],
+                subject: `You've been invited to join ${orgName} on Mosaic`,
+                htmlContent: `
+                    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                        <h2>Organization Invite</h2>
+                        <p><strong>${invitedByName}</strong> has invited you to join <strong>${orgName}</strong> on Mosaic Approver.</p>
+                        <p>To accept this invite:</p>
+                        <ol>
+                            <li>Sign up or log in to your Mosaic account</li>
+                            <li>Go to the Invites page</li>
+                            <li>Accept the invite from ${orgName}</li>
+                        </ol>
+                        <p style="color: #999; font-size: 12px;">This invite expires in 7 days.</p>
+                    </div>
+                `
+            };
+
+            await axios.post(this.apiUrl, data, {
+                headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+            console.log(`Invite sent to ${email} for org ${orgName}`);
+
+        } catch (error) {
+            console.error('Failed to send invite email:', error.response ? error.response.data : error.message);
+            console.log(`[FALLBACK] Invite for ${email} to join "${orgName}"`);
         }
     }
 }

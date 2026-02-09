@@ -4,7 +4,7 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 
 const Dashboard: React.FC = () => {
-    const { user, activeDepartment } = useAuth();
+    const { user, activeDepartment, activeOrganization } = useAuth();
     const [stats, setStats] = useState<any>(null);
     const [recentProjects, setRecentProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);

@@ -89,6 +89,7 @@ const OnboardingAssignmentItemSchema = new mongoose.Schema({
       signerName: { type: String, trim: true },
       originalUrl: { type: String, trim: true },
       signedUrl: { type: String, trim: true },
+      signedPublicId: { type: String, trim: true },
       ipAddress: { type: String, trim: true },
       userAgent: { type: String, trim: true },
       signers: [{

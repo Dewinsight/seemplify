@@ -71,125 +71,277 @@
                   </span>
                 </div>
 
-                <div style="margin-top: 16px; display: grid; gap: 12px;">
-                  <% if (assignment.status === 'cancelled') { %>
+                <% if (assignment.status === 'cancelled') { %>
+                  <div class="onboarding-flow">
                     <div class="alert alert-error" style="margin:0;">This onboarding assignment was cancelled.</div>
+                  </div>
+                <% } else { %>
+                  <% const visibleItems = []; %>
+                  <% assignment.items.forEach(item => { %>
+                    <% const signerConfigList = item.config?.signers || []; %>
+                    <% const signerStatusList = item.data?.esign?.signers || []; %>
+                    <% const signerMatch = signerConfigList.some(signer => String(signer.member || signer.memberId || signer.key || signer) === currentUserId); %>
+                    <% const signerStatusMatch = signerStatusList.some(signer => String(signer.member) === currentUserId); %>
+                    <% const canViewItem = isAssignee || (item.type === 'esign' && (signerMatch || signerStatusMatch)); %>
+                    <% if (canViewItem) visibleItems.push(item); %>
+                  <% }) %>
+
+                  <% if (visibleItems.length === 0) { %>
+                    <div class="empty-state" style="padding: 18px 0;">
+                      <h3>No onboarding steps</h3>
+                      <p>No items are assigned to you on this onboarding.</p>
+                    </div>
                   <% } else { %>
-                    <% assignment.items.forEach(item => { %>
-                      <% const signerConfigList = item.config?.signers || []; %>
-                      <% const signerStatusList = item.data?.esign?.signers || []; %>
-                      <% const signerMatch = signerConfigList.some(signer => String(signer.member || signer.memberId || signer.key || signer) === currentUserId); %>
-                      <% const signerStatusMatch = signerStatusList.some(signer => String(signer.member) === currentUserId); %>
-                      <% const canViewItem = isAssignee || (item.type === 'esign' && (signerMatch || signerStatusMatch)); %>
-                      <% if (canViewItem) { %>
-                        <div class="card" style="margin:0; padding: 16px;">
-                        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
-                          <div>
-                            <div style="font-weight:700; font-size:15px;"><%= item.title %></div>
-                            <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
-                              <%= item.description || '' %>
-                            </div>
-                          </div>
-                          <span class="role-badge onboarding-badge onboarding-<%= item.status === 'completed' ? 'completed' : 'pending' %>">
-                            <%= item.status === 'completed' ? 'Completed' : 'Pending' %>
-                          </span>
+                    <div class="onboarding-flow" data-onboarding-flow data-assignment="<%= assignment._id %>">
+                      <div class="onboarding-flow-meta">
+                        <div class="onboarding-step-indicator" data-step-indicator>Step 1 of <%= visibleItems.length %></div>
+                        <div class="onboarding-progress-track" role="progressbar" aria-label="Progress">
+                          <div class="onboarding-progress-bar" data-progress-bar></div>
+                        </div>
+                        <div class="onboarding-step-indicator" data-progress-label></div>
+                      </div>
+
+                      <div class="onboarding-stepper">
+                        <div class="onboarding-steps" role="tablist" aria-label="Onboarding steps">
+                          <% visibleItems.forEach((item, index) => { %>
+                            <% const isRequired = item.required !== false; %>
+                            <% const isCompleted = item.status === 'completed'; %>
+                            <% let userActionable = false; %>
+                            <% let userDone = false; %>
+                            <% let statusText = isCompleted ? 'Completed' : 'Pending'; %>
+                            <% const typeText = item.type === 'form' ? 'Form' : (item.type === 'upload' ? 'Upload' : 'E-sign'); %>
+
+                            <% if (item.type === 'form' || item.type === 'upload') { %>
+                              <% userActionable = !isCompleted; %>
+                              <% userDone = isCompleted; %>
+                              <% statusText = isCompleted ? 'Completed' : 'Action needed'; %>
+                            <% } %>
+
+                            <% if (item.type === 'esign') { %>
+                              <% const signerConfigList = item.config?.signers || []; %>
+                              <% const signerStatusList = item.data?.esign?.signers || []; %>
+                              <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                              <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                              <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                              <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                              <% userActionable = !isCompleted && canSign && !hasSigned; %>
+                              <% userDone = isCompleted || hasSigned; %>
+                              <% statusText = isCompleted ? 'Completed' : (hasSigned ? 'Signed' : (userActionable ? 'Action needed' : 'Waiting')); %>
+                            <% } %>
+
+                            <% const stepClass = 'onboarding-step-link'
+                              + (index === 0 ? ' active' : '')
+                              + (userDone ? ' completed' : '')
+                              + (userActionable ? ' actionable' : '')
+                              + (!userActionable && !userDone ? ' waiting' : ''); %>
+
+                            <button type="button" class="<%= stepClass %>" data-step-link data-step="<%= index %>" role="tab">
+                              <span class="onboarding-step-index"><%= index + 1 %></span>
+                              <span class="onboarding-step-body">
+                                <span class="onboarding-step-title"><%= item.title %></span>
+                                <span class="onboarding-step-meta">
+                                  <span class="onboarding-step-chip"><%= typeText %></span>
+                                  <span class="onboarding-step-chip"><%= isRequired ? 'Required' : 'Optional' %></span>
+                                  <span class="onboarding-step-chip status"><%= statusText %></span>
+                                </span>
+                              </span>
+                            </button>
+                          <% }) %>
                         </div>
 
-                        <% if (item.type === 'form' && item.status !== 'completed') { %>
-                          <form data-form-item data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" style="margin-top: 12px;">
-                            <% if (item.config?.fields && item.config.fields.length > 0) { %>
-                              <% item.config.fields.forEach(field => { %>
-                                <div class="form-group">
-                                  <label for="field-<%= item._id %>-<%= field.key %>"><%= field.label %></label>
-                                  <% if (field.type === 'textarea') { %>
-                                    <textarea id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>></textarea>
-                                  <% } else if (field.type === 'select') { %>
-                                    <select id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>>
-                                      <option value="">Select...</option>
-                                      <% (field.options || []).forEach(option => { %>
-                                        <option value="<%= option %>"><%= option %></option>
-                                      <% }) %>
-                                    </select>
-                                  <% } else { %>
-                                    <input type="<%= field.type || 'text' %>" id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> />
+                        <div>
+                          <% visibleItems.forEach((item, index) => { %>
+                            <% const isRequired = item.required !== false; %>
+                            <% const isCompleted = item.status === 'completed'; %>
+                            <% let userActionable = false; %>
+                            <% let userDone = false; %>
+
+                            <% if (item.type === 'form' || item.type === 'upload') { %>
+                              <% userActionable = !isCompleted; %>
+                              <% userDone = isCompleted; %>
+                            <% } %>
+
+                            <% if (item.type === 'esign') { %>
+                              <% const signerConfigList = item.config?.signers || []; %>
+                              <% const signerStatusList = item.data?.esign?.signers || []; %>
+                              <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                              <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                              <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                              <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                              <% userActionable = !isCompleted && canSign && !hasSigned; %>
+                              <% userDone = isCompleted || hasSigned; %>
+                            <% } %>
+
+                            <section
+                              class="onboarding-step-panel<%= index === 0 ? ' active' : '' %>"
+                              data-step-panel
+                              data-step="<%= index %>"
+                              data-step-required="<%= isRequired ? 1 : 0 %>"
+                              data-step-actionable="<%= userActionable ? 1 : 0 %>"
+                              data-step-userdone="<%= userDone ? 1 : 0 %>"
+                            >
+                              <div class="onboarding-step-panel-header">
+                                <div>
+                                  <div class="onboarding-step-panel-title">Step <%= index + 1 %>: <%= item.title %></div>
+                                  <% if (item.description) { %>
+                                    <div class="onboarding-step-panel-subtitle"><%= item.description %></div>
                                   <% } %>
                                 </div>
-                              <% }) %>
-                            <% } else { %>
-                              <div class="form-group">
-                                <label for="field-<%= item._id %>-notes">Details</label>
-                                <textarea id="field-<%= item._id %>-notes" name="details"></textarea>
+                                <div class="onboarding-step-panel-badges">
+                                  <span class="role-badge onboarding-badge onboarding-<%= isRequired ? 'pending' : 'not_started' %>"><%= isRequired ? 'required' : 'optional' %></span>
+                                  <span class="role-badge onboarding-badge onboarding-<%= isCompleted ? 'completed' : 'pending' %>"><%= isCompleted ? 'Completed' : 'Pending' %></span>
+                                </div>
                               </div>
-                            <% } %>
-                            <div class="form-actions">
-                              <button class="btn btn-primary" type="submit">Submit</button>
-                            </div>
-                          </form>
-                        <% } %>
 
-                        <% if (item.type === 'upload' && item.status !== 'completed') { %>
-                          <div style="margin-top: 12px;">
-                            <input type="file" data-upload-input data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" accept="<%= item.config?.accept || '.pdf,.jpg,.jpeg,.png' %>" />
-                            <button class="btn btn-secondary" type="button" style="margin-top: 8px;" onclick="uploadOnboardingFile('<%= assignment._id %>', '<%= item._id %>')">Upload</button>
-                          </div>
-                        <% } %>
-
-                        <% if (item.type === 'esign') { %>
-                          <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
-                          <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
-                          <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
-                          <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
-                          <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
-                            <span style="color: var(--muted); font-size: 13px;">
-                              Document: <%= item.config?.document?.fileName || 'Contract' %>
-                            </span>
-                            <% if (item.config?.document?.url) { %>
-                              <a class="btn btn-secondary btn-sm" href="<%= item.config.document.url %>" target="_blank" rel="noreferrer">View</a>
-                            <% } %>
-                            <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
-                              <button
-                                class="btn btn-primary btn-sm"
-                                type="button"
-                                data-esign-button
-                                data-assignment="<%= assignment._id %>"
-                                data-item="<%= item._id %>"
-                                data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
-                                data-doc-url="<%= item.config?.document?.url || '' %>"
-                                data-preview-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
-                                data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
-                              >Sign document</button>
-                            <% } else if (item.data?.esign?.signedUrl) { %>
-                              <a class="btn btn-secondary btn-sm" href="<%= item.data.esign.signedUrl %>" target="_blank" rel="noreferrer">Signed document</a>
-                            <% } %>
-                          </div>
-                          <% const displaySigners = signerStatusList.length
-                            ? signerStatusList
-                            : signerConfigList.map(signer => ({
-                                name: signer.name || signer.label,
-                                email: signer.email,
-                                status: 'pending'
-                              })); %>
-                          <% if (displaySigners.length) { %>
-                            <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
-                              <% displaySigners.forEach((signer, index) => { %>
-                                <span>
-                                  <%= signer.name || signer.email %>: <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
-                                </span>
-                                <% if (index < displaySigners.length - 1) { %>
-                                  <span> | </span>
+                              <% if (item.type === 'form') { %>
+                                <% if (item.status !== 'completed') { %>
+                                  <form data-form-item data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" style="margin-top: 12px;">
+                                    <% if (item.config?.fields && item.config.fields.length > 0) { %>
+                                      <% item.config.fields.forEach(field => { %>
+                                        <div class="form-group">
+                                          <label for="field-<%= item._id %>-<%= field.key %>"><%= field.label %></label>
+                                          <% if (field.type === 'textarea') { %>
+                                            <textarea id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>></textarea>
+                                          <% } else if (field.type === 'select') { %>
+                                            <select id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>>
+                                              <option value="">Select...</option>
+                                              <% (field.options || []).forEach(option => { %>
+                                                <option value="<%= option %>"><%= option %></option>
+                                              <% }) %>
+                                            </select>
+                                          <% } else { %>
+                                            <input type="<%= field.type || 'text' %>" id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> />
+                                          <% } %>
+                                        </div>
+                                      <% }) %>
+                                    <% } else { %>
+                                      <div class="form-group">
+                                        <label for="field-<%= item._id %>-notes">Details</label>
+                                        <textarea id="field-<%= item._id %>-notes" name="details"></textarea>
+                                      </div>
+                                    <% } %>
+                                    <div class="form-actions">
+                                      <button class="btn btn-primary" type="submit">Submit</button>
+                                    </div>
+                                  </form>
+                                <% } else { %>
+                                  <div class="alert alert-success" style="margin:0;">Submitted.</div>
+                                  <% const submitted = item.data?.form || {}; %>
+                                  <% const submittedKeys = Object.keys(submitted || {}); %>
+                                  <% const fields = item.config?.fields || []; %>
+                                  <% if (fields.length || submittedKeys.length) { %>
+                                    <div class="onboarding-submitted-grid">
+                                      <% if (fields.length) { %>
+                                        <% fields.forEach(field => { %>
+                                          <div class="onboarding-submitted-row">
+                                            <div class="onboarding-submitted-key"><%= field.label %></div>
+                                            <div class="onboarding-submitted-value"><%= submitted[field.key] ?? '' %></div>
+                                          </div>
+                                        <% }) %>
+                                      <% } else { %>
+                                        <% submittedKeys.forEach(key => { %>
+                                          <div class="onboarding-submitted-row">
+                                            <div class="onboarding-submitted-key"><%= key %></div>
+                                            <div class="onboarding-submitted-value"><%= submitted[key] ?? '' %></div>
+                                          </div>
+                                        <% }) %>
+                                      <% } %>
+                                    </div>
+                                  <% } %>
                                 <% } %>
-                              <% }) %>
-                            </div>
-                          <% } %>
-                          <% if (hasSigned && item.status !== 'completed') { %>
-                            <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You have signed. Waiting on others.</div>
-                          <% } %>
-                        <% } %>
+                              <% } %>
+
+                              <% if (item.type === 'upload') { %>
+                                <% if (item.status !== 'completed') { %>
+                                  <div style="margin-top: 12px;">
+                                    <input type="file" data-upload-input data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" accept="<%= item.config?.accept || '.pdf,.jpg,.jpeg,.png' %>" />
+                                    <button class="btn btn-secondary" type="button" style="margin-top: 8px;" onclick="uploadOnboardingFile('<%= assignment._id %>', '<%= item._id %>')">Upload</button>
+                                  </div>
+                                <% } else { %>
+                                  <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+                                    <div class="alert alert-success" style="margin:0;">Uploaded.</div>
+                                    <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document" target="_blank" rel="noreferrer">View uploaded</a>
+                                  </div>
+                                  <% if (item.data?.upload?.fileName) { %>
+                                    <div style="margin-top: 8px; color: var(--muted); font-size: 12px;">
+                                      <%= item.data.upload.fileName %>
+                                    </div>
+                                  <% } %>
+                                <% } %>
+                              <% } %>
+
+                              <% if (item.type === 'esign') { %>
+                                <% const signerConfigList = item.config?.signers || []; %>
+                                <% const signerStatusList = item.data?.esign?.signers || []; %>
+                                <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                                <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                                <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                                <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                                <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                                  <span style="color: var(--muted); font-size: 13px;">
+                                    Document: <%= item.config?.document?.fileName || 'Contract' %>
+                                  </span>
+                                  <% if (item.config?.document?.url) { %>
+                                    <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=original" target="_blank" rel="noreferrer">View</a>
+                                  <% } %>
+                                  <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
+                                    <button
+                                      class="btn btn-primary btn-sm"
+                                      type="button"
+                                      data-esign-button
+                                      data-assignment="<%= assignment._id %>"
+                                      data-item="<%= item._id %>"
+                                      data-assignee-id="<%= assignmentMemberId %>"
+                                      data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
+                                      data-doc-url="<%= item.config?.document?.url || '' %>"
+                                      data-preview-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
+                                      data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
+                                    >Sign document</button>
+                                  <% } else if (item.data?.esign?.signedUrl) { %>
+                                    <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=signed" target="_blank" rel="noreferrer">Signed document</a>
+                                  <% } %>
+                                </div>
+
+                                <% if (!canSign && item.status !== 'completed') { %>
+                                  <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You are not assigned to sign this document.</div>
+                                <% } %>
+
+                                <% const displaySigners = signerStatusList.length
+                                  ? signerStatusList
+                                  : signerConfigList.map(signer => ({
+                                      name: signer.name || signer.label,
+                                      email: signer.email,
+                                      status: 'pending'
+                                    })); %>
+                                <% if (displaySigners.length) { %>
+                                  <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+                                    <% displaySigners.forEach((signer, idx) => { %>
+                                      <span>
+                                        <%= signer.name || signer.email %>: <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
+                                      </span>
+                                      <% if (idx < displaySigners.length - 1) { %>
+                                        <span> | </span>
+                                      <% } %>
+                                    <% }) %>
+                                  </div>
+                                <% } %>
+                                <% if (hasSigned && item.status !== 'completed') { %>
+                                  <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You have signed. Waiting on others.</div>
+                                <% } %>
+                              <% } %>
+                            </section>
+                          <% }) %>
+
+                          <div class="onboarding-step-controls">
+                            <button class="btn btn-secondary" type="button" data-step-prev>Previous</button>
+                            <div class="onboarding-step-indicator" data-step-indicator-inline></div>
+                            <button class="btn btn-secondary" type="button" data-step-next>Next</button>
+                          </div>
                         </div>
-                      <% } %>
-                    <% }) %>
+                      </div>
+                    </div>
                   <% } %>
-                </div>
+                <% } %>
               </div>
             <% }) %>
           <% } %>
@@ -302,14 +454,6 @@ Start Date|date|required"></textarea>
               <label for="custom-accept">Accepted file types</label>
               <input type="text" id="custom-accept" value=".pdf,.jpg,.jpeg,.png" />
             </div>
-            <div class="form-group" id="custom-esign-document" style="display:none;">
-              <label for="custom-document">Contract PDF</label>
-              <input type="file" id="custom-document" accept=".pdf" />
-              <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items:center;">
-                <button class="btn btn-secondary btn-sm" type="button" onclick="prepareEsignDocument('custom')">Upload & Preview</button>
-                <span id="custom-document-status" style="color: var(--muted); font-size: 12px;">No document uploaded.</span>
-              </div>
-            </div>
             <div class="form-group" id="custom-esign-signers" style="display:none;">
               <label>Signers</label>
               <div id="custom-signers-options" style="display:grid; gap: 6px;"></div>
@@ -317,41 +461,109 @@ Start Date|date|required"></textarea>
             </div>
             <div class="form-group" id="custom-esign-fields" style="display:none;">
               <label>Signature Fields</label>
-              <div style="display:grid; gap: 10px;">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
-                  <input type="text" id="custom-sign-label" placeholder="Label (Signature)" />
-                  <select id="custom-sign-type">
-                    <option value="signature">Signature</option>
-                    <option value="date">Date</option>
-                    <option value="text">Text</option>
-                  </select>
-                  <select id="custom-sign-signer"></select>
-                  <input type="number" id="custom-sign-page" placeholder="Page" value="1" min="1" />
-                  <input type="number" id="custom-sign-x" placeholder="X" value="50" />
-                  <input type="number" id="custom-sign-y" placeholder="Y" value="50" />
-                  <input type="number" id="custom-sign-width" placeholder="Width" value="180" />
-                  <input type="number" id="custom-sign-height" placeholder="Height" value="60" />
-                  <select id="custom-sign-origin">
-                    <option value="top-left">Top-left origin</option>
-                    <option value="bottom-left">Bottom-left origin</option>
-                  </select>
-                  <input type="text" id="custom-sign-text" placeholder="Text (if type=text)" />
-                </div>
-                <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('custom')">Add Field</button>
-                <div id="custom-signature-fields-list" style="display:grid; gap: 6px;"></div>
-                <div class="form-hint">Coordinates are in PDF points (72 = 1 inch). Origin defaults to top-left.</div>
-                <div class="pdf-viewer" id="custom-pdf-viewer" style="display:none;">
-                  <div class="pdf-toolbar">
-                    <div style="display:flex; gap: 6px; align-items:center;">
-                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', -1)">Prev</button>
-                      <span id="custom-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
-                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', 1)">Next</button>
-                    </div>
-                    <button class="btn btn-secondary btn-sm" type="button" id="custom-place-toggle" onclick="togglePlaceMode('custom')">Click to place</button>
+
+              <div class="esign-builder">
+                <div class="esign-panel">
+                  <div class="esign-panel-header">
+                    <div class="esign-panel-title">Field Tools</div>
+                    <div style="color: var(--muted); font-size: 12px;">Pick a recipient, then drag a field onto the PDF. Drag to move; use the corner handle to resize.</div>
                   </div>
-                  <div class="pdf-canvas-wrap" id="custom-pdf-canvas-wrap">
-                    <canvas id="custom-pdf-canvas"></canvas>
-                    <div class="pdf-overlay" id="custom-pdf-overlay"></div>
+
+                  <div class="esign-palette" aria-label="Field type palette">
+                    <button class="esign-chip active" type="button" data-esign-chip="custom" data-type="signature" onclick="setFieldType('custom', 'signature')">Signature</button>
+                    <button class="esign-chip" type="button" data-esign-chip="custom" data-type="date" onclick="setFieldType('custom', 'date')">Date</button>
+                    <button class="esign-chip" type="button" data-esign-chip="custom" data-type="text" onclick="setFieldType('custom', 'text')">Name/Text</button>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="custom-sign-signer">Active recipient</label>
+                    <div id="custom-recipient-chips" class="esign-recipient-chips" aria-label="Recipients"></div>
+                    <select id="custom-sign-signer"></select>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="custom-sign-type">Field type</label>
+                    <select id="custom-sign-type">
+                      <option value="signature">Signature</option>
+                      <option value="date">Date</option>
+                      <option value="text">Text</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="custom-sign-label">Label</label>
+                    <input type="text" id="custom-sign-label" placeholder="e.g. Employee Signature" />
+                  </div>
+
+                  <div class="form-group" id="custom-sign-text-wrap" style="display:none;">
+                    <label for="custom-sign-text">Text (optional)</label>
+                    <input type="text" id="custom-sign-text" placeholder="Leave blank to use the signer's name" />
+                    <div class="form-hint">Only used when Field type is Text.</div>
+                  </div>
+
+                  <details class="esign-advanced">
+                    <summary>Advanced placement</summary>
+                    <div class="esign-advanced-grid">
+                      <input type="number" id="custom-sign-page" placeholder="Page" value="1" min="1" />
+                      <select id="custom-sign-origin">
+                        <option value="top-left">Top-left origin</option>
+                        <option value="bottom-left">Bottom-left origin</option>
+                      </select>
+                      <input type="number" id="custom-sign-x" placeholder="X" value="50" />
+                      <input type="number" id="custom-sign-y" placeholder="Y" value="50" />
+                      <input type="number" id="custom-sign-width" placeholder="Width" value="180" />
+                      <input type="number" id="custom-sign-height" placeholder="Height" value="60" />
+                    </div>
+                    <div style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('custom')">Add Field At Coordinates</button>
+                      <button class="btn btn-danger btn-sm" type="button" onclick="removeSelectedSignatureField('custom')">Delete Selected</button>
+                    </div>
+                    <div class="form-hint" style="margin-top: 10px;">Coordinates are in PDF points (72 = 1 inch). Drag fields to reposition.</div>
+                  </details>
+
+                  <div class="esign-panel-header" style="margin-top: 12px;">
+                    <div class="esign-panel-title">Fields</div>
+                    <div id="custom-signature-fields-count" style="color: var(--muted); font-size: 12px;"></div>
+                  </div>
+                  <div id="custom-signature-fields-list" class="esign-fields-list"></div>
+                  <div class="form-hint" style="margin-top: 10px;">Drag fields from the left onto the document. Drag to move, use the corner to resize. Click a field to edit.</div>
+                </div>
+
+                <div>
+                  <div class="pdf-viewer" id="custom-pdf-viewer" style="display:none;">
+                    <div class="pdf-toolbar">
+                      <div style="display:flex; gap: 6px; align-items:center;">
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', -1)">Prev</button>
+                        <span id="custom-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('custom', 1)">Next</button>
+                      </div>
+                      <div style="display:flex; gap: 6px; align-items:center;">
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfZoom('custom', -0.15)">-</button>
+                        <span id="custom-pdf-zoom-label" style="font-size: 12px; color: var(--muted);">100%</span>
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfZoom('custom', 0.15)">+</button>
+                        <button class="btn btn-secondary btn-sm" type="button" id="custom-place-toggle" onclick="togglePlaceMode('custom')">Click to place: OFF</button>
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="openEsignFilePicker('custom')">Upload PDF</button>
+                        <button class="btn btn-danger btn-sm" type="button" onclick="removeEsignDocument('custom')">Remove PDF</button>
+                        <span id="custom-document-status-toolbar" class="pdf-toolbar-status"></span>
+                      </div>
+                    </div>
+                    <div class="pdf-canvas-wrap" id="custom-pdf-canvas-wrap">
+                      <div class="pdf-stage" id="custom-pdf-stage">
+                        <canvas id="custom-pdf-canvas"></canvas>
+                        <div class="pdf-overlay" id="custom-pdf-overlay"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="empty-state" id="custom-pdf-empty" style="padding: 32px 16px;">
+                    <div class="pdf-dropzone" data-pdf-dropzone="custom" tabindex="0" role="button" aria-label="Upload PDF">
+                      <input type="file" id="custom-document" accept=".pdf" style="display:none;" />
+                      <div class="pdf-dropzone-title">Drop a PDF to start</div>
+                      <div class="pdf-dropzone-subtitle">or click to choose a file (uploads immediately)</div>
+                      <div class="pdf-dropzone-actions">
+                        <button class="btn btn-primary btn-sm" type="button" onclick="openEsignFilePicker('custom')">Choose PDF</button>
+                      </div>
+                      <div id="custom-document-status" class="pdf-dropzone-status">No document uploaded.</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -373,25 +585,26 @@ Start Date|date|required"></textarea>
       <% if (assignments && assignments.length > 0) { %>
         <% assignments.forEach(assignment => { %>
           <div class="card" style="margin-top: 12px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
-              <div>
-                <div style="font-weight:700; font-size:15px;">
-                  <%= assignment.member?.profile?.name || assignment.member?.email || 'Member' %>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+                <div>
+                  <div style="font-weight:700; font-size:15px;">
+                    <%= assignment.member?.profile?.name || assignment.member?.email || 'Member' %>
+                  </div>
+                  <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
+                    Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+                  </div>
                 </div>
-                <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
-                  Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+                <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
+                  <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= assignment._id %>">View details</a>
+                  <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                    <%= assignment.status.replace('_', ' ') %>
+                  </span>
+                  <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
+                    <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
+                  <% } %>
                 </div>
-              </div>
-              <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
-                <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
-                  <%= assignment.status.replace('_', ' ') %>
-                </span>
-                <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
-                  <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
-                <% } %>
               </div>
             </div>
-          </div>
         <% }) %>
       <% } else { %>
         <div class="empty-state">
@@ -407,7 +620,7 @@ Start Date|date|required"></textarea>
 
   <!-- Template Modal -->
   <div class="modal" id="templateModal">
-    <div class="modal-content">
+    <div class="modal-content modal-xl">
       <div class="modal-header">
         <h2>Create Template</h2>
         <button class="modal-close" onclick="hideTemplateModal()">&times;</button>
@@ -462,14 +675,6 @@ Start Date|date|required"></textarea>
             <label for="template-accept">Accepted file types</label>
             <input type="text" id="template-accept" value=".pdf,.jpg,.jpeg,.png" />
           </div>
-          <div class="form-group" id="template-esign-document" style="display:none;">
-            <label for="template-document">Contract PDF</label>
-            <input type="file" id="template-document" accept=".pdf" />
-            <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items:center;">
-              <button class="btn btn-secondary btn-sm" type="button" onclick="prepareEsignDocument('template')">Upload & Preview</button>
-              <span id="template-document-status" style="color: var(--muted); font-size: 12px;">No document uploaded.</span>
-            </div>
-          </div>
           <div class="form-group" id="template-esign-signers" style="display:none;">
             <label>Signers</label>
             <div id="template-signers-options" style="display:grid; gap: 6px;"></div>
@@ -477,41 +682,109 @@ Start Date|date|required"></textarea>
           </div>
           <div class="form-group" id="template-esign-fields" style="display:none;">
             <label>Signature Fields</label>
-            <div style="display:grid; gap: 10px;">
-              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
-                <input type="text" id="template-sign-label" placeholder="Label (Signature)" />
-                <select id="template-sign-type">
-                  <option value="signature">Signature</option>
-                  <option value="date">Date</option>
-                  <option value="text">Text</option>
-                </select>
-                <select id="template-sign-signer"></select>
-                <input type="number" id="template-sign-page" placeholder="Page" value="1" min="1" />
-                <input type="number" id="template-sign-x" placeholder="X" value="50" />
-                <input type="number" id="template-sign-y" placeholder="Y" value="50" />
-                <input type="number" id="template-sign-width" placeholder="Width" value="180" />
-                <input type="number" id="template-sign-height" placeholder="Height" value="60" />
-                <select id="template-sign-origin">
-                  <option value="top-left">Top-left origin</option>
-                  <option value="bottom-left">Bottom-left origin</option>
-                </select>
-                <input type="text" id="template-sign-text" placeholder="Text (if type=text)" />
-              </div>
-              <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('template')">Add Field</button>
-              <div id="template-signature-fields-list" style="display:grid; gap: 6px;"></div>
-              <div class="form-hint">Coordinates are in PDF points (72 = 1 inch). Origin defaults to top-left.</div>
-              <div class="pdf-viewer" id="template-pdf-viewer" style="display:none;">
-                <div class="pdf-toolbar">
-                  <div style="display:flex; gap: 6px; align-items:center;">
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', -1)">Prev</button>
-                    <span id="template-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', 1)">Next</button>
-                  </div>
-                  <button class="btn btn-secondary btn-sm" type="button" id="template-place-toggle" onclick="togglePlaceMode('template')">Click to place</button>
+
+            <div class="esign-builder">
+              <div class="esign-panel">
+                <div class="esign-panel-header">
+                  <div class="esign-panel-title">Field Tools</div>
+                  <div style="color: var(--muted); font-size: 12px;">Pick a recipient, then drag a field onto the PDF. Drag to move; use the corner handle to resize.</div>
                 </div>
-                <div class="pdf-canvas-wrap" id="template-pdf-canvas-wrap">
-                  <canvas id="template-pdf-canvas"></canvas>
-                  <div class="pdf-overlay" id="template-pdf-overlay"></div>
+
+                <div class="esign-palette" aria-label="Field type palette">
+                  <button class="esign-chip active" type="button" data-esign-chip="template" data-type="signature" onclick="setFieldType('template', 'signature')">Signature</button>
+                  <button class="esign-chip" type="button" data-esign-chip="template" data-type="date" onclick="setFieldType('template', 'date')">Date</button>
+                  <button class="esign-chip" type="button" data-esign-chip="template" data-type="text" onclick="setFieldType('template', 'text')">Name/Text</button>
+                </div>
+
+                <div class="form-group">
+                  <label for="template-sign-signer">Active recipient</label>
+                  <div id="template-recipient-chips" class="esign-recipient-chips" aria-label="Recipients"></div>
+                  <select id="template-sign-signer"></select>
+                </div>
+
+                <div class="form-group">
+                  <label for="template-sign-type">Field type</label>
+                  <select id="template-sign-type">
+                    <option value="signature">Signature</option>
+                    <option value="date">Date</option>
+                    <option value="text">Text</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="template-sign-label">Label</label>
+                  <input type="text" id="template-sign-label" placeholder="e.g. Employee Signature" />
+                </div>
+
+                <div class="form-group" id="template-sign-text-wrap" style="display:none;">
+                  <label for="template-sign-text">Text (optional)</label>
+                  <input type="text" id="template-sign-text" placeholder="Leave blank to use the signer's name" />
+                  <div class="form-hint">Only used when Field type is Text.</div>
+                </div>
+
+                <details class="esign-advanced">
+                  <summary>Advanced placement</summary>
+                  <div class="esign-advanced-grid">
+                    <input type="number" id="template-sign-page" placeholder="Page" value="1" min="1" />
+                    <select id="template-sign-origin">
+                      <option value="top-left">Top-left origin</option>
+                      <option value="bottom-left">Bottom-left origin</option>
+                    </select>
+                    <input type="number" id="template-sign-x" placeholder="X" value="50" />
+                    <input type="number" id="template-sign-y" placeholder="Y" value="50" />
+                    <input type="number" id="template-sign-width" placeholder="Width" value="180" />
+                    <input type="number" id="template-sign-height" placeholder="Height" value="60" />
+                  </div>
+                  <div style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addSignatureField('template')">Add Field At Coordinates</button>
+                    <button class="btn btn-danger btn-sm" type="button" onclick="removeSelectedSignatureField('template')">Delete Selected</button>
+                  </div>
+                  <div class="form-hint" style="margin-top: 10px;">Coordinates are in PDF points (72 = 1 inch). Drag fields to reposition.</div>
+                </details>
+
+                <div class="esign-panel-header" style="margin-top: 12px;">
+                  <div class="esign-panel-title">Fields</div>
+                  <div id="template-signature-fields-count" style="color: var(--muted); font-size: 12px;"></div>
+                </div>
+                <div id="template-signature-fields-list" class="esign-fields-list"></div>
+                <div class="form-hint" style="margin-top: 10px;">Drag fields from the left onto the document. Drag to move, use the corner to resize. Click a field to edit.</div>
+              </div>
+
+              <div>
+                <div class="pdf-viewer" id="template-pdf-viewer" style="display:none;">
+                  <div class="pdf-toolbar">
+                    <div style="display:flex; gap: 6px; align-items:center;">
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', -1)">Prev</button>
+                      <span id="template-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfPage('template', 1)">Next</button>
+                    </div>
+                    <div style="display:flex; gap: 6px; align-items:center;">
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfZoom('template', -0.15)">-</button>
+                      <span id="template-pdf-zoom-label" style="font-size: 12px; color: var(--muted);">100%</span>
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="changePdfZoom('template', 0.15)">+</button>
+                      <button class="btn btn-secondary btn-sm" type="button" id="template-place-toggle" onclick="togglePlaceMode('template')">Click to place: OFF</button>
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="openEsignFilePicker('template')">Upload PDF</button>
+                      <button class="btn btn-danger btn-sm" type="button" onclick="removeEsignDocument('template')">Remove PDF</button>
+                      <span id="template-document-status-toolbar" class="pdf-toolbar-status"></span>
+                    </div>
+                  </div>
+                  <div class="pdf-canvas-wrap" id="template-pdf-canvas-wrap">
+                    <div class="pdf-stage" id="template-pdf-stage">
+                      <canvas id="template-pdf-canvas"></canvas>
+                      <div class="pdf-overlay" id="template-pdf-overlay"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="empty-state" id="template-pdf-empty" style="padding: 32px 16px;">
+                  <div class="pdf-dropzone" data-pdf-dropzone="template" tabindex="0" role="button" aria-label="Upload PDF">
+                    <input type="file" id="template-document" accept=".pdf" style="display:none;" />
+                    <div class="pdf-dropzone-title">Drop a PDF to start</div>
+                    <div class="pdf-dropzone-subtitle">or click to choose a file (uploads immediately)</div>
+                    <div class="pdf-dropzone-actions">
+                      <button class="btn btn-primary btn-sm" type="button" onclick="openEsignFilePicker('template')">Choose PDF</button>
+                    </div>
+                    <div id="template-document-status" class="pdf-dropzone-status">No document uploaded.</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -531,42 +804,78 @@ Start Date|date|required"></textarea>
 
   <% if (typeof personalAssignments !== 'undefined') { %>
     <div class="modal" id="esignModal">
-      <div class="modal-content">
+      <div class="modal-content modal-xl">
         <div class="modal-header">
           <h2>Sign Document</h2>
           <button class="modal-close" onclick="closeESignModal()">&times;</button>
         </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
-          <div id="esign-document-name" style="font-weight:600;">Document</div>
-          <a class="btn btn-secondary btn-sm" id="esign-document-link" target="_blank" rel="noreferrer" style="display:none;">View Document</a>
+
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+          <div style="min-width: 240px;">
+            <div id="esign-document-name" style="font-weight:800;">Document</div>
+            <div id="esign-document-subtitle" style="color: var(--muted); font-size: 12px; margin-top: 4px;"></div>
+          </div>
+          <a class="btn btn-secondary btn-sm" id="esign-document-link" target="_blank" rel="noreferrer" style="display:none;">Open document</a>
         </div>
-        <div class="pdf-viewer" id="esign-pdf-viewer" style="display:none;">
-          <div class="pdf-toolbar">
-            <div style="display:flex; gap: 6px; align-items:center;">
-              <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(-1)">Prev</button>
-              <span id="esign-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
-              <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(1)">Next</button>
+
+        <div class="esign-modal-layout" style="margin-top: 14px;">
+          <div>
+            <div class="pdf-viewer" id="esign-pdf-viewer" style="display:none; margin-top: 0;">
+              <div class="pdf-toolbar">
+                <div style="display:flex; gap: 6px; align-items:center; flex-wrap: wrap;">
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(-1)">Prev</button>
+                  <span id="esign-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(1)">Next</button>
+                  <input class="pdf-page-range" type="range" min="1" max="1" value="1" id="esign-pdf-page-range" aria-label="Page slider" />
+                </div>
+                <div style="display:flex; gap: 6px; align-items:center;">
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignZoom(-0.15)">-</button>
+                  <span id="esign-pdf-zoom-label" style="font-size: 12px; color: var(--muted);">100%</span>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignZoom(0.15)">+</button>
+                </div>
+              </div>
+              <div class="pdf-canvas-wrap" id="esign-pdf-canvas-wrap">
+                <div class="pdf-stage" id="esign-pdf-stage">
+                  <canvas id="esign-pdf-canvas"></canvas>
+                  <div class="pdf-overlay" id="esign-pdf-overlay"></div>
+                </div>
+              </div>
+              <div class="pdf-hint">Tip: drag to pan. Use the field list to jump fast.</div>
             </div>
           </div>
-          <div class="pdf-canvas-wrap" id="esign-pdf-canvas-wrap">
-            <canvas id="esign-pdf-canvas"></canvas>
-            <div class="pdf-overlay" id="esign-pdf-overlay"></div>
+
+          <div class="esign-modal-sidebar">
+            <div class="esign-panel">
+              <div class="esign-panel-header">
+                <div class="esign-panel-title">Your Fields</div>
+                <div id="esign-fields-count" style="color: var(--muted); font-size: 12px;"></div>
+              </div>
+              <div id="esign-fields-list" class="esign-fields-list"></div>
+              <div style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="jumpEsignField(-1)">Prev field</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="jumpEsignField(1)">Next field</button>
+              </div>
+            </div>
+
+            <div class="esign-panel">
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label for="esign-signer-name">Your name (optional)</label>
+                <input type="text" id="esign-signer-name" placeholder="Type your name" />
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Signature</label>
+                <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
+                  <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
+                </div>
+                <div style="display:flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
+                  <button class="btn btn-primary btn-sm" id="esign-submit-btn" type="button" onclick="submitESignature()">Finish & Generate Signed PDF</button>
+                </div>
+                <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="form-group" style="margin-top: 16px;">
-          <label for="esign-signer-name">Your name (optional)</label>
-          <input type="text" id="esign-signer-name" placeholder="Type your name" />
-        </div>
-        <div class="form-group">
-          <label>Signature</label>
-          <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
-            <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
-          </div>
-          <div style="display:flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
-            <button class="btn btn-primary btn-sm" type="button" onclick="submitESignature()">Submit signature</button>
-          </div>
-          <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to the marked fields.</div>
         </div>
       </div>
     </div>
@@ -579,14 +888,19 @@ Start Date|date|required"></textarea>
     const templateItems = [];
     const customItems = [];
     const signatureFieldState = { template: [], custom: [] };
+    const selectedSignatureFieldIndex = { template: -1, custom: -1 };
     const signerSelectionState = { template: [], custom: [] };
     const signatureDocumentState = { template: null, custom: null };
     const pdfState = {
-      template: { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null },
-      custom: { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null }
+      template: { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null },
+      custom: { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null }
     };
     const placeModeState = { template: false, custom: false };
     const dragState = { active: false, prefix: null, index: -1, startX: 0, startY: 0, originX: 0, originY: 0, element: null };
+    const resizeState = { active: false, prefix: null, index: -1, startX: 0, startY: 0, originWidth: 0, originHeight: 0, originX: 0, originTopLeftY: 0, element: null };
+    const paletteDragState = { active: false, candidate: null, prefix: null, type: null, btn: null, pointerId: null, startX: 0, startY: 0, ghost: null };
+    const suppressNextOverlayClick = { template: false, custom: false };
+    const SIGNER_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#22c55e', '#f97316'];
 
     function showTemplateModal() {
       document.getElementById('templateModal').classList.add('active');
@@ -600,12 +914,16 @@ Start Date|date|required"></textarea>
       const type = document.getElementById(`${prefix}-type`).value;
       document.getElementById(`${prefix}-form-fields`).style.display = type === 'form' ? 'block' : 'none';
       document.getElementById(`${prefix}-upload-accept`).style.display = type === 'upload' ? 'block' : 'none';
-      document.getElementById(`${prefix}-esign-document`).style.display = type === 'esign' ? 'block' : 'none';
       document.getElementById(`${prefix}-esign-fields`).style.display = type === 'esign' ? 'block' : 'none';
       document.getElementById(`${prefix}-esign-signers`).style.display = type === 'esign' ? 'block' : 'none';
       const viewer = document.getElementById(`${prefix}-pdf-viewer`);
-      if (viewer) {
-        viewer.style.display = type === 'esign' && signatureDocumentState[prefix] ? 'block' : 'none';
+      const empty = document.getElementById(`${prefix}-pdf-empty`);
+      if (type === 'esign') {
+        if (viewer) viewer.style.display = signatureDocumentState[prefix] ? 'block' : 'none';
+        if (empty) empty.style.display = signatureDocumentState[prefix] ? 'none' : 'block';
+      } else {
+        if (viewer) viewer.style.display = 'none';
+        if (empty) empty.style.display = 'none';
       }
     }
 
@@ -723,68 +1041,484 @@ Start Date|date|required"></textarea>
         ? signerSelectionState[prefix]
         : [{ key: 'assignee', label: 'Onboarding member', type: 'assignee' }];
 
+      const currentValue = select.value;
       select.innerHTML = signers
         .map(signer => `<option value="${signer.key}">${signer.label}</option>`)
         .join('');
+
+      const nextValue = currentValue && signers.some(signer => signer.key === currentValue)
+        ? currentValue
+        : (signers[0]?.key || 'assignee');
+      select.value = nextValue;
+
+      renderRecipientChips(prefix);
+    }
+
+    function renderRecipientChips(prefix) {
+      const container = document.getElementById(`${prefix}-recipient-chips`);
+      const select = document.getElementById(`${prefix}-sign-signer`);
+      if (!container || !select) return;
+
+      const signers = signerSelectionState[prefix].length
+        ? signerSelectionState[prefix]
+        : [{ key: 'assignee', label: 'Onboarding member', type: 'assignee' }];
+
+      const activeKey = select.value || (signers[0]?.key || 'assignee');
+
+      container.innerHTML = signers.map(signer => {
+        const key = signer.key || 'assignee';
+        const color = getSignerColor(prefix, key);
+        const label = escapeHtml(getSignerLabel(prefix, key));
+        const activeClass = key === activeKey ? 'active' : '';
+        return `
+          <button type="button" class="esign-recipient-chip ${activeClass}" data-signer-key="${escapeHtml(key)}" style="--esign-color:${color};">
+            <span class="esign-recipient-dot"></span>
+            <span>${label}</span>
+          </button>
+        `;
+      }).join('');
+
+      container.querySelectorAll('[data-signer-key]').forEach(button => {
+        button.addEventListener('click', () => {
+          const key = button.dataset.signerKey;
+          if (!key) return;
+          select.value = key;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      });
     }
 
     function getSignerLabel(prefix, key) {
       const signer = signerSelectionState[prefix].find(item => item.key === key);
-      return signer ? signer.label : 'Onboarding member';
+      const label = signer ? signer.label : 'Onboarding member';
+      return String(label || '').replace(/\s*\(.+\)\s*$/, '');
+    }
+
+    function getSignerColor(prefix, signerKey) {
+      const key = signerKey || 'assignee';
+      const signers = signerSelectionState[prefix]?.length
+        ? signerSelectionState[prefix].map(signer => signer.key)
+        : ['assignee'];
+      const index = Math.max(0, signers.indexOf(key));
+      return SIGNER_COLORS[index % SIGNER_COLORS.length];
+    }
+
+    function hexToRgba(hex, alpha) {
+      const raw = (hex || '').replace('#', '').trim();
+      if (raw.length !== 6) return `rgba(99,102,241,${alpha})`;
+      const r = parseInt(raw.slice(0, 2), 16);
+      const g = parseInt(raw.slice(2, 4), 16);
+      const b = parseInt(raw.slice(4, 6), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getWrapInnerWidth(el) {
+      if (!el) return 600;
+      const styles = window.getComputedStyle(el);
+      const padLeft = parseFloat(styles.paddingLeft) || 0;
+      const padRight = parseFloat(styles.paddingRight) || 0;
+      const width = (el.clientWidth || 0) - padLeft - padRight;
+      return width > 0 ? width : (el.clientWidth || 600);
+    }
+
+    function setFieldType(prefix, type) {
+      const typeSelect = document.getElementById(`${prefix}-sign-type`);
+      if (typeSelect) {
+        typeSelect.value = type;
+      }
+      syncFieldTypeUI(prefix);
+      updateSelectedSignatureFieldFromInputs(prefix);
+    }
+
+    function syncFieldTypeUI(prefix) {
+      const typeSelect = document.getElementById(`${prefix}-sign-type`);
+      const labelInput = document.getElementById(`${prefix}-sign-label`);
+      const textWrap = document.getElementById(`${prefix}-sign-text-wrap`);
+
+      const type = typeSelect?.value || 'signature';
+      if (textWrap) {
+        textWrap.style.display = type === 'text' ? 'block' : 'none';
+      }
+
+      // Palette active state
+      document.querySelectorAll(`[data-esign-chip="${prefix}"]`).forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === type);
+      });
+
+      // Auto-suggest a label if empty
+      if (labelInput && !labelInput.value.trim()) {
+        if (type === 'date') labelInput.placeholder = 'e.g. Date Signed';
+        else if (type === 'text') labelInput.placeholder = 'e.g. Full Name';
+        else labelInput.placeholder = 'e.g. Employee Signature';
+      }
     }
 
     function renderSignatureFields(prefix) {
       const container = document.getElementById(`${prefix}-signature-fields-list`);
       const fields = signatureFieldState[prefix] || [];
+      const countEl = document.getElementById(`${prefix}-signature-fields-count`);
+      if (countEl) countEl.textContent = fields.length ? `${fields.length} field${fields.length === 1 ? '' : 's'}` : '';
 
       if (!fields.length) {
-        container.innerHTML = '<div style="color: var(--muted); font-size: 12px;">No signature fields added yet.</div>';
+        container.innerHTML = '<div style="color: var(--muted); font-size: 12px;">No fields yet. Drag a field from the palette onto the PDF (or enable Click to place).</div>';
         return;
       }
 
       container.innerHTML = fields
         .map((field, index) => `
-          <div class="card" style="margin:0; padding: 10px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; flex-wrap: wrap;">
-              <div style="font-size: 12px;">
-                <div style="font-weight:700;">${field.label} (${field.type}) - ${getSignerLabel(prefix, field.signerKey || 'assignee')}</div>
-                <div style="color: var(--muted); margin-top: 4px;">
-                  Page ${field.page} | x:${field.x} y:${field.y} | ${field.width}x${field.height} | ${field.origin}
-                </div>
-              </div>
-              <button class="btn btn-danger btn-sm" type="button" onclick="removeSignatureField('${prefix}', ${index})">Remove</button>
+          <div class="esign-field-row ${index === selectedSignatureFieldIndex[prefix] ? 'active' : ''}" style="--esign-color:${getSignerColor(prefix, field.signerKey || 'assignee')};" onclick="selectSignatureField('${prefix}', ${index})">
+            <div class="esign-field-dot" style="--esign-color:${getSignerColor(prefix, field.signerKey || 'assignee')};"></div>
+            <div style="min-width:0;">
+              <div class="esign-field-row-title">${index + 1}. ${escapeHtml(field.label || field.type)} <span style="color: var(--muted); font-weight:700;">(${escapeHtml(field.type)})</span></div>
+              <div class="esign-field-row-meta">${escapeHtml(getSignerLabel(prefix, field.signerKey || 'assignee'))} | Page ${Number(field.page) || 1}</div>
+            </div>
+            <div class="esign-field-row-actions">
+              <button class="btn btn-danger btn-sm" type="button" onclick="event.stopPropagation(); removeSignatureField('${prefix}', ${index});">Delete</button>
             </div>
           </div>
         `)
         .join('');
     }
 
-    function setDocumentStatus(prefix, message, isError = false) {
-      const status = document.getElementById(`${prefix}-document-status`);
-      if (!status) return;
-      status.textContent = message;
-      status.style.color = isError ? '#f87171' : 'var(--muted)';
+    function syncSelectedSignatureFieldInputs(prefix) {
+      const index = selectedSignatureFieldIndex[prefix];
+      if (index < 0) return;
+      const field = signatureFieldState[prefix]?.[index];
+      if (!field) return;
+
+      const labelInput = document.getElementById(`${prefix}-sign-label`);
+      const typeInput = document.getElementById(`${prefix}-sign-type`);
+      const signerSelect = document.getElementById(`${prefix}-sign-signer`);
+      const pageInput = document.getElementById(`${prefix}-sign-page`);
+      const xInput = document.getElementById(`${prefix}-sign-x`);
+      const yInput = document.getElementById(`${prefix}-sign-y`);
+      const widthInput = document.getElementById(`${prefix}-sign-width`);
+      const heightInput = document.getElementById(`${prefix}-sign-height`);
+      const originInput = document.getElementById(`${prefix}-sign-origin`);
+      const textInput = document.getElementById(`${prefix}-sign-text`);
+
+      if (labelInput) labelInput.value = field.label || '';
+      if (typeInput) typeInput.value = field.type || 'signature';
+      if (signerSelect) signerSelect.value = field.signerKey || 'assignee';
+      if (pageInput) pageInput.value = String(field.page || 1);
+      if (xInput) xInput.value = String(field.x ?? 0);
+      if (yInput) yInput.value = String(field.y ?? 0);
+      if (widthInput) widthInput.value = String(field.width || 180);
+      if (heightInput) heightInput.value = String(field.height || 60);
+      if (originInput) originInput.value = field.origin === 'bottom-left' ? 'bottom-left' : 'top-left';
+      if (textInput) textInput.value = field.text || '';
+
+      syncFieldTypeUI(prefix);
+      renderRecipientChips(prefix);
     }
 
-    async function prepareEsignDocument(prefix) {
-      const fileInput = document.getElementById(`${prefix}-document`);
-      if (!fileInput || !fileInput.files.length) {
+    function updateSelectedSignatureFieldFromInputs(prefix) {
+      const index = selectedSignatureFieldIndex[prefix];
+      if (index < 0) return;
+      const field = signatureFieldState[prefix]?.[index];
+      if (!field) return;
+
+      const labelInput = document.getElementById(`${prefix}-sign-label`);
+      const typeInput = document.getElementById(`${prefix}-sign-type`);
+      const signerSelect = document.getElementById(`${prefix}-sign-signer`);
+      const pageInput = document.getElementById(`${prefix}-sign-page`);
+      const xInput = document.getElementById(`${prefix}-sign-x`);
+      const yInput = document.getElementById(`${prefix}-sign-y`);
+      const widthInput = document.getElementById(`${prefix}-sign-width`);
+      const heightInput = document.getElementById(`${prefix}-sign-height`);
+      const originInput = document.getElementById(`${prefix}-sign-origin`);
+      const textInput = document.getElementById(`${prefix}-sign-text`);
+
+      const nextType = typeInput?.value || field.type || 'signature';
+      field.type = nextType;
+      field.signerKey = signerSelect?.value || field.signerKey || 'assignee';
+      field.label = (labelInput?.value || '').trim() || (nextType === 'date' ? 'Date' : nextType === 'text' ? 'Text' : 'Signature');
+      field.page = Math.max(1, Number(pageInput?.value || field.page || 1));
+      field.x = Number(xInput?.value ?? field.x);
+      field.y = Number(yInput?.value ?? field.y);
+      field.width = Math.max(1, Number(widthInput?.value || field.width || 180));
+      field.height = Math.max(1, Number(heightInput?.value || field.height || 60));
+      field.origin = originInput?.value === 'bottom-left' ? 'bottom-left' : 'top-left';
+      field.text = nextType === 'text' ? ((textInput?.value || '').trim() || undefined) : undefined;
+
+      const state = pdfState[prefix];
+      if (state?.pdf && field.page && field.page !== state.page) {
+        state.page = field.page;
+        renderPdfPage(prefix);
+      } else {
+        renderOverlayFields(prefix);
+      }
+      renderSignatureFields(prefix);
+    }
+
+    async function selectSignatureField(prefix, index, options = {}) {
+      selectedSignatureFieldIndex[prefix] = index;
+      syncSelectedSignatureFieldInputs(prefix);
+
+      const field = signatureFieldState[prefix]?.[index];
+      const state = pdfState[prefix];
+      if (field && state?.pdf && field.page && field.page !== state.page) {
+        state.page = field.page;
+        await renderPdfPage(prefix);
+      } else {
+        renderOverlayFields(prefix);
+      }
+
+      renderSignatureFields(prefix);
+      if (options.scroll !== false) {
+        scrollSignatureFieldIntoView(prefix, index);
+      }
+    }
+
+    function scrollSignatureFieldIntoView(prefix, index) {
+      const wrap = document.getElementById(`${prefix}-pdf-canvas-wrap`);
+      const overlay = document.getElementById(`${prefix}-pdf-overlay`);
+      if (!wrap || !overlay) return;
+      const el = overlay.querySelector(`.esign-field[data-index="${index}"]`);
+      if (!el) return;
+
+      const wrapRect = wrap.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const left = (elRect.left - wrapRect.left) + wrap.scrollLeft;
+      const top = (elRect.top - wrapRect.top) + wrap.scrollTop;
+
+      wrap.scrollTo({
+        left: Math.max(0, left - (wrap.clientWidth / 2) + (el.clientWidth / 2)),
+        top: Math.max(0, top - (wrap.clientHeight / 2) + (el.clientHeight / 2)),
+        behavior: 'smooth'
+      });
+    }
+
+    function clearSignatureFieldSelection(prefix) {
+      if (selectedSignatureFieldIndex[prefix] < 0) return;
+      selectedSignatureFieldIndex[prefix] = -1;
+      renderSignatureFields(prefix);
+      renderOverlayFields(prefix);
+    }
+
+    function removeSelectedSignatureField(prefix) {
+      const index = selectedSignatureFieldIndex[prefix];
+      if (index < 0) {
+        alert('Select a field to delete');
+        return;
+      }
+      removeSignatureField(prefix, index);
+    }
+
+    function bindSignatureFieldEditor(prefix) {
+      const typeEl = document.getElementById(`${prefix}-sign-type`);
+      const labelEl = document.getElementById(`${prefix}-sign-label`);
+      const signerEl = document.getElementById(`${prefix}-sign-signer`);
+      const pageEl = document.getElementById(`${prefix}-sign-page`);
+      const xEl = document.getElementById(`${prefix}-sign-x`);
+      const yEl = document.getElementById(`${prefix}-sign-y`);
+      const widthEl = document.getElementById(`${prefix}-sign-width`);
+      const heightEl = document.getElementById(`${prefix}-sign-height`);
+      const originEl = document.getElementById(`${prefix}-sign-origin`);
+      const textEl = document.getElementById(`${prefix}-sign-text`);
+
+      typeEl?.addEventListener('change', () => {
+        syncFieldTypeUI(prefix);
+        updateSelectedSignatureFieldFromInputs(prefix);
+      });
+      signerEl?.addEventListener('change', () => {
+        renderRecipientChips(prefix);
+        updateSelectedSignatureFieldFromInputs(prefix);
+      });
+      originEl?.addEventListener('change', () => updateSelectedSignatureFieldFromInputs(prefix));
+
+      const onInput = () => updateSelectedSignatureFieldFromInputs(prefix);
+      labelEl?.addEventListener('input', onInput);
+      pageEl?.addEventListener('input', onInput);
+      xEl?.addEventListener('input', onInput);
+      yEl?.addEventListener('input', onInput);
+      widthEl?.addEventListener('input', onInput);
+      heightEl?.addEventListener('input', onInput);
+      textEl?.addEventListener('input', onInput);
+    }
+
+    function setDocumentStatus(prefix, message, isError = false) {
+      const targets = [
+        document.getElementById(`${prefix}-document-status`),
+        document.getElementById(`${prefix}-document-status-toolbar`)
+      ].filter(Boolean);
+
+      targets.forEach(el => {
+        el.textContent = message;
+        el.style.color = isError ? '#f87171' : 'var(--muted)';
+      });
+    }
+
+    function openEsignFilePicker(prefix) {
+      const input = document.getElementById(`${prefix}-document`);
+      if (!input) {
+        alert('File picker is not available');
+        return;
+      }
+      input.click();
+    }
+
+    async function deleteUploadedDocument(publicId) {
+      if (!publicId) return;
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/onboarding/documents/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicId })
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to delete document');
+        }
+      } catch (error) {
+        console.warn('Failed to delete onboarding document from storage:', error);
+      }
+    }
+
+    async function removeEsignDocument(prefix) {
+      const existing = signatureDocumentState[prefix];
+      if (!existing) {
+        setDocumentStatus(prefix, 'No document uploaded.');
+        toggleItemInputs(prefix);
+        return;
+      }
+
+      const ok = confirm('Remove this PDF? This will clear all placed fields.');
+      if (!ok) return;
+
+      setDocumentStatus(prefix, 'Removing...');
+
+      const publicId = existing.publicId;
+      signatureDocumentState[prefix] = null;
+      pdfState[prefix] = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+      placeModeState[prefix] = false;
+      resetSignatureFields(prefix);
+      toggleItemInputs(prefix);
+      setDocumentStatus(prefix, 'No document uploaded.');
+
+      if (publicId) {
+        await deleteUploadedDocument(publicId);
+      }
+    }
+
+    async function uploadAndPreviewEsignDocument(prefix, file, options = {}) {
+      if (!file) {
         alert('Please select a PDF file first');
         return;
+      }
+
+      if (!String(file.type || '').includes('pdf') && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
+        alert('Only PDF documents are allowed for e-signing');
+        return;
+      }
+
+      const existing = signatureDocumentState[prefix];
+      const isReplace = !!existing;
+
+      if (isReplace && !options.skipConfirm) {
+        const ok = confirm('Replace the current PDF? This will clear all placed fields.');
+        if (!ok) return;
       }
 
       setDocumentStatus(prefix, 'Uploading...');
 
       try {
-        const documentData = await uploadDocument(fileInput.files[0]);
+        const documentData = await uploadDocument(file);
+
         signatureDocumentState[prefix] = documentData;
-        setDocumentStatus(prefix, `Uploaded: ${documentData.fileName || fileInput.files[0].name}`);
+        setDocumentStatus(prefix, `Uploaded: ${documentData.fileName || file.name}`);
+
         resetSignatureFields(prefix);
         await loadPdfPreview(prefix, documentData.url);
+
+        if (isReplace && existing?.publicId && existing.publicId !== documentData.publicId) {
+          await deleteUploadedDocument(existing.publicId);
+        }
       } catch (error) {
         console.error('PDF upload error:', error);
         setDocumentStatus(prefix, error.message || 'Upload failed', true);
         alert(error.message || 'Failed to upload document');
+      }
+    }
+
+    function bindEsignDocumentUpload(prefix) {
+      const input = document.getElementById(`${prefix}-document`);
+      const dropzone = document.querySelector(`[data-pdf-dropzone="${prefix}"]`);
+      const wrap = document.getElementById(`${prefix}-pdf-canvas-wrap`);
+
+      if (input && input.dataset.bound !== '1') {
+        input.dataset.bound = '1';
+        input.addEventListener('change', async () => {
+          const file = input.files && input.files.length ? input.files[0] : null;
+          input.value = '';
+          await uploadAndPreviewEsignDocument(prefix, file);
+        });
+      }
+
+      if (dropzone && dropzone.dataset.bound !== '1') {
+        dropzone.dataset.bound = '1';
+
+        dropzone.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openEsignFilePicker(prefix);
+          }
+        });
+
+        dropzone.addEventListener('click', (event) => {
+          if (event.target.closest('button')) return;
+          openEsignFilePicker(prefix);
+        });
+
+        dropzone.addEventListener('dragover', (event) => {
+          event.preventDefault();
+          dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+          dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', async (event) => {
+          event.preventDefault();
+          dropzone.classList.remove('dragover');
+          const file = event.dataTransfer?.files?.[0] || null;
+          await uploadAndPreviewEsignDocument(prefix, file, { skipConfirm: true });
+        });
+      }
+
+      if (wrap && wrap.dataset.pdfDropBound !== '1') {
+        wrap.dataset.pdfDropBound = '1';
+
+        wrap.addEventListener('dragover', (event) => {
+          if (!event.dataTransfer) return;
+          event.preventDefault();
+          wrap.classList.add('drop-active');
+        });
+
+        wrap.addEventListener('dragleave', () => {
+          wrap.classList.remove('drop-active');
+        });
+
+        wrap.addEventListener('drop', async (event) => {
+          if (!event.dataTransfer) return;
+          event.preventDefault();
+          wrap.classList.remove('drop-active');
+          const file = event.dataTransfer?.files?.[0] || null;
+          if (!file) return;
+          await uploadAndPreviewEsignDocument(prefix, file);
+        });
       }
     }
 
@@ -801,11 +1535,20 @@ Start Date|date|required"></textarea>
       pdfState[prefix].pdf = pdf;
       pdfState[prefix].page = 1;
       pdfState[prefix].totalPages = pdf.numPages;
+      pdfState[prefix].zoom = 1;
 
       const viewer = document.getElementById(`${prefix}-pdf-viewer`);
+      const empty = document.getElementById(`${prefix}-pdf-empty`);
       if (viewer) {
         viewer.style.display = 'block';
       }
+      if (empty) {
+        empty.style.display = 'none';
+      }
+
+      // Default to drag-to-place after upload; click-to-place can be toggled on if desired.
+      placeModeState[prefix] = false;
+      updatePlaceModeUI(prefix);
 
       await renderPdfPage(prefix);
     }
@@ -821,14 +1564,18 @@ Start Date|date|required"></textarea>
 
       const page = await state.pdf.getPage(state.page);
       const unscaledViewport = page.getViewport({ scale: 1 });
-      const availableWidth = wrap.clientWidth || 600;
-      const scale = availableWidth / unscaledViewport.width;
+      const availableWidth = getWrapInnerWidth(wrap) || 600;
+      const scale = (availableWidth / unscaledViewport.width) * (state.zoom || 1);
       const viewport = page.getViewport({ scale });
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(viewport.width * ratio);
+      canvas.height = Math.floor(viewport.height * ratio);
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, viewport.width, viewport.height);
       await page.render({ canvasContext: ctx, viewport }).promise;
 
       overlay.style.width = `${viewport.width}px`;
@@ -843,15 +1590,26 @@ Start Date|date|required"></textarea>
         label.textContent = `Page ${state.page} / ${state.pdf.numPages}`;
       }
 
+      const zoomLabel = document.getElementById(`${prefix}-pdf-zoom-label`);
+      if (zoomLabel) {
+        zoomLabel.textContent = `${Math.round((state.zoom || 1) * 100)}%`;
+      }
+
       if (!overlay.dataset.bound) {
         overlay.addEventListener('click', (event) => {
-          if (!placeModeState[prefix]) return;
           if (event.target.closest('.esign-field')) return;
-          addFieldAtPoint(prefix, event);
+
+          if (placeModeState[prefix]) {
+            addFieldAtPoint(prefix, event);
+            return;
+          }
+
+          clearSignatureFieldSelection(prefix);
         });
         overlay.dataset.bound = 'true';
       }
 
+      updatePlaceModeUI(prefix);
       renderOverlayFields(prefix);
     }
 
@@ -864,12 +1622,151 @@ Start Date|date|required"></textarea>
       renderPdfPage(prefix);
     }
 
-    function togglePlaceMode(prefix) {
-      placeModeState[prefix] = !placeModeState[prefix];
+    function updatePlaceModeUI(prefix) {
       const button = document.getElementById(`${prefix}-place-toggle`);
       if (button) {
-        button.textContent = placeModeState[prefix] ? 'Click to place: ON' : 'Click to place';
+        button.textContent = placeModeState[prefix] ? 'Click to place: ON' : 'Click to place: OFF';
       }
+      const overlay = document.getElementById(`${prefix}-pdf-overlay`);
+      if (overlay) {
+        overlay.classList.toggle('place-mode', !!placeModeState[prefix]);
+      }
+    }
+
+    function togglePlaceMode(prefix) {
+      placeModeState[prefix] = !placeModeState[prefix];
+      updatePlaceModeUI(prefix);
+    }
+
+    function changePdfZoom(prefix, delta) {
+      const state = pdfState[prefix];
+      if (!state.pdf) return;
+      const nextZoom = Math.max(0.5, Math.min(2.25, (state.zoom || 1) + delta));
+      state.zoom = nextZoom;
+      renderPdfPage(prefix);
+    }
+
+    function bindPaletteDrag(prefix) {
+      document.querySelectorAll(`[data-esign-chip="${prefix}"]`).forEach(button => {
+        if (button.dataset.dragBound === '1') return;
+        button.dataset.dragBound = '1';
+
+        button.addEventListener('pointerdown', (event) => {
+          if (event.pointerType === 'mouse' && event.button !== 0) return;
+          paletteDragState.candidate = {
+            prefix,
+            type: button.dataset.type || 'signature',
+            btn: button,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY
+          };
+        });
+      });
+    }
+
+    function beginPaletteDrag(candidate, event) {
+      const prefix = candidate?.prefix;
+      const type = candidate?.type || 'signature';
+      const btn = candidate?.btn;
+      const state = prefix ? pdfState[prefix] : null;
+      const overlay = prefix ? document.getElementById(`${prefix}-pdf-overlay`) : null;
+
+      paletteDragState.candidate = null;
+
+      if (!prefix || !btn || !state?.viewport || !overlay) {
+        return;
+      }
+
+      // Prevent the chip click from firing after a drag.
+      const swallow = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      btn.addEventListener('click', swallow, { once: true, capture: true });
+
+      paletteDragState.active = true;
+      paletteDragState.prefix = prefix;
+      paletteDragState.type = type;
+      paletteDragState.btn = btn;
+      paletteDragState.pointerId = event.pointerId;
+
+      const signerKey = document.getElementById(`${prefix}-sign-signer`)?.value || 'assignee';
+      const signerColor = getSignerColor(prefix, signerKey);
+      const signerLabel = getSignerLabel(prefix, signerKey);
+      const { width, height } = getDefaultFieldSize(type);
+      const scale = state.scale || 1;
+
+      const ghost = document.createElement('div');
+      ghost.className = 'esign-field esign-field-ghost esign-field-builder';
+      ghost.style.setProperty('--esign-color', signerColor);
+      ghost.style.borderColor = signerColor;
+      ghost.style.background = hexToRgba(signerColor, 0.18);
+      ghost.style.width = `${Math.max(60, Math.round(width * scale))}px`;
+      ghost.style.height = `${Math.max(24, Math.round(height * scale))}px`;
+      ghost.innerHTML = `
+        <div class="esign-field-title">${escapeHtml(getDefaultFieldLabel(type))}</div>
+        <div class="esign-field-signer">${escapeHtml(signerLabel)}</div>
+      `;
+      document.body.appendChild(ghost);
+      paletteDragState.ghost = ghost;
+
+      updatePaletteDrag(event);
+    }
+
+    function updatePaletteDrag(event) {
+      if (!paletteDragState.active) return;
+
+      const ghost = paletteDragState.ghost;
+      if (ghost) {
+        const x = Math.round(event.clientX + 14);
+        const y = Math.round(event.clientY + 14);
+        ghost.style.transform = `translate(${x}px, ${y}px)`;
+      }
+
+      const prefix = paletteDragState.prefix;
+      const overlay = prefix ? document.getElementById(`${prefix}-pdf-overlay`) : null;
+      if (!overlay) return;
+
+      const r = overlay.getBoundingClientRect();
+      const inside = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+      overlay.classList.toggle('drop-active', inside);
+    }
+
+    function endPaletteDrag(event) {
+      if (!paletteDragState.active) {
+        paletteDragState.candidate = null;
+        return;
+      }
+
+      const prefix = paletteDragState.prefix;
+      const overlay = prefix ? document.getElementById(`${prefix}-pdf-overlay`) : null;
+      const state = prefix ? pdfState[prefix] : null;
+
+      if (overlay) {
+        overlay.classList.remove('drop-active');
+      }
+
+      if (overlay && state?.viewport) {
+        const r = overlay.getBoundingClientRect();
+        const inside = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+        if (inside) {
+          suppressNextOverlayClick[prefix] = true;
+          addFieldAtClientPoint(prefix, event.clientX, event.clientY, { type: paletteDragState.type });
+        }
+      }
+
+      if (paletteDragState.ghost) {
+        paletteDragState.ghost.remove();
+      }
+
+      paletteDragState.active = false;
+      paletteDragState.prefix = null;
+      paletteDragState.type = null;
+      paletteDragState.btn = null;
+      paletteDragState.pointerId = null;
+      paletteDragState.ghost = null;
+      paletteDragState.candidate = null;
     }
 
     function getDefaultFieldSize(type) {
@@ -883,16 +1780,32 @@ Start Date|date|required"></textarea>
     }
 
     function addFieldAtPoint(prefix, event) {
+      if (suppressNextOverlayClick[prefix]) {
+        suppressNextOverlayClick[prefix] = false;
+        return;
+      }
+
+      addFieldAtClientPoint(prefix, event.clientX, event.clientY);
+    }
+
+    function getDefaultFieldLabel(type) {
+      if (type === 'date') return 'Date';
+      if (type === 'text') return 'Text';
+      return 'Signature';
+    }
+
+    function addFieldAtClientPoint(prefix, clientX, clientY, options = {}) {
       const state = pdfState[prefix];
       const overlay = document.getElementById(`${prefix}-pdf-overlay`);
       if (!overlay || !state.viewport) return;
 
       const rect = overlay.getBoundingClientRect();
-      const xPx = event.clientX - rect.left;
-      const yPx = event.clientY - rect.top;
+      const xPx = clientX - rect.left;
+      const yPx = clientY - rect.top;
       const scale = state.scale || 1;
 
-      const type = document.getElementById(`${prefix}-sign-type`).value;
+      const typeSelect = document.getElementById(`${prefix}-sign-type`);
+      const type = options.type || typeSelect?.value || 'signature';
       const labelInput = document.getElementById(`${prefix}-sign-label`);
       const textInput = document.getElementById(`${prefix}-sign-text`);
       const signerSelect = document.getElementById(`${prefix}-sign-signer`);
@@ -906,13 +1819,19 @@ Start Date|date|required"></textarea>
       let y = yPx / scale;
       x = Math.max(0, Math.min(x, pdfWidth - width));
       y = Math.max(0, Math.min(y, pdfHeight - height));
-      const origin = originInput.value;
+
+      // If a field is selected, inputs are editing that field. For new fields, prefer sane defaults.
+      const isEditingExisting = selectedSignatureFieldIndex[prefix] >= 0;
+      const origin = !isEditingExisting && originInput?.value === 'bottom-left' ? 'bottom-left' : 'top-left';
       const storedY = origin === 'bottom-left'
         ? Math.max(0, Math.min(pdfHeight - y - height, pdfHeight - height))
         : y;
 
+      const rawLabel = !isEditingExisting ? (labelInput?.value || '').trim() : '';
+      const rawText = !isEditingExisting ? (textInput?.value || '').trim() : '';
+
       const field = {
-        label: labelInput.value.trim() || (type === 'date' ? 'Date' : 'Signature'),
+        label: rawLabel || getDefaultFieldLabel(type),
         type,
         signerKey: signerSelect?.value || 'assignee',
         page: state.page,
@@ -921,13 +1840,14 @@ Start Date|date|required"></textarea>
         width,
         height,
         origin,
-        text: textInput.value.trim() || undefined
+        text: type === 'text' ? (rawText || undefined) : undefined
       };
 
       signatureFieldState[prefix].push(field);
+      selectedSignatureFieldIndex[prefix] = signatureFieldState[prefix].length - 1;
       renderSignatureFields(prefix);
       renderOverlayFields(prefix);
-      renderOverlayFields(prefix);
+      scrollSignatureFieldIntoView(prefix, selectedSignatureFieldIndex[prefix]);
     }
 
     function renderOverlayFields(prefix) {
@@ -943,8 +1863,15 @@ Start Date|date|required"></textarea>
       signatureFieldState[prefix].forEach((field, index) => {
         if (field.page !== state.page) return;
 
+        const signerKey = field.signerKey || 'assignee';
+        const signerColor = getSignerColor(prefix, signerKey);
+
         const fieldEl = document.createElement('div');
-        fieldEl.className = 'esign-field';
+        fieldEl.className = 'esign-field esign-field-builder';
+        fieldEl.dataset.index = String(index);
+        fieldEl.style.setProperty('--esign-color', signerColor);
+        fieldEl.style.borderColor = signerColor;
+        fieldEl.style.background = hexToRgba(signerColor, 0.14);
         fieldEl.style.left = `${field.x * scale}px`;
         const topLeftY = field.origin === 'bottom-left'
           ? (pdfHeight - field.y - field.height)
@@ -952,12 +1879,30 @@ Start Date|date|required"></textarea>
         fieldEl.style.top = `${topLeftY * scale}px`;
         fieldEl.style.width = `${field.width * scale}px`;
         fieldEl.style.height = `${field.height * scale}px`;
-        fieldEl.textContent = field.label || field.type;
+
+        if (index === selectedSignatureFieldIndex[prefix]) {
+          fieldEl.classList.add('selected');
+        }
+
+        const numberBadge = document.createElement('div');
+        numberBadge.className = 'esign-field-number';
+        numberBadge.textContent = String(index + 1);
+        fieldEl.appendChild(numberBadge);
+
+        const fieldTitle = document.createElement('div');
+        fieldTitle.className = 'esign-field-title';
+        fieldTitle.textContent = field.label || field.type;
+        fieldEl.appendChild(fieldTitle);
+
+        const fieldSigner = document.createElement('div');
+        fieldSigner.className = 'esign-field-signer';
+        fieldSigner.textContent = getSignerLabel(prefix, signerKey);
+        fieldEl.appendChild(fieldSigner);
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'esign-field-remove';
-        removeBtn.textContent = '×';
+        removeBtn.textContent = 'x';
         removeBtn.addEventListener('click', (event) => {
           event.stopPropagation();
           removeSignatureField(prefix, index);
@@ -965,9 +1910,25 @@ Start Date|date|required"></textarea>
         });
         fieldEl.appendChild(removeBtn);
 
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'esign-field-resize';
+        resizeHandle.addEventListener('pointerdown', (event) => {
+          event.stopPropagation();
+          startResizeField(prefix, index, event);
+        });
+        fieldEl.appendChild(resizeHandle);
+
         fieldEl.addEventListener('pointerdown', (event) => {
           if (event.target.closest('.esign-field-remove')) return;
+          if (event.target.closest('.esign-field-resize')) return;
           event.preventDefault();
+
+          selectedSignatureFieldIndex[prefix] = index;
+          syncSelectedSignatureFieldInputs(prefix);
+          renderSignatureFields(prefix);
+          overlay.querySelectorAll('.esign-field.selected').forEach(el => el.classList.remove('selected'));
+          fieldEl.classList.add('selected');
+
           const stateForDrag = pdfState[prefix];
           const pdfHeightForDrag = stateForDrag?.viewport
             ? stateForDrag.viewport.viewBox[3] - stateForDrag.viewport.viewBox[1]
@@ -991,9 +1952,36 @@ Start Date|date|required"></textarea>
       });
     }
 
+    function startResizeField(prefix, index, event) {
+      const state = pdfState[prefix];
+      const field = signatureFieldState[prefix]?.[index];
+      if (!field || !state?.viewport) return;
+
+      const pdfHeight = state.viewport.viewBox[3] - state.viewport.viewBox[1];
+      const topLeftY = field.origin === 'bottom-left'
+        ? (pdfHeight - field.y - field.height)
+        : field.y;
+
+      resizeState.active = true;
+      resizeState.prefix = prefix;
+      resizeState.index = index;
+      resizeState.startX = event.clientX;
+      resizeState.startY = event.clientY;
+      resizeState.originWidth = field.width || 0;
+      resizeState.originHeight = field.height || 0;
+      resizeState.originX = field.x || 0;
+      resizeState.originTopLeftY = topLeftY || 0;
+      resizeState.element = event.target.closest('.esign-field');
+
+      try {
+        resizeState.element?.setPointerCapture(event.pointerId);
+      } catch (e) {}
+    }
+
     function addSignatureField(prefix) {
       const labelInput = document.getElementById(`${prefix}-sign-label`);
       const typeInput = document.getElementById(`${prefix}-sign-type`);
+      const signerSelect = document.getElementById(`${prefix}-sign-signer`);
       const pageInput = document.getElementById(`${prefix}-sign-page`);
       const xInput = document.getElementById(`${prefix}-sign-x`);
       const yInput = document.getElementById(`${prefix}-sign-y`);
@@ -1013,9 +2001,11 @@ Start Date|date|required"></textarea>
         return;
       }
 
+      const nextType = typeInput.value;
+      const rawLabel = labelInput.value.trim();
       const field = {
-        label: labelInput.value.trim() || 'Signature',
-        type: typeInput.value,
+        label: rawLabel || getDefaultFieldLabel(nextType),
+        type: nextType,
         signerKey: signerSelect?.value || 'assignee',
         page: Number.isFinite(page) && page > 0 ? page : 1,
         x,
@@ -1023,30 +2013,95 @@ Start Date|date|required"></textarea>
         width: Number.isFinite(width) && width > 0 ? width : 180,
         height: Number.isFinite(height) && height > 0 ? height : 60,
         origin: originInput.value,
-        text: textInput.value.trim() || undefined
+        text: nextType === 'text' ? (textInput.value.trim() || undefined) : undefined
       };
 
       signatureFieldState[prefix].push(field);
-      renderSignatureFields(prefix);
-
-      labelInput.value = '';
-      if (textInput) textInput.value = '';
+      selectSignatureField(prefix, signatureFieldState[prefix].length - 1);
     }
 
     function removeSignatureField(prefix, index) {
       signatureFieldState[prefix].splice(index, 1);
+
+      const remaining = signatureFieldState[prefix].length;
+      if (remaining === 0) {
+        selectedSignatureFieldIndex[prefix] = -1;
+      } else if (selectedSignatureFieldIndex[prefix] === index) {
+        selectedSignatureFieldIndex[prefix] = Math.min(index, remaining - 1);
+      } else if (selectedSignatureFieldIndex[prefix] > index) {
+        selectedSignatureFieldIndex[prefix] = selectedSignatureFieldIndex[prefix] - 1;
+      }
+
       renderSignatureFields(prefix);
       renderOverlayFields(prefix);
+      syncSelectedSignatureFieldInputs(prefix);
     }
 
     function resetSignatureFields(prefix) {
       signatureFieldState[prefix] = [];
+      selectedSignatureFieldIndex[prefix] = -1;
       renderSignatureFields(prefix);
       renderOverlayFields(prefix);
     }
 
     if (!window.__esignDragBound) {
       document.addEventListener('pointermove', (event) => {
+        const target = event.target;
+        if (target && target.closest && target.closest('#esignModal')) {
+          return;
+        }
+
+        if (paletteDragState.candidate && !paletteDragState.active && paletteDragState.candidate.pointerId === event.pointerId) {
+          const dx = event.clientX - paletteDragState.candidate.startX;
+          const dy = event.clientY - paletteDragState.candidate.startY;
+          if (Math.abs(dx) + Math.abs(dy) > 10) {
+            beginPaletteDrag(paletteDragState.candidate, event);
+          }
+        }
+
+        if (paletteDragState.active) {
+          updatePaletteDrag(event);
+          return;
+        }
+
+        if (resizeState.active) {
+          const state = pdfState[resizeState.prefix];
+          const field = signatureFieldState[resizeState.prefix]?.[resizeState.index];
+          if (!state?.viewport || !field) return;
+
+          const scale = state.scale || 1;
+          const dx = (event.clientX - resizeState.startX) / scale;
+          const dy = (event.clientY - resizeState.startY) / scale;
+
+          const pdfWidth = state.viewport.viewBox[2] - state.viewport.viewBox[0];
+          const pdfHeight = state.viewport.viewBox[3] - state.viewport.viewBox[1];
+
+          const minW = field.type === 'signature' ? 120 : 90;
+          const minH = field.type === 'signature' ? 40 : 24;
+          const maxW = Math.max(minW, pdfWidth - (field.x || 0));
+          const maxH = Math.max(minH, pdfHeight - (resizeState.originTopLeftY || 0));
+
+          const nextW = Math.min(maxW, Math.max(minW, (resizeState.originWidth || 0) + dx));
+          const nextH = Math.min(maxH, Math.max(minH, (resizeState.originHeight || 0) + dy));
+
+          field.width = nextW;
+          field.height = nextH;
+
+          if (field.origin === 'bottom-left') {
+            field.y = Math.max(0, Math.min(pdfHeight - (resizeState.originTopLeftY || 0) - field.height, pdfHeight - field.height));
+          } else {
+            field.y = resizeState.originTopLeftY || 0;
+          }
+
+          if (resizeState.element) {
+            resizeState.element.style.width = `${field.width * scale}px`;
+            resizeState.element.style.height = `${field.height * scale}px`;
+            resizeState.element.style.top = `${(resizeState.originTopLeftY || 0) * scale}px`;
+          }
+
+          return;
+        }
+
         if (!dragState.active) return;
         const state = pdfState[dragState.prefix];
         const scale = state.scale || 1;
@@ -1072,15 +2127,38 @@ Start Date|date|required"></textarea>
         }
       });
 
-      document.addEventListener('pointerup', () => {
+      document.addEventListener('pointerup', (event) => {
+        if (paletteDragState.active) {
+          endPaletteDrag(event);
+          return;
+        }
+
+        if (paletteDragState.candidate && paletteDragState.candidate.pointerId === event.pointerId) {
+          paletteDragState.candidate = null;
+        }
+
+        if (resizeState.active) {
+          const prefix = resizeState.prefix;
+          resizeState.active = false;
+          resizeState.element = null;
+          if (prefix) {
+            renderSignatureFields(prefix);
+            renderOverlayFields(prefix);
+            syncSelectedSignatureFieldInputs(prefix);
+          }
+          return;
+        }
+
         if (!dragState.active) return;
         if (dragState.element) {
           dragState.element.classList.remove('active');
         }
+        const prefix = dragState.prefix;
         dragState.active = false;
         dragState.element = null;
-        if (dragState.prefix) {
-          renderSignatureFields(dragState.prefix);
+        if (prefix) {
+          renderSignatureFields(prefix);
+          syncSelectedSignatureFieldInputs(prefix);
         }
       });
 
@@ -1193,13 +2271,30 @@ Start Date|date|required"></textarea>
       if (type === 'esign') {
         const documentData = signatureDocumentState[prefix];
         if (!documentData) {
-          alert('Upload and preview a contract PDF first');
+          alert('Upload a contract PDF first');
           return;
         }
         if (!signatureFieldState[prefix].length) {
           alert('Add at least one signature field');
           return;
         }
+
+        const selectedSigners = signerSelectionState[prefix].length
+          ? signerSelectionState[prefix]
+          : [{ key: 'assignee', label: 'Onboarding member', type: 'assignee' }];
+        const usedSignerKeys = new Set(signatureFieldState[prefix].map(field => field.signerKey || 'assignee'));
+        const missingSignerKeys = selectedSigners
+          .map(signer => signer.key)
+          .filter(key => !usedSignerKeys.has(key));
+
+        if (missingSignerKeys.length) {
+          const missingLabels = missingSignerKeys
+            .map(key => getSignerLabel(prefix, key))
+            .join(', ');
+          alert(`Assign at least one field to each signer. Missing: ${missingLabels}`);
+          return;
+        }
+
         item.config.document = documentData;
         item.config.signatureFields = signatureFieldState[prefix].map(field => ({ ...field }));
         item.config.signers = signerSelectionState[prefix].map(signer => ({
@@ -1216,10 +2311,13 @@ Start Date|date|required"></textarea>
       if (type === 'esign') {
         document.getElementById(`${prefix}-document`).value = '';
         signatureDocumentState[prefix] = null;
-        pdfState[prefix] = { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null };
+        pdfState[prefix] = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+        placeModeState[prefix] = false;
         setDocumentStatus(prefix, 'No document uploaded.');
         const viewer = document.getElementById(`${prefix}-pdf-viewer`);
         if (viewer) viewer.style.display = 'none';
+        const empty = document.getElementById(`${prefix}-pdf-empty`);
+        if (empty) empty.style.display = 'block';
         resetSignatureFields(prefix);
       }
     }
@@ -1381,23 +2479,191 @@ Start Date|date|required"></textarea>
 
     const esignModal = document.getElementById('esignModal');
     const esignDocumentName = document.getElementById('esign-document-name');
+    const esignDocumentSubtitle = document.getElementById('esign-document-subtitle');
     const esignDocumentLink = document.getElementById('esign-document-link');
     const esignPdfViewer = document.getElementById('esign-pdf-viewer');
+    const esignPdfCanvasWrap = document.getElementById('esign-pdf-canvas-wrap');
+    const esignPdfStage = document.getElementById('esign-pdf-stage');
     const esignPdfCanvas = document.getElementById('esign-pdf-canvas');
     const esignPdfOverlay = document.getElementById('esign-pdf-overlay');
     const esignPdfPageLabel = document.getElementById('esign-pdf-page-label');
+    const esignPdfPageRange = document.getElementById('esign-pdf-page-range');
+    const esignPdfZoomLabel = document.getElementById('esign-pdf-zoom-label');
     const esignSignerName = document.getElementById('esign-signer-name');
+    const esignFieldsList = document.getElementById('esign-fields-list');
+    const esignFieldsCount = document.getElementById('esign-fields-count');
+    const esignSubmitBtn = document.getElementById('esign-submit-btn');
     const signatureCanvas = document.getElementById('esign-canvas');
     const signatureCtx = signatureCanvas.getContext('2d');
     const currentUserId = '<%= user._id %>';
     let activeAssignmentId = null;
     let activeItemId = null;
     let activeFields = [];
+    let selectedEsignFieldIndex = -1;
     let signaturePreviewUrl = null;
     let esignPdfUrl = null;
     let isDrawing = false;
     let hasSignature = false;
-    const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, viewport: null };
+    let lastSignaturePoint = null;
+    let lastSignatureMidPoint = null;
+    const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+    let activeAssigneeId = null;
+    const ESIGN_COLOR = '#6366f1';
+
+    function normalizeId(value) {
+      if (!value) return '';
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed === 'undefined' || trimmed === 'null' || trimmed === '[object Object]') return '';
+        const m = trimmed.match(/^[Oo]bject[Ii]d\(['"]([0-9a-fA-F]{24})['"]\)$/);
+        if (m) return m[1];
+        return trimmed;
+      }
+      if (typeof value === 'number') return String(value);
+      if (typeof value === 'object') {
+        if (typeof value.$oid === 'string') return value.$oid;
+        if (value.key) return normalizeId(value.key);
+        if (value.value) return normalizeId(value.value);
+        if (value._id) return normalizeId(value._id);
+        if (value.id) return normalizeId(value.id);
+        if (value.member) return normalizeId(value.member);
+        if (value.memberId) return normalizeId(value.memberId);
+      }
+      try {
+        return String(value);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function fieldAssignedToUser(field, userId, assigneeId) {
+      // Prefer signerKey because signerId can sometimes be a nested object (or coerces poorly).
+      const raw = normalizeId(field.signerKey || field.signerId || field.signer);
+      if (!raw) return true; // Unassigned fields can be signed by any allowed signer.
+      const resolved = raw === 'assignee' ? normalizeId(assigneeId) : raw;
+      return resolved === userId;
+    }
+
+    function clampNumber(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function getFieldDisplayTitle(field, index) {
+      const label = (field.label || '').trim();
+      if (label) return `${index + 1}. ${label}`;
+      if (field.type === 'date') return `${index + 1}. Date`;
+      if (field.type === 'text') return `${index + 1}. Text`;
+      return `${index + 1}. Signature`;
+    }
+
+    function renderEsignFieldsList() {
+      if (!esignFieldsList) return;
+      esignFieldsList.innerHTML = '';
+
+      if (esignFieldsCount) {
+        const n = activeFields.length;
+        esignFieldsCount.textContent = `${n} field${n === 1 ? '' : 's'}`;
+      }
+
+      activeFields.forEach((field, index) => {
+        const row = document.createElement('div');
+        row.className = 'esign-field-row' + (index === selectedEsignFieldIndex ? ' active' : '');
+        row.style.setProperty('--esign-color', ESIGN_COLOR);
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', `Jump to field ${index + 1}`);
+
+        const dot = document.createElement('div');
+        dot.className = 'esign-field-dot';
+        dot.style.background = ESIGN_COLOR;
+
+        const body = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'esign-field-row-title';
+        title.textContent = getFieldDisplayTitle(field, index);
+
+        const meta = document.createElement('div');
+        meta.className = 'esign-field-row-meta';
+        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'}`;
+
+        body.appendChild(title);
+        body.appendChild(meta);
+
+        row.appendChild(dot);
+        row.appendChild(body);
+
+        row.addEventListener('click', () => selectEsignField(index, { scroll: true }));
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectEsignField(index, { scroll: true });
+          }
+        });
+
+        esignFieldsList.appendChild(row);
+      });
+    }
+
+    function scrollToEsignField(field) {
+      if (!field || !esignPdfCanvasWrap || !esignPdfState.viewport) return;
+      const stage = esignPdfStage || esignPdfOverlay?.parentElement;
+      const stageOffsetLeft = stage?.offsetLeft || 0;
+      const stageOffsetTop = stage?.offsetTop || 0;
+      const scale = esignPdfState.scale || 1;
+      const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
+      const topLeftY = field.origin === 'bottom-left'
+        ? (pdfHeight - field.y - field.height)
+        : field.y;
+
+      const targetLeft = stageOffsetLeft + (field.x * scale) + ((field.width || 0) * scale) / 2;
+      const targetTop = stageOffsetTop + (topLeftY * scale) + ((field.height || 0) * scale) / 2;
+
+      const nextLeft = clampNumber(targetLeft - (esignPdfCanvasWrap.clientWidth / 2), 0, esignPdfCanvasWrap.scrollWidth);
+      const nextTop = clampNumber(targetTop - (esignPdfCanvasWrap.clientHeight / 2), 0, esignPdfCanvasWrap.scrollHeight);
+
+      esignPdfCanvasWrap.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
+    }
+
+    function selectEsignField(index, options = {}) {
+      if (!activeFields.length) return;
+      const safeIndex = clampNumber(Number(index) || 0, 0, activeFields.length - 1);
+      selectedEsignFieldIndex = safeIndex;
+      renderEsignFieldsList();
+
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field) return;
+
+      const desiredPage = Number(field.page) || 1;
+      if (esignPdfState.page !== desiredPage) {
+        esignPdfState.page = desiredPage;
+        renderEsignPdfPage().then(() => {
+          if (options.scroll !== false) scrollToEsignField(field);
+        });
+        return;
+      }
+
+      renderEsignOverlay();
+      if (options.scroll !== false) scrollToEsignField(field);
+    }
+
+    function jumpEsignField(delta) {
+      if (!activeFields.length) return;
+      const base = selectedEsignFieldIndex >= 0 ? selectedEsignFieldIndex : 0;
+      selectEsignField(base + delta, { scroll: true });
+    }
+
+    function changeEsignZoom(delta) {
+      if (!esignPdfState.pdf) return;
+      const next = clampNumber((esignPdfState.zoom || 1) + Number(delta || 0), 0.6, 2.25);
+      if (Math.abs(next - (esignPdfState.zoom || 1)) < 0.001) return;
+      esignPdfState.zoom = next;
+      renderEsignPdfPage().then(() => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (field && Number(field.page) === esignPdfState.page) {
+          scrollToEsignField(field);
+        }
+      });
+    }
 
     function resizeSignatureCanvas() {
       const ratio = window.devicePixelRatio || 1;
@@ -1458,26 +2724,44 @@ Start Date|date|required"></textarea>
       const loadingTask = pdfjsLib.getDocument(url);
       const pdf = await loadingTask.promise;
       esignPdfState.pdf = pdf;
-      esignPdfState.page = 1;
       esignPdfState.totalPages = pdf.numPages;
+      if (typeof esignPdfState.zoom !== 'number' || !Number.isFinite(esignPdfState.zoom)) {
+        esignPdfState.zoom = 1;
+      }
+      esignPdfState.page = clampNumber(esignPdfState.page || 1, 1, esignPdfState.totalPages || 1);
       if (esignPdfViewer) {
         esignPdfViewer.style.display = 'block';
       }
+      if (esignPdfPageRange) {
+        esignPdfPageRange.min = '1';
+        esignPdfPageRange.max = String(esignPdfState.totalPages || 1);
+        esignPdfPageRange.value = String(esignPdfState.page || 1);
+        esignPdfPageRange.style.display = (esignPdfState.totalPages || 1) > 1 ? 'inline-block' : 'none';
+      }
       await renderEsignPdfPage();
+      const selectedField = activeFields[selectedEsignFieldIndex];
+      if (selectedField && Number(selectedField.page || 1) === Number(esignPdfState.page || 1)) {
+        scrollToEsignField(selectedField);
+      }
     }
 
     async function renderEsignPdfPage() {
       if (!esignPdfState.pdf) return;
       const page = await esignPdfState.pdf.getPage(esignPdfState.page);
       const unscaledViewport = page.getViewport({ scale: 1 });
-      const wrapWidth = esignPdfCanvas.parentElement?.clientWidth || 600;
-      const scale = wrapWidth / unscaledViewport.width;
+      const wrapWidth = getWrapInnerWidth(esignPdfCanvasWrap) || esignPdfCanvas.parentElement?.clientWidth || 600;
+      const zoom = esignPdfState.zoom || 1;
+      const scale = (wrapWidth / unscaledViewport.width) * zoom;
       const viewport = page.getViewport({ scale });
 
-      esignPdfCanvas.width = viewport.width;
-      esignPdfCanvas.height = viewport.height;
+      const ratio = window.devicePixelRatio || 1;
+      esignPdfCanvas.width = Math.floor(viewport.width * ratio);
+      esignPdfCanvas.height = Math.floor(viewport.height * ratio);
+      esignPdfCanvas.style.width = `${Math.floor(viewport.width)}px`;
+      esignPdfCanvas.style.height = `${Math.floor(viewport.height)}px`;
       const ctx = esignPdfCanvas.getContext('2d');
-      ctx.clearRect(0, 0, esignPdfCanvas.width, esignPdfCanvas.height);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, viewport.width, viewport.height);
       await page.render({ canvasContext: ctx, viewport }).promise;
 
       esignPdfOverlay.style.width = `${viewport.width}px`;
@@ -1491,6 +2775,14 @@ Start Date|date|required"></textarea>
         esignPdfPageLabel.textContent = `Page ${esignPdfState.page} / ${esignPdfState.totalPages}`;
       }
 
+      if (esignPdfPageRange) {
+        esignPdfPageRange.value = String(esignPdfState.page || 1);
+      }
+
+      if (esignPdfZoomLabel) {
+        esignPdfZoomLabel.textContent = `${Math.round((esignPdfState.zoom || 1) * 100)}%`;
+      }
+
       renderEsignOverlay();
     }
 
@@ -1502,6 +2794,73 @@ Start Date|date|required"></textarea>
       renderEsignPdfPage();
     }
 
+    function bindPdfPanScroll(wrapEl, options = {}) {
+      if (!wrapEl) return;
+      const ignoreSelector = options.ignoreSelector || null;
+      const isEnabled = typeof options.isEnabled === 'function' ? options.isEnabled : (() => true);
+      const threshold = typeof options.threshold === 'number' ? options.threshold : 4;
+
+      let isDown = false;
+      let moved = false;
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+
+      wrapEl.classList.add('can-pan');
+
+      wrapEl.addEventListener('pointerdown', (event) => {
+        if (!isEnabled()) return;
+        if (event.pointerType !== 'mouse') return;
+        if (event.button !== 0) return;
+        if (ignoreSelector && event.target.closest(ignoreSelector)) return;
+
+        isDown = true;
+        moved = false;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = wrapEl.scrollLeft;
+        startTop = wrapEl.scrollTop;
+
+        wrapEl.classList.add('is-pan-ready');
+        wrapEl.setPointerCapture(pointerId);
+      });
+
+      wrapEl.addEventListener('pointermove', (event) => {
+        if (!isDown) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < threshold) return;
+        moved = true;
+        wrapEl.classList.add('is-panning');
+        wrapEl.scrollLeft = startLeft - dx;
+        wrapEl.scrollTop = startTop - dy;
+      });
+
+      const endPan = () => {
+        if (!isDown) return;
+        isDown = false;
+        wrapEl.classList.remove('is-panning');
+        wrapEl.classList.remove('is-pan-ready');
+        if (pointerId != null) {
+          try { wrapEl.releasePointerCapture(pointerId); } catch (e) {}
+        }
+        pointerId = null;
+      };
+
+      wrapEl.addEventListener('pointerup', endPan);
+      wrapEl.addEventListener('pointercancel', endPan);
+
+      wrapEl.addEventListener('click', (event) => {
+        if (moved) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+    }
+
     function renderEsignOverlay() {
       if (!esignPdfState.viewport || !esignPdfOverlay) return;
       esignPdfOverlay.innerHTML = '';
@@ -1510,10 +2869,13 @@ Start Date|date|required"></textarea>
       const now = new Date().toLocaleDateString();
       const signerName = esignSignerName.value.trim();
 
-      activeFields.forEach(field => {
+      activeFields.forEach((field, index) => {
         if ((field.page || 1) !== esignPdfState.page) return;
         const fieldEl = document.createElement('div');
         fieldEl.className = 'esign-field esign-field-preview';
+        fieldEl.dataset.index = String(index);
+        fieldEl.style.setProperty('--esign-color', ESIGN_COLOR);
+        fieldEl.style.borderColor = ESIGN_COLOR;
 
         const topLeftY = field.origin === 'bottom-left'
           ? (pdfHeight - field.y - field.height)
@@ -1523,19 +2885,44 @@ Start Date|date|required"></textarea>
         fieldEl.style.width = `${field.width * scale}px`;
         fieldEl.style.height = `${field.height * scale}px`;
 
+        if (index === selectedEsignFieldIndex) {
+          fieldEl.classList.add('selected');
+        }
+
+        const numberBadge = document.createElement('div');
+        numberBadge.className = 'esign-field-number';
+        numberBadge.textContent = String(index + 1);
+        fieldEl.appendChild(numberBadge);
+
         if (field.type === 'signature') {
           if (signaturePreviewUrl) {
             const img = document.createElement('img');
             img.src = signaturePreviewUrl;
             fieldEl.appendChild(img);
           } else {
-            fieldEl.textContent = field.label || 'Signature';
+            const label = document.createElement('div');
+            label.className = 'esign-field-title';
+            label.textContent = field.label || 'Signature';
+            fieldEl.appendChild(label);
           }
         } else if (field.type === 'date') {
-          fieldEl.textContent = now;
+          const label = document.createElement('div');
+          label.className = 'esign-field-title';
+          label.textContent = now;
+          fieldEl.appendChild(label);
         } else if (field.type === 'text') {
-          fieldEl.textContent = field.text || signerName || 'Text';
+          const label = document.createElement('div');
+          label.className = 'esign-field-title';
+          label.textContent = field.text || signerName || 'Text';
+          fieldEl.appendChild(label);
         }
+
+        fieldEl.addEventListener('click', () => {
+          selectEsignField(index, { scroll: true });
+          if (!hasSignature && field.type === 'signature') {
+            signatureCanvas?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
 
         esignPdfOverlay.appendChild(fieldEl);
       });
@@ -1554,20 +2941,50 @@ Start Date|date|required"></textarea>
       isDrawing = true;
       hasSignature = true;
       const point = getCanvasPoint(event);
+      lastSignaturePoint = point;
+      lastSignatureMidPoint = point;
+
+      // Draw a tiny dot so taps still create a visible mark.
       signatureCtx.beginPath();
       signatureCtx.moveTo(point.x, point.y);
+      signatureCtx.lineTo(point.x + 0.01, point.y + 0.01);
+      signatureCtx.stroke();
       signatureCanvas.setPointerCapture(event.pointerId);
     });
 
     signatureCanvas.addEventListener('pointermove', (event) => {
       if (!isDrawing) return;
-      const point = getCanvasPoint(event);
-      signatureCtx.lineTo(point.x, point.y);
-      signatureCtx.stroke();
+      const events = typeof event.getCoalescedEvents === 'function'
+        ? event.getCoalescedEvents()
+        : [event];
+
+      for (const e of events) {
+        const point = getCanvasPoint(e);
+        if (!lastSignaturePoint) {
+          lastSignaturePoint = point;
+          lastSignatureMidPoint = point;
+          continue;
+        }
+
+        const midPoint = {
+          x: (lastSignaturePoint.x + point.x) / 2,
+          y: (lastSignaturePoint.y + point.y) / 2
+        };
+
+        signatureCtx.beginPath();
+        signatureCtx.moveTo(lastSignatureMidPoint.x, lastSignatureMidPoint.y);
+        signatureCtx.quadraticCurveTo(lastSignaturePoint.x, lastSignaturePoint.y, midPoint.x, midPoint.y);
+        signatureCtx.stroke();
+
+        lastSignaturePoint = point;
+        lastSignatureMidPoint = midPoint;
+      }
     });
 
     signatureCanvas.addEventListener('pointerup', (event) => {
       isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
       signatureCtx.closePath();
       if (signatureCanvas.hasPointerCapture(event.pointerId)) {
         signatureCanvas.releasePointerCapture(event.pointerId);
@@ -1577,11 +2994,20 @@ Start Date|date|required"></textarea>
 
     signatureCanvas.addEventListener('pointerleave', () => {
       isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
+    });
+
+    signatureCanvas.addEventListener('pointercancel', () => {
+      isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
     });
 
     function openESignModal(button) {
       const assignmentId = button.dataset.assignment;
       const itemId = button.dataset.item;
+      const assigneeId = button.dataset.assigneeId || '';
       const docName = button.dataset.docName;
       const docUrl = button.dataset.docUrl;
       const previewUrl = button.dataset.previewUrl || docUrl;
@@ -1603,24 +3029,33 @@ Start Date|date|required"></textarea>
           width: Number(field.width) || 180,
           height: Number(field.height) || 60
         }))
-        .filter(field => !field.signerId || field.signerId === currentUserId);
+        .filter(field => fieldAssignedToUser(field, currentUserId, assigneeId))
+        .sort((a, b) => (a.page || 1) - (b.page || 1) || (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
 
       if (!previewUrl) {
         alert('Document is not available for signing');
         return;
       }
       if (!activeFields.length) {
+        console.warn('No signature fields assigned to current signer', { currentUserId, assigneeId, fields });
         alert('No signature fields assigned to you');
         return;
       }
       activeAssignmentId = assignmentId;
       activeItemId = itemId;
+      activeAssigneeId = assigneeId;
+      selectedEsignFieldIndex = 0;
       esignDocumentName.textContent = docName || 'Document';
-      esignDocumentLink.href = docUrl || previewUrl;
+      if (esignDocumentSubtitle) {
+        esignDocumentSubtitle.textContent = `You have ${activeFields.length} field${activeFields.length === 1 ? '' : 's'} to complete.`;
+      }
+      const viewerVersion = (previewUrl && docUrl && previewUrl !== docUrl) ? 'signed' : 'original';
+      esignDocumentLink.href = `/onboarding/assignments/${assignmentId}/items/${itemId}/document?version=${viewerVersion}`;
       esignDocumentLink.style.display = (docUrl || previewUrl) ? 'inline-flex' : 'none';
       esignSignerName.value = '';
       esignModal.classList.add('active');
       esignPdfUrl = previewUrl;
+      esignPdfState.zoom = 1;
       setTimeout(() => {
         resizeSignatureCanvas();
         clearSignature(true, true);
@@ -1628,7 +3063,9 @@ Start Date|date|required"></textarea>
         if (storedSignature) {
           loadSignatureDataUrl(storedSignature);
         }
+        renderEsignFieldsList();
         loadEsignPdf(previewUrl);
+        selectEsignField(0, { scroll: false });
       }, 50);
     }
 
@@ -1637,9 +3074,11 @@ Start Date|date|required"></textarea>
       activeAssignmentId = null;
       activeItemId = null;
       activeFields = [];
+      selectedEsignFieldIndex = -1;
       esignPdfState.pdf = null;
       esignPdfState.page = 1;
       esignPdfState.totalPages = 0;
+      esignPdfState.zoom = 1;
       esignPdfState.viewport = null;
       if (esignPdfViewer) {
         esignPdfViewer.style.display = 'none';
@@ -1660,6 +3099,30 @@ Start Date|date|required"></textarea>
 
     esignSignerName?.addEventListener('input', () => {
       renderEsignOverlay();
+    });
+
+    let esignPageScrubTimer = null;
+    esignPdfPageRange?.addEventListener('input', () => {
+      if (!esignPdfState.pdf) return;
+      const next = clampNumber(Number(esignPdfPageRange.value), 1, esignPdfState.totalPages || 1);
+      if (esignPdfPageLabel) {
+        esignPdfPageLabel.textContent = `Page ${next} / ${esignPdfState.totalPages}`;
+      }
+      clearTimeout(esignPageScrubTimer);
+      esignPageScrubTimer = setTimeout(() => {
+        esignPdfState.page = next;
+        renderEsignPdfPage();
+      }, 120);
+    });
+
+    bindPdfPanScroll(esignPdfCanvasWrap, { ignoreSelector: '.esign-field-preview' });
+    bindPdfPanScroll(document.getElementById('template-pdf-canvas-wrap'), {
+      ignoreSelector: '.esign-field',
+      isEnabled: () => !placeModeState.template
+    });
+    bindPdfPanScroll(document.getElementById('custom-pdf-canvas-wrap'), {
+      ignoreSelector: '.esign-field',
+      isEnabled: () => !placeModeState.custom
     });
 
     async function submitESignature() {
@@ -1705,6 +3168,14 @@ Start Date|date|required"></textarea>
     renderItems(customItems, 'custom-items-list');
     renderSignerOptions('template');
     renderSignerOptions('custom');
+    bindSignatureFieldEditor('template');
+    bindSignatureFieldEditor('custom');
+    bindPaletteDrag('template');
+    bindPaletteDrag('custom');
+    bindEsignDocumentUpload('template');
+    bindEsignDocumentUpload('custom');
+    syncFieldTypeUI('template');
+    syncFieldTypeUI('custom');
     renderSignatureFields('template');
     renderSignatureFields('custom');
     toggleItemInputs('template');
@@ -1713,6 +3184,152 @@ Start Date|date|required"></textarea>
       const defaultTab = '<%= (typeof activePage !== "undefined" && activePage === "onboarding") ? "my" : "center" %>';
       setActiveOnboardingTab(defaultTab);
     }
+
+    function initOnboardingFlows() {
+      const flows = document.querySelectorAll('[data-onboarding-flow]');
+      flows.forEach(flow => {
+        const assignmentId = (flow.dataset.assignment || '').toString();
+        const links = Array.from(flow.querySelectorAll('[data-step-link]'));
+        const panels = Array.from(flow.querySelectorAll('[data-step-panel]'));
+        const prevBtn = flow.querySelector('[data-step-prev]');
+        const nextBtn = flow.querySelector('[data-step-next]');
+        const indicator = flow.querySelector('[data-step-indicator]');
+        const indicatorInline = flow.querySelector('[data-step-indicator-inline]');
+        const progressBar = flow.querySelector('[data-progress-bar]');
+        const progressLabel = flow.querySelector('[data-progress-label]');
+
+        if (!links.length || !panels.length) return;
+
+        let currentIndex = 0;
+        const storageKey = assignmentId ? `onboardingFlow:${assignmentId}:step` : null;
+
+        const clampIndex = (value) => {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return 0;
+          return Math.min(panels.length - 1, Math.max(0, Math.floor(n)));
+        };
+
+        const metaFor = (panel) => ({
+          required: panel?.dataset?.stepRequired === '1',
+          actionable: panel?.dataset?.stepActionable === '1',
+          userDone: panel?.dataset?.stepUserdone === '1'
+        });
+
+        const computeProgress = () => {
+          const actionableRequired = panels.filter(p => {
+            const m = metaFor(p);
+            return m.actionable && m.required;
+          });
+          const doneRequired = actionableRequired.filter(p => metaFor(p).userDone);
+
+          const total = actionableRequired.length;
+          const done = doneRequired.length;
+          const pct = total ? Math.round((done / total) * 100) : 100;
+
+          if (progressBar) {
+            progressBar.style.width = `${pct}%`;
+            progressBar.setAttribute('aria-valuenow', String(pct));
+          }
+          if (progressLabel) {
+            progressLabel.textContent = total ? `${done} / ${total} required done` : 'No required actions';
+          }
+        };
+
+        const updateIndicator = () => {
+          const label = `Step ${currentIndex + 1} of ${panels.length}`;
+          if (indicator) indicator.textContent = label;
+          if (indicatorInline) indicatorInline.textContent = label;
+        };
+
+        const setButtonState = () => {
+          if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+          if (nextBtn) nextBtn.disabled = currentIndex >= panels.length - 1;
+        };
+
+        const selectStep = (index, opts = {}) => {
+          const options = {
+            persist: opts.persist !== false,
+            scroll: opts.scroll === true
+          };
+          currentIndex = clampIndex(index);
+
+          links.forEach(link => {
+            const isActive = clampIndex(link.dataset.step) === currentIndex;
+            link.classList.toggle('active', isActive);
+            link.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            link.tabIndex = isActive ? 0 : -1;
+          });
+
+          panels.forEach(panel => {
+            const isActive = clampIndex(panel.dataset.step) === currentIndex;
+            panel.classList.toggle('active', isActive);
+            if (isActive) {
+              panel.removeAttribute('hidden');
+            } else {
+              panel.setAttribute('hidden', '');
+            }
+          });
+
+          updateIndicator();
+          setButtonState();
+          computeProgress();
+
+          if (storageKey && options.persist) {
+            try { localStorage.setItem(storageKey, String(currentIndex)); } catch (e) {}
+          }
+
+          if (options.scroll) {
+            try { flow.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+          }
+        };
+
+        const pickInitialIndex = (savedIndex) => {
+          const safeSaved = clampIndex(savedIndex);
+          const savedPanel = panels[safeSaved];
+          if (savedPanel) {
+            const m = metaFor(savedPanel);
+            if (m.actionable && !m.userDone) return safeSaved;
+          }
+
+          let idx = panels.findIndex(p => {
+            const m = metaFor(p);
+            return m.actionable && m.required && !m.userDone;
+          });
+          if (idx >= 0) return idx;
+
+          idx = panels.findIndex(p => {
+            const m = metaFor(p);
+            return m.actionable && !m.userDone;
+          });
+          if (idx >= 0) return idx;
+
+          return safeSaved;
+        };
+
+        links.forEach(link => {
+          link.addEventListener('click', () => {
+            selectStep(link.dataset.step, { scroll: false });
+          });
+        });
+
+        if (prevBtn) {
+          prevBtn.addEventListener('click', () => {
+            selectStep(currentIndex - 1, { scroll: true });
+          });
+        }
+
+        if (nextBtn) {
+          nextBtn.addEventListener('click', () => {
+            selectStep(currentIndex + 1, { scroll: true });
+          });
+        }
+
+        const saved = storageKey ? localStorage.getItem(storageKey) : null;
+        selectStep(pickInitialIndex(saved), { persist: false, scroll: false });
+      });
+    }
+
+    initOnboardingFlows();
   </script>
 
   <script src="/js/invitation-gatekeeper.js"></script>

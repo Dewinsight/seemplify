@@ -1,39 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api';
 
-interface Department {
-    _id: string;
-    name: string;
-    description: string;
-}
-
 const Register: React.FC = () => {
-    const [form, setForm] = useState({ username: '', email: '', password: '', department: '' });
-    const [departments, setDepartments] = useState<Department[]>([]);
+    const [form, setForm] = useState({ username: '', email: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
-
-    useEffect(() => {
-        fetchDepartments();
-    }, []);
-
-    const fetchDepartments = async () => {
-        try {
-            const res = await api.get('/departments');
-            setDepartments(res.data);
-            // Default to first if available and not set? No, let user choose or 'General' default
-            const general = res.data.find((d: Department) => d.name === 'General');
-            if (general) {
-                setForm(f => ({ ...f, department: general._id }));
-            } else if (res.data.length > 0) {
-                setForm(f => ({ ...f, department: res.data[0]._id }));
-            }
-        } catch (err) {
-            console.error('Failed to fetch departments', err);
-        }
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -78,21 +51,6 @@ const Register: React.FC = () => {
                         required
                         style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
                     />
-
-                    <div style={{ textAlign: 'left' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Department</label>
-                        <select
-                            value={form.department}
-                            onChange={(e) => setForm({ ...form, department: e.target.value })}
-                            required
-                            style={{ width: '100%', padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.3)', color: 'white' }}
-                        >
-                            {departments.map(dept => (
-                                <option key={dept._id} value={dept._id}>{dept.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
                     <input
                         type="password"
                         placeholder="Choose Password"

@@ -51,4 +51,18 @@ export const uploadBufferToCloudinary = ({
   })
 }
 
+export const deleteFromCloudinary = async ({ publicId, resourceType = 'raw' }) => {
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary configuration missing')
+  }
+  if (!publicId) {
+    throw new Error('Cloudinary publicId is required')
+  }
+
+  return cloudinary.uploader.destroy(publicId, {
+    resource_type: resourceType,
+    invalidate: true
+  })
+}
+
 export default cloudinary
