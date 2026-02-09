@@ -5511,6 +5511,9 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
           updateThemeIcon(currentTheme);
         });
       </script>
+    </body>
+    </html>
+  `
 }
 
 // Hub Signup Page Renderer
