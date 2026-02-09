@@ -5287,135 +5287,119 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <head>
       <title>AIIN Hub - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/login.css">
       <style>
         ${themeCss}
-        /* Page-specific tweaks */
-        body {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 32px 18px;
-          position: relative;
-        }
-        .auth-shell {
-          position: relative;
-          z-index: 1;
-          width: min(1180px, 100%);
-          display: grid;
-          grid-template-columns: 1.05fr 0.95fr;
-          gap: 22px;
-          align-items: stretch;
-        }
-        .card { padding: 28px; }
-        .btn { width: 100%; margin-top: 6px; }
-        @media (max-width: 1024px) {
-          .auth-shell { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 640px) {
-          .card { padding: 22px; }
-          .title h1 { font-size: 26px; }
-        }
       </style>
       <script src="/js/theme.js?v=2"></script>
     </head>
     <body>
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
-        <div class="theme-dropdown">
-          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
-          <div class="theme-menu" id="theme-menu">
-            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              Light
-            </button>
-            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              Dark
-            </button>
-            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              System
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="halo one"></div>
-      <div class="halo two"></div>
-      <div class="halo three"></div>
+      <div class="grid-overlay"></div>
 
-      <div class="auth-shell">
-        <div class="card intro">
-          <span class="pill">AIIN Identity / Hub</span>
-          <div class="title">
-            <h1>Welcome back to the Hub</h1>
-            <p>Enterprise-grade sign-in that mirrors the SmartHR dashboard feel. One consistent entry point for all AIIN apps.</p>
-          </div>
-          <div class="chips">
-            <span class="chip">SSO ready</span>
-            <span class="chip">Adaptive MFA</span>
-            <span class="chip secondary">Session continuity</span>
-          </div>
-          <div class="stats">
-            <div class="stat"><span class="dot online"></span>All systems healthy</div>
-            <div class="stat"><span class="dot"></span>Smart redirect with hub token</div>
-          </div>
-          <div class="surface">
-            <div class="surface-row">
-              <div>
-                <div class="label">Single redirect</div>
-                <div class="value">Hub token -> SmartHR API</div>
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Back to home
+          </a>
+
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${seemplifyMarkSvg}</div>
+              <span class="login-brand-name">Seemplify</span>
+            </div>
+
+            <h1 class="login-heading">Welcome back</h1>
+            <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+
+            ${inviteBanner}
+            ${errorMsg ? `<div class="error show">${errorMsg}</div>` : ''}
+
+            <form id="loginForm" action="/login" method="POST">
+              ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
+              
+              <div class="form-group">
+                <label for="email">Email address</label>
+                <input type="email" id="email" name="email" placeholder="name@example.com" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
               </div>
-              <div class="badge success">Live</div>
+
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <label for="password">Password</label>
+                  <a href="/forgot-password" class="link">Forgot password?</a>
+                </div>
+                <input type="password" id="password" name="password" placeholder="••••••••" required />
+              </div>
+
+              <div class="muted-row">
+                <label>
+                  <input type="checkbox" name="remember" value="true" />
+                  Remember me
+                </label>
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Don't have an account? <a class="link" href="/signup">Create free account</a>
             </div>
-            <p class="surface-note">Launch SmartHR and connected tools without re-entering credentials. Aligned with the frontend dashboard styling.</p>
           </div>
         </div>
 
-        <div class="card form-card">
-          <div class="form-header">
-            <div>
-              <span class="eyebrow">Identity</span>
-              <h2 class="form-title">Sign in</h2>
-              <p class="hint">Access SmartHR, dashboards, and connected tools.</p>
-            </div>
-            <div class="brand-mark">
-              ${seemplifyMarkSvg}
-            </div>
-          </div>
-
-          ${inviteBanner}
-
-          ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
-
-          <form id="loginForm" action="/login" method="POST">
-            ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
-            <div class="form-group">
-              <label for="email">Work email</label>
-              <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              Enterprise-ready &bull; SOC 2 Ready
             </div>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input type="password" id="password" name="password" placeholder="Enter your password" required />
+            <h2 class="marketing-heading">
+              Your Workforce,<br/><span class="highlight">Supercharged.</span>
+            </h2>
+
+            <p class="marketing-desc">
+              Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+            </p>
+
+            <div class="feature-cards">
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">Single Sign-On</div>
+                  <div class="feature-desc">One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.</div>
+                </div>
+              </div>
+
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">Instant Access</div>
+                  <div class="feature-desc">Adaptive MFA and session continuity for seamless, secure access across your tools.</div>
+                </div>
+              </div>
+
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">Enterprise Security</div>
+                  <div class="feature-desc">SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.</div>
+                </div>
+              </div>
             </div>
-
-            <div class="muted-row">
-              <label>
-                <input type="checkbox" name="remember" value="true" />
-                Remember me
-              </label>
-              <a href="/forgot-password" class="link">Forgot password?</a>
-            </div>
-
-            <button type="submit" id="submitBtn" class="btn">
-              <span id="btnText">${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}</span>
-            </button>
-          </form>
-
-          <div class="meta-footer">
-            New to the hub? <a class="link" href="/signup">Create an account</a>
           </div>
         </div>
       </div>
