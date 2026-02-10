@@ -4,6 +4,15 @@ class EmailService {
     constructor() {
         this.apiKey = process.env.BREVO_API_KEY;
         this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
+        this.senderName = process.env.SENDER_NAME || 'Mosaic Approver';
+        this.senderEmail = process.env.SENDER_EMAIL || null;
+    }
+
+    getSender() {
+        if (!this.senderEmail) {
+            throw new Error('SENDER_EMAIL is required. Set it in your environment variables.');
+        }
+        return { name: this.senderName, email: this.senderEmail };
     }
 
     async sendOtp(email, otp) {
@@ -15,7 +24,7 @@ class EmailService {
 
         try {
             const data = {
-                sender: { name: 'Approver System', email: 'no-reply@seemplify.com' },
+                sender: this.getSender(),
                 to: [{ email: email }],
                 subject: 'Your Verification Code',
                 htmlContent: `
@@ -51,7 +60,7 @@ class EmailService {
 
         try {
             const data = {
-                sender: { name: 'Mosaic Approver', email: 'no-reply@seemplify.com' },
+                sender: this.getSender(),
                 to: [{ email: email }],
                 subject: `You've been invited to join ${orgName} on Mosaic`,
                 htmlContent: `
