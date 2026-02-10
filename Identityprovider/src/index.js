@@ -807,9 +807,9 @@ app.get('/interaction/:uid', async (req, res) => {
       <head>
         <title>Seemplify - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/css/idp-theme.css">
-        <link rel="stylesheet" href="/css/login.css">
-        <script src="/js/theme.js?v=3"></script>
+        <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+        <link rel="stylesheet" href="/css/login.css?v=4">
+        <script src="/js/theme.js?v=4"></script>
         <style>
           body { visibility: hidden; }
           body.light, body.dark, [data-theme] body { visibility: visible; }
@@ -1119,8 +1119,8 @@ app.get('/interaction/:uid', async (req, res) => {
         <head>
           <title>Session Expired - Seemplify Identity</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link rel="stylesheet" href="/css/idp-theme.css">
-          <script src="/js/theme.js?v=3"></script>
+          <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+          <script src="/js/theme.js?v=4"></script>
           <style>
             body { 
               display: flex;
@@ -1194,9 +1194,9 @@ app.get('/signup/:uid', async (req, res) => {
     <head>
       <title>Seemplify - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css">
-      <link rel="stylesheet" href="/css/login.css">
-      <script src="/js/theme.js?v=3"></script>
+      <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+      <link rel="stylesheet" href="/css/login.css?v=4">
+      <script src="/js/theme.js?v=4"></script>
       <style>
         body { visibility: hidden; }
         body.light, body.dark, [data-theme] body { visibility: visible; }
@@ -1571,8 +1571,8 @@ app.get('/verify-email/:accountId', async (req, res) => {
     <head>
       <title>Verify Email - Seemplify Identity</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css">
-      <script src="/js/theme.js?v=3"></script>
+      <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+      <script src="/js/theme.js?v=4"></script>
       <style>
         body {
           display: flex;
@@ -1935,8 +1935,8 @@ app.get('/forgot-password', async (req, res) => {
     <head>
       <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css">
-      <script src="/js/theme.js?v=3"></script>
+      <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+      <script src="/js/theme.js?v=4"></script>
       <style>
         body { 
           display: flex;
@@ -5225,9 +5225,9 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <head>
       <title>Seemplify - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css">
-      <link rel="stylesheet" href="/css/login.css">
-      <script src="/js/theme.js?v=3"></script>
+      <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+      <link rel="stylesheet" href="/css/login.css?v=4">
+      <script src="/js/theme.js?v=4"></script>
     </head>
     <body>
       <div class="grid-overlay"></div>
@@ -5419,8 +5419,8 @@ function renderHubSignupPage(errorMsg) {
     <head>
       <title>Seemplify - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css">
-      <link rel="stylesheet" href="/css/login.css">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=4">
+      <link rel="stylesheet" href="/css/login.css?v=4">
       <style>
         body {
           display: flex;
