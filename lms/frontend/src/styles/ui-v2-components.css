@@ -155,3 +155,132 @@
 .ui-skin-v2 .avatar-group .avatar {
 	border: 2px solid var(--v2-surface);
 }
+
+.ui-skin-v2 .lms-lesson-outline-wrap {
+	border-left: 1px solid var(--v2-border);
+	background: var(--v2-page-bg);
+}
+
+.ui-skin-v2 .lms-lesson-outline-header {
+	background: linear-gradient(165deg, var(--v2-sidebar-start), var(--v2-sidebar-end)) !important;
+	border-bottom-color: rgba(255, 255, 255, 0.35) !important;
+	padding: 1rem 0.95rem !important;
+}
+
+.ui-skin-v2 .lms-lesson-outline-title {
+	font-family: var(--v2-font-heading) !important;
+	font-weight: 800 !important;
+	font-size: 1.45rem !important;
+	line-height: 1.1;
+	letter-spacing: 0.01em;
+	color: #f7f9ff !important;
+	text-shadow: 0 3px 16px rgba(18, 23, 38, 0.28);
+}
+
+.ui-skin-v2 .lms-course-outline {
+	background: transparent;
+	padding: 0.45rem 0.5rem 0.7rem;
+}
+
+.ui-skin-v2 .lms-outline-header {
+	margin-bottom: 0.5rem !important;
+}
+
+.ui-skin-v2 .lms-outline-title {
+	font-family: var(--v2-font-heading) !important;
+	font-size: 1.25rem !important;
+	font-weight: 800 !important;
+	letter-spacing: 0.015em;
+}
+
+.ui-skin-v2 .lms-outline-shell {
+	border: 1px solid rgba(255, 255, 255, 0.7) !important;
+	background: var(--v2-surface-soft);
+	border-radius: 1.2rem !important;
+	box-shadow: var(--v2-shadow-soft);
+	padding: 0.45rem !important;
+}
+
+.ui-skin-v2 .lms-outline-chapter-item + .lms-outline-chapter-item {
+	margin-top: 0.35rem;
+}
+
+.ui-skin-v2 .lms-outline-chapter-button {
+	border-radius: 0.95rem;
+	padding: 0.65rem 0.6rem !important;
+	transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.ui-skin-v2 .lms-outline-chapter-button:hover {
+	background: rgba(95, 99, 234, 0.1);
+}
+
+.ui-skin-v2 .lms-outline-chevron {
+	color: var(--v2-accent-strong) !important;
+}
+
+.ui-skin-v2 .lms-outline-chapter-title {
+	font-family: var(--v2-font-heading) !important;
+	font-size: 1.15rem !important;
+	font-weight: 700 !important;
+	color: var(--v2-text-strong) !important;
+}
+
+.ui-skin-v2 .lms-outline-lessons-panel {
+	border-left: 2px dashed rgba(95, 99, 234, 0.3);
+	margin-left: 0.95rem;
+}
+
+.ui-skin-v2 .lms-outline-lesson {
+	position: relative;
+	border-radius: 0.85rem;
+	transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.ui-skin-v2 .lms-outline-lesson::before {
+	content: '';
+	position: absolute;
+	left: 0.85rem;
+	top: 50%;
+	width: 0.42rem;
+	height: 0.42rem;
+	border-radius: 999px;
+	background: rgba(95, 99, 234, 0.45);
+	transform: translateY(-50%);
+}
+
+.ui-skin-v2 .lms-outline-lesson:hover {
+	background: rgba(53, 179, 245, 0.11);
+}
+
+.ui-skin-v2 .lms-outline-lesson-link {
+	font-size: 0.95rem !important;
+	font-weight: 700;
+	color: var(--v2-text-strong);
+}
+
+.ui-skin-v2 .lms-outline-lesson-icon {
+	color: var(--v2-accent-strong) !important;
+}
+
+.ui-skin-v2 .lms-outline-lesson-active {
+	background: linear-gradient(
+		90deg,
+		rgba(95, 99, 234, 0.21),
+		rgba(194, 77, 191, 0.17)
+	) !important;
+}
+
+@media (max-width: 768px) {
+	.ui-skin-v2 .lms-lesson-outline-wrap {
+		border-left: none;
+	}
+
+	.ui-skin-v2 .lms-lesson-outline-title {
+		font-size: 1.3rem !important;
+	}
+
+	.ui-skin-v2 .lms-outline-chapter-title {
+		font-size: 1.08rem !important;
+	}
+}

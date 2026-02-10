@@ -237,6 +237,67 @@ input:focus {
   background: var(--bg);
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.password-toggle:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.password-toggle-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.password-toggle-icon--hide {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--show {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--hide {
+  display: block;
+}
+
+.caps-lock-hint {
+  min-height: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f59e0b;
+}
+
 /* Checkbox row */
 .muted-row {
   display: flex;
@@ -390,6 +451,18 @@ button:disabled {
   box-shadow: none !important;
 }
 
+button[type="submit"].is-loading::before,
+button.btn-primary.is-loading::before,
+#continueBtn.is-loading::before {
+  display: none;
+}
+
+button[type="submit"].is-loading svg,
+button.btn-primary.is-loading svg,
+#continueBtn.is-loading svg {
+  display: none;
+}
+
 button svg {
   transition: transform 0.3s ease;
 }
@@ -479,8 +552,8 @@ button:hover svg {
 
 /* Spinner */
 .spinner {
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top: 2px solid #fff;
+  border: 2px solid rgba(9, 9, 11, 0.25);
+  border-top: 2px solid currentColor;
   border-radius: 50%;
   width: 16px;
   height: 16px;
@@ -492,6 +565,11 @@ button:hover svg {
 
 @keyframes spin { 
   to { transform: rotate(360deg); } 
+}
+
+[data-theme="light"] .spinner,
+body.light .spinner {
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 /* === RIGHT: Marketing Panel — matches marketing-site dark sections === */
@@ -885,6 +963,10 @@ body.light .feature-desc {
     padding: 13px 14px;
     font-size: 16px; /* Prevents zoom on iOS */
   }
+
+  .password-field input {
+    padding-right: 44px;
+  }
   
   button[type="submit"] {
     padding: 14px 18px;
@@ -948,4 +1030,15 @@ a:focus-visible {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

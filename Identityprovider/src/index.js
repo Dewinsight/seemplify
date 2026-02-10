@@ -5223,6 +5223,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>Seemplify - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=4">
@@ -5272,14 +5273,14 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
             <p class="login-subheading">Sign in to access your AIIN workspace.</p>
 
             ${inviteBanner}
-            ${errorMsg ? `<div class="error show">${errorMsg}</div>` : ''}
+            ${errorMsg ? `<div id="loginError" class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
 
             <form id="loginForm" action="/login" method="POST">
               ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
               
               <div class="form-group">
                 <label for="email">Email address</label>
-                <input type="email" id="email" name="email" placeholder="name@example.com" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
+                <input type="email" id="email" name="email" placeholder="name@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
               </div>
 
               <div class="form-group">
@@ -5287,7 +5288,19 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
                   <label for="password" style="margin: 0;">Password</label>
                   <a href="/forgot-password" class="link">Forgot password?</a>
                 </div>
-                <input type="password" id="password" name="password" placeholder="••••••••" required />
+                <div class="password-field">
+                  <input type="password" id="password" name="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" required />
+                  <button type="button" id="passwordToggle" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                    <svg class="password-toggle-icon password-toggle-icon--show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="password-toggle-icon password-toggle-icon--hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.7 21.7 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.72 21.72 0 0 1-3.1 4.44M1 1l22 22"/>
+                    </svg>
+                  </button>
+                </div>
+                <div id="capsLockHint" class="caps-lock-hint" aria-live="polite"></div>
               </div>
 
               <div class="muted-row">
@@ -5375,11 +5388,51 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
         const form = document.getElementById('loginForm');
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
+        const passwordInput = document.getElementById('password');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const capsLockHint = document.getElementById('capsLockHint');
+        const submitLabel = '${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}';
 
-        form.addEventListener('submit', () => {
-          submitBtn.disabled = true;
-          btnText.innerHTML = '<span class="spinner"></span>Signing in...';
+        function setSubmittingState(isSubmitting) {
+          if (!submitBtn || !btnText) return;
+          submitBtn.disabled = isSubmitting;
+          submitBtn.classList.toggle('is-loading', isSubmitting);
+          btnText.innerHTML = isSubmitting ? '<span class="spinner"></span>Signing in...' : submitLabel;
+        }
+
+        form.addEventListener('submit', (event) => {
+          if (submitBtn.disabled) {
+            event.preventDefault();
+            return;
+          }
+          setSubmittingState(true);
         });
+
+        window.addEventListener('pageshow', () => {
+          setSubmittingState(false);
+        });
+
+        if (passwordToggle && passwordInput) {
+          passwordToggle.addEventListener('click', () => {
+            const shouldShowPassword = passwordInput.type === 'password';
+            passwordInput.type = shouldShowPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', shouldShowPassword ? 'Hide password' : 'Show password');
+            passwordToggle.classList.toggle('is-visible', shouldShowPassword);
+            passwordInput.focus();
+          });
+        }
+
+        if (passwordInput && capsLockHint) {
+          const updateCapsLockHint = (event) => {
+            const isCapsLock = Boolean(event.getModifierState && event.getModifierState('CapsLock'));
+            capsLockHint.textContent = isCapsLock ? 'Caps Lock is on' : '';
+          };
+
+          ['keydown', 'keyup', 'focus', 'blur'].forEach((eventName) => {
+            passwordInput.addEventListener(eventName, updateCapsLockHint);
+          });
+        }
 
         function toggleTheme() {
           const current = window.ThemeManager?.getTheme() || 'dark';
@@ -5391,6 +5444,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
         function updateThemeIcon(theme) {
           const sunIcon = document.querySelector('.theme-icon-sun');
           const moonIcon = document.querySelector('.theme-icon-moon');
+          if (!sunIcon || !moonIcon) return;
           if (theme === 'light') {
             sunIcon.style.display = 'none';
             moonIcon.style.display = 'block';
@@ -5762,5 +5816,3 @@ app.listen(PORT, async () => {
     console.error('⚠️ Failed to initialize subscription lifecycle jobs:', error)
   }
 })
-
-

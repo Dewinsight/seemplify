@@ -22,17 +22,17 @@
 				</slot>
 			</Tooltip>
 			<span
-				class="lms-sidebar-link-label flex-shrink-0 text-sm duration-300 ease-in-out"
+				class="lms-sidebar-link-label overflow-hidden text-sm duration-300 ease-in-out"
 				:class="
 					isCollapsed
 						? 'ml-0 w-0 overflow-hidden opacity-0'
-						: 'ml-2 w-auto opacity-100'
+						: 'ml-2 min-w-0 flex-1 truncate opacity-100'
 				"
 			>
 				{{ __(link.label) }}
 			</span>
 			<span
-				v-if="decorativeIcon && !isCollapsed && isV2Skin"
+				v-if="showDecorativeIcon"
 				class="lms-sidebar-link-emoji"
 				aria-hidden="true"
 			>
@@ -124,6 +124,12 @@ const isActive = computed(() => {
 
 const decorativeIcon = computed(() => {
 	return getDecorativeNavIcon(props.link?.label)
+})
+
+const showDecorativeIcon = computed(() => {
+	if (props.isCollapsed || !isV2Skin.value || !decorativeIcon.value) return false
+	const labelLength = props.link?.label?.length || 0
+	return labelLength <= 13
 })
 
 const isV2Skin = computed(() => {

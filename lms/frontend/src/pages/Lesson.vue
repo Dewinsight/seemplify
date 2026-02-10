@@ -292,9 +292,9 @@
 					</div>
 				</div>
 			</div>
-			<div class="sticky top-10">
-				<div class="bg-surface-menu-bar py-5 px-2 border-b">
-					<div class="text-lg font-semibold text-ink-gray-9">
+			<div class="sticky top-10 lms-lesson-outline-wrap">
+				<div class="bg-surface-menu-bar py-5 px-2 border-b lms-lesson-outline-header">
+					<div class="text-lg font-semibold text-ink-gray-9 lms-lesson-outline-title">
 						{{ lesson.data.course_title }}
 					</div>
 					<div
