@@ -82,6 +82,23 @@
 	border-radius: 1rem;
 }
 
+.ui-skin-v2 .lms-sidebar-user-dropdown-button:hover {
+	background: rgba(255, 255, 255, 0.14) !important;
+}
+
+.ui-skin-v2 .lms-sidebar-user-dropdown-button.bg-surface-white {
+	background: rgba(255, 255, 255, 0.16) !important;
+	border: 1px solid rgba(255, 255, 255, 0.28);
+	box-shadow: 0 10px 22px rgba(27, 35, 70, 0.18) !important;
+}
+
+.ui-skin-v2 .lms-sidebar-user-dropdown-button:hover .lms-sidebar-user-title,
+.ui-skin-v2 .lms-sidebar-user-dropdown-button:hover .lms-sidebar-user-name,
+.ui-skin-v2 .lms-sidebar-user-dropdown-button.bg-surface-white .lms-sidebar-user-title,
+.ui-skin-v2 .lms-sidebar-user-dropdown-button.bg-surface-white .lms-sidebar-user-name {
+	color: #ffffff !important;
+}
+
 .ui-skin-v2 .lms-sidebar-user-title {
 	font-family: var(--v2-font-heading);
 	font-size: 1.03rem;
