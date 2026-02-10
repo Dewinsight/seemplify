@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLoca
 import { useState, useEffect } from 'react';
 import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import api from './api';
 import { getUserDisplayName, getUserInitials } from './utils/userDisplay';
@@ -327,7 +328,12 @@ const ProtectedRoute = () => {
     return <Navigate to="/setup" />;
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <InviteNotificationPopup />
+      <Outlet />
+    </>
+  );
 };
 
 function App() {
