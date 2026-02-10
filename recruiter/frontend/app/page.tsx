@@ -86,7 +86,9 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white selection:bg-indigo-500/30">
+    // This marketing page is designed as a dark experience even when the app theme is set to "light".
+    // Force dark tokens locally so shared UI primitives (e.g. `.glass-card`) don't render as light surfaces on a dark backdrop.
+    <div className="dark min-h-screen bg-[#0B1020] text-white selection:bg-indigo-500/30">
       <div className="bg-noise" />
 
       {/* Ambient Lighting */}
@@ -96,7 +98,7 @@ export default function LandingPage() {
       </div>
 
       {/* Header */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#050505]/80 backdrop-blur-xl border-b border-white/[0.08]' : ''
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#0B1020]/80 backdrop-blur-xl border-b border-white/[0.08]' : ''
         }`}>
         <nav className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -138,7 +140,7 @@ export default function LandingPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-[#050505]/95 backdrop-blur-md z-40 lg:hidden"
+                className="fixed inset-0 bg-[#0B1020]/95 backdrop-blur-md z-40 lg:hidden"
                 onClick={() => setIsMobileMenuOpen(false)}
               />
               <motion.div
@@ -146,7 +148,7 @@ export default function LandingPage() {
                 animate={{ x: 0 }}
                 exit={{ x: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed top-0 right-0 bottom-0 w-80 max-w-[85vw] bg-[#050505]/98 backdrop-blur-lg border-l border-white/[0.08] z-50 lg:hidden overflow-y-auto"
+                className="fixed top-0 right-0 bottom-0 w-80 max-w-[85vw] bg-[#0B1020]/98 backdrop-blur-lg border-l border-white/[0.08] z-50 lg:hidden overflow-y-auto"
               >
                 <div className="flex justify-end p-4">
                   <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-white hover:bg-white/10 rounded-lg">
@@ -277,8 +279,8 @@ export default function LandingPage() {
               </div>
 
               {/* Main Display Glass Card */}
-              <div className="glass-card rounded-2xl p-1 border border-white/5">
-                <div className="rounded-xl bg-black/40 p-8 md:p-12 overflow-hidden relative min-h-[300px] flex items-center">
+              <div className="glass-card rounded-2xl p-0.5">
+                <div className="rounded-xl bg-black/60 p-8 md:p-12 overflow-hidden relative min-h-[300px] flex items-center">
 
                   <div className="grid md:grid-cols-2 gap-12 items-center w-full relative z-10">
                     <div className="text-left">
@@ -288,7 +290,7 @@ export default function LandingPage() {
                       <h3 className="text-3xl font-semibold mb-4 text-white tracking-tight">{products[activeProduct].description}</h3>
                       <ul className="space-y-3">
                         {products[activeProduct].features.map((feature) => (
-                          <li key={feature} className="flex items-center text-zinc-400 text-sm">
+                          <li key={feature} className="flex items-center text-zinc-300 text-sm">
                             <div className="w-1 h-1 rounded-full bg-indigo-500 mr-3" />
                             {feature}
                           </li>
@@ -304,13 +306,13 @@ export default function LandingPage() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 1.05 }}
                         transition={{ duration: 0.4 }}
-                        className="w-full h-full flex items-center justify-center p-4 rounded-xl border border-white/5 bg-white/[0.02]"
+                        className="w-full h-full flex items-center justify-center p-4 rounded-xl border border-white/10 bg-white/[0.03]"
                       >
                         <div className="text-center">
                           <div className={`text-6xl font-bold mb-2 ${products[activeProduct].color}`}>
                             {activeProduct === 0 ? '95%' : activeProduct === 1 ? '60%' : '3x'}
                           </div>
-                          <div className="text-zinc-500 text-sm">
+                          <div className="text-zinc-400 text-sm">
                             {activeProduct === 0 ? 'Match Accuracy' : activeProduct === 1 ? 'Time Saved' : 'Faster Hiring'}
                           </div>
                         </div>
@@ -591,7 +593,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-20 border-t border-white/5 bg-[#050505] relative z-10">
+      <footer className="py-20 border-t border-white/5 bg-[#0B1020] relative z-10">
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
             <div className="space-y-4">

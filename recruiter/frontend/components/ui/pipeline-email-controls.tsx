@@ -177,7 +177,7 @@ export function PipelineEmailControls({
 
   return (
     <>
-      <Card className="border-0 bg-gradient-to-r from-orange-50 via-red-50 to-pink-50 dark:from-orange-950 dark:via-red-950 dark:to-pink-950 shadow-lg">
+      <Card className="bg-gradient-to-r from-orange-500/5 via-red-500/5 to-pink-500/5 dark:from-orange-500/10 dark:via-red-500/10 dark:to-pink-500/10 shadow-lg">
         <CardContent className="p-6">
           <div className="space-y-6">
             {/* Header Section */}
@@ -187,19 +187,19 @@ export function PipelineEmailControls({
                   <Mail className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                     Pipeline Email Management
-                    <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
+                    <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
                       {totalCandidates} total candidates
                     </Badge>
                   </h3>
-                  <p className="text-sm text-muted-foreground dark:text-gray-400 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     Send targeted rejection emails to candidates in <span className="font-medium">{jobTitle}</span> pipeline
                   </p>
                 </div>
               </div>
               
-              <div className="hidden sm:flex items-center space-x-4 text-sm text-muted-foreground dark:text-gray-400">
+              <div className="hidden sm:flex items-center space-x-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Layers className="h-4 w-4 text-blue-500" />
                   <span>Multi-Stage</span>
@@ -220,7 +220,7 @@ export function PipelineEmailControls({
               {stageStats.map((stage, index) => (
                 <div 
                   key={stage._id}
-                  className="glass-card bg-popover/40 dark:bg-card/30 rounded-lg p-3 border border-border/60 hover:shadow-lg transition-all duration-200"
+                  className="rounded-lg p-3 border border-border/60 bg-card/70 dark:bg-card/30 shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div className="text-xs font-medium text-muted-foreground mb-1 truncate" title={stage.name}>
                     {stage.name}
@@ -230,7 +230,7 @@ export function PipelineEmailControls({
                       {stage.candidateCount}
                     </span>
                     <div className={`h-2 w-2 rounded-full ${
-                      stage.candidateCount > 0 ? 'bg-blue-500' : 'bg-gray-300'
+                      stage.candidateCount > 0 ? 'bg-primary' : 'bg-muted-foreground/30'
                     }`} />
                   </div>
                 </div>
@@ -247,7 +247,7 @@ export function PipelineEmailControls({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Filter Type */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground dark:text-gray-400">Scope</Label>
+                  <Label className="text-xs text-muted-foreground">Scope</Label>
                   <Select value={filterBy} onValueChange={(value: FilterOption) => {
                     setFilterBy(value)
                     setSelectedCandidates([]) // Reset selection when filter changes
@@ -280,7 +280,7 @@ export function PipelineEmailControls({
                 {/* Stage Selection */}
                 {filterBy === 'stage' && (
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground dark:text-gray-400">Select Stage</Label>
+                    <Label className="text-xs text-muted-foreground">Select Stage</Label>
                     <Select value={selectedStageId} onValueChange={(value) => {
                       setSelectedStageId(value)
                       setSelectedCandidates([]) // Reset selection when stage changes
@@ -306,7 +306,7 @@ export function PipelineEmailControls({
 
                 {/* Action Button */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground dark:text-gray-400">Action</Label>
+                  <Label className="text-xs text-muted-foreground">Action</Label>
                   <Button 
                     onClick={openBulkDialog}
                     disabled={filteredCandidates.length === 0}
@@ -325,14 +325,14 @@ export function PipelineEmailControls({
 
               {/* Current Selection Info */}
               {filteredCandidates.length > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="bg-primary/10 p-4 rounded-lg border border-primary/20">
                   <div className="flex items-start gap-2">
-                    <TrendingUp className="h-4 w-4 text-blue-600 mt-0.5" />
-                    <div className="text-sm text-blue-700 dark:text-blue-300">
-                      <p className="font-medium mb-1">
+                    <TrendingUp className="h-4 w-4 text-primary mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium mb-1 text-primary">
                         Ready to send: {filteredCandidates.length} candidate{filteredCandidates.length !== 1 ? 's' : ''}
                       </p>
-                      <p>
+                      <p className="text-muted-foreground">
                         {filterBy === 'all' 
                           ? 'All pipeline candidates will receive rejection emails' 
                           : `Candidates in "${stages.find(s => s._id === selectedStageId)?.name}" stage will receive rejection emails`

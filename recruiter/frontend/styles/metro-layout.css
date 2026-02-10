@@ -93,7 +93,17 @@
 
 /* Light mode - slightly darker tiles */
 :root:not(.dark) .metro-tile {
-  background: rgba(0, 0, 0, 0.04);
+  /* Slightly stronger surface so tiles don't wash out against the page background */
+  background: rgba(0, 0, 0, 0.07);
+}
+
+/* Light mode - increase tint so colored tiles read as tiles (not near-white cards) */
+:root:not(.dark) .metro-tile::before {
+  opacity: 0.22;
+}
+
+:root:not(.dark) .metro-tile:hover::before {
+  opacity: 0.32;
 }
 
 .metro-tile::before {
@@ -539,11 +549,11 @@
 }
 
 :root:not(.dark) .metro-tile-emphasis::before {
-  opacity: 0.3;
+  opacity: 0.38;
 }
 
 :root:not(.dark) .metro-tile-emphasis:hover::before {
-  opacity: 0.4;
+  opacity: 0.46;
 }
 
 :root:not(.dark) .metro-tile-emphasis .metro-tile-overlay {

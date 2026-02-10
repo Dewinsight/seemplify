@@ -440,9 +440,9 @@ export function InterviewStageConfiguration({
 
   if (stages.length === 0) {
     return (
-      <Card className="glass-card border-border/50 dark:border-white/5">
+      <Card className="glass-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+          <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
             Configure Interview Stages
           </CardTitle>
@@ -451,8 +451,8 @@ export function InterviewStageConfiguration({
           <div className="text-center py-8">
             <div className="mb-6">
               <Wand2 className="h-12 w-12 text-purple-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2 text-foreground dark:text-white">No Interview Stages Configured</h3>
-              <p className="text-muted-foreground dark:text-gray-400 mb-6">
+              <h3 className="text-lg font-semibold mb-2">No Interview Stages Configured</h3>
+              <p className="text-muted-foreground mb-6">
                 Get started by choosing a template for your hiring process. Templates provide a structured interview pipeline with predefined stages.
               </p>
             </div>
@@ -465,9 +465,9 @@ export function InterviewStageConfiguration({
                     Use Template
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-background border-border text-foreground dark:bg-[#0A0A0A] dark:border-white/10">
+                <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl text-foreground dark:text-white">Choose Interview Pipeline Template</DialogTitle>
+                    <DialogTitle className="text-2xl">Choose Interview Pipeline Template</DialogTitle>
                   </DialogHeader>
 
                   <Alert className="bg-blue-500/10 border-blue-500/20">
@@ -679,7 +679,7 @@ export function InterviewStageConfiguration({
 
   return (
     <div className="space-y-6">
-      <Card className="glass-card border-white/5">
+      <Card className="glass-card">
         <CardHeader className="pb-3 sm:pb-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -938,16 +938,17 @@ export function InterviewStageConfiguration({
         <CardContent>
           <div className="space-y-4">
             {stages.map((stage, index) => (
-              <Card key={stage._id} className="transition-all duration-200 hover:bg-white/5 border-0 border-l-[3px] border-l-blue-500 glass-card">
-                <CardContent className="p-3 sm:p-4">
+              <Card key={stage._id} className="glass-card relative overflow-hidden transition-all duration-200">
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-primary/70" />
+                <CardContent className="p-3 sm:p-4 pl-4 sm:pl-5">
                   <div className="flex flex-col gap-3">
                     {/* Mobile Header Row */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Badge variant="outline" className="text-xs px-2 py-1 flex-shrink-0 bg-white/5 border-white/10 text-gray-400">
+                        <Badge variant="outline" className="text-xs px-2 py-1 flex-shrink-0 bg-muted/40 border-border/60 text-muted-foreground">
                           #{stage.order}
                         </Badge>
-                        <h3 className="font-semibold text-sm sm:text-base truncate text-white">{stage.name}</h3>
+                        <h3 className="font-semibold text-sm sm:text-base truncate text-foreground">{stage.name}</h3>
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -955,7 +956,7 @@ export function InterviewStageConfiguration({
                             variant="ghost"
                             size="sm"
                             disabled={movingStage === stage._id}
-                            className="h-8 w-8 p-0 hover:bg-white/10 text-gray-400 hover:text-white flex-shrink-0"
+                            className="h-8 w-8 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
                           >
                             {movingStage === stage._id ? (
                               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -964,15 +965,14 @@ export function InterviewStageConfiguration({
                             )}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="bg-[#1A1A1A] border-white/10 text-gray-300">
-                          <DropdownMenuLabel className="text-gray-400">Move Stage</DropdownMenuLabel>
-                          <DropdownMenuSeparator className="bg-white/10" />
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel className="text-muted-foreground">Move Stage</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
 
                           {index > 0 && (
                             <DropdownMenuItem
                               onClick={() => handleMoveStage(stage._id, index - 1)}
                               disabled={movingStage === stage._id}
-                              className="focus:bg-white/10 focus:text-white"
                             >
                               <ChevronUp className="h-4 w-4 mr-2" />
                               Move Up
@@ -983,7 +983,6 @@ export function InterviewStageConfiguration({
                             <DropdownMenuItem
                               onClick={() => handleMoveStage(stage._id, index + 1)}
                               disabled={movingStage === stage._id}
-                              className="focus:bg-white/10 focus:text-white"
                             >
                               <ChevronDown className="h-4 w-4 mr-2" />
                               Move Down
@@ -1017,20 +1016,20 @@ export function InterviewStageConfiguration({
                     {/* Stage Details */}
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="secondary" className="capitalize text-xs bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                        <Badge variant="outline" className="capitalize text-xs bg-blue-500/10 text-blue-700 dark:text-blue-200 border-blue-500/20">
                           {stage.type.replace('_', ' ')}
                         </Badge>
                         {!stage.isActive && (
-                          <Badge variant="destructive" className="text-xs bg-red-500/10 text-red-300 border border-red-500/20">Inactive</Badge>
+                          <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/20">Inactive</Badge>
                         )}
                         {(stage.interviewCount || 0) > 0 && (
-                          <Badge variant="outline" className="text-xs border-white/10 text-gray-400">
+                          <Badge variant="outline" className="text-xs bg-muted/30 border-border/60 text-muted-foreground">
                             {stage.interviewCount} interview{stage.interviewCount !== 1 ? 's' : ''}
                           </Badge>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-4 text-xs sm:text-sm text-gray-400">
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-4 text-xs sm:text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {stage.defaultDuration} min
@@ -1048,21 +1047,21 @@ export function InterviewStageConfiguration({
                       </div>
 
                       {stage.description && (
-                        <p className="text-xs sm:text-sm text-gray-500 line-clamp-2">
+                        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
                           {stage.description}
                         </p>
                       )}
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center justify-between pt-2 border-t border-border/60">
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleToggleStageActive(stage._id)}
                           title={stage.isActive ? 'Deactivate stage' : 'Activate stage'}
-                          className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
                         >
                           {stage.isActive ? (
                             <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -1076,7 +1075,7 @@ export function InterviewStageConfiguration({
                           size="sm"
                           onClick={() => handleEditStage(stage)}
                           title="Edit stage"
-                          className="h-8 w-8 p-0 hover:bg-white/10 text-gray-400 hover:text-white"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
                         >
                           <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
@@ -1090,7 +1089,7 @@ export function InterviewStageConfiguration({
                             ? 'Cannot delete stage with existing interviews'
                             : 'Delete stage'
                           }
-                          className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                         >
                           <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>

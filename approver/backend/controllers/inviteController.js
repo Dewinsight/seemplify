@@ -45,8 +45,9 @@ exports.sendInvite = async (req, res) => {
         // Try to send email notification
         const inviter = await User.findById(req.user.id, 'username');
         const org = await require('../models/Organization').findById(req.organization, 'name');
+        const hasAccount = !!(await User.findOne({ email: email.toLowerCase() }));
         try {
-            await emailService.sendInvite(email, org?.name || 'Unknown', inviter?.username || 'Someone');
+            await emailService.sendInvite(email, org?.name || 'Unknown', inviter?.username || 'Someone', hasAccount);
         } catch (emailErr) {
             console.warn('Failed to send invite email:', emailErr.message);
         }

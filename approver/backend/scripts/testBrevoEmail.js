@@ -27,10 +27,10 @@ async function test() {
         console.error('   OTP failed:', e.message);
     }
 
-    // Test 2: Invite email
-    console.log('2. Sending test Invite email...');
+    // Test 2: Invite email (hasAccount = false for "Sign up" variant)
+    console.log('2. Sending test Invite email (Sign up variant)...');
     try {
-        await emailService.sendInvite(toEmail, 'Test Organization', 'Test Admin');
+        await emailService.sendInvite(toEmail, 'Test Organization', 'Test Admin', false);
         console.log('   Invite send attempted (check for success log above)\n');
     } catch (e) {
         console.error('   Invite failed:', e.message);

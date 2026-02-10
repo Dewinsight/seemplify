@@ -1998,7 +1998,7 @@ function JobDetailInnerPage() {
                           <Settings className="h-5 w-5 flex-shrink-0" />
                           <span className="truncate">Stage Configuration</span>
                         </CardTitle>
-                        <CardDescription className="text-indigo-100 text-sm">
+                        <CardDescription className="dark:text-blue-100/80">
                           Set up and manage interview stages for this position
                         </CardDescription>
                       </CardHeader>
@@ -2017,12 +2017,12 @@ function JobDetailInnerPage() {
 
                   <TabsContent value="email-management" className="mt-0">
                     <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-orange-950/40 to-red-950/40 text-orange-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
+                      <CardHeader className="bg-gradient-to-r from-orange-500/10 to-red-500/10 text-foreground rounded-t-lg px-4 sm:px-6 border-b border-border/60 dark:from-orange-950/60 dark:to-red-950/60 dark:text-orange-50">
                         <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <Mail className="h-5 w-5 flex-shrink-0" />
+                          <Mail className="h-5 w-5 flex-shrink-0 text-orange-600 dark:text-orange-300" />
                           <span className="truncate">Email Management</span>
                         </CardTitle>
-                        <CardDescription className="text-orange-100 text-sm">
+                        <CardDescription className="dark:text-orange-100/80">
                           Send targeted emails to candidates in the hiring pipeline
                         </CardDescription>
                       </CardHeader>
@@ -2045,12 +2045,12 @@ function JobDetailInnerPage() {
 
                   <TabsContent value="feedback-form" className="mt-0">
                     <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-purple-950/40 to-pink-950/40 text-purple-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
+                      <CardHeader className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-foreground rounded-t-lg px-4 sm:px-6 border-b border-border/60 dark:from-purple-950/60 dark:to-pink-950/60 dark:text-purple-50">
                         <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <MessageSquare className="h-5 w-5 flex-shrink-0" />
+                          <MessageSquare className="h-5 w-5 flex-shrink-0 text-purple-600 dark:text-purple-300" />
                           <span className="truncate">Feedback Form Management</span>
                         </CardTitle>
-                        <CardDescription className="text-purple-100 text-sm">
+                        <CardDescription className="dark:text-purple-100/80">
                           Configure job settings and manage organization templates & custom fields
                         </CardDescription>
                       </CardHeader>
@@ -2083,12 +2083,12 @@ function JobDetailInnerPage() {
 
                   <TabsContent value="overview" className="mt-0">
                     <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-emerald-950/40 to-teal-950/40 text-emerald-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
+                      <CardHeader className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 text-foreground rounded-t-lg px-4 sm:px-6 border-b border-border/60 dark:from-emerald-950/85 dark:to-teal-950/85">
                         <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <Calendar className="h-5 w-5 flex-shrink-0" />
+                          <Calendar className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-300" />
                           <span className="truncate">Interview Overview</span>
                         </CardTitle>
-                        <CardDescription className="text-emerald-100 text-sm">
+                        <CardDescription>
                           All interviews scheduled for this position
                         </CardDescription>
                       </CardHeader>

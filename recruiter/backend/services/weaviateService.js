@@ -4,14 +4,20 @@ const { mongoIdToUuid } = require('../utils/uuidHelper');
 class WeaviateService {
   constructor() {
     try {
+      // Local dev: "weaviate" hostname only resolves inside Docker; use server IP instead
+      let host = process.env.WEAVIATE_HOST || 'localhost:8080';
+      if (process.env.NODE_ENV === 'development' && (host.startsWith('weaviate') || host === 'weaviate')) {
+        host = '4.180.153.209:8080';
+        console.log('🔧 Weaviate: using server IP for local dev (weaviate hostname not resolvable)');
+      }
       this.client = weaviate.default.client({
         scheme: process.env.WEAVIATE_SCHEME || 'http',
-        host: process.env.WEAVIATE_HOST || 'localhost:8080',
+        host,
         headers: {
           'Authorization': `Bearer ${process.env.WEAVIATE_API_KEY}`
         }
       });
-      console.log('✅ Weaviate client initialized');
+      console.log('✅ Weaviate client initialized (host:', host, ')');
     } catch (error) {
       console.error('❌ Failed to initialize Weaviate client:', error);
       this.client = null;

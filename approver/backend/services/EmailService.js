@@ -51,12 +51,24 @@ class EmailService {
         }
     }
 
-    async sendInvite(email, orgName, invitedByName) {
+    async sendInvite(email, orgName, invitedByName, hasAccount = false) {
         if (!this.apiKey) {
             console.warn('BREVO_API_KEY is missing. Invite will only be logged to console.');
             console.log(`[DEV MODE] Invite for ${email} to join "${orgName}" (invited by ${invitedByName})`);
             return;
         }
+
+        const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+        const loginUrl = `${baseUrl}/login`;
+        const signupUrl = `${baseUrl}/register`;
+
+        const ctaHtml = hasAccount
+            ? `<p><a href="${loginUrl}" style="display: inline-block; padding: 12px 24px; background: #646cff; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Login</a> to accept this invite and join ${orgName}.</p>`
+            : `<p><a href="${signupUrl}" style="display: inline-block; padding: 12px 24px; background: #646cff; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Sign up</a> to create your account and join ${orgName}.</p>`;
+
+        const ctaText = hasAccount
+            ? `You already have an account. Log in to accept this invite.`
+            : `You don't have an account yet. Sign up to create one and join the organization.`;
 
         try {
             const data = {
@@ -66,14 +78,10 @@ class EmailService {
                 htmlContent: `
                     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                         <h2>Organization Invite</h2>
-                        <p><strong>${invitedByName}</strong> has invited you to join <strong>${orgName}</strong> on Mosaic Approver.</p>
-                        <p>To accept this invite:</p>
-                        <ol>
-                            <li>Sign up or log in to your Mosaic account</li>
-                            <li>Go to the Invites page</li>
-                            <li>Accept the invite from ${orgName}</li>
-                        </ol>
-                        <p style="color: #999; font-size: 12px;">This invite expires in 7 days.</p>
+                        <p><strong>${invitedByName}</strong> has invited you to join <strong>${orgName}</strong> on Mosaic.</p>
+                        <p>${ctaText}</p>
+                        ${ctaHtml}
+                        <p style="color: #999; font-size: 12px; margin-top: 24px;">This invite expires in 7 days.</p>
                     </div>
                 `
             };

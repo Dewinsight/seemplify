@@ -81,29 +81,30 @@ const getPriorityConfig = (priority: string) => {
     case 'high':
       return {
         borderClass: 'border-l-red-500',
-        bgClass: 'bg-gradient-to-br from-red-950/40 via-red-900/20 to-red-950/10 dark:from-red-950/40 dark:via-red-900/20 dark:to-red-950/10 backdrop-blur-sm',
-        badgeClass: 'bg-red-500/10 text-red-400 border border-red-500/20',
+        // Light: subtle warm tint with strong text contrast. Dark: deep tint for focus without pure-black.
+        bgClass: 'bg-gradient-to-br from-card/95 via-card/90 to-red-500/5 dark:from-card/50 dark:via-card/35 dark:to-red-500/10 backdrop-blur-sm',
+        badgeClass: 'bg-rose-100/80 text-rose-800 border border-rose-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20',
         icon: <AlertTriangle className="h-3 w-3" />
       }
     case 'medium':
       return {
         borderClass: 'border-l-yellow-500',
-        bgClass: 'bg-gradient-to-br from-yellow-950/40 via-yellow-900/20 to-yellow-950/10 dark:from-yellow-950/40 dark:via-yellow-900/20 dark:to-yellow-950/10 backdrop-blur-sm',
-        badgeClass: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20',
+        bgClass: 'bg-gradient-to-br from-card/95 via-card/90 to-amber-500/5 dark:from-card/50 dark:via-card/35 dark:to-amber-500/10 backdrop-blur-sm',
+        badgeClass: 'bg-amber-100/80 text-amber-800 border border-amber-200 dark:bg-yellow-500/10 dark:text-yellow-300 dark:border-yellow-500/20',
         icon: <Timer className="h-3 w-3" />
       }
     case 'low':
       return {
         borderClass: 'border-l-green-500',
-        bgClass: 'bg-gradient-to-br from-green-950/40 via-green-900/20 to-green-950/10 dark:from-green-950/40 dark:via-green-900/20 dark:to-green-950/10 backdrop-blur-sm',
-        badgeClass: 'bg-green-500/10 text-green-400 border border-green-500/20',
+        bgClass: 'bg-gradient-to-br from-card/95 via-card/90 to-emerald-500/5 dark:from-card/50 dark:via-card/35 dark:to-emerald-500/10 backdrop-blur-sm',
+        badgeClass: 'bg-emerald-100/80 text-emerald-800 border border-emerald-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',
         icon: <CheckCircle className="h-3 w-3" />
       }
     default:
       return {
         borderClass: 'border-l-gray-500',
-        bgClass: 'glass-card hover:bg-white/5 transition-colors',
-        badgeClass: 'bg-white/10 text-gray-300 border border-white/10',
+        bgClass: 'glass-card bg-popover/30 dark:bg-card/30 hover:bg-popover/50 dark:hover:bg-card/40 transition-colors backdrop-blur-sm',
+        badgeClass: 'bg-muted/40 text-muted-foreground border border-border/60 dark:bg-white/10 dark:text-muted-foreground dark:border-white/10',
         icon: <Clock className="h-3 w-3" />
       }
   }
@@ -152,10 +153,12 @@ export function EnhancedCandidateCard({
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-all duration-300 group relative border-l-[3px] transform-gpu border-0 shadow-lg",
+        "cursor-pointer transition-all duration-200 group relative border-l-[3px] transform-gpu overflow-hidden",
+        "shadow-lg hover:shadow-2xl hover:-translate-y-0.5 hover:scale-[1.01]",
+        "ring-1 ring-border/50 dark:ring-white/10",
         isRejected
-          ? "bg-red-950/10 border-l-red-500/50 border-white/5 opacity-60 hover:opacity-90 hover:shadow-red-900/10"
-          : "hover:shadow-xl hover:scale-[1.02] border-white/5 ring-1 ring-white/5 " + priorityConfig.borderClass + " " + priorityConfig.bgClass,
+          ? "border-l-red-500/60 bg-red-50/70 dark:bg-red-950/15 opacity-70 hover:opacity-100"
+          : priorityConfig.borderClass + " " + priorityConfig.bgClass,
         isMoving && "opacity-50 scale-95"
       )}
       onClick={onClick}
@@ -173,7 +176,7 @@ export function EnhancedCandidateCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3 min-w-0 flex-1">
             <div className="relative">
-              <Avatar className="h-12 w-12 ring-2 ring-white/10 shadow-lg bg-black/40">
+              <Avatar className="h-12 w-12 ring-2 ring-border/60 dark:ring-white/10 shadow-lg bg-muted/40 dark:bg-black/40">
                 <AvatarImage src={candidate.avatar} alt={`${candidate.firstName} ${candidate.lastName}`} />
                 <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-700 text-white font-semibold text-sm">
                   {getInitials(candidate)}
@@ -188,10 +191,12 @@ export function EnhancedCandidateCard({
             <div className="min-w-0 flex-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <h3 className={`font-semibold truncate cursor-help text-base ${isRejected
-                      ? 'text-gray-500 line-through'
-                      : 'text-white group-hover:text-blue-200 transition-colors'
-                    }`}>
+                  <h3 className={cn(
+                    "font-semibold truncate cursor-help text-base transition-colors",
+                    isRejected
+                      ? "text-muted-foreground line-through"
+                      : "text-foreground group-hover:text-primary"
+                  )}>
                     {candidate.firstName} {candidate.lastName}
                   </h3>
                 </TooltipTrigger>
@@ -201,10 +206,10 @@ export function EnhancedCandidateCard({
               </Tooltip>
 
               <div className="hidden sm:flex items-center space-x-1 mt-1">
-                <Mail className="h-3 w-3 text-gray-400" />
+                <Mail className="h-3 w-3 text-muted-foreground" />
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <p className="text-sm text-gray-400 truncate cursor-help max-w-[160px]">
+                    <p className="text-sm text-muted-foreground truncate cursor-help max-w-[160px]">
                       {candidate.email}
                     </p>
                   </TooltipTrigger>
@@ -216,8 +221,8 @@ export function EnhancedCandidateCard({
 
               {candidate.location && (
                 <div className="hidden sm:flex items-center space-x-1 mt-1">
-                  <MapPin className="h-3 w-3 text-gray-400" />
-                  <p className="text-xs text-gray-400 truncate">
+                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground truncate">
                     {candidate.location}
                   </p>
                 </div>
@@ -242,7 +247,7 @@ export function EnhancedCandidateCard({
             {candidate.position && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <p className="font-semibold text-gray-200 text-base sm:text-sm truncate cursor-help">
+                  <p className="font-semibold text-foreground text-base sm:text-sm truncate cursor-help">
                     {candidate.position}
                   </p>
                 </TooltipTrigger>
@@ -252,7 +257,7 @@ export function EnhancedCandidateCard({
               </Tooltip>
             )}
             {candidate.experience && (
-              <p className="hidden sm:block text-xs text-gray-400 truncate">{candidate.experience}</p>
+              <p className="hidden sm:block text-xs text-muted-foreground truncate">{candidate.experience}</p>
             )}
           </div>
         )}
@@ -261,7 +266,11 @@ export function EnhancedCandidateCard({
         {candidate.skills && (
           <div className="flex flex-wrap gap-1">
             {candidate.skills.split(',').slice(0, 3).map((skill, index) => (
-              <Badge key={index} variant="secondary" className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20">
+              <Badge
+                key={index}
+                variant="secondary"
+                className="text-xs px-2 py-0.5 bg-blue-100/70 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20"
+              >
                 {skill.trim()}
               </Badge>
             ))}
@@ -275,19 +284,19 @@ export function EnhancedCandidateCard({
 
         {/* AI Insights */}
         {candidate.aiInsights && (
-          <div className={cn("hidden sm:block p-3 rounded-lg border border-white/5", aiRecommendation.bg)}>
+          <div className={cn("hidden sm:block p-3 rounded-lg border border-border/60 backdrop-blur-sm", aiRecommendation.bg)}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                <TrendingUp className="h-4 w-4 text-blue-400" />
-                <span className="text-sm font-medium text-gray-200">AI Score</span>
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium text-foreground">AI Score</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Star className="h-4 w-4 text-yellow-500" />
-                <span className="font-bold text-sm">{Math.round(candidate.aiInsights.overallScore || 0)}%</span>
+                <span className="font-bold text-sm text-foreground">{Math.round(candidate.aiInsights.overallScore || 0)}%</span>
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400">Recommendation:</span>
+              <span className="text-xs text-muted-foreground">Recommendation:</span>
               <Badge variant="outline" className={cn("text-xs capitalize border-0", aiRecommendation.color)}>
                 {aiRecommendation.label}
               </Badge>
@@ -302,13 +311,13 @@ export function EnhancedCandidateCard({
               <div className="flex items-center space-x-2">
                 <Calendar className="h-4 w-4 text-blue-400" />
                 <div>
-                  <p className="text-sm font-medium text-blue-100">Next Interview</p>
-                  <p className="text-xs text-blue-300">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Next Interview</p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
                     {new Date(upcomingInterview.scheduledAt).toLocaleDateString()}
                   </p>
                 </div>
               </div>
-              <Badge className="bg-blue-500/20 text-blue-200 border-0 text-xs">
+              <Badge className="bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-500/30 text-xs">
                 {upcomingInterview.status}
               </Badge>
             </div>
@@ -325,10 +334,10 @@ export function EnhancedCandidateCard({
         </div>
 
         {/* Time in Stage & Status */}
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-border/60">
           <div className="flex items-center gap-1.5">
-            <Clock className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isOverdue ? "text-red-400" : "text-gray-500")} />
-            <span className={cn("text-xs font-medium", isOverdue ? "text-red-400" : "text-gray-500")}>
+            <Clock className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground")} />
+            <span className={cn("text-xs font-medium", isOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
               <span className="sm:hidden">{daysInStage}d</span>
               <span className="hidden sm:inline">{daysInStage} day{daysInStage !== 1 ? 's' : ''} in stage</span>
             </span>
@@ -345,7 +354,7 @@ export function EnhancedCandidateCard({
         {candidate.tags.length > 0 && (
           <div className="hidden sm:flex flex-wrap gap-1">
             {candidate.tags.slice(0, 2).map((tag, index) => (
-              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-white/5 text-gray-400 border-white/10">
+              <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5 bg-muted/30 text-muted-foreground border-border/50">
                 {tag}
               </Badge>
             ))}
@@ -366,8 +375,8 @@ export function EnhancedCandidateCard({
 
         {/* Stage Movement Controls */}
         {onMoveStage && stages.length > 1 && (
-          <div className="flex items-center justify-between pt-3 border-t border-white/5">
-            <span className="text-xs text-gray-500 font-medium hidden sm:inline">Quick Move:</span>
+          <div className="flex items-center justify-between pt-3 border-t border-border/60">
+            <span className="text-xs text-muted-foreground font-medium hidden sm:inline">Quick Move:</span>
             <span className="text-xs text-muted-foreground font-medium sm:hidden">Move:</span>
             <div className="flex items-center space-x-2">
               {/* Move to Previous Stage */}
@@ -377,7 +386,7 @@ export function EnhancedCandidateCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-blue-500/20 hover:border-blue-500/50 border-white/10 bg-transparent touch-manipulation text-gray-400 hover:text-blue-400"
+                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-blue-500/10 hover:border-blue-500/40 border-border/60 bg-background/40 dark:bg-card/20 touch-manipulation text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400"
                       onClick={(e) => {
                         e.stopPropagation()
                         onMoveStage(candidate._id, 'previous')
@@ -393,7 +402,7 @@ export function EnhancedCandidateCard({
               )}
 
               {/* Stage Indicator */}
-              <div className="px-2 py-1 bg-white/5 rounded text-xs font-medium text-gray-400">
+              <div className="px-2 py-1 bg-muted/30 border border-border/60 rounded text-xs font-medium text-muted-foreground">
                 {currentStageOrder + 1}/{stages.length}
               </div>
 
@@ -404,7 +413,7 @@ export function EnhancedCandidateCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-green-500/20 hover:border-green-500/50 border-white/10 bg-transparent touch-manipulation text-gray-400 hover:text-green-400"
+                      className="h-8 w-8 sm:h-6 sm:w-6 p-0 hover:bg-green-500/10 hover:border-green-500/40 border-border/60 bg-background/40 dark:bg-card/20 touch-manipulation text-muted-foreground hover:text-green-700 dark:hover:text-green-400"
                       onClick={(e) => {
                         e.stopPropagation()
                         onMoveStage(candidate._id, 'next')
