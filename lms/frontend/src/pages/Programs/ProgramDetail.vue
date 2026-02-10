@@ -59,7 +59,7 @@
 	</div>
 </template>
 <script setup lang="ts">
-import { computed, inject, onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
 	Badge,
 	Breadcrumbs,
@@ -75,32 +75,63 @@ import CourseCard from '@/components/CourseCard.vue'
 
 const { brand } = sessionStore()
 const router = useRouter()
-const user = inject<any>('$user')
+const enrollmentCheckComplete = ref(false)
+const enrollmentCheckInProgress = ref(false)
 
 const props = defineProps<{
 	programName: string
 }>()
 
-onMounted(() => {
-	checkIfEnrolled()
-})
+const wait = (delay: number) => {
+	return new Promise((resolve) => setTimeout(resolve, delay))
+}
 
-const checkIfEnrolled = () => {
-	call('frappe.client.get_value', {
-		doctype: 'LMS Program Member',
-		filters: {
-			member: user.data.name,
-			parent: props.programName,
-		},
-		parent: 'LMS Program',
-		fieldname: 'name',
-	}).then((data: { name: string }) => {
-		if (data.name) {
-			program.reload()
-		} else {
-			router.push({ name: 'Programs' })
-		}
+const isProgramEnrolled = (data: any) => {
+	const enrolledPrograms = data?.enrolled || data?.message?.enrolled || []
+	return enrolledPrograms.some((program: { name: string }) => {
+		return program.name === props.programName
 	})
+}
+
+const getProgramMembership = async () => {
+	const retryDelays = [0, 200, 400]
+	for (const delay of retryDelays) {
+		if (delay) {
+			await wait(delay)
+		}
+		try {
+			const data = await call('lms.lms.utils.get_programs')
+			if (isProgramEnrolled(data)) {
+				return props.programName
+			}
+		} catch (error) {
+			if (delay === retryDelays[retryDelays.length - 1]) {
+				throw error
+			}
+		}
+	}
+	return null
+}
+
+const checkIfEnrolled = async () => {
+	if (enrollmentCheckInProgress.value || enrollmentCheckComplete.value) return
+	if (!props.programName) return
+
+	enrollmentCheckInProgress.value = true
+	try {
+		const membershipName = await getProgramMembership()
+		if (!membershipName) {
+			router.push({ name: 'Programs' })
+			return
+		}
+		await program.reload()
+		enrollmentCheckComplete.value = true
+	} catch (error) {
+		console.error('Failed to verify program enrollment', error)
+		router.push({ name: 'Programs' })
+	} finally {
+		enrollmentCheckInProgress.value = false
+	}
 }
 
 const program = createResource({
@@ -109,6 +140,15 @@ const program = createResource({
 		program_name: props.programName,
 	},
 })
+
+watch(
+	() => props.programName,
+	() => {
+		enrollmentCheckComplete.value = false
+		checkIfEnrolled()
+	},
+	{ immediate: true }
+)
 
 const openCourse = (course: any, enforceCourseOrder: boolean) => {
 	if (!course.eligible && enforceCourseOrder) return
