@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ const OnboardingPage: React.FC = () => {
     const [orgDescription, setOrgDescription] = useState('');
     const [createLoading, setCreateLoading] = useState(false);
     const [createError, setCreateError] = useState('');
+    const createInFlightRef = useRef(false);
 
     // Invites state
     const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -45,21 +46,41 @@ const OnboardingPage: React.FC = () => {
     const handleCreateOrg = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!orgName.trim()) return;
+        if (createInFlightRef.current) return;
+        createInFlightRef.current = true;
         setCreateLoading(true);
         setCreateError('');
 
         try {
-            await api.post('/organizations/create-and-join', {
+            const res = await api.post('/organizations/create-and-join', {
                 name: orgName.trim(),
                 description: orgDescription.trim()
             });
-            await refreshOrganizations();
-            navigate('/');
+            // 200 = already member (idempotent), 201 = created
+            if (res.data?.organization) {
+                await refreshOrganizations();
+                navigate('/');
+            }
         } catch (err: any) {
-            console.error(err);
-            setCreateError(err.response?.data?.error || 'Failed to create organization');
+            // On 409: maybe we're already a member (create succeeded earlier, client had stale state)
+            if (err.response?.status === 409) {
+                const orgs = await refreshOrganizations();
+                if (orgs.length > 0) {
+                    navigate('/');
+                    return;
+                }
+            }
+            const message = err.response?.data?.error || 'Failed to create organization';
+            const hint = err.response?.data?.hint;
+            setCreateError(hint ? `${message} ${hint}` : message);
+
+            // Only log unexpected errors; "org already exists" is a normal user-facing case.
+            if (!err.response || err.response.status >= 500) {
+                console.error(err);
+            }
         } finally {
             setCreateLoading(false);
+            createInFlightRef.current = false;
         }
     };
 

@@ -28,7 +28,7 @@ interface AuthContextType {
     login: (token: string, user: User, organizations: OrgMembership[]) => void;
     logout: () => void;
     switchOrganization: (org: OrgMembership) => void;
-    refreshOrganizations: () => Promise<void>;
+    refreshOrganizations: () => Promise<OrgMembership[]>;
     isAuthenticated: boolean;
     isLoading: boolean;
     activeDepartment: { _id: string; name: string } | null;
@@ -146,7 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    const refreshOrganizations = async () => {
+    const refreshOrganizations = async (): Promise<OrgMembership[]> => {
         try {
             const res = await api.get('/organizations/my');
             const orgs: OrgMembership[] = res.data;
@@ -168,8 +168,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     localStorage.removeItem('activeOrganization');
                 }
             }
+            return orgs;
         } catch (error) {
             console.error('Failed to refresh organizations:', error);
+            return [];
         }
     };
 

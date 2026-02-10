@@ -696,25 +696,44 @@ exports.createOrganization = async (req, res) => {
         await org.save();
         res.status(201).json(org);
     } catch (error) {
+        // Duplicate key (e.g. unique org name/slug)
+        if (error && error.code === 11000) {
+            const dupField = error.keyPattern ? Object.keys(error.keyPattern)[0] : null;
+            const message =
+                dupField === 'name'
+                    ? 'An organization with that name already exists.'
+                    : dupField === 'slug'
+                        ? 'An organization with a similar name already exists.'
+                        : 'Organization already exists.';
+            return res.status(409).json({ error: message });
+        }
         res.status(500).json({ error: error.message });
     }
 };
 
+// Same slug derivation as Organization model (for lookup on conflict)
+function slugFromName(name) {
+    if (!name || typeof name !== 'string') return '';
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 // Create org AND join it (onboarding flow — no org context needed)
 exports.createAndJoin = async (req, res) => {
+    const UserOrganization = require('../models/UserOrganization');
+    const Department = require('../models/Department');
+
     try {
         const { name, description } = req.body;
         if (!name) {
             return res.status(400).json({ error: 'Organization name is required' });
         }
 
-        const UserOrganization = require('../models/UserOrganization');
-        const Department = require('../models/Department');
+        const trimmedName = name.trim();
 
-        // Create the organization
+        // Create the organization (rely on MongoDB unique indexes for duplicate detection)
         const org = new Organization({
-            name,
-            description: description || '',
+            name: trimmedName,
+            description: (description || '').trim(),
             createdBy: req.user.id
         });
         await org.save();
@@ -747,8 +766,70 @@ exports.createAndJoin = async (req, res) => {
             }
         });
     } catch (error) {
-        if (error.code === 11000) {
-            return res.status(400).json({ error: 'An organization with that name already exists.' });
+        // Duplicate key (org name/slug already exists)
+        if (error && error.code === 11000) {
+            const trimmedName = (req.body.name || '').trim();
+            const attemptedSlug = slugFromName(trimmedName);
+            const existingOrg = await Organization.findOne({
+                $or: [{ name: trimmedName }, { slug: attemptedSlug }]
+            });
+            if (existingOrg) {
+                const existingMembership = await UserOrganization.findOne({
+                    user: req.user.id,
+                    organization: existingOrg._id
+                }).populate('organization', 'name slug').populate('permissions.department', 'name');
+                if (existingMembership) {
+                    return res.status(200).json({
+                        organization: {
+                            _id: existingOrg._id,
+                            name: existingOrg.name,
+                            slug: existingOrg.slug,
+                            isAdmin: existingMembership.isAdmin,
+                            permissions: existingMembership.permissions
+                        }
+                    });
+                }
+                // Orphan recovery: org exists but has no members — createdBy matches current user (partial create failed)
+                const isOrphan = existingOrg.createdBy && existingOrg.createdBy.toString() === req.user.id.toString();
+                if (isOrphan) {
+                    let generalDept = await Department.findOne({ name: 'General', organization: existingOrg._id });
+                    if (!generalDept) {
+                        generalDept = await new Department({
+                            name: 'General',
+                            description: 'Default department',
+                            organization: existingOrg._id
+                        }).save();
+                    }
+                    const membership = await UserOrganization.create({
+                        user: req.user.id,
+                        organization: existingOrg._id,
+                        isAdmin: true,
+                        permissions: [{ department: generalDept._id, roles: ['ExecutiveApprover'] }]
+                    });
+                    await membership.populate('organization', 'name slug');
+                    await membership.populate('permissions.department', 'name');
+                    return res.status(200).json({
+                        organization: {
+                            _id: existingOrg._id,
+                            name: existingOrg.name,
+                            slug: existingOrg.slug,
+                            isAdmin: membership.isAdmin,
+                            permissions: membership.permissions
+                        }
+                    });
+                }
+            }
+            const dupField = error.keyPattern ? Object.keys(error.keyPattern)[0] : null;
+            const message =
+                dupField === 'name'
+                    ? 'An organization with that name already exists.'
+                    : dupField === 'slug'
+                        ? 'An organization with a similar name already exists.'
+                        : 'Organization already exists.';
+            return res.status(409).json({
+                error: message,
+                hint: 'Try a different name (e.g. add "2" or your company name), or ask an admin of that organization to invite you.'
+            });
         }
         res.status(500).json({ error: error.message });
     }
