@@ -55,7 +55,7 @@
                 <tr data-status="<%= plan.isActive ? 'active' : 'inactive' %>">
                   <td>
                     <div style="display: flex; align-items: center; gap: 12px;">
-                      <div style="width: 40px; height: 40px; border-radius: 8px; background: <%= plan.color || '#3b82f6' %>; display: flex; align-items: center; justify-content: center;">
+                      <div style="width: 40px; height: 40px; border-radius: 8px; background: <%= plan.color || '#6366f1' %>; display: flex; align-items: center; justify-content: center;">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                         </svg>
@@ -228,7 +228,7 @@
             </div>
             <div class="admin-form-group">
               <label class="admin-form-label">Brand Color</label>
-              <input type="color" id="planColor" name="color" class="admin-form-input" value="#3b82f6" style="height: 42px;">
+              <input type="color" id="planColor" name="color" class="admin-form-input" value="#6366f1" style="height: 42px;">
             </div>
           </div>
 
@@ -329,7 +329,7 @@
           document.getElementById('maxMembers').value = plan.limits?.maxMembers || '';
           document.getElementById('maxTeams').value = plan.limits?.maxTeams || '';
           document.getElementById('displayOrder').value = plan.displayOrder || 0;
-          document.getElementById('planColor').value = plan.color || '#3b82f6';
+          document.getElementById('planColor').value = plan.color || '#6366f1';
           document.getElementById('badgeText').value = plan.badgeText || '';
           document.getElementById('isActive').checked = plan.isActive;
           document.getElementById('isPublic').checked = plan.isPublic;

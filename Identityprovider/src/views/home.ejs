@@ -337,7 +337,7 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .org-option-item.active .org-option-avatar {
-      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1);
       color: #fff;
       box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
     }
@@ -384,7 +384,7 @@
         <!-- Top Strip: Current Org & Switcher -->
         <div class="org-top-strip" style="padding: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--border); background: var(--hover-bg);">
           <div style="display: flex; align-items: center; gap: 16px;">
-            <div class="org-icon" style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, var(--brand), var(--brand-2)); display: grid; place-items: center;">
+            <div class="org-icon" style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1); display: grid; place-items: center;">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                 <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
               </svg>
@@ -458,7 +458,7 @@
         <div class="app-grid">
           <% apps.forEach(app => { %>
             <% if (app.isBeta) { %>
-              <div onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>; cursor: pointer;">
+              <div onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#6366f1' %>; cursor: pointer;">
                 <div class="app-card__icon"><%- app.iconSvg %></div>
                 <div class="app-card__body">
                   <div class="app-card__title">
@@ -477,7 +477,7 @@
                 </div>
               </div>
             <% } else { %>
-              <a href="/launch/<%= app.appId %>" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#2563eb' %>">
+              <a href="/launch/<%= app.appId %>" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#6366f1' %>">
                 <div class="app-card__icon"><%- app.iconSvg %></div>
                 <div class="app-card__body">
                   <div class="app-card__title">

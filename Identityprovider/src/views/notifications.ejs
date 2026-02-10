@@ -256,21 +256,24 @@
     }
 
     .btn-send {
-      background: linear-gradient(135deg, #10b981 0%, #2dd4bf 50%, #6366f1 100%);
-      color: white;
+      background: #18181b;
+      color: #ffffff;
       border: none;
       padding: 12px 24px;
-      border-radius: 8px;
+      border-radius: 999px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .btn-send:hover {
-      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
     }
 
     .btn-send:disabled {
