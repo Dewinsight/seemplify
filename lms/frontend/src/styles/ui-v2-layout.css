@@ -32,6 +32,7 @@
 	border-radius: 1.1rem;
 	padding-left: 0.1rem;
 	padding-right: 0.1rem;
+	justify-content: flex-start;
 	color: rgba(247, 249, 255, 0.92) !important;
 }
 
@@ -64,6 +65,7 @@
 	font-size: 0.93rem;
 	font-weight: 600;
 	letter-spacing: 0.01em;
+	text-align: left;
 }
 
 .ui-skin-v2 .lms-sidebar-link-emoji {

@@ -1,14 +1,14 @@
 <template>
 	<button
 		v-if="link && !link.onlyMobile"
-		class="lms-sidebar-link flex w-full h-7 cursor-pointer items-center rounded text-ink-gray-8 duration-300 ease-in-out focus:outline-none focus:transition-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+		class="lms-sidebar-link flex w-full h-7 cursor-pointer items-center rounded text-left text-ink-gray-8 duration-300 ease-in-out focus:outline-none focus:transition-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 		:class="
 			isActive ? 'bg-surface-selected shadow-sm' : 'hover:bg-surface-gray-2'
 		"
 		@click="handleClick"
 	>
 		<div
-			class="flex items-center w-full duration-300 ease-in-out group"
+			class="flex items-center justify-start w-full duration-300 ease-in-out group"
 			:class="isCollapsed ? 'p-1 relative' : 'px-2 py-1'"
 		>
 			<Tooltip :text="__(link.label)" placement="right">
@@ -22,7 +22,7 @@
 				</slot>
 			</Tooltip>
 			<span
-				class="lms-sidebar-link-label overflow-hidden text-sm duration-300 ease-in-out"
+				class="lms-sidebar-link-label overflow-hidden text-left text-sm duration-300 ease-in-out"
 				:class="
 					isCollapsed
 						? 'ml-0 w-0 overflow-hidden opacity-0'
