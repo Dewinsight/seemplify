@@ -8,15 +8,18 @@
 		@click="handleClick"
 	>
 		<div
-			class="flex items-center justify-start w-full duration-300 ease-in-out group"
-			:class="isCollapsed ? 'p-1 relative' : 'px-2 py-1'"
+			class="flex items-center w-full duration-300 ease-in-out group"
+			:class="
+				isCollapsed ? 'p-1 relative justify-center' : 'px-2 py-1 justify-start'
+			"
 		>
 			<Tooltip :text="__(link.label)" placement="right">
 				<slot name="icon">
 					<span class="lms-sidebar-link-icon grid h-5 w-6 flex-shrink-0 place-items-center">
 						<component
 							:is="icons[link.icon]"
-							class="h-4 w-4 stroke-1.5 text-ink-gray-8"
+							class="lms-sidebar-link-icon-svg h-4 w-4 stroke-1.5"
+							:class="isActive ? 'lms-sidebar-icon-active' : 'text-ink-gray-8'"
 						/>
 					</span>
 				</slot>

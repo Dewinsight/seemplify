@@ -17,7 +17,7 @@
 						<span>{{ __(link.label) }}</span>
 					</div>
 					<nav class="space-y-1">
-						<div v-for="item in link.items">
+						<div v-for="item in link.items" class="w-full">
 							<SidebarLink
 								:link="item"
 								:isCollapsed="sidebarStore.isSidebarCollapsed"

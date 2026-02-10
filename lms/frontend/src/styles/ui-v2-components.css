@@ -124,7 +124,7 @@
 	border-color: var(--v2-border) !important;
 }
 
-.ui-skin-v2 input,
+.ui-skin-v2 input:not([type='radio']):not([type='checkbox']),
 .ui-skin-v2 select,
 .ui-skin-v2 textarea,
 .ui-skin-v2 .form-control,
@@ -132,6 +132,16 @@
 	background: var(--v2-surface) !important;
 	border-color: var(--v2-border) !important;
 	border-radius: 0.95rem !important;
+}
+
+.ui-skin-v2 input[type='radio'],
+.ui-skin-v2 input[type='checkbox'] {
+	accent-color: var(--v2-accent-strong);
+	appearance: auto;
+	background: transparent !important;
+	border-color: var(--v2-border) !important;
+	pointer-events: auto !important;
+	cursor: pointer;
 }
 
 .ui-skin-v2 [role='dialog'],
