@@ -27,7 +27,8 @@ router.get('/invites/sent', verifyToken, injectOrgContext, verifyRole(['Admin'])
 router.delete('/invites/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), inviteController.revokeInvite);
 
 // --- Departments ---
-router.get('/departments', optionalToken, mainController.getDepartments);
+// Departments are org-scoped; require org context to avoid leaking departments across tenants.
+router.get('/departments', verifyToken, injectOrgContext, mainController.getDepartments);
 router.post('/departments', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.createDepartment);
 router.delete('/departments/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.deleteDepartment);
 

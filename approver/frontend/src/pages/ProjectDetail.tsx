@@ -96,7 +96,7 @@ interface Project {
 const ProjectDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { activeOrganization } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [showOverride, setShowOverride] = useState(false);
@@ -195,15 +195,15 @@ const ProjectDetail: React.FC = () => {
     if (loading) return <div className="glass-panel">Loading...</div>;
     if (!project) return <div className="glass-panel">Project not found</div>;
 
-    const canOverride = (user?.isAdmin || user?.role === 'Admin' ||
-        user?.permissions?.some((p: any) => {
+    const canOverride = (activeOrganization?.isAdmin ||
+        activeOrganization?.permissions?.some((p: any) => {
             const roles = p.roles || (p.role ? [p.role] : []);
             return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
         })
     );
 
     // Check if user can perform CoE review
-    const canCoEReview = user?.isAdmin || user?.permissions?.some(
+    const canCoEReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
         (p: any) => {
             const roles = p.roles || (p.role ? [p.role] : []);
             return roles.includes('CenterOfExcellence');
@@ -211,7 +211,7 @@ const ProjectDetail: React.FC = () => {
     );
 
     // Check if user can perform governance review
-    const canGovernanceReview = user?.isAdmin || user?.permissions?.some(
+    const canGovernanceReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
         (p: any) => {
             const roles = p.roles || (p.role ? [p.role] : []);
             return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
@@ -219,7 +219,7 @@ const ProjectDetail: React.FC = () => {
     );
 
     // Check if user can perform executive review
-    const canExecutiveReview = user?.isAdmin || user?.permissions?.some(
+    const canExecutiveReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
         (p: any) => {
             const roles = p.roles || (p.role ? [p.role] : []);
             return roles.includes('ExecutiveApprover');
@@ -663,7 +663,7 @@ const ProjectDetail: React.FC = () => {
                 </div>
             )}
 
-            {(user?.isAdmin || user?.role === 'Admin') && (
+            {activeOrganization?.isAdmin && (
                 <div style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)', textAlign: 'right' }}>
                     <button
                         onClick={async () => {

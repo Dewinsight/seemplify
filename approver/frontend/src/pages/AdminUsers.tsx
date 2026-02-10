@@ -27,7 +27,7 @@ interface User {
 const AVAILABLE_ROLES = ['Requester', 'GovernanceApprover', 'ExecutiveApprover'] as const;
 
 const AdminUsers: React.FC = () => {
-    const { user: currentUser } = useAuth();
+    const { activeOrganization } = useAuth();
     const [activeTab, setActiveTab] = useState<'users' | 'departments'>('users');
 
     // Users State
@@ -144,7 +144,8 @@ const AdminUsers: React.FC = () => {
         }
     };
 
-    if (currentUser?.role !== 'Admin' && !currentUser?.isAdmin) {
+    // Only org admins can access this page (matches backend verifyRole(['Admin'])).
+    if (!activeOrganization?.isAdmin) {
         return <div className="glass-panel">Access Denied</div>;
     }
 

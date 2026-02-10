@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 
 const Profile: React.FC = () => {
-    const { user } = useAuth();
+    const { user, activeOrganization } = useAuth();
     const [form, setForm] = useState({
         username: user?.username || '',
         email: user?.email || '',
@@ -103,7 +103,7 @@ const Profile: React.FC = () => {
                     <div className="glass-panel">
                         <h3 style={{ marginTop: 0, marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Department Access</h3>
 
-                        {user?.isAdmin && (
+                        {activeOrganization?.isAdmin && (
                             <div style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(255, 193, 7, 0.1)', border: '1px solid #ffc107', borderRadius: '8px', color: '#ffc107' }}>
                                 <strong>👑 Global Administrator</strong>
                                 <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', opacity: 0.9 }}>You have full access to all departments.</p>
@@ -118,7 +118,7 @@ const Profile: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {user?.permissions?.map((p: any, idx: number) => {
+                                {activeOrganization?.permissions?.map((p: any, idx: number) => {
                                     // Handle populated object or raw ID string from token
                                     const deptName = typeof p.department === 'object' ? p.department?.name : 'Unknown Dept';
                                     const roles = p.roles || (p.role ? [p.role] : []);
@@ -145,7 +145,7 @@ const Profile: React.FC = () => {
                                         </tr>
                                     );
                                 })}
-                                {(!user?.permissions || user.permissions.length === 0) && (
+                                {(!activeOrganization?.permissions || activeOrganization.permissions.length === 0) && (
                                     <tr><td colSpan={2} style={{ padding: '1rem', textAlign: 'center', opacity: 0.5 }}>No specific department roles assigned.</td></tr>
                                 )}
                             </tbody>

@@ -22,7 +22,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 const Rules: React.FC = () => {
     const [rules, setRules] = useState<Rule[]>([]);
-    const { user, activeDepartment } = useAuth();
+    const { activeDepartment, activeOrganization } = useAuth();
     const [availableDepartments, setAvailableDepartments] = useState<any[]>([]);
     // Form state: department is ID string or empty (for Global)
     const [form, setForm] = useState({
@@ -38,7 +38,7 @@ const Rules: React.FC = () => {
     // Determine edit permission: Admin or Governance/Executive Approver
     // Note: Requesters probably can't see this page or can't edit. 
     // ProtectedRoute lets them in. UI should hide form.
-    const canEdit = user?.isAdmin || (user?.permissions || []).some((p: any) => {
+    const canEdit = activeOrganization?.isAdmin || (activeOrganization?.permissions || []).some((p: any) => {
         const roles = p.roles || (p.role ? [p.role] : []);
         return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Admin'].includes(r));
     });
@@ -46,7 +46,7 @@ const Rules: React.FC = () => {
     // Fetch available departments for scope dropdown
     useEffect(() => {
         const fetchDepartments = async () => {
-            if (user?.isAdmin) {
+            if (activeOrganization?.isAdmin) {
                 try {
                     const res = await api.get('/departments');
                     setAvailableDepartments(res.data);
@@ -55,12 +55,12 @@ const Rules: React.FC = () => {
                 }
             } else {
                 // For non-admins, use their permissions
-                const depts = user?.permissions?.map((p: any) => p.department).filter((d: any) => d && typeof d === 'object') || [];
+                const depts = activeOrganization?.permissions?.map((p: any) => p.department).filter((d: any) => d && typeof d === 'object') || [];
                 setAvailableDepartments(depts);
             }
         };
         fetchDepartments();
-    }, [user]);
+    }, [activeOrganization]);
 
     useEffect(() => {
         fetchRules();

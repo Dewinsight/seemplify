@@ -76,20 +76,22 @@ const Dashboard: React.FC = () => {
             // Determine effective role for this context
             let showStats = false;
 
-            const hasApproverRole = (perms: any) => {
-                const roles = perms?.roles || (perms?.role ? [perms.role] : []);
-                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Approver'].includes(r));
+            const hasApproverRole = (perm: any) => {
+                const roles = perm?.roles || (perm?.role ? [perm.role] : []);
+                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
             };
 
-            if (user?.isAdmin) showStats = true;
+            const orgPerms = activeOrganization?.permissions || [];
+
+            if (activeOrganization?.isAdmin) showStats = true;
             else if (activeDepartment) {
-                const deptPerms = user?.permissions?.find(p =>
+                const deptPerms = orgPerms.find((p: any) =>
                     (typeof p.department === 'object' ? p.department._id : p.department) === activeDepartment._id
                 );
                 if (hasApproverRole(deptPerms)) showStats = true;
             } else {
                 // No active dept (Global view?) - show if they have ANY approver role
-                if (user?.permissions?.some(p => hasApproverRole(p))) showStats = true;
+                if (orgPerms.some((p: any) => hasApproverRole(p))) showStats = true;
             }
 
             if (showStats) {
