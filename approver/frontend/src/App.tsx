@@ -133,40 +133,52 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           </button>
         </div>
 
-        {/* Organization Switcher */}
-        {organizations.length > 1 && (
+        {/* Organization - always show when user has orgs */}
+        {organizations.length > 0 && (
           <div style={{ padding: '0 1rem', marginBottom: '0.5rem' }}>
-            <button
-              onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-              style={{
-                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
-                borderRadius: '8px', padding: '0.6rem 0.8rem', color: 'var(--text-primary)',
-                cursor: 'pointer', fontSize: '0.85rem'
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>{activeOrganization?.name || 'Select Org'}</span>
-              <span style={{ fontSize: '0.7rem' }}>▼</span>
-            </button>
-            {orgDropdownOpen && (
-              <div style={{ marginTop: '0.5rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', overflow: 'hidden' }}>
-                {organizations.map((org) => (
-                  <div
-                    key={org._id}
-                    onClick={() => {
-                      switchOrganization(org);
-                      setOrgDropdownOpen(false);
-                    }}
-                    style={{
-                      padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem',
-                      fontWeight: activeOrganization?._id === org._id ? 'bold' : 'normal',
-                      background: activeOrganization?._id === org._id ? 'rgba(155, 81, 224, 0.15)' : 'transparent'
-                    }}
-                  >
-                    {org.name}
-                    {org.isAdmin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', opacity: 0.6 }}>Admin</span>}
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Organization</div>
+            {organizations.length > 1 ? (
+              <>
+                <button
+                  onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                  style={{
+                    width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
+                    borderRadius: '8px', padding: '0.6rem 0.8rem', color: 'var(--text-primary)',
+                    cursor: 'pointer', fontSize: '0.85rem'
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{activeOrganization?.name || 'Select Org'}</span>
+                  <span style={{ fontSize: '0.7rem' }}>▼</span>
+                </button>
+                {orgDropdownOpen && (
+                  <div style={{ marginTop: '0.5rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    {organizations.map((org) => (
+                      <div
+                        key={org._id}
+                        onClick={() => {
+                          switchOrganization(org);
+                          setOrgDropdownOpen(false);
+                        }}
+                        style={{
+                          padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem',
+                          fontWeight: activeOrganization?._id === org._id ? 'bold' : 'normal',
+                          background: activeOrganization?._id === org._id ? 'rgba(155, 81, 224, 0.15)' : 'transparent'
+                        }}
+                      >
+                        {org.name}
+                        {org.isAdmin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', opacity: 0.6 }}>Admin</span>}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+              </>
+            ) : (
+              <div style={{
+                padding: '0.6rem 0.8rem', background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
+                borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)'
+              }}>
+                {activeOrganization?.name || 'No organization'}
               </div>
             )}
           </div>
@@ -252,19 +264,27 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 };
 
 const MobileHeader = ({ onMenuClick }: { onMenuClick: () => void }) => {
+  const { activeOrganization } = useAuth();
   return (
     <header className="mobile-header">
       <Logo />
-      <button className="hamburger-btn" onClick={onMenuClick}>
-        <MenuIcon />
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {activeOrganization?.name && (
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {activeOrganization.name}
+          </span>
+        )}
+        <button className="hamburger-btn" onClick={onMenuClick}>
+          <MenuIcon />
+        </button>
+      </div>
     </header>
   );
 };
 
 const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, activeOrganization, activeDepartment } = useAuth();
 
   if (!isAuthenticated) {
     return <Outlet />;
@@ -275,6 +295,20 @@ const AppLayout = () => {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
       <main className="main-content">
+        {/* Context bar: Organization + Department */}
+        {(activeOrganization || activeDepartment) && (
+          <div style={{
+            padding: '0.5rem 0', marginBottom: '1rem', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--glass-border)',
+            fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '1rem', flexWrap: 'wrap'
+          }}>
+            {activeOrganization?.name && (
+              <span><strong>Organization:</strong> {activeOrganization.name}</span>
+            )}
+            {activeDepartment && (
+              <span><strong>Department:</strong> {activeDepartment.name}</span>
+            )}
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
