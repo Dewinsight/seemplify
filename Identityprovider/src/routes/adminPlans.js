@@ -58,6 +58,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       limits,
       features,
       hideHubCards,
+      showComingSoonCards,
       isActive,
       isPublic,
       isFeatured,
@@ -81,6 +82,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       limits: limits || {},
       features: features || {},
       hideHubCards: Array.isArray(hideHubCards) ? hideHubCards : [],
+      showComingSoonCards: Array.isArray(showComingSoonCards) ? showComingSoonCards : [],
       isActive: isActive !== false,
       isPublic: isPublic !== false,
       isFeatured: isFeatured || false,
@@ -120,6 +122,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
       limits,
       features,
       hideHubCards,
+      showComingSoonCards,
       isActive,
       isPublic,
       isFeatured,
@@ -140,6 +143,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
     if (limits !== undefined) planData.limits = limits
     if (features !== undefined) planData.features = features
     if (hideHubCards !== undefined) planData.hideHubCards = Array.isArray(hideHubCards) ? hideHubCards : []
+    if (showComingSoonCards !== undefined) planData.showComingSoonCards = Array.isArray(showComingSoonCards) ? showComingSoonCards : []
     if (isActive !== undefined) planData.isActive = isActive
     if (isPublic !== undefined) planData.isPublic = isPublic
     if (isFeatured !== undefined) planData.isFeatured = isFeatured

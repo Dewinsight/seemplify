@@ -1874,26 +1874,27 @@ def update_certificate_purchase(course, payment_name):
 
 @frappe.whitelist()
 def get_programs():
+	program_fields = get_program_fields()
 	enrolled_programs = frappe.get_all(
 		"LMS Program Member", {"member": frappe.session.user}, ["parent as name", "progress"]
 	)
 	for program in enrolled_programs:
-		program.update(
-			frappe.db.get_value(
-				"LMS Program",
-				program.name,
-				["name", "title", "image", "course_count", "member_count", "published"],
-				as_dict=True,
-			)
+		program_details = frappe.db.get_value(
+			"LMS Program",
+			program.name,
+			program_fields,
+			as_dict=True,
 		)
+		program.update(normalize_program_details(program_details))
 
 	published_programs = frappe.get_all(
 		"LMS Program",
 		{
 			"published": 1,
 		},
-		["name", "title", "image", "course_count", "member_count", "published"],
+		program_fields,
 	)
+	published_programs = [normalize_program_details(program) for program in published_programs]
 
 	programs_to_remove = []
 	for program in published_programs:
@@ -1909,20 +1910,15 @@ def get_programs():
 
 @frappe.whitelist()
 def get_program_details(program_name):
+	program_fields = get_program_fields(include_enforce_course_order=True)
 	program = frappe.db.get_value(
 		"LMS Program",
 		program_name,
-		[
-			"name",
-			"title",
-			"image",
-			"member_count",
-			"course_count",
-			"published",
-			"enforce_course_order",
-		],
+		program_fields,
 		as_dict=1,
 	)
+	program = normalize_program_details(program)
+	program.enforce_course_order = program.get("enforce_course_order") or 0
 	program_courses = frappe.get_all(
 		"LMS Program Course", {"parent": program_name}, ["course"], order_by="idx"
 	)
@@ -1947,6 +1943,31 @@ def get_program_details(program_name):
 				"progress",
 			)
 
+	return program
+
+
+def get_program_fields(include_enforce_course_order=False):
+	fields = ["name", "course_count", "member_count", "published"]
+
+	if frappe.db.has_column("LMS Program", "title"):
+		fields.insert(1, "title")
+
+	if frappe.db.has_column("LMS Program", "image"):
+		fields.insert(2, "image")
+
+	if include_enforce_course_order:
+		fields.append("enforce_course_order")
+
+	return fields
+
+
+def normalize_program_details(program):
+	program = frappe._dict(program or {})
+	program.title = program.get("title") or program.get("name")
+	program.image = program.get("image")
+	program.course_count = program.get("course_count") or 0
+	program.member_count = program.get("member_count") or 0
+	program.published = program.get("published") or 0
 	return program
 
 

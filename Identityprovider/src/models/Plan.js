@@ -38,6 +38,10 @@ const PlanSchema = new mongoose.Schema({
   // Hub card visibility: appIds to hide from the hub for this plan (card not shown at all)
   hideHubCards: [{ type: String, trim: true }],
 
+  // Coming soon cards: card IDs to show in hub for this plan (messaging, payroll, performance-management)
+  // These are special non-clickable "Coming Soon" cards, shown only when enabled per plan. Default: off.
+  showComingSoonCards: { type: [String], default: [] },
+
   // App Access Toggles
   features: {
     recruiter: { type: Boolean, default: false },

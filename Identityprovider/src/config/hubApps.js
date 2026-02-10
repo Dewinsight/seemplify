@@ -320,3 +320,57 @@ export function getAppApiUrl(appId) {
 export function getAppsByCategory(category) {
   return getHubApps().filter(app => app.category === category)
 }
+
+/**
+ * Coming soon cards - special non-clickable cards shown when enabled per plan
+ * These are separate from normal hub apps (e.g. payroll, performance-management have both live and coming-soon variants)
+ */
+const COMING_SOON_CARDS = [
+  {
+    cardId: 'messaging',
+    name: 'Simplified Messaging',
+    description: 'Streamlined team messaging and collaboration',
+    icon: 'chat-bubble-left-right',
+    color: '#64748b',
+    order: 1
+  },
+  {
+    cardId: 'payroll',
+    name: 'Payroll',
+    description: 'Salary processing, bonuses, and compensation management',
+    icon: 'currency-dollar',
+    color: '#94a3b8',
+    order: 2
+  },
+  {
+    cardId: 'performance-management',
+    name: 'Performance Management',
+    description: 'AI-powered OKRs, reviews, and continuous feedback',
+    icon: 'chart-bar',
+    color: '#94a3b8',
+    order: 3
+  }
+]
+
+/**
+ * Get coming soon cards that are enabled for a plan
+ * @param {string[]} enabledCardIds - Card IDs to show (from plan.showComingSoonCards)
+ * @returns {Array} Filtered coming soon cards
+ */
+export function getComingSoonCards(enabledCardIds = []) {
+  if (!Array.isArray(enabledCardIds) || enabledCardIds.length === 0) {
+    return []
+  }
+  const enabledSet = new Set(enabledCardIds.map(id => String(id).trim()).filter(Boolean))
+  return COMING_SOON_CARDS
+    .filter(card => enabledSet.has(card.cardId))
+    .sort((a, b) => a.order - b.order)
+}
+
+/**
+ * Get all coming soon card definitions (for admin UI)
+ * @returns {Array} All coming soon cards
+ */
+export function getAllComingSoonCards() {
+  return [...COMING_SOON_CARDS]
+}

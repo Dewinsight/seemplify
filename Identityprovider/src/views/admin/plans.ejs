@@ -238,6 +238,23 @@
             </div>
           </div>
 
+          <div class="admin-form-group">
+            <label class="admin-form-label">Show Coming Soon Cards</label>
+            <small style="color: var(--muted); display: block; margin-bottom: 8px;">Select "Coming Soon" cards to display in the hub for orgs on this plan. These are special non-clickable cards (Messaging, Payroll, Performance Management) shown as preview. Default: off.</small>
+            <div class="feature-grid" id="showComingSoonCardsGrid">
+              <% if (typeof comingSoonCards !== 'undefined' && comingSoonCards && comingSoonCards.length > 0) { %>
+                <% comingSoonCards.forEach(card => { %>
+                  <label class="feature-toggle">
+                    <input type="checkbox" name="showComingSoonCards" value="<%= card.cardId %>" data-coming-soon-card="<%= card.cardId %>">
+                    <span class="feature-toggle-label"><%= card.name %></span>
+                  </label>
+                <% }) %>
+              <% } else { %>
+                <span style="color: var(--muted); font-size: 13px;">No coming soon cards configured.</span>
+              <% } %>
+            </div>
+          </div>
+
           <div class="admin-form-row">
             <div class="admin-form-group">
               <label class="admin-form-label">Display Order</label>
@@ -366,6 +383,11 @@
           document.querySelectorAll('[data-hide-app]').forEach(cb => {
             cb.checked = hideHubCards.includes(cb.dataset.hideApp);
           });
+
+          const showComingSoonCards = plan.showComingSoonCards || [];
+          document.querySelectorAll('[data-coming-soon-card]').forEach(cb => {
+            cb.checked = showComingSoonCards.includes(cb.dataset.comingSoonCard);
+          });
         }
       } else {
         title.textContent = 'Create New Plan';
@@ -424,7 +446,8 @@
         isActive: document.getElementById('isActive').checked,
         isPublic: document.getElementById('isPublic').checked,
         isFeatured: document.getElementById('isFeatured').checked,
-        hideHubCards: Array.from(document.querySelectorAll('[name="hideHubCards"]:checked')).map(cb => cb.value)
+        hideHubCards: Array.from(document.querySelectorAll('[name="hideHubCards"]:checked')).map(cb => cb.value),
+        showComingSoonCards: Array.from(document.querySelectorAll('[name="showComingSoonCards"]:checked')).map(cb => cb.value)
       };
 
       try {
