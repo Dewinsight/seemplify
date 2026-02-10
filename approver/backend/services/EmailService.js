@@ -1,5 +1,10 @@
 const axios = require('axios');
 
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 class EmailService {
     constructor() {
         this.apiKey = process.env.BREVO_API_KEY;
@@ -13,6 +18,33 @@ class EmailService {
             throw new Error('SENDER_EMAIL is required. Set it in your environment variables.');
         }
         return { name: this.senderName, email: this.senderEmail };
+    }
+
+    async _sendWithRetry(data, label = 'email') {
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const res = await axios.post(this.apiUrl, data, {
+                    headers: {
+                        'api-key': this.apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 15000
+                });
+                return { success: true, response: res };
+            } catch (error) {
+                const isRetryable = !error.response || (error.response.status >= 500 || error.response.status === 429);
+                const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+                console.warn(`[Email] ${label} attempt ${attempt}/${MAX_RETRIES} failed:`, errMsg);
+
+                if (attempt < MAX_RETRIES && isRetryable) {
+                    const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+                    console.log(`[Email] Retrying in ${delay}ms...`);
+                    await sleep(delay);
+                } else {
+                    throw error;
+                }
+            }
+        }
     }
 
     async sendOtp(email, otp) {
@@ -37,16 +69,10 @@ class EmailService {
                 `
             };
 
-            await axios.post(this.apiUrl, data, {
-                headers: {
-                    'api-key': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
-            });
+            await this._sendWithRetry(data, `OTP to ${email}`);
             console.log(`OTP sent to ${email}`);
-
         } catch (error) {
-            console.error('Failed to send email:', error.response ? error.response.data : error.message);
+            console.error('Failed to send OTP:', error.response?.data || error.message);
             console.log(`[FALLBACK] OTP for ${email}: ${otp}`);
         }
     }
@@ -86,16 +112,10 @@ class EmailService {
                 `
             };
 
-            await axios.post(this.apiUrl, data, {
-                headers: {
-                    'api-key': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
-            });
+            await this._sendWithRetry(data, `Invite to ${email}`);
             console.log(`Invite sent to ${email} for org ${orgName}`);
-
         } catch (error) {
-            console.error('Failed to send invite email:', error.response ? error.response.data : error.message);
+            console.error('Failed to send invite email:', error.response?.data || error.message);
             console.log(`[FALLBACK] Invite for ${email} to join "${orgName}"`);
         }
     }

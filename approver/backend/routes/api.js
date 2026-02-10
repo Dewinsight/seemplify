@@ -8,6 +8,7 @@ const { verifyToken, verifyRole, injectOrgContext, optionalToken } = require('..
 // --- Auth Routes ---
 router.post('/auth/register', authController.register);
 router.post('/auth/verify', authController.verifyOtp);
+router.post('/auth/resend-otp', authController.resendOtp);
 router.post('/auth/login', authController.login);
 router.post('/auth/seed-admin', authController.seedAdmin);
 router.patch('/auth/me', verifyToken, authController.updateProfile);

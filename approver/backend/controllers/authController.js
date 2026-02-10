@@ -25,10 +25,15 @@ exports.register = async (req, res) => {
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             if (!existingUser.isVerified) {
-                const otp = '111111'; // Hardcoded for dev
+                const otp = generateOtp();
                 const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
                 existingUser.otp = { code: otp, expiresAt: otpExpiresAt };
                 await existingUser.save();
+                try {
+                    await emailService.sendOtp(email, otp);
+                } catch (e) {
+                    console.warn('Failed to send OTP email:', e.message);
+                }
                 return res.status(200).json({
                     message: 'Account exists but not verified. OTP resent.',
                     needsVerification: true,
@@ -39,7 +44,7 @@ exports.register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const otp = '111111';
+        const otp = generateOtp();
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
         // Create user with NO org, NO permissions — org setup happens post-login via onboarding
@@ -53,7 +58,12 @@ exports.register = async (req, res) => {
         });
 
         await user.save();
-        res.status(201).json({ message: 'User registered. Use OTP 111111 to verify.' });
+        try {
+            await emailService.sendOtp(email, otp);
+        } catch (e) {
+            console.warn('Failed to send OTP email:', e.message);
+        }
+        res.status(201).json({ message: 'User registered. Check your email for the verification code.' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -85,6 +95,33 @@ exports.verifyOtp = async (req, res) => {
     }
 };
 
+// Resend OTP for unverified user
+exports.resendOtp = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.isVerified) return res.json({ message: 'Account already verified' });
+
+        const otp = generateOtp();
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        user.otp = { code: otp, expiresAt: otpExpiresAt };
+        await user.save();
+
+        try {
+            await emailService.sendOtp(email, otp);
+        } catch (e) {
+            console.warn('Failed to send OTP email:', e.message);
+        }
+
+        res.json({ message: 'Verification code resent. Check your email.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // --- Login: returns org memberships list + needsOnboarding flag ---
 exports.login = async (req, res) => {
     try {
@@ -94,10 +131,15 @@ exports.login = async (req, res) => {
         if (!user) return res.status(400).json({ error: 'User not found' });
 
         if (!user.isVerified) {
-            const otp = '111111';
+            const otp = generateOtp();
             const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
             user.otp = { code: otp, expiresAt: otpExpiresAt };
             await user.save();
+            try {
+                await emailService.sendOtp(email, otp);
+            } catch (e) {
+                console.warn('Failed to send OTP email:', e.message);
+            }
 
             return res.status(403).json({
                 error: 'Account not verified.',
