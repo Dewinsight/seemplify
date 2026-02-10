@@ -351,46 +351,71 @@
       <div class="tab-panel" id="tab-onboarding-center">
     <% } %>
 
-    <div class="card">
-      <h2 style="margin-top:0">Templates</h2>
-      <% if (templates && templates.length > 0) { %>
-        <% templates.forEach(template => { %>
-          <div class="card" style="margin-top: 12px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
-              <div>
-                <div style="font-weight:700; font-size:16px; display:flex; align-items:center; gap:8px;">
-                  <%= template.name %>
-                  <% if (template.isDefault) { %>
-                    <span class="role-badge onboarding-badge onboarding-completed">Default</span>
-                  <% } %>
-                </div>
-                <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">
-                  <%= template.description || 'No description' %>
-                </div>
-                <div style="color: var(--muted); font-size: 12px; margin-top: 6px;">
-                  <%= template.items.length %> item<%= template.items.length === 1 ? '' : 's' %>
-                </div>
-              </div>
-              <div style="display:flex; gap: 8px; flex-wrap: wrap;">
-                <% if (!template.isDefault) { %>
-                  <button class="btn btn-secondary btn-sm" onclick="setDefaultTemplate('<%= template._id %>')">Set Default</button>
-                <% } %>
-                <button class="btn btn-danger btn-sm" onclick="deleteTemplate('<%= template._id %>')">Delete</button>
-              </div>
-            </div>
-          </div>
-        <% }) %>
-      <% } else { %>
-        <div class="empty-state">
-          <h3>No templates yet</h3>
-          <p>Create a template for general onboarding.</p>
-        </div>
-      <% } %>
-    </div>
+    <% const templateList = templates || []; %>
+    <% const assignmentList = assignments || []; %>
+    <% const defaultTemplate = templateList.find(template => template.isDefault); %>
+    <% const activeAssignmentCount = assignmentList.filter(assignment => assignment.status !== 'completed' && assignment.status !== 'cancelled').length; %>
+    <% const completedAssignmentCount = assignmentList.filter(assignment => assignment.status === 'completed').length; %>
 
-    <div class="card">
-      <h2 style="margin-top:0">Assign Onboarding</h2>
-      <div style="display:grid; gap: 16px;">
+    <div class="onboarding-center-shell">
+      <div class="center-kpis" aria-label="Onboarding metrics">
+        <div class="center-kpi">
+          <div class="center-kpi-label">Templates</div>
+          <div class="center-kpi-value"><%= templateList.length %></div>
+          <div class="center-kpi-meta">Reusable flows</div>
+        </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Default Template</div>
+          <div class="center-kpi-value center-kpi-value-sm"><%= defaultTemplate ? defaultTemplate.name : 'None' %></div>
+          <div class="center-kpi-meta">Applied by default</div>
+        </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Active</div>
+          <div class="center-kpi-value"><%= activeAssignmentCount %></div>
+          <div class="center-kpi-meta">In progress</div>
+        </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Completed</div>
+          <div class="center-kpi-value"><%= completedAssignmentCount %></div>
+          <div class="center-kpi-meta">Done assignments</div>
+        </div>
+      </div>
+
+    <div class="card center-card-assign assign-onboarding-card">
+      <div class="center-card-header">
+        <h2>Assign Onboarding</h2>
+        <p>Create assignments, manage templates, and track recent activity.</p>
+      </div>
+
+      <div class="assign-onboarding-tabs" role="tablist" aria-label="Assign Onboarding sections">
+        <button type="button" class="assign-tab-button active" data-assign-tab="assign" role="tab" aria-selected="true">Assign</button>
+        <button type="button" class="assign-tab-button" data-assign-tab="templates" role="tab" aria-selected="false">Templates</button>
+        <button type="button" class="assign-tab-button" data-assign-tab="recent" role="tab" aria-selected="false">Recent Assignments</button>
+      </div>
+
+      <div class="assign-onboarding-tab-panel active" id="assign-tab-assign" data-assign-panel="assign" role="tabpanel" aria-label="New assignment">
+        <div class="center-wizard">
+      <div class="center-wizard-step-list" role="tablist" aria-label="Assignment steps">
+        <button type="button" class="center-wizard-step active" data-center-step="1" role="tab" aria-selected="true">
+          <span class="center-wizard-step-index">1</span>
+          <span>Recipient</span>
+        </button>
+        <button type="button" class="center-wizard-step" data-center-step="2" role="tab" aria-selected="false">
+          <span class="center-wizard-step-index">2</span>
+          <span>Custom Items</span>
+        </button>
+        <button type="button" class="center-wizard-step" data-center-step="3" role="tab" aria-selected="false">
+          <span class="center-wizard-step-index">3</span>
+          <span>Review</span>
+        </button>
+      </div>
+
+      <div class="center-wizard-panels">
+        <section class="center-step-panel active" data-center-step-panel="1" role="tabpanel" aria-label="Step 1: Recipient and schedule">
+          <div class="center-panel-heading">
+            <h3 tabindex="-1">Step 1: Recipient and Schedule</h3>
+            <p>Select member, optional template, and due date.</p>
+          </div>
         <div class="form-group">
           <label for="assignmentMember">Member</label>
           <select id="assignmentMember">
@@ -418,11 +443,22 @@
           <input type="date" id="assignmentDue" />
         </div>
 
-        <div class="card" style="margin:0;">
-          <h3 style="margin-top:0">Custom Items</h3>
-          <div id="custom-items-list" style="display:grid; gap: 10px;"></div>
+        </section>
 
-          <div style="display:grid; gap: 10px; margin-top: 14px;">
+        <section class="center-step-panel" data-center-step-panel="2" role="tabpanel" aria-label="Step 2: Custom items" hidden>
+          <div class="center-panel-heading">
+            <h3 tabindex="-1">Step 2: Add Custom Items</h3>
+            <p>Create any extra tasks needed for this assignment.</p>
+          </div>
+
+        <div class="card center-items-card" style="margin:0;">
+          <div class="center-items-header">
+            <h3 style="margin-top:0">Custom Items</h3>
+            <span class="center-items-count" id="custom-items-count">0 item(s)</span>
+          </div>
+          <div id="custom-items-list" class="center-items-list"></div>
+
+          <div class="center-builder-fields">
             <div class="form-group">
               <label for="custom-type">Type</label>
               <select id="custom-type">
@@ -456,7 +492,7 @@ Start Date|date|required"></textarea>
             </div>
             <div class="form-group" id="custom-esign-signers" style="display:none;">
               <label>Signers</label>
-              <div id="custom-signers-options" style="display:grid; gap: 6px;"></div>
+              <div id="custom-signers-options" class="signers-options-list"></div>
               <div class="form-hint">Select who must sign. "Onboarding member" will sign as the assignee.</div>
             </div>
             <div class="form-group" id="custom-esign-fields" style="display:none;">
@@ -554,7 +590,7 @@ Start Date|date|required"></textarea>
                       </div>
                     </div>
                   </div>
-                  <div class="empty-state" id="custom-pdf-empty" style="padding: 32px 16px;">
+                  <div class="empty-state" id="custom-pdf-empty">
                     <div class="pdf-dropzone" data-pdf-dropzone="custom" tabindex="0" role="button" aria-label="Upload PDF">
                       <input type="file" id="custom-document" accept=".pdf" style="display:none;" />
                       <div class="pdf-dropzone-title">Drop a PDF to start</div>
@@ -568,50 +604,162 @@ Start Date|date|required"></textarea>
                 </div>
               </div>
             </div>
-            <div>
+            <div class="center-builder-actions">
               <button class="btn btn-secondary" type="button" onclick="addCustomItem()">Add Custom Item</button>
             </div>
           </div>
         </div>
 
-        <div class="form-actions">
-          <button class="btn btn-primary" type="button" onclick="assignOnboarding()">Assign Onboarding</button>
+        </section>
+
+        <section class="center-step-panel" data-center-step-panel="3" role="tabpanel" aria-label="Step 3: Review and assign" hidden>
+          <div class="center-panel-heading">
+            <h3 tabindex="-1">Step 3: Review and Assign</h3>
+            <p>Double-check details before assigning.</p>
+          </div>
+          <div class="center-review-grid">
+            <div class="center-review-row">
+              <div class="center-review-label">Recipient</div>
+              <div class="center-review-value" id="review-member">Not selected</div>
+            </div>
+            <div class="center-review-row">
+              <div class="center-review-label">Template</div>
+              <div class="center-review-value" id="review-template">No template</div>
+            </div>
+            <div class="center-review-row">
+              <div class="center-review-label">Due Date</div>
+              <div class="center-review-value" id="review-due">Not set</div>
+            </div>
+            <div class="center-review-row">
+              <div class="center-review-label">Custom Items</div>
+              <div class="center-review-value" id="review-custom-count">0 item(s)</div>
+            </div>
+            <div class="center-review-row">
+              <div class="center-review-label">E-Sign Items</div>
+              <div class="center-review-value" id="review-esign-count">0 item(s)</div>
+            </div>
+          </div>
+          <div class="form-actions center-review-actions">
+            <button class="btn btn-primary" type="button" onclick="assignOnboarding()">Assign Onboarding</button>
+          </div>
+        </section>
+
+        <div class="center-step-controls">
+          <button class="btn btn-secondary" type="button" id="center-step-prev" onclick="prevCenterStep()">Back</button>
+          <div class="center-step-indicator" id="center-step-indicator">Step 1 of 3</div>
+          <button class="btn btn-secondary" type="button" id="center-step-next" onclick="nextCenterStep()">Continue</button>
         </div>
       </div>
-    </div>
+        </div>
+      </div>
 
-    <div class="card">
-      <h2 style="margin-top:0">Recent Assignments</h2>
+      <div class="assign-onboarding-tab-panel" id="assign-tab-templates" data-assign-panel="templates" role="tabpanel" aria-label="Templates" hidden>
+        <div class="template-library">
+          <div class="template-library-tools">
+            <input type="text" data-template-filter placeholder="Search templates..." aria-label="Search templates" />
+          </div>
+          <% if (templates && templates.length > 0) { %>
+            <div class="template-library-list">
+              <% templates.forEach(template => { %>
+                <article
+                  class="template-library-item"
+                  data-template-item
+                  data-template-search="<%= (template.name + ' ' + (template.description || '')).toLowerCase() %>"
+                >
+                  <div class="template-library-item-head">
+                    <div class="template-library-item-title">
+                      <%= template.name %>
+                      <% if (template.isDefault) { %>
+                        <span class="role-badge onboarding-badge onboarding-completed">Default</span>
+                      <% } %>
+                    </div>
+                    <div class="template-library-item-meta">
+                      <%= template.items.length %> item<%= template.items.length === 1 ? '' : 's' %>
+                    </div>
+                  </div>
+                  <div class="template-library-item-desc"><%= template.description || 'No description' %></div>
+                  <div class="template-library-item-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" data-use-template="<%= template._id %>">Use Template</button>
+                    <% if (!template.isDefault) { %>
+                      <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultTemplate('<%= template._id %>')">Set Default</button>
+                    <% } %>
+                    <button class="btn btn-danger btn-sm" type="button" onclick="deleteTemplate('<%= template._id %>')">Delete</button>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+            <div class="empty-state template-library-empty" data-template-empty hidden>
+              <h3>No matching templates</h3>
+              <p>Try a different search term.</p>
+            </div>
+          <% } else { %>
+            <div class="empty-state">
+              <h3>No templates yet</h3>
+              <p>Create a template for general onboarding.</p>
+            </div>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="assign-onboarding-tab-panel" id="assign-tab-recent" data-assign-panel="recent" role="tabpanel" aria-label="Recent assignments" hidden>
+        <div class="assignment-board">
+      <div class="center-card-header">
+        <h2>Recent Assignments</h2>
+        <p>Monitor status and take quick actions.</p>
+      </div>
+      <div class="assignment-board-tools">
+        <input type="text" data-assignment-filter placeholder="Search assignments..." aria-label="Search assignments" />
+      </div>
+      <div class="assignment-board-status" role="tablist" aria-label="Filter assignments by status">
+        <button type="button" class="assignment-status-chip active" data-assignment-status-filter="all" aria-selected="true">All</button>
+        <button type="button" class="assignment-status-chip" data-assignment-status-filter="pending" aria-selected="false">Pending</button>
+        <button type="button" class="assignment-status-chip" data-assignment-status-filter="in_progress" aria-selected="false">In Progress</button>
+        <button type="button" class="assignment-status-chip" data-assignment-status-filter="completed" aria-selected="false">Completed</button>
+        <button type="button" class="assignment-status-chip" data-assignment-status-filter="cancelled" aria-selected="false">Cancelled</button>
+      </div>
       <% if (assignments && assignments.length > 0) { %>
-        <% assignments.forEach(assignment => { %>
-          <div class="card" style="margin-top: 12px;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
-                <div>
-                  <div style="font-weight:700; font-size:15px;">
-                    <%= assignment.member?.profile?.name || assignment.member?.email || 'Member' %>
-                  </div>
-                  <div style="color: var(--muted); font-size: 12px; margin-top:4px;">
-                    Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
-                  </div>
-                </div>
-                <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
-                  <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= assignment._id %>">View details</a>
-                  <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
-                    <%= assignment.status.replace('_', ' ') %>
-                  </span>
-                  <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
-                    <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
+        <div class="assignment-board-list">
+          <% assignments.forEach(assignment => { %>
+            <% const assignmentName = assignment.member?.profile?.name || assignment.member?.email || 'Member'; %>
+            <% const assignmentSearch = (assignmentName + ' ' + (assignment.member?.email || '') + ' ' + assignment.status).toLowerCase(); %>
+            <article
+              class="assignment-board-item"
+              data-assignment-item
+              data-assignment-status="<%= assignment.status %>"
+              data-assignment-search="<%= assignmentSearch %>"
+            >
+              <div class="assignment-board-item-main">
+                <div class="assignment-board-item-name"><%= assignmentName %></div>
+                <div class="assignment-board-item-meta">
+                  Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+                  <% if (assignment.dueAt) { %>
+                    - Due <%= new Date(assignment.dueAt).toLocaleDateString() %>
                   <% } %>
                 </div>
               </div>
-            </div>
-        <% }) %>
+              <div class="assignment-board-item-actions">
+                <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>"><%= assignment.status.replace('_', ' ') %></span>
+                <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= assignment._id %>">View</a>
+                <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
+                  <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
+                <% } %>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+        <div class="empty-state assignment-board-empty" data-assignment-empty hidden>
+          <h3>No matching assignments</h3>
+          <p>Adjust your search or filter.</p>
+        </div>
       <% } else { %>
         <div class="empty-state">
           <h3>No assignments yet</h3>
           <p>Assign onboarding to get started.</p>
         </div>
       <% } %>
+        </div>
+      </div>
+    </div>
     </div>
     <% if (typeof personalAssignments !== 'undefined') { %>
       </div>
@@ -620,11 +768,31 @@ Start Date|date|required"></textarea>
 
   <!-- Template Modal -->
   <div class="modal" id="templateModal">
-    <div class="modal-content modal-xl">
+    <div class="modal-content modal-xl template-modal-shell">
       <div class="modal-header">
         <h2>Create Template</h2>
         <button class="modal-close" onclick="hideTemplateModal()">&times;</button>
       </div>
+      <div class="template-modal-step-list" role="tablist" aria-label="Template builder steps">
+        <button type="button" class="template-modal-step active" data-template-modal-step="1" role="tab" aria-selected="true">
+          <span class="template-modal-step-index">A</span>
+          <span>Basics</span>
+        </button>
+        <button type="button" class="template-modal-step" data-template-modal-step="2" role="tab" aria-selected="false">
+          <span class="template-modal-step-index">B</span>
+          <span>Items</span>
+        </button>
+        <button type="button" class="template-modal-step" data-template-modal-step="3" role="tab" aria-selected="false">
+          <span class="template-modal-step-index">C</span>
+          <span>Review</span>
+        </button>
+      </div>
+
+      <section class="template-modal-panel active" data-template-modal-panel="1" role="tabpanel" aria-label="Template basics">
+        <div class="template-modal-panel-heading">
+          <h3 tabindex="-1">Step A: Basics</h3>
+          <p>Name the template and set default behavior.</p>
+        </div>
       <div class="form-group">
         <label for="template-name">Template name</label>
         <input type="text" id="template-name" placeholder="General Onboarding" />
@@ -638,12 +806,22 @@ Start Date|date|required"></textarea>
           <input type="checkbox" id="template-default" /> Set as default
         </label>
       </div>
+      </section>
 
-      <div class="card" style="margin:0;">
-        <h3 style="margin-top:0">Template Items</h3>
-        <div id="template-items-list" style="display:grid; gap: 10px;"></div>
+      <section class="template-modal-panel" data-template-modal-panel="2" role="tabpanel" aria-label="Template items" hidden>
+        <div class="template-modal-panel-heading">
+          <h3 tabindex="-1">Step B: Build Items</h3>
+          <p>Add form, upload, and e-sign steps to your template.</p>
+        </div>
 
-        <div style="display:grid; gap: 10px; margin-top: 14px;">
+      <div class="card center-items-card template-items-card" style="margin:0;">
+        <div class="center-items-header">
+          <h3 style="margin-top:0">Template Items</h3>
+          <span class="center-items-count" id="template-items-count">0 item(s)</span>
+        </div>
+        <div id="template-items-list" class="center-items-list"></div>
+
+        <div class="center-builder-fields">
           <div class="form-group">
             <label for="template-type">Type</label>
             <select id="template-type">
@@ -677,7 +855,7 @@ Start Date|date|required"></textarea>
           </div>
           <div class="form-group" id="template-esign-signers" style="display:none;">
             <label>Signers</label>
-            <div id="template-signers-options" style="display:grid; gap: 6px;"></div>
+            <div id="template-signers-options" class="signers-options-list"></div>
             <div class="form-hint">Select who must sign. "Onboarding member" will sign as the assignee.</div>
           </div>
           <div class="form-group" id="template-esign-fields" style="display:none;">
@@ -775,7 +953,7 @@ Start Date|date|required"></textarea>
                     </div>
                   </div>
                 </div>
-                <div class="empty-state" id="template-pdf-empty" style="padding: 32px 16px;">
+                <div class="empty-state" id="template-pdf-empty">
                   <div class="pdf-dropzone" data-pdf-dropzone="template" tabindex="0" role="button" aria-label="Upload PDF">
                     <input type="file" id="template-document" accept=".pdf" style="display:none;" />
                     <div class="pdf-dropzone-title">Drop a PDF to start</div>
@@ -789,15 +967,47 @@ Start Date|date|required"></textarea>
               </div>
             </div>
           </div>
-          <div>
+          <div class="center-builder-actions">
             <button class="btn btn-secondary" type="button" onclick="addTemplateItem()">Add Template Item</button>
           </div>
         </div>
       </div>
+      </section>
 
-      <div class="form-actions">
+      <section class="template-modal-panel" data-template-modal-panel="3" role="tabpanel" aria-label="Template review" hidden>
+        <div class="template-modal-panel-heading">
+          <h3 tabindex="-1">Step C: Review</h3>
+          <p>Validate template details before creating it.</p>
+        </div>
+        <div class="center-review-grid">
+          <div class="center-review-row">
+            <div class="center-review-label">Template Name</div>
+            <div class="center-review-value" id="template-review-name">Not set</div>
+          </div>
+          <div class="center-review-row">
+            <div class="center-review-label">Description</div>
+            <div class="center-review-value" id="template-review-description">No description</div>
+          </div>
+          <div class="center-review-row">
+            <div class="center-review-label">Default</div>
+            <div class="center-review-value" id="template-review-default">No</div>
+          </div>
+          <div class="center-review-row">
+            <div class="center-review-label">Items</div>
+            <div class="center-review-value" id="template-review-count">0 item(s)</div>
+          </div>
+          <div class="center-review-row">
+            <div class="center-review-label">E-Sign Items</div>
+            <div class="center-review-value" id="template-review-esign">0 item(s)</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="form-actions template-modal-actions">
         <button class="btn btn-secondary" type="button" onclick="hideTemplateModal()">Cancel</button>
-        <button class="btn btn-primary" type="button" onclick="createTemplate()">Create Template</button>
+        <button class="btn btn-secondary" type="button" id="template-modal-prev" onclick="prevTemplateModalStep()">Back</button>
+        <button class="btn btn-secondary" type="button" id="template-modal-next" onclick="nextTemplateModalStep()">Continue</button>
+        <button class="btn btn-primary" type="button" id="template-modal-create" style="display:none;" onclick="createTemplate()">Create Template</button>
       </div>
     </div>
   </div>
@@ -901,9 +1111,253 @@ Start Date|date|required"></textarea>
     const paletteDragState = { active: false, candidate: null, prefix: null, type: null, btn: null, pointerId: null, startX: 0, startY: 0, ghost: null };
     const suppressNextOverlayClick = { template: false, custom: false };
     const SIGNER_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#22c55e', '#f97316'];
+    const centerWizardState = { step: 1, total: 3 };
+    const templateModalState = { step: 1, total: 3 };
+    const assignmentFilterState = { query: '', status: 'all' };
+
+    function clampStep(step, max) {
+      const n = Number(step);
+      if (!Number.isFinite(n)) return 1;
+      return Math.max(1, Math.min(max, Math.floor(n)));
+    }
+
+    function renderCenterReview() {
+      const memberSelect = document.getElementById('assignmentMember');
+      const templateSelect = document.getElementById('assignmentTemplate');
+      const dueInput = document.getElementById('assignmentDue');
+
+      const memberLabel = memberSelect?.selectedOptions?.[0]?.textContent || '';
+      const templateLabel = templateSelect?.selectedOptions?.[0]?.textContent || '';
+      const dueLabel = dueInput?.value ? new Date(`${dueInput.value}T00:00:00`).toLocaleDateString() : 'Not set';
+      const esignCount = customItems.filter(item => item.type === 'esign').length;
+
+      const memberEl = document.getElementById('review-member');
+      const templateEl = document.getElementById('review-template');
+      const dueEl = document.getElementById('review-due');
+      const customCountEl = document.getElementById('review-custom-count');
+      const esignCountEl = document.getElementById('review-esign-count');
+
+      if (memberEl) memberEl.textContent = memberSelect?.value ? memberLabel : 'Not selected';
+      if (templateEl) templateEl.textContent = templateSelect?.value ? templateLabel : 'No template';
+      if (dueEl) dueEl.textContent = dueLabel;
+      if (customCountEl) customCountEl.textContent = `${customItems.length} item(s)`;
+      if (esignCountEl) esignCountEl.textContent = `${esignCount} item(s)`;
+    }
+
+    function setCenterStep(step, options = {}) {
+      const nextStep = clampStep(step, centerWizardState.total);
+      centerWizardState.step = nextStep;
+
+      const stepButtons = Array.from(document.querySelectorAll('[data-center-step]'));
+      const panels = Array.from(document.querySelectorAll('[data-center-step-panel]'));
+      const indicator = document.getElementById('center-step-indicator');
+      const prevBtn = document.getElementById('center-step-prev');
+      const nextBtn = document.getElementById('center-step-next');
+
+      stepButtons.forEach(button => {
+        const isActive = Number(button.dataset.centerStep) === nextStep;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      panels.forEach(panel => {
+        const panelStep = Number(panel.dataset.centerStepPanel);
+        const isActive = panelStep === nextStep;
+        panel.classList.toggle('active', isActive);
+        if (isActive) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
+      });
+
+      if (indicator) indicator.textContent = `Step ${nextStep} of ${centerWizardState.total}`;
+      if (prevBtn) prevBtn.disabled = nextStep <= 1;
+      if (nextBtn) {
+        nextBtn.style.display = nextStep === centerWizardState.total ? 'none' : 'inline-flex';
+      }
+
+      if (nextStep === centerWizardState.total) {
+        renderCenterReview();
+      }
+
+      if (options.focus !== false) {
+        const activePanel = document.querySelector(`[data-center-step-panel="${nextStep}"] h3`);
+        if (activePanel) activePanel.focus?.();
+      }
+    }
+
+    function validateCenterStep(step) {
+      if (step === 1) {
+        const memberId = document.getElementById('assignmentMember')?.value;
+        if (!memberId) {
+          alert('Please select a member before continuing.');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function nextCenterStep() {
+      const current = centerWizardState.step;
+      if (!validateCenterStep(current)) return;
+      setCenterStep(current + 1, { focus: true });
+    }
+
+    function prevCenterStep() {
+      setCenterStep(centerWizardState.step - 1, { focus: true });
+    }
+
+    function applyTemplateToAssignment(templateId, options = {}) {
+      const select = document.getElementById('assignmentTemplate');
+      if (!select || !templateId) return;
+      select.value = String(templateId);
+      renderCenterReview();
+      if (options.jumpToStep !== false) {
+        setCenterStep(1, { focus: false });
+      }
+    }
+
+    function filterTemplateLibrary(query) {
+      const searchTerm = String(query || '').trim().toLowerCase();
+      const items = Array.from(document.querySelectorAll('[data-template-item]'));
+      const empty = document.querySelector('[data-template-empty]');
+      if (!items.length) return;
+
+      let visible = 0;
+      items.forEach(item => {
+        const haystack = (item.dataset.templateSearch || '').toLowerCase();
+        const matches = !searchTerm || haystack.includes(searchTerm);
+        item.hidden = !matches;
+        if (matches) visible += 1;
+      });
+
+      if (empty) empty.hidden = visible !== 0;
+    }
+
+    function filterAssignments(options = {}) {
+      if (Object.prototype.hasOwnProperty.call(options, 'query')) {
+        assignmentFilterState.query = String(options.query || '').trim().toLowerCase();
+      }
+      if (Object.prototype.hasOwnProperty.call(options, 'status')) {
+        assignmentFilterState.status = options.status || 'all';
+      }
+
+      const items = Array.from(document.querySelectorAll('[data-assignment-item]'));
+      const empty = document.querySelector('[data-assignment-empty]');
+      const chips = Array.from(document.querySelectorAll('[data-assignment-status-filter]'));
+
+      chips.forEach(chip => {
+        const isActive = chip.dataset.assignmentStatusFilter === assignmentFilterState.status;
+        chip.classList.toggle('active', isActive);
+        chip.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      let visible = 0;
+      items.forEach(item => {
+        const status = item.dataset.assignmentStatus || '';
+        const search = (item.dataset.assignmentSearch || '').toLowerCase();
+        const statusMatch = assignmentFilterState.status === 'all' || status === assignmentFilterState.status;
+        const queryMatch = !assignmentFilterState.query || search.includes(assignmentFilterState.query);
+        const matches = statusMatch && queryMatch;
+        item.hidden = !matches;
+        if (matches) visible += 1;
+      });
+
+      if (empty) empty.hidden = visible !== 0;
+    }
+
+    function renderTemplateReview() {
+      const name = document.getElementById('template-name')?.value.trim() || '';
+      const description = document.getElementById('template-description')?.value.trim() || '';
+      const isDefault = !!document.getElementById('template-default')?.checked;
+      const esignCount = templateItems.filter(item => item.type === 'esign').length;
+
+      const nameEl = document.getElementById('template-review-name');
+      const descriptionEl = document.getElementById('template-review-description');
+      const defaultEl = document.getElementById('template-review-default');
+      const countEl = document.getElementById('template-review-count');
+      const esignEl = document.getElementById('template-review-esign');
+
+      if (nameEl) nameEl.textContent = name || 'Not set';
+      if (descriptionEl) descriptionEl.textContent = description || 'No description';
+      if (defaultEl) defaultEl.textContent = isDefault ? 'Yes' : 'No';
+      if (countEl) countEl.textContent = `${templateItems.length} item(s)`;
+      if (esignEl) esignEl.textContent = `${esignCount} item(s)`;
+    }
+
+    function setTemplateModalStep(step, options = {}) {
+      const nextStep = clampStep(step, templateModalState.total);
+      templateModalState.step = nextStep;
+
+      const stepButtons = Array.from(document.querySelectorAll('[data-template-modal-step]'));
+      const panels = Array.from(document.querySelectorAll('[data-template-modal-panel]'));
+      const prevBtn = document.getElementById('template-modal-prev');
+      const nextBtn = document.getElementById('template-modal-next');
+      const createBtn = document.getElementById('template-modal-create');
+
+      stepButtons.forEach(button => {
+        const isActive = Number(button.dataset.templateModalStep) === nextStep;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      panels.forEach(panel => {
+        const panelStep = Number(panel.dataset.templateModalPanel);
+        const isActive = panelStep === nextStep;
+        panel.classList.toggle('active', isActive);
+        if (isActive) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
+      });
+
+      if (prevBtn) prevBtn.disabled = nextStep <= 1;
+      if (nextBtn) nextBtn.style.display = nextStep === templateModalState.total ? 'none' : 'inline-flex';
+      if (createBtn) createBtn.style.display = nextStep === templateModalState.total ? 'inline-flex' : 'none';
+
+      if (nextStep === templateModalState.total) {
+        renderTemplateReview();
+      }
+
+      if (options.focus !== false) {
+        const activeHeading = document.querySelector(`[data-template-modal-panel="${nextStep}"] h3`);
+        if (activeHeading) activeHeading.focus?.();
+      }
+    }
+
+    function validateTemplateModalStep(step) {
+      if (step === 1) {
+        const name = document.getElementById('template-name')?.value.trim();
+        if (!name) {
+          alert('Template name is required.');
+          return false;
+        }
+      }
+      if (step === 2 && templateItems.length === 0) {
+        alert('Add at least one item before continuing.');
+        return false;
+      }
+      return true;
+    }
+
+    function nextTemplateModalStep() {
+      const current = templateModalState.step;
+      if (!validateTemplateModalStep(current)) return;
+      setTemplateModalStep(current + 1, { focus: true });
+    }
+
+    function prevTemplateModalStep() {
+      setTemplateModalStep(templateModalState.step - 1, { focus: true });
+    }
 
     function showTemplateModal() {
       document.getElementById('templateModal').classList.add('active');
+      setTemplateModalStep(1, { focus: false });
+      setTimeout(() => {
+        document.getElementById('template-name')?.focus();
+      }, 30);
     }
 
     function hideTemplateModal() {
@@ -2191,12 +2645,113 @@ Start Date|date|required"></textarea>
 
       if (panels.my) panels.my.style.display = tabKey === 'my' ? 'block' : 'none';
       if (panels.center) panels.center.style.display = tabKey === 'center' ? 'block' : 'none';
+
+      if (tabKey === 'center') {
+        renderCenterReview();
+      }
     }
 
     document.querySelectorAll('[data-onboarding-tab]').forEach(button => {
       button.addEventListener('click', () => {
         setActiveOnboardingTab(button.dataset.onboardingTab);
       });
+    });
+
+    function setActiveAssignTab(tabKey) {
+      const tabs = document.querySelectorAll('[data-assign-tab]');
+      const panels = {
+        assign: document.getElementById('assign-tab-assign'),
+        templates: document.getElementById('assign-tab-templates'),
+        recent: document.getElementById('assign-tab-recent')
+      };
+
+      tabs.forEach(button => {
+        const isActive = button.dataset.assignTab === tabKey;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive);
+      });
+
+      Object.entries(panels).forEach(([key, panel]) => {
+        if (panel) {
+          const isActive = key === tabKey;
+          panel.classList.toggle('active', isActive);
+          panel.hidden = !isActive;
+        }
+      });
+
+      if (tabKey === 'assign') {
+        renderCenterReview();
+      }
+    }
+
+    document.querySelectorAll('[data-assign-tab]').forEach(button => {
+      button.addEventListener('click', () => {
+        setActiveAssignTab(button.dataset.assignTab);
+      });
+    });
+
+    document.querySelectorAll('[data-center-step]').forEach(button => {
+      button.addEventListener('click', () => {
+        const targetStep = Number(button.dataset.centerStep || 1);
+        if (targetStep > centerWizardState.step && !validateCenterStep(centerWizardState.step)) {
+          return;
+        }
+        setCenterStep(targetStep, { focus: false });
+      });
+    });
+
+    document.querySelectorAll('[data-template-modal-step]').forEach(button => {
+      button.addEventListener('click', () => {
+        const targetStep = Number(button.dataset.templateModalStep || 1);
+        if (targetStep > templateModalState.step && !validateTemplateModalStep(templateModalState.step)) {
+          return;
+        }
+        setTemplateModalStep(targetStep, { focus: false });
+      });
+    });
+
+    document.querySelectorAll('[data-use-template]').forEach(button => {
+      button.addEventListener('click', () => {
+        applyTemplateToAssignment(button.dataset.useTemplate || '');
+        if (typeof setActiveAssignTab === 'function') setActiveAssignTab('assign');
+      });
+    });
+
+    const templateFilterInput = document.querySelector('[data-template-filter]');
+    templateFilterInput?.addEventListener('input', () => {
+      filterTemplateLibrary(templateFilterInput.value);
+    });
+
+    const assignmentFilterInput = document.querySelector('[data-assignment-filter]');
+    assignmentFilterInput?.addEventListener('input', () => {
+      filterAssignments({ query: assignmentFilterInput.value });
+    });
+
+    document.querySelectorAll('[data-assignment-status-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        filterAssignments({ status: button.dataset.assignmentStatusFilter || 'all' });
+      });
+    });
+
+    ['assignmentMember', 'assignmentTemplate', 'assignmentDue'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', renderCenterReview);
+      el.addEventListener('input', renderCenterReview);
+    });
+
+    ['template-name', 'template-description', 'template-default'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', renderTemplateReview);
+      el.addEventListener('input', renderTemplateReview);
+    });
+
+    const templateModal = document.getElementById('templateModal');
+    templateModal?.addEventListener('click', (event) => {
+      if (event.target === templateModal) {
+        hideTemplateModal();
+      }
     });
 
     async function uploadDocument(file) {
@@ -2213,26 +2768,36 @@ Start Date|date|required"></textarea>
       return response.json();
     }
 
+    function syncBuilderCounts() {
+      const customCount = document.getElementById('custom-items-count');
+      const templateCount = document.getElementById('template-items-count');
+      if (customCount) customCount.textContent = `${customItems.length} item(s)`;
+      if (templateCount) templateCount.textContent = `${templateItems.length} item(s)`;
+    }
+
     function renderItems(list, containerId) {
       const container = document.getElementById(containerId);
+      if (!container) return;
+
       if (list.length === 0) {
-        container.innerHTML = '<div style="color: var(--muted); font-size: 13px;">No items added yet.</div>';
-        return;
+        container.innerHTML = '<div class="center-items-empty">No items added yet.</div>';
+      } else {
+        container.innerHTML = list
+          .map((item, index) => `
+            <article class="center-item-preview">
+              <div class="center-item-preview-body">
+                <div class="center-item-preview-title">${escapeHtml(item.title || 'Untitled')}</div>
+                <div class="center-item-preview-meta">${escapeHtml((item.type || '').toUpperCase())} - ${item.required ? 'Required' : 'Optional'}</div>
+              </div>
+              <button class="btn btn-danger btn-sm" type="button" onclick="removeItem('${containerId}', ${index})">Remove</button>
+            </article>
+          `)
+          .join('');
       }
 
-      container.innerHTML = list
-        .map((item, index) => `
-          <div class="card" style="margin:0; padding: 14px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
-              <div>
-                <div style="font-weight:700;">${item.title}</div>
-                <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">${item.type.toUpperCase()} - ${item.required ? 'Required' : 'Optional'}</div>
-              </div>
-              <button class="btn btn-danger btn-sm" onclick="removeItem('${containerId}', ${index})">Remove</button>
-            </div>
-          </div>
-        `)
-        .join('');
+      syncBuilderCounts();
+      renderCenterReview();
+      renderTemplateReview();
     }
 
     function removeItem(containerId, index) {
@@ -3180,6 +3745,13 @@ Start Date|date|required"></textarea>
     renderSignatureFields('custom');
     toggleItemInputs('template');
     toggleItemInputs('custom');
+    syncBuilderCounts();
+    renderCenterReview();
+    renderTemplateReview();
+    setCenterStep(1, { focus: false });
+    setTemplateModalStep(1, { focus: false });
+    filterTemplateLibrary(templateFilterInput?.value || '');
+    filterAssignments({ query: assignmentFilterInput?.value || '', status: 'all' });
     if (document.querySelector('[data-onboarding-tab]')) {
       const defaultTab = '<%= (typeof activePage !== "undefined" && activePage === "onboarding") ? "my" : "center" %>';
       setActiveOnboardingTab(defaultTab);
