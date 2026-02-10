@@ -11,10 +11,15 @@ const generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+const normalizeName = (value) => (typeof value === 'string' ? value.trim() : '');
+const hasCompletedProfile = (user) => {
+    return Boolean(normalizeName(user?.firstName) && normalizeName(user?.lastName));
+};
+
 // --- Registration: simple (username, email, password only) ---
 exports.register = async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, email, password, firstName, lastName } = req.body;
 
         // Check if user exists
         const existingUser = await User.findOne({ email });
@@ -40,6 +45,8 @@ exports.register = async (req, res) => {
         // Create user with NO org, NO permissions — org setup happens post-login via onboarding
         const user = new User({
             username,
+            firstName: normalizeName(firstName),
+            lastName: normalizeName(lastName),
             email,
             password: hashedPassword,
             otp: { code: otp, expiresAt: otpExpiresAt }
@@ -114,6 +121,8 @@ exports.login = async (req, res) => {
         const payload = {
             id: user._id,
             username: user.username,
+            firstName: user.firstName || '',
+            lastName: user.lastName || '',
             email: user.email
         };
 
@@ -136,7 +145,7 @@ exports.login = async (req, res) => {
             token,
             user: payload,
             organizations,
-            needsOnboarding: organizations.length === 0
+            needsOnboarding: organizations.length === 0 || !hasCompletedProfile(user)
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -165,6 +174,8 @@ exports.seedAdmin = async (req, res) => {
 
         const admin = new User({
             username: 'admin',
+            firstName: 'Admin',
+            lastName: 'User',
             email: 'admin@approver.com',
             password: hashedPassword,
             isVerified: true
@@ -195,6 +206,8 @@ exports.getAllUsers = async (req, res) => {
         const users = memberships.map(m => ({
             _id: m.user._id,
             username: m.user.username,
+            firstName: m.user.firstName || '',
+            lastName: m.user.lastName || '',
             email: m.user.email,
             isAdmin: m.isAdmin,
             permissions: m.permissions,
@@ -235,17 +248,51 @@ exports.updateUserRole = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
     try {
-        const { username } = req.body;
+        const { username, firstName, lastName } = req.body;
         const userId = req.user.id;
         const user = await User.findById(userId);
 
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        if (username) user.username = username;
+        if (typeof username !== 'undefined') {
+            const nextUsername = typeof username === 'string' ? username.trim() : '';
+            if (!nextUsername) {
+                return res.status(400).json({ error: 'Username cannot be empty' });
+            }
+            user.username = nextUsername;
+        }
+
+        if (typeof firstName !== 'undefined') {
+            const nextFirstName = normalizeName(firstName);
+            if (!nextFirstName) {
+                return res.status(400).json({ error: 'First name is required' });
+            }
+            user.firstName = nextFirstName;
+        }
+
+        if (typeof lastName !== 'undefined') {
+            const nextLastName = normalizeName(lastName);
+            if (!nextLastName) {
+                return res.status(400).json({ error: 'Last name is required' });
+            }
+            user.lastName = nextLastName;
+        }
 
         await user.save();
-        res.json({ message: 'Profile updated successfully' });
+        res.json({
+            message: 'Profile updated successfully',
+            user: {
+                id: user._id,
+                username: user.username,
+                firstName: user.firstName || '',
+                lastName: user.lastName || '',
+                email: user.email
+            }
+        });
     } catch (error) {
+        if (error && error.code === 11000 && error.keyPattern?.username) {
+            return res.status(409).json({ error: 'Username already exists' });
+        }
         res.status(500).json({ error: error.message });
     }
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 const Dashboard: React.FC = () => {
     const { user, activeDepartment, activeOrganization } = useAuth();
@@ -10,6 +11,7 @@ const Dashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     const [sortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+    const displayName = getUserDisplayName(user, 'there');
 
     useEffect(() => {
         fetchData();
@@ -78,7 +80,7 @@ const Dashboard: React.FC = () => {
 
             const hasApproverRole = (perm: any) => {
                 const roles = perm?.roles || (perm?.role ? [perm.role] : []);
-                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
             };
 
             const orgPerms = activeOrganization?.permissions || [];
@@ -156,7 +158,7 @@ const Dashboard: React.FC = () => {
                         fontWeight: 700,
                         color: 'var(--text-primary)',
                     }}>
-                        {getGreeting()}, {user?.username || 'there'}
+                        {getGreeting()}, {displayName}
                     </h1>
                     <p className="dashboard-subtitle" style={{
                         color: 'var(--text-secondary)',

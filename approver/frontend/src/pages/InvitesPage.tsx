@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 interface PendingInvite {
     _id: string;
     organization: { _id: string; name: string; slug: string };
-    invitedBy: { username: string };
+    invitedBy: { username?: string; firstName?: string; lastName?: string };
     role: string;
     department?: { name: string };
     expiresAt: string;
@@ -17,7 +18,7 @@ interface SentInvite {
     role: string;
     status: string;
     department?: { _id: string; name: string };
-    invitedBy: { username: string };
+    invitedBy: { username?: string; firstName?: string; lastName?: string };
     createdAt: string;
     expiresAt: string;
 }
@@ -26,6 +27,18 @@ interface Department {
     _id: string;
     name: string;
 }
+
+const ROLE_OPTIONS = [
+    { value: 'Requester', label: 'Requester' },
+    { value: 'CenterOfExcellence', label: 'Center of Excellence' },
+    { value: 'GovernanceApprover', label: 'Governance Approver' },
+    { value: 'ExecutiveApprover', label: 'Executive Approver' }
+] as const;
+
+const formatRoleLabel = (role: string) => {
+    const option = ROLE_OPTIONS.find(r => r.value === role);
+    return option?.label || role;
+};
 
 const InvitesPage: React.FC = () => {
     const { activeOrganization, refreshOrganizations } = useAuth();
@@ -213,8 +226,8 @@ const InvitesPage: React.FC = () => {
                                     {invite.organization.name}
                                 </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>
-                                    Invited by <strong>{invite.invitedBy.username}</strong>
-                                    {' '}&middot;{' '}Role: <strong>{invite.role}</strong>
+                                    Invited by <strong>{getUserDisplayName(invite.invitedBy, 'Someone')}</strong>
+                                    {' '}&middot;{' '}Role: <strong>{formatRoleLabel(invite.role)}</strong>
                                     {invite.department && <>{' '}&middot;{' '}Dept: <strong>{invite.department.name}</strong></>}
                                 </div>
                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
@@ -281,10 +294,9 @@ const InvitesPage: React.FC = () => {
                                         background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)'
                                     }}
                                 >
-                                    <option value="Requester">Requester</option>
-                                    <option value="GovernanceApprover">Governance Approver</option>
-                                    <option value="ExecutiveApprover">Executive Approver</option>
-                                    <option value="CenterOfExcellence">Center of Excellence</option>
+                                    {ROLE_OPTIONS.map((role) => (
+                                        <option key={role.value} value={role.value}>{role.label}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div style={{ flex: '1 1 140px' }}>
@@ -354,7 +366,7 @@ const InvitesPage: React.FC = () => {
                                         {sentInvites.map(invite => (
                                             <tr key={invite._id}>
                                                 <td style={{ fontWeight: 600 }}>{invite.email}</td>
-                                                <td>{invite.role}</td>
+                                                <td>{formatRoleLabel(invite.role)}</td>
                                                 <td>{invite.department?.name || 'General'}</td>
                                                 <td>{statusBadge(invite.status)}</td>
                                                 <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{formatDate(invite.createdAt)}</td>

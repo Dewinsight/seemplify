@@ -58,7 +58,7 @@ exports.getDepartments = async (req, res) => {
             query.organization = req.query.organization;
         }
 
-        const departments = await Department.find(query, 'name description manager organization').populate('manager', 'username');
+        const departments = await Department.find(query, 'name description manager organization').populate('manager', 'username firstName lastName');
         res.json(departments);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -254,7 +254,7 @@ exports.getProjects = async (req, res) => {
             const approverDeptIds = (req.user.permissions || [])
                 .filter(p => {
                     const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
                 })
                 .map(p => (p.department._id || p.department).toString());
 
@@ -273,7 +273,7 @@ exports.getProjects = async (req, res) => {
         }
 
         const projects = await Project.find(query)
-            .populate('requester', 'username department')
+            .populate('requester', 'username firstName lastName department')
             .populate('department', 'name')
             .sort({ createdAt: -1 });
         res.json(projects);
@@ -321,8 +321,9 @@ exports.getProjectById = async (req, res) => {
     try {
         const projectId = req.params.id;
         const project = await Project.findOne({ _id: projectId, organization: req.organization })
-            .populate('requester', 'username department')
-            .populate('department', 'name');
+            .populate('requester', 'username firstName lastName department')
+            .populate('department', 'name')
+            .populate('approvalHistory.by', 'username firstName lastName');
         if (!project) {
             return res.status(404).json({ error: 'Project not found.' });
         }
@@ -340,7 +341,7 @@ exports.getDashboardStats = async (req, res) => {
             const approverDepts = (req.user.permissions || [])
                 .filter(p => {
                     const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
+                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
                 })
                 .map(p => (p.department._id || p.department).toString());
 
@@ -665,7 +666,7 @@ exports.getPendingReviews = async (req, res) => {
         }
 
         const projects = await Project.find(query)
-            .populate('requester', 'username')
+            .populate('requester', 'username firstName lastName')
             .populate('department', 'name')
             .sort({ createdAt: -1 });
 

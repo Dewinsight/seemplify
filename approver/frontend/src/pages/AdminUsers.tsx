@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 // --- Interfaces ---
 interface Department {
     _id: string;
     name: string;
     description: string;
-    manager?: { username: string };
+    manager?: { username?: string; firstName?: string; lastName?: string };
 }
 interface Permission {
     department: { _id: string, name: string } | string;
@@ -17,14 +18,30 @@ interface Permission {
 interface User {
     _id: string;
     username: string;
+    firstName?: string;
+    lastName?: string;
     email: string;
     isAdmin: boolean;
     permissions: Permission[];
     isVerified: boolean;
 }
 
-// Available roles (excluding old 'Approver')
-const AVAILABLE_ROLES = ['Requester', 'GovernanceApprover', 'ExecutiveApprover'] as const;
+const ROLE_OPTIONS = [
+    { value: 'Requester', label: 'Requester', color: 'var(--brand-primary)' },
+    { value: 'CenterOfExcellence', label: 'Center of Excellence', color: '#2196f3' },
+    { value: 'GovernanceApprover', label: 'Governance Reviewer', color: '#ff9800' },
+    { value: 'ExecutiveApprover', label: 'Executive Approver', color: 'var(--sterling-red)' }
+] as const;
+
+const formatRoleLabel = (role: string) => {
+    const option = ROLE_OPTIONS.find(r => r.value === role);
+    return option?.label || role;
+};
+
+const getRoleColor = (role: string) => {
+    const option = ROLE_OPTIONS.find(r => r.value === role);
+    return option?.color || 'var(--brand-primary)';
+};
 
 const AdminUsers: React.FC = () => {
     const { activeOrganization } = useAuth();
@@ -200,7 +217,7 @@ const AdminUsers: React.FC = () => {
                                 {users.map(user => (
                                     <tr key={user._id}>
                                         <td>
-                                            <div style={{ fontWeight: 'bold' }}>{user.username}</div>
+                                            <div style={{ fontWeight: 'bold' }}>{getUserDisplayName(user, user.username)}</div>
                                             <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{user.email}</div>
                                         </td>
                                         <td>
@@ -214,7 +231,7 @@ const AdminUsers: React.FC = () => {
                                                         const roles = p.roles || (p.role ? [p.role] : []);
                                                         return (
                                                             <span key={i} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
-                                                                {deptName}: <strong>{roles.join(', ').replace(/Approver/g, '').replace('Governance', 'Gov').replace('Executive', 'Exec') || 'None'}</strong>
+                                                                {deptName}: <strong>{roles.map(formatRoleLabel).join(', ') || 'None'}</strong>
                                                             </span>
                                                         );
                                                     }) : <span style={{ opacity: 0.5 }}>None</span>}
@@ -352,7 +369,7 @@ const AdminUsers: React.FC = () => {
                         <div style={{ padding: '0 2rem', marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexShrink: 0 }}>
                             <div>
                                 <h2 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--text-primary)' }}>Edit Permissions</h2>
-                                <p style={{ margin: '0.5rem 0 0 0', color: 'var(--text-secondary)', fontSize: '1rem' }}>User: <strong style={{ color: 'var(--text-primary)' }}>{editingUser.username}</strong></p>
+                                <p style={{ margin: '0.5rem 0 0 0', color: 'var(--text-secondary)', fontSize: '1rem' }}>User: <strong style={{ color: 'var(--text-primary)' }}>{getUserDisplayName(editingUser, editingUser.username)}</strong></p>
                             </div>
                             <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
                         </div>
@@ -389,8 +406,8 @@ const AdminUsers: React.FC = () => {
                                             }}>
                                                 <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{dept.name}</div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                                                    {AVAILABLE_ROLES.map(role => (
-                                                        <label key={role} style={{
+                                                    {ROLE_OPTIONS.map(({ value, label }) => (
+                                                        <label key={value} style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             gap: '0.8rem',
@@ -400,21 +417,19 @@ const AdminUsers: React.FC = () => {
                                                             borderRadius: '6px',
                                                             transition: 'background 0.2s',
                                                             color: 'var(--text-primary)',
-                                                            background: (editPermissions[dept._id] || []).includes(role) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
+                                                            background: (editPermissions[dept._id] || []).includes(value) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
                                                         }}>
                                                             <input
                                                                 type="checkbox"
-                                                                checked={(editPermissions[dept._id] || []).includes(role)}
-                                                                onChange={() => handleRoleToggle(dept._id, role)}
-                                                                style={{ width: '1.1rem', height: '1.1rem', accentColor: role === 'ExecutiveApprover' ? 'var(--sterling-red)' : role === 'GovernanceApprover' ? '#ff9800' : 'var(--brand-primary)' }}
+                                                                checked={(editPermissions[dept._id] || []).includes(value)}
+                                                                onChange={() => handleRoleToggle(dept._id, value)}
+                                                                style={{ width: '1.1rem', height: '1.1rem', accentColor: getRoleColor(value) }}
                                                             />
                                                             <span style={{
-                                                                fontWeight: (editPermissions[dept._id] || []).includes(role) ? 600 : 400,
-                                                                color: role === 'ExecutiveApprover' ? 'var(--sterling-red)' :
-                                                                    role === 'GovernanceApprover' ? '#ff9800' : 'inherit'
+                                                                fontWeight: (editPermissions[dept._id] || []).includes(value) ? 600 : 400,
+                                                                color: getRoleColor(value)
                                                             }}>
-                                                                {role === 'GovernanceApprover' ? 'Governance Reviewer' :
-                                                                    role === 'ExecutiveApprover' ? 'Executive Approver' : 'Requester'}
+                                                                {label}
                                                             </span>
                                                         </label>
                                                     ))}

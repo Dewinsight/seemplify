@@ -2,19 +2,38 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName, hasCompletedNameProfile } from '../utils/userDisplay';
 
 interface PendingInvite {
     _id: string;
     organization: { _id: string; name: string; slug: string };
-    invitedBy: { username: string };
+    invitedBy: { username?: string; firstName?: string; lastName?: string };
     role: string;
     department?: { name: string };
     expiresAt: string;
 }
 
+const formatRoleLabel = (role: string) => {
+    switch (role) {
+        case 'CenterOfExcellence':
+            return 'Center of Excellence';
+        case 'GovernanceApprover':
+            return 'Governance Approver';
+        case 'ExecutiveApprover':
+            return 'Executive Approver';
+        default:
+            return role;
+    }
+};
+
 const OnboardingPage: React.FC = () => {
-    const { user, logout, refreshOrganizations } = useAuth();
+    const { user, organizations, logout, refreshOrganizations, updateUserProfile } = useAuth();
     const navigate = useNavigate();
+
+    const [firstName, setFirstName] = useState(user?.firstName || '');
+    const [lastName, setLastName] = useState(user?.lastName || '');
+    const [profileLoading, setProfileLoading] = useState(false);
+    const [profileError, setProfileError] = useState('');
 
     // Create org state
     const [orgName, setOrgName] = useState('');
@@ -27,10 +46,20 @@ const OnboardingPage: React.FC = () => {
     const [invites, setInvites] = useState<PendingInvite[]>([]);
     const [invitesLoading, setInvitesLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const isProfileComplete = hasCompletedNameProfile(user);
+    const displayName = getUserDisplayName(user, 'there');
+    const profileHasChanges =
+        firstName.trim() !== (user?.firstName || '').trim() ||
+        lastName.trim() !== (user?.lastName || '').trim();
 
     useEffect(() => {
         fetchPendingInvites();
     }, []);
+
+    useEffect(() => {
+        setFirstName(user?.firstName || '');
+        setLastName(user?.lastName || '');
+    }, [user?.firstName, user?.lastName]);
 
     const fetchPendingInvites = async () => {
         try {
@@ -43,8 +72,41 @@ const OnboardingPage: React.FC = () => {
         }
     };
 
+    const handleSaveProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmedFirst = firstName.trim();
+        const trimmedLast = lastName.trim();
+        if (!trimmedFirst || !trimmedLast) {
+            setProfileError('First name and last name are required.');
+            return;
+        }
+
+        setProfileLoading(true);
+        setProfileError('');
+        try {
+            const res = await api.patch('/auth/me', {
+                firstName: trimmedFirst,
+                lastName: trimmedLast
+            });
+            if (res.data?.user) {
+                updateUserProfile(res.data.user);
+            }
+            if (organizations.length > 0) {
+                navigate('/');
+            }
+        } catch (err: any) {
+            setProfileError(err.response?.data?.error || 'Failed to update profile');
+        } finally {
+            setProfileLoading(false);
+        }
+    };
+
     const handleCreateOrg = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isProfileComplete) {
+            setCreateError('Complete your profile before creating or joining an organization.');
+            return;
+        }
         if (!orgName.trim()) return;
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
@@ -85,6 +147,10 @@ const OnboardingPage: React.FC = () => {
     };
 
     const handleAcceptInvite = async (inviteId: string) => {
+        if (!isProfileComplete) {
+            alert('Complete your profile before joining an organization.');
+            return;
+        }
         setActionLoading(inviteId);
         try {
             await api.post(`/invites/${inviteId}/accept`);
@@ -138,124 +204,189 @@ const OnboardingPage: React.FC = () => {
                     </defs>
                 </svg>
                 <h1 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '2rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>
-                    Welcome, {user?.username}!
+                    Welcome, {displayName}!
                 </h1>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', margin: 0 }}>
-                    Get started by creating an organization or joining one via an invite.
+                    {isProfileComplete
+                        ? 'Get started by creating an organization or joining one via an invite.'
+                        : 'Complete your profile before continuing.'}
                 </p>
             </div>
 
-            <div style={{ width: '100%', maxWidth: '800px', display: 'grid', gridTemplateColumns: invites.length > 0 ? '1fr 1fr' : '1fr', gap: '2rem' }}>
-                {/* Create Organization */}
+            <div style={{ width: '100%', maxWidth: '800px', marginBottom: '2rem' }}>
                 <div className="glass-panel" style={{ height: 'fit-content' }}>
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
-                        Create Organization
+                        {isProfileComplete ? 'Profile Details' : 'Complete Your Profile'}
                     </h3>
-                    <form onSubmit={handleCreateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                Organization Name *
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Acme Corp"
-                                value={orgName}
-                                onChange={(e) => setOrgName(e.target.value)}
-                                required
-                                style={{
-                                    width: '100%', padding: '0.8rem', borderRadius: '6px',
-                                    border: '1px solid var(--glass-border)',
-                                    background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
-                                }}
-                            />
+                    <form onSubmit={handleSaveProfile} style={{ display: 'grid', gap: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                    First Name *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    required
+                                    style={{
+                                        width: '100%', padding: '0.8rem', borderRadius: '6px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                    Last Name *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    required
+                                    style={{
+                                        width: '100%', padding: '0.8rem', borderRadius: '6px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
+                                    }}
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                Description
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="Brief description (optional)"
-                                value={orgDescription}
-                                onChange={(e) => setOrgDescription(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '0.8rem', borderRadius: '6px',
-                                    border: '1px solid var(--glass-border)',
-                                    background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
-                                }}
-                            />
-                        </div>
-                        {createError && <p style={{ color: '#ff6b6b', margin: 0 }}>{createError}</p>}
+                        {profileError && <p style={{ color: '#ff6b6b', margin: 0 }}>{profileError}</p>}
                         <button
                             type="submit"
                             className="btn-primary"
-                            style={{ width: '100%', padding: '0.9rem', marginTop: '0.5rem' }}
-                            disabled={createLoading}
+                            style={{ width: '100%', padding: '0.9rem', marginTop: '0.25rem' }}
+                            disabled={profileLoading || (!profileHasChanges && isProfileComplete)}
                         >
-                            {createLoading ? 'Creating...' : 'Create Organization'}
+                            {profileLoading
+                                ? 'Saving...'
+                                : (!profileHasChanges && isProfileComplete ? 'Profile Saved' : 'Save Profile')}
                         </button>
                     </form>
                 </div>
+            </div>
 
-                {/* Pending Invites */}
-                {invitesLoading ? (
-                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
-                        <p style={{ color: 'var(--text-secondary)' }}>Loading invites...</p>
-                    </div>
-                ) : invites.length > 0 ? (
+            {isProfileComplete ? (
+                <div style={{ width: '100%', maxWidth: '800px', display: 'grid', gridTemplateColumns: invites.length > 0 ? '1fr 1fr' : '1fr', gap: '2rem' }}>
+                    {/* Create Organization */}
                     <div className="glass-panel" style={{ height: 'fit-content' }}>
                         <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
-                            Pending Invites
+                            Create Organization
                         </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {invites.map(invite => (
-                                <div
-                                    key={invite._id}
+                        <form onSubmit={handleCreateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                    Organization Name *
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Acme Corp"
+                                    value={orgName}
+                                    onChange={(e) => setOrgName(e.target.value)}
+                                    required
                                     style={{
-                                        padding: '1.2rem',
-                                        background: 'rgba(0,0,0,0.2)',
-                                        borderRadius: '10px',
-                                        border: '1px solid var(--glass-border)'
+                                        width: '100%', padding: '0.8rem', borderRadius: '6px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
                                     }}
-                                >
-                                    <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
-                                        {invite.organization.name}
-                                    </div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                        Invited by <strong>{invite.invitedBy.username}</strong>
-                                        {' '}&middot;{' '}Role: <strong>{invite.role}</strong>
-                                        {invite.department && <>{' '}&middot;{' '}Dept: <strong>{invite.department.name}</strong></>}
-                                    </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
-                                        {formatExpiry(invite.expiresAt)}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                        <button
-                                            className="btn-primary"
-                                            style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem' }}
-                                            onClick={() => handleAcceptInvite(invite._id)}
-                                            disabled={actionLoading === invite._id}
-                                        >
-                                            {actionLoading === invite._id ? 'Accepting...' : 'Accept'}
-                                        </button>
-                                        <button
-                                            style={{
-                                                padding: '0.5rem 1.2rem', fontSize: '0.85rem',
-                                                background: 'transparent', border: '1px solid var(--glass-border)',
-                                                color: 'var(--text-secondary)', borderRadius: '6px', cursor: 'pointer'
-                                            }}
-                                            onClick={() => handleDeclineInvite(invite._id)}
-                                            disabled={actionLoading === invite._id}
-                                        >
-                                            Decline
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                    Description
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="Brief description (optional)"
+                                    value={orgDescription}
+                                    onChange={(e) => setOrgDescription(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '0.8rem', borderRadius: '6px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
+                                    }}
+                                />
+                            </div>
+                            {createError && <p style={{ color: '#ff6b6b', margin: 0 }}>{createError}</p>}
+                            <button
+                                type="submit"
+                                className="btn-primary"
+                                style={{ width: '100%', padding: '0.9rem', marginTop: '0.5rem' }}
+                                disabled={createLoading}
+                            >
+                                {createLoading ? 'Creating...' : 'Create Organization'}
+                            </button>
+                        </form>
                     </div>
-                ) : null}
-            </div>
+
+                    {/* Pending Invites */}
+                    {invitesLoading ? (
+                        <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
+                            <p style={{ color: 'var(--text-secondary)' }}>Loading invites...</p>
+                        </div>
+                    ) : invites.length > 0 ? (
+                        <div className="glass-panel" style={{ height: 'fit-content' }}>
+                            <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+                                Pending Invites
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {invites.map(invite => (
+                                    <div
+                                        key={invite._id}
+                                        style={{
+                                            padding: '1.2rem',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            borderRadius: '10px',
+                                            border: '1px solid var(--glass-border)'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
+                                            {invite.organization.name}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                            Invited by <strong>{getUserDisplayName(invite.invitedBy, 'Someone')}</strong>
+                                            {' '}&middot;{' '}Role: <strong>{formatRoleLabel(invite.role)}</strong>
+                                            {invite.department && <>{' '}&middot;{' '}Dept: <strong>{invite.department.name}</strong></>}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
+                                            {formatExpiry(invite.expiresAt)}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                className="btn-primary"
+                                                style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem' }}
+                                                onClick={() => handleAcceptInvite(invite._id)}
+                                                disabled={actionLoading === invite._id}
+                                            >
+                                                {actionLoading === invite._id ? 'Accepting...' : 'Accept'}
+                                            </button>
+                                            <button
+                                                style={{
+                                                    padding: '0.5rem 1.2rem', fontSize: '0.85rem',
+                                                    background: 'transparent', border: '1px solid var(--glass-border)',
+                                                    color: 'var(--text-secondary)', borderRadius: '6px', cursor: 'pointer'
+                                                }}
+                                                onClick={() => handleDeclineInvite(invite._id)}
+                                                disabled={actionLoading === invite._id}
+                                            >
+                                                Decline
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            ) : (
+                <div className="glass-panel" style={{ width: '100%', maxWidth: '800px', textAlign: 'center' }}>
+                    <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                        Profile completion is required before you can create or join an organization.
+                    </p>
+                </div>
+            )}
 
             {/* Logout link */}
             <div style={{ marginTop: '2rem' }}>

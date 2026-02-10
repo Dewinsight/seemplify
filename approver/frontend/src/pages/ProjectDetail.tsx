@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 interface RuleAnalysis {
     ruleName: string;
@@ -44,7 +45,7 @@ interface FormData {
 interface ApprovalHistoryItem {
     stage: 'AI' | 'CenterOfExcellence' | 'Governance' | 'Executive';
     action: 'Approved' | 'Rejected' | 'Escalated';
-    by?: { username: string } | null;
+    by?: { username?: string; firstName?: string; lastName?: string } | null;
     reason?: string;
     score?: number;
     timestamp: string;
@@ -84,7 +85,9 @@ interface Project {
         calculatedTier?: number;
     };
     requester: {
-        username: string;
+        username?: string;
+        firstName?: string;
+        lastName?: string;
         department: string;
     };
     department?: { _id: string; name: string };
@@ -233,7 +236,7 @@ const ProjectDetail: React.FC = () => {
                     <div>
                         <h2 style={{ margin: '0 0 0.5rem 0' }}>{project.name}</h2>
                         <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-                            Submitted by <strong>{project.requester?.username}</strong> ({project.requester?.department}) on {new Date(project.createdAt).toLocaleDateString()}
+                            Submitted by <strong>{getUserDisplayName(project.requester, 'Unknown')}</strong> ({project.requester?.department}) on {new Date(project.createdAt).toLocaleDateString()}
                         </p>
                         {project.workflowStage && (
                             <span style={{
@@ -509,7 +512,7 @@ const ProjectDetail: React.FC = () => {
                                         }}>
                                             {item.action}
                                         </span>
-                                        {item.by && <span style={{ marginLeft: '0.5rem', opacity: 0.7 }}>by {typeof item.by === 'object' ? item.by.username : 'System'}</span>}
+                                        {item.by && <span style={{ marginLeft: '0.5rem', opacity: 0.7 }}>by {typeof item.by === 'object' ? getUserDisplayName(item.by, 'System') : 'System'}</span>}
                                     </div>
                                     <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>
                                         {new Date(item.timestamp).toLocaleString()}

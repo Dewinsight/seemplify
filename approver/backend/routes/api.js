@@ -49,13 +49,13 @@ router.delete('/rules/:id', verifyToken, injectOrgContext, verifyRole(['Admin', 
 router.delete('/projects/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.deleteProject);
 
 // Dashboard stats
-router.get('/dashboard/stats', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.getDashboardStats);
+router.get('/dashboard/stats', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence']), mainController.getDashboardStats);
 
 // --- Tiered Approval Workflow ---
 router.post('/projects/governance-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.governanceReview);
 router.post('/projects/executive-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'ExecutiveApprover']), mainController.executiveReview);
 router.post('/projects/coe-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'CenterOfExcellence']), mainController.centerOfExcellenceReview);
-router.get('/projects/pending-reviews', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.getPendingReviews);
+router.get('/projects/pending-reviews', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence']), mainController.getPendingReviews);
 
 
 module.exports = router;

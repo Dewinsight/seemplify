@@ -3,6 +3,7 @@ import api from '../api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import InitiativeIntake from '../components/InitiativeIntake';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 const Analyze: React.FC = () => {
     const navigate = useNavigate();
@@ -73,8 +74,8 @@ const Analyze: React.FC = () => {
 
                 // Handle nested keys
                 if (sortConfig.key === 'requester') {
-                    aValue = a.requester?.username || '';
-                    bValue = b.requester?.username || '';
+                    aValue = getUserDisplayName(a.requester, '');
+                    bValue = getUserDisplayName(b.requester, '');
                 }
                 if (sortConfig.key === 'department') {
                     aValue = a.department?.name || '';
@@ -99,7 +100,7 @@ const Analyze: React.FC = () => {
             headers.join(','),
             ...sortedProjects.map(p => [
                 `"${p.name}"`,
-                `"${p.requester?.username || 'Unknown'}"`,
+                `"${getUserDisplayName(p.requester, 'Unknown')}"`,
                 `"${p.department?.name || 'General'}"`,
                 `"${p.approvalStatus}"`,
                 p.score,
@@ -125,7 +126,7 @@ const Analyze: React.FC = () => {
     // Filter projects based on search query
     const filteredProjects = sortedProjects.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.requester?.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getUserDisplayName(p.requester, '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.department?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.approvalStatus || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -274,7 +275,7 @@ const Analyze: React.FC = () => {
                                         >
                                             <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.name}</td>
                                             <td style={{ color: 'var(--text-secondary)' }}>
-                                                {p.requester?.username || 'Unknown'}
+                                                {getUserDisplayName(p.requester, 'Unknown')}
                                             </td>
                                             <td style={{ color: 'var(--text-secondary)' }}>
                                                 {p.department?.name || 'General'}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api';
+import { hasCompletedNameProfile } from '../utils/userDisplay';
 
 interface OrgPermission {
     department: { _id: string; name: string };
@@ -17,6 +18,8 @@ interface OrgMembership {
 interface User {
     id: string;
     username: string;
+    firstName?: string;
+    lastName?: string;
     email: string;
 }
 
@@ -29,6 +32,7 @@ interface AuthContextType {
     logout: () => void;
     switchOrganization: (org: OrgMembership) => void;
     refreshOrganizations: () => Promise<OrgMembership[]>;
+    updateUserProfile: (nextUser: User) => void;
     isAuthenticated: boolean;
     isLoading: boolean;
     activeDepartment: { _id: string; name: string } | null;
@@ -44,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
     const [activeDepartment, setActiveDepartment] = useState<{ _id: string; name: string } | null>(null);
 
-    const needsOnboarding = !!user && organizations.length === 0;
+    const needsOnboarding = !!user && (!hasCompletedNameProfile(user) || organizations.length === 0);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -175,6 +179,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const updateUserProfile = (nextUser: User) => {
+        setUser(nextUser);
+        localStorage.setItem('user', JSON.stringify(nextUser));
+    };
+
     const switchDepartment = (dept: { _id: string; name: string } | null) => {
         setActiveDepartment(dept);
         if (dept) {
@@ -194,6 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             logout,
             switchOrganization,
             refreshOrganizations,
+            updateUserProfile,
             isAuthenticated: !!user,
             isLoading: loading,
             activeDepartment,

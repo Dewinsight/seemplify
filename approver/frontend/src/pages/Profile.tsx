@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
+import { getUserDisplayName } from '../utils/userDisplay';
 
 const Profile: React.FC = () => {
-    const { user, activeOrganization } = useAuth();
+    const { user, activeOrganization, updateUserProfile } = useAuth();
     const [form, setForm] = useState({
+        firstName: user?.firstName || '',
+        lastName: user?.lastName || '',
         username: user?.username || '',
-        email: user?.email || '',
-        password: ''
+        email: user?.email || ''
     });
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const displayName = getUserDisplayName(user, 'User');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -21,20 +24,26 @@ const Profile: React.FC = () => {
 
         try {
             const payload: any = {};
+            if (form.firstName !== (user?.firstName || '')) payload.firstName = form.firstName;
+            if (form.lastName !== (user?.lastName || '')) payload.lastName = form.lastName;
             if (form.username !== user?.username) payload.username = form.username;
-
-            // Email and Password updates are disabled via UI and Backend
-            // if (form.email !== user?.email) payload.email = form.email;
-            // if (form.password) payload.password = form.password;
 
             if (Object.keys(payload).length === 0) {
                 setLoading(false);
                 return;
             }
 
-            await api.patch('/auth/me', payload);
-            setMessage('Profile updated successfully! Changes will take effect on your next login.');
-            setForm({ ...form, password: '' });
+            const res = await api.patch('/auth/me', payload);
+            if (res.data?.user) {
+                updateUserProfile(res.data.user);
+                setForm({
+                    firstName: res.data.user.firstName || '',
+                    lastName: res.data.user.lastName || '',
+                    username: res.data.user.username || '',
+                    email: res.data.user.email || form.email
+                });
+            }
+            setMessage('Profile updated successfully.');
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.error || 'Failed to update profile');
@@ -46,12 +55,47 @@ const Profile: React.FC = () => {
     return (
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
             <h2 style={{ marginBottom: '2rem' }}>User Profile</h2>
+            <p style={{ marginTop: '-1rem', marginBottom: '2rem', color: 'var(--text-secondary)' }}>
+                Display name: <strong style={{ color: 'var(--text-primary)' }}>{displayName}</strong>
+            </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {/* Left Column: Edit Profile */}
                 <div className="glass-panel">
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Edit Information</h3>
                     <form onSubmit={handleSubmit}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>First Name</label>
+                        <input
+                            type="text"
+                            value={form.firstName}
+                            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '0.6rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--glass-border)',
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white'
+                            }}
+                        />
+
+                        <label style={{ display: 'block', marginBottom: '0.5rem', marginTop: '1rem' }}>Last Name</label>
+                        <input
+                            type="text"
+                            value={form.lastName}
+                            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '0.6rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--glass-border)',
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white'
+                            }}
+                        />
+
                         <label style={{ display: 'block', marginBottom: '0.5rem' }}>Username</label>
                         <input
                             type="text"
@@ -93,7 +137,7 @@ const Profile: React.FC = () => {
                         {error && <div style={{ color: '#f44336', margin: '1rem 0', padding: '0.5rem', background: 'rgba(244, 67, 54, 0.1)', borderRadius: '4px' }}>{error}</div>}
 
                         <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', marginTop: '1.5rem', padding: '0.8rem' }}>
-                            {loading ? 'Updating...' : 'Update Username'}
+                            {loading ? 'Saving...' : 'Save Profile'}
                         </button>
                     </form>
                 </div>

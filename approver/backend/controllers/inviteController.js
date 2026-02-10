@@ -4,13 +4,28 @@ const Department = require('../models/Department');
 const User = require('../models/User');
 const emailService = require('../services/EmailService');
 
+const ALLOWED_INVITE_ROLES = Invite.schema.path('role').enumValues || ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'];
+
+const getDisplayName = (user) => {
+    const firstName = typeof user?.firstName === 'string' ? user.firstName.trim() : '';
+    const lastName = typeof user?.lastName === 'string' ? user.lastName.trim() : '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    return fullName || user?.username || 'Someone';
+};
+
 // Admin sends invite to an email
 exports.sendInvite = async (req, res) => {
     try {
         const { email, role, department, isAdmin } = req.body;
+        const selectedRole = role || 'Requester';
 
         if (!email) {
             return res.status(400).json({ error: 'Email is required' });
+        }
+        if (!ALLOWED_INVITE_ROLES.includes(selectedRole)) {
+            return res.status(400).json({
+                error: `Invalid role. Allowed roles: ${ALLOWED_INVITE_ROLES.join(', ')}`
+            });
         }
 
         // Check if there's already a pending invite for this email+org
@@ -36,24 +51,24 @@ exports.sendInvite = async (req, res) => {
             email: email.toLowerCase(),
             organization: req.organization,
             invitedBy: req.user.id,
-            role: role || 'Requester',
+            role: selectedRole,
             department: department || null,
             isAdmin: isAdmin || false
         });
         await invite.save();
 
         // Try to send email notification
-        const inviter = await User.findById(req.user.id, 'username');
+        const inviter = await User.findById(req.user.id, 'username firstName lastName');
         const org = await require('../models/Organization').findById(req.organization, 'name');
         const hasAccount = !!(await User.findOne({ email: email.toLowerCase() }));
         try {
-            await emailService.sendInvite(email, org?.name || 'Unknown', inviter?.username || 'Someone', hasAccount);
+            await emailService.sendInvite(email, org?.name || 'Unknown', getDisplayName(inviter), hasAccount);
         } catch (emailErr) {
             console.warn('Failed to send invite email:', emailErr.message);
         }
 
         await invite.populate('organization', 'name slug');
-        await invite.populate('invitedBy', 'username');
+        await invite.populate('invitedBy', 'username firstName lastName');
 
         res.status(201).json(invite);
     } catch (error) {
@@ -70,7 +85,7 @@ exports.getPendingInvites = async (req, res) => {
             expiresAt: { $gt: new Date() }
         })
             .populate('organization', 'name slug')
-            .populate('invitedBy', 'username')
+            .populate('invitedBy', 'username firstName lastName')
             .populate('department', 'name')
             .sort({ createdAt: -1 });
 
@@ -191,7 +206,7 @@ exports.declineInvite = async (req, res) => {
 exports.getSentInvites = async (req, res) => {
     try {
         const invites = await Invite.find({ organization: req.organization })
-            .populate('invitedBy', 'username')
+            .populate('invitedBy', 'username firstName lastName')
             .populate('department', 'name')
             .sort({ createdAt: -1 });
 
