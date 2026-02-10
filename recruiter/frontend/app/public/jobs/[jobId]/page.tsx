@@ -251,9 +251,9 @@ export default function PublicJobPage() {
             <Button 
               size="sm"
               className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
-              onClick={() => router.push('/signup')}
+              onClick={() => router.push('/login')}
             >
-              Sign Up
+              Login
             </Button>
               </div>
               
@@ -285,10 +285,10 @@ export default function PublicJobPage() {
                   className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
                   onClick={() => {
                     setIsMobileMenuOpen(false)
-                    router.push('/signup')
+                    router.push('/login')
                   }}
                 >
-                  Sign Up
+                  Login
                 </Button>
               </div>
             </motion.div>

@@ -220,13 +220,13 @@ export function PipelineEmailControls({
               {stageStats.map((stage, index) => (
                 <div 
                   key={stage._id}
-                  className="bg-white dark:bg-gray-800/50 rounded-lg p-3 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all duration-200"
+                  className="glass-card bg-popover/40 dark:bg-card/30 rounded-lg p-3 border border-border/60 hover:shadow-lg transition-all duration-200"
                 >
-                  <div className="text-xs font-medium text-muted-foreground dark:text-gray-400 mb-1 truncate" title={stage.name}>
+                  <div className="text-xs font-medium text-muted-foreground mb-1 truncate" title={stage.name}>
                     {stage.name}
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    <span className="text-lg font-bold text-foreground">
                       {stage.candidateCount}
                     </span>
                     <div className={`h-2 w-2 rounded-full ${
@@ -252,7 +252,7 @@ export function PipelineEmailControls({
                     setFilterBy(value)
                     setSelectedCandidates([]) // Reset selection when filter changes
                   }}>
-                    <SelectTrigger className="bg-white dark:bg-gray-800 min-w-[200px]">
+                    <SelectTrigger className="bg-background dark:bg-card/50 min-w-[200px]">
                       <SelectValue placeholder="Choose scope..." />
                     </SelectTrigger>
                     <SelectContent className="min-w-[250px]">
@@ -285,7 +285,7 @@ export function PipelineEmailControls({
                       setSelectedStageId(value)
                       setSelectedCandidates([]) // Reset selection when stage changes
                     }}>
-                      <SelectTrigger className="bg-white dark:bg-gray-800 min-w-[200px]">
+                      <SelectTrigger className="bg-background dark:bg-card/50 min-w-[200px]">
                         <SelectValue placeholder="Choose a stage..." />
                       </SelectTrigger>
                       <SelectContent className="min-w-[280px]">
@@ -362,12 +362,12 @@ export function PipelineEmailControls({
 
           <div className="space-y-6">
             {/* Filter Summary */}
-            <div className="bg-muted/30 dark:bg-gray-900 rounded-lg p-4 border">
+            <div className="glass-card bg-muted/30 dark:bg-card/30 rounded-lg p-4 border border-border/60">
               <div className="flex items-center gap-2 mb-2">
                 <Settings className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Email Scope</span>
+                <span className="text-sm font-medium text-foreground">Email Scope</span>
               </div>
-              <div className="text-sm text-muted-foreground dark:text-gray-400">
+              <div className="text-sm text-muted-foreground">
                 {filterBy === 'all' 
                   ? `All ${totalCandidates} pipeline candidates across ${stages.length} stages`
                   : `${filteredCandidates.length} candidates in "${stages.find(s => s._id === selectedStageId)?.name}" stage`
@@ -392,9 +392,9 @@ export function PipelineEmailControls({
                 </Button>
               </div>
               
-              <div className="border rounded-lg bg-muted/30 dark:bg-gray-900 max-h-64 overflow-y-auto">
+              <div className="border border-border/60 rounded-lg glass-card bg-muted/30 dark:bg-card/30 max-h-64 overflow-y-auto">
                 {filteredCandidates.map((candidate) => (
-                  <div key={candidate._id} className="flex items-center space-x-3 p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-b border-gray-200 dark:border-gray-700 last:border-b-0">
+                  <div key={candidate._id} className="flex items-center space-x-3 p-3 hover:bg-muted/50 dark:hover:bg-card/40 transition-colors border-b border-border/60 last:border-b-0">
                     <Checkbox
                       id={candidate._id}
                       checked={selectedCandidates.includes(candidate._id)}
@@ -403,7 +403,7 @@ export function PipelineEmailControls({
                     <div className="flex-1">
                       <label htmlFor={candidate._id} className="flex items-center justify-between cursor-pointer">
                         <div>
-                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                          <span className="font-medium text-foreground">
                             {candidate.firstName} {candidate.lastName}
                           </span>
                           <span className="text-muted-foreground text-sm ml-2">({candidate.email})</span>

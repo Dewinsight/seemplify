@@ -107,7 +107,7 @@ const TopNavbar = () => {
 
   return (
     <header
-      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 dark:bg-black/5 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60"
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60 dark:bg-background/40 dark:supports-[backdrop-filter]:bg-background/30"
       data-tutorial="app-navbar"
     >
       <div className="container flex h-16 items-center justify-between max-w-screen-2xl px-4 lg:px-6">
@@ -208,7 +208,7 @@ const TopNavbar = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-56 glass-card border-border/20 text-foreground bg-white/80 dark:bg-black/50"
+              className="w-56 glass-card border-border/20 text-foreground bg-popover/90 dark:bg-popover/80"
               align="end"
               forceMount
             >

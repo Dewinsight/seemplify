@@ -19,7 +19,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps): React.ReactElement |
       return; // Wait for loading to complete
     }
 
-    const isAuthPage = pathname === '/login' || pathname === '/signup';
+    const isAuthPage = pathname === '/login';
     const isPublicPage = pathname === '/' || 
                        pathname.startsWith('/public/') || 
                        pathname === '/terms' || 
@@ -51,7 +51,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps): React.ReactElement |
     return <div>Loading...</div>;
   }
 
-  const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const isAuthPage = pathname === '/login';
   const isPublicPage = pathname === '/' || 
                      pathname.startsWith('/public/') || 
                      pathname === '/terms' || 

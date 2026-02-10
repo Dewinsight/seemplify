@@ -236,7 +236,7 @@ export function QuestionQualityDisplay({
             )}
 
             {/* Legal Compliance */}
-            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-muted/30 dark:bg-card/30 border border-border/40 rounded-lg">
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4 text-blue-600" />
                 <span className="text-sm font-medium">Legal Compliance</span>
@@ -344,7 +344,7 @@ export function QuestionQualityDisplay({
                     <div className="grid grid-cols-1 gap-2">
                       {Object.entries(metrics.biasAnalysis).map(([type, score]) => (
                         score !== undefined && (
-                          <div key={type} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border rounded">
+                          <div key={type} className="flex items-center justify-between p-2 glass-card bg-popover/40 dark:bg-card/30 border border-border/60 rounded">
                             <div className="flex items-center gap-2">
                               {getBiasIcon(type)}
                               <span className="text-sm">{formatBiasType(type)}</span>

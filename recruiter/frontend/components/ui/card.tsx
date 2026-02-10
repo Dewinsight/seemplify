@@ -10,8 +10,9 @@ const Card = React.forwardRef<
     ref={ref}
     className={cn(
       "rounded-xl border text-card-foreground shadow-sm transition-all duration-200",
-      "bg-card border-border/50",
-      "dark:bg-zinc-900/40 dark:border-white/[0.06] dark:backdrop-blur-sm",
+      "bg-card border-border/60",
+      // Keep default cards readable, but let the ambient background show through in dark mode.
+      "dark:bg-card/80 dark:backdrop-blur-sm",
       className
     )}
     {...props}

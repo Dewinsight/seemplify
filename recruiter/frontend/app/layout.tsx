@@ -45,7 +45,7 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} bg-[rgb(var(--background-start-rgb))] relative`}>
         {/* Ambient Backgorund Gradient */}
-        <div className="fixed inset-0 bg-gradient-to-br from-indigo-100/40 via-purple-100/40 to-pink-100/40 dark:from-indigo-900/10 dark:via-purple-900/10 dark:to-pink-900/10 blur-3xl pointer-events-none -z-10" />
+        <div className="fixed inset-0 bg-gradient-to-br from-indigo-100/25 via-purple-100/25 to-pink-100/25 dark:from-indigo-900/18 dark:via-purple-900/18 dark:to-pink-900/18 blur-3xl pointer-events-none -z-10" />
 
         <ErrorBoundary>
           <ConfigThemeProvider attribute="class" enableSystem disableTransitionOnChange>

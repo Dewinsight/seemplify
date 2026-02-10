@@ -198,7 +198,7 @@ export default function CandidatesPage() {
         </div>
         <div className="text-sm text-foreground mb-3">{children}</div>
         <div className="flex items-center justify-between mt-2 gap-2">
-          <button className="px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100" onClick={() => setCurrentStep(Math.max(0, (currentStep ?? 0) - 1))}>Prev</button>
+          <button className="px-3 py-1.5 rounded border border-border/60 text-sm text-foreground hover:bg-muted/50" onClick={() => setCurrentStep(Math.max(0, (currentStep ?? 0) - 1))}>Prev</button>
           <div className="flex items-center gap-1">
             {Array.from({ length: total }).map((_, i) => (<span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-primary' : 'bg-muted'}`}></span>))}
           </div>
@@ -933,7 +933,7 @@ export default function CandidatesPage() {
               {/* Empty State */}
               {candidates.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
+                  <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
                     <Users className="h-8 w-8 text-blue-400" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2">
@@ -990,7 +990,7 @@ export default function CandidatesPage() {
               {/* Search Bar for Jobs */}
               {!loadingJobs && allJobs.length > 0 && (
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="text"
                     placeholder="Search jobs..."
@@ -1007,10 +1007,10 @@ export default function CandidatesPage() {
                   <span className="ml-3 text-muted-foreground">Loading available jobs...</span>
                 </div>
               ) : allJobs.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-muted-foreground">
                   <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
                   <p>No active jobs available</p>
-                  <p className="text-sm text-gray-400 mt-1">Create a job first to add candidates to shortlist</p>
+                  <p className="text-sm text-muted-foreground mt-1">Create a job first to add candidates to shortlist</p>
                 </div>
               ) : (
                 <ScrollArea className="h-96">
@@ -1024,10 +1024,10 @@ export default function CandidatesPage() {
 
                     if (filteredJobs.length === 0 && jobSearchTerm) {
                       return (
-                        <div className="text-center py-8 text-gray-500">
+                        <div className="text-center py-8 text-muted-foreground">
                           <Search className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
                           <p>No jobs match your search</p>
-                          <p className="text-sm text-gray-400 mt-1">Try a different search term</p>
+                          <p className="text-sm text-muted-foreground mt-1">Try a different search term</p>
                         </div>
                       );
                     }
@@ -1037,16 +1037,16 @@ export default function CandidatesPage() {
                         {filteredJobs.map((job) => (
                           <div
                             key={job._id}
-                            className={`border rounded-lg p-4 transition-all duration-200 ${addingToShortlist
+                            className={`border rounded-lg p-4 transition-all duration-200 glass-card bg-popover/40 dark:bg-card/30 border-border/60 ${addingToShortlist
                               ? 'cursor-not-allowed opacity-50'
-                              : 'hover:shadow-md hover:border-blue-300 cursor-pointer'
+                              : 'hover:shadow-lg hover:border-primary/30 hover:bg-popover/60 dark:hover:bg-card/40 cursor-pointer'
                               }`}
                             onClick={() => !addingToShortlist && handleAddToJobShortlist(job._id, job.title)}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <h4 className="font-semibold text-foreground">{job.title}</h4>
-                                <p className="text-sm text-gray-600 dark:text-muted-foreground/50">{(typeof job.department === 'object' && job.department !== null ? (job.department as any)?.name || '' : job.department) || 'N/A'} • {job.location}</p>
+                                <p className="text-sm text-muted-foreground">{(typeof job.department === 'object' && job.department !== null ? (job.department as any)?.name || '' : job.department) || 'N/A'} • {job.location}</p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <Badge variant="outline" className="text-xs">
                                     {job.type}
@@ -1061,7 +1061,7 @@ export default function CandidatesPage() {
                                   ) : null}
                                 </div>
                               </div>
-                              <div className="text-right text-sm text-gray-500 flex flex-col items-end gap-1">
+                              <div className="text-right text-sm text-muted-foreground flex flex-col items-end gap-1">
                                 <p>{job.openings} opening{job.openings !== 1 ? 's' : ''}</p>
                                 {job.applicantCount !== undefined && (
                                   <p>{job.applicantCount} applicant{job.applicantCount !== 1 ? 's' : ''}</p>
@@ -1088,7 +1088,7 @@ export default function CandidatesPage() {
             </div>
 
             <div className="flex items-center justify-between pt-4 border-t">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Click on a job to add the candidate to its shortlist
               </p>
               <Button
@@ -1118,7 +1118,18 @@ export default function CandidatesPage() {
         Close: () => null,
       } as any}
       styles={{
-        popover: (base) => ({ ...base, zIndex: 2147483000, pointerEvents: 'auto', maxWidth: 420 }),
+        popover: (base) => ({
+          ...base,
+          zIndex: 2147483000,
+          pointerEvents: 'auto',
+          maxWidth: 420,
+          background: 'hsl(var(--popover) / 0.95)',
+          color: 'hsl(var(--popover-foreground))',
+          border: '1px solid hsl(var(--border) / 0.6)',
+          borderRadius: 16,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(16px)',
+        }),
         maskWrapper: (base) => ({ ...base, zIndex: 2147482000 }),
         maskArea: (base) => ({ ...base, pointerEvents: 'none' }),
       }}

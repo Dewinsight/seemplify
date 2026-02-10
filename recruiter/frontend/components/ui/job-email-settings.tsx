@@ -359,7 +359,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
                       className="font-mono text-xs leading-relaxed"
                       spellCheck={false}
                     />
-                    <div className="absolute top-2 right-2 bg-white/90 dark:bg-gray-800/90 px-2 py-1 rounded text-xs text-muted-foreground">
+                    <div className="absolute top-2 right-2 bg-white/90 dark:bg-popover/80 px-2 py-1 rounded text-xs text-muted-foreground border border-border/40">
                       {(settings.customTemplates?.[activeTemplate] || defaultTemplates[
                         activeTemplate === 'rejection' ? 'rejection-notice' :
                         activeTemplate === 'shortlistRejection' ? 'shortlist-rejection' :
@@ -385,7 +385,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
                     <Eye className="h-4 w-4" />
                     Live Preview
                   </Label>
-                  <div className="border rounded-lg bg-gray-50 dark:bg-gray-900 p-2">
+                  <div className="border rounded-lg glass-card bg-muted/30 dark:bg-card/30 border-border/60 p-2">
                     <iframe
                       srcDoc={settings.customTemplates?.[activeTemplate] || defaultTemplates[
                         activeTemplate === 'rejection' ? 'rejection-notice' :

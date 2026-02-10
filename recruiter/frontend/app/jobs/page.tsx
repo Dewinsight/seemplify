@@ -249,7 +249,7 @@ function JobsInnerPage() {
         <div className="text-sm text-muted-foreground mb-3">{children}</div>
         <div className="flex items-center justify-between mt-2 gap-2">
           <button
-            className="px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100"
+            className="px-3 py-1.5 rounded border border-border/60 text-sm text-foreground hover:bg-muted/50"
             onClick={() => setCurrentStep(Math.max(0, (currentStep ?? 0) - 1))}
           >Prev</button>
           <div className="flex items-center gap-1">
@@ -814,7 +814,7 @@ function JobsInnerPage() {
         {!loading && filteredJobs.length === 0 && (
           <Card className="bg-card/50 backdrop-blur-xl border-border/50">
             <CardContent className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
                 <Briefcase className="h-8 w-8 text-blue-400" />
               </div>
               <h3 className="text-lg font-semibold mb-2">
@@ -928,7 +928,18 @@ export default function JobsPage() {
       scrollSmooth
       onClickMask={() => { }}
       styles={{
-        popover: (base) => ({ ...base, zIndex: 2147483000, pointerEvents: 'auto', maxWidth: 420 }),
+        popover: (base) => ({
+          ...base,
+          zIndex: 2147483000,
+          pointerEvents: 'auto',
+          maxWidth: 420,
+          background: 'hsl(var(--popover) / 0.95)',
+          color: 'hsl(var(--popover-foreground))',
+          border: '1px solid hsl(var(--border) / 0.6)',
+          borderRadius: 16,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(16px)',
+        }),
         maskWrapper: (base) => ({ ...base, zIndex: 2147482000 }),
         maskArea: (base) => ({ ...base, pointerEvents: 'none' }),
       }}

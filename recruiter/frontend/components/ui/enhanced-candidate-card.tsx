@@ -120,7 +120,7 @@ const getAIRecommendationConfig = (action?: string) => {
     case 'reject':
       return { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/30', label: 'Reject' }
     default:
-      return { color: 'text-muted-foreground dark:text-muted-foreground/70', bg: 'bg-muted/30 dark:bg-gray-950/30', label: 'Pending' }
+      return { color: 'text-muted-foreground dark:text-muted-foreground/70', bg: 'bg-muted/30 dark:bg-card/30', label: 'Pending' }
   }
 }
 

@@ -118,7 +118,7 @@ export default function LandingPage() {
               <Link href="/login" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">
                 Sign In
               </Link>
-              <Link href="/signup" className="px-4 py-2 bg-white text-black rounded text-sm font-medium hover:bg-zinc-200 transition-colors">
+              <Link href="/login" className="px-4 py-2 bg-white text-black rounded text-sm font-medium hover:bg-zinc-200 transition-colors">
                 Get Started
               </Link>
             </div>
@@ -177,7 +177,7 @@ export default function LandingPage() {
                     </Button>
                     <Button
                       className="w-full bg-white text-black hover:bg-zinc-200"
-                      onClick={() => { setIsMobileMenuOpen(false); router.push('/signup'); }}
+                      onClick={() => { setIsMobileMenuOpen(false); router.push('/login'); }}
                     >
                       Get Started
                     </Button>
@@ -231,10 +231,10 @@ export default function LandingPage() {
               className="flex flex-col sm:flex-row gap-4 justify-center mb-24"
             >
               <Link
-                href="/signup"
+                href="/login"
                 className="inline-flex items-center justify-center px-8 py-3 bg-white text-black rounded-lg font-medium hover:bg-zinc-200 transition-all duration-300"
               >
-                Start Free Trial
+                Get Started
               </Link>
               <Link
                 href="/login"
@@ -447,7 +447,7 @@ export default function LandingPage() {
               ))}
             </ul>
             <Button
-              onClick={() => router.push('/signup')}
+              onClick={() => router.push('/login')}
               className="bg-white text-black hover:bg-zinc-200"
             >
               Try AI Matching <ArrowRight className="ml-2 w-4 h-4" />
@@ -520,7 +520,7 @@ export default function LandingPage() {
             {
               step: '01',
               title: 'Create Your Account',
-              description: 'Sign up and configure your company profile in under 5 minutes.',
+              description: 'Log in and configure your company profile in under 5 minutes.',
             },
             {
               step: '02',
@@ -581,10 +581,10 @@ export default function LandingPage() {
               </div>
             </div>
             <Button
-              onClick={() => router.push('/signup')}
+              onClick={() => router.push('/login')}
               className="bg-white text-black hover:bg-zinc-200 h-12 px-8 text-base"
             >
-              Start Free Trial <ArrowRight className="ml-2 w-4 h-4" />
+              Get Started <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </div>
         </motion.div>

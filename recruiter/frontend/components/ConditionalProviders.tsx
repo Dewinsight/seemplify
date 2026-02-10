@@ -20,12 +20,11 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
   const isPublicRoute = pathname?.startsWith('/public');
   const isOidcRoute = pathname?.startsWith('/oidc');
   const isLoginRoute = pathname?.startsWith('/login');
-  const isSignupRoute = pathname?.startsWith('/signup');
+  const isSignupRoute = pathname?.startsWith('/signup'); // redirect-only pages
 
   console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute, isOidcRoute });
 
-  // For admin, public, oidc, login, and signup routes, skip all the regular providers and just render children
-  // These routes need to be lightweight to handle authentication flows quickly
+  // For admin, public, oidc, login, and signup (redirect) routes, skip all the regular providers and just render children
   if (isAdminRoute || isPublicRoute || isOidcRoute || isLoginRoute || isSignupRoute) {
     console.log('🚀 Lightweight route detected - skipping regular providers');
     return <>{children}</>;

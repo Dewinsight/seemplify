@@ -64,13 +64,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Initialize inactivity tracking after login
         initializeInactivityTracking();
 
-        // Only redirect if skipRedirect is false
-        // This allows signup flow to control its own redirection
         if (!skipRedirect) {
           console.log('🔄 AuthContext: Redirecting to organization check');
           window.location.href = '/organization/check';
-        } else {
-          console.log('🔄 AuthContext: Skipping redirect (signup flow)');
         }
       } catch (error) {
         console.error('Error saving to localStorage:', error);

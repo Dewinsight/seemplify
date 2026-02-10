@@ -324,24 +324,6 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
     }
   }
 
-  // Helper function to check if we're in signup flow
-  const isInSignupFlow = () => {
-    if (!isBrowser) return false;
-    
-    // Check for signup flags in sessionStorage
-    const signupSuccess = sessionStorage.getItem('signupSuccess');
-    const inSignupFlow = sessionStorage.getItem('inSignupFlow');
-    
-    // Check for recent signup time (within last 60 seconds)
-    const signupTime = sessionStorage.getItem('signupTime');
-    const isRecentSignup = signupTime && (Date.now() - parseInt(signupTime)) < 60000;
-    
-    // Check for signup success page in URL
-    const isOnSignupSuccessPage = window.location.pathname.includes('/signup/success');
-    
-    return (signupSuccess === 'true' || inSignupFlow === 'true' || isRecentSignup || isOnSignupSuccessPage);
-  };
-
   // Handle 402 Payment Required (Insufficient Credits) responses
   if (response.status === 402 && isBrowser) {
     // Clone and read the error data
@@ -364,12 +346,6 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
       errorData = await response.clone().json();
     } catch (parseErr) {
       console.warn('⚠️ Unable to parse 401 response JSON', parseErr);
-    }
-    
-    // Skip auto-logout during signup flow
-    if (isInSignupFlow()) {
-      console.log('⚠️ 401 received during signup flow - suppressing auto-logout');
-      return response;
     }
     
     console.warn('🚨 401 Unauthorized response:', errorData);

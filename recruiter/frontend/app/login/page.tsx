@@ -481,26 +481,7 @@ export default function LoginPage() {
               </div>
             </motion.div>
 
-            {/* Signup Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.6 }}
-              className="mt-6"
-            >
-              <div className="glass-card rounded-xl p-6 border border-border/50 dark:border-white/[0.06] text-center shadow-lg dark:shadow-none">
-                <p className="text-muted-foreground text-sm mb-4">
-                  Don't have an account?
-                </p>
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center justify-center px-6 py-2.5 border border-input dark:border-zinc-800 rounded-lg font-medium text-foreground dark:text-zinc-300 hover:text-primary dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5 transition-all duration-300 text-sm"
-                >
-                  Sign up for free
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Link>
-              </div>
-            </motion.div>
+            {/* Sign up is handled by the IDP; no separate signup page */}
 
             {/* App Hub */}
             <motion.div

@@ -618,7 +618,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                       {/* Expanded explanation */}
                       {isExpanded && explanation && (
-                        <div className="border-t border-border/50 dark:border-white/5 bg-muted/30 dark:bg-black/20 p-4 space-y-4">
+                        <div className="border-t border-border/50 dark:border-white/5 bg-muted/30 dark:bg-card/30 p-4 space-y-4">
                           {/* Enhanced Reasons */}
                           {explanation.reasons && explanation.reasons.length > 0 && (
                             <div>
@@ -833,7 +833,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                               {/* Contextual Explanation */}
                               {explanation.gptEnhanced.contextualExplanation && (
-                                <div className="bg-white dark:bg-black/20 p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-2">🎯 Why This Match Makes Sense</h6>
                                   <p className="text-sm text-foreground dark:text-gray-300 leading-relaxed">
                                     {explanation.gptEnhanced.contextualExplanation}
@@ -843,7 +843,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                               {/* Enhanced Scoring Breakdown */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                                <div className="bg-white dark:bg-black/20 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-1 sm:mb-2">💪 Skills Match</h6>
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-100 dark:bg-purple-500/20 rounded-full h-2">
@@ -858,7 +858,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-black/20 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-1 sm:mb-2">⭐ Experience Fit</h6>
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-100 dark:bg-purple-500/20 rounded-full h-2">
@@ -873,7 +873,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-black/20 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-1 sm:mb-2">🤝 Cultural Alignment</h6>
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-100 dark:bg-purple-500/20 rounded-full h-2">
@@ -888,7 +888,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-black/20 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-2 sm:p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-1 sm:mb-2">🚀 Growth Potential</h6>
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-100 dark:bg-purple-500/20 rounded-full h-2">
@@ -906,7 +906,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                               {/* Interview Focus Questions */}
                               {explanation.gptEnhanced.interviewFocus && explanation.gptEnhanced.interviewFocus.length > 0 && (
-                                <div className="bg-white dark:bg-black/20 p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
+                                <div className="bg-white dark:bg-card/30 p-3 rounded border border-purple-200 dark:border-purple-500/20 shadow-sm">
                                   <h6 className="font-medium text-purple-700 dark:text-purple-300 text-xs mb-2 flex items-center gap-1">
                                     💬 AI-Suggested Interview Questions
                                   </h6>

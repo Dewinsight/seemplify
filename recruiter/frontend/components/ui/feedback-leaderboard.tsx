@@ -335,8 +335,8 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
     if (rank === 2) return <span className="text-2xl">🥈</span>
     if (rank === 3) return <span className="text-2xl">🥉</span>
     return (
-      <div className="w-8 h-8 rounded-full bg-muted/50 dark:bg-gray-800 flex items-center justify-center">
-        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{rank}</span>
+      <div className="w-8 h-8 rounded-full bg-muted/50 dark:bg-card/40 flex items-center justify-center">
+        <span className="text-sm font-bold text-foreground">{rank}</span>
       </div>
     )
   }
@@ -373,7 +373,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
     return (
       <Card>
         <CardContent className="p-12 flex flex-col items-center justify-center text-center">
-          <Trophy className="h-16 w-16 text-gray-300 mb-4" />
+          <Trophy className="h-16 w-16 text-muted-foreground/60 mb-4" />
           <h3 className="text-lg font-semibold text-foreground mb-2">No Feedback Data Available</h3>
           <p className="text-muted-foreground max-w-md">
             There is no interview feedback available yet for this job. 
@@ -589,7 +589,7 @@ function StageLeaderboardSection({
       {isExpanded && leaderboard.length === 0 && (
         <CardContent>
           <div className="text-center py-8 text-muted-foreground">
-            <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+            <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/60" />
             <p>No candidates with feedback in this stage yet.</p>
           </div>
         </CardContent>
@@ -614,7 +614,7 @@ function CandidateCard({
   getPerformanceLabel
 }: CandidateCardProps) {
   return (
-    <div className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white dark:bg-gray-900">
+    <div className="border rounded-lg p-4 hover:shadow-lg transition-shadow glass-card bg-popover/40 dark:bg-card/30 border-border/60">
       <div className="flex items-start gap-4">
         {/* Rank Badge */}
         <div className="flex-shrink-0 pt-1">

@@ -109,7 +109,7 @@ const getPriorityConfig = (priority: string) => {
     case 'low':
       return { color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/30', icon: <CheckCircle className="h-4 w-4" /> }
     default:
-      return { color: 'text-muted-foreground', bg: 'bg-muted/30 dark:bg-gray-950/30', icon: <Clock className="h-4 w-4" /> }
+      return { color: 'text-muted-foreground', bg: 'bg-muted/30 dark:bg-card/30', icon: <Clock className="h-4 w-4" /> }
   }
 }
 
@@ -166,10 +166,10 @@ export function EnhancedCandidatePopup({
       case 'confirmed': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
       case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
       case 'missed': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
-      case 'no_show': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+      case 'no_show': return 'bg-gray-100 text-gray-800 dark:bg-card/30 dark:text-gray-300'
       case 'rescheduled': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
       case 'in_progress': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+      default: return 'bg-gray-100 text-gray-800 dark:bg-card/30 dark:text-gray-300'
     }
   }
 
@@ -491,7 +491,7 @@ export function EnhancedCandidatePopup({
                   <CardContent>
                     <div className="space-y-3">
                       {candidate.stageHistory.map((stage, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-muted/30 dark:bg-gray-800/50 rounded-lg">
+                        <div key={index} className="flex items-center justify-between p-3 bg-muted/30 dark:bg-card/30 rounded-lg">
                           <div className="flex items-center space-x-3">
                             <div 
                               className="w-3 h-3 rounded-full"

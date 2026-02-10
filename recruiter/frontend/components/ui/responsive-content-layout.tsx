@@ -520,7 +520,7 @@ export function ResponsiveDataList({
       {data.map((item, index) => (
         <div
           key={item[keyField] || index}
-          className="p-4 bg-muted/30 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700"
+          className="p-4 glass-card bg-muted/30 dark:bg-card/30 rounded-lg border border-border/60"
         >
           {renderItem(item, index)}
         </div>

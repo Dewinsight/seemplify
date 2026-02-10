@@ -206,7 +206,7 @@ export default function PricingSection() {
                         ? 'bg-white text-purple-600 hover:bg-white/90 shadow-xl'
                         : 'bg-blue-600 text-white hover:bg-blue-700'
                     } transition-all duration-200`}
-                    onClick={() => router.push('/signup?plan=' + plan.code)}
+                    onClick={() => router.push('/login?plan=' + plan.code)}
                   >
                     <span className="flex items-center justify-center gap-2">
                       {plan.trialDays > 0 ? `Start ${plan.trialDays}-Day Free Trial` : 'Get Started'}

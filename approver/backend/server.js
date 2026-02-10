@@ -15,7 +15,8 @@ const PORT = process.env.PORT || 80;
 // Middleware
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' ? true : (process.env.FRONTEND_URL || 'http://localhost:5173'),
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id']
 }));
 app.use(express.json());
 

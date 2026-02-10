@@ -219,9 +219,9 @@ export function ShortlistEmailControls({
                 </Button>
               </div>
               
-              <div className="border rounded-lg bg-gray-50 dark:bg-gray-900 max-h-48 overflow-y-auto">
+              <div className="border border-border/60 rounded-lg glass-card bg-muted/30 dark:bg-card/30 max-h-48 overflow-y-auto">
                 {availableCandidates.map((candidate) => (
-                  <div key={candidate._id} className="flex items-center space-x-3 p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <div key={candidate._id} className="flex items-center space-x-3 p-3 hover:bg-muted/50 dark:hover:bg-card/40 transition-colors">
                     <Checkbox
                       id={candidate._id}
                       checked={selectedCandidates.includes(candidate._id)}
@@ -230,7 +230,7 @@ export function ShortlistEmailControls({
                     <div className="flex-1">
                       <label htmlFor={candidate._id} className="flex items-center justify-between cursor-pointer">
                         <div>
-                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                          <span className="font-medium text-foreground">
                             {candidate.firstName} {candidate.lastName}
                           </span>
                           <span className="text-muted-foreground text-sm ml-2">({candidate.email})</span>

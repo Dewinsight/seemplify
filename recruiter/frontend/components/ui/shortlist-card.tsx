@@ -913,7 +913,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                           <Checkbox
                             checked={selectedCandidates.has(getCandidateId(match))}
                             onCheckedChange={() => toggleCandidateSelection(getCandidateId(match))}
-                            className="h-5 w-5 border-2 border-border dark:border-white/20 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 bg-background dark:bg-black/40 shadow-lg hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer relative z-10"
+                            className="h-5 w-5 border-2 border-border dark:border-white/20 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 bg-background dark:bg-card/40 shadow-lg hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer relative z-10"
                           />
                           {/* Hover tooltip */}
                           <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity delay-300 pointer-events-none z-20">
@@ -1047,7 +1047,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                       </div>
 
                       {/* AI Match Score Section */}
-                      <div className="bg-muted/30 dark:bg-black/20 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-4 border border-border/50 dark:border-white/5 backdrop-blur-sm">
+                      <div className="bg-muted/30 dark:bg-card/30 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-4 border border-border/50 dark:border-white/5 backdrop-blur-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
                             <Award className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 dark:text-blue-400" />

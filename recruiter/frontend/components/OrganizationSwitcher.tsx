@@ -135,8 +135,8 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
   if (isLoading) {
     return (
       <div className={`flex items-center space-x-2 ${className}`}>
-        <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
-        <div className="w-32 h-4 bg-gray-200 rounded animate-pulse" />
+        <div className="w-8 h-8 bg-muted/60 rounded animate-pulse" />
+        <div className="w-32 h-4 bg-muted/60 rounded animate-pulse" />
       </div>
     );
   }
@@ -156,7 +156,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className={`flex items-center space-x-2 h-auto p-2 bg-white/80 dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 text-foreground ${className}`}
+            className={`flex items-center space-x-2 h-auto p-2 bg-popover/80 dark:bg-card/50 border border-border/60 hover:bg-muted/60 dark:hover:bg-card/60 text-foreground ${className}`}
             disabled={isSwitching || isLoading}
           >
             <Avatar className="w-6 h-6">
@@ -180,18 +180,18 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
           </Button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent className="w-80 glass-card border-gray-200 dark:border-white/10 text-foreground bg-white/90 dark:bg-black/80" align="start">
+        <DropdownMenuContent className="w-80 glass-card border-border/20 text-foreground bg-popover/90 dark:bg-popover/80" align="start">
           <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
 
           {/* Credits Display */}
           {currentOrganization && (
             <>
-              <div className="px-2 py-3 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-md mx-2 mb-2">
+              <div className="px-2 py-3 bg-muted/40 dark:bg-card/40 border border-border/50 rounded-md mx-2 mb-2">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Coins className={`w-4 h-4 ${getCreditsColor()}`} />
-                    <span className="text-sm font-medium text-gray-700 dark:text-zinc-300">Credits</span>
+                    <span className="text-sm font-medium text-foreground">Credits</span>
                   </div>
                   <button
                     onClick={() => router.push('/settings/organization')}
@@ -214,7 +214,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
                       </span>
                     </div>
 
-                    <div className="w-full bg-gray-200 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden mb-1">
+                    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden mb-1">
                       <div
                         className={`h-full transition-all duration-300 ${getCreditsProgressColor()}`}
                         style={{ width: `${Math.min(credits.percentageUsed, 100)}%` }}

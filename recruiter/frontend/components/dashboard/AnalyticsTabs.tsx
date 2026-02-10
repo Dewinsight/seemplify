@@ -98,7 +98,7 @@ export const AnalyticsTabs = React.memo(function AnalyticsTabs({ analytics, clas
             <TabsTrigger
               key={tab.id}
               value={tab.id}
-              className="flex flex-col gap-1 py-3 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-200"
+              className="flex flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-border/50 transition-all duration-200"
             >
               <div className="flex items-center gap-2">
                 {tab.icon}
