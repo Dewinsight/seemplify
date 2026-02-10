@@ -17,7 +17,7 @@
 			</Button>
 		</div>
 	</header>
-	<div v-if="programs.data?.length && !isStudent" class="lms-programs-page py-8 px-4 md:px-6">
+	<div v-if="programCards.data?.length && !isStudent" class="lms-programs-page p-5 pb-10">
 		<section class="lms-programs-hero mb-8">
 			<div>
 				<div class="lms-programs-overline text-sm font-semibold">
@@ -37,15 +37,15 @@
 			<div class="lms-programs-count-pill">
 				{{
 					__('{0} {1}').format(
-						programs.data.length,
-						programs.data.length == 1 ? __('Program') : __('Programs')
+						programCards.data.length,
+						programCards.data.length == 1 ? __('Program') : __('Programs')
 					)
 				}}
 			</div>
 		</section>
-		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 lms-programs-grid">
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8 lms-programs-grid">
 			<div
-				v-for="program in programs.data"
+				v-for="program in programCards.data"
 				:key="program.name"
 				@click="openForm(program.name)"
 				class="lms-program-card border rounded-md cursor-pointer"
@@ -114,8 +114,14 @@
 	/>
 </template>
 <script setup>
-import { Breadcrumbs, Button, usePageMeta, createListResource } from 'frappe-ui'
-import { computed, inject, onMounted, ref } from 'vue'
+import {
+	Breadcrumbs,
+	Button,
+	createListResource,
+	createResource,
+	usePageMeta,
+} from 'frappe-ui'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { BookOpen, Plus, User } from 'lucide-vue-next'
 import { sessionStore } from '@/stores/session'
 import ProgramForm from '@/pages/Programs/ProgramForm.vue'
@@ -134,7 +140,13 @@ onMounted(() => {
 	}
 	if (user.data?.is_moderator || user.data?.is_instructor) {
 		programs.reload()
+		programCards.reload()
 	}
+})
+
+const programCards = createResource({
+	url: 'lms.lms.utils.get_program_cards',
+	auto: false,
 })
 
 const programs = createListResource({
@@ -143,7 +155,6 @@ const programs = createListResource({
 	fields: [
 		'name',
 		'title',
-		'image',
 		'member_count',
 		'course_count',
 		'published',
@@ -164,6 +175,13 @@ const openForm = (programName) => {
 	currentProgram.value = programName
 	showForm.value = true
 }
+
+watch(showForm, (isOpen) => {
+	if (!isOpen && canCreateProgram()) {
+		programs.reload()
+		programCards.reload()
+	}
+})
 
 const getProgramGradient = (programName = '') => {
 	const gradients = [

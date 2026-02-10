@@ -1909,6 +1909,13 @@ def get_programs():
 
 
 @frappe.whitelist()
+def get_program_cards():
+	program_fields = get_program_fields()
+	programs = frappe.get_all("LMS Program", fields=program_fields, order_by="creation desc")
+	return [normalize_program_details(program) for program in programs]
+
+
+@frappe.whitelist()
 def get_program_details(program_name):
 	program_fields = get_program_fields(include_enforce_course_order=True)
 	program = frappe.db.get_value(
@@ -1946,6 +1953,42 @@ def get_program_details(program_name):
 	return program
 
 
+@frappe.whitelist()
+def get_program_image(program_name):
+	if not frappe.db.exists("LMS Program", program_name):
+		frappe.throw(_("Program does not exist."))
+
+	program_doc = frappe.get_doc("LMS Program", program_name)
+	if not program_doc.has_permission("read"):
+		frappe.throw(_("You do not have permission to access this program image."), frappe.PermissionError)
+
+	return {
+		"image": get_program_image_url(program_name),
+		"has_image_column": frappe.db.has_column("LMS Program", "image"),
+	}
+
+
+@frappe.whitelist()
+def set_program_image(program_name, image=None):
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue."), frappe.PermissionError)
+
+	if not frappe.db.exists("LMS Program", program_name):
+		frappe.throw(_("Program does not exist."))
+
+	program_doc = frappe.get_doc("LMS Program", program_name)
+	if not program_doc.has_permission("write"):
+		frappe.throw(_("You do not have permission to edit this program."), frappe.PermissionError)
+
+	image = validate_image(image) if image else ""
+	set_program_image_attachment(program_name, image)
+
+	if frappe.db.has_column("LMS Program", "image"):
+		frappe.db.set_value("LMS Program", program_name, "image", image)
+
+	return {"image": image}
+
+
 def get_program_fields(include_enforce_course_order=False):
 	fields = ["name", "course_count", "member_count", "published"]
 
@@ -1964,11 +2007,106 @@ def get_program_fields(include_enforce_course_order=False):
 def normalize_program_details(program):
 	program = frappe._dict(program or {})
 	program.title = program.get("title") or program.get("name")
-	program.image = program.get("image")
+	program.image = get_program_image_url(program.get("name"), program.get("image"))
 	program.course_count = program.get("course_count") or 0
 	program.member_count = program.get("member_count") or 0
 	program.published = program.get("published") or 0
 	return program
+
+
+def get_program_image_url(program_name, image=None):
+	if image:
+		return validate_image(image)
+
+	attached_image = get_program_attached_image(program_name)
+	if attached_image:
+		return attached_image
+
+	return get_program_cover_image(program_name)
+
+
+def get_program_attached_image(program_name):
+	if not program_name:
+		return None
+
+	attachments = frappe.get_all(
+		"File",
+		filters={
+			"attached_to_doctype": "LMS Program",
+			"attached_to_name": program_name,
+			"attached_to_field": ["in", ["image", "program_image"]],
+		},
+		fields=["file_url"],
+		order_by="creation desc",
+		limit=1,
+	)
+
+	if not attachments:
+		return None
+
+	return validate_image(attachments[0].file_url)
+
+
+def set_program_image_attachment(program_name, image):
+	attachments = frappe.get_all(
+		"File",
+		filters={
+			"attached_to_doctype": "LMS Program",
+			"attached_to_name": program_name,
+			"attached_to_field": ["in", ["image", "program_image"]],
+		},
+		fields=["name"],
+	)
+
+	for attachment in attachments:
+		frappe.db.set_value(
+			"File",
+			attachment.name,
+			{
+				"attached_to_doctype": None,
+				"attached_to_name": None,
+				"attached_to_field": None,
+			},
+		)
+
+	if not image:
+		return
+
+	file_name = frappe.db.get_value("File", {"file_url": image}, "name")
+	if not file_name:
+		return
+
+	frappe.db.set_value(
+		"File",
+		file_name,
+		{
+			"attached_to_doctype": "LMS Program",
+			"attached_to_name": program_name,
+			"attached_to_field": "image",
+		},
+	)
+
+
+def get_program_cover_image(program_name):
+	if not program_name:
+		return None
+
+	program_courses = frappe.get_all(
+		"LMS Program Course",
+		filters={"parent": program_name},
+		fields=["course"],
+		order_by="idx asc",
+		limit=1,
+	)
+
+	if not program_courses:
+		return None
+
+	course_name = program_courses[0].get("course")
+	if not course_name:
+		return None
+
+	return frappe.db.get_value("LMS Course", course_name, "image")
 
 
 @frappe.whitelist()

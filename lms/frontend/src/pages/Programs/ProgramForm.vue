@@ -292,6 +292,7 @@ import {
 	Badge,
 	Button,
 	createListResource,
+	call,
 	Dialog,
 	FileUploader,
 	FormControl,
@@ -375,8 +376,34 @@ const setProgramData = () => {
 			program_courses: [],
 			program_members: [],
 		}
+	} else if (props.programName && props.programName !== 'new') {
+		void loadProgramImage(props.programName)
 	}
 	dirty.value = false
+}
+
+const getApiData = (response: any) => {
+	return response?.message || response || {}
+}
+
+const loadProgramImage = async (programName: string) => {
+	try {
+		const response = await call('lms.lms.utils.get_program_image', {
+			program_name: programName,
+		})
+		const data = getApiData(response)
+		program.value.image = data.image || ''
+	} catch (error) {
+		console.error('Failed to load program image', error)
+		program.value.image = ''
+	}
+}
+
+const persistProgramImage = async (programName: string) => {
+	await call('lms.lms.utils.set_program_image', {
+		program_name: programName,
+		image: program.value.image || '',
+	})
 }
 
 const programCourses = createListResource({
@@ -435,13 +462,24 @@ const saveProgram = (close: () => void) => {
 }
 
 const createNewProgram = (close: () => void) => {
+	const payload = getProgramPayload()
 	programs.value.insert.submit(
 		{
-			...program.value,
-			title: program.value.name,
+			...payload,
+			title: payload.name,
 		},
 		{
-			onSuccess() {
+			async onSuccess() {
+				try {
+					await persistProgramImage(payload.name)
+				} catch (error) {
+					console.error('Failed to save program image', error)
+					toast.warning(
+						__(
+							'Program created, but image could not be saved. Please try uploading again.'
+						)
+					)
+				}
 				close()
 				programs.value.reload()
 				toast.success(__('Program created successfully'))
@@ -454,13 +492,26 @@ const createNewProgram = (close: () => void) => {
 }
 
 const updateProgram = (close: () => void) => {
+	const payload = getProgramPayload()
 	programs.value.setValue.submit(
 		{
 			name: props.programName,
-			...program.value,
+			...payload,
 		},
 		{
-			onSuccess() {
+			async onSuccess() {
+				try {
+					if (props.programName) {
+						await persistProgramImage(props.programName)
+					}
+				} catch (error) {
+					console.error('Failed to save program image', error)
+					toast.warning(
+						__(
+							'Program updated, but image could not be saved. Please try uploading again.'
+						)
+					)
+				}
 				close()
 				programs.value.reload()
 				toast.success(__('Program updated successfully'))
@@ -504,6 +555,12 @@ const addCourse = (close: () => void) => {
 	} else {
 		toast.warning(__('Course already added to program'))
 	}
+}
+
+const getProgramPayload = () => {
+	const payload = { ...program.value }
+	delete payload.image
+	return payload
 }
 
 const saveImage = (file: { file_url: string }) => {

@@ -474,7 +474,11 @@ html[data-theme='dark'] .ui-skin-v2 .lms-course-detail-tags .badge {
 }
 
 .ui-skin-v2 .lms-programs-page,
-.ui-skin-v2 .lms-student-programs-page,
+.ui-skin-v2 .lms-student-programs-page {
+	max-width: none;
+	margin: 0;
+}
+
 .ui-skin-v2 .lms-program-detail-page {
 	max-width: 1360px;
 	margin: 0 auto;
