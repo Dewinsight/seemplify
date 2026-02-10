@@ -308,9 +308,9 @@ const seemplifyMarkSvg = `
   <svg viewBox="0 0 100 100" aria-hidden="true">
     <defs>
       <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#3b82f6" />
-        <stop offset="50%" stop-color="#8b5cf6" />
-        <stop offset="100%" stop-color="#ec4899" />
+        <stop offset="0%" stop-color="#10b981" />
+        <stop offset="50%" stop-color="#2dd4bf" />
+        <stop offset="100%" stop-color="#6366f1" />
       </linearGradient>
     </defs>
     <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75" stroke="url(#seemplifyGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
@@ -805,7 +805,7 @@ app.get('/interaction/:uid', async (req, res) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>AIIN Identity - Sign in</title>
+        <title>Seemplify - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="/css/idp-theme.css">
         <link rel="stylesheet" href="/css/login.css">
@@ -862,7 +862,7 @@ app.get('/interaction/:uid', async (req, res) => {
                 <div class="error" id="errorQuick"></div>
                 <div style="background: var(--surface-2, rgba(30,41,59,0.4)); border:1px solid var(--border); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
                   <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #a855f7, #ec4899); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
                       ${lastLoggedInEmail.charAt(0).toUpperCase()}
                     </div>
                     <div style="flex: 1;">
@@ -1117,45 +1117,46 @@ app.get('/interaction/:uid', async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Session Expired - AIIN Identity</title>
+          <title>Session Expired - Seemplify Identity</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <link rel="stylesheet" href="/css/idp-theme.css">
+          <script src="/js/theme.js?v=3"></script>
           <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              min-height: 100vh;
               display: flex;
               align-items: center;
               justify-content: center;
               padding: 20px;
             }
             .container { 
-              background: white;
+              background: var(--panel);
+              backdrop-filter: blur(16px);
               padding: 48px;
-              border-radius: 16px;
-              box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+              border-radius: 24px;
+              border: 1px solid var(--border);
+              box-shadow: var(--card-shadow);
               max-width: 440px;
               width: 100%;
               text-align: center;
             }
             .icon { font-size: 64px; margin-bottom: 24px; }
-            h1 { font-size: 24px; color: #1a1a1a; margin-bottom: 16px; }
-            p { color: #666; margin-bottom: 32px; line-height: 1.6; }
+            h1 { font-size: 24px; color: var(--text); margin-bottom: 16px; font-family: "Space Grotesk", system-ui, sans-serif; }
+            p { color: var(--muted); margin-bottom: 32px; line-height: 1.6; }
             button { 
               padding: 14px 32px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
+              background: #18181b;
+              color: #ffffff;
               border: none;
-              border-radius: 8px;
+              border-radius: 999px;
               font-size: 16px;
               font-weight: 600;
               cursor: pointer;
-              transition: all 0.2s;
+              transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+              box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
             }
             button:hover { 
-              transform: translateY(-1px);
-              box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+              transform: translateY(-2px);
+              box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
             }
           </style>
         </head>
@@ -1191,347 +1192,221 @@ app.get('/signup/:uid', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Create Account - AIIN Identity</title>
+      <title>Seemplify - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css">
+      <link rel="stylesheet" href="/css/login.css">
+      <script src="/js/theme.js?v=3"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-        }
-        .container { 
-          background: white;
-          padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-          max-width: 440px;
-          width: 100%;
-          animation: slideIn 0.3s ease-out;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(-20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .logo {
-          text-align: center;
-          margin-bottom: 32px;
-        }
-        .logo-icon {
-          width: 60px;
-          height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 12px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 32px;
-          margin-bottom: 16px;
-        }
-        h1 { 
-          font-size: 28px;
-          color: #1a1a1a;
-          margin-bottom: 8px;
-          font-weight: 700;
-          text-align: center;
-        }
-        p { 
-          color: #666;
-          margin-bottom: 32px;
-          font-size: 15px;
-          text-align: center;
-        }
-        .form-group {
-          margin-bottom: 20px;
-        }
-        label {
-          display: block;
-          margin-bottom: 8px;
-          font-size: 14px;
-          font-weight: 500;
-          color: #333;
-        }
-        input[type="email"],
-        input[type="password"],
-        input[type="text"] { 
-          width: 100%;
-          padding: 14px 16px;
-          border: 2px solid #e0e0e0;
-          border-radius: 8px;
-          font-size: 15px;
-          transition: all 0.2s;
-        }
-        input[type="email"]:focus,
-        input[type="password"]:focus,
-        input[type="text"]:focus { 
-          outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        .password-strength {
-          height: 4px;
-          background: #e0e0e0;
-          border-radius: 2px;
-          margin-top: 8px;
-          overflow: hidden;
-        }
-        .password-strength-bar {
-          height: 100%;
-          width: 0%;
-          transition: all 0.3s;
-          border-radius: 2px;
-        }
-        .strength-weak { width: 33%; background: #f44336; }
-        .strength-medium { width: 66%; background: #ff9800; }
-        .strength-strong { width: 100%; background: #4caf50; }
-        .password-hint {
-          font-size: 12px;
-          color: #999;
-          margin-top: 6px;
-        }
-        button { 
-          width: 100%;
-          padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          margin-top: 8px;
-        }
-        button:hover { 
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        button:active {
-          transform: translateY(0);
-        }
-        button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-          transform: none;
-        }
-        .error { 
-          background: #fee;
-          color: #c33;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 14px;
-          margin-bottom: 16px;
-          border: 1px solid #fcc;
-          display: none;
-        }
-        .error.show {
-          display: block;
-        }
-        .success {
-          background: #e8f5e9;
-          color: #2e7d32;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 14px;
-          margin-bottom: 16px;
-          border: 1px solid #a5d6a7;
-          display: none;
-        }
-        .success.show {
-          display: block;
-        }
-        .divider {
-          text-align: center;
-          margin: 24px 0;
-          position: relative;
-        }
-        .divider::before {
-          content: '';
-          position: absolute;
-          top: 50%;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: #e0e0e0;
-        }
-        .divider span {
-          background: white;
-          padding: 0 16px;
-          position: relative;
-          color: #999;
-          font-size: 14px;
-        }
-        .login-link {
-          text-align: center;
-          margin-top: 24px;
-          font-size: 14px;
-          color: #666;
-        }
-        .login-link a {
-          color: #667eea;
-          text-decoration: none;
-          font-weight: 600;
-        }
-        .login-link a:hover {
-          text-decoration: underline;
-        }
-        .spinner {
-          border: 2px solid rgba(255,255,255,0.3);
-          border-top: 2px solid white;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          margin-right: 8px;
-          vertical-align: middle;
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        body { visibility: hidden; }
+        body.light, body.dark, [data-theme] body { visibility: visible; }
       </style>
     </head>
     <body>
-      <div class="container">
-        <div class="logo">
-          <div class="logo-icon">✨</div>
-          <h1>Create Your Account</h1>
-          <p>Join AIIN Identity to get started</p>
-        </div>
-        
-        <form id="signupForm">
-          <div class="error" id="error"></div>
-          <div class="success" id="success"></div>
-          
-          <div class="form-group">
-            <label for="name">Full Name (Optional)</label>
-            <input type="text" id="name" name="name" placeholder="John Doe" />
-          </div>
-          
-          <div class="form-group">
-            <label for="email">Email Address</label>
-            <input type="email" id="email" name="email" placeholder="you@example.com" required autofocus />
-          </div>
-          
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" />
-            <div class="password-strength">
-              <div class="password-strength-bar" id="strengthBar"></div>
+      <div class="grid-overlay"></div>
+
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/interaction/${uid}" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Back to sign in
+          </a>
+
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${seemplifyMarkSvg}</div>
+              <span class="login-brand-name">Seemplify</span>
             </div>
-            <div class="password-hint" id="strengthText">Use 8+ characters with letters and numbers</div>
+
+            <h1 class="login-heading">Create your account</h1>
+            <p class="login-subheading">One identity for the hub and all connected apps.</p>
+
+            <div class="error" id="error"></div>
+
+            <form id="signupForm" action="/interaction/${uid}/signup" method="POST">
+              <div class="form-group">
+                <label for="name">Full name (optional)</label>
+                <input type="text" id="name" name="name" placeholder="Jordan Harper" autocomplete="name" />
+              </div>
+
+              <div class="form-group">
+                <label for="email">Work email</label>
+                <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus autocomplete="email" />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" autocomplete="new-password" />
+                <div class="password-strength">
+                  <div class="password-strength-bar" id="strengthBar"></div>
+                </div>
+                <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required autocomplete="new-password" />
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">Create account</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Already have an account? <a class="link" href="/interaction/${uid}">Sign in</a>
+            </div>
           </div>
-          
-          <div class="form-group">
-            <label for="confirmPassword">Confirm Password</label>
-            <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required />
+        </div>
+
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              Enterprise-ready &bull; SOC 2 Ready
+            </div>
+
+            <h2 class="marketing-heading">
+              Start in minutes,<br/><span class="highlight">scale for years.</span>
+            </h2>
+
+            <p class="marketing-desc">
+              Create your identity once. Launch SmartHR, LMS, Chat, and more via single sign-on with org-level controls.
+            </p>
+
+            <div class="feature-cards">
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">SSO-Ready</div>
+                  <div class="feature-desc">One account for the hub and all connected apps.</div>
+                </div>
+              </div>
+
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">Fast Onboarding</div>
+                  <div class="feature-desc">Create teams, invite members, and control access from one place.</div>
+                </div>
+              </div>
+
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+                </div>
+                <div>
+                  <div class="feature-title">Secure by Design</div>
+                  <div class="feature-desc">Email verification + modern session handling across apps.</div>
+                </div>
+              </div>
+            </div>
           </div>
-          
-          <button type="submit" id="submitBtn">
-            <span id="btnText">Create Account</span>
-          </button>
-        </form>
-        
-        <div class="divider"><span>or</span></div>
-        
-        <div class="login-link">
-          Already have an account? <a href="/interaction/${uid}">Sign in</a>
         </div>
       </div>
-      
+
       <script>
         const form = document.getElementById('signupForm');
         const errorDiv = document.getElementById('error');
-        const successDiv = document.getElementById('success');
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
         const passwordInput = document.getElementById('password');
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
-        
-        // Show error message if present
-        const urlParams = new URLSearchParams(window.location.search);
-        const errorParam = urlParams.get('error');
-        if (errorParam) {
-          errorDiv.textContent = '${errorMsg}';
+
+        const errorMsgSafe = ${JSON.stringify(errorMsg || '')};
+        if (errorMsgSafe && errorDiv) {
+          errorDiv.textContent = errorMsgSafe;
           errorDiv.classList.add('show');
         }
-        
-        // Password strength checker
+
         passwordInput.addEventListener('input', () => {
           const password = passwordInput.value;
           let strength = 0;
-          
+
           if (password.length >= 8) strength++;
           if (password.length >= 12) strength++;
           if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
           if (/[0-9]/.test(password)) strength++;
           if (/[^a-zA-Z0-9]/.test(password)) strength++;
-          
+
           strengthBar.className = 'password-strength-bar';
           if (strength <= 2) {
-            strengthBar.classList.add('strength-weak');
             strengthText.textContent = 'Weak password';
-            strengthText.style.color = '#f44336';
           } else if (strength <= 3) {
             strengthBar.classList.add('strength-medium');
             strengthText.textContent = 'Medium strength';
-            strengthText.style.color = '#ff9800';
           } else {
             strengthBar.classList.add('strength-strong');
             strengthText.textContent = 'Strong password!';
-            strengthText.style.color = '#4caf50';
           }
         });
-        
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          
-          // Validate passwords match
+
+        form.addEventListener('submit', (e) => {
           if (passwordInput.value !== confirmPasswordInput.value) {
+            e.preventDefault();
             errorDiv.textContent = 'Passwords do not match';
             errorDiv.classList.add('show');
             return;
           }
-          
-          // Show loading state
           submitBtn.disabled = true;
           btnText.innerHTML = '<span class="spinner"></span>Creating account...';
-          errorDiv.classList.remove('show');
-          successDiv.classList.remove('show');
-          
-          const formData = new FormData(e.target);
-          
-          // Create hidden form to allow browser to follow redirects
-          const hiddenForm = document.createElement('form');
-          hiddenForm.method = 'POST';
-          hiddenForm.action = '/interaction/${uid}/signup';
-          
-          const emailInput = document.createElement('input');
-          emailInput.type = 'hidden';
-          emailInput.name = 'email';
-          emailInput.value = formData.get('email');
-          hiddenForm.appendChild(emailInput);
-          
-          const passwordInputField = document.createElement('input');
-          passwordInputField.type = 'hidden';
-          passwordInputField.name = 'password';
-          passwordInputField.value = formData.get('password');
-          hiddenForm.appendChild(passwordInputField);
-          
-          const nameInput = document.createElement('input');
-          nameInput.type = 'hidden';
-          nameInput.name = 'name';
-          nameInput.value = formData.get('name') || '';
-          hiddenForm.appendChild(nameInput);
-          
-          document.body.appendChild(hiddenForm);
-          hiddenForm.submit();
+        });
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
         });
       </script>
     </body>
@@ -1694,38 +1569,41 @@ app.get('/verify-email/:accountId', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Verify Email - AIIN Identity</title>
+      <title>Verify Email - Seemplify Identity</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css">
+      <script src="/js/theme.js?v=3"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
         }
         .container {
-          background: white;
+          background: var(--panel);
+          backdrop-filter: blur(16px);
           padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+          border-radius: 24px;
+          border: 1px solid var(--border);
+          box-shadow: var(--card-shadow);
           width: 100%;
           max-width: 480px;
         }
         .logo { text-align: center; margin-bottom: 32px; }
         .logo-icon { font-size: 64px; margin-bottom: 16px; }
-        h1 { font-size: 28px; color: #1a202c; margin-bottom: 8px; }
-        p { color: #718096; font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
+        h1 { font-size: 28px; color: var(--text); margin-bottom: 8px; font-family: "Space Grotesk", system-ui, sans-serif; }
+        p { color: var(--muted); font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
+        p strong { color: var(--text); }
         .form-group { margin-bottom: 24px; }
-        label { display: block; color: #4a5568; font-weight: 500; margin-bottom: 8px; }
+        label { display: block; color: var(--text-secondary); font-weight: 500; margin-bottom: 8px; }
         input {
           width: 100%;
           padding: 14px;
-          border: 2px solid #e2e8f0;
-          border-radius: 8px;
+          border: 2px solid var(--border);
+          border-radius: 12px;
+          background: var(--input-bg);
+          color: var(--text);
           font-size: 16px;
           transition: all 0.2s;
           text-align: center;
@@ -1735,39 +1613,43 @@ app.get('/verify-email/:accountId', async (req, res) => {
         }
         input:focus {
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         button {
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
+          background: #18181b;
+          color: #ffffff;
           border: none;
-          border-radius: 8px;
+          border-radius: 999px;
           font-size: 16px;
           font-weight: 600;
           cursor: pointer;
-          transition: opacity 0.2s;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
         }
-        button:hover:not(:disabled) { opacity: 0.9; }
+        button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 40px rgba(15, 23, 42, 0.35); }
         button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+          transform: none;
         }
         .error {
-          background: #fee;
-          color: #c33;
+          background: var(--badge-error-bg);
+          border: 2px solid var(--badge-error-text);
+          color: var(--badge-error-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           margin-bottom: 16px;
           font-size: 14px;
         }
         .success {
-          background: #efe;
-          color: #3c3;
+          background: var(--badge-success-bg);
+          border: 2px solid var(--badge-success-text);
+          color: var(--badge-success-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           margin-bottom: 16px;
           font-size: 14px;
           display: none;
@@ -1777,10 +1659,10 @@ app.get('/verify-email/:accountId', async (req, res) => {
           text-align: center;
           margin-top: 16px;
           font-size: 14px;
-          color: #718096;
+          color: var(--muted);
         }
         .resend-link a {
-          color: #667eea;
+          color: var(--brand);
           text-decoration: none;
           font-weight: 500;
         }
@@ -2051,24 +1933,24 @@ app.get('/forgot-password', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Forgot Password - AIIN Identity</title>
+      <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css">
+      <script src="/js/theme.js?v=3"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
         }
         .container { 
-          background: white;
+          background: var(--panel);
+          backdrop-filter: blur(16px);
           padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+          border-radius: 24px;
+          border: 1px solid var(--border);
+          box-shadow: var(--card-shadow);
           max-width: 440px;
           width: 100%;
           animation: slideIn 0.3s ease-out;
@@ -2084,8 +1966,8 @@ app.get('/forgot-password', async (req, res) => {
         .logo-icon {
           width: 60px;
           height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 12px;
+          background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1);
+          border-radius: 14px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -2094,13 +1976,14 @@ app.get('/forgot-password', async (req, res) => {
         }
         h1 { 
           font-size: 28px;
-          color: #1a1a1a;
+          color: var(--text);
           margin-bottom: 8px;
           font-weight: 700;
           text-align: center;
+          font-family: "Space Grotesk", system-ui, sans-serif;
         }
         p { 
-          color: #666;
+          color: var(--muted);
           margin-bottom: 32px;
           font-size: 15px;
           text-align: center;
@@ -2114,37 +1997,40 @@ app.get('/forgot-password', async (req, res) => {
           margin-bottom: 8px;
           font-size: 14px;
           font-weight: 500;
-          color: #333;
+          color: var(--text-secondary);
         }
         input[type="email"] { 
           width: 100%;
           padding: 14px 16px;
-          border: 2px solid #e0e0e0;
-          border-radius: 8px;
+          border: 2px solid var(--border);
+          border-radius: 12px;
+          background: var(--input-bg);
+          color: var(--text);
           font-size: 15px;
           transition: all 0.2s;
         }
         input[type="email"]:focus { 
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         button { 
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
+          background: #18181b;
+          color: #ffffff;
           border: none;
-          border-radius: 8px;
+          border-radius: 999px;
           font-size: 16px;
           font-weight: 600;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
           margin-top: 8px;
+          box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
         }
         button:hover { 
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          transform: translateY(-2px);
+          box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
         }
         button:disabled {
           opacity: 0.6;
@@ -2152,13 +2038,13 @@ app.get('/forgot-password', async (req, res) => {
           transform: none;
         }
         .success { 
-          background: #e8f5e9;
-          color: #2e7d32;
+          background: var(--badge-success-bg);
+          color: var(--badge-success-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           font-size: 14px;
           margin-bottom: 16px;
-          border: 1px solid #a5d6a7;
+          border: 2px solid var(--badge-success-text);
           display: none;
         }
         .success.show {
@@ -2169,7 +2055,7 @@ app.get('/forgot-password', async (req, res) => {
           margin-top: 24px;
         }
         .back-link a {
-          color: #667eea;
+          color: var(--brand);
           text-decoration: none;
           font-size: 14px;
           font-weight: 600;
@@ -2358,13 +2244,13 @@ app.get('/reset-password/:token/success', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Password Reset Successful - AIIN Identity</title>
+      <title>Password Reset Successful - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           min-height: 100vh;
           display: flex;
           align-items: center;
@@ -2390,7 +2276,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         p { color: #666; margin-bottom: 32px; line-height: 1.6; }
         button { 
           padding: 14px 32px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           color: white;
           border: none;
           border-radius: 8px;
@@ -2403,7 +2289,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         }
         button:hover { 
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
       </style>
     </head>
@@ -2412,7 +2298,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         <div class="icon">✅</div>
         <h1>Password Reset Successful!</h1>
         <p>Your password has been changed successfully. You can now sign in with your new password.</p>
-        <a href="${ISSUER_URL}" style="padding: 14px 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
+        <a href="${ISSUER_URL}" style="padding: 14px 32px; background: #18181b; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
           Go to Login
         </a>
       </div>
@@ -2438,13 +2324,13 @@ app.get('/reset-password/:token', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Reset Password - AIIN Identity</title>
+      <title>Reset Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           min-height: 100vh;
           display: flex;
           align-items: center;
@@ -2471,7 +2357,7 @@ app.get('/reset-password/:token', async (req, res) => {
         .logo-icon {
           width: 60px;
           height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           border-radius: 12px;
           display: inline-flex;
           align-items: center;
@@ -2512,13 +2398,13 @@ app.get('/reset-password/:token', async (req, res) => {
         }
         input[type="password"]:focus { 
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand, #6366f1);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
         button { 
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           color: white;
           border: none;
           border-radius: 8px;
@@ -2530,7 +2416,7 @@ app.get('/reset-password/:token', async (req, res) => {
         }
         button:hover { 
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
         button:disabled {
           opacity: 0.6;
@@ -2576,7 +2462,7 @@ app.get('/reset-password/:token', async (req, res) => {
           margin-top: 24px;
         }
         .back-link a {
-          color: #667eea;
+          color: var(--brand, #6366f1);
           text-decoration: none;
           font-size: 14px;
           font-weight: 600;
@@ -5326,12 +5212,10 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>AIIN Hub - Sign in</title>
+      <title>Seemplify - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css">
       <link rel="stylesheet" href="/css/login.css">
-      <style>
-        ${themeCss}
-      </style>
       <script src="/js/theme.js?v=3"></script>
     </head>
     <body>
@@ -5522,10 +5406,11 @@ function renderHubSignupPage(errorMsg) {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>AIIN Hub - Create account</title>
+      <title>Seemplify - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css">
+      <link rel="stylesheet" href="/css/login.css">
       <style>
-        ${themeCss}
         body {
           display: flex;
           align-items: center;
@@ -5547,7 +5432,7 @@ function renderHubSignupPage(errorMsg) {
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .card { padding: 22px; } }
       </style>
-      <script src="/js/theme.js?v=2"></script>
+      <script src="/js/theme.js?v=3"></script>
     </head>
     <body>
       <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 /* Enable View Transitions for smoother navigation */
 @view-transition {
@@ -6,19 +6,19 @@
 }
 
 :root {
-  /* Default Dark Mode */
+  /* Default Dark Mode — aligned with marketing-site globals.css */
   color-scheme: dark;
   --bg: #050505;
-  --panel: rgba(18, 18, 22, 0.78);
-  --panel-solid: rgba(10, 10, 14, 0.96);
+  --panel: rgba(20, 20, 25, 0.4);
+  --panel-solid: #0b0b11;
   --panel-strong: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.08);
-  --text: #f8fafc;
-  --text-secondary: #94a3b8;
-  --muted: #9ca3af;
+  --text: #ffffff;
+  --text-secondary: #a1a1aa;
+  --muted: #a1a1aa;
   --brand: #818cf8;
-  --brand-2: #c084fc;
-  --accent: #7c3aed;
+  --brand-2: #a855f7;
+  --accent: #818cf8;
   --success: #22c55e;
   --error: #ef4444;
   --warning: #f59e0b;
@@ -27,7 +27,13 @@
   --noise-opacity: 0.05;
   --input-bg: rgba(255, 255, 255, 0.05);
   --hover-bg: rgba(255, 255, 255, 0.04);
-  --card-bg: linear-gradient(175deg, rgba(18, 18, 22, 0.82), rgba(15, 15, 20, 0.68));
+  --card-bg: linear-gradient(175deg, rgba(24, 24, 27, 0.6), rgba(24, 24, 27, 0.3));
+
+  /* Aurora tokens — marketing-site HeroBackground */
+  --aurora-violet: rgba(124, 58, 237, 0.45);
+  --aurora-cyan: rgba(34, 211, 238, 0.4);
+  --aurora-emerald: rgba(16, 185, 129, 0.35);
+  --grid-line: rgba(255, 255, 255, 0.08);
 
   /* Badge Colors (Dark Mode Defaults) */
   --badge-owner-bg: rgba(192, 132, 252, 0.18);
@@ -46,26 +52,32 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f8fafc;
-  --panel: rgba(255, 255, 255, 0.9);
+  --bg: #fafafa;
+  --panel: rgba(255, 255, 255, 0.7);
   --panel-solid: #ffffff;
   --panel-strong: rgba(0, 0, 0, 0.06);
-  --border: rgba(0, 0, 0, 0.08);
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --muted: #64748b;
+  --border: rgba(0, 0, 0, 0.06);
+  --text: #09090b;
+  --text-secondary: #52525b;
+  --muted: #71717a;
   --brand: #6366f1;
   --brand-2: #a855f7;
-  --accent: #7c3aed;
+  --accent: #6366f1;
   --success: #16a34a;
   --error: #dc2626;
   --warning: #d97706;
-  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --card-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 1);
   --halo-opacity: 0.04;
   --noise-opacity: 0.02;
   --input-bg: rgba(255, 255, 255, 0.8);
   --hover-bg: rgba(0, 0, 0, 0.04);
   --card-bg: #ffffff;
+
+  /* Aurora tokens — marketing-site light mode */
+  --aurora-violet: rgba(99, 102, 241, 0.35);
+  --aurora-cyan: rgba(34, 211, 238, 0.28);
+  --aurora-emerald: rgba(16, 185, 129, 0.28);
+  --grid-line: rgba(15, 23, 42, 0.12);
 
   /* Badge Colors */
   --badge-owner-bg: rgba(168, 85, 247, 0.12);
@@ -77,17 +89,17 @@
   --badge-warning-bg: rgba(217, 119, 6, 0.12);
   --badge-warning-text: #b45309;
   --badge-neutral-bg: rgba(148, 163, 184, 0.12);
-  --badge-neutral-text: #475569;
+  --badge-neutral-text: #52525b;
   --badge-error-bg: rgba(220, 38, 38, 0.12);
   --badge-error-text: #b91c1c;
 }
 
-/* Light mode specific overrides */
+/* Light mode specific overrides — matches marketing-site HeroBackground radials */
 [data-theme="light"] body::before {
-  background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.08), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(168, 85, 247, 0.06), transparent 42%),
-    radial-gradient(circle at 50% 80%, rgba(59, 130, 246, 0.05), transparent 40%);
-  opacity: 0.5;
+  background: radial-gradient(circle at 20% 15%, rgba(56, 189, 248, 0.12), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(16, 185, 129, 0.10), transparent 50%),
+    radial-gradient(circle at 60% 70%, rgba(99, 102, 241, 0.08), transparent 55%);
+  opacity: 0.8;
 }
 
 [data-theme="light"] ::-webkit-scrollbar-track {
@@ -103,8 +115,8 @@
 }
 
 [data-theme="light"] .card::after {
-  background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.03), transparent 38%),
-    radial-gradient(circle at 80% 0%, rgba(168, 85, 247, 0.04), transparent 42%);
+  background: radial-gradient(circle at 20% 15%, rgba(56, 189, 248, 0.04), transparent 50%),
+    radial-gradient(circle at 80% 0%, rgba(16, 185, 129, 0.03), transparent 45%);
 }
 
 * {
@@ -112,7 +124,7 @@
 }
 
 body {
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: "IBM Plex Sans", system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -121,6 +133,20 @@ body {
   line-height: 1.6;
   position: relative;
   overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 body::before {
@@ -2195,7 +2221,7 @@ textarea {
 .halo.one {
   width: 520px;
   height: 520px;
-  background: #4338ca;
+  background: var(--aurora-violet, rgba(124, 58, 237, 0.45));
   top: -120px;
   left: -60px;
 }
@@ -2203,7 +2229,7 @@ textarea {
 .halo.two {
   width: 420px;
   height: 420px;
-  background: #7c3aed;
+  background: var(--aurora-cyan, rgba(34, 211, 238, 0.4));
   bottom: -120px;
   right: -60px;
 }
@@ -2211,7 +2237,7 @@ textarea {
 .halo.three {
   width: 360px;
   height: 360px;
-  background: #0ea5e9;
+  background: var(--aurora-emerald, rgba(16, 185, 129, 0.35));
   top: 30%;
   right: 10%;
 }
