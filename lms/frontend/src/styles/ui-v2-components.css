@@ -284,3 +284,177 @@
 		font-size: 1.08rem !important;
 	}
 }
+
+.ui-skin-v2 .lms-course-detail-page,
+.ui-skin-v2 .lms-course-detail-page * {
+	font-family: var(--v2-font-heading);
+}
+
+.ui-skin-v2 .lms-course-detail-page {
+	background:
+		radial-gradient(circle at 8% 4%, rgba(255, 255, 255, 0.46) 0, rgba(255, 255, 255, 0) 23rem),
+		var(--v2-page-bg);
+	min-height: 100%;
+}
+
+.ui-skin-v2 .lms-course-detail-header {
+	border-bottom-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .lms-course-detail-content {
+	max-width: 1360px;
+	margin: 1rem auto 2.4rem !important;
+	padding: 0 0.35rem;
+}
+
+.ui-skin-v2 .lms-course-detail-grid {
+	display: grid !important;
+	grid-template-columns: minmax(0, 1fr) 320px;
+	gap: 1.65rem;
+	align-items: start;
+}
+
+.ui-skin-v2 .lms-course-detail-main,
+.ui-skin-v2 .lms-course-detail-side {
+	width: 100% !important;
+	min-width: 0;
+}
+
+.ui-skin-v2 .lms-course-detail-title {
+	font-size: clamp(1.95rem, 2.55vw, 2.6rem) !important;
+	font-weight: 800 !important;
+	letter-spacing: 0.015em;
+	line-height: 1.08;
+}
+
+.ui-skin-v2 .lms-course-detail-intro {
+	font-size: 1.1rem;
+	font-weight: 600;
+	line-height: 1.45;
+	color: var(--v2-text) !important;
+}
+
+.ui-skin-v2 .lms-course-detail-meta {
+	margin-top: 0.45rem;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+}
+
+.ui-skin-v2 .lms-course-detail-tags .badge {
+	border-radius: 999px !important;
+	padding: 0.28rem 0.68rem !important;
+	font-size: 0.88rem !important;
+	font-weight: 700;
+	background: rgba(255, 255, 255, 0.74) !important;
+	border: 1px solid rgba(255, 255, 255, 0.75);
+}
+
+.ui-skin-v2 .lms-course-detail-description {
+	margin-top: 1.15rem !important;
+	background: rgba(255, 255, 255, 0.7);
+	border: 1px solid rgba(255, 255, 255, 0.78);
+	border-radius: 1.2rem;
+	padding: 1.08rem 1.1rem;
+	box-shadow: var(--v2-shadow-soft);
+}
+
+.ui-skin-v2 .lms-course-detail-description p,
+.ui-skin-v2 .lms-course-detail-description li {
+	line-height: 1.5;
+}
+
+.ui-skin-v2 .lms-course-detail-outline {
+	margin-top: 1.35rem !important;
+}
+
+.ui-skin-v2 .lms-course-detail-outline .lms-outline-shell {
+	background: rgba(255, 255, 255, 0.62);
+}
+
+.ui-skin-v2 .lms-course-detail-side {
+	position: sticky;
+	top: 5.25rem;
+}
+
+.ui-skin-v2 .lms-course-overlay {
+	width: 100%;
+	min-width: 0 !important;
+	max-width: none !important;
+	background: rgba(255, 255, 255, 0.68) !important;
+	border: 1px solid rgba(255, 255, 255, 0.76) !important;
+	border-radius: 1.25rem !important;
+	box-shadow: var(--v2-shadow-soft);
+	backdrop-filter: blur(7px);
+}
+
+.ui-skin-v2 .lms-course-overlay .p-5 {
+	padding: 1rem 1rem 1.1rem !important;
+}
+
+.ui-skin-v2 .lms-course-overlay-actions .w-full {
+	border-radius: 999px !important;
+	font-size: 1rem !important;
+	font-weight: 700;
+}
+
+.ui-skin-v2 .lms-course-overlay-stats {
+	margin-top: 0.9rem;
+	padding-top: 0.9rem;
+	border-top: 1px solid var(--v2-border);
+	gap: 0.72rem !important;
+}
+
+.ui-skin-v2 .lms-course-overlay-stats-title {
+	font-size: 1.05rem;
+	font-weight: 700 !important;
+}
+
+.ui-skin-v2 .lms-course-overlay-stat {
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.ui-skin-v2 .lms-course-detail-reviews,
+.ui-skin-v2 .lms-course-detail-related {
+	margin-top: 1.7rem;
+}
+
+html[data-theme='dark'] .ui-skin-v2 .lms-course-detail-description {
+	background: rgba(31, 39, 64, 0.78);
+	border-color: rgba(73, 93, 134, 0.62);
+}
+
+html[data-theme='dark'] .ui-skin-v2 .lms-course-overlay {
+	background: rgba(31, 39, 64, 0.84) !important;
+	border-color: rgba(73, 93, 134, 0.68) !important;
+}
+
+html[data-theme='dark'] .ui-skin-v2 .lms-course-detail-tags .badge {
+	background: rgba(40, 50, 79, 0.86) !important;
+	border-color: rgba(73, 93, 134, 0.62);
+}
+
+@media (max-width: 1100px) {
+	.ui-skin-v2 .lms-course-detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.ui-skin-v2 .lms-course-detail-side {
+		position: static;
+	}
+}
+
+@media (max-width: 768px) {
+	.ui-skin-v2 .lms-course-detail-content {
+		margin: 0.8rem auto 2rem !important;
+		padding: 0 0.05rem;
+	}
+
+	.ui-skin-v2 .lms-course-detail-title {
+		font-size: 1.75rem !important;
+	}
+
+	.ui-skin-v2 .lms-course-detail-intro {
+		font-size: 1rem;
+	}
+}

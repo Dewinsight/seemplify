@@ -1,5 +1,5 @@
 <template>
-	<div class="border-2 rounded-md min-w-80 max-w-sm">
+	<div class="lms-course-overlay border-2 rounded-md min-w-80 max-w-sm">
 		<iframe
 			v-if="course.data.video_link"
 			:src="video_link"
@@ -9,7 +9,7 @@
 			<div v-if="course.data.paid_course" class="text-2xl font-semibold mb-3">
 				{{ course.data.price }}
 			</div>
-			<div v-if="!readOnlyMode">
+			<div v-if="!readOnlyMode" class="lms-course-overlay-actions">
 				<div v-if="course.data.membership" class="space-y-2">
 					<router-link
 						:to="{
@@ -118,20 +118,20 @@
 					</Button>
 				</router-link>
 			</div>
-			<div class="space-y-4">
+			<div class="lms-course-overlay-stats space-y-4">
 				<div
-					class="font-medium text-ink-gray-9"
+					class="lms-course-overlay-stats-title font-medium text-ink-gray-9"
 					:class="{ 'mt-8': !readOnlyMode }"
 				>
 					{{ __('This course has:') }}
 				</div>
-				<div class="flex items-center text-ink-gray-9">
+				<div class="lms-course-overlay-stat flex items-center text-ink-gray-9">
 					<BookOpen class="h-4 w-4 stroke-1.5" />
 					<span class="ml-2">
 						{{ course.data.lessons }} {{ __('Lessons') }}
 					</span>
 				</div>
-				<div class="flex items-center text-ink-gray-9">
+				<div class="lms-course-overlay-stat flex items-center text-ink-gray-9">
 					<Users class="h-4 w-4 stroke-1.5" />
 					<span class="ml-2">
 						{{ formatAmount(course.data.enrollments) }}
@@ -140,7 +140,7 @@
 				</div>
 				<div
 					v-if="parseInt(course.data.rating) > 0"
-					class="flex items-center text-ink-gray-9"
+					class="lms-course-overlay-stat flex items-center text-ink-gray-9"
 				>
 					<Star class="size-4 stroke-1.5 fill-yellow-500 text-transparent" />
 					<span class="ml-2">
@@ -149,7 +149,7 @@
 				</div>
 				<div
 					v-if="course.data.enable_certification"
-					class="flex items-center font-semibold text-ink-gray-9"
+					class="lms-course-overlay-stat flex items-center font-semibold text-ink-gray-9"
 				>
 					<GraduationCap class="h-4 w-4 stroke-2" />
 					<span class="ml-2">
@@ -158,7 +158,7 @@
 				</div>
 				<div
 					v-if="course.data.paid_certificate"
-					class="flex items-center font-semibold text-ink-gray-9"
+					class="lms-course-overlay-stat flex items-center font-semibold text-ink-gray-9"
 				>
 					<GraduationCap class="h-4 w-4 stroke-2" />
 					<span class="ml-2">
