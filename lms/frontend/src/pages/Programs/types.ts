@@ -1,22 +1,23 @@
-interface Program {
+export interface Program {
     name: string;
     title: string;
+    image: string;
     published: boolean;
     enforce_course_order: boolean;
     program_courses: ProgramCourse[];
-    program_batches: ProgramMember[];
+    program_members: ProgramMember[];
     course_count: number;
     member_count: number;
 }
 
-interface ProgramCourse {
+export interface ProgramCourse {
     course: string;
     course_title: string;
     idx: number;
     name: string;
 }
 
-interface ProgramMember {
+export interface ProgramMember {
     member: string;
     full_name: string;
     progress: number;
@@ -24,7 +25,7 @@ interface ProgramMember {
     name: string;
 }  
 
-interface Programs {
+export interface Programs {
     data: Program[];
     reload: () => void;
     hasNextPage: boolean;

@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
+  "image",
   "published",
   "column_break_cwjx",
   "enforce_course_order",
@@ -39,6 +40,11 @@
    "label": "Title",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Image"
   },
   {
    "default": "0",

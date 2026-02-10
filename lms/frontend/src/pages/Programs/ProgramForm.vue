@@ -42,6 +42,57 @@
 						/>
 					</div>
 				</div>
+				<div class="pb-5 lms-program-form-image-wrap">
+					<div class="text-xs text-ink-gray-5 mb-2">
+						{{ __('Program Cover Image') }}
+					</div>
+					<FileUploader
+						v-if="!program.image"
+						:fileTypes="['image/*']"
+						:validateFile="validateFile"
+						@success="(file) => saveImage(file)"
+					>
+						<template #default="{ progress, uploading, openFileSelector }">
+							<div class="lms-program-form-image-upload-shell">
+								<div
+									class="lms-program-form-image-placeholder"
+									@click="openFileSelector"
+								>
+									<Image class="size-6 stroke-1.5 text-ink-gray-6" />
+								</div>
+								<div>
+									<Button @click="openFileSelector" :loading="uploading">
+										{{
+											uploading
+												? __('Uploading {0}%').format(
+														Math.round(progress || 0)
+													)
+												: __('Upload Cover')
+										}}
+									</Button>
+									<div class="mt-1 text-sm text-ink-gray-6">
+										{{ __('Displayed on program cards and detail pages.') }}
+									</div>
+								</div>
+							</div>
+						</template>
+					</FileUploader>
+					<div v-else class="lms-program-form-image-preview-shell">
+						<img
+							:src="program.image"
+							:alt="program.name || __('Program')"
+							class="lms-program-form-image-preview"
+						/>
+						<div>
+							<Button @click="removeImage()" variant="outline">
+								{{ __('Remove') }}
+							</Button>
+							<div class="mt-1 text-sm text-ink-gray-6">
+								{{ __('Displayed on program cards and detail pages.') }}
+							</div>
+						</div>
+					</div>
+				</div>
 
 				<div class="pb-5">
 					<div class="flex items-center justify-between mt-5 mb-4">
@@ -242,6 +293,7 @@ import {
 	Button,
 	createListResource,
 	Dialog,
+	FileUploader,
 	FormControl,
 	ListSelectBanner,
 	ListView,
@@ -252,9 +304,14 @@ import {
 	toast,
 } from 'frappe-ui'
 import { computed, ref, watch, getCurrentInstance } from 'vue'
-import { Plus, Trash2, TrendingUp } from 'lucide-vue-next'
-import { Programs, Program } from '@/types/programs'
-import { escapeHTML, openSettings } from '@/utils'
+import { Image, Plus, Trash2, TrendingUp } from 'lucide-vue-next'
+import type {
+	Program,
+	ProgramCourse,
+	ProgramMember,
+	Programs,
+} from '@/pages/Programs/types'
+import { escapeHTML, openSettings, validateFile } from '@/utils'
 import Link from '@/components/Controls/Link.vue'
 import Draggable from 'vuedraggable'
 import ProgramProgressSummary from '@/pages/Programs/ProgramProgressSummary.vue'
@@ -283,6 +340,7 @@ const props = withDefaults(
 const program = ref<Program>({
 	name: '',
 	title: '',
+	image: '',
 	published: false,
 	enforce_course_order: false,
 	program_courses: [],
@@ -311,6 +369,7 @@ const setProgramData = () => {
 		program.value = {
 			name: '',
 			title: '',
+			image: '',
 			published: false,
 			enforce_course_order: false,
 			program_courses: [],
@@ -445,6 +504,16 @@ const addCourse = (close: () => void) => {
 	} else {
 		toast.warning(__('Course already added to program'))
 	}
+}
+
+const saveImage = (file: { file_url: string }) => {
+	program.value.image = file.file_url
+	dirty.value = true
+}
+
+const removeImage = () => {
+	program.value.image = ''
+	dirty.value = true
 }
 
 const addMember = (close: () => void) => {

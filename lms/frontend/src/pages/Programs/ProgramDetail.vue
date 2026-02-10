@@ -1,30 +1,57 @@
 <template>
 	<header
-		class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
+		class="lms-program-detail-header sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 	>
 		<Breadcrumbs :items="breadcrumbs" />
 	</header>
-	<div v-if="program.data" class="pt-5 px-5 pb-10 mx-auto">
-		<div class="flex items-center space-x-2 mb-5">
-			<div class="text-lg font-semibold text-ink-gray-9">
-				{{ program.data.name }}
+	<div v-if="program.data" class="lms-program-detail-page pt-5 px-5 pb-10 mx-auto">
+		<div class="lms-program-detail-hero mb-8">
+			<div class="lms-program-detail-cover">
+				<img
+					v-if="program.data.image"
+					:src="program.data.image"
+					:alt="program.data.title || program.data.name"
+					class="lms-program-detail-cover-image"
+				/>
+				<div
+					v-else
+					class="lms-program-detail-cover-fallback"
+					:style="{ background: getProgramGradient(program.data.name) }"
+				></div>
+				<div class="lms-program-detail-cover-overlay"></div>
+				<div class="lms-program-detail-cover-title">
+					{{ program.data.title || program.data.name }}
+				</div>
 			</div>
-
-			<Badge :theme="program.data.progress < 100 ? 'orange' : 'green'">
-				{{ program.data.progress }}% {{ __('completed') }}
-			</Badge>
-
-			<Tooltip
-				v-if="program.data.enforce_course_order"
-				placement="right"
-				:text="
-					__(
-						'Courses must be completed in order. You can only start the next course after completing the previous one.'
-					)
-				"
-			>
-				<Info class="size-3 cursor-pointer" />
-			</Tooltip>
+			<div class="lms-program-detail-meta">
+				<div class="flex items-center flex-wrap gap-2">
+					<Badge :theme="(program.data.progress || 0) < 100 ? 'orange' : 'green'">
+						{{ program.data.progress || 0 }}% {{ __('completed') }}
+					</Badge>
+					<Tooltip
+						v-if="program.data.enforce_course_order"
+						placement="right"
+						:text="
+							__(
+								'Courses must be completed in order. You can only start the next course after completing the previous one.'
+							)
+						"
+					>
+						<Info class="size-3 cursor-pointer" />
+					</Tooltip>
+				</div>
+				<div class="lms-program-detail-meta-copy mt-3">
+					{{
+						__('{0} courses | {1} members').format(
+							program.data.course_count || 0,
+							program.data.member_count || 0
+						)
+					}}
+				</div>
+			</div>
+		</div>
+		<div class="lms-program-detail-section-title text-lg font-semibold text-ink-gray-9 mb-4">
+			{{ __('Courses in this Program') }}
 		</div>
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
 			<div
@@ -84,6 +111,20 @@ const props = defineProps<{
 
 const wait = (delay: number) => {
 	return new Promise((resolve) => setTimeout(resolve, delay))
+}
+
+const getProgramGradient = (programName = '') => {
+	const gradients = [
+		'linear-gradient(135deg, #5f63ea 0%, #3b82f6 45%, #35b3f5 100%)',
+		'linear-gradient(135deg, #f97316 0%, #ef4444 50%, #ec4899 100%)',
+		'linear-gradient(135deg, #0ea5e9 0%, #6366f1 50%, #a855f7 100%)',
+		'linear-gradient(135deg, #22c55e 0%, #14b8a6 50%, #06b6d4 100%)',
+	]
+	let seed = 0
+	for (let i = 0; i < programName.length; i++) {
+		seed += programName.charCodeAt(i)
+	}
+	return gradients[seed % gradients.length]
 }
 
 const isProgramEnrolled = (data: any) => {
@@ -173,7 +214,7 @@ const breadcrumbs = computed(() => {
 
 usePageMeta(() => {
 	return {
-		title: props.programName,
+		title: program.data?.title || props.programName,
 		icon: brand.favicon,
 	}
 })

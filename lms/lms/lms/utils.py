@@ -1880,7 +1880,10 @@ def get_programs():
 	for program in enrolled_programs:
 		program.update(
 			frappe.db.get_value(
-				"LMS Program", program.name, ["name", "course_count", "member_count"], as_dict=True
+				"LMS Program",
+				program.name,
+				["name", "title", "image", "course_count", "member_count", "published"],
+				as_dict=True,
 			)
 		)
 
@@ -1889,7 +1892,7 @@ def get_programs():
 		{
 			"published": 1,
 		},
-		["name", "course_count", "member_count"],
+		["name", "title", "image", "course_count", "member_count", "published"],
 	)
 
 	programs_to_remove = []
@@ -1911,6 +1914,8 @@ def get_program_details(program_name):
 		program_name,
 		[
 			"name",
+			"title",
+			"image",
 			"member_count",
 			"course_count",
 			"published",
