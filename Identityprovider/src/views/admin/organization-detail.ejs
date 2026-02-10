@@ -130,6 +130,10 @@
   <% const pendingRequests = requests.filter(request => request.status === 'pending').length; %>
   <% const currentSubscription = organization.activeSubscription; %>
   <% const statusBadgeClass = organization.subscriptionStatus === 'none' ? 'cancelled' : (organization.subscriptionStatus || 'pending'); %>
+  <% const launchItems = appLaunches || []; %>
+  <% const onboardingItems = onboardingAssignments || []; %>
+  <% const successfulLaunches = launchItems.filter(item => item.isSuccessful).length; %>
+  <% const onboardingInProgress = onboardingSummary?.inProgress || 0; %>
 
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'organizations' }) %>
@@ -165,6 +169,16 @@
           <div class="admin-stat-value" style="font-size: 18px;">
             <span class="status-badge status-badge--<%= statusBadgeClass %>"><%= organization.subscriptionStatus || 'none' %></span>
           </div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">App Launch Clicks</div>
+          <div class="admin-stat-value"><%= launchItems.length %></div>
+          <div class="org-muted"><%= successfulLaunches %> successful</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Onboarding</div>
+          <div class="admin-stat-value"><%= onboardingItems.length %></div>
+          <div class="org-muted"><%= onboardingInProgress %> in progress</div>
         </div>
       </div>
 
@@ -264,6 +278,55 @@
 
           <div class="admin-card">
             <div class="admin-card-header">
+              <div class="admin-card-title">App Click Activity</div>
+            </div>
+
+            <% if (launchItems.length > 0) { %>
+              <div class="admin-table-container" style="border: none;">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>App</th>
+                      <th>User</th>
+                      <th>Outcome</th>
+                      <th>Auth Flow</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% launchItems.forEach(launch => { %>
+                      <tr>
+                        <td>
+                          <div style="font-weight: 600;"><%= launch.appName || launch.appId || 'Unknown app' %></div>
+                          <div class="org-muted"><%= launch.appId || 'N/A' %></div>
+                        </td>
+                        <td>
+                          <div><%= launch.account?.profile?.name || launch.account?.email || 'Unknown user' %></div>
+                          <div class="org-muted"><%= launch.account?.email || 'N/A' %></div>
+                        </td>
+                        <td>
+                          <span class="status-badge status-badge--<%= launch.badgeStatus || 'pending' %>"><%= launch.statusLabel || launch.status || 'unknown' %></span>
+                        </td>
+                        <td>
+                          <%= launch.details?.authType || launch.source || 'hub' %>
+                        </td>
+                        <td>
+                          <%= launch.createdAt ? new Date(launch.createdAt).toLocaleString() : 'N/A' %>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No app clicks logged yet for this organization.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
               <div class="admin-card-title">Subscription History</div>
             </div>
 
@@ -304,6 +367,61 @@
             <% } else { %>
               <div class="admin-empty" style="padding: 16px;">
                 <p>No subscriptions found for this organization.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Onboarding Activity</div>
+            </div>
+
+            <% if (onboardingItems.length > 0) { %>
+              <div class="admin-table-container" style="border: none;">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>Template</th>
+                      <th>Progress</th>
+                      <th>Status</th>
+                      <th>Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% onboardingItems.forEach(assignment => { %>
+                      <tr>
+                        <td>
+                          <div style="font-weight: 600;"><%= assignment.member?.profile?.name || assignment.member?.email || 'Unknown member' %></div>
+                          <div class="org-muted"><%= assignment.member?.email || 'N/A' %></div>
+                        </td>
+                        <td>
+                          <div><%= assignment.template?.name || 'Custom Assignment' %></div>
+                          <% if (assignment.dueAt) { %>
+                            <div class="org-muted">Due: <%= new Date(assignment.dueAt).toLocaleDateString() %></div>
+                          <% } %>
+                        </td>
+                        <td>
+                          <% if (assignment.totalItems > 0) { %>
+                            <%= assignment.completedItems %> / <%= assignment.totalItems %> completed
+                          <% } else { %>
+                            N/A
+                          <% } %>
+                        </td>
+                        <td>
+                          <span class="status-badge status-badge--<%= assignment.badgeStatus || 'pending' %>"><%= (assignment.status || 'unknown').replace(/_/g, ' ') %></span>
+                        </td>
+                        <td>
+                          <div><%= assignment.updatedAt ? new Date(assignment.updatedAt).toLocaleString() : 'N/A' %></div>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No onboarding assignments found for this organization.</p>
               </div>
             <% } %>
           </div>
@@ -393,6 +511,64 @@
                 <p>No active plan assigned.</p>
               </div>
             <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">App Usage Summary</div>
+            </div>
+            <% if (appLaunchSummary && appLaunchSummary.length > 0) { %>
+              <div class="org-kv-list">
+                <% appLaunchSummary.forEach(summary => { %>
+                  <div class="org-kv-item">
+                    <div class="org-kv-key"><%= summary.appName %></div>
+                    <div class="org-kv-value">
+                      <strong><%= summary.totalLaunches %></strong> launches
+                      <div class="org-muted">
+                        <%= summary.successfulLaunches %> successful
+                        <% if (summary.blockedLaunches > 0) { %>, <%= summary.blockedLaunches %> blocked<% } %>
+                        <% if (summary.failedLaunches > 0) { %>, <%= summary.failedLaunches %> failed<% } %>
+                      </div>
+                      <% if (summary.lastUsedAt) { %>
+                        <div class="org-muted">Last used: <%= new Date(summary.lastUsedAt).toLocaleString() %></div>
+                      <% } %>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No app usage summary available yet.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Onboarding Summary</div>
+            </div>
+            <div class="org-kv-list">
+              <div class="org-kv-item">
+                <div class="org-kv-key">Total</div>
+                <div class="org-kv-value"><%= onboardingSummary?.total || 0 %> assignments</div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Pending</div>
+                <div class="org-kv-value"><%= onboardingSummary?.pending || 0 %></div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">In Progress</div>
+                <div class="org-kv-value"><%= onboardingSummary?.inProgress || 0 %></div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Completed</div>
+                <div class="org-kv-value"><%= onboardingSummary?.completed || 0 %></div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Cancelled</div>
+                <div class="org-kv-value"><%= onboardingSummary?.cancelled || 0 %></div>
+              </div>
+            </div>
           </div>
 
           <div class="admin-card">

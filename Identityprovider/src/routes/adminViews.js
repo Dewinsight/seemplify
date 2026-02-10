@@ -187,7 +187,7 @@ router.get('/organizations/:organizationId', async (req, res) => {
   try {
     const organizationId = req.params.organizationId
 
-    const [organization, subscriptions, requests] = await Promise.all([
+    const [organization, subscriptions, requests, onboardingAssignmentsRaw, appLaunchesRaw] = await Promise.all([
       Organization.findById(organizationId)
         .populate('owner', 'email profile.name')
         .populate('members.account', 'email profile.name')
@@ -210,7 +210,17 @@ router.get('/organizations/:organizationId', async (req, res) => {
         .limit(15)
         .populate('plan', 'name slug pricing')
         .populate('requestedBy', 'email profile.name')
-        .populate('processedBy', 'email profile.name')
+        .populate('processedBy', 'email profile.name'),
+      OnboardingAssignment.find({ organization: organizationId })
+        .sort({ updatedAt: -1 })
+        .limit(20)
+        .populate('member', 'email profile.name')
+        .populate('createdBy', 'email profile.name')
+        .populate('template', 'name'),
+      AppLaunchActivity.find({ organization: organizationId })
+        .sort({ createdAt: -1 })
+        .limit(60)
+        .populate('account', 'email profile.name')
     ])
 
     if (!organization) {
@@ -231,6 +241,84 @@ router.get('/organizations/:organizationId', async (req, res) => {
       return aName.localeCompare(bName)
     })
 
+    const onboardingAssignments = onboardingAssignmentsRaw.map((assignment) => {
+      const assignmentObject = assignment.toObject()
+      const allItems = assignmentObject.items || []
+      const requiredItems = allItems.filter(item => item.required !== false)
+      const progressItems = requiredItems.length > 0 ? requiredItems : allItems
+      const completedItems = progressItems.filter(item => item.status === 'completed').length
+
+      return {
+        ...assignmentObject,
+        completedItems,
+        totalItems: progressItems.length,
+        badgeStatus: assignmentObject.status === 'in_progress' ? 'pending' : assignmentObject.status
+      }
+    })
+
+    const onboardingSummary = onboardingAssignments.reduce((acc, assignment) => {
+      acc.total += 1
+      if (assignment.status === 'pending') acc.pending += 1
+      if (assignment.status === 'in_progress') acc.inProgress += 1
+      if (assignment.status === 'completed') acc.completed += 1
+      if (assignment.status === 'cancelled') acc.cancelled += 1
+      return acc
+    }, {
+      total: 0,
+      pending: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0
+    })
+
+    const mapLaunchStatusToBadge = (status) => {
+      if (typeof status === 'string' && status.startsWith('launched_')) return 'active'
+      if (status === 'blocked_subscription') return 'pending'
+      if (status === 'no_session') return 'cancelled'
+      return 'rejected'
+    }
+
+    const appLaunches = appLaunchesRaw.map((launch) => {
+      const launchObject = launch.toObject()
+      const status = launchObject.status || 'unknown'
+
+      return {
+        ...launchObject,
+        isSuccessful: typeof status === 'string' && status.startsWith('launched_'),
+        badgeStatus: mapLaunchStatusToBadge(status),
+        statusLabel: status.replace(/_/g, ' ')
+      }
+    })
+
+    const appLaunchSummaryMap = new Map()
+    for (const launch of appLaunches) {
+      const key = launch.appId || 'unknown'
+      if (!appLaunchSummaryMap.has(key)) {
+        appLaunchSummaryMap.set(key, {
+          appId: key,
+          appName: launch.appName || launch.appId || 'Unknown App',
+          totalLaunches: 0,
+          successfulLaunches: 0,
+          blockedLaunches: 0,
+          failedLaunches: 0,
+          lastUsedAt: launch.createdAt
+        })
+      }
+
+      const summary = appLaunchSummaryMap.get(key)
+      summary.totalLaunches += 1
+      if (launch.isSuccessful) summary.successfulLaunches += 1
+      else if (launch.status === 'blocked_subscription') summary.blockedLaunches += 1
+      else summary.failedLaunches += 1
+
+      if (launch.createdAt && (!summary.lastUsedAt || new Date(launch.createdAt) > new Date(summary.lastUsedAt))) {
+        summary.lastUsedAt = launch.createdAt
+      }
+    }
+
+    const appLaunchSummary = Array.from(appLaunchSummaryMap.values())
+      .sort((a, b) => b.totalLaunches - a.totalLaunches)
+
     const activity = [
       ...requests.map(request => ({
         id: request._id,
@@ -247,16 +335,36 @@ router.get('/organizations/:organizationId', async (req, res) => {
         title: `${subscription.plan?.name || 'Subscription'} (${subscription.billingCycle || 'n/a'})`,
         actor: subscription.approvedBy?.profile?.name || subscription.approvedBy?.email || 'System',
         at: subscription.createdAt
+      })),
+      ...onboardingAssignments.map(assignment => ({
+        id: assignment._id,
+        type: 'onboarding',
+        status: assignment.badgeStatus || 'pending',
+        title: `Onboarding for ${assignment.member?.profile?.name || assignment.member?.email || 'Unknown member'}`,
+        actor: assignment.createdBy?.profile?.name || assignment.createdBy?.email || 'System',
+        at: assignment.updatedAt || assignment.createdAt
+      })),
+      ...appLaunches.map(launch => ({
+        id: launch._id,
+        type: 'app_click',
+        status: launch.badgeStatus || 'pending',
+        title: `${launch.appName || launch.appId || 'Unknown app'} launch`,
+        actor: launch.account?.profile?.name || launch.account?.email || 'Unknown user',
+        at: launch.createdAt
       }))
     ]
       .sort((a, b) => new Date(b.at) - new Date(a.at))
-      .slice(0, 20)
+      .slice(0, 30)
 
     res.render('admin/organization-detail', {
       organization,
       members,
       subscriptions,
       requests,
+      onboardingAssignments,
+      onboardingSummary,
+      appLaunches,
+      appLaunchSummary,
       activity,
       user: req.user
     })
