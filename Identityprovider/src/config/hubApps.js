@@ -47,7 +47,7 @@ const developmentApps = [
   },
   {
     appId: 'smarthr',
-    name: 'SmartHR',
+    name: 'Recruiter',
     description: 'AI-powered recruitment and HR management',
     icon: 'briefcase',
     color: '#667eea',
@@ -181,7 +181,7 @@ const productionApps = [
   },
   {
     appId: 'smarthr',
-    name: 'SmartHR',
+    name: 'Recruiter',
     description: 'AI-powered recruitment and HR management',
     icon: 'briefcase',
     color: '#667eea',

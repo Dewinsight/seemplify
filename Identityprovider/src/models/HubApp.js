@@ -63,7 +63,7 @@ export async function seedDefaultApps() {
   const defaultApps = [
     {
       appId: 'smarthr',
-      name: 'SmartHR',
+      name: 'Recruiter',
       description: 'AI-powered recruitment and HR management',
       icon: 'briefcase',
       color: '#667eea',
