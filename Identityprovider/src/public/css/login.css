@@ -1,7 +1,12 @@
 /* Login Page – Premium Split-Screen Design with Light/Dark Mode */
 /* Matching marketing site color scheme and aesthetics */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --login-font-body: "Nunito", "IBM Plex Sans", system-ui, sans-serif;
+  --login-font-display: "Baloo 2", "Space Grotesk", "Nunito", system-ui, sans-serif;
+}
 
 /* === Reset & Base === */
 * { 
@@ -11,7 +16,7 @@
 }
 
 body {
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--login-font-body);
   background: var(--bg);
   min-height: 100vh;
   color: var(--text);
@@ -24,6 +29,16 @@ body {
   letter-spacing: -0.015em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.login-brand-name,
+.login-heading,
+.marketing-heading,
+.feature-title,
+.form-title,
+.title h1,
+.intro h1 {
+  font-family: var(--login-font-display);
 }
 
 /* === Split-Screen Container === */
@@ -707,9 +722,9 @@ body.light .marketing-pill .status-dot {
 
 /* Marketing heading — zinc scale, matching marketing-site */
 .marketing-heading {
-  font-family: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--login-font-display);
   font-size: clamp(32px, 4vw, 44px);
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.04em;
   color: #ffffff;
   line-height: 1.15;

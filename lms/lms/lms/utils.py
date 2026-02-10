@@ -2072,7 +2072,7 @@ def set_program_image_attachment(program_name, image):
 	if not image:
 		return
 
-	file_name = frappe.db.get_value("File", {"file_url": image}, "name")
+	file_name = get_file_name_from_url(image)
 	if not file_name:
 		return
 
@@ -2085,6 +2085,25 @@ def set_program_image_attachment(program_name, image):
 			"attached_to_field": "image",
 		},
 	)
+
+
+def get_file_name_from_url(file_url):
+	if not file_url:
+		return None
+
+	file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	if file_name:
+		return file_name
+
+	if file_url.startswith("/files/"):
+		private_path = file_url.replace("/files/", "/private/files/", 1)
+		return frappe.db.get_value("File", {"file_url": private_path}, "name")
+
+	if file_url.startswith("/private/files/"):
+		public_path = file_url.replace("/private/files/", "/files/", 1)
+		return frappe.db.get_value("File", {"file_url": public_path}, "name")
+
+	return None
 
 
 def get_program_cover_image(program_name):
