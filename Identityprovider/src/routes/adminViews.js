@@ -4,7 +4,10 @@ import { subscriptionService } from '../services/subscriptionService.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
 import Plan from '../models/Plan.js'
+import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
+import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
+import AppLaunchActivity from '../models/AppLaunchActivity.js'
 
 const router = express.Router()
 
@@ -172,6 +175,96 @@ router.get('/organizations', async (req, res) => {
     res.status(500).render('error', {
       title: 'Error',
       message: 'Failed to load organizations'
+    })
+  }
+})
+
+/**
+ * GET /admin/organizations/:organizationId
+ * Organization detail view
+ */
+router.get('/organizations/:organizationId', async (req, res) => {
+  try {
+    const organizationId = req.params.organizationId
+
+    const [organization, subscriptions, requests] = await Promise.all([
+      Organization.findById(organizationId)
+        .populate('owner', 'email profile.name')
+        .populate('members.account', 'email profile.name')
+        .populate({
+          path: 'activeSubscription',
+          populate: [
+            { path: 'plan', select: 'name slug pricing' },
+            { path: 'approvedBy', select: 'email profile.name' }
+          ]
+        })
+        .populate('currentPlan', 'name slug pricing'),
+      Subscription.find({ organization: organizationId })
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .populate('plan', 'name slug pricing')
+        .populate('approvedBy', 'email profile.name')
+        .populate('cancelledBy', 'email profile.name'),
+      SubscriptionRequest.find({ organization: organizationId })
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .populate('plan', 'name slug pricing')
+        .populate('requestedBy', 'email profile.name')
+        .populate('processedBy', 'email profile.name')
+    ])
+
+    if (!organization) {
+      return res.status(404).render('error', {
+        title: 'Not Found',
+        message: 'Organization not found'
+      })
+    }
+
+    const members = [...(organization.members || [])].sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'active' ? -1 : 1
+      if (a.role !== b.role) {
+        const roleWeight = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, staff: 5 }
+        return (roleWeight[a.role] ?? 99) - (roleWeight[b.role] ?? 99)
+      }
+      const aName = a.account?.profile?.name || a.account?.email || ''
+      const bName = b.account?.profile?.name || b.account?.email || ''
+      return aName.localeCompare(bName)
+    })
+
+    const activity = [
+      ...requests.map(request => ({
+        id: request._id,
+        type: 'request',
+        status: request.status,
+        title: `${request.requestTypeDisplay || request.requestType || 'Subscription request'}${request.plan?.name ? ` - ${request.plan.name}` : ''}`,
+        actor: request.requestedBy?.profile?.name || request.requestedBy?.email || 'Unknown',
+        at: request.createdAt
+      })),
+      ...subscriptions.map(subscription => ({
+        id: subscription._id,
+        type: 'subscription',
+        status: subscription.status,
+        title: `${subscription.plan?.name || 'Subscription'} (${subscription.billingCycle || 'n/a'})`,
+        actor: subscription.approvedBy?.profile?.name || subscription.approvedBy?.email || 'System',
+        at: subscription.createdAt
+      }))
+    ]
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 20)
+
+    res.render('admin/organization-detail', {
+      organization,
+      members,
+      subscriptions,
+      requests,
+      activity,
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading organization detail:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to load organization details'
     })
   }
 })

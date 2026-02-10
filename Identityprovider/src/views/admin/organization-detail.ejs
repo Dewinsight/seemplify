@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Organization Details - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .org-detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .org-detail-stack {
+      display: grid;
+      gap: 20px;
+      align-content: start;
+    }
+
+    .org-meta-line {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      word-break: break-word;
+    }
+
+    .org-kv-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .org-kv-item {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .org-kv-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .org-kv-key {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .org-kv-value {
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .org-muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .org-activity-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .org-activity-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--panel-strong);
+    }
+
+    .org-activity-title {
+      font-size: 13px;
+      color: var(--text);
+      margin: 0 0 6px;
+      line-height: 1.45;
+    }
+
+    .org-activity-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .org-pill {
+      display: inline-flex;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--hover-bg);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    @media (max-width: 1100px) {
+      .org-detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .org-kv-item {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <% const activeMembers = members.filter(member => member.status === 'active'); %>
+  <% const inactiveMembers = members.filter(member => member.status !== 'active'); %>
+  <% const pendingRequests = requests.filter(request => request.status === 'pending').length; %>
+  <% const currentSubscription = organization.activeSubscription; %>
+  <% const statusBadgeClass = organization.subscriptionStatus === 'none' ? 'cancelled' : (organization.subscriptionStatus || 'pending'); %>
+
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'organizations' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1><%= organization.name || 'Organization' %></h1>
+          <div class="org-meta-line">Organization ID: <%= organization._id %></div>
+        </div>
+        <div class="admin-header-actions">
+          <a href="/admin/organizations" class="btn btn-secondary">Back to Organizations</a>
+          <a href="/admin/subscriptions" class="btn btn-secondary">Subscriptions</a>
+          <a href="/admin/requests" class="btn btn-secondary">Requests</a>
+        </div>
+      </div>
+
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Active Members</div>
+          <div class="admin-stat-value"><%= activeMembers.length %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Pending Requests</div>
+          <div class="admin-stat-value" style="color: <%= pendingRequests > 0 ? '#f59e0b' : 'var(--text)' %>"><%= pendingRequests %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Subscription Records</div>
+          <div class="admin-stat-value"><%= subscriptions.length %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Subscription Status</div>
+          <div class="admin-stat-value" style="font-size: 18px;">
+            <span class="status-badge status-badge--<%= statusBadgeClass %>"><%= organization.subscriptionStatus || 'none' %></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="org-detail-grid">
+        <section class="org-detail-stack">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Users</div>
+            </div>
+
+            <% if (members.length > 0) { %>
+              <div class="admin-table-container" style="border: none;">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% members.forEach(member => { %>
+                      <tr>
+                        <td>
+                          <div style="font-weight: 600;"><%= member.account?.profile?.name || member.account?.email || 'Unknown user' %></div>
+                          <div class="org-muted"><%= member.account?.email || 'N/A' %></div>
+                        </td>
+                        <td style="text-transform: capitalize;"><%= (member.role || 'unknown').replace(/_/g, ' ') %></td>
+                        <td>
+                          <span class="status-badge status-badge--<%= member.status === 'active' ? 'active' : 'cancelled' %>"><%= member.status || 'unknown' %></span>
+                        </td>
+                        <td>
+                          <%= member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : 'N/A' %>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No members found for this organization.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Plan Request Activity</div>
+            </div>
+
+            <% if (requests.length > 0) { %>
+              <div class="admin-table-container" style="border: none;">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Request</th>
+                      <th>Requested By</th>
+                      <th>Status</th>
+                      <th>Submitted</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% requests.forEach(request => { %>
+                      <tr>
+                        <td>
+                          <div style="font-weight: 600;"><%= request.plan?.name || 'Unknown plan' %></div>
+                          <div class="org-muted">
+                            <%= request.requestTypeDisplay || request.requestType || 'Request' %>
+                            <% if (request.formattedPrice) { %> - <%= request.formattedPrice %><% } %>
+                          </div>
+                        </td>
+                        <td>
+                          <div><%= request.requestedBy?.profile?.name || request.requestedBy?.email || 'Unknown' %></div>
+                          <div class="org-muted"><%= request.requestedBy?.email || 'N/A' %></div>
+                        </td>
+                        <td>
+                          <span class="status-badge status-badge--<%= request.status || 'pending' %>"><%= request.status || 'unknown' %></span>
+                        </td>
+                        <td><%= request.createdAt ? new Date(request.createdAt).toLocaleString() : 'N/A' %></td>
+                        <td>
+                          <a href="/admin/requests/<%= request._id %>" class="btn btn-sm btn-secondary">View</a>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No subscription requests yet.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Subscription History</div>
+            </div>
+
+            <% if (subscriptions.length > 0) { %>
+              <div class="admin-table-container" style="border: none;">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Plan</th>
+                      <th>Status</th>
+                      <th>Period</th>
+                      <th>Approved By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% subscriptions.forEach(subscription => { %>
+                      <tr>
+                        <td>
+                          <div style="font-weight: 600;"><%= subscription.plan?.name || 'Unknown plan' %></div>
+                          <div class="org-muted"><%= subscription.formattedPrice || '' %></div>
+                        </td>
+                        <td>
+                          <span class="status-badge status-badge--<%= subscription.status || 'pending' %>"><%= subscription.status || 'unknown' %></span>
+                        </td>
+                        <td>
+                          <div><%= subscription.startDate ? new Date(subscription.startDate).toLocaleDateString() : 'N/A' %></div>
+                          <div class="org-muted">to <%= subscription.endDate ? new Date(subscription.endDate).toLocaleDateString() : 'N/A' %></div>
+                        </td>
+                        <td>
+                          <div><%= subscription.approvedBy?.profile?.name || subscription.approvedBy?.email || 'N/A' %></div>
+                          <div class="org-muted"><%= subscription.approvedAt ? new Date(subscription.approvedAt).toLocaleString() : '' %></div>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No subscriptions found for this organization.</p>
+              </div>
+            <% } %>
+          </div>
+        </section>
+
+        <aside class="org-detail-stack">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Organization Overview</div>
+            </div>
+            <div class="org-kv-list">
+              <div class="org-kv-item">
+                <div class="org-kv-key">Owner</div>
+                <div class="org-kv-value">
+                  <%= organization.owner?.profile?.name || organization.owner?.email || 'Unknown' %><br>
+                  <span class="org-muted"><%= organization.owner?.email || 'N/A' %></span>
+                </div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Description</div>
+                <div class="org-kv-value"><%= organization.description || 'No description set' %></div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Created</div>
+                <div class="org-kv-value"><%= organization.createdAt ? new Date(organization.createdAt).toLocaleString() : 'N/A' %></div>
+              </div>
+              <div class="org-kv-item">
+                <div class="org-kv-key">Members</div>
+                <div class="org-kv-value">
+                  <%= activeMembers.length %> active
+                  <% if (inactiveMembers.length > 0) { %>
+                    <span class="org-muted">, <%= inactiveMembers.length %> inactive</span>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Current Plan</div>
+            </div>
+
+            <% if (currentSubscription) { %>
+              <div class="org-kv-list">
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Plan</div>
+                  <div class="org-kv-value"><%= currentSubscription.plan?.name || organization.currentPlan?.name || 'Unknown plan' %></div>
+                </div>
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Status</div>
+                  <div class="org-kv-value">
+                    <span class="status-badge status-badge--<%= currentSubscription.status || 'pending' %>"><%= currentSubscription.status || 'unknown' %></span>
+                  </div>
+                </div>
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Billing</div>
+                  <div class="org-kv-value">
+                    <%= currentSubscription.billingCycle || 'N/A' %>
+                    <% if (currentSubscription.formattedPrice) { %>
+                      <span class="org-muted">- <%= currentSubscription.formattedPrice %></span>
+                    <% } %>
+                  </div>
+                </div>
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Period</div>
+                  <div class="org-kv-value">
+                    <%= currentSubscription.startDate ? new Date(currentSubscription.startDate).toLocaleDateString() : 'N/A' %>
+                    to
+                    <%= currentSubscription.endDate ? new Date(currentSubscription.endDate).toLocaleDateString() : 'N/A' %>
+                  </div>
+                </div>
+              </div>
+            <% } else if (organization.currentPlan) { %>
+              <div class="org-kv-list">
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Plan</div>
+                  <div class="org-kv-value"><%= organization.currentPlan.name || 'Unknown plan' %></div>
+                </div>
+                <div class="org-kv-item">
+                  <div class="org-kv-key">Status</div>
+                  <div class="org-kv-value">Cached plan set, no active subscription record</div>
+                </div>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No active plan assigned.</p>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Recent Activity</div>
+            </div>
+            <% if (activity.length > 0) { %>
+              <ul class="org-activity-list">
+                <% activity.forEach(item => { %>
+                  <li class="org-activity-item">
+                    <p class="org-activity-title"><%= item.title %></p>
+                    <div class="org-activity-meta">
+                      <span class="org-pill"><%= item.type %></span>
+                      <span class="status-badge status-badge--<%= item.status || 'pending' %>"><%= item.status || 'unknown' %></span>
+                    </div>
+                    <div class="org-activity-meta" style="margin-top: 6px;">
+                      <span><%= item.actor %></span>
+                      <span><%= item.at ? new Date(item.at).toLocaleString() : '' %></span>
+                    </div>
+                  </li>
+                <% }) %>
+              </ul>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px;">
+                <p>No recent activity yet.</p>
+              </div>
+            <% } %>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</body>
+
+</html>

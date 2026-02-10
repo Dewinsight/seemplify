@@ -12,6 +12,7 @@ import { Team } from './models/Team.js'
 import { Notification } from './models/Notification.js'
 import { OnboardingTemplate } from './models/OnboardingTemplate.js'
 import { OnboardingAssignment } from './models/OnboardingAssignment.js'
+import AppLaunchActivity from './models/AppLaunchActivity.js'
 import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
 import bcrypt from 'bcrypt'
 import { readFileSync } from 'fs'
@@ -2748,6 +2749,41 @@ async function getSessionFromCookies(req) {
   }
 }
 
+async function logAppLaunchActivity({ req, account = null, app = null, appId = null, status, details = {} }) {
+  try {
+    const orgId =
+      account?.currentOrganization?._id?.toString() ||
+      account?.currentOrganization?.toString() ||
+      details.organizationId ||
+      null
+
+    const userAgent = typeof req.headers['user-agent'] === 'string'
+      ? req.headers['user-agent'].slice(0, 512)
+      : null
+
+    const errorMessage = typeof details.error === 'string'
+      ? details.error.slice(0, 512)
+      : undefined
+
+    await AppLaunchActivity.create({
+      organization: orgId || undefined,
+      account: account?._id,
+      appId: app?.appId || appId || 'unknown',
+      appName: app?.name || details.appName || null,
+      status,
+      source: 'hub',
+      details: {
+        ...details,
+        error: errorMessage
+      },
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+      userAgent
+    })
+  } catch (error) {
+    console.error('Failed to log app launch activity:', error.message)
+  }
+}
+
 // Public Plans Page - View available subscription plans
 app.get('/plans', async (req, res) => {
   try {
@@ -3249,21 +3285,37 @@ app.get('/logout', async (req, res) => {
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
   const launchStartTime = Date.now()
+  let account = null
+  let app = null
+
   try {
     const { appId } = req.params
 
     const sessionStart = Date.now()
-    const account = await getSessionFromCookies(req)
-    console.log(`⏱️ Hub session lookup took ${Date.now() - sessionStart}ms`)
+    account = await getSessionFromCookies(req)
+    console.log(`Hub session lookup took ${Date.now() - sessionStart}ms`)
 
     if (!account) {
+      await logAppLaunchActivity({
+        req,
+        appId,
+        status: 'no_session'
+      })
       return res.redirect('/login')
     }
 
-    const app = getAppById(appId)
+    app = getAppById(appId)
     if (!app) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        appId,
+        status: 'app_not_found'
+      })
       return res.status(404).send('App not found')
     }
+
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
 
     // Check subscription access for apps that require it
     // Map app IDs to subscription feature keys
@@ -3281,14 +3333,25 @@ app.get('/launch/:appId', async (req, res) => {
 
     const featureKey = appFeatureMap[appId]
     if (!featureKey) {
-      console.warn(`⚠️ No subscription feature mapping for appId: ${appId} - subscription check skipped`)
+      console.warn(`No subscription feature mapping for appId: ${appId} - subscription check skipped`)
     }
-    if (featureKey && account.currentOrganization) {
-      const orgId = account.currentOrganization._id?.toString() || account.currentOrganization.toString()
-      const canAccess = await subscriptionService.canAccessApp(orgId, featureKey)
+
+    if (featureKey && currentOrgId) {
+      const canAccess = await subscriptionService.canAccessApp(currentOrgId, featureKey)
 
       if (!canAccess) {
-        console.log(`🚫 Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
+        console.log(`Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
+        await logAppLaunchActivity({
+          req,
+          account,
+          app,
+          status: 'blocked_subscription',
+          details: {
+            organizationId: currentOrgId,
+            featureKey
+          }
+        })
+
         return res.render('subscription-required', {
           appName: app.name,
           organization: account.currentOrganization,
@@ -3297,7 +3360,7 @@ app.get('/launch/:appId', async (req, res) => {
       }
     }
 
-    console.log('🚀 Launching app from hub:')
+    console.log('Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
     console.log('  Auth Type:', app.authType || 'oidc')
@@ -3305,55 +3368,90 @@ app.get('/launch/:appId', async (req, res) => {
 
     // Check if app uses SAML authentication
     if (app.authType === 'saml') {
-      // For SAML apps, redirect directly to the SAML SSO endpoint
-      // The user is already authenticated (we have their session), so SAML will generate assertion
       const samlSsoUrl = `/saml/sso?sp=${app.appId}`
-      console.log('  📍 SAML SSO REDIRECT TO:', samlSsoUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_saml',
+        details: {
+          redirectUrl: samlSsoUrl,
+          authType: 'saml',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(samlSsoUrl)
     }
 
     // Check if app uses direct link (no SSO)
     if (app.authType === 'direct') {
-      // For direct apps, just redirect to the app URL - no SSO integration
-      console.log('  📍 DIRECT REDIRECT TO:', app.url)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_direct',
+        details: {
+          redirectUrl: app.url,
+          authType: 'direct',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(app.url)
     }
 
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
     if (app.appId === 'outline') {
-      // Outline handles OIDC at /auth/oidc - redirect there directly
       const outlineAuthUrl = `${app.url}/auth/oidc`
-      console.log('  📍 OUTLINE OIDC REDIRECT TO:', outlineAuthUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_outline',
+        details: {
+          redirectUrl: outlineAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(outlineAuthUrl)
     }
 
     // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
     if (app.appId === 'openwebui') {
-      // Open WebUI handles OIDC at /oauth/oidc/login - redirect there directly
       const openwebuiAuthUrl = `${app.url}/oauth/oidc/login`
-      console.log('  📍 OPEN WEBUI OIDC REDIRECT TO:', openwebuiAuthUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_openwebui',
+        details: {
+          redirectUrl: openwebuiAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(openwebuiAuthUrl)
     }
 
     // Zulip uses a single realm instance with multi-org support via OIDC claims
-    // The current_organization claim determines which organization the user accesses
     if (app.appId === 'zulip') {
       const zulipUrl = 'https://chat.seemplifyai.com/login/oidc/?next=/'
-      console.log('  🔗 Redirecting to Zulip:', zulipUrl)
-      console.log('  🏢 Organization context will be determined by OIDC claims')
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_zulip',
+        details: {
+          redirectUrl: zulipUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(zulipUrl)
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
-    // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
-    // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify
     if (app.appId === 'lms') {
-      // Generate SSO token to enable auto-login from hub session
       const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
       const secretKey = new TextEncoder().encode(ssoSecret)
 
@@ -3365,10 +3463,9 @@ app.get('/launch/:appId', async (req, res) => {
       })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
-        .setExpirationTime('5m') // Short-lived token
+        .setExpirationTime('5m')
         .sign(secretKey)
 
-      // Build the OAuth authorization URL with proper parameters
       const state = Buffer.from(JSON.stringify({
         site: app.url,
         token: crypto.randomBytes(16).toString('hex'),
@@ -3381,14 +3478,24 @@ app.get('/launch/:appId', async (req, res) => {
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: 'openid email profile',
-        state: state,
-        hub_token: hubToken // Include SSO token for auto-login
+        state,
+        hub_token: hubToken
       })
 
       const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
-      console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
-      console.log('  🔑 Hub SSO token included for auto-login')
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_lms',
+        details: {
+          redirectUrl: lmsAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
+
       return res.redirect(lmsAuthUrl)
     }
 
@@ -3404,52 +3511,67 @@ app.get('/launch/:appId', async (req, res) => {
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime('5m') // Short-lived token
+      .setExpirationTime('5m')
       .sign(secretKey)
 
     // Build the redirect URL to the app's backend OIDC start
-    // Use app-specific API URL based on appId
-    let apiUrl;
+    let apiUrl
     switch (app.appId) {
       case 'smarthr':
-        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
-        break;
+        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
+        break
       case 'leave-management':
-        apiUrl = process.env.LEAVE_MANAGEMENT_API_URL || 'http://localhost:5002';
-        break;
+        apiUrl = process.env.LEAVE_MANAGEMENT_API_URL || 'http://localhost:5002'
+        break
       case 'performance-management':
-        apiUrl = process.env.PERFORMANCE_MANAGEMENT_API_URL || 'http://localhost:5004';
-        break;
+        apiUrl = process.env.PERFORMANCE_MANAGEMENT_API_URL || 'http://localhost:5004'
+        break
       case 'payroll-management':
-        apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
-        break;
+        apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006'
+        break
       case 'time-attendance':
-        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com';
-        break;
+        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com'
+        break
       default:
-        // Fallback to smarthr API URL for unknown apps
-        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
+        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
     }
 
     const frontendUrl = app.url
-
-    // Construct the OIDC start URL with SSO token
     const redirectUrl = `${apiUrl}/api/auth/oidc/start?` + new URLSearchParams({
       idp_initiated: 'true',
       hub_token: ssoToken,
       returnTo: frontendUrl
     }).toString()
 
-    console.log('  📍 OIDC REDIRECT TO:', redirectUrl)
-    console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+    await logAppLaunchActivity({
+      req,
+      account,
+      app,
+      status: 'launched_oidc',
+      details: {
+        redirectUrl,
+        authType: 'oidc',
+        launchDurationMs: Date.now() - launchStartTime
+      }
+    })
 
     res.redirect(redirectUrl)
   } catch (err) {
     console.error('App launch error:', err)
+    await logAppLaunchActivity({
+      req,
+      account,
+      app,
+      appId: req.params?.appId,
+      status: 'launch_error',
+      details: {
+        error: err.message,
+        launchDurationMs: Date.now() - launchStartTime
+      }
+    })
     res.status(500).send('Failed to launch app')
   }
 })
-
 // API: Get all apps (for potential SPA usage)
 app.get('/api/apps', async (req, res) => {
   try {

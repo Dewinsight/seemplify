@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title><%= title || 'Error' %> - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+
+    .error-page {
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+    }
+
+    .error-card {
+      width: 100%;
+      max-width: 640px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--panel);
+      padding: 28px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .error-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .error-title {
+      margin: 0 0 10px;
+      font-size: 28px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .error-message {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .error-actions {
+      margin-top: 24px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <main class="error-page">
+    <section class="error-card">
+      <div class="error-label">Request Failed</div>
+      <h1 class="error-title"><%= title || 'Something went wrong' %></h1>
+      <p class="error-message"><%= message || 'An unexpected error occurred while processing this request.' %></p>
+
+      <div class="error-actions">
+        <a href="/admin" class="btn btn-primary">Back to Admin</a>
+        <a href="/admin/requests" class="btn btn-secondary">View Requests</a>
+      </div>
+    </section>
+  </main>
+</body>
+
+</html>
