@@ -83,15 +83,6 @@ SITE_NAME="localhost"
 # Get LMS app from GitHub (local get-app has compatibility issues)
 bench get-app lms
 
-# Overlay local customizations (www/login override, CSS) if workspace is mounted
-# Login must be in apps/lms/lms/www/ (get_app_path returns inner lms folder)
-if [ -f "/workspace-lms/www/login.html" ]; then
-  echo "Overlaying local LMS customizations (Learning Fun login UI)..."
-  cp /workspace-lms/www/login.html ./apps/lms/lms/www/
-  cp /workspace-lms/www/login.py ./apps/lms/lms/www/
-  cp /workspace-lms/lms/public/css/login-learning-fun.css ./apps/lms/lms/public/css/
-fi
-
 # Create new site with localhost
 bench new-site $SITE_NAME \
   --force \
