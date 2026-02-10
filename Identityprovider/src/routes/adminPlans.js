@@ -57,6 +57,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       pricing,
       limits,
       features,
+      hideHubCards,
       isActive,
       isPublic,
       isFeatured,
@@ -79,6 +80,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       pricing: pricing || {},
       limits: limits || {},
       features: features || {},
+      hideHubCards: Array.isArray(hideHubCards) ? hideHubCards : [],
       isActive: isActive !== false,
       isPublic: isPublic !== false,
       isFeatured: isFeatured || false,
@@ -117,6 +119,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
       pricing,
       limits,
       features,
+      hideHubCards,
       isActive,
       isPublic,
       isFeatured,
@@ -136,6 +139,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
     if (pricing !== undefined) planData.pricing = pricing
     if (limits !== undefined) planData.limits = limits
     if (features !== undefined) planData.features = features
+    if (hideHubCards !== undefined) planData.hideHubCards = Array.isArray(hideHubCards) ? hideHubCards : []
     if (isActive !== undefined) planData.isActive = isActive
     if (isPublic !== undefined) planData.isPublic = isPublic
     if (isFeatured !== undefined) planData.isFeatured = isFeatured

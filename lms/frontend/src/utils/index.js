@@ -402,6 +402,27 @@ export function getUserTimezone() {
 	}
 }
 
+const DECORATIVE_NAV_ICON_MAP = Object.freeze({
+	Home: '🏠',
+	Search: '🔍',
+	Notifications: '🔔',
+	Courses: '📚',
+	Programs: '🎯',
+	Batches: '👥',
+	Certifications: '🏅',
+	Jobs: '💼',
+	Statistics: '📊',
+	'Contact Us': '📩',
+	Quizzes: '❓',
+	Assignments: '📝',
+	'Programming Exercises': '💻',
+})
+
+export const getDecorativeNavIcon = (label) => {
+	if (!label) return ''
+	return DECORATIVE_NAV_ICON_MAP[label] || ''
+}
+
 export function getSidebarLinks() {
 	let links = getSidebarItems()
 

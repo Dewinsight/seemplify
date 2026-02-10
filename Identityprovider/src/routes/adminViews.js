@@ -49,10 +49,13 @@ router.get('/', async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
+    const { getHubApps } = await import('../config/hubApps.js')
     const plans = await subscriptionService.getAllPlans()
+    const hubApps = getHubApps()
 
     res.render('admin/plans', {
       plans,
+      hubApps,
       user: req.user
     })
   } catch (error) {

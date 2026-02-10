@@ -1,9 +1,9 @@
 <template>
-	<div class="p-2">
+	<div class="lms-sidebar-user-dropdown p-2">
 		<Dropdown :options="userDropdownOptions">
 			<template v-slot="{ open, close }">
 				<button
-					class="flex h-12 py-2 items-center rounded-md duration-300 ease-in-out"
+					class="lms-sidebar-user-dropdown-button flex h-12 py-2 items-center rounded-md duration-300 ease-in-out"
 					:class="
 						isCollapsed
 							? 'px-0 w-auto'
@@ -26,7 +26,7 @@
 								: 'opacity-100 ml-2 w-auto'
 						"
 					>
-						<div class="text-base font-medium text-ink-gray-9 leading-none">
+						<div class="lms-sidebar-user-title text-base font-medium text-ink-gray-9 leading-none">
 							<span
 								v-if="
 									branding.data?.app_name && branding.data?.app_name != 'Frappe'
@@ -38,7 +38,7 @@
 						</div>
 						<div
 							v-if="userResource.data"
-							class="mt-1 text-sm text-ink-gray-7 leading-none"
+							class="lms-sidebar-user-name mt-1 text-sm text-ink-gray-7 leading-none"
 						>
 							{{ convertToTitleCase(userResource.data?.full_name) }}
 						</div>

@@ -221,6 +221,23 @@
             </div>
           </div>
 
+          <div class="admin-form-group">
+            <label class="admin-form-label">Hide Hub Cards</label>
+            <small style="color: var(--muted); display: block; margin-bottom: 8px;">Select apps whose cards should be hidden in the hub for orgs on this plan. Hides the card entirely (separate from access control).</small>
+            <div class="feature-grid" id="hideHubCardsGrid">
+              <% if (typeof hubApps !== 'undefined' && hubApps && hubApps.length > 0) { %>
+                <% hubApps.forEach(app => { %>
+                  <label class="feature-toggle">
+                    <input type="checkbox" name="hideHubCards" value="<%= app.appId %>" data-hide-app="<%= app.appId %>">
+                    <span class="feature-toggle-label"><%= app.name %></span>
+                  </label>
+                <% }) %>
+              <% } else { %>
+                <span style="color: var(--muted); font-size: 13px;">No hub apps configured.</span>
+              <% } %>
+            </div>
+          </div>
+
           <div class="admin-form-row">
             <div class="admin-form-group">
               <label class="admin-form-label">Display Order</label>
@@ -344,6 +361,11 @@
           document.getElementById('featureOutlineDocs').checked = features.outlineDocs;
           document.getElementById('featureAiChat').checked = features.aiChat;
           document.getElementById('featureLms').checked = features.lms;
+
+          const hideHubCards = plan.hideHubCards || [];
+          document.querySelectorAll('[data-hide-app]').forEach(cb => {
+            cb.checked = hideHubCards.includes(cb.dataset.hideApp);
+          });
         }
       } else {
         title.textContent = 'Create New Plan';
@@ -401,7 +423,8 @@
         badgeText: document.getElementById('badgeText').value,
         isActive: document.getElementById('isActive').checked,
         isPublic: document.getElementById('isPublic').checked,
-        isFeatured: document.getElementById('isFeatured').checked
+        isFeatured: document.getElementById('isFeatured').checked,
+        hideHubCards: Array.from(document.querySelectorAll('[name="hideHubCards"]:checked')).map(cb => cb.value)
       };
 
       try {

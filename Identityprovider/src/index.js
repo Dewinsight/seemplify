@@ -3010,10 +3010,21 @@ app.get('/', async (req, res) => {
     })
 
     // Get all active apps and add iconSvg for the template
-    const apps = getHubApps().map(app => ({
+    let apps = getHubApps().map(app => ({
       ...app,
       iconSvg: getAppIcon(app.icon)
     }))
+
+    // Filter hub cards by plan's hideHubCards (dynamically hide cards per plan)
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+    if (currentOrgId) {
+      const subscription = await subscriptionService.getSubscriptionForOrg(currentOrgId)
+      const hideHubCards = subscription?.plan?.hideHubCards
+      if (hideHubCards && Array.isArray(hideHubCards) && hideHubCards.length > 0) {
+        const hideSet = new Set(hideHubCards.map(id => String(id).trim()).filter(Boolean))
+        apps = apps.filter(app => !hideSet.has(app.appId))
+      }
+    }
 
     const pendingOnboardingAssignments = await OnboardingAssignment.find({
       member: account._id,

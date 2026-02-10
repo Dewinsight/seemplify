@@ -1,0 +1,122 @@
+.ui-skin-v2 {
+	--v2-font-heading: 'Baloo 2', 'Nunito', 'Inter', sans-serif;
+	--v2-font-body: 'Nunito', 'Inter', sans-serif;
+	--v2-sidebar-start: #5f63ea;
+	--v2-sidebar-end: #c24dbf;
+	--v2-sidebar-ink: #f7f9ff;
+	--v2-page-bg: #dfe8f0;
+	--v2-surface: #ffffff;
+	--v2-surface-soft: #eef4ff;
+	--v2-text-strong: #1b263b;
+	--v2-text: #3f4c66;
+	--v2-text-muted: #66738f;
+	--v2-border: #d5dfef;
+	--v2-ring: rgba(69, 125, 255, 0.35);
+	--v2-shadow: 0 18px 40px rgba(37, 56, 88, 0.14);
+	--v2-shadow-soft: 0 10px 24px rgba(37, 56, 88, 0.1);
+	--v2-accent: #35b3f5;
+	--v2-accent-strong: #4f61ff;
+	font-family: var(--v2-font-body);
+	background: var(--v2-page-bg);
+	color: var(--v2-text);
+}
+
+html[data-theme='dark'] .ui-skin-v2 {
+	--v2-sidebar-start: #2b2e66;
+	--v2-sidebar-end: #66305f;
+	--v2-sidebar-ink: #e9ecff;
+	--v2-page-bg: #151b2a;
+	--v2-surface: #1f2740;
+	--v2-surface-soft: #28324f;
+	--v2-text-strong: #ecf2ff;
+	--v2-text: #d0d9ef;
+	--v2-text-muted: #a2b0cf;
+	--v2-border: #334269;
+	--v2-ring: rgba(98, 139, 255, 0.5);
+	--v2-shadow: 0 20px 44px rgba(6, 10, 19, 0.45);
+	--v2-shadow-soft: 0 10px 26px rgba(6, 10, 19, 0.3);
+	--v2-accent: #4dc6ff;
+	--v2-accent-strong: #7f8dff;
+}
+
+.ui-skin-v2,
+.ui-skin-v2 * {
+	font-family: var(--v2-font-body);
+}
+
+.ui-skin-v2 h1,
+.ui-skin-v2 h2,
+.ui-skin-v2 h3,
+.ui-skin-v2 h4,
+.ui-skin-v2 .font-extrabold,
+.ui-skin-v2 .font-bold {
+	font-family: var(--v2-font-heading);
+	letter-spacing: 0.01em;
+}
+
+.ui-skin-v2 .text-ink-gray-9 {
+	color: var(--v2-text-strong) !important;
+}
+
+.ui-skin-v2 .text-ink-gray-8,
+.ui-skin-v2 .text-ink-gray-7,
+.ui-skin-v2 .text-ink-gray-6 {
+	color: var(--v2-text) !important;
+}
+
+.ui-skin-v2 .text-ink-gray-5 {
+	color: var(--v2-text-muted) !important;
+}
+
+.ui-skin-v2 .bg-surface-white {
+	background-color: var(--v2-surface) !important;
+}
+
+.ui-skin-v2 .bg-surface-menu-bar {
+	background: linear-gradient(180deg, var(--v2-sidebar-start), var(--v2-sidebar-end)) !important;
+}
+
+.ui-skin-v2 .bg-surface-gray-2 {
+	background-color: var(--v2-surface-soft) !important;
+}
+
+.ui-skin-v2 .bg-surface-gray-3,
+.ui-skin-v2 .bg-surface-gray-4 {
+	background-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .bg-surface-selected {
+	background-color: #ffffff !important;
+}
+
+.ui-skin-v2 .border,
+.ui-skin-v2 .border-t,
+.ui-skin-v2 .border-r,
+.ui-skin-v2 .border-b,
+.ui-skin-v2 .border-l,
+.ui-skin-v2 .border-x,
+.ui-skin-v2 .border-y,
+.ui-skin-v2 .border-x-2,
+.ui-skin-v2 .border-y-2,
+.ui-skin-v2 .border-b-2,
+.ui-skin-v2 .border-t-2 {
+	border-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .border-outline-gray-2,
+.ui-skin-v2 .border-outline-gray-3,
+.ui-skin-v2 .hover\:border-outline-gray-3:hover {
+	border-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .focus-visible\:ring-outline-gray-3:focus-visible {
+	--tw-ring-color: var(--v2-ring) !important;
+}
+
+.ui-skin-v2 .rounded-md {
+	border-radius: 1rem;
+}
+
+.ui-skin-v2 .rounded {
+	border-radius: 0.85rem;
+}

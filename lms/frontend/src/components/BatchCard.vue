@@ -1,9 +1,9 @@
 <template>
 	<div
-		class="flex flex-col border hover:border-outline-gray-3 rounded-md p-4 h-full"
+		class="lms-batch-card flex flex-col border hover:border-outline-gray-3 rounded-md p-4 h-full"
 		style="min-height: 150px"
 	>
-		<div class="text-lg leading-5 font-semibold mb-2 text-ink-gray-9">
+		<div class="lms-batch-card-title text-lg leading-5 font-semibold mb-2 text-ink-gray-9">
 			{{ batch.title }}
 		</div>
 		<div
@@ -24,7 +24,7 @@
 		>
 			{{ __('Sold Out') }}
 		</div>
-		<div class="short-introduction text-sm text-ink-gray-7">
+		<div class="lms-batch-card-description short-introduction text-sm text-ink-gray-7">
 			{{ batch.description }}
 		</div>
 		<div v-if="batch.amount" class="font-semibold text-ink-gray-9 mb-4">

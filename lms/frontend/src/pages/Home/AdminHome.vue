@@ -1,8 +1,8 @@
 <template>
-	<div>
-		<div v-if="createdCourses.data?.length" class="mt-10">
-			<div class="flex items-center justify-between mb-3">
-				<span class="font-semibold text-lg text-ink-gray-9">
+	<div class="lms-home-content">
+		<div v-if="createdCourses.data?.length" class="lms-home-section mt-10">
+			<div class="lms-home-section-header flex items-center justify-between mb-3">
+				<span class="lms-home-section-title font-semibold text-lg text-ink-gray-9">
 					{{ __('Courses Created') }}
 				</span>
 				<router-link
@@ -10,7 +10,7 @@
 						name: 'Courses',
 					}"
 				>
-					<span class="flex items-center space-x-1 text-ink-gray-5 text-xs">
+					<span class="lms-home-section-link flex items-center space-x-1 text-ink-gray-5 text-xs">
 						<span>
 							{{ __('See all') }}
 						</span>
@@ -18,7 +18,7 @@
 					</span>
 				</router-link>
 			</div>
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+			<div class="lms-home-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
 				<router-link
 					v-for="course in createdCourses.data"
 					:to="{ name: 'CourseDetail', params: { courseName: course.name } }"
@@ -28,9 +28,9 @@
 			</div>
 		</div>
 
-		<div v-if="createdBatches.data?.length" class="mt-10">
-			<div class="flex items-center justify-between mb-3">
-				<span class="font-semibold text-lg text-ink-gray-9">
+		<div v-if="createdBatches.data?.length" class="lms-home-section mt-10">
+			<div class="lms-home-section-header flex items-center justify-between mb-3">
+				<span class="lms-home-section-title font-semibold text-lg text-ink-gray-9">
 					{{ __('Upcoming Batches') }}
 				</span>
 				<router-link
@@ -38,7 +38,7 @@
 						name: 'Batches',
 					}"
 				>
-					<span class="flex items-center space-x-1 text-ink-gray-5 text-xs">
+					<span class="lms-home-section-link flex items-center space-x-1 text-ink-gray-5 text-xs">
 						<span>
 							{{ __('See all') }}
 						</span>
@@ -46,7 +46,7 @@
 					</span>
 				</router-link>
 			</div>
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+			<div class="lms-home-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
 				<router-link
 					v-for="batch in createdBatches.data"
 					:to="{ name: 'BatchDetail', params: { batchName: batch.name } }"
@@ -58,7 +58,7 @@
 
 		<div
 			v-if="!createdCourses.data?.length && !createdBatches.data?.length"
-			class="flex flex-col items-center justify-center mt-60"
+			class="lms-home-empty flex flex-col items-center justify-center mt-60"
 		>
 			<GraduationCap class="size-10 mx-auto stroke-1 text-ink-gray-5" />
 			<div class="text-lg font-semibold text-ink-gray-7 mb-1.5">
@@ -86,15 +86,15 @@
 			</router-link>
 		</div>
 
-		<div class="grid grid-cols-2 gap-5 mt-10">
-			<div v-if="evals?.data?.length">
-				<div class="font-semibold text-lg text-ink-gray-9 mb-3">
+		<div class="lms-home-section grid grid-cols-2 gap-5 mt-10">
+			<div v-if="evals?.data?.length" class="lms-home-subsection">
+				<div class="lms-home-section-title font-semibold text-lg text-ink-gray-9 mb-3">
 					{{ __('Upcoming Evaluations') }}
 				</div>
 				<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 					<div
 						v-for="evaluation in evals?.data"
-						class="border hover:border-outline-gray-3 rounded-md p-3 flex flex-col h-full cursor-pointer"
+						class="lms-live-card border hover:border-outline-gray-3 rounded-md p-3 flex flex-col h-full cursor-pointer"
 						@click="redirectToProfile()"
 					>
 						<div class="font-semibold text-ink-gray-9 text-lg leading-5 mb-1">
@@ -123,14 +123,14 @@
 					</div>
 				</div>
 			</div>
-			<div v-if="liveClasses?.data?.length">
-				<div class="font-semibold text-lg text-ink-gray-9 mb-3">
+			<div v-if="liveClasses?.data?.length" class="lms-home-subsection">
+				<div class="lms-home-section-title font-semibold text-lg text-ink-gray-9 mb-3">
 					{{ __('Upcoming Live Classes') }}
 				</div>
 				<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 					<div
 						v-for="cls in liveClasses?.data"
-						class="border hover:border-outline-gray-3 rounded-md p-3"
+						class="lms-live-card border hover:border-outline-gray-3 rounded-md p-3"
 					>
 						<div class="font-semibold text-ink-gray-9 text-lg leading-5 mb-1">
 							{{ cls.title }}

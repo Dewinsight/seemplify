@@ -1,5 +1,5 @@
 <template>
-	<div class="flex h-full flex-col relative">
+	<div class="lms-mobile-layout flex h-full flex-col relative">
 		<div class="h-full pb-10" id="scrollContainer">
 			<slot />
 		</div>
@@ -7,7 +7,7 @@
 		<div class="relative z-20">
 			<!-- Dropdown menu -->
 			<div
-				class="fixed bottom-16 right-2 w-[80%] rounded-md bg-surface-white text-base p-5 space-y-4 shadow-md"
+				class="lms-mobile-menu-sheet fixed bottom-16 right-2 w-[80%] rounded-md bg-surface-white text-base p-5 space-y-4 shadow-md"
 				v-if="showMenu"
 				ref="menu"
 			>
@@ -28,13 +28,13 @@
 			<!-- Fixed menu -->
 			<div
 				v-if="sidebarSettings.data"
-				class="fixed bottom-0 left-0 w-full flex items-center justify-around border-t border-outline-gray-2 bg-surface-white standalone:pb-4 z-10"
+				class="lms-mobile-bottom-nav fixed bottom-0 left-0 w-full flex items-center justify-around border-t border-outline-gray-2 bg-surface-white standalone:pb-4 z-10"
 			>
 				<button
 					v-for="tab in sidebarLinks"
 					:key="tab.label"
 					:class="isVisible(tab) ? 'block' : 'hidden'"
-					class="flex flex-col items-center justify-center py-3 transition active:scale-95"
+					class="lms-mobile-nav-button flex flex-col items-center justify-center py-3 transition active:scale-95"
 					@click="handleClick(tab)"
 				>
 					<component
@@ -43,7 +43,7 @@
 						:class="[isActive(tab) ? 'text-ink-gray-9' : 'text-ink-gray-5']"
 					/>
 				</button>
-				<button @click="toggleMenu">
+				<button class="lms-mobile-nav-button" @click="toggleMenu">
 					<component
 						:is="icons['List']"
 						class="h-6 w-6 stroke-1.5 text-ink-gray-5"

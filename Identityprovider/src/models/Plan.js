@@ -35,6 +35,9 @@ const PlanSchema = new mongoose.Schema({
     maxStorage: { type: Number, default: null }  // In GB, null = unlimited
   },
 
+  // Hub card visibility: appIds to hide from the hub for this plan (card not shown at all)
+  hideHubCards: [{ type: String, trim: true }],
+
   // App Access Toggles
   features: {
     recruiter: { type: Boolean, default: false },

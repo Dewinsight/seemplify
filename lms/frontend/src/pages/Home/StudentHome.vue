@@ -1,8 +1,8 @@
 <template>
-	<div>
-		<div v-if="myCourses.data?.length" class="mt-10">
-			<div class="flex items-center justify-between mb-3">
-				<span class="font-semibold text-lg text-ink-gray-9">
+	<div class="lms-home-content">
+		<div v-if="myCourses.data?.length" class="lms-home-section mt-10">
+			<div class="lms-home-section-header flex items-center justify-between mb-3">
+				<span class="lms-home-section-title font-semibold text-lg text-ink-gray-9">
 					{{
 						myCourses.data[0].membership
 							? __('My Courses')
@@ -14,7 +14,7 @@
 						name: 'Courses',
 					}"
 				>
-					<span class="flex items-center space-x-1 text-ink-gray-5 text-xs">
+					<span class="lms-home-section-link flex items-center space-x-1 text-ink-gray-5 text-xs">
 						<span>
 							{{ __('See all') }}
 						</span>
@@ -22,7 +22,7 @@
 					</span>
 				</router-link>
 			</div>
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+			<div class="lms-home-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
 				<router-link
 					v-for="course in myCourses.data"
 					:to="{ name: 'CourseDetail', params: { courseName: course.name } }"
@@ -32,9 +32,9 @@
 			</div>
 		</div>
 
-		<div v-if="myBatches.data?.length" class="mt-10">
-			<div class="flex items-center justify-between mb-3">
-				<span class="font-semibold text-lg text-ink-gray-9">
+		<div v-if="myBatches.data?.length" class="lms-home-section mt-10">
+			<div class="lms-home-section-header flex items-center justify-between mb-3">
+				<span class="lms-home-section-title font-semibold text-lg text-ink-gray-9">
 					{{
 						myBatches.data?.[0].students.includes(user.data?.name)
 							? __('My Batches')
@@ -46,7 +46,7 @@
 						name: 'Batches',
 					}"
 				>
-					<span class="flex items-center space-x-1 text-ink-gray-5 text-xs">
+					<span class="lms-home-section-link flex items-center space-x-1 text-ink-gray-5 text-xs">
 						<span>
 							{{ __('See all') }}
 						</span>
@@ -54,7 +54,7 @@
 					</span>
 				</router-link>
 			</div>
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+			<div class="lms-home-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
 				<router-link
 					v-for="batch in myBatches.data"
 					:to="{ name: 'BatchDetail', params: { batchName: batch.name } }"
@@ -64,16 +64,16 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-5 mt-10">
-			<UpcomingEvaluations :forHome="true" />
-			<div v-if="myLiveClasses.data?.length">
-				<div class="font-semibold text-lg mb-3 text-ink-gray-9">
+		<div class="lms-home-section grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-5 mt-10">
+			<UpcomingEvaluations :forHome="true" class="lms-home-subsection" />
+			<div v-if="myLiveClasses.data?.length" class="lms-home-subsection">
+				<div class="lms-home-section-title font-semibold text-lg mb-3 text-ink-gray-9">
 					{{ __('Upcoming Live Classes') }}
 				</div>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 					<div
 						v-for="cls in myLiveClasses.data"
-						class="border rounded-md hover:border-outline-gray-3 p-2"
+						class="lms-live-card border rounded-md hover:border-outline-gray-3 p-2"
 					>
 						<div class="font-semibold text-ink-gray-9 text-lg leading-5 mb-1">
 							{{ cls.title }}

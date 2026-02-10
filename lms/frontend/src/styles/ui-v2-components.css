@@ -1,0 +1,157 @@
+.ui-skin-v2 .lms-course-card,
+.ui-skin-v2 .lms-batch-card,
+.ui-skin-v2 .lms-job-card,
+.ui-skin-v2 .lms-live-card {
+	background: var(--v2-surface) !important;
+	border: 2px solid rgba(255, 255, 255, 0.75) !important;
+	border-radius: 1.7rem !important;
+	box-shadow: var(--v2-shadow-soft);
+	overflow: hidden;
+}
+
+.ui-skin-v2 .lms-course-card-cover {
+	border-top-left-radius: 1.45rem !important;
+	border-top-right-radius: 1.45rem !important;
+	border-top: 2px solid rgba(255, 255, 255, 0.7) !important;
+	border-left: 2px solid rgba(255, 255, 255, 0.7) !important;
+	border-right: 2px solid rgba(255, 255, 255, 0.7) !important;
+}
+
+.ui-skin-v2 .lms-course-card-cover-title {
+	font-family: var(--v2-font-heading);
+	font-weight: 800 !important;
+	font-size: clamp(2rem, 2vw, 2.45rem) !important;
+	text-shadow: 0 4px 22px rgba(0, 0, 0, 0.2);
+}
+
+.ui-skin-v2 .lms-course-card-body {
+	border-bottom-left-radius: 1.45rem !important;
+	border-bottom-right-radius: 1.45rem !important;
+	background: var(--v2-surface) !important;
+}
+
+.ui-skin-v2 .lms-course-card-metrics {
+	color: var(--v2-text-muted);
+}
+
+.ui-skin-v2 .lms-course-card-description,
+.ui-skin-v2 .lms-batch-card-description {
+	color: var(--v2-text) !important;
+	font-size: 1rem;
+	line-height: 1.45;
+}
+
+.ui-skin-v2 .lms-course-card-footer {
+	padding-top: 0.8rem;
+	border-top: 1px solid var(--v2-border);
+}
+
+.ui-skin-v2 .lms-batch-card {
+	padding: 1rem 1rem 1.05rem !important;
+}
+
+.ui-skin-v2 .lms-batch-card-title {
+	font-family: var(--v2-font-heading);
+	font-size: 1.6rem !important;
+	line-height: 1.15 !important;
+}
+
+.ui-skin-v2 .lms-job-card {
+	padding: 1rem !important;
+}
+
+.ui-skin-v2 .lms-empty-state {
+	margin-top: 7.25rem !important;
+}
+
+.ui-skin-v2 .lms-empty-state > .size-10 {
+	color: var(--v2-accent-strong) !important;
+}
+
+.ui-skin-v2 .lms-home-card-grid > a {
+	display: block;
+}
+
+.ui-skin-v2 .grid .border.rounded-md,
+.ui-skin-v2 .grid .border.hover\:border-outline-gray-3 {
+	background: var(--v2-surface);
+	border-color: rgba(255, 255, 255, 0.75) !important;
+	box-shadow: var(--v2-shadow-soft);
+	border-radius: 1.25rem !important;
+}
+
+.ui-skin-v2 button {
+	border-radius: 0.95rem;
+	font-weight: 700;
+}
+
+.ui-skin-v2 a {
+	color: inherit;
+}
+
+.ui-skin-v2 .lms-sidebar-link {
+	border-radius: 1.1rem !important;
+}
+
+.ui-skin-v2 [role='tablist'] {
+	background: var(--v2-surface-soft);
+	padding: 0.28rem;
+	border-radius: 999px;
+	border: 1px solid var(--v2-border);
+}
+
+.ui-skin-v2 [role='tablist'] [role='tab'] {
+	border-radius: 999px;
+}
+
+.ui-skin-v2 [role='tablist'] [role='tab'][aria-selected='true'] {
+	background: #ffffff;
+	color: var(--v2-text-strong);
+	box-shadow: var(--v2-shadow-soft);
+}
+
+.ui-skin-v2 .list-view,
+.ui-skin-v2 table,
+.ui-skin-v2 .table {
+	background: var(--v2-surface) !important;
+	border-color: var(--v2-border) !important;
+	border-radius: 1rem;
+	overflow: hidden;
+}
+
+.ui-skin-v2 .list-view .border-b,
+.ui-skin-v2 table .border-b {
+	border-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 input,
+.ui-skin-v2 select,
+.ui-skin-v2 textarea,
+.ui-skin-v2 .form-control,
+.ui-skin-v2 .frappe-control {
+	background: var(--v2-surface) !important;
+	border-color: var(--v2-border) !important;
+	border-radius: 0.95rem !important;
+}
+
+.ui-skin-v2 [role='dialog'],
+.ui-skin-v2 .dialog,
+.ui-skin-v2 .modal {
+	border-radius: 1.2rem !important;
+	border: 1px solid var(--v2-border) !important;
+	box-shadow: var(--v2-shadow) !important;
+}
+
+.ui-skin-v2 .dialog .bg-surface-white,
+.ui-skin-v2 .modal .bg-surface-white {
+	background: var(--v2-surface) !important;
+}
+
+.ui-skin-v2 .prose,
+.ui-skin-v2 .ProseMirror {
+	color: var(--v2-text);
+}
+
+.ui-skin-v2 .avatar-group .avatar {
+	border: 2px solid var(--v2-surface);
+}
