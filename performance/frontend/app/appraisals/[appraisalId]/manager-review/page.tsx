@@ -147,7 +147,7 @@ export default function ManagerReviewPage() {
         return {
           okrId: okr.okrId,
           okrTitle: okr.okrTitle,
-          managerVerifiedCompletion: managerOkr?.managerVerifiedCompletion || okr.completionPercentage || 0,
+          managerVerifiedCompletion: managerOkr?.managerVerifiedCompletion ?? okr.completionPercentage ?? 0,
           managerComments: managerOkr?.managerComments || '',
           qualityRating: managerOkr?.qualityRating || 3,
           employeeCompletion: okr.completionPercentage
@@ -403,7 +403,7 @@ export default function ManagerReviewPage() {
       </Typography>
 
       {/* Employee Info Card */}
-      <Card sx={{ mb: 3, p: 2, bgcolor: 'grey.50' }}>
+      <Card sx={{ mb: 3, p: 2, bgcolor: 'action.hover' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main' }}>
             {appraisal.employee.name[0]}
@@ -413,14 +413,26 @@ export default function ManagerReviewPage() {
             <Typography variant="body2" color="text.secondary">
               {appraisal.employee.jobTitle || 'Team Member'} • {appraisal.employee.department || 'Department'}
             </Typography>
-            <Chip
-              size="small"
-              label={`Self-Rating: ${selfAssessment.overallSelfRating}/5`}
-              icon={<Star />}
-              color="primary"
-              variant="outlined"
-              sx={{ mt: 0.5 }}
-            />
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
+              {selfAssessment.overallSelfRating && (
+                <Chip
+                  size="small"
+                  label={`Self-Rating: ${selfAssessment.overallSelfRating}/5`}
+                  icon={<Star />}
+                  color="primary"
+                  variant="outlined"
+                />
+              )}
+              {selfAssessment.aiRatingSuggestion?.suggestedRating && (
+                <Chip
+                  size="small"
+                  label={`AI: ${selfAssessment.aiRatingSuggestion.suggestedRating}/5`}
+                  icon={<SmartToy />}
+                  color="secondary"
+                  variant="outlined"
+                />
+              )}
+            </Box>
           </Box>
         </Box>
       </Card>
@@ -468,25 +480,25 @@ export default function ManagerReviewPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <Typography variant="caption" color="text.secondary">Key Achievements</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'grey.50', p: 1, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1, borderRadius: 1 }}>
                 {selfAssessment.overallSummary?.achievements || 'Not provided'}
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <Typography variant="caption" color="text.secondary">Challenges Faced</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'grey.50', p: 1, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1, borderRadius: 1 }}>
                 {selfAssessment.overallSummary?.challenges || 'Not provided'}
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <Typography variant="caption" color="text.secondary">Key Learnings</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'grey.50', p: 1, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1, borderRadius: 1 }}>
                 {selfAssessment.overallSummary?.learnings || 'Not provided'}
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <Typography variant="caption" color="text.secondary">Goals for Next Period</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'grey.50', p: 1, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1, borderRadius: 1 }}>
                 {selfAssessment.overallSummary?.goals || 'Not provided'}
               </Typography>
             </Grid>
@@ -616,7 +628,7 @@ export default function ManagerReviewPage() {
 
               {/* Visual comparison */}
               {competency.selfRating && (
-                <Box sx={{ mb: 2, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                <Box sx={{ mb: 2, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                   <Box sx={{ display: 'flex', gap: 4 }}>
                     <Box>
                       <Typography variant="caption">Self-Rating</Typography>
@@ -671,7 +683,7 @@ export default function ManagerReviewPage() {
               <Typography variant="subtitle1" fontWeight={600}>{okr.okrTitle}</Typography>
 
               {/* Comparison */}
-              <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Employee's Claim</Typography>
@@ -1161,11 +1173,11 @@ export default function ManagerReviewPage() {
                     width: 40,
                     height: 40,
                     borderRadius: '50%',
-                    bgcolor: index <= activeStep ? 'primary.main' : 'grey.300',
+                    bgcolor: index <= activeStep ? 'primary.main' : 'action.disabledBackground',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: index <= activeStep ? 'white' : 'grey.600'
+                    color: index <= activeStep ? 'primary.contrastText' : 'text.secondary'
                   }}
                 >
                   {index < activeStep ? <CheckCircle /> : step.icon}

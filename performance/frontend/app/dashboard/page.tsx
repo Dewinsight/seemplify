@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { authApi } from '@/lib/api';
 
 export default function DashboardPage() {
@@ -123,23 +122,19 @@ export default function DashboardPage() {
   // Loading state
   if (isLoading) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-        </div>
-      </Layout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
     );
   }
 
   // Error state
   if (isError) {
     return (
-      <Layout>
-        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-lg flex items-start gap-2">
-          <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-          <div className="text-sm">Unable to load dashboard data. Some features may be limited.</div>
-        </div>
-      </Layout>
+      <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-lg flex items-start gap-2">
+        <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+        <div className="text-sm">Unable to load dashboard data. Some features may be limited.</div>
+      </div>
     );
   }
 
@@ -201,8 +196,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <Layout>
-      <div className="space-y-8">
+    <div className="space-y-8">
         {/* Welcome Header */}
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl opacity-50 dark:opacity-100"></div>
@@ -472,7 +466,6 @@ export default function DashboardPage() {
             </p>
           </div>
         )}
-      </div>
-    </Layout>
+    </div>
   );
 }

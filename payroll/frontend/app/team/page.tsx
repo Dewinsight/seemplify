@@ -106,7 +106,7 @@ export default function TeamCompensation() {
 
             <div className="flex items-center gap-3">
               <Link
-                href="/"
+                href="/dashboard"
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 font-medium text-sm hover:bg-slate-50 hover:border-slate-300 transition-all"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -403,7 +403,7 @@ export default function TeamCompensation() {
               </div>
               <h3 className="text-xl font-semibold text-slate-700 mb-2">No Compensation Requests</h3>
               <p className="text-slate-500 max-w-md mx-auto leading-relaxed mb-6">
-                Create a new request to start managing your team's bonuses and compensation adjustments.
+                Create a new request to start managing your team bonuses and compensation adjustments.
               </p>
               <button
                 onClick={() => setShowForm(true)}

@@ -63,6 +63,8 @@ export default function MyRequestsPage() {
     const [formData, setFormData] = useState({
         type: 'overtime',
         amount: '',
+        overtimeHours: '',
+        overtimeMultiplier: '1.5',
         reason: '',
         effectiveDate: new Date().toISOString().split('T')[0]
     });
@@ -110,6 +112,8 @@ export default function MyRequestsPage() {
             setFormData({
                 type: 'overtime',
                 amount: '',
+                overtimeHours: '',
+                overtimeMultiplier: '1.5',
                 reason: '',
                 effectiveDate: new Date().toISOString().split('T')[0]
             });
@@ -193,9 +197,11 @@ export default function MyRequestsPage() {
                             </div>
                             <div className="text-right">
                                 <p className="text-xl font-bold text-zinc-100">
-                                    {user?.currency || '$'}{req.amount.toFixed(2)}
+                                    {req.type === 'overtime' && req.overtimeHours
+                                        ? `${req.overtimeHours}h @ ${req.overtimeMultiplier || 1.5}x`
+                                        : `${req.currency || 'USD'} ${Number(req.amount || 0).toFixed(2)}`}
                                 </p>
-                                <p className="text-xs text-zinc-500 mt-1">Amount</p>
+                                <p className="text-xs text-zinc-500 mt-1">{req.type === 'overtime' ? 'Hours' : 'Amount'}</p>
                             </div>
                         </div>
                     ))
@@ -232,12 +238,14 @@ export default function MyRequestsPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Amount</label>
+                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                    {formData.type === 'overtime' ? 'Amount (Optional)' : 'Amount'}
+                                </label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-2.5 text-zinc-500">$</span>
                                     <input
                                         type="number"
-                                        required
+                                        required={formData.type === 'reimbursement'}
                                         min="0"
                                         step="0.01"
                                         value={formData.amount}
@@ -246,7 +254,42 @@ export default function MyRequestsPage() {
                                         placeholder="0.00"
                                     />
                                 </div>
+                                {formData.type === 'overtime' && (
+                                    <p className="text-xs text-zinc-500 mt-1.5">
+                                        Recommended: fill hours below and leave amount blank. Payroll will calculate from salary rate.
+                                    </p>
+                                )}
                             </div>
+
+                            {formData.type === 'overtime' && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Hours</label>
+                                        <input
+                                            type="number"
+                                            required
+                                            min="0"
+                                            step="0.5"
+                                            value={formData.overtimeHours}
+                                            onChange={(e) => setFormData({ ...formData, overtimeHours: e.target.value })}
+                                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                            placeholder="e.g. 6"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Multiplier</label>
+                                        <select
+                                            value={formData.overtimeMultiplier}
+                                            onChange={(e) => setFormData({ ...formData, overtimeMultiplier: e.target.value })}
+                                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                        >
+                                            <option value="1">1.0x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="2">2.0x</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date</label>

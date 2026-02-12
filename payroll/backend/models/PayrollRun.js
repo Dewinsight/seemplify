@@ -130,6 +130,7 @@ const PayrollRunSchema = new Schema({
       'approved',         // Approved, ready for payment
       'processing_payment', // Payment in progress
       'paid',             // Fully paid
+      'exported',         // Exported/finalized for accountant
       'partially_paid',   // Some payments completed
       'cancelled'         // Cancelled
     ],
@@ -156,12 +157,15 @@ const PayrollRunSchema = new Schema({
   calculatedAt: Date,
   approvedAt: Date,
   paidAt: Date,
-  
+  exportedAt: Date,
+
   // Audit
   createdBy: { type: String, required: true },
   createdByName: String,
   processedBy: String,
   processedByName: String,
+  exportedBy: String,
+  exportedByName: String,
   
   // Notes
   notes: String,

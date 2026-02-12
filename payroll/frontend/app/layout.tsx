@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
-import { authApi, isAuthenticated as checkAuthenticated } from '@/lib/api';
+import { authApi, handleAuthCallback, isAuthenticated as checkAuthenticated } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import './globals.css';
 import {
   LayoutGrid,
   FileText,
   Users,
+  Clock,
   Calculator,
   Settings,
   LogOut,
@@ -73,13 +74,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileExpandedDropdown, setMobileExpandedDropdown] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash.includes('access_token=')) {
-        setHasAccessToken(true);
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-    }
+    // Ensure deep-links also process the OIDC callback token.
+    const stored = handleAuthCallback();
+    if (stored) setHasAccessToken(true);
   }, []);
 
   const isAuthenticated = checkAuthenticated() || hasAccessToken;
@@ -164,8 +161,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Simple nav items (direct links)
   const simpleNavItems: NavItem[] = [
-    { name: 'Dashboard', href: '/', icon: LayoutGrid },
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
     { name: 'My Payslips', href: '/payslips', icon: FileText },
+    { name: 'My Requests', href: '/requests', icon: Clock },
   ];
 
   // Dropdown menus for admin (grouped by functionality)

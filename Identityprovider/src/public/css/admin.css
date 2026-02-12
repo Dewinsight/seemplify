@@ -1058,7 +1058,7 @@ html[data-theme="light"] {
 }
 
 .admin-modal {
-  background: var(--panel);
+  background: var(--panel-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   width: 90%;

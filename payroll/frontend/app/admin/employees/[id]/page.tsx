@@ -7,13 +7,10 @@ import Link from 'next/link';
 import {
     ArrowLeft,
     Save,
-    User,
     DollarSign,
-    Building2,
     FileText,
     CreditCard,
     Loader2,
-    CheckCircle,
     Plus,
     Trash2,
     PiggyBank
@@ -30,7 +27,27 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         basicSalary: 0,
         currency: 'USD',
         isActive: true,
-        socialSecurityNumber: '',
+        allowances: [] as any[],
+        payrollFlags: {
+            includeInNextRun: true,
+            holdPayment: false,
+            holdReason: ''
+        },
+        taxConfig: {
+            taxId: '',
+            filingStatus: 'single',
+            dependents: 0,
+            additionalWithholding: 0,
+            calculationRegime: 'flat',
+            flatTaxRate: 10
+        },
+        statutoryContributions: {
+            socialSecurityOptIn: true,
+            socialSecurityNumber: '',
+            pensionOptIn: false,
+            pensionContributionPercent: 0,
+            employerPensionPercent: 0
+        },
         bankAccount: {
             bankName: '',
             accountNumber: '',
@@ -51,6 +68,16 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         totalLoanAmount: 0
     });
 
+    // Allowance Form State
+    const [newAllowance, setNewAllowance] = useState({
+        type: 'hra',
+        name: '',
+        amount: 0,
+        isTaxable: true,
+        effectiveFrom: '',
+        effectiveTo: ''
+    });
+
     useEffect(() => {
         if (!isAuthenticated()) {
             router.push('/login');
@@ -66,8 +93,28 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 setFormData({
                     basicSalary: res.data.basicSalary || 0,
                     currency: res.data.currency || 'USD',
-                    isActive: res.data.isActive,
-                    socialSecurityNumber: res.data.statutoryContributions?.socialSecurityNumber || '',
+                    isActive: res.data.isActive !== false,
+                    allowances: res.data.allowances || [],
+                    payrollFlags: {
+                        includeInNextRun: res.data.payrollFlags?.includeInNextRun !== false,
+                        holdPayment: !!res.data.payrollFlags?.holdPayment,
+                        holdReason: res.data.payrollFlags?.holdReason || ''
+                    },
+                    taxConfig: {
+                        taxId: res.data.taxConfig?.taxId || '',
+                        filingStatus: res.data.taxConfig?.filingStatus || 'single',
+                        dependents: res.data.taxConfig?.dependents || 0,
+                        additionalWithholding: res.data.taxConfig?.additionalWithholding || 0,
+                        calculationRegime: res.data.taxConfig?.calculationRegime || 'flat',
+                        flatTaxRate: res.data.taxConfig?.flatTaxRate ?? 10
+                    },
+                    statutoryContributions: {
+                        socialSecurityOptIn: res.data.statutoryContributions?.socialSecurityOptIn !== false,
+                        socialSecurityNumber: res.data.statutoryContributions?.socialSecurityNumber || '',
+                        pensionOptIn: !!res.data.statutoryContributions?.pensionOptIn,
+                        pensionContributionPercent: res.data.statutoryContributions?.pensionContributionPercent || 0,
+                        employerPensionPercent: res.data.statutoryContributions?.employerPensionPercent || 0
+                    },
                     bankAccount: {
                         bankName: res.data.bankAccounts?.[0]?.bankName || '',
                         accountNumber: res.data.bankAccounts?.[0]?.accountNumber || '',
@@ -85,25 +132,52 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         fetchProfile();
     }, [params.id, router]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e?: React.SyntheticEvent) => {
+        e?.preventDefault?.();
         setSaving(true);
 
         try {
+            const bankName = String(formData.bankAccount?.bankName || '').trim();
+            const accountNumber = String(formData.bankAccount?.accountNumber || '').trim();
+            const routingNumber = String(formData.bankAccount?.routingNumber || '').trim();
+
+            let bankAccounts: any[] = [];
+            if (!bankName && !accountNumber && !routingNumber) {
+                bankAccounts = [];
+            } else if (!bankName || !accountNumber) {
+                alert('Bank name and account number are required if you want to save bank details.');
+                setSaving(false);
+                return;
+            } else {
+                bankAccounts = [
+                    {
+                        bankName,
+                        accountNumber,
+                        routingNumber: routingNumber || undefined,
+                        isPrimary: true,
+                        accountName: profile?.employeeInfo?.name || 'Primary'
+                    }
+                ];
+            }
+
             await api.put(`/payroll/profiles/${params.id}`, {
                 basicSalary: Number(formData.basicSalary),
                 currency: formData.currency,
                 isActive: formData.isActive,
-                statutoryContributions: {
-                    socialSecurityNumber: formData.socialSecurityNumber
+                allowances: formData.allowances,
+                payrollFlags: formData.payrollFlags,
+                taxConfig: {
+                    ...formData.taxConfig,
+                    dependents: Number(formData.taxConfig.dependents || 0),
+                    additionalWithholding: Number(formData.taxConfig.additionalWithholding || 0),
+                    flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0)
                 },
-                bankAccounts: [
-                    {
-                        ...formData.bankAccount,
-                        isPrimary: true,
-                        accountName: profile?.employeeInfo?.name || 'Primary'
-                    }
-                ],
+                statutoryContributions: {
+                    ...formData.statutoryContributions,
+                    pensionContributionPercent: Number(formData.statutoryContributions.pensionContributionPercent || 0),
+                    employerPensionPercent: Number(formData.statutoryContributions.employerPensionPercent || 0)
+                },
+                bankAccounts,
                 recurringDeductions: formData.recurringDeductions
             });
 
@@ -115,6 +189,62 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         } finally {
             setSaving(false);
         }
+    };
+
+    const addAllowance = () => {
+        const amount = Number(newAllowance.amount || 0);
+        if (!newAllowance.type) {
+            alert('Please select an allowance type');
+            return;
+        }
+        if (!(amount > 0)) {
+            alert('Please enter a valid allowance amount');
+            return;
+        }
+
+        const defaultNameByType: Record<string, string> = {
+            hra: 'Housing Allowance',
+            transport: 'Transport Allowance',
+            meal: 'Meal Allowance',
+            phone: 'Phone Allowance',
+            medical: 'Medical Allowance',
+            education: 'Education Allowance',
+            special: 'Special Allowance',
+            other: 'Allowance',
+        };
+
+        const name = String(newAllowance.name || '').trim() || defaultNameByType[newAllowance.type] || 'Allowance';
+
+        const payload: any = {
+            type: newAllowance.type,
+            name,
+            amount,
+            isTaxable: !!newAllowance.isTaxable,
+            isActive: true,
+        };
+
+        if (newAllowance.effectiveFrom) payload.effectiveFrom = newAllowance.effectiveFrom;
+        if (newAllowance.effectiveTo) payload.effectiveTo = newAllowance.effectiveTo;
+
+        setFormData({
+            ...formData,
+            allowances: [...(formData.allowances || []), payload],
+        });
+
+        setNewAllowance({
+            type: 'hra',
+            name: '',
+            amount: 0,
+            isTaxable: true,
+            effectiveFrom: '',
+            effectiveTo: '',
+        });
+    };
+
+    const removeAllowance = (index: number) => {
+        const updated = [...(formData.allowances || [])];
+        updated.splice(index, 1);
+        setFormData({ ...formData, allowances: updated });
     };
 
     const addDeduction = () => {
@@ -188,7 +318,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             {profile?.employeeInfo?.name || 'Edit Employee'}
                         </h1>
                         <p className="text-zinc-500">
-                            {profile?.employeeInfo?.designation} • {profile?.employeeInfo?.department}
+                            {profile?.employeeInfo?.designation || '--'} - {profile?.employeeInfo?.department || '--'}
                         </p>
                     </div>
 
@@ -241,6 +371,65 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                             </div>
                         </div>
+
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+                                Payroll Flags
+                            </h3>
+
+                            <div className="space-y-3">
+                                <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                    <span className="text-zinc-300 text-sm">Include in Next Run</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.payrollFlags?.includeInNextRun !== false}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            payrollFlags: {
+                                                ...formData.payrollFlags,
+                                                includeInNextRun: e.target.checked
+                                            }
+                                        })}
+                                        className="rounded bg-zinc-900 border-zinc-700"
+                                    />
+                                </label>
+
+                                <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                    <span className="text-zinc-300 text-sm">Hold Payment</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={!!formData.payrollFlags?.holdPayment}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            payrollFlags: {
+                                                ...formData.payrollFlags,
+                                                holdPayment: e.target.checked
+                                            }
+                                        })}
+                                        className="rounded bg-zinc-900 border-zinc-700"
+                                    />
+                                </label>
+
+                                {formData.payrollFlags?.holdPayment && (
+                                    <div>
+                                        <label className="block text-xs text-zinc-500 mb-1.5">Hold Reason</label>
+                                        <input
+                                            type="text"
+                                            value={formData.payrollFlags?.holdReason || ''}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                payrollFlags: {
+                                                    ...formData.payrollFlags,
+                                                    holdReason: e.target.value
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-amber-500 outline-none"
+                                            placeholder="e.g. On leave without pay clarification"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Main Form */}
@@ -279,6 +468,135 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     />
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Allowances */}
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500">
+                                    <Plus className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-zinc-200">Allowances</h3>
+                                    <p className="text-sm text-zinc-500">Recurring allowances added to gross pay</p>
+                                </div>
+                            </div>
+
+                            {/* List Existing */}
+                            <div className="space-y-3 mb-6">
+                                {(formData.allowances || []).map((allowance, idx) => (
+                                    <div key={idx} className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium text-zinc-200">{allowance.name}</span>
+                                                <span className="text-[10px] bg-zinc-900/60 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700/50 uppercase">
+                                                    {String(allowance.type || 'other')}
+                                                </span>
+                                                {allowance.isTaxable === false && (
+                                                    <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">NON-TAX</span>
+                                                )}
+                                                {allowance.isActive === false && (
+                                                    <span className="text-[10px] bg-zinc-500/10 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-500/20">INACTIVE</span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-zinc-500 mt-1">
+                                                {formData.currency} {Number(allowance.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {allowance.effectiveFrom && <span className="ml-2">From {new Date(allowance.effectiveFrom).toLocaleDateString()}</span>}
+                                                {allowance.effectiveTo && <span className="ml-2">To {new Date(allowance.effectiveTo).toLocaleDateString()}</span>}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => removeAllowance(idx)}
+                                            className="text-zinc-500 hover:text-red-400 p-2 transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {(formData.allowances || []).length === 0 && (
+                                    <p className="text-sm text-zinc-500 italic text-center py-2">No allowances configured</p>
+                                )}
+                            </div>
+
+                            {/* Add New */}
+                            <div className="bg-zinc-800/20 rounded-lg p-4 border border-zinc-700/50">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-3">Add Allowance</h4>
+
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                    <select
+                                        value={newAllowance.type}
+                                        onChange={e => setNewAllowance({ ...newAllowance, type: e.target.value })}
+                                        className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                    >
+                                        <option value="hra">HRA</option>
+                                        <option value="transport">Transport</option>
+                                        <option value="meal">Meal</option>
+                                        <option value="phone">Phone</option>
+                                        <option value="medical">Medical</option>
+                                        <option value="education">Education</option>
+                                        <option value="special">Special</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                    <input
+                                        type="text"
+                                        placeholder="Name (optional)"
+                                        value={newAllowance.name}
+                                        onChange={e => setNewAllowance({ ...newAllowance, name: e.target.value })}
+                                        className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="Amount"
+                                        value={newAllowance.amount}
+                                        onChange={e => setNewAllowance({ ...newAllowance, amount: Number(e.target.value) })}
+                                        className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                    />
+                                    <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!newAllowance.isTaxable}
+                                            onChange={(e) => setNewAllowance({ ...newAllowance, isTaxable: e.target.checked })}
+                                            className="rounded bg-zinc-950 border-zinc-700"
+                                        />
+                                        Taxable
+                                    </label>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 mb-4">
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Effective From (Optional)</label>
+                                        <input
+                                            type="date"
+                                            value={newAllowance.effectiveFrom}
+                                            onChange={e => setNewAllowance({ ...newAllowance, effectiveFrom: e.target.value })}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Effective To (Optional)</label>
+                                        <input
+                                            type="date"
+                                            value={newAllowance.effectiveTo}
+                                            onChange={e => setNewAllowance({ ...newAllowance, effectiveTo: e.target.value })}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={addAllowance}
+                                    className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-sm text-zinc-200 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Add Allowance
+                                </button>
                             </div>
                         </div>
 
@@ -491,7 +809,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             </div>
                         </div>
 
-                        {/* Tax Info */}
+                        {/* Tax & Statutory */}
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-500">
@@ -499,19 +817,200 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-semibold text-zinc-200">Tax Configuration</h3>
-                                    <p className="text-sm text-zinc-500">Statutory IDs and tax info</p>
+                                    <p className="text-sm text-zinc-500">Configure tax calculation and statutory contributions</p>
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Social Security Number (SSN)</label>
-                                <input
-                                    type="text"
-                                    value={formData.socialSecurityNumber}
-                                    onChange={(e) => setFormData({ ...formData, socialSecurityNumber: e.target.value })}
-                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                    placeholder="XXX-XX-XXXX"
-                                />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Tax ID / SSN / TIN</label>
+                                    <input
+                                        type="text"
+                                        value={formData.taxConfig.taxId}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            taxConfig: { ...formData.taxConfig, taxId: e.target.value }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        placeholder="e.g. XXX-XX-XXXX"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
+                                    <select
+                                        value={formData.taxConfig.filingStatus}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            taxConfig: { ...formData.taxConfig, filingStatus: e.target.value }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    >
+                                        <option value="single">Single</option>
+                                        <option value="married_filing_jointly">Married Filing Jointly</option>
+                                        <option value="married_filing_separately">Married Filing Separately</option>
+                                        <option value="head_of_household">Head of Household</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={formData.taxConfig.dependents}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            taxConfig: { ...formData.taxConfig, dependents: Number(e.target.value) }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Additional Withholding</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.taxConfig.additionalWithholding}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            taxConfig: { ...formData.taxConfig, additionalWithholding: Number(e.target.value) }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Tax Calculation</label>
+                                    <select
+                                        value={formData.taxConfig.calculationRegime}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            taxConfig: { ...formData.taxConfig, calculationRegime: e.target.value }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    >
+                                        <option value="none">No Income Tax</option>
+                                        <option value="flat">Flat Percentage</option>
+                                        <option value="progressive_us">Progressive (US)</option>
+                                        <option value="progressive_uk">Progressive (UK)</option>
+                                        <option value="progressive_generic">Progressive (Generic)</option>
+                                    </select>
+                                </div>
+
+                                {formData.taxConfig.calculationRegime === 'flat' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Flat Tax Rate (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value={formData.taxConfig.flatTaxRate}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                taxConfig: { ...formData.taxConfig, flatTaxRate: Number(e.target.value) }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-6 pt-6 border-t border-zinc-800/70">
+                                <h4 className="text-sm font-semibold text-zinc-300 mb-4">Statutory Contributions</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                        <span className="text-sm text-zinc-300">Social Security Opt-In</span>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.statutoryContributions.socialSecurityOptIn}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                statutoryContributions: {
+                                                    ...formData.statutoryContributions,
+                                                    socialSecurityOptIn: e.target.checked
+                                                }
+                                            })}
+                                            className="rounded bg-zinc-900 border-zinc-700"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Social Security Number</label>
+                                        <input
+                                            type="text"
+                                            value={formData.statutoryContributions.socialSecurityNumber}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                statutoryContributions: {
+                                                    ...formData.statutoryContributions,
+                                                    socialSecurityNumber: e.target.value
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            placeholder="XXX-XX-XXXX"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                        <span className="text-sm text-zinc-300">Pension Opt-In</span>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.statutoryContributions.pensionOptIn}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                statutoryContributions: {
+                                                    ...formData.statutoryContributions,
+                                                    pensionOptIn: e.target.checked
+                                                }
+                                            })}
+                                            className="rounded bg-zinc-900 border-zinc-700"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Pension (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value={formData.statutoryContributions.pensionContributionPercent}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                statutoryContributions: {
+                                                    ...formData.statutoryContributions,
+                                                    pensionContributionPercent: Number(e.target.value)
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            disabled={!formData.statutoryContributions.pensionOptIn}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employer Pension (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value={formData.statutoryContributions.employerPensionPercent}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                statutoryContributions: {
+                                                    ...formData.statutoryContributions,
+                                                    employerPensionPercent: Number(e.target.value)
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            disabled={!formData.statutoryContributions.pensionOptIn}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

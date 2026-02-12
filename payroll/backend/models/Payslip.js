@@ -24,6 +24,8 @@ const EarningItemSchema = new Schema({
       'meal',            // Meal/Food allowance
       'phone',           // Phone/Communication allowance
       'medical',         // Medical allowance
+      'education',       // Education allowance
+      'special',         // Special allowance
       'overtime',        // Overtime pay
       'bonus',           // Performance/annual bonus
       'commission',      // Sales commission
@@ -246,6 +248,7 @@ const PayslipSchema = new Schema({
       'draft',           // Being prepared
       'pending_approval',// Awaiting HR approval
       'approved',        // Approved by HR
+      'exported',        // Finalized/exported to accountant
       'processing',      // Payment being processed
       'paid',            // Payment completed
       'disputed',        // Employee raised dispute
@@ -339,6 +342,8 @@ PayslipSchema.methods.calculateTotals = function() {
       case 'meal':
       case 'phone':
       case 'medical':
+      case 'education':
+      case 'special':
         totalAllowances += earning.amount;
         break;
       case 'bonus':

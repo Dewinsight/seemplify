@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Box, Paper, Alert, CircularProgress, Button, Typography, Snackbar } from '@mui/material';
-import { PlayArrow, Refresh } from '@mui/icons-material';
+import { PlayArrow } from '@mui/icons-material';
 import api from '@/lib/api';
 import ChatInterface from './ChatInterface';
 import PhaseProgress from './PhaseProgress';
@@ -63,8 +63,23 @@ interface ReportData {
     goals: string;
   };
   okrAssessment?: any[];
+  // AI suggestion (not the employee's final self-rating)
   suggestedOverallRating: number;
   ratingJustification: string;
+  aiSuggestedRating?: {
+    suggestedRating: number;
+    ratingJustification: string;
+    confidence?: number;
+    keyStrengths?: string[];
+    developmentAreas?: string[];
+    calibrationNotes?: string;
+  };
+
+  // Employee-provided self-rating
+  overallSelfRating?: number;
+
+  // Optional guidance if the report is missing key info
+  missingInfo?: string[];
   aiInsights: {
     strengths: string[];
     developmentAreas: string[];
@@ -114,9 +129,9 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
 
         // Check if we should show report
         if (data.conversationState.currentPhase === 'review' || data.conversationState.currentPhase === 'completed') {
-          // Find the report in the last few messages
-          const reportMessage = data.chatThread
-            .slice(-5)
+          // Find the latest report draft in the thread (if any)
+          const reportMessage = [...(data.chatThread || [])]
+            .reverse()
             .find((m: Message) => m.structuredData?.type === 'report');
           if (reportMessage?.structuredData?.data) {
             setReport(reportMessage.structuredData.data);
@@ -248,8 +263,8 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
 
     if (fields.length === 2 && fields[0] === 'overallSummary') {
       (newReport.overallSummary as any)[fields[1]] = value;
-    } else if (field === 'suggestedOverallRating') {
-      newReport.suggestedOverallRating = parseInt(value);
+    } else if (field === 'overallSelfRating') {
+      newReport.overallSelfRating = parseInt(value);
     }
 
     setReport(newReport);
@@ -272,23 +287,6 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       setSnackbar({ open: true, message: 'Failed to submit report', severity: 'error' });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // Manual phase advance
-  const handleAdvancePhase = async (targetPhase: string) => {
-    try {
-      const response = await api.post(`/appraisals/${appraisalId}/conversation/advance`, { targetPhase });
-      const data = response.data.data;
-
-      setConversationState(data.conversationState);
-      setMessages(data.chatThread);
-
-      if (targetPhase === 'report_generation') {
-        await generateReport();
-      }
-    } catch (err: any) {
-      console.error('Advance phase error:', err);
     }
   };
 
@@ -392,33 +390,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           extractedData={conversationState?.extractedData || { achievements: [], challenges: [], skills: [], goals: [] }}
           currentOkrIndex={conversationState?.currentOkrIndex || 0}
           onOkrSelect={handleOkrSelect}
-          onPhaseClick={handleAdvancePhase}
         />
 
         {/* Quick Actions */}
-        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-          {conversationState?.currentPhase !== 'report_generation' &&
-            conversationState?.currentPhase !== 'review' &&
-            conversationState?.currentPhase !== 'completed' && (
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={() => handleAdvancePhase('report_generation')}
-                disabled={isProcessing}
-              >
-                Generate Report Now
-              </Button>
-            )}
-          {conversationState?.currentPhase === 'review' && (
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={() => setShowReport(true)}
-            >
+        {conversationState?.currentPhase === 'review' && (
+          <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+            <Button fullWidth variant="contained" onClick={() => setShowReport(true)}>
               View Report
             </Button>
-          )}
-        </Box>
+          </Box>
+        )}
       </Paper>
 
       {/* Chat Area */}
@@ -432,21 +413,10 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           messages={messages}
           onSendMessage={handleSendMessage}
           onUploadFile={handleUploadFile}
-          onAdvancePhase={() => {
-            const currentPhase = conversationState?.currentPhase || 'okr_reflection';
-            const phases = ['okr_reflection', 'achievements', 'challenges', 'learnings', 'future_goals', 'report_generation'];
-            const currentIndex = phases.indexOf(currentPhase);
-            if (currentIndex >= 0 && currentIndex < phases.length - 1) {
-              handleAdvancePhase(phases[currentIndex + 1]);
-            }
-          }}
           isLoading={isProcessing}
           currentPhase={conversationState?.currentPhase || 'okr_reflection'}
           disabled={conversationState?.currentPhase === 'completed'}
-          canAdvancePhase={
-            conversationState?.currentPhase &&
-            !['report_generation', 'review', 'completed'].includes(conversationState?.currentPhase)
-          }
+          canAdvancePhase={false}
         />
       </Box>
 

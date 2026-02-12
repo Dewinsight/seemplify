@@ -194,7 +194,7 @@ export default function SalaryGradesPage() {
                             {grades.filter(g => g.isActive).length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-5 py-8 text-center text-zinc-500">
-                                        No salary grades defined yet. Click "Add Grade" to create one.
+                                        No salary grades defined yet. Click &quot;Add Grade&quot; to create one.
                                     </td>
                                 </tr>
                             )}

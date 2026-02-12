@@ -12,7 +12,7 @@ import {
 import {
   ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
   ExpandMore, Star, Assignment, TrendingUp, Chat, Description,
-  Psychology, Flag, Warning, Groups, ArrowForward
+  Psychology, Flag, Warning, Groups, ArrowForward, AssessmentOutlined
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -43,6 +43,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
   'calibration_pending': { label: 'Calibration Pending', color: 'warning', icon: <TrendingUp /> },
+  'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
   'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
 };
 
@@ -333,7 +334,7 @@ export default function AppraisalDetailPage() {
                 </Accordion>
 
                 {/* Overall Self Rating */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
                   <Typography variant="subtitle1" fontWeight={600}>Overall Self-Rating</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
                     <Rating value={selfAssessment.overallSelfRating} readOnly size="large" />
@@ -474,7 +475,7 @@ export default function AppraisalDetailPage() {
                 </Accordion>
 
                 {/* Overall Manager Rating */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
                   <Typography variant="subtitle1" fontWeight={600}>Overall Manager Rating</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
                     <Rating value={managerReview.overallManagerRating} readOnly size="large" />

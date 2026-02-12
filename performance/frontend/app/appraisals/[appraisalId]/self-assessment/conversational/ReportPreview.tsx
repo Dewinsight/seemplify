@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box, Typography, Paper, Card, CardContent, TextField, Button,
   Accordion, AccordionSummary, AccordionDetails, Chip, Rating,
@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import {
   ExpandMore, Edit, Save, Send, Flag, Assignment, EmojiObjects,
-  TrendingUp, Star, Refresh
+  TrendingUp, Star, Refresh, SmartToy, Person
 } from '@mui/icons-material';
 
 interface ReportData {
@@ -25,8 +25,23 @@ interface ReportData {
     completionPercentage: number;
     selfComments: string;
   }[];
+  // AI suggestion (never the final self-rating)
   suggestedOverallRating: number;
   ratingJustification: string;
+  aiSuggestedRating?: {
+    suggestedRating: number;
+    ratingJustification: string;
+    confidence?: number;
+    keyStrengths?: string[];
+    developmentAreas?: string[];
+    calibrationNotes?: string;
+  };
+
+  // Employee-provided self-rating (required on submit)
+  overallSelfRating?: number;
+
+  // Optional guidance if the report is missing key info
+  missingInfo?: string[];
   aiInsights: {
     strengths: string[];
     developmentAreas: string[];
@@ -121,12 +136,19 @@ export default function ReportPreview({
   isSubmitting,
   isRegenerating
 }: ReportPreviewProps) {
-  const [overallRating, setOverallRating] = useState(report.suggestedOverallRating);
+  const aiSuggestedRating = report.aiSuggestedRating?.suggestedRating ?? report.suggestedOverallRating;
+  const aiJustification = report.aiSuggestedRating?.ratingJustification ?? report.ratingJustification;
 
-  const handleRatingChange = (_: any, value: number | null) => {
+  const [overallSelfRating, setOverallSelfRating] = useState<number | null>(report.overallSelfRating ?? null);
+
+  useEffect(() => {
+    setOverallSelfRating(report.overallSelfRating ?? null);
+  }, [report.overallSelfRating]);
+
+  const handleSelfRatingChange = (_: any, value: number | null) => {
+    setOverallSelfRating(value);
     if (value) {
-      setOverallRating(value);
-      onEdit('suggestedOverallRating', String(value));
+      onEdit('overallSelfRating', String(value));
     }
   };
 
@@ -147,28 +169,75 @@ export default function ReportPreview({
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        Review your AI-generated report below. You can edit any section before submitting.
+        Review your draft report below. It is generated from your conversation and evidence, and may include placeholders.
+        Edit any section before submitting.
       </Alert>
 
-      {/* Overall Rating Section */}
-      <Paper sx={{ p: 3, mb: 3, bgcolor: 'primary.lighter' }}>
-        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-          Overall Self-Rating
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Rating
-            value={overallRating}
-            onChange={handleRatingChange}
-            size="large"
-          />
+      {report.missingInfo && report.missingInfo.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+            Missing Information
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            {report.missingInfo.map((item, idx) => (
+              <li key={idx}>
+                <Typography variant="body2">{item}</Typography>
+              </li>
+            ))}
+          </Box>
+        </Alert>
+      )}
+
+      {/* Employee Self-Rating (Required) */}
+      <Paper sx={{ p: 3, mb: 2, bgcolor: 'primary.lighter' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Person color="primary" />
+          <Typography variant="subtitle1" fontWeight={600}>
+            Your Overall Self-Rating
+          </Typography>
+          <Chip size="small" color="warning" label="Required" />
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <Rating value={overallSelfRating} onChange={handleSelfRatingChange} size="large" />
+          {overallSelfRating ? (
+            <Chip
+              label={ratingLabels[overallSelfRating]}
+              color={overallSelfRating >= 4 ? 'success' : overallSelfRating >= 3 ? 'info' : 'warning'}
+            />
+          ) : (
+            <Chip label="Select a rating" variant="outlined" />
+          )}
+        </Box>
+
+        {!overallSelfRating && (
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            Choose your self-rating to submit.
+          </Alert>
+        )}
+      </Paper>
+
+      {/* AI Suggested Rating (Informational) */}
+      <Paper sx={{ p: 3, mb: 3, border: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <SmartToy color="secondary" />
+          <Typography variant="subtitle1" fontWeight={600}>
+            AI Suggested Rating (Not Final)
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <Rating value={aiSuggestedRating} readOnly size="large" />
           <Chip
-            label={ratingLabels[overallRating]}
-            color={overallRating >= 4 ? 'success' : overallRating >= 3 ? 'info' : 'warning'}
+            label={ratingLabels[aiSuggestedRating]}
+            color={aiSuggestedRating >= 4 ? 'success' : aiSuggestedRating >= 3 ? 'info' : 'warning'}
           />
         </Box>
         <Typography variant="body2" color="text.secondary">
-          <strong>AI Justification:</strong> {report.ratingJustification}
+          <strong>Justification:</strong> {aiJustification || 'Not provided'}
         </Typography>
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          This is a suggestion only. Your self-rating is what will be submitted.
+        </Alert>
       </Paper>
 
       {/* Summary Sections */}
@@ -225,7 +294,7 @@ export default function ReportPreview({
           </AccordionSummary>
           <AccordionDetails>
             {report.okrAssessment.map((okr, index) => (
-              <Box key={okr.okrId || index} sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Box key={okr.okrId || index} sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
                 <Typography variant="subtitle2" fontWeight={600}>
                   {okr.okrTitle}
                 </Typography>
@@ -301,7 +370,7 @@ export default function ReportPreview({
           size="large"
           startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <Send />}
           onClick={onSubmit}
-          disabled={isSubmitting || isRegenerating}
+          disabled={isSubmitting || isRegenerating || !overallSelfRating}
         >
           Submit Self-Assessment
         </Button>

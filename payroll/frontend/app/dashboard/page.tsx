@@ -9,12 +9,12 @@ import {
   Users,
   Calculator,
   LayoutGrid,
-  DollarSign,
   TrendingUp,
   Calendar,
   CheckCircle,
   Clock,
-  Building2
+  Building2,
+  AlertCircle
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -23,12 +23,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [currentOrg, setCurrentOrg] = useState<any>(null);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [adminOverview, setAdminOverview] = useState<any>(null);
 
   useEffect(() => {
     handleAuthCallback();
 
     if (!isAuthenticated()) {
-      console.log('🔒 Not authenticated, redirecting to login');
       router.push('/login');
       return;
     }
@@ -38,16 +38,13 @@ export default function Dashboard() {
         const response = await authApi.getMe();
         setUser(response.user);
 
-        if (response.currentOrganizationId && response.user?.organizations) {
-          const org = response.user.organizations.find(
-            (o: any) => o.id === response.currentOrganizationId
-          );
+        let org: any = null;
+        if (Array.isArray(response.user?.organizations) && response.user.organizations.length > 0) {
+          org = response.currentOrganizationId
+            ? response.user.organizations.find((o: any) => o.id === response.currentOrganizationId) || response.user.organizations[0]
+            : response.user.organizations[0];
           setCurrentOrg(org);
-        } else if (response.user?.organizations?.length > 0) {
-          setCurrentOrg(response.user.organizations[0]);
         }
-
-        setLoading(false);
 
         // Fetch dashboard stats
         try {
@@ -56,6 +53,19 @@ export default function Dashboard() {
         } catch (statsErr) {
           console.log('Could not fetch dashboard stats:', statsErr);
         }
+
+        // HR-only overview widgets
+        const isHr = org && ['owner', 'admin', 'hr_manager'].includes(org.role);
+        if (isHr) {
+          try {
+            const overviewRes = await api.get('/payroll/admin/overview');
+            setAdminOverview(overviewRes.data);
+          } catch (overviewErr) {
+            console.log('Could not fetch admin overview:', overviewErr);
+          }
+        }
+
+        setLoading(false);
       } catch (error: any) {
         console.error('Failed to fetch user:', error);
         if (error.response?.status === 401) {
@@ -71,6 +81,13 @@ export default function Dashboard() {
   const isManager = user?.teams?.some((t: any) =>
     t.organizationId === currentOrg?.id && ['line_manager', 'team_lead'].includes(t.role)
   );
+
+  const currency = dashboardStats?.currency || 'USD';
+  const profileOk = !!dashboardStats?.hasProfile;
+  const profileStatus = dashboardStats?.profileStatus || 'pending_setup';
+
+  const formatMoney = (amount: any) =>
+    Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   if (loading) {
     return (
@@ -92,7 +109,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-start flex-wrap gap-4">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
-                Welcome back, {user?.name?.split(' ')[0] || 'User'} 👋
+                Welcome back, {user?.name?.split(' ')[0] || 'User'}
               </h1>
               <p className="text-zinc-400 mt-2">
                 Payroll dashboard for{' '}
@@ -206,6 +223,30 @@ export default function Dashboard() {
           </Link>
         )}
 
+        {/* Employees Card - HR Admin Only */}
+        {isHRAdmin && (
+          <Link href="/admin/employees" className="group">
+            <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-amber-500/20 p-6 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/10">
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/0 to-orange-500/0 group-hover:from-amber-500/5 group-hover:to-orange-500/5 transition-all" />
+              <div className="relative">
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform mb-4">
+                  <Users className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-zinc-100 text-lg mb-2">Employees</h3>
+                <p className="text-zinc-400 text-sm mb-4 leading-relaxed">
+                  Configure payroll profiles, salary, allowances, and tax settings per employee.
+                </p>
+                <div className="flex items-center text-amber-400 font-medium text-sm group-hover:text-amber-300">
+                  <span>Manage Employees</span>
+                  <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
+
         {/* Analytics Card - HR Admin Only */}
         {isHRAdmin && (
           <Link href="/admin/analytics" className="group">
@@ -242,25 +283,90 @@ export default function Dashboard() {
               <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                 <span className="text-zinc-400 text-sm">Gross Earnings</span>
                 <span className="font-semibold text-zinc-200">
-                  ${dashboardStats?.ytd?.grossEarnings?.toLocaleString() || '0.00'}
+                  {currency} {formatMoney(dashboardStats?.ytd?.grossEarnings)}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                 <span className="text-zinc-400 text-sm">Total Tax</span>
                 <span className="font-semibold text-zinc-200">
-                  ${dashboardStats?.ytd?.totalTax?.toLocaleString() || '0.00'}
+                  {currency} {formatMoney(dashboardStats?.ytd?.totalTax)}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 bg-emerald-500/10 -mx-2 px-2 rounded-lg border border-emerald-500/20">
                 <span className="text-emerald-400 font-medium text-sm">Net Pay</span>
                 <span className="font-bold text-lg text-emerald-300">
-                  ${dashboardStats?.ytd?.netPay?.toLocaleString() || '0.00'}
+                  {currency} {formatMoney(dashboardStats?.ytd?.netPay)}
                 </span>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* HR Overview Widgets */}
+      {isHRAdmin && adminOverview && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <Users className="h-5 w-5 text-blue-400" />
+              </div>
+              <span className="text-sm font-medium text-zinc-300">Active Employees</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-300">{adminOverview.activeEmployees || 0}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-orange-500/20 p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                <AlertCircle className="h-5 w-5 text-orange-400" />
+              </div>
+              <span className="text-sm font-medium text-zinc-300">Profiles Needing Setup</span>
+            </div>
+            <p className="text-2xl font-bold text-orange-300">{adminOverview.profilesNeedingSetup || 0}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-purple-500/20 p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <Clock className="h-5 w-5 text-purple-400" />
+              </div>
+              <span className="text-sm font-medium text-zinc-300">Pending Requests</span>
+            </div>
+            <p className="text-2xl font-bold text-purple-300">{adminOverview.pendingCompensationRequests || 0}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-amber-500/20 p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Calculator className="h-5 w-5 text-amber-400" />
+              </div>
+              <span className="text-sm font-medium text-zinc-300">Runs Pending Action</span>
+            </div>
+            <p className="text-2xl font-bold text-amber-300">{adminOverview.pendingRuns || 0}</p>
+          </div>
+
+          {adminOverview.latestRun?._id && (
+            <Link href={`/admin/runs/${adminOverview.latestRun._id}`} className="md:col-span-4 group">
+              <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 hover:border-amber-500/30 transition-colors">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-xs text-zinc-500 mb-1">Latest Payroll Run</div>
+                    <div className="text-lg font-semibold text-zinc-100">
+                      {adminOverview.latestRun.payPeriod?.month}/{adminOverview.latestRun.payPeriod?.year}{' '}
+                      <span className="text-xs font-mono text-zinc-500 ml-2">{adminOverview.latestRun.runNumber}</span>
+                    </div>
+                    <div className="text-sm text-zinc-500 mt-1 capitalize">
+                      Status: {String(adminOverview.latestRun.status || '').replace(/_/g, ' ') || 'unknown'}
+                    </div>
+                  </div>
+                  <div className="text-amber-400 text-sm font-medium group-hover:text-amber-300">Open</div>
+                </div>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Quick Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -297,10 +403,12 @@ export default function Dashboard() {
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
               <CheckCircle className="h-5 w-5 text-white" />
             </div>
-            <span className="text-sm font-medium text-zinc-300">Profile Status</span>
+            <span className="text-sm font-medium text-zinc-300">Payroll Profile</span>
           </div>
-          <p className="text-2xl font-bold text-emerald-300">Active</p>
-          <p className="text-xs text-zinc-500 mt-1">All systems operational</p>
+          <p className={`text-2xl font-bold ${profileOk ? 'text-emerald-300' : 'text-orange-300'}`}>
+            {profileOk ? 'Configured' : 'Needs Setup'}
+          </p>
+          <p className="text-xs text-zinc-500 mt-1 capitalize">{String(profileStatus).replace(/_/g, ' ')}</p>
         </div>
       </div>
 
@@ -324,7 +432,7 @@ export default function Dashboard() {
             </div>
             <h3 className="text-zinc-400 font-medium mb-1">No recent activity</h3>
             <p className="text-zinc-500 text-sm max-w-sm mx-auto">
-              Your payslips and compensation updates will appear here once they're processed.
+              Your payslips and compensation updates will appear here once they are processed.
             </p>
           </div>
         </div>

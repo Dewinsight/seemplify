@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api, { authApi, isAuthenticated } from '@/lib/api';
+import api, { isAuthenticated } from '@/lib/api';
 import Link from 'next/link';
 import {
     Search,
@@ -113,6 +113,10 @@ export default function EmployeesPage() {
             <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredEmployees.map((employee) => {
                     const needsOnboarding = !employee.basicSalary || employee.basicSalary === 0;
+                    const currency = employee.currency || 'USD';
+                    const totalAllowances = Number(employee.totalAllowances || 0);
+                    const grossMonthlySalary = Number(employee.grossMonthlySalary || (Number(employee.basicSalary || 0) + totalAllowances));
+                    const holdPayment = !!employee.payrollFlags?.holdPayment;
 
                     return (
                         <div
@@ -139,6 +143,11 @@ export default function EmployeesPage() {
                                         Needs Setup
                                     </span>
                                 )}
+                                {!needsOnboarding && holdPayment && (
+                                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+                                        Hold
+                                    </span>
+                                )}
                             </div>
 
                             <div className="space-y-2.5">
@@ -154,9 +163,20 @@ export default function EmployeesPage() {
                                         <DollarSign className="w-3.5 h-3.5" /> Basic Salary
                                     </span>
                                     <span className={`font-mono font-medium ${needsOnboarding ? 'text-zinc-500' : 'text-emerald-400'}`}>
-                                        {needsOnboarding ? 'Not Set' : `${employee.currency || '$'}${employee.basicSalary?.toLocaleString()}`}
+                                        {needsOnboarding ? 'Not Set' : `${currency} ${Number(employee.basicSalary || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                     </span>
                                 </div>
+
+                                {!needsOnboarding && (
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-zinc-500 flex items-center gap-1.5">
+                                            <DollarSign className="w-3.5 h-3.5" /> Gross Monthly
+                                        </span>
+                                        <span className="font-mono font-medium text-zinc-200">
+                                            {currency} {grossMonthlySalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                )}
 
                                 <div className="pt-3 mt-3 border-t border-zinc-800/50 flex items-center justify-between">
                                     <span className={`text-xs px-2 py-0.5 rounded-full border ${employee.isActive

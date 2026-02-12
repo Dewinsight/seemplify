@@ -7,7 +7,6 @@ import Link from 'next/link';
 import {
     ArrowLeft,
     Loader2,
-    Calendar,
     CheckCircle,
     Clock,
     AlertCircle,
@@ -27,8 +26,11 @@ interface PayrollRun {
     summary: {
         totalEmployees: number;
         processedCount: number;
+        skippedCount?: number;
+        errorCount?: number;
         totalGrossPayroll: number;
         totalNetPayroll: number;
+        currency?: string;
     };
     calculatedAt: string;
     paidAt?: string;
@@ -41,6 +43,7 @@ const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
     pending_review: { icon: AlertCircle, color: 'text-orange-400', bg: 'bg-orange-500/10' },
     pending_approval: { icon: Clock, color: 'text-purple-400', bg: 'bg-purple-500/10' },
     approved: { icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    exported: { icon: CheckCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
     paid: { icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' }
 };
 
@@ -105,16 +108,18 @@ export default function PayrollRunsPage() {
                     {runs.map((run) => {
                         const config = statusConfig[run.status] || statusConfig.draft;
                         const StatusIcon = config.icon;
+                        const currency = run.summary?.currency || 'USD';
 
                         return (
-                            <div
+                            <Link
                                 key={run._id}
+                                href={`/admin/runs/${run._id}`}
                                 className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-zinc-700 transition-all group"
                             >
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-12 h-12 rounded-lg ${config.bg} flex items-center justify-center`}>
-                                            <Calendar className={`w-5 h-5 ${config.color}`} />
+                                            <StatusIcon className={`w-5 h-5 ${config.color} ${run.status === 'calculating' ? 'animate-spin' : ''}`} />
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2">
@@ -130,7 +135,7 @@ export default function PayrollRunsPage() {
                                                 </span>
                                                 <span className="text-xs text-zinc-500 flex items-center gap-1">
                                                     <Users className="w-3 h-3" />
-                                                    {run.summary?.processedCount || 0} employees
+                                                    {(run.summary?.processedCount || 0)}/{(run.summary?.totalEmployees || 0)} processed
                                                 </span>
                                             </div>
                                         </div>
@@ -140,19 +145,19 @@ export default function PayrollRunsPage() {
                                         <div className="text-right">
                                             <p className="text-xs text-zinc-500">Gross</p>
                                             <p className="font-mono font-semibold text-zinc-200">
-                                                ${(run.summary?.totalGrossPayroll || 0).toLocaleString()}
+                                                {currency} {(run.summary?.totalGrossPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs text-zinc-500">Net</p>
                                             <p className="font-mono font-semibold text-emerald-400">
-                                                ${(run.summary?.totalNetPayroll || 0).toLocaleString()}
+                                                {currency} {(run.summary?.totalNetPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                         <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-amber-500 transition-colors" />
                                     </div>
                                 </div>
-                            </div>
+                            </Link>
                         );
                     })}
 

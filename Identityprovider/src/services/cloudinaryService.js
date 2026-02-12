@@ -1,25 +1,46 @@
 import dotenv from 'dotenv'
 import { v2 as cloudinary } from 'cloudinary'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
 
-// Load env vars before config
-dotenv.config()
+// Load Identityprovider/.env regardless of where the process was started from.
+// This fixes cases where the service is launched from the repo root, which would
+// otherwise make dotenv look for `<repo>/.env` instead of `Identityprovider/.env`.
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+dotenv.config({ path: resolve(__dirname, '../../.env') })
 
-const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-const apiKey = process.env.CLOUDINARY_API_KEY
-const apiSecret = process.env.CLOUDINARY_API_SECRET
+const readCloudinaryEnv = () => ({
+  cloudinaryUrl: process.env.CLOUDINARY_URL,
+  cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+  apiKey: process.env.CLOUDINARY_API_KEY,
+  apiSecret: process.env.CLOUDINARY_API_SECRET
+})
 
-if (cloudName && apiKey && apiSecret) {
-  cloudinary.config({
-    cloud_name: cloudName,
-    api_key: apiKey,
-    api_secret: apiSecret
-  })
-} else {
-  console.warn('?? Cloudinary is not fully configured. Uploads will fail until env vars are set.')
+const ensureCloudinaryConfigured = () => {
+  const { cloudinaryUrl, cloudName, apiKey, apiSecret } = readCloudinaryEnv()
+
+  if (cloudinaryUrl) {
+    // Instruct the SDK to (re)load configuration from CLOUDINARY_URL.
+    cloudinary.config(true)
+    return true
+  }
+
+  if (cloudName && apiKey && apiSecret) {
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret
+    })
+    return true
+  }
+
+  return false
 }
 
 export const isCloudinaryConfigured = () => {
-  return !!(cloudName && apiKey && apiSecret)
+  const { cloudinaryUrl, cloudName, apiKey, apiSecret } = readCloudinaryEnv()
+  return !!(cloudinaryUrl || (cloudName && apiKey && apiSecret))
 }
 
 export const uploadBufferToCloudinary = ({
@@ -28,7 +49,7 @@ export const uploadBufferToCloudinary = ({
   folder,
   resourceType = 'auto'
 }) => {
-  if (!isCloudinaryConfigured()) {
+  if (!ensureCloudinaryConfigured()) {
     throw new Error('Cloudinary configuration missing')
   }
 
@@ -52,7 +73,7 @@ export const uploadBufferToCloudinary = ({
 }
 
 export const deleteFromCloudinary = async ({ publicId, resourceType = 'raw' }) => {
-  if (!isCloudinaryConfigured()) {
+  if (!ensureCloudinaryConfigured()) {
     throw new Error('Cloudinary configuration missing')
   }
   if (!publicId) {
@@ -66,3 +87,7 @@ export const deleteFromCloudinary = async ({ publicId, resourceType = 'raw' }) =
 }
 
 export default cloudinary
+
+if (!isCloudinaryConfigured()) {
+  console.warn('?? Cloudinary is not fully configured. Uploads will fail until env vars are set.')
+}

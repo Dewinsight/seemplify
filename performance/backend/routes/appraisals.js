@@ -971,7 +971,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 
     if (submit) {
       appraisal.selfAssessment.submittedAt = new Date();
-      appraisal.status = 'self_assessment_submitted';
+      appraisal.status = 'manager_review_pending';
 
       // Generate AI insights
       try {
@@ -994,6 +994,18 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     }
 
     await appraisal.save();
+
+    // Notify manager (best-effort; do not fail submission if email is not configured)
+    if (submit) {
+      try {
+        if (appraisal.manager && appraisal.manager.email) {
+          await notificationService.notifySelfAssessmentSubmitted(appraisal.manager, appraisal.employee);
+        }
+      } catch (notifyErr) {
+        console.error('Notification error:', notifyErr);
+      }
+    }
+
     res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Save self-assessment error:', error);
@@ -1045,7 +1057,17 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
 
     if (submit) {
       appraisal.managerReview.submittedAt = new Date();
-      appraisal.status = 'manager_review_submitted';
+      appraisal.status = 'final_review_pending';
+
+      // Flag rating gaps for follow-up/arbitration in final review
+      const selfRating = appraisal.selfAssessment?.overallSelfRating;
+      const managerRating = appraisal.managerReview?.overallManagerRating;
+      if (selfRating && managerRating && Math.abs(selfRating - managerRating) >= 2) {
+        appraisal.flags = appraisal.flags || {};
+        appraisal.flags.hasDispute = true;
+        appraisal.flags.needsAttention = true;
+        appraisal.flags.disputeReason = `Self vs manager rating gap (${selfRating} vs ${managerRating})`;
+      }
 
       // Check for bias
       try {
@@ -1364,43 +1386,57 @@ router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, 
 // =============================================
 
 // Finalize appraisal
-router.post('/:appraisalId/finalize', requireAuth, requireHRAdmin, async (req, res) => {
+router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, res) => {
   try {
     const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
 
+    // Allow assigned manager or HR Admin to finalize
+    const userId = req.session?.user?.id;
+    const userEmail = req.session?.user?.email;
+    const isAssignedManager = appraisal.manager.userId === userId || appraisal.manager.email === userEmail;
+    const isHR = req.userRole === 'hr_admin';
+
+    if (!isAssignedManager && !isHR) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
     const { finalRating, calibratedRating, justification } = req.body;
     const cycle = appraisal.cycleId;
 
-    // Calculate weighted final rating
-    const okrWeight = cycle.okrWeight / 100;
-    const competencyWeight = 1 - okrWeight;
+    const minRating = cycle?.ratingScale?.min ?? 1;
+    const maxRating = cycle?.ratingScale?.max ?? 5;
 
-    const okrScore = appraisal.selfAssessment?.okrAssessment?.reduce((acc, okr) => acc + (okr.completionPercentage || 0), 0) /
-      (appraisal.selfAssessment?.okrAssessment?.length || 1);
-    const competencyScore = appraisal.managerReview?.competencyRatings?.reduce((acc, c) => acc + (c.managerRating || 0), 0) /
-      (appraisal.managerReview?.competencyRatings?.length || 1);
+    // Use the same composite score math as the manager scoring endpoint.
+    const scores = appraisalAIService.calculateCompositeScore(appraisal, cycle);
 
-    const calculatedRating = calibratedRating || finalRating ||
-      (okrScore * okrWeight / 20 + competencyScore * competencyWeight);
+    const requestedRating =
+      (calibratedRating ?? finalRating ?? appraisal.managerReview?.overallManagerRating ?? scores?.suggestedRating);
 
-    // Get rating label
-    const ratingInfo = cycle.ratingScale.labels.find(l => l.value === Math.round(calculatedRating)) || {};
+    if (requestedRating === undefined || requestedRating === null) {
+      return res.status(400).json({ success: false, error: 'Final rating is required' });
+    }
+
+    const numericRating = Number(requestedRating);
+    if (Number.isNaN(numericRating) || numericRating < minRating || numericRating > maxRating) {
+      return res.status(400).json({ success: false, error: `Final rating must be a number from ${minRating} to ${maxRating}` });
+    }
+
+    const overall = Math.round(numericRating * 10) / 10;
+
+    // Get rating label/color from cycle scale (fallback to generic label if not found).
+    const ratingInfo = cycle?.ratingScale?.labels?.find(l => l.value === Math.round(overall)) || {};
 
     appraisal.finalRating = {
-      overall: Math.round(calculatedRating * 10) / 10,
-      okrScore: Math.round(okrScore * 10) / 10,
-      competencyScore: Math.round(competencyScore * 10) / 10,
-      ratingLabel: ratingInfo.label,
+      overall,
+      okrScore: scores?.okrScore,
+      competencyScore: scores?.competencyScore,
+      ratingLabel: ratingInfo.label || scores?.ratingLabel,
       ratingColor: ratingInfo.color,
-      breakdown: {
-        okrWeight: cycle.okrWeight,
-        okrContribution: okrScore * okrWeight / 100,
-        competencyWeight: 100 - cycle.okrWeight,
-        competencyContribution: competencyScore * competencyWeight
-      },
+      justification: justification || undefined,
+      breakdown: scores?.breakdown,
       finalizedAt: new Date(),
       finalizedBy: {
         userId: req.session.user.id,
@@ -1408,10 +1444,10 @@ router.post('/:appraisalId/finalize', requireAuth, requireHRAdmin, async (req, r
       }
     };
 
-    if (calibratedRating) {
+    if (calibratedRating !== undefined && calibratedRating !== null) {
       appraisal.calibration = {
-        originalRating: finalRating || appraisal.managerReview?.overallManagerRating,
-        calibratedRating,
+        originalRating: Number(finalRating ?? appraisal.managerReview?.overallManagerRating),
+        calibratedRating: Number(calibratedRating),
         calibratedBy: { userId: req.session.user.id, name: req.session.user.name },
         calibratedAt: new Date(),
         justification
@@ -2077,6 +2113,10 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       message: "I've generated your self-assessment report based on our conversation. Please review it below and let me know if you'd like any changes before submitting.",
       messageType: 'report_draft',
       phase: 'review',
+      structuredData: {
+        type: 'report',
+        data: report
+      },
       aiContext: {
         isAiGenerated: true,
         modelUsed: 'gpt-4.1',
@@ -2129,16 +2169,56 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     // Apply any edits
     const finalReport = edits ? { ...report, ...edits } : report;
 
+    // Employee must provide their own self-rating. AI rating is stored separately.
+    const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;
+    if (allowSelfRating) {
+      const rating = finalReport.overallSelfRating;
+      if (rating === undefined || rating === null) {
+        return res.status(400).json({ success: false, error: 'Overall self-rating is required' });
+      }
+      if (typeof rating !== 'number' || Number.isNaN(rating) || rating < 1 || rating > 5) {
+        return res.status(400).json({ success: false, error: 'Overall self-rating must be a number from 1 to 5' });
+      }
+    }
+
+    const aiRatingSuggestion = finalReport.aiSuggestedRating || (
+      finalReport.suggestedOverallRating || finalReport.ratingJustification ? {
+        suggestedRating: finalReport.suggestedOverallRating,
+        ratingJustification: finalReport.ratingJustification
+      } : null
+    );
+
     // Update self-assessment with report data
     appraisal.selfAssessment = {
       ...appraisal.selfAssessment,
       overallSummary: finalReport.overallSummary,
       okrAssessment: finalReport.okrAssessment || appraisal.selfAssessment?.okrAssessment || [],
-      overallSelfRating: finalReport.suggestedOverallRating || 3,
-      aiInsights: finalReport.aiInsights,
+      overallSelfRating: finalReport.overallSelfRating,
+      aiRatingSuggestion: aiRatingSuggestion ? {
+        ...aiRatingSuggestion,
+        generatedAt: new Date()
+      } : appraisal.selfAssessment?.aiRatingSuggestion,
+      // Populate AI insights after submission (based on the employee-approved content)
+      aiInsights: appraisal.selfAssessment?.aiInsights,
       submittedAt: new Date(),
       lastSavedAt: new Date()
     };
+
+    // Generate AI insights (strengths/development areas) from the finalized self-assessment.
+    try {
+      const aiInsights = await appraisalAIService.analyzeSelfAssessment(
+        appraisal.selfAssessment,
+        appraisal.selfAssessment.okrAssessment || [],
+        []
+      );
+      appraisal.selfAssessment.aiInsights = {
+        ...aiInsights,
+        generatedAt: new Date()
+      };
+    } catch (aiError) {
+      console.error('AI insights error (finalize report):', aiError);
+      // Keep whatever we already have (or none).
+    }
 
     // Update conversation state
     appraisal.conversationAssessment.currentPhase = 'completed';
@@ -2147,7 +2227,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     }
 
     // Update status
-    appraisal.status = 'self_assessment_submitted';
+    appraisal.status = 'manager_review_pending';
 
     // Add completion message
     appraisal.chatThread.push({

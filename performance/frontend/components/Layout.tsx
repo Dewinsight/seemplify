@@ -229,7 +229,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-2">
-              {navigation.filter(n => n.section === 'main').slice(0, 5).map((item) => {
+              {navigation.filter(n => n.section === 'main').map((item) => {
                 const active = pathname === item.href;
                 return (
                   <Link

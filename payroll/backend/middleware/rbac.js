@@ -124,8 +124,21 @@ const PERMISSIONS = {
 function getUserRole(user) {
   if (!user) return null;
 
-  // Check organization role for HR admin
-  const orgRole = user.organizationRole || user.userinfo?.organizations?.[0]?.role;
+  // Check organization role for HR admin (use CURRENT org, not first org)
+  const currentOrg =
+    user.currentOrganization ||
+    user.userinfo?.current_organization ||
+    user.userinfo?.currentOrganization;
+
+  const currentOrgId = currentOrg?.id;
+  const orgRole =
+    currentOrg?.role ||
+    user.organizationRole ||
+    (currentOrgId && Array.isArray(user.organizations)
+      ? user.organizations.find(o => o.id === currentOrgId)?.role
+      : null) ||
+    user.userinfo?.organizations?.[0]?.role;
+
   if (orgRole === 'hr_manager' || orgRole === 'admin' || orgRole === 'owner') {
     return 'hr_admin';
   }

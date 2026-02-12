@@ -95,6 +95,20 @@ const TaxConfigSchema = new Schema({
     enum: ['standard', 'simplified', 'exempt', 'custom'],
     default: 'standard'
   },
+  // Payroll calculation settings (kept generic; not a tax-filing system)
+  calculationRegime: {
+    type: String,
+    enum: ['none', 'flat', 'progressive_uk', 'progressive_us', 'progressive_generic'],
+    default: 'flat'
+  },
+  flatTaxRate: { type: Number, min: 0, max: 100 }, // percent, used when calculationRegime='flat'
+  customBrackets: [{
+    min: { type: Number, required: true },
+    max: { type: Number, required: true }, // Use a large number instead of Infinity
+    rate: { type: Number, required: true, min: 0, max: 100 }
+  }],
+  socialSecurityRate: { type: Number, min: 0, max: 100 }, // percent (optional override)
+  socialSecurityCap: { type: Number, min: 0 }, // annual cap (optional override)
   taxExemptions: [{
     type: { type: String }, // e.g., 'housing_loan', 'education', 'charitable'
     amount: Number,

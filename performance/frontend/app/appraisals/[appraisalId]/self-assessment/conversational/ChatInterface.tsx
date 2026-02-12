@@ -55,7 +55,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
             icon={<Description fontSize="small" />}
             label={message.message || ''}
             variant="outlined"
-            sx={{ bgcolor: 'grey.100' }}
+            sx={{ bgcolor: 'action.hover' }}
           />
         </Box>
       </Fade>
@@ -138,7 +138,7 @@ const TypingIndicator = () => (
     <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36 }}>
       <SmartToy fontSize="small" />
     </Avatar>
-    <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'grey.50', borderRadius: 2 }}>
+    <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 2 }}>
       <Box sx={{ display: 'flex', gap: 0.5 }}>
         {[0, 1, 2].map((i) => (
           <Box
@@ -302,7 +302,7 @@ export default function ChatInterface({
               bgcolor: 'primary.main',
               color: 'white',
               '&:hover': { bgcolor: 'primary.dark' },
-              '&.Mui-disabled': { bgcolor: 'grey.300', color: 'grey.500' }
+              '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' }
             }}
           >
             {isSending ? <CircularProgress size={24} color="inherit" /> : <Send />}

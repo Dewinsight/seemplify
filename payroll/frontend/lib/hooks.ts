@@ -315,7 +315,7 @@ export function usePayrollRuns(filters?: { year?: number; status?: string }) {
  * Get payroll run by ID
  */
 export function usePayrollRun(runId?: string) {
-  const url = runId ? `/payroll/run/${runId}` : null;
+  const url = runId ? `/payroll/runs/${runId}` : null;
   const { data, error, isLoading } = useSWR(url, fetcher, defaultConfig);
 
   return {

@@ -145,28 +145,53 @@ export default function AppraisalsPage() {
   };
 
   const getStepStatus = (status: string, stepKey: string): 'completed' | 'active' | 'pending' => {
-    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'];
-    const currentStepIndex = stepOrder.indexOf(status.split('_')[0]) || 0;
-    const stepIndex = stepOrder.indexOf(stepKey);
+    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'] as const;
 
-    if (status === 'completed') return 'completed';
-    if (stepIndex < currentStepIndex) return 'completed';
-    if (status.includes(stepKey)) return 'active';
+    const activeStepIndex = (() => {
+      if (!status) return -1;
+      if (status === 'completed' || status === 'employee_acknowledged') return stepOrder.length;
+      if (['not_started', 'goal_setting', 'goal_approval_pending'].includes(status)) return -1;
+
+      if (status === 'self_assessment_submitted') return 1; // legacy data
+      if (status.startsWith('self_assessment')) return 0;
+      if (status.startsWith('manager_review')) return 1;
+
+      if (status.startsWith('discussion') || status.startsWith('calibration') || status === 'manager_review_submitted') return 2;
+      if (status === 'final_review_pending') return 3;
+
+      return -1;
+    })();
+
+    const stepIndex = stepOrder.indexOf(stepKey as any);
+
+    if (activeStepIndex === stepOrder.length) return 'completed';
+    if (stepIndex === -1) return 'pending';
+    if (activeStepIndex === -1) return 'pending';
+    if (stepIndex < activeStepIndex) return 'completed';
+    if (stepIndex === activeStepIndex) return 'active';
     return 'pending';
   };
 
-  const isOverdue = (deadline: string | undefined, status: string) => {
+  const isOverdue = (deadline: string | undefined, status: string, stage: 'self' | 'manager') => {
     if (!deadline) return false;
-    if (status.includes('submitted') || status === 'completed') return false;
-    return new Date(deadline) < new Date();
+    const due = new Date(deadline);
+    if (Number.isNaN(due.getTime())) return false;
+
+    const now = new Date();
+
+    if (stage === 'self') {
+      return ['self_assessment_pending', 'self_assessment_in_progress'].includes(status) && due < now;
+    }
+
+    return ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'].includes(status) && due < now;
   };
 
   const renderAppraisalCard = (appraisal: Appraisal, isEmployee: boolean) => {
     const config = statusConfig[appraisal.status] || statusConfig['not_started'];
     const selfDue = appraisal.deadlines?.selfAssessmentDue;
     const managerDue = appraisal.deadlines?.managerReviewDue;
-    const selfOverdue = isOverdue(selfDue, appraisal.status);
-    const managerOverdue = isOverdue(managerDue, appraisal.status);
+    const selfOverdue = isOverdue(selfDue, appraisal.status, 'self');
+    const managerOverdue = isOverdue(managerDue, appraisal.status, 'manager');
 
     return (
       <Card
@@ -352,6 +377,19 @@ export default function AppraisalsPage() {
                     sx={{ ml: 1 }}
                   >
                     {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
+                  </Button>
+                )}
+
+                {!isEmployee && appraisal.status === 'final_review_pending' && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="success"
+                    startIcon={<CheckCircle />}
+                    onClick={() => router.push(`/appraisals/${appraisal._id}/final-review`)}
+                    sx={{ ml: 1 }}
+                  >
+                    Finalize
                   </Button>
                 )}
 
