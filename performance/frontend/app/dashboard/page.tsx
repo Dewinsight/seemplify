@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { useUserContext, useDashboardData, useCurrentTeam } from '@/lib/hooks';
 import Link from 'next/link';
 import {
-  TrendingUp, Target, MessageSquare, BarChart3, Users, LayoutGrid, Sparkles, Flag, AlertCircle, ChevronDown, Eye
+  TrendingUp, Target, FileText, MessageSquare, BarChart3, Users, Video, LayoutGrid, Sparkles, Flag, AlertCircle, ChevronDown, Eye
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -190,9 +190,10 @@ export default function DashboardPage() {
   // Quick actions
   const quickActions = [
     { name: 'Set OKRs', href: '/okrs', icon: Target, color: 'from-purple-500 to-pink-500' },
+    { name: 'My Appraisals', href: '/appraisals', icon: FileText, color: 'from-indigo-500 to-blue-500' },
     { name: 'Give Feedback', href: '/feedback', icon: MessageSquare, color: 'from-green-500 to-emerald-500' },
     { name: 'View Reviews', href: '/reviews', icon: BarChart3, color: 'from-amber-500 to-orange-500' },
-    { name: 'Schedule 1:1', href: '/one-on-ones', icon: Users, color: 'from-indigo-500 to-blue-500' },
+    { name: 'Schedule 1:1', href: '/one-on-ones', icon: Video, color: 'from-fuchsia-500 to-rose-500' },
   ];
 
   return (
@@ -203,7 +204,7 @@ export default function DashboardPage() {
           <div className="relative glass-card rounded-2xl p-0 overflow-hidden">
 
             {/* Top Section - Welcome + App Hub */}
-            <div className="flex justify-between items-center p-6 pb-4 border-b border-zinc-700/30">
+            <div className="flex justify-between items-center p-6 pb-4 border-b border-border">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-500 dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
                   Welcome back, {userName.split(' ')[0]}
@@ -235,7 +236,7 @@ export default function DashboardPage() {
                 </div>
 
                 {selectedTeamView === 'all' && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 text-sm font-medium">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-700 dark:text-purple-200 text-sm font-medium">
                     <Users className="h-3.5 w-3.5" />
                     All {orgTeams.length} Teams
                   </span>
@@ -255,17 +256,17 @@ export default function DashboardPage() {
                       setTeamDropdownOpen(!teamDropdownOpen);
                     }}
                     disabled={switchingTeam}
-                    className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-sm text-zinc-100 hover:bg-zinc-700/80 hover:border-zinc-600 transition-all shadow-lg"
+                    className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-background border border-border text-sm text-foreground hover:bg-muted transition-all shadow-lg dark:bg-zinc-800/80 dark:border-zinc-700/60 dark:hover:bg-zinc-700/80"
                   >
                     <div className="flex items-center gap-2">
                       <Eye className="h-4 w-4 text-purple-400" />
                       <span className="font-medium">{getTeamViewDisplay()}</span>
                     </div>
-                    <div className="h-4 w-px bg-zinc-600"></div>
-                    <span className="text-xs text-zinc-500">
+                    <div className="h-4 w-px bg-border"></div>
+                    <span className="text-xs text-muted-foreground">
                       {orgTeams.length} team{orgTeams.length !== 1 ? 's' : ''}
                     </span>
-                    <ChevronDown className="h-4 w-4 text-zinc-400" />
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </button>
                   {teamDropdownOpen && mounted && createPortal(
                     <>
@@ -274,19 +275,19 @@ export default function DashboardPage() {
                         onClick={() => setTeamDropdownOpen(false)}
                       />
                       <div
-                        className="fixed w-80 rounded-xl border border-white/[0.08] bg-zinc-950 shadow-2xl overflow-hidden z-[9999]"
+                        className="fixed w-80 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden z-[9999]"
                         style={{
                           top: `${dropdownPosition.top}px`,
                           left: `${dropdownPosition.left}px`
                         }}
                       >
-                        <div className="px-4 py-3 border-b border-zinc-800/60 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
+                        <div className="px-4 py-3 border-b border-border bg-gradient-to-r from-purple-500/10 to-pink-500/10">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Users className="h-4 w-4 text-purple-400" />
-                              <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Team View</div>
+                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team View</div>
                             </div>
-                            <span className="text-xs text-zinc-500">{orgTeams.length + 1} options</span>
+                            <span className="text-xs text-muted-foreground">{orgTeams.length + 1} options</span>
                           </div>
                         </div>
 
@@ -298,15 +299,15 @@ export default function DashboardPage() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex-1 min-w-0">
-                              <div className={`font-semibold ${selectedTeamView === 'all' ? 'text-purple-300' : 'text-zinc-200'} truncate`}>
+                              <div className={`font-semibold ${selectedTeamView === 'all' ? 'text-purple-700 dark:text-purple-200' : 'text-foreground'} truncate`}>
                                 All Teams
                               </div>
-                              <div className="text-xs text-zinc-500 mt-0.5">
+                              <div className="text-xs text-muted-foreground mt-0.5">
                                 View aggregated data across {orgTeams.length} teams
                               </div>
                             </div>
                             {selectedTeamView === 'all' && (
-                              <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                              <span className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-300 flex-shrink-0 bg-purple-500/15 px-2.5 py-1.5 rounded-lg font-medium">
                                 <Eye className="h-3 w-3" />
                                 Viewing
                               </span>
@@ -329,20 +330,20 @@ export default function DashboardPage() {
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex-1 min-w-0">
-                                  <div className={`font-semibold ${isActive ? 'text-purple-300' : 'text-zinc-200'} truncate`}>{team.name}</div>
+                                  <div className={`font-semibold ${isActive ? 'text-purple-700 dark:text-purple-200' : 'text-foreground'} truncate`}>{team.name}</div>
                                   <div className="flex items-center gap-2 mt-1">
                                     {team.role && (
-                                      <span className={`text-xs truncate ${isActive ? 'text-purple-400' : 'text-zinc-500'}`}>
+                                      <span className={`text-xs truncate ${isActive ? 'text-purple-600 dark:text-purple-300' : 'text-muted-foreground'}`}>
                                         {team.roleDisplay || team.role}
                                       </span>
                                     )}
                                     {!isActive && (
-                                      <span className="text-xs text-zinc-600">• Click to view</span>
+                                      <span className="text-xs text-muted-foreground/80">- Click to view</span>
                                     )}
                                   </div>
                                 </div>
                                 {isActive && (
-                                  <span className="flex items-center gap-1.5 text-xs text-purple-400 flex-shrink-0 bg-purple-500/30 px-2.5 py-1.5 rounded-lg font-medium">
+                                  <span className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-300 flex-shrink-0 bg-purple-500/15 px-2.5 py-1.5 rounded-lg font-medium">
                                     <Eye className="h-3 w-3" />
                                     {isActiveTeam ? 'Active' : 'Viewing'}
                                   </span>
@@ -384,7 +385,7 @@ export default function DashboardPage() {
                       <div className="text-xs text-muted-foreground/80">{stat.subtitle}</div>
                     )}
                     {stat.showProgress && (
-                      <div className="mt-3 w-full bg-zinc-800/70 rounded-full h-2 overflow-hidden">
+                      <div className="mt-3 w-full bg-muted/60 rounded-full h-2 overflow-hidden">
                         <div
                           className={`h-2 rounded-full bg-gradient-to-r ${stat.gradient} transition-all duration-300`}
                           style={{ width: `${stat.progressValue}%` }}
@@ -401,7 +402,7 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <div className="glass-card rounded-xl p-6">
           <h2 className="text-lg font-bold text-foreground mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {quickActions.map((action) => (
               <Link
                 key={action.name}
@@ -411,7 +412,7 @@ export default function DashboardPage() {
                 <div className={`h-12 w-12 rounded-lg bg-gradient-to-br ${action.color} flex items-center justify-center mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
                   <action.icon className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-sm font-medium text-zinc-200">{action.name}</span>
+                <span className="text-sm font-medium text-foreground">{action.name}</span>
               </Link>
             ))}
           </div>
@@ -421,13 +422,13 @@ export default function DashboardPage() {
         {isManager && managerData && managerData.directReportCount > 0 && (
           <div className="glass-card rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-400" />
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Users className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
                 Team Overview
               </h2>
               <Link
                 href="/team"
-                className="text-sm text-purple-400 hover:text-purple-300 transition-colors font-medium"
+                className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors font-medium"
               >
                 View All →
               </Link>
@@ -438,9 +439,9 @@ export default function DashboardPage() {
                 <div className="text-sm text-muted-foreground">Direct Reports</div>
               </div>
               {managerData.pendingReviews > 0 && (
-                <div className="p-4 rounded-lg bg-zinc-800/60 border border-amber-500/20">
-                  <div className="text-2xl font-bold text-amber-300">{managerData.pendingReviews}</div>
-                  <div className="text-sm text-zinc-400">Pending Reviews</div>
+                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                  <div className="text-2xl font-bold text-amber-600 dark:text-amber-300">{managerData.pendingReviews}</div>
+                  <div className="text-sm text-muted-foreground">Pending Reviews</div>
                 </div>
               )}
             </div>
@@ -448,20 +449,20 @@ export default function DashboardPage() {
         )}
 
         {isHRAdmin && (
-          <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-red-500/20 p-6">
+          <div className="glass-card rounded-xl shadow-lg border border-red-500/20 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
-                <Flag className="h-5 w-5 text-red-400" />
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Flag className="h-5 w-5 text-red-500 dark:text-red-400" />
                 HR Administration
               </h2>
               <Link
                 href="/admin/appraisal-cycles"
-                className="text-sm text-red-400 hover:text-red-300 transition-colors font-medium"
+                className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors font-medium"
               >
                 Admin Panel →
               </Link>
             </div>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-muted-foreground">
               Manage appraisal cycles, calibration sessions, and organization-wide reports.
             </p>
           </div>

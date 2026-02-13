@@ -322,14 +322,8 @@ const requireAuth = async (req, res, next) => {
  * Middleware: Require specific permission
  */
 const requirePermission = (permission) => {
-  return (req, res, next) => {
-    if (!req.session?.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED'
-      });
-    }
+  return (req, res, next) => requireAuth(req, res, () => {
+    if (!req.session?.user) return; // requireAuth already responded
 
     const role = getUserRole(req.session.user);
     
@@ -349,21 +343,15 @@ const requirePermission = (permission) => {
     req.currentOrganization = getCurrentOrganization(req.session.user);
     
     next();
-  };
+  });
 };
 
 /**
  * Middleware: Require one of multiple permissions
  */
 const requireAnyPermission = (...permissions) => {
-  return (req, res, next) => {
-    if (!req.session?.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED'
-      });
-    }
+  return (req, res, next) => requireAuth(req, res, () => {
+    if (!req.session?.user) return; // requireAuth already responded
 
     const role = getUserRole(req.session.user);
     const hasAny = permissions.some(p => hasPermission(role, p));
@@ -384,21 +372,15 @@ const requireAnyPermission = (...permissions) => {
     req.currentOrganization = getCurrentOrganization(req.session.user);
     
     next();
-  };
+  });
 };
 
 /**
  * Middleware: Require access to target user's data
  */
 const requireUserAccess = (getUserId) => {
-  return (req, res, next) => {
-    if (!req.session?.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED'
-      });
-    }
+  return (req, res, next) => requireAuth(req, res, () => {
+    if (!req.session?.user) return; // requireAuth already responded
 
     const targetUserId = typeof getUserId === 'function' 
       ? getUserId(req) 
@@ -416,20 +398,14 @@ const requireUserAccess = (getUserId) => {
     req.targetUserId = targetUserId;
     
     next();
-  };
+  });
 };
 
 /**
  * Middleware: Require HR Admin role
  */
-const requireHRAdmin = (req, res, next) => {
-  if (!req.session?.user) {
-    return res.status(401).json({
-      success: false,
-      error: 'Authentication required',
-      code: 'AUTH_REQUIRED'
-    });
-    }
+const requireHRAdmin = (req, res, next) => requireAuth(req, res, () => {
+  if (!req.session?.user) return; // requireAuth already responded
 
   const role = getUserRole(req.session.user);
   
@@ -443,20 +419,17 @@ const requireHRAdmin = (req, res, next) => {
   }
 
   req.userRole = role;
+  req.directReports = getDirectReports(req.session.user);
+  req.managedTeams = getManagedTeams(req.session.user);
+  req.currentOrganization = getCurrentOrganization(req.session.user);
   next();
-};
+});
 
 /**
  * Middleware: Require Line Manager role or higher
  */
-const requireManager = (req, res, next) => {
-  if (!req.session?.user) {
-    return res.status(401).json({
-      success: false,
-      error: 'Authentication required',
-      code: 'AUTH_REQUIRED'
-    });
-  }
+const requireManager = (req, res, next) => requireAuth(req, res, () => {
+  if (!req.session?.user) return; // requireAuth already responded
 
   const role = getUserRole(req.session.user);
   
@@ -475,19 +448,13 @@ const requireManager = (req, res, next) => {
   req.currentOrganization = getCurrentOrganization(req.session.user);
   
   next();
-};
+});
 
 /**
  * Middleware: Require Team Lead role or higher
  */
-const requireTeamLead = (req, res, next) => {
-  if (!req.session?.user) {
-    return res.status(401).json({
-      success: false,
-      error: 'Authentication required',
-      code: 'AUTH_REQUIRED'
-    });
-  }
+const requireTeamLead = (req, res, next) => requireAuth(req, res, () => {
+  if (!req.session?.user) return; // requireAuth already responded
 
   const role = getUserRole(req.session.user);
   
@@ -506,7 +473,7 @@ const requireTeamLead = (req, res, next) => {
   req.currentOrganization = getCurrentOrganization(req.session.user);
   
   next();
-};
+});
 
 module.exports = {
   PERMISSIONS,

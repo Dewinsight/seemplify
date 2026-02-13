@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api, { handleAuthCallback, isAuthenticated } from '@/lib/api';
+import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
 import Link from 'next/link';
 
 export default function TeamCompensation() {
   const router = useRouter();
   const [requests, setRequests] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<'hr_admin' | 'line_manager' | 'team_lead' | null>(null);
 
   // Form State
   const [showForm, setShowForm] = useState(false);
@@ -21,6 +23,31 @@ export default function TeamCompensation() {
     effectiveDate: new Date().toISOString().split('T')[0]
   });
   const [submitting, setSubmitting] = useState(false);
+  const requestTypeOptions = role === 'hr_admin'
+    ? [
+        { value: 'bonus', label: 'Bonus' },
+        { value: 'salary_revision', label: 'Salary Revision' },
+        { value: 'overtime', label: 'Overtime' },
+        { value: 'commission', label: 'Commission' },
+        { value: 'incentive', label: 'Incentive' },
+        { value: 'allowance', label: 'Allowance' },
+        { value: 'reimbursement', label: 'Reimbursement' },
+      ]
+    : role === 'line_manager'
+      ? [
+          { value: 'bonus', label: 'Bonus' },
+          { value: 'salary_revision', label: 'Salary Revision' },
+          { value: 'overtime', label: 'Overtime' },
+          { value: 'commission', label: 'Commission' },
+          { value: 'incentive', label: 'Incentive' },
+          { value: 'allowance', label: 'Allowance' },
+        ]
+      : [
+          { value: 'bonus', label: 'Bonus' },
+          { value: 'commission', label: 'Commission' },
+          { value: 'incentive', label: 'Incentive' },
+          { value: 'allowance', label: 'Allowance' },
+        ];
 
   useEffect(() => {
     // Handle SSO callback
@@ -32,18 +59,59 @@ export default function TeamCompensation() {
       return;
     }
 
-    fetchRequests();
+    (async () => {
+      try {
+        const me = await authApi.getMe();
+        const currentOrgId = me.currentOrganizationId;
+        const currentOrg =
+          me.user?.organizations?.find((o: any) => o.id === currentOrgId) || me.user?.organizations?.[0];
+
+        const orgRole = currentOrg?.role;
+        const isHr = !!currentOrg && ['owner', 'admin', 'hr_manager'].includes(orgRole);
+        const teams = me.user?.teams || [];
+        const isManager = teams.some((t: any) => t.organizationId === currentOrgId && t.role === 'line_manager');
+        const isTeamLead = teams.some((t: any) => t.organizationId === currentOrgId && t.role === 'team_lead');
+
+        if (!isHr && !isManager && !isTeamLead) {
+          router.push('/dashboard');
+          return;
+        }
+
+        setRole(isHr ? 'hr_admin' : isManager ? 'line_manager' : 'team_lead');
+
+        const [membersRes, reqRes] = await Promise.all([
+          api.get('/compensation/team-members'),
+          api.get('/compensation/team'),
+        ]);
+
+        const members = membersRes.data?.members || [];
+        setTeamMembers(members);
+
+        // Initialize default selection
+        if (members.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            userId: prev.userId || members[0].userId,
+            userName: prev.userName || members[0].name,
+          }));
+        }
+
+        setRequests(reqRes.data?.requests || reqRes.data || []);
+      } catch (err) {
+        console.error('Failed to load team data:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [router]);
 
   const fetchRequests = () => {
     api.get('/compensation/team')
       .then(res => {
         setRequests(res.data.requests || res.data || []);
-        setLoading(false);
       })
       .catch(err => {
         console.error('Failed to fetch requests:', err);
-        setLoading(false);
       });
   };
 
@@ -51,11 +119,12 @@ export default function TeamCompensation() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const selected = teamMembers.find(m => m.userId === formData.userId);
       await api.post('/compensation/request', formData);
       setShowForm(false);
       setFormData({
-        userId: '',
-        userName: '',
+        userId: selected?.userId || '',
+        userName: selected?.name || '',
         type: 'bonus',
         amount: '',
         reason: '',
@@ -165,29 +234,33 @@ export default function TeamCompensation() {
               </div>
 
               <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Employee ID</label>
-                    <input
-                      type="text"
-                      value={formData.userId}
-                      onChange={e => setFormData({...formData, userId: e.target.value})}
-                      placeholder="e.g. user-123"
-                      required
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Employee Name</label>
-                    <input
-                      type="text"
-                      value={formData.userName}
-                      onChange={e => setFormData({...formData, userName: e.target.value})}
-                      placeholder="e.g. John Doe"
-                      required
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Employee</label>
+                  <select
+                    value={formData.userId}
+                    onChange={(e) => {
+                      const userId = e.target.value;
+                      const selected = teamMembers.find(m => m.userId === userId);
+                      setFormData({ ...formData, userId, userName: selected?.name || '' });
+                    }}
+                    required
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  >
+                    {teamMembers.length === 0 ? (
+                      <option value="">No team members found</option>
+                    ) : (
+                      teamMembers.map((m) => (
+                        <option key={m.userId} value={m.userId}>
+                          {m.name || m.userId}{m.email ? ` (${m.email})` : ''}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {teamMembers.length === 0 && role !== 'hr_admin' && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      No direct reports found. Check your team setup in the Identity Provider.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -198,11 +271,9 @@ export default function TeamCompensation() {
                       onChange={e => setFormData({...formData, type: e.target.value})}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     >
-                      <option value="bonus">Bonus</option>
-                      <option value="salary_revision">Salary Revision</option>
-                      <option value="overtime">Overtime</option>
-                      <option value="commission">Commission</option>
-                      <option value="incentive">Incentive</option>
+                      {requestTypeOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

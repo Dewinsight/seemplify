@@ -31,7 +31,7 @@ const generateTeamInsightsSchema = {
 router.post('/generate-okrs', requirePerformancePermission('create:okrs'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { userRole, teamGoals, companyGoals } = req.body;
       
       const result = await AIPerformanceService.generateOKRs(userRole, teamGoals, companyGoals);
@@ -62,7 +62,7 @@ router.post('/generate-okrs', requirePerformancePermission('create:okrs'), async
 router.post('/analyze-review', requirePerformancePermission('evaluate:reviews'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { selfEvaluation, managerEvaluation, peerReviews } = req.body;
       
       const result = await AIPerformanceService.analyzePerformanceReview(
@@ -97,7 +97,7 @@ router.post('/analyze-review', requirePerformancePermission('evaluate:reviews'),
 router.post('/analyze-feedback', requirePerformancePermission('analyze:feedback'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { feedbackText } = req.body;
       
       const result = await AIPerformanceService.analyzeFeedback(feedbackText);
@@ -128,7 +128,7 @@ router.post('/analyze-feedback', requirePerformancePermission('analyze:feedback'
 router.post('/generate-team-insights', requirePerformancePermission('view:team-analytics'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { teamData, performanceMetrics } = req.body;
       
       const result = await AIPerformanceService.generateTeamInsights(teamData, performanceMetrics);
@@ -159,7 +159,7 @@ router.post('/generate-team-insights', requirePerformancePermission('view:team-a
 router.post('/generate-review-assistant', requirePerformancePermission('participate:reviews'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { reviewContext, targetType } = req.body;
       
       const result = await AIPerformanceService.generateReviewWritingAssistant(reviewContext, targetType);
@@ -190,7 +190,7 @@ router.post('/generate-review-assistant', requirePerformancePermission('particip
 router.post('/detect-bias', requirePerformancePermission('evaluate:reviews'), async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    if (errors.isEmpty()) {
       const { reviewText, reviewerRole } = req.body;
       
       const result = await AIPerformanceService.detectBias(reviewText, reviewerRole);

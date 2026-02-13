@@ -343,7 +343,7 @@ router.post('/:teamId/members',
         role: role
       }
       webhookService.notifyTeamMemberAdded(
-        accountId,
+        account.sub,
         req.team._id.toString(),
         teamData,
         req.team.organization.toString()
@@ -382,8 +382,9 @@ router.delete('/:teamId/members/:memberId',
       console.log('✅ Member removed from team:', req.team.name, 'by', req.user.email)
 
       // Send webhook notification for team member removal
+      const removedAccount = await Account.findById(memberId).select('sub').lean()
       webhookService.notifyTeamMemberRemoved(
-        memberId,
+        removedAccount?.sub || memberId,
         req.team._id.toString(),
         req.team.organization.toString()
       ).catch(err => console.error('Webhook notification failed:', err))
@@ -434,8 +435,9 @@ router.put('/:teamId/members/:memberId',
       console.log('✅ Team member role updated to', role, 'in', req.team.name, 'by', req.user.email)
 
       // Send webhook notification for role change
+      const targetAccount = await Account.findById(memberId).select('sub').lean()
       webhookService.notifyTeamRoleChanged(
-        memberId,
+        targetAccount?.sub || memberId,
         req.team._id.toString(),
         oldRole,
         role,

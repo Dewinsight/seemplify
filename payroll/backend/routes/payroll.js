@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
@@ -20,6 +21,25 @@ const getUserInfo = (req) => ({
   name: req.session?.user?.name,
   role: req.currentOrganization?.role || req.session?.user?.currentRole
 });
+
+const getIdpBaseUrl = () =>
+  process.env.IDP_URL ||
+  process.env.IDP_ISSUER_URL ||
+  process.env.OIDC_ISSUER_URL ||
+  process.env.OIDC_ISSUER ||
+  'http://localhost:4000';
+
+async function fetchIdpOrgMembers(accessToken, organizationId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
 
 // =====================================================
 // PAYROLL PROFILE ROUTES (Employee & HR Admin)
@@ -172,6 +192,33 @@ router.get('/admin/overview', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Admin Overview Error:', err);
     res.status(500).json({ error: 'Failed to fetch admin overview' });
+  }
+});
+
+/**
+ * GET /api/payroll/idp/members
+ * Proxy to IDP organization members (HR Admin only)
+ *
+ * This is used to list employees from the Identity Provider even if they haven't logged into Payroll yet.
+ */
+router.get('/idp/members', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    const data = await fetchIdpOrgMembers(accessToken, organizationId);
+    res.json(data);
+  } catch (err) {
+    console.error('IDP Members Proxy Error:', err?.response?.data || err.message || err);
+    res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP members' });
   }
 });
 
@@ -373,6 +420,66 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Create Profile Error:', err);
     res.status(500).json({ error: 'Failed to create profile' });
+  }
+});
+
+/**
+ * POST /api/payroll/profiles/import-from-idp
+ * Create a payroll profile for an IDP member (HR Admin only)
+ *
+ * Body: { userId: "<idp_sub>" }
+ */
+router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+    const targetUserId = String(req.body?.userId || '').trim();
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const existing = await PayrollProfile.findOne({ userId: targetUserId, organizationId });
+    if (existing) {
+      return res.json({ success: true, profile: existing, existed: true });
+    }
+
+    const membersPayload = await fetchIdpOrgMembers(accessToken, organizationId);
+    const members = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
+    const member = members.find((m) => m?.sub === targetUserId || m?.id === targetUserId);
+
+    if (!member) {
+      return res.status(404).json({ error: 'Employee not found in IDP organization members' });
+    }
+
+    const profile = new PayrollProfile({
+      userId: targetUserId,
+      organizationId,
+      basicSalary: 0,
+      employeeInfo: {
+        name: member.name,
+        email: member.email,
+        lastSyncedAt: new Date(),
+      },
+      createdBy: adminId,
+      status: 'active',
+      isActive: true,
+    });
+
+    await profile.save();
+
+    res.status(201).json({ success: true, profile, existed: false });
+  } catch (err) {
+    console.error('Import Profile From IDP Error:', err);
+    res.status(500).json({ error: 'Failed to import profile from IDP' });
   }
 });
 

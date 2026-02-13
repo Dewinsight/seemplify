@@ -22,13 +22,15 @@ router.get('/:orgId/members',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        .populate('members.account', 'email profile.name emailVerified createdAt')
+        // Include both `_id` and `sub` so downstream apps can reliably map members to OIDC `sub`.
+        .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
 
       const members = organization.members
         .filter(m => m.status === 'active')
         .map(m => ({
           id: m.account._id,
+          sub: m.account.sub,
           email: m.account.email,
           name: m.account.profile?.name,
           emailVerified: m.account.emailVerified,
@@ -72,7 +74,8 @@ router.get('/:orgId/members/:memberId',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        .populate('members.account', 'email profile.name emailVerified createdAt')
+        // Include both `_id` and `sub` so downstream apps can reliably map members to OIDC `sub`.
+        .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
 
       const member = organization.members.find(
@@ -85,6 +88,7 @@ router.get('/:orgId/members/:memberId',
 
       res.json({
         id: member.account._id,
+        sub: member.account.sub,
         email: member.account.email,
         name: member.account.profile?.name,
         emailVerified: member.account.emailVerified,

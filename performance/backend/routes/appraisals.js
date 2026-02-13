@@ -2172,13 +2172,15 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     // Employee must provide their own self-rating. AI rating is stored separately.
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;
     if (allowSelfRating) {
-      const rating = finalReport.overallSelfRating;
+      const ratingRaw = finalReport.overallSelfRating;
+      const rating = typeof ratingRaw === 'string' ? Number(ratingRaw) : ratingRaw;
       if (rating === undefined || rating === null) {
         return res.status(400).json({ success: false, error: 'Overall self-rating is required' });
       }
       if (typeof rating !== 'number' || Number.isNaN(rating) || rating < 1 || rating > 5) {
         return res.status(400).json({ success: false, error: 'Overall self-rating must be a number from 1 to 5' });
       }
+      finalReport.overallSelfRating = rating;
     }
 
     const aiRatingSuggestion = finalReport.aiSuggestedRating || (

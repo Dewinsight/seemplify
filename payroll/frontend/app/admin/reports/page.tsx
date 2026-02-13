@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarChart3, Download, FileText, DollarSign, Users, Calendar, TrendingUp } from 'lucide-react';
 import api, { isAuthenticated } from '@/lib/api';
@@ -22,15 +22,7 @@ export default function ReportsPage() {
     const [reportType, setReportType] = useState<'summary' | 'department' | 'monthly'>('summary');
     const [year, setYear] = useState(new Date().getFullYear());
 
-    useEffect(() => {
-        if (!isAuthenticated()) {
-            router.push('/login');
-            return;
-        }
-        fetchReportData();
-    }, [year, router]);
-
-    const fetchReportData = async () => {
+    const fetchReportData = useCallback(async () => {
         try {
             setLoading(true);
             const res = await api.get('/payroll/reports/summary', { params: { year } });
@@ -42,7 +34,15 @@ export default function ReportsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [year]);
+
+    useEffect(() => {
+        if (!isAuthenticated()) {
+            router.push('/login');
+            return;
+        }
+        fetchReportData();
+    }, [router, fetchReportData]);
 
     const handleExport = async (format: 'csv' | 'pdf') => {
         try {

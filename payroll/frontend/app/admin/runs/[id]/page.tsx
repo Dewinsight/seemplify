@@ -131,7 +131,7 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
   const exceptionEmployees = useMemo(() => {
     const list = Array.isArray(run?.employees) ? run!.employees : [];
     return list.filter(e => e?.status === 'error' || e?.status === 'skipped');
-  }, [run?.employees]);
+  }, [run]);
 
   const canRecalculate = run?.status === 'calculated' || run?.status === 'pending_review';
   const canSubmitForApproval = run?.status === 'calculated' || run?.status === 'pending_review';
@@ -482,4 +482,3 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
     </div>
   );
 }
-

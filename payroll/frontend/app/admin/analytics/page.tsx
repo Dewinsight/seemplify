@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { isAuthenticated, authApi } from '@/lib/api';
 import Link from 'next/link';
@@ -71,21 +71,7 @@ export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'workforce'>('overview');
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push('/login');
-      return;
-    }
-    checkAccess();
-  }, [router]);
-
-  useEffect(() => {
-    if (isHRAdmin) {
-      fetchAnalytics();
-    }
-  }, [year, isHRAdmin]);
-
-  const checkAccess = async () => {
+  const checkAccess = useCallback(async () => {
     try {
       const response = await authApi.getMe();
       const user = response.user;
@@ -104,9 +90,9 @@ export default function AnalyticsPage() {
       console.error('Failed to check access:', error);
       router.push('/login');
     }
-  };
+  }, [router]);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
       const [analyticsData, headcountData] = await Promise.all([
@@ -121,7 +107,21 @@ export default function AnalyticsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [year]);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push('/login');
+      return;
+    }
+    checkAccess();
+  }, [router, checkAccess]);
+
+  useEffect(() => {
+    if (isHRAdmin) {
+      fetchAnalytics();
+    }
+  }, [isHRAdmin, fetchAnalytics]);
 
   const handleRefresh = () => {
     setRefreshing(true);

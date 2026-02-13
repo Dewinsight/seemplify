@@ -85,6 +85,8 @@ export default function Dashboard() {
   const currency = dashboardStats?.currency || 'USD';
   const profileOk = !!dashboardStats?.hasProfile;
   const profileStatus = dashboardStats?.profileStatus || 'pending_setup';
+  const latestRun = adminOverview?.latestRun;
+  const latestRunStatus = String(latestRun?.status || '');
 
   const formatMoney = (amount: any) =>
     Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -365,6 +367,68 @@ export default function Dashboard() {
               </div>
             </Link>
           )}
+        </div>
+      )}
+
+      {/* HR Workflow */}
+      {isHRAdmin && (
+        <div className="bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 rounded-xl shadow-lg border border-zinc-700/50 p-6">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <h2 className="text-lg font-semibold text-zinc-100">Payroll Workflow</h2>
+            <span className="text-xs text-zinc-500">Prepare payroll for accountant export</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Link href="/admin/employees" className="group">
+              <div className="h-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-amber-500/30 transition-colors">
+                <div className="text-xs text-zinc-500 mb-2">Step 1</div>
+                <div className="text-sm font-semibold text-zinc-200 mb-2">Configure Employees</div>
+                <div className="text-xs text-zinc-400">
+                  {Number(adminOverview?.profilesNeedingSetup || 0) > 0
+                    ? `${adminOverview.profilesNeedingSetup} profiles need setup`
+                    : 'All active employee profiles configured'}
+                </div>
+              </div>
+            </Link>
+
+            <Link href="/admin/approvals" className="group">
+              <div className="h-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-purple-500/30 transition-colors">
+                <div className="text-xs text-zinc-500 mb-2">Step 2</div>
+                <div className="text-sm font-semibold text-zinc-200 mb-2">Approve Requests</div>
+                <div className="text-xs text-zinc-400">
+                  {Number(adminOverview?.pendingCompensationRequests || 0) > 0
+                    ? `${adminOverview.pendingCompensationRequests} request(s) pending`
+                    : 'No pending compensation approvals'}
+                </div>
+              </div>
+            </Link>
+
+            <Link href={latestRun?._id ? `/admin/runs/${latestRun._id}` : '/admin/run'} className="group">
+              <div className="h-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-red-500/30 transition-colors">
+                <div className="text-xs text-zinc-500 mb-2">Step 3</div>
+                <div className="text-sm font-semibold text-zinc-200 mb-2">Run Payroll</div>
+                <div className="text-xs text-zinc-400">
+                  {latestRun?._id
+                    ? `Latest ${latestRun.runNumber || 'run'} is ${latestRunStatus.replace(/_/g, ' ') || 'unknown'}`
+                    : 'No payroll run yet for the current cycle'}
+                </div>
+              </div>
+            </Link>
+
+            <Link href={latestRun?._id ? `/admin/runs/${latestRun._id}` : '/admin/runs'} className="group">
+              <div className="h-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-emerald-500/30 transition-colors">
+                <div className="text-xs text-zinc-500 mb-2">Step 4</div>
+                <div className="text-sm font-semibold text-zinc-200 mb-2">Finalize and Export</div>
+                <div className="text-xs text-zinc-400">
+                  {latestRunStatus === 'exported'
+                    ? 'Latest run already exported to accounting'
+                    : latestRunStatus === 'approved'
+                      ? 'Latest run is approved and ready to finalize'
+                      : 'Finalize after approval to produce accountant export'}
+                </div>
+              </div>
+            </Link>
+          </div>
         </div>
       )}
 

@@ -2,6 +2,17 @@
 
 import { createTheme, alpha, PaletteMode, ThemeOptions } from '@mui/material/styles';
 
+// Extend MUI palette tokens used across the app (e.g., `primary.lighter`).
+declare module '@mui/material/styles' {
+  interface PaletteColor {
+    lighter?: string;
+  }
+
+  interface SimplePaletteColorOptions {
+    lighter?: string;
+  }
+}
+
 // Premium color palette
 const colors = {
   primary: {
@@ -99,6 +110,8 @@ const darkShadows = {
 export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
   const isDark = mode === 'dark';
   const currentShadows = isDark ? darkShadows : shadows;
+  const lighterOpacity = isDark ? 0.15 : 0.08;
+  const tint = (main: string) => alpha(main, lighterOpacity);
 
   return {
     palette: {
@@ -107,33 +120,39 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
         main: colors.primary.main,
         light: colors.primary.light,
         dark: colors.primary.dark,
+        lighter: tint(colors.primary.main),
         contrastText: '#ffffff',
       },
       secondary: {
         main: colors.secondary.main,
         light: colors.secondary.light,
         dark: colors.secondary.dark,
+        lighter: tint(colors.secondary.main),
         contrastText: '#ffffff',
       },
       success: {
         main: colors.success.main,
         light: colors.success.light,
         dark: colors.success.dark,
+        lighter: tint(colors.success.main),
       },
       warning: {
         main: colors.warning.main,
         light: colors.warning.light,
         dark: colors.warning.dark,
+        lighter: tint(colors.warning.main),
       },
       error: {
         main: colors.error.main,
         light: colors.error.light,
         dark: colors.error.dark,
+        lighter: tint(colors.error.main),
       },
       info: {
         main: colors.info.main,
         light: colors.info.light,
         dark: colors.info.dark,
+        lighter: tint(colors.info.main),
       },
       grey: colors.grey,
       background: {

@@ -31,12 +31,68 @@ const canCreateForUser = (req, targetUserId, requestType) => {
 
   // Manager/team lead can request for direct reports
   if (['line_manager', 'team_lead'].includes(role)) {
+    // Match intent from RBAC docs: team leads can initiate bonuses, line managers can request salary/overtime.
+    const allowedByRole = {
+      team_lead: ['bonus', 'commission', 'incentive', 'allowance'],
+      line_manager: ['bonus', 'commission', 'incentive', 'allowance', 'salary_revision', 'overtime'],
+    };
+
+    const allowedTypes = allowedByRole[role] || [];
+    if (!allowedTypes.includes(requestType)) return false;
+
     const directReports = req.directReports || [];
     return directReports.includes(targetUserId);
   }
 
   return false;
 };
+
+/**
+ * GET /api/compensation/team-members
+ * Get direct reports (manager/team-lead) as employee list for request creation.
+ */
+router.get('/team-members', requireAuth, async (req, res) => {
+  try {
+    const { organizationId, role } = getUserInfo(req);
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!['line_manager', 'team_lead', 'hr_admin'].includes(role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const directReports = role === 'hr_admin' ? null : (req.directReports || []);
+
+    const query = { organizationId, isActive: true };
+    if (directReports) {
+      query.userId = { $in: directReports };
+    }
+
+    const profiles = await PayrollProfile.find(query)
+      .select('userId employeeInfo status isActive')
+      .sort({ 'employeeInfo.name': 1 })
+      .lean();
+
+    const members = profiles.map(p => ({
+      userId: p.userId,
+      name: p.employeeInfo?.name || '',
+      email: p.employeeInfo?.email || '',
+      department: p.employeeInfo?.department || '',
+      designation: p.employeeInfo?.designation || '',
+      teamId: p.employeeInfo?.teamId || '',
+      teamName: p.employeeInfo?.teamName || '',
+      status: p.status || 'active',
+      isActive: p.isActive !== false,
+    }));
+
+    res.json({ members });
+  } catch (err) {
+    console.error('Get Team Members Error:', err);
+    res.status(500).json({ error: 'Failed to fetch team members' });
+  }
+});
 
 /**
  * POST /api/compensation/request

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api, { isAuthenticated } from '@/lib/api';
+import api, { handleAuthCallback, isAuthenticated } from '@/lib/api';
 import Link from 'next/link';
 import {
     Search,
@@ -17,13 +17,29 @@ import {
     AlertCircle
 } from 'lucide-react';
 
+type IdpMember = {
+    id: string;
+    sub?: string;
+    email?: string;
+    name?: string;
+    role?: string;
+};
+
+type EmployeeRow = {
+    userId: string;
+    member?: IdpMember;
+    profile?: any;
+};
+
 export default function EmployeesPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [employees, setEmployees] = useState<any[]>([]);
+    const [employees, setEmployees] = useState<EmployeeRow[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
+        handleAuthCallback();
+
         if (!isAuthenticated()) {
             router.push('/login');
             return;
@@ -31,12 +47,39 @@ export default function EmployeesPage() {
 
         const fetchEmployees = async () => {
             try {
-                // Fetch all profiles for the organization
-                // Note: We need a new backend endpoint for this or reuse an existing one
-                // For now, let's assume GET /api/payroll/profiles exists and returns list
-                // If not, we might need to add it to routes/payroll.js
-                const res = await api.get('/payroll/profiles');
-                setEmployees(res.data.profiles || []);
+                const [idpRes, profilesRes] = await Promise.all([
+                    api.get('/payroll/idp/members'),
+                    api.get('/payroll/profiles', { params: { limit: 1000 } }),
+                ]);
+
+                const members: IdpMember[] = Array.isArray(idpRes.data?.members) ? idpRes.data.members : [];
+                const profiles: any[] = Array.isArray(profilesRes.data?.profiles) ? profilesRes.data.profiles : [];
+
+                const profileByUserId = new Map<string, any>();
+                profiles.forEach((p) => {
+                    if (p?.userId) profileByUserId.set(String(p.userId), p);
+                });
+
+                const rows: EmployeeRow[] = members.map((m) => {
+                    const userId = String(m?.sub || m?.id || '').trim();
+                    return {
+                        userId,
+                        member: m,
+                        profile: userId ? profileByUserId.get(userId) : undefined,
+                    };
+                }).filter(r => !!r.userId);
+
+                // Include any payroll profiles that no longer map to an IDP member (safety net).
+                const seen = new Set(rows.map(r => r.userId));
+                profiles.forEach((p) => {
+                    const userId = String(p?.userId || '').trim();
+                    if (userId && !seen.has(userId)) {
+                        rows.push({ userId, profile: p });
+                        seen.add(userId);
+                    }
+                });
+
+                setEmployees(rows);
             } catch (error) {
                 console.error('Failed to fetch employees:', error);
             } finally {
@@ -47,10 +90,17 @@ export default function EmployeesPage() {
         fetchEmployees();
     }, [router]);
 
-    const filteredEmployees = employees.filter(emp =>
-        emp.employeeInfo?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.employeeInfo?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.employeeInfo?.department?.toLowerCase().includes(searchQuery.toLowerCase())
+    const filteredEmployees = employees.filter(row => {
+        const p = row.profile;
+        const m = row.member;
+
+        const name = String(p?.employeeInfo?.name || m?.name || '').toLowerCase();
+        const email = String(p?.employeeInfo?.email || m?.email || '').toLowerCase();
+        const department = String(p?.employeeInfo?.department || '').toLowerCase();
+
+        const q = searchQuery.toLowerCase();
+        return name.includes(q) || email.includes(q) || department.includes(q);
+    }
     );
 
     if (loading) {
@@ -85,7 +135,7 @@ export default function EmployeesPage() {
                             Total: {employees.length}
                         </div>
                         <div className="px-3 py-1.5 rounded text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
-                            Active: {employees.filter(e => e.isActive).length}
+                            Active: {employees.filter(e => e.profile?.isActive !== false).length}
                         </div>
                     </div>
                 </div>
@@ -111,33 +161,44 @@ export default function EmployeesPage() {
 
             {/* Employees Grid */}
             <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredEmployees.map((employee) => {
-                    const needsOnboarding = !employee.basicSalary || employee.basicSalary === 0;
-                    const currency = employee.currency || 'USD';
-                    const totalAllowances = Number(employee.totalAllowances || 0);
-                    const grossMonthlySalary = Number(employee.grossMonthlySalary || (Number(employee.basicSalary || 0) + totalAllowances));
-                    const holdPayment = !!employee.payrollFlags?.holdPayment;
+                {filteredEmployees.map((row) => {
+                    const employee = row.profile;
+                    const member = row.member;
+                    const hasProfile = !!employee;
+
+                    const needsOnboarding = !hasProfile;
+                    const needsSetup = !employee?.basicSalary || employee.basicSalary === 0;
+                    const currency = employee?.currency || 'USD';
+                    const totalAllowances = Number(employee?.totalAllowances || 0);
+                    const grossMonthlySalary = Number(employee?.grossMonthlySalary || (Number(employee?.basicSalary || 0) + totalAllowances));
+                    const holdPayment = !!employee?.payrollFlags?.holdPayment;
 
                     return (
                         <div
-                            key={employee._id}
+                            key={row.userId}
                             className="group bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 hover:bg-zinc-900 hover:border-amber-500/30 transition-all"
                         >
                             <div className="flex items-start justify-between mb-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/20 group-hover:border-amber-500/40">
                                         <span className="font-semibold text-amber-500">
-                                            {employee.employeeInfo?.name?.charAt(0) || 'U'}
+                                            {String(employee?.employeeInfo?.name || member?.name || 'U').charAt(0) || 'U'}
                                         </span>
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-zinc-200 group-hover:text-amber-400 transition-colors">
-                                            {employee.employeeInfo?.name || 'Unknown'}
+                                            {employee?.employeeInfo?.name || member?.name || 'Unknown'}
                                         </h3>
-                                        <p className="text-xs text-zinc-500">{employee.employeeInfo?.designation || 'No Designation'}</p>
+                                        <p className="text-xs text-zinc-500">{employee?.employeeInfo?.designation || 'No Designation'}</p>
                                     </div>
                                 </div>
                                 {needsOnboarding && (
+                                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                                        <AlertCircle className="w-3 h-3" />
+                                        Not Onboarded
+                                    </span>
+                                )}
+                                {!needsOnboarding && needsSetup && (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
                                         <AlertCircle className="w-3 h-3" />
                                         Needs Setup
@@ -155,19 +216,19 @@ export default function EmployeesPage() {
                                     <span className="text-zinc-500 flex items-center gap-1.5">
                                         <Briefcase className="w-3.5 h-3.5" /> Department
                                     </span>
-                                    <span className="text-zinc-300">{employee.employeeInfo?.department || '--'}</span>
+                                    <span className="text-zinc-300">{employee?.employeeInfo?.department || '--'}</span>
                                 </div>
 
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-zinc-500 flex items-center gap-1.5">
                                         <DollarSign className="w-3.5 h-3.5" /> Basic Salary
                                     </span>
-                                    <span className={`font-mono font-medium ${needsOnboarding ? 'text-zinc-500' : 'text-emerald-400'}`}>
-                                        {needsOnboarding ? 'Not Set' : `${currency} ${Number(employee.basicSalary || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                    <span className={`font-mono font-medium ${needsSetup ? 'text-zinc-500' : 'text-emerald-400'}`}>
+                                        {needsSetup ? 'Not Set' : `${currency} ${Number(employee?.basicSalary || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                     </span>
                                 </div>
 
-                                {!needsOnboarding && (
+                                {!!employee && !needsSetup && (
                                     <div className="flex items-center justify-between text-sm">
                                         <span className="text-zinc-500 flex items-center gap-1.5">
                                             <DollarSign className="w-3.5 h-3.5" /> Gross Monthly
@@ -179,16 +240,16 @@ export default function EmployeesPage() {
                                 )}
 
                                 <div className="pt-3 mt-3 border-t border-zinc-800/50 flex items-center justify-between">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${employee.isActive
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${(employee?.isActive !== false)
                                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                         : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
                                         }`}>
-                                        {employee.isActive ? 'Active' : 'Inactive'}
+                                        {(employee?.isActive !== false) ? 'Active' : 'Inactive'}
                                     </span>
                                     <div className="flex gap-2">
                                         {needsOnboarding ? (
                                             <Link
-                                                href={`/admin/employees/onboard/${employee.userId}`}
+                                                href={`/admin/employees/onboard/${row.userId}`}
                                                 className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
                                             >
                                                 <UserPlus className="w-3.5 h-3.5" />
@@ -196,10 +257,10 @@ export default function EmployeesPage() {
                                             </Link>
                                         ) : (
                                             <Link
-                                                href={`/admin/employees/${employee.userId}`}
+                                                href={`/admin/employees/${row.userId}`}
                                                 className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
                                             >
-                                                View
+                                                {needsSetup ? 'Setup' : 'View'}
                                                 <ChevronRight className="w-3.5 h-3.5" />
                                             </Link>
                                         )}

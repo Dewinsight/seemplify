@@ -1060,6 +1060,39 @@ Keep it to 2-3 sentences.`;
   }
 
   /**
+   * Estimate a suggested rating from OKR completion + extracted data
+   * Used when AI is unavailable to avoid static 3.0 ratings.
+   */
+  estimateSelfSuggestedRating(okrPerformance = [], extractedData = {}) {
+    const okrAvg = okrPerformance.length > 0
+      ? okrPerformance.reduce((sum, o) => sum + (o.progress || 0), 0) / okrPerformance.length
+      : null;
+
+    const base = okrAvg !== null ? this.percentageToRating(okrAvg) : 3;
+
+    const achievements = extractedData.achievements?.length || 0;
+    const challenges = extractedData.challenges?.length || 0;
+    const skills = extractedData.skills?.length || 0;
+    const goals = extractedData.goals?.length || 0;
+
+    let bonus = 0;
+    if (achievements >= 4) bonus += 0.5;
+    else if (achievements >= 2) bonus += 0.25;
+    if (skills >= 2) bonus += 0.2;
+    if (goals >= 2) bonus += 0.1;
+    if (challenges >= 2 && achievements === 0) bonus -= 0.1;
+
+    const raw = base + bonus;
+    const suggested = Math.max(1, Math.min(5, Math.round(raw)));
+
+    return {
+      suggestedRating: suggested,
+      okrAverage: okrAvg,
+      evidenceCount: { achievements, challenges, skills, goals }
+    };
+  }
+
+  /**
    * Generate AI-suggested rating with justification for manager review
    */
   async generateAISuggestedRating(appraisal, okrs) {
@@ -1202,6 +1235,7 @@ Provide a recommendation in JSON format:
   }
 
   getFallbackReport(extractedData, okrPerformance) {
+    const heuristic = this.estimateSelfSuggestedRating(okrPerformance, extractedData);
     const achievements = extractedData.achievements?.length
       ? extractedData.achievements.map(a => `- ${a.text}`).join('\n')
       : 'Not provided.';
@@ -1235,8 +1269,10 @@ Provide a recommendation in JSON format:
         completionPercentage: okr.progress,
         selfComments: ''
       })),
-      suggestedOverallRating: 3,
-      ratingJustification: 'Please review and adjust based on your assessment.',
+      suggestedOverallRating: heuristic.suggestedRating,
+      ratingJustification: heuristic.okrAverage !== null
+        ? `Based on ${Math.round(heuristic.okrAverage)}% average OKR completion and ${heuristic.evidenceCount.achievements} achievements captured.`
+        : 'Based on the evidence captured in your conversation. Please review and adjust as needed.',
       aiInsights: {
         strengths: [],
         developmentAreas: [],
