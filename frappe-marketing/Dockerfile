@@ -1,5 +1,6 @@
 # Build stage
-FROM node:16-alpine AS builder
+FROM node:18-alpine AS builder
+RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
@@ -9,7 +10,7 @@ ENV HOST=0.0.0.0
 RUN npm run build
 
 # Production stage
-FROM node:16-alpine AS runner
+FROM node:18-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
