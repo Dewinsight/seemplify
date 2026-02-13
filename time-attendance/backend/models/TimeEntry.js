@@ -109,6 +109,9 @@ const TimeEntrySchema = new Schema({
     autoClockOut: {
         warningSentAt: Date,
         warningEmailMessageId: String,
+        manualReminderSentAt: Date,
+        manualReminderEmailMessageId: String,
+        manualReminderSentBy: String,
         autoClockedOutAt: Date,
         autoClockOutEntryId: {
             type: Schema.Types.ObjectId,

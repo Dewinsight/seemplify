@@ -14,6 +14,8 @@ import {
     Clock3,
     ArrowRight,
     AlertCircle,
+    BellRing,
+    RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -40,6 +42,8 @@ type TeamSummary = {
     notClockedIn?: number;
 };
 
+type TeamStatusFilter = 'all' | TeamMember['status'];
+
 const EMPTY_SUMMARY: TeamSummary = {
     total: 0,
     working: 0,
@@ -56,6 +60,10 @@ export default function TeamPage() {
     const [summary, setSummary] = useState<TeamSummary>(EMPTY_SUMMARY);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<TeamStatusFilter>('all');
+    const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+    const [reminderSendingFor, setReminderSendingFor] = useState<string | null>(null);
+    const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const [selectedTeamId, setSelectedTeamId] = useState<string>('');
     const [isTeamMenuOpen, setIsTeamMenuOpen] = useState(false);
@@ -69,12 +77,19 @@ export default function TeamPage() {
         fetchTeamStatus();
     }, [selectedTeamId]);
 
+    useEffect(() => {
+        if (!actionFeedback) return;
+        const timeout = setTimeout(() => setActionFeedback(null), 5000);
+        return () => clearTimeout(timeout);
+    }, [actionFeedback]);
+
     const fetchTeamStatus = async () => {
         try {
             setLoading(true);
             const response = await attendanceApi.getTeamStatus(selectedTeamId || undefined);
             setTeamData(response.team || []);
             setSummary(response.summary || EMPTY_SUMMARY);
+            setLastUpdatedAt(new Date());
         } catch (error) {
             console.error('Failed to fetch team status', error);
             setTeamData([]);
@@ -86,19 +101,22 @@ export default function TeamPage() {
 
     const filteredTeamData = useMemo(() => {
         const q = searchTerm.trim().toLowerCase();
-        if (!q) return teamData;
+        const statusScoped = statusFilter === 'all'
+            ? teamData
+            : teamData.filter(member => member.status === statusFilter);
+        if (!q) return statusScoped;
 
-        return teamData.filter((member) =>
-            [
+        return statusScoped.filter((member) => {
+            return [
                 member.userName,
                 member.userEmail,
                 member.teamName,
                 member.status,
             ]
                 .filter(Boolean)
-                .some((value) => String(value).toLowerCase().includes(q))
-        );
-    }, [teamData, searchTerm]);
+                .some((value) => String(value).toLowerCase().includes(q));
+        });
+    }, [teamData, searchTerm, statusFilter]);
 
     const getSelectedTeamName = () => {
         if (!selectedTeamId) return 'All Managed Teams';
@@ -124,6 +142,37 @@ export default function TeamPage() {
             [location.area, location.city, location.state].filter(Boolean).join(', ') ||
             '--'
         );
+    };
+
+    const canSendClockOutReminder = (member: TeamMember) => {
+        const hasActiveStatus = member.status === 'working' || member.status === 'on_break';
+        return hasActiveStatus && Boolean(member.userEmail);
+    };
+
+    const sendClockOutReminder = async (member: TeamMember) => {
+        if (!canSendClockOutReminder(member)) {
+            setActionFeedback({
+                type: 'error',
+                text: 'Reminder can only be sent to a currently active member with an email address.',
+            });
+            return;
+        }
+
+        try {
+            setReminderSendingFor(member.userId);
+            const response = await attendanceApi.sendClockOutReminder(member.userId);
+            setActionFeedback({
+                type: 'success',
+                text: response?.message || `Reminder sent to ${member.userName}.`,
+            });
+        } catch (error: any) {
+            setActionFeedback({
+                type: 'error',
+                text: error?.response?.data?.error || 'Failed to send clock-out reminder.',
+            });
+        } finally {
+            setReminderSendingFor(null);
+        }
     };
 
     const getStatusStyles = (status: TeamMember['status']) => {
@@ -155,6 +204,8 @@ export default function TeamPage() {
     };
 
     const hasManagerAccess = managedTeams.length > 0 || ['owner', 'admin', 'hr_manager'].includes(user?.currentOrganization?.role || '');
+    const notClockedInCount = summary.notClockedIn || 0;
+    const clockedOutOnlyCount = Math.max(0, summary.clockedOut - notClockedInCount);
 
     if (!hasManagerAccess) {
         return (
@@ -171,6 +222,9 @@ export default function TeamPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-white">Team Attendance Table</h1>
                     <p className="text-zinc-400">Line manager view of clock-in, clock-out, location, and current status.</p>
+                    {lastUpdatedAt && (
+                        <p className="text-xs text-zinc-500 mt-1">Last updated: {format(lastUpdatedAt, 'MMM d, h:mm:ss a')}</p>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -216,6 +270,17 @@ export default function TeamPage() {
                         </div>
                     )}
 
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            fetchTeamStatus();
+                        }}
+                        disabled={loading}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+                        Refresh
+                    </button>
                     <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300">
                         <span className="text-zinc-500">Total:</span> {summary.total}
                     </div>
@@ -225,24 +290,68 @@ export default function TeamPage() {
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-300">
                         <span className="text-amber-500/80">Break:</span> {summary.onBreak}
                     </div>
+                    <div className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-300">
+                        <span className="text-zinc-500">Clocked Out:</span> {clockedOutOnlyCount}
+                    </div>
                 </div>
             </div>
 
-            <div className="relative max-w-xl">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by name, email, team, or status"
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
-                />
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+                <div className="relative max-w-xl w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by name, email, team, or status"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                    />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {[
+                        { key: 'all', label: 'All', count: summary.total },
+                        { key: 'working', label: 'Working', count: summary.working },
+                        { key: 'on_break', label: 'On Break', count: summary.onBreak },
+                        { key: 'clocked_out', label: 'Clocked Out', count: clockedOutOnlyCount },
+                        { key: 'not_clocked_in', label: 'Not Clocked In', count: notClockedInCount },
+                    ].map((filterItem) => {
+                        const isActive = statusFilter === filterItem.key;
+                        return (
+                            <button
+                                key={filterItem.key}
+                                type="button"
+                                onClick={() => setStatusFilter(filterItem.key as TeamStatusFilter)}
+                                className={cn(
+                                    'px-3 py-1.5 rounded-lg border text-xs transition-colors',
+                                    isActive
+                                        ? 'bg-teal-500/15 border-teal-500/30 text-teal-300'
+                                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                                )}
+                            >
+                                {filterItem.label}: {filterItem.count}
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
-            <div className="bg-zinc-900/50 border border-white/5 rounded-xl overflow-hidden">
+            {actionFeedback && (
+                <div
+                    className={cn(
+                        'px-3 py-2 rounded-lg border text-sm',
+                        actionFeedback.type === 'success'
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                            : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                    )}
+                >
+                    {actionFeedback.text}
+                </div>
+            )}
+
+            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1200px]">
-                        <thead className="bg-zinc-900/90 border-b border-zinc-800">
+                    <table className="w-full min-w-[1320px]">
+                        <thead className="bg-zinc-900/95 border-b border-zinc-800 sticky top-0 z-10">
                             <tr className="text-left text-xs uppercase tracking-wider text-zinc-500">
                                 <th className="px-4 py-3 font-medium">Member</th>
                                 <th className="px-4 py-3 font-medium">Team</th>
@@ -253,7 +362,7 @@ export default function TeamPage() {
                                 <th className="px-4 py-3 font-medium">Clock-Out Location</th>
                                 <th className="px-4 py-3 font-medium">Worked Today</th>
                                 <th className="px-4 py-3 font-medium">Last Activity</th>
-                                <th className="px-4 py-3 font-medium text-right">Drill Down</th>
+                                <th className="px-4 py-3 font-medium text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-800/60">
@@ -278,7 +387,9 @@ export default function TeamPage() {
                                         <Users className="h-10 w-10 text-zinc-700 mx-auto mb-3" />
                                         <p className="text-zinc-400 font-medium">No team members found</p>
                                         <p className="text-zinc-500 text-sm mt-1">
-                                            {searchTerm ? 'Try a different search term.' : 'No managed team members are available in this view.'}
+                                            {searchTerm || statusFilter !== 'all'
+                                                ? 'Try a different search or status filter.'
+                                                : 'No managed team members are available in this view.'}
                                         </p>
                                     </td>
                                 </tr>
@@ -287,13 +398,23 @@ export default function TeamPage() {
                             {!loading && filteredTeamData.map((member) => (
                                 <tr
                                     key={member.userId}
-                                    className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                                    className={cn(
+                                        'transition-colors cursor-pointer',
+                                        member.status === 'working' && 'bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08]',
+                                        member.status === 'on_break' && 'bg-amber-500/[0.03] hover:bg-amber-500/[0.08]',
+                                        member.status !== 'working' && member.status !== 'on_break' && 'hover:bg-zinc-800/30'
+                                    )}
                                     onClick={() => router.push(`/team/${member.userId}`)}
                                 >
                                     <td className="px-4 py-3">
-                                        <div>
-                                            <div className="font-medium text-white">{member.userName}</div>
-                                            <div className="text-xs text-zinc-500">{member.userEmail || member.userId}</div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-semibold flex items-center justify-center">
+                                                {(member.userName || member.userEmail || member.userId).slice(0, 2).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-white">{member.userName}</div>
+                                                <div className="text-xs text-zinc-500">{member.userEmail || member.userId}</div>
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-sm text-zinc-300">{member.teamName || '--'}</td>
@@ -307,13 +428,17 @@ export default function TeamPage() {
                                     <td className="px-4 py-3 text-sm text-zinc-300 max-w-[220px]">
                                         <div className="flex items-start gap-1.5">
                                             <MapPin className="h-3.5 w-3.5 text-zinc-500 mt-0.5 shrink-0" />
-                                            <span className="truncate">{formatLocation(member.clockInLocation)}</span>
+                                            <span className="truncate" title={formatLocation(member.clockInLocation)}>
+                                                {formatLocation(member.clockInLocation)}
+                                            </span>
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-sm text-zinc-300 max-w-[220px]">
                                         <div className="flex items-start gap-1.5">
                                             <MapPin className="h-3.5 w-3.5 text-zinc-500 mt-0.5 shrink-0" />
-                                            <span className="truncate">{formatLocation(member.clockOutLocation)}</span>
+                                            <span className="truncate" title={formatLocation(member.clockOutLocation)}>
+                                                {formatLocation(member.clockOutLocation)}
+                                            </span>
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-sm text-zinc-200">
@@ -324,18 +449,47 @@ export default function TeamPage() {
                                             <Clock3 className="h-3.5 w-3.5 text-zinc-500" />
                                             <span>{formatTime(member.lastActivity, true)}</span>
                                         </div>
+                                        {member.lastActivityType && (
+                                            <div className="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">
+                                                {member.lastActivityType.replace('_', ' ')}
+                                            </div>
+                                        )}
                                     </td>
-                                    <td className="px-4 py-3 text-right">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                router.push(`/team/${member.userId}`);
-                                            }}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-xs text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors"
-                                        >
-                                            View
-                                            <ArrowRight className="h-3.5 w-3.5" />
-                                        </button>
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    sendClockOutReminder(member);
+                                                }}
+                                                disabled={!canSendClockOutReminder(member) || reminderSendingFor === member.userId}
+                                                className={cn(
+                                                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                                                    canSendClockOutReminder(member)
+                                                        ? 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/50'
+                                                        : 'border-zinc-700 text-zinc-500'
+                                                )}
+                                                title={
+                                                    canSendClockOutReminder(member)
+                                                        ? 'Send clock-out reminder'
+                                                        : 'Available only for active sessions'
+                                                }
+                                            >
+                                                <BellRing className="h-3.5 w-3.5" />
+                                                {reminderSendingFor === member.userId ? 'Sending...' : 'Remind'}
+                                            </button>
+
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    router.push(`/team/${member.userId}`);
+                                                }}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-xs text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors"
+                                            >
+                                                View
+                                                <ArrowRight className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -346,7 +500,7 @@ export default function TeamPage() {
 
             <div className="text-xs text-zinc-500 flex items-center gap-2">
                 <AlertCircle className="h-3.5 w-3.5" />
-                Drill-down opens detailed time activity for the selected team member.
+                Use "Remind" to email active team members and prompt them to clock out.
             </div>
         </div>
     );

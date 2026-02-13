@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
-const { TimeEntry, Timesheet } = require('../models');
+const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
+const emailService = require('../services/emailService');
 const { startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, format } = require('date-fns');
 
 const MANAGER_ROLES = ['line_manager', 'team_lead'];
@@ -209,6 +210,86 @@ router.get('/team', async (req, res) => {
     }
 });
 
+// Send a manual clock-out reminder to a team member with an active session
+router.post('/team/:userId/notify-clock-out', async (req, res) => {
+    try {
+        const organizationId = req.organizationId;
+        const targetUserId = req.params.userId;
+        const managerUserId = req.user.id;
+        const managerName = req.user.name || req.user.email || req.user.id;
+
+        if (!isHRAdmin(req) && !isLineManager(req)) {
+            return res.status(403).json({ error: 'Manager access required' });
+        }
+
+        if (!isHRAdmin(req) && !canManagerAccessUser(req, targetUserId, organizationId)) {
+            return res.status(403).json({ error: 'Access denied to this team member' });
+        }
+
+        const activeClockIn = await getActiveClockInEntry(organizationId, targetUserId);
+        if (!activeClockIn) {
+            return res.status(400).json({ error: 'This team member is not currently clocked in' });
+        }
+
+        const recentManualReminderAt = activeClockIn.autoClockOut?.manualReminderSentAt
+            ? new Date(activeClockIn.autoClockOut.manualReminderSentAt)
+            : null;
+        const now = new Date();
+        if (recentManualReminderAt && (now - recentManualReminderAt) < 5 * 60 * 1000) {
+            return res.status(429).json({
+                error: 'A reminder was sent recently. Please wait a few minutes before sending another one.',
+            });
+        }
+
+        const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+        const thresholdHours = Math.max(
+            1,
+            Number(policy?.clockSettings?.autoClockOut?.afterHours) || 10
+        );
+        const maxWarningMinutes = Math.max(1, Math.floor(thresholdHours * 60) - 1);
+        const configuredWarning = Number(policy?.clockSettings?.autoClockOut?.warningMinutesBefore) || 30;
+        const warningMinutes = Math.max(1, Math.min(configuredWarning, maxWarningMinutes));
+
+        const sendResult = await emailService.sendAutoClockOutWarning(
+            {
+                userName: activeClockIn.userName,
+                deadlineAt: new Date(activeClockIn.timestamp.getTime() + thresholdHours * 60 * 60 * 1000),
+                warningMinutes,
+                thresholdHours,
+            },
+            activeClockIn.userEmail
+        );
+
+        if (!sendResult.success) {
+            return res.status(500).json({
+                error: sendResult.reason || sendResult.error || 'Failed to send reminder email',
+            });
+        }
+
+        activeClockIn.autoClockOut = {
+            ...(activeClockIn.autoClockOut || {}),
+            warningSentAt: now,
+            warningEmailMessageId: sendResult.messageId || activeClockIn.autoClockOut?.warningEmailMessageId || null,
+            manualReminderSentAt: now,
+            manualReminderEmailMessageId: sendResult.messageId || null,
+            manualReminderSentBy: managerUserId,
+        };
+        await activeClockIn.save();
+
+        res.json({
+            success: true,
+            message: `Clock-out reminder sent to ${activeClockIn.userName || activeClockIn.userEmail}`,
+            userId: targetUserId,
+            userEmail: activeClockIn.userEmail,
+            sentBy: managerName,
+            sentAt: now.toISOString(),
+        });
+    } catch (error) {
+        console.error('Send clock-out reminder error:', error);
+        res.status(500).json({ error: 'Failed to send clock-out reminder' });
+    }
+});
+
 // Get detailed attendance information for a single team member
 router.get('/team/:userId', async (req, res) => {
     try {
@@ -394,6 +475,33 @@ function canManagerAccessUser(req, userId, organizationId) {
     return managedTeams.some(team =>
         Array.isArray(team.directReports) && team.directReports.includes(userId)
     );
+}
+
+async function getActiveClockInEntry(organizationId, userId) {
+    const latestClockIn = await TimeEntry.findOne({
+        organizationId,
+        userId,
+        entryType: 'clock_in',
+    }).sort({ timestamp: -1 });
+
+    if (!latestClockIn) {
+        return null;
+    }
+
+    const clockOutAfter = await TimeEntry.findOne({
+        organizationId,
+        userId,
+        entryType: 'clock_out',
+        timestamp: { $gt: latestClockIn.timestamp },
+    })
+        .select('_id timestamp')
+        .lean();
+
+    if (clockOutAfter) {
+        return null;
+    }
+
+    return latestClockIn;
 }
 
 function getEntriesByUser(entries) {

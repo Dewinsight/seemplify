@@ -150,6 +150,10 @@ export const attendanceApi = {
         const response = await api.get(`/attendance/team/${userId}`);
         return response.data;
     },
+    sendClockOutReminder: async (userId: string) => {
+        const response = await api.post(`/attendance/team/${userId}/notify-clock-out`);
+        return response.data;
+    },
     getSummary: async (params?: any) => {
         const response = await api.get('/attendance/summary', { params });
         return response.data;
