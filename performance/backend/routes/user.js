@@ -309,7 +309,6 @@ router.get('/all-employees', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
     const currentOrganization = req.currentOrganization;
-    const currentOrgId = currentOrganization?.id;
 
     // Only HR Admin and Recruiters can access all employees
     if (role !== 'hr_admin' && role !== 'recruiter') {
@@ -322,8 +321,8 @@ router.get('/all-employees', requireAuth, async (req, res) => {
     // Get all users in the organization (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
-        { currentOrganizationId: currentOrganization?.id },
-        { 'idpTeams.organizationId': currentOrganization?.id }
+        { currentOrganizationId: currentOrgId },
+        { 'idpTeams.organizationId': currentOrgId }
       ]
     }).select('email profile idpTeams currentOrganizationId');
 
@@ -553,6 +552,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
     const currentOrganization = req.currentOrganization;
+    const currentOrgId = currentOrganization?.id;
 
     // Only HR Admin, line managers, and team leads can view team hierarchy
     if (!isAppraisalManagerRole(role)) {
@@ -563,13 +563,17 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
     }
 
     const scope = await resolveAppraisalAccessScope(req);
+    const effectiveOrgId = currentOrgId || scope.organizationId;
+    if (!effectiveOrgId) {
+      return res.status(400).json({ success: false, error: 'No active organization selected' });
+    }
     const accessibleTeamIds = new Set((scope.accessibleTeamIds || []).filter(Boolean));
 
     // Get all users in the organization with their team info (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
-        { currentOrganizationId: currentOrganization?.id },
-        { 'idpTeams.organizationId': currentOrganization?.id }
+        { currentOrganizationId: effectiveOrgId },
+        { 'idpTeams.organizationId': effectiveOrgId }
       ]
     }).select('email profile idpTeams currentOrganizationId');
 
@@ -579,7 +583,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
 
     users.forEach(user => {
       const userTeams = (user.idpTeams || []).filter((team) => {
-        if (currentOrgId && team.organizationId !== currentOrgId) return false;
+        if (effectiveOrgId && team.organizationId !== effectiveOrgId) return false;
         if (scope.isHrPlus) return true;
         return accessibleTeamIds.has(team.id);
       });
@@ -655,6 +659,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
 
     // Find root teams (no parent)
     const rootTeams = teams.filter(t => !t.parentTeamId);
+    const currentTeam = req.currentTeam || getCurrentTeam(req.session.user);
 
     res.json({
       success: true,

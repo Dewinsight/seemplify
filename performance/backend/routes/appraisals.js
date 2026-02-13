@@ -33,6 +33,102 @@ function isAppraisalEmployee(req, appraisal) {
   return appraisal?.employee?.userId === userId || appraisal?.employee?.email === userEmail;
 }
 
+function normalizeConversationText(value) {
+  return (value || '').toString().replace(/\s+/g, ' ').trim();
+}
+
+function isLowSignalConversationText(value) {
+  const normalized = normalizeConversationText(value).toLowerCase();
+  if (!normalized) return true;
+  return /^(?:n\/a|na|none|nothing|nil|no|nope|idk|i(?:\s+do)?n'?t know|not sure|skip|pass|same|none yet|nothing yet|no comment)$/i.test(normalized);
+}
+
+function hasMeaningfulConversationText(value, options = {}) {
+  const {
+    minLength = 12,
+    minWords = 3,
+    allowSingleWord = false
+  } = options;
+
+  const normalized = normalizeConversationText(value);
+  if (!normalized || isLowSignalConversationText(normalized)) return false;
+
+  if (allowSingleWord) {
+    return normalized.length >= minLength;
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return normalized.length >= minLength && words.length >= minWords;
+}
+
+function sanitizeConversationExtraction(type, data) {
+  if (!type || !data) return null;
+
+  switch (type) {
+    case 'achievement': {
+      const text = normalizeConversationText(data.text);
+      if (!hasMeaningfulConversationText(text, { minLength: 12, minWords: 3 })) return null;
+      return { text };
+    }
+    case 'challenge': {
+      const text = normalizeConversationText(data.text);
+      if (!hasMeaningfulConversationText(text, { minLength: 12, minWords: 3 })) return null;
+      return {
+        text,
+        resolution: normalizeConversationText(data.resolution),
+        learnings: normalizeConversationText(data.learnings)
+      };
+    }
+    case 'learning':
+    case 'skill': {
+      const skill = normalizeConversationText(data.text || data.skill);
+      if (!hasMeaningfulConversationText(skill, { minLength: 3, allowSingleWord: true })) return null;
+      return {
+        skill,
+        evidence: normalizeConversationText(data.context || data.evidence)
+      };
+    }
+    case 'goal': {
+      const goal = normalizeConversationText(data.text || data.goal);
+      if (!hasMeaningfulConversationText(goal, { minLength: 8, minWords: 2 })) return null;
+      return {
+        goal,
+        measurable: Boolean(data.measurable),
+        timeframe: normalizeConversationText(data.timeframe)
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function hasMeaningfulSummaryText(value, options = {}) {
+  const { minLength = 20, minWords = 4 } = options;
+  const normalized = normalizeConversationText(value);
+  if (!normalized || isLowSignalConversationText(normalized) || /^not provided\.?$/i.test(normalized)) {
+    return false;
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return normalized.length >= minLength && words.length >= minWords;
+}
+
+function getMissingSelfAssessmentSections(summary = {}) {
+  const missing = [];
+  if (!hasMeaningfulSummaryText(summary.achievements, { minLength: 20, minWords: 4 })) {
+    missing.push('Key achievements (with examples/metrics)');
+  }
+  if (!hasMeaningfulSummaryText(summary.challenges, { minLength: 16, minWords: 3 })) {
+    missing.push('Challenges faced');
+  }
+  if (!hasMeaningfulSummaryText(summary.learnings, { minLength: 16, minWords: 3 })) {
+    missing.push('Key learnings');
+  }
+  if (!hasMeaningfulSummaryText(summary.goals, { minLength: 16, minWords: 3 })) {
+    missing.push('Goals for next period');
+  }
+  return missing;
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -82,8 +178,8 @@ router.get('/cycles', requireAuth, async (req, res) => {
 
     // FILTER FOR MANAGERS
     if (isAppraisalManagerRole(userRole) && userRole !== 'hr_admin') {
-      const managedTeams = req.managedTeams || [];
-      const managedTeamIds = managedTeams.map(t => t.team?.toString() || t.teamId?.toString() || t.id?.toString());
+      const scope = await resolveAppraisalAccessScope(req);
+      const managedTeamIds = scope.accessibleTeamIds || [];
 
       query.$or = [
         { 'createdBy.userId': userId }, // Created by me
@@ -120,9 +216,9 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
         });
       }
 
-      // Verify managed teams
-      const managedTeams = req.managedTeams || [];
-      const managedTeamIds = managedTeams.map(t => t.team?.toString() || t.teamId?.toString() || t.id?.toString());
+      // Verify managed teams (including hierarchy descendants)
+      const accessScope = await resolveAppraisalAccessScope(req);
+      const managedTeamIds = accessScope.accessibleTeamIds || [];
 
       const targetIds = scope.targetIds || [];
       const invalidTargets = targetIds.filter(id => !managedTeamIds.includes(id));
@@ -203,8 +299,19 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
     if (scope) {
       // Validate again if manager
       if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole)) {
-        // ... validation logic similar to create ...
-        // For brevity trusting create logic or could duplicate
+        if (scope.type !== 'team') {
+          return res.status(403).json({ success: false, error: 'Managers can only set team scope' });
+        }
+        const accessScope = await resolveAppraisalAccessScope(req);
+        const managedTeamIds = accessScope.accessibleTeamIds || [];
+        const targetIds = scope.targetIds || [];
+        const invalidTargets = targetIds.filter(id => !managedTeamIds.includes(id));
+        if (invalidTargets.length > 0) {
+          return res.status(403).json({
+            success: false,
+            error: 'You can only set cycle scope for teams in your hierarchy'
+          });
+        }
       }
       cycle.scope = scope;
     }
@@ -1735,9 +1842,15 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       createdAt: new Date()
     };
 
-    // Only add structuredData if extractedData has a valid type
-    if (result.extractedData && result.extractedData.type && result.extractedData.type !== 'null') {
-      aiMessage.structuredData = result.extractedData;
+    const extractedType = result.extractedData?.type;
+    const sanitizedExtraction = sanitizeConversationExtraction(extractedType, result.extractedData?.data);
+    const normalizedExtractedData = (sanitizedExtraction && extractedType && extractedType !== 'null')
+      ? { type: extractedType, data: sanitizedExtraction }
+      : null;
+
+    // Only add structuredData if extractedData is valid and meaningful
+    if (normalizedExtractedData) {
+      aiMessage.structuredData = normalizedExtractedData;
     }
 
     appraisal.chatThread.push(aiMessage);
@@ -1757,9 +1870,9 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     }
 
     // Store extracted data
-    if (result.extractedData && result.extractedData.type && result.extractedData.data) {
-      const dataType = result.extractedData.type;
-      const dataValue = result.extractedData.data;
+    if (normalizedExtractedData) {
+      const dataType = normalizedExtractedData.type;
+      const dataValue = normalizedExtractedData.data;
 
       switch (dataType) {
         case 'achievement':
@@ -1800,7 +1913,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       data: {
         response: result.response,
         currentPhase: result.currentPhase,
-        extractedData: result.extractedData,
+        extractedData: normalizedExtractedData,
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-20)
       }
@@ -2182,6 +2295,16 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
 
     // Apply any edits
     const finalReport = edits ? { ...report, ...edits } : report;
+
+    // Require meaningful self-assessment content before submission.
+    const missingSummarySections = getMissingSelfAssessmentSections(finalReport.overallSummary || {});
+    if (missingSummarySections.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Please complete required self-assessment sections before submitting: ${missingSummarySections.join(', ')}`,
+        missingSections: missingSummarySections
+      });
+    }
 
     // Employee must provide their own self-rating. AI rating is stored separately.
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;

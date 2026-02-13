@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, Paper, Card, CardContent, TextField, Button,
   Accordion, AccordionSummary, AccordionDetails, Chip, Rating,
-  Alert, Divider, CircularProgress, Grid
+  Alert, Divider, CircularProgress, Grid, Stack, LinearProgress
 } from '@mui/material';
 import {
   ExpandMore, Edit, Save, Send, Flag, Assignment, EmojiObjects,
-  TrendingUp, Star, Refresh, SmartToy, Person
+  TrendingUp, Star, Refresh, SmartToy, Person, Close
 } from '@mui/icons-material';
 
 interface ReportData {
@@ -25,7 +25,6 @@ interface ReportData {
     completionPercentage: number;
     selfComments: string;
   }[];
-  // AI suggestion (never the final self-rating)
   suggestedOverallRating: number | null;
   ratingJustification: string;
   aiSuggestedRating?: {
@@ -36,11 +35,7 @@ interface ReportData {
     developmentAreas?: string[];
     calibrationNotes?: string;
   };
-
-  // Employee-provided self-rating (required on submit)
   overallSelfRating?: number;
-
-  // Optional guidance if the report is missing key info
   missingInfo?: string[];
   aiInsights: {
     strengths: string[];
@@ -67,13 +62,29 @@ const ratingLabels: Record<number, string> = {
   5: 'Outstanding'
 };
 
+const countWords = (text: string) =>
+  (text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+
+const isMeaningfulSummaryText = (text: string) => {
+  const normalized = (text || '').trim();
+  if (!normalized || /^not provided\.?$/i.test(normalized)) return false;
+  return countWords(normalized) >= 4;
+};
+
 const SectionEditor = ({
   title,
   icon,
   value,
   fieldName,
   onEdit,
-  placeholder
+  placeholder,
+  guidance,
+  starterPrompts,
+  targetWords
 }: {
   title: string;
   icon: React.ReactNode;
@@ -81,47 +92,122 @@ const SectionEditor = ({
   fieldName: string;
   onEdit: (field: string, value: string) => void;
   placeholder: string;
+  guidance: string;
+  starterPrompts: string[];
+  targetWords: number;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value);
+  const [editValue, setEditValue] = useState(value || '');
+
+  useEffect(() => {
+    setEditValue(value || '');
+  }, [value]);
+
+  const wordCount = countWords(editValue);
+  const completion = Math.min(100, Math.round((wordCount / targetWords) * 100));
+  const hasContent = isMeaningfulSummaryText(editValue);
+
+  const appendPrompt = (prompt: string) => {
+    setEditValue((prev) => {
+      const base = (prev || '').trim();
+      return base ? `${base}\n- ${prompt}` : `- ${prompt}`;
+    });
+  };
 
   const handleSave = () => {
-    onEdit(fieldName, editValue);
+    onEdit(fieldName, editValue.trim());
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value || '');
     setIsEditing(false);
   };
 
   return (
-    <Card variant="outlined" sx={{ mb: 2 }}>
+    <Card
+      variant="outlined"
+      sx={{
+        mb: 2,
+        borderColor: isEditing ? 'primary.main' : 'divider',
+        bgcolor: isEditing ? 'primary.lighter' : 'background.paper'
+      }}
+    >
       <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {icon}
-            <Typography variant="subtitle1" fontWeight={600}>
+            <Typography variant="subtitle1" fontWeight={700}>
               {title}
             </Typography>
           </Box>
-          <Button
-            size="small"
-            startIcon={isEditing ? <Save /> : <Edit />}
-            onClick={isEditing ? handleSave : () => setIsEditing(true)}
-          >
-            {isEditing ? 'Save' : 'Edit'}
-          </Button>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`${wordCount} words`}
+              color={hasContent ? 'success' : 'default'}
+            />
+            <Button
+              size="small"
+              variant={isEditing ? 'contained' : 'text'}
+              startIcon={isEditing ? <Save /> : <Edit />}
+              onClick={isEditing ? handleSave : () => setIsEditing(true)}
+            >
+              {isEditing ? 'Save' : value ? 'Refine' : 'Add details'}
+            </Button>
+            {isEditing && (
+              <Button size="small" startIcon={<Close />} onClick={handleCancel}>
+                Cancel
+              </Button>
+            )}
+          </Stack>
         </Box>
 
-        {isEditing ? (
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            placeholder={placeholder}
-          />
-        ) : (
+        {!isEditing ? (
           <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: value ? 'text.primary' : 'text.disabled' }}>
             {value || placeholder}
           </Typography>
+        ) : (
+          <Box>
+            <TextField
+              fullWidth
+              multiline
+              minRows={5}
+              maxRows={12}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              placeholder={placeholder}
+              helperText={guidance}
+              sx={{ mb: 1.5 }}
+            />
+
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              Starter prompts
+            </Typography>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
+              {starterPrompts.map((prompt) => (
+                <Chip
+                  key={prompt}
+                  size="small"
+                  variant="outlined"
+                  label={prompt}
+                  onClick={() => appendPrompt(prompt)}
+                  sx={{ cursor: 'pointer' }}
+                />
+              ))}
+            </Stack>
+
+            <LinearProgress
+              variant="determinate"
+              value={completion}
+              color={completion >= 80 ? 'success' : completion >= 45 ? 'warning' : 'error'}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+              Target depth: ~{targetWords} words for a strong section.
+            </Typography>
+          </Box>
         )}
       </CardContent>
     </Card>
@@ -138,18 +224,19 @@ export default function ReportPreview({
 }: ReportPreviewProps) {
   const aiSuggestedRating = report.aiSuggestedRating?.suggestedRating ?? report.suggestedOverallRating ?? null;
   const aiJustification = report.aiSuggestedRating?.ratingJustification ?? report.ratingJustification;
-  const summaryValues = Object.values(report.overallSummary || {});
-  const nonPlaceholderSummaryCount = summaryValues.filter((v) => {
-    const normalized = (v || '').trim().toLowerCase();
-    return normalized && normalized !== 'not provided.';
-  }).length;
-  const hasInsufficientSignal = (report.missingInfo?.length || 0) > 0 && nonPlaceholderSummaryCount < 2;
+  const hasInsufficientSignal = (report.missingInfo?.length || 0) > 0;
   const hasAiSuggestedRating = (
     typeof aiSuggestedRating === 'number' &&
     aiSuggestedRating >= 1 &&
     aiSuggestedRating <= 5 &&
     !hasInsufficientSignal
   );
+
+  const completeness = useMemo(() => {
+    const requiredFields: Array<keyof ReportData['overallSummary']> = ['achievements', 'challenges', 'learnings', 'goals'];
+    const completed = requiredFields.filter((field) => isMeaningfulSummaryText(report.overallSummary?.[field] || '')).length;
+    return Math.round((completed / requiredFields.length) * 100);
+  }, [report.overallSummary]);
 
   const [overallSelfRating, setOverallSelfRating] = useState<number | null>(report.overallSelfRating ?? null);
 
@@ -165,8 +252,8 @@ export default function ReportPreview({
   };
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+    <Box sx={{ p: { xs: 1, sm: 2 } }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
         <Typography variant="h5" fontWeight={700}>
           Self-Assessment Report
         </Typography>
@@ -180,9 +267,30 @@ export default function ReportPreview({
         </Button>
       </Box>
 
+      <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'background.paper' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            Report Completeness
+          </Typography>
+          <Chip
+            label={`${completeness}%`}
+            color={completeness >= 75 ? 'success' : completeness >= 40 ? 'warning' : 'error'}
+            size="small"
+          />
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={completeness}
+          color={completeness >= 75 ? 'success' : completeness >= 40 ? 'warning' : 'error'}
+          sx={{ height: 9, borderRadius: 4.5 }}
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          Complete achievements, challenges, learnings, and next goals before submitting.
+        </Typography>
+      </Paper>
+
       <Alert severity="info" sx={{ mb: 3 }}>
-        Review your draft report below. It is generated from your conversation and evidence, and may include placeholders.
-        Edit any section before submitting.
+        Review your draft report below. Edit any section that needs more detail before submitting.
       </Alert>
 
       {report.missingInfo && report.missingInfo.length > 0 && (
@@ -200,8 +308,7 @@ export default function ReportPreview({
         </Alert>
       )}
 
-      {/* Employee Self-Rating (Required) */}
-      <Paper sx={{ p: 3, mb: 2, bgcolor: 'primary.lighter' }}>
+      <Paper sx={{ p: 3, mb: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <Person color="primary" />
           <Typography variant="subtitle1" fontWeight={600}>
@@ -210,7 +317,7 @@ export default function ReportPreview({
           <Chip size="small" color="warning" label="Required" />
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
           <Rating value={overallSelfRating} onChange={handleSelfRatingChange} size="large" />
           {overallSelfRating ? (
             <Chip
@@ -229,7 +336,6 @@ export default function ReportPreview({
         )}
       </Paper>
 
-      {/* AI Suggested Rating (Informational) */}
       <Paper sx={{ p: 3, mb: 3, border: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <SmartToy color="secondary" />
@@ -260,7 +366,6 @@ export default function ReportPreview({
         </Alert>
       </Paper>
 
-      {/* Summary Sections */}
       <SectionEditor
         title="Key Achievements"
         icon={<Flag color="success" />}
@@ -268,6 +373,13 @@ export default function ReportPreview({
         fieldName="achievements"
         onEdit={(field, value) => onEdit(`overallSummary.${field}`, value)}
         placeholder="Describe your key accomplishments..."
+        guidance="Include impact, numbers, and who benefited from the result."
+        starterPrompts={[
+          'What did I deliver?',
+          'What measurable outcome did it produce?',
+          'What cross-team impact did it create?'
+        ]}
+        targetWords={70}
       />
 
       <SectionEditor
@@ -277,6 +389,13 @@ export default function ReportPreview({
         fieldName="challenges"
         onEdit={(field, value) => onEdit(`overallSummary.${field}`, value)}
         placeholder="Describe challenges you faced..."
+        guidance="State the challenge, what you tried, and what result or learning came out of it."
+        starterPrompts={[
+          'The blocker was...',
+          'I addressed it by...',
+          'The outcome/lesson was...'
+        ]}
+        targetWords={50}
       />
 
       <SectionEditor
@@ -286,6 +405,13 @@ export default function ReportPreview({
         fieldName="learnings"
         onEdit={(field, value) => onEdit(`overallSummary.${field}`, value)}
         placeholder="Describe what you learned..."
+        guidance="Capture the specific skill or insight and where you applied it."
+        starterPrompts={[
+          'A skill I strengthened was...',
+          'I applied this by...',
+          'This changed how I now...'
+        ]}
+        targetWords={45}
       />
 
       <SectionEditor
@@ -295,6 +421,13 @@ export default function ReportPreview({
         fieldName="improvements"
         onEdit={(field, value) => onEdit(`overallSummary.${field}`, value)}
         placeholder="Describe areas for improvement..."
+        guidance="Keep this specific and actionable."
+        starterPrompts={[
+          'I need to improve...',
+          'My plan to improve is...',
+          'I need support in...'
+        ]}
+        targetWords={35}
       />
 
       <SectionEditor
@@ -304,9 +437,15 @@ export default function ReportPreview({
         fieldName="goals"
         onEdit={(field, value) => onEdit(`overallSummary.${field}`, value)}
         placeholder="Set your goals for next period..."
+        guidance="Each goal should have a clear outcome and timeframe."
+        starterPrompts={[
+          'Goal 1: ... by ...',
+          'Success metric: ...',
+          'Dependencies/support needed: ...'
+        ]}
+        targetWords={55}
       />
 
-      {/* OKR Assessment */}
       {report.okrAssessment && report.okrAssessment.length > 0 && (
         <Accordion defaultExpanded sx={{ mb: 2 }}>
           <AccordionSummary expandIcon={<ExpandMore />}>
@@ -335,7 +474,6 @@ export default function ReportPreview({
         </Accordion>
       )}
 
-      {/* AI Insights */}
       <Accordion sx={{ mb: 3 }}>
         <AccordionSummary expandIcon={<ExpandMore />}>
           <Typography fontWeight={600}>AI Insights</Typography>
@@ -378,10 +516,15 @@ export default function ReportPreview({
 
       <Divider sx={{ my: 3 }} />
 
-      {/* Submit Section */}
       <Alert severity="warning" sx={{ mb: 2 }}>
         Once submitted, you cannot make changes. Your manager will be notified to begin their review.
       </Alert>
+
+      {hasInsufficientSignal && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Add the missing details above before submitting.
+        </Alert>
+      )}
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
         <Button
@@ -390,7 +533,7 @@ export default function ReportPreview({
           size="large"
           startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <Send />}
           onClick={onSubmit}
-          disabled={isSubmitting || isRegenerating || !overallSelfRating}
+          disabled={isSubmitting || isRegenerating || !overallSelfRating || hasInsufficientSignal}
         >
           Submit Self-Assessment
         </Button>
@@ -398,3 +541,4 @@ export default function ReportPreview({
     </Box>
   );
 }
+

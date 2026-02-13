@@ -283,8 +283,9 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       onComplete?.();
     } catch (err: any) {
       console.error('Submit report error:', err);
-      setError(err.response?.data?.error || 'Failed to submit report');
-      setSnackbar({ open: true, message: 'Failed to submit report', severity: 'error' });
+      const errorMessage = err.response?.data?.error || 'Failed to submit report';
+      setError(errorMessage);
+      setSnackbar({ open: true, message: errorMessage, severity: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -371,16 +372,25 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
 
   // Main conversation view
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: 600 }}>
+    <Box
+      sx={{
+        display: { xs: 'block', md: 'flex' },
+        height: { xs: 'auto', md: 'calc(100vh - 220px)' },
+        minHeight: { md: 620 }
+      }}
+    >
       {/* Progress Sidebar */}
       <Paper
         elevation={1}
         sx={{
-          width: 280,
+          width: { xs: '100%', md: 280 },
           flexShrink: 0,
-          borderRight: 1,
+          borderRight: { xs: 0, md: 1 },
+          borderBottom: { xs: 1, md: 0 },
           borderColor: 'divider',
-          overflow: 'auto'
+          overflow: 'auto',
+          maxHeight: { xs: 280, md: 'none' },
+          mb: { xs: 2, md: 0 }
         }}
       >
         <PhaseProgress
@@ -403,7 +413,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       </Paper>
 
       {/* Chat Area */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: { xs: 520, md: 'auto' } }}>
         {error && (
           <Alert severity="error" onClose={() => setError(null)} sx={{ m: 2 }}>
             {error}

@@ -3,8 +3,9 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Box, TextField, IconButton, Paper, Typography, CircularProgress,
-  Chip, Avatar, Fade, Tooltip
+  Chip, Avatar, Fade, Tooltip, Stack
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { Send, AttachFile, SmartToy, Person, Description } from '@mui/icons-material';
 
 interface Message {
@@ -40,6 +41,51 @@ interface ChatInterfaceProps {
   disabled?: boolean;
   canAdvancePhase?: boolean;
 }
+
+const LOW_SIGNAL_INPUT_REGEX = /^(?:n\/a|na|none|nothing|nil|no|nope|idk|i(?:\s+do)?n'?t know|not sure|skip|pass)$/i;
+
+const phasePlaceholders: Record<string, string> = {
+  okr_reflection: 'Describe outcomes for this OKR. Include metrics, impact, and what you would improve.',
+  achievements: 'List a key achievement, what you did, and the measurable result.',
+  challenges: 'Describe a challenge, how you handled it, and what changed after.',
+  learnings: 'Share what you learned and how you applied it in your work.',
+  future_goals: 'Add a specific goal for next period with success criteria and timeline.',
+  review: 'Refine your details before generating the final self-assessment.',
+  completed: 'Assessment completed'
+};
+
+const phaseQuickPrompts: Record<string, string[]> = {
+  okr_reflection: [
+    'I delivered this OKR by...',
+    'The measurable result was...',
+    'A key tradeoff I handled was...'
+  ],
+  achievements: [
+    'I improved ___ by ___%',
+    'I delivered ___ ahead of schedule',
+    'I mentored ___ and the impact was...'
+  ],
+  challenges: [
+    'The main blocker was...',
+    'To resolve it, I...',
+    'What I learned from this was...'
+  ],
+  learnings: [
+    'I developed skill in...',
+    'I applied this learning by...',
+    'A repeated pattern I noticed was...'
+  ],
+  future_goals: [
+    'Next period I will...',
+    'Success will be measured by...',
+    'Target completion timeline is...'
+  ],
+  default: [
+    'I achieved...',
+    'The impact was...',
+    'Next I plan to...'
+  ]
+};
 
 const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean }) => {
   const sender = message.sender || { role: 'system', name: 'System', userId: 'system' };
@@ -84,7 +130,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
           </Avatar>
         )}
 
-        <Box sx={{ maxWidth: '70%' }}>
+        <Box sx={{ maxWidth: { xs: '88%', sm: '74%', md: '70%' } }}>
           <Paper
             elevation={1}
             sx={{
@@ -172,7 +218,9 @@ export default function ChatInterface({
   disabled = false,
   canAdvancePhase = false
 }: ChatInterfaceProps) {
+  const theme = useTheme();
   const [inputValue, setInputValue] = useState('');
+  const [inputError, setInputError] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,6 +234,13 @@ export default function ChatInterface({
     if (!inputValue.trim() || isSending || disabled) return;
 
     const message = inputValue.trim();
+    const isOkrSelection = currentPhase === 'okr_reflection' && /^#?\d+$/.test(message);
+    if (!isOkrSelection && LOW_SIGNAL_INPUT_REGEX.test(message.toLowerCase())) {
+      setInputError('Add at least one specific example, outcome, or metric to continue.');
+      return;
+    }
+
+    setInputError('');
     setInputValue('');
     setIsSending(true);
 
@@ -213,6 +268,13 @@ export default function ChatInterface({
     }
   };
 
+  const helperPrompts = phaseQuickPrompts[currentPhase] || phaseQuickPrompts.default;
+  const placeholder = disabled
+    ? phasePlaceholders.completed
+    : (phasePlaceholders[currentPhase] || 'Type your response...');
+  const trimmedLength = inputValue.trim().length;
+  const hasWarningLength = trimmedLength > 0 && trimmedLength < 16;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Messages Area */}
@@ -221,7 +283,8 @@ export default function ChatInterface({
           flex: 1,
           overflow: 'auto',
           p: 2,
-          bgcolor: 'background.default'
+          bgcolor: 'background.default',
+          backgroundImage: `linear-gradient(180deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.03)} 0%, ${alpha(theme.palette.background.default, 0)} 35%)`
         }}
       >
         {messages.map((msg, index) => (
@@ -260,6 +323,24 @@ export default function ChatInterface({
         )}
 
         <Box sx={{ p: 2, pt: canAdvancePhase ? 1.5 : 2 }}>
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.25 }}>
+            {helperPrompts.map((prompt) => (
+              <Chip
+                key={prompt}
+                size="small"
+                variant="outlined"
+                label={prompt}
+                onClick={() => {
+                  if (disabled || isLoading) return;
+                  setInputError('');
+                  setInputValue((prev) => (prev ? `${prev}\n${prompt}` : prompt));
+                }}
+                sx={{ cursor: disabled || isLoading ? 'default' : 'pointer' }}
+                disabled={disabled || isLoading}
+              />
+            ))}
+          </Stack>
+
           <input
             type="file"
             ref={fileInputRef}
@@ -268,52 +349,70 @@ export default function ChatInterface({
             style={{ display: 'none' }}
           />
 
-          <Tooltip title="Attach document (PDF, DOC, DOCX, TXT, PPTX)">
-            <IconButton
-              onClick={() => fileInputRef.current?.click()}
+          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
+            <Tooltip title="Attach document (PDF, DOC, DOCX, TXT, PPTX)">
+              <span>
+                <IconButton
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={disabled || isLoading}
+                  color="primary"
+                  sx={{ mb: 0.5 }}
+                >
+                  <AttachFile />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              maxRows={8}
+              placeholder={placeholder}
+              value={inputValue}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                if (inputError) setInputError('');
+              }}
+              onKeyPress={handleKeyPress}
               disabled={disabled || isLoading}
+              error={Boolean(inputError)}
+              helperText={inputError || 'Press Enter to send, Shift + Enter for a new line.'}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 3
+                }
+              }}
+            />
+
+            <IconButton
+              onClick={handleSend}
+              disabled={!inputValue.trim() || isSending || disabled || isLoading}
               color="primary"
+              sx={{
+                bgcolor: 'primary.main',
+                color: 'white',
+                mb: 0.5,
+                '&:hover': { bgcolor: 'primary.dark' },
+                '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' }
+              }}
             >
-              <AttachFile />
+              {isSending ? <CircularProgress size={24} color="inherit" /> : <Send />}
             </IconButton>
-          </Tooltip>
+          </Box>
 
-          <TextField
-            fullWidth
-            multiline
-            maxRows={4}
-            placeholder={disabled ? "Assessment completed" : "Type your response..."}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={disabled || isLoading}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 3
-              }
-            }}
-          />
-
-          <IconButton
-            onClick={handleSend}
-            disabled={!inputValue.trim() || isSending || disabled || isLoading}
-            color="primary"
-            sx={{
-              bgcolor: 'primary.main',
-              color: 'white',
-              '&:hover': { bgcolor: 'primary.dark' },
-              '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' }
-            }}
-          >
-            {isSending ? <CircularProgress size={24} color="inherit" /> : <Send />}
-          </IconButton>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.75 }}>
+            <Typography variant="caption" color="text.secondary">
+              Currently discussing: {currentPhase.replace(/_/g, ' ')}
+            </Typography>
+            <Typography
+              variant="caption"
+              color={hasWarningLength ? 'warning.main' : 'text.secondary'}
+            >
+              {trimmedLength} characters
+            </Typography>
+          </Box>
         </Box>
-
-        {currentPhase && currentPhase !== 'completed' && (
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            Currently discussing: {currentPhase.replace(/_/g, ' ')}
-          </Typography>
-        )}
       </Paper>
     </Box>
   );

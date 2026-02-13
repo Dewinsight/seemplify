@@ -136,7 +136,7 @@ export default function TeamHubPage() {
   };
 
   // Get user's managed teams for filter
-  const userManagedTeams = teams?.filter((t: any) => t.isManager || t.role === 'line_manager') || [];
+  const userManagedTeams = teams?.filter((t: any) => t.isManager || t.role === 'line_manager' || t.role === 'team_lead') || [];
   
   // Filter team members by selected team and search
   const filteredMembers = (allTeamMembers || []).filter((member: TeamMember) => {

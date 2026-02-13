@@ -49,6 +49,7 @@ DOKPLOY_TOKEN=github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKk
 | **payroll-backend** | `fCXCiEFV3luBmNyUOo1wD` | payroll-backend-h27qb0 |
 | **payroll-frontend** | `DmqWaws_nZkMknN0PaukU` | payroll-frontend-natbov |
 | **marketing-site** | `U_Ct4s31IYEOuzTASkYd3` | marketing-site-web-ssx3uh |
+| **frappe-marketing** | `yMSZcZfu0x4ufvoMHucs5` | app-hack-optical-array-v4l5y5 |
 
 ### Development Applications
 
@@ -100,6 +101,7 @@ PERFORMANCE_FRONTEND_APP_ID=9Lt5Ur-T2OKUdbTchmkAu
 PAYROLL_BACKEND_APP_ID=fCXCiEFV3luBmNyUOo1wD
 PAYROLL_FRONTEND_APP_ID=DmqWaws_nZkMknN0PaukU
 MARKETING_SITE_APP_ID=U_Ct4s31IYEOuzTASkYd3
+FRAPPE_MARKETING_APP_ID=yMSZcZfu0x4ufvoMHucs5
 ```
 
 ### Required Secrets for Development

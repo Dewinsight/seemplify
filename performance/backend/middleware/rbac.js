@@ -146,7 +146,7 @@ function getUserRole(user) {
   // Check if user is a line manager in any team
   const isLineManager = teams.some(t =>
     t.role === 'line_manager' ||
-    (t.isManager && (t.role === 'line_manager' || t.role === 'team_lead'))
+    (t.isManager && t.role === 'line_manager')
   );
   if (isLineManager) return 'line_manager';
 
@@ -164,7 +164,12 @@ function getUserRole(user) {
 function getDirectReports(user) {
   if (!user) return [];
 
-  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  const currentOrgId = currentOrg?.id || currentOrg?._id?.toString();
+  const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
+    if (!currentOrgId) return true;
+    return !team.organizationId || team.organizationId === currentOrgId;
+  });
   const teamPermissions = user.idpTeamPermissions || user.userinfo?.team_permissions || [];
 
   const directReportIds = new Set();
@@ -195,7 +200,12 @@ function getDirectReports(user) {
 function getManagedTeams(user) {
   if (!user) return [];
 
-  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  const currentOrgId = currentOrg?.id || currentOrg?._id?.toString();
+  const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
+    if (!currentOrgId) return true;
+    return !team.organizationId || team.organizationId === currentOrgId;
+  });
 
   return teams.filter(t =>
     t.role === 'line_manager' ||
@@ -571,5 +581,3 @@ module.exports = {
   requireManager,
   requireDirectReportAccess
 };
-
-

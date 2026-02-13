@@ -892,12 +892,6 @@ Keep it to 2-3 sentences.`;
     const extractedData = convState.extractedData || {};
     const chatThread = appraisal.chatThread || [];
 
-    // Compile conversation highlights
-    const employeeMessages = chatThread
-      .filter(m => m.sender?.role === 'employee')
-      .map(m => m.message)
-      .join('\n\n');
-
     // OKR performance summary
     const okrPerformance = okrs.map(okr => ({
       id: okr._id,
@@ -912,29 +906,24 @@ Keep it to 2-3 sentences.`;
       }))
     }));
 
+    // Filter out low-signal extracted snippets (e.g., "no", "n/a")
+    const sanitizedExtractedData = this.sanitizeExtractedData(extractedData);
+
     // Ground the report body in extracted data (deterministic) to avoid "demo-ish" hallucinations.
-    const baseReport = this.getFallbackReport(extractedData, okrPerformance);
+    const baseReport = this.getFallbackReport(sanitizedExtractedData, okrPerformance);
+
+    const conversationSignal = this.collectConversationSignal(chatThread, sanitizedExtractedData);
+    const missingInfo = this.getMissingSelfAssessmentInfo(conversationSignal);
+    const hasEnoughSignal = missingInfo.length === 0;
 
     // Prevent "demo-ish" hallucinated reports when there's too little signal.
-    const extractedCount =
-      (extractedData.achievements?.length || 0) +
-      (extractedData.challenges?.length || 0) +
-      (extractedData.skills?.length || 0) +
-      (extractedData.goals?.length || 0);
-    const employeeTextLen = (employeeMessages || '').trim().length;
-    const hasEnoughSignal = employeeTextLen >= 200 || extractedCount >= 3;
-
     if (!hasEnoughSignal) {
       return {
         ...baseReport,
         suggestedOverallRating: null,
         ratingJustification: 'Not enough evidence was captured to suggest a rating yet.',
         aiSuggestedRating: undefined,
-        missingInfo: [
-          'Add 2-3 key achievements (ideally with outcomes/metrics)',
-          'Add 1-2 challenges and how you addressed them',
-          'Add 1-2 learnings and 1-2 goals for next period'
-        ],
+        missingInfo,
         tokensUsed: 0,
         success: true,
         fallback: true
@@ -1185,6 +1174,143 @@ Provide a recommendation in JSON format:
   // =========================================
   // CONVERSATION HELPER METHODS
   // =========================================
+
+  normalizeText(value) {
+    return (value || '')
+      .toString()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  isLowSignalText(value) {
+    const normalized = this.normalizeText(value).toLowerCase();
+    if (!normalized) return true;
+    return /^(?:n\/a|na|none|nothing|nil|no|nope|idk|i(?:\s+do)?n'?t know|not sure|skip|pass|same|none yet|nothing yet|no comment)$/i.test(normalized);
+  }
+
+  isMeaningfulText(value, options = {}) {
+    const {
+      minLength = 12,
+      minWords = 3,
+      allowSingleWord = false
+    } = options;
+    const normalized = this.normalizeText(value);
+    if (!normalized || this.isLowSignalText(normalized)) return false;
+
+    if (allowSingleWord) {
+      return normalized.length >= minLength;
+    }
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    return normalized.length >= minLength && words.length >= minWords;
+  }
+
+  sanitizeExtractedData(extractedData = {}) {
+    const achievements = (extractedData.achievements || [])
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 12, minWords: 3 }))
+      .map(item => ({
+        ...item,
+        text: this.normalizeText(item?.text)
+      }));
+
+    const challenges = (extractedData.challenges || [])
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 12, minWords: 3 }))
+      .map(item => ({
+        ...item,
+        text: this.normalizeText(item?.text),
+        resolution: this.normalizeText(item?.resolution),
+        learnings: this.normalizeText(item?.learnings)
+      }));
+
+    const skills = (extractedData.skills || [])
+      .filter(item => this.isMeaningfulText(item?.skill || item?.text, { minLength: 3, allowSingleWord: true }))
+      .map(item => ({
+        ...item,
+        skill: this.normalizeText(item?.skill || item?.text),
+        evidence: this.normalizeText(item?.evidence || item?.context)
+      }));
+
+    const goals = (extractedData.goals || [])
+      .filter(item => this.isMeaningfulText(item?.goal || item?.text, { minLength: 8, minWords: 2 }))
+      .map(item => ({
+        ...item,
+        goal: this.normalizeText(item?.goal || item?.text),
+        timeframe: this.normalizeText(item?.timeframe)
+      }));
+
+    return {
+      achievements,
+      challenges,
+      skills,
+      goals
+    };
+  }
+
+  collectConversationSignal(chatThread = [], extractedData = {}) {
+    const employeeMessages = (chatThread || [])
+      .filter(m => m.sender?.role === 'employee')
+      .map(m => this.normalizeText(m.message))
+      .filter(Boolean);
+
+    const meaningfulMessages = employeeMessages.filter(msg =>
+      this.isMeaningfulText(msg, { minLength: 10, minWords: 2 })
+    );
+
+    const employeeWordCount = meaningfulMessages.reduce(
+      (sum, msg) => sum + msg.split(/\s+/).filter(Boolean).length,
+      0
+    );
+
+    const uniqueWords = new Set(
+      meaningfulMessages
+        .join(' ')
+        .toLowerCase()
+        .match(/[a-z0-9]+/g) || []
+    ).size;
+
+    const extractedCounts = {
+      achievements: extractedData.achievements?.length || 0,
+      challenges: extractedData.challenges?.length || 0,
+      learnings: extractedData.skills?.length || 0,
+      goals: extractedData.goals?.length || 0
+    };
+
+    return {
+      employeeMessageCount: employeeMessages.length,
+      meaningfulMessageCount: meaningfulMessages.length,
+      employeeWordCount,
+      uniqueWords,
+      extractedCounts,
+      totalExtracted:
+        extractedCounts.achievements +
+        extractedCounts.challenges +
+        extractedCounts.learnings +
+        extractedCounts.goals
+    };
+  }
+
+  getMissingSelfAssessmentInfo(signal) {
+    const missing = [];
+    const counts = signal?.extractedCounts || {};
+
+    if ((counts.achievements || 0) < 2) {
+      missing.push('Add 2-3 key achievements (ideally with outcomes/metrics)');
+    }
+    if ((counts.challenges || 0) < 1) {
+      missing.push('Add at least 1 challenge and how you addressed it');
+    }
+    if ((counts.learnings || 0) < 1) {
+      missing.push('Add 1-2 learnings or skills you developed');
+    }
+    if ((counts.goals || 0) < 1) {
+      missing.push('Add 1-2 goals for the next period');
+    }
+    if ((signal?.employeeWordCount || 0) < 60 || (signal?.uniqueWords || 0) < 25) {
+      missing.push('Provide more specific detail and examples (metrics, outcomes, and context)');
+    }
+
+    return missing;
+  }
 
   buildPhaseContext(phase, currentOkr, extractedData) {
     const contexts = {
