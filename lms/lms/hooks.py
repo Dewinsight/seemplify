@@ -20,6 +20,7 @@ app_license = "AGPL"
 
 # include js, css files in header of web template
 web_include_css = "lms.bundle.css"
+web_include_js = ["/assets/lms/js/seemplify_login.js"]
 # web_include_css = "/assets/lms/css/lms.css"
 # web_include_js = "/assets/lms/js/lms.js"
 
@@ -136,7 +137,7 @@ scheduler_events = {
 	],
 }
 
-fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
+fixtures = ["Custom Field", "Function", "Industry", "LMS Category", "Social Login Key"]
 
 # Testing
 # -------
@@ -163,6 +164,7 @@ override_whitelisted_methods = {
 
 # Add all simple route rules here
 website_route_rules = [
+	{"from_route": "/lms-login", "to_route": "lms-login"},
 	{"from_route": "/lms/<path:app_path>", "to_route": "lms"},
 	{
 		"from_route": "/courses/<course_name>/<certificate_id>",
@@ -190,6 +192,7 @@ website_redirects = [
 		"match_with_query_string": True,
 	},
 	{"source": "/statistics", "target": "/lms/statistics"},
+	{"source": "/login", "target": "/lms-login"},
 ]
 
 update_website_context = [
@@ -246,6 +249,8 @@ page_renderer = [
 profile_url_prefix = "/users/"
 
 signup_form_template = "lms.plugins.show_custom_signup"
+
+on_login = "lms.lms.user.on_login"
 
 get_site_info = "lms.activation.get_site_info"
 
