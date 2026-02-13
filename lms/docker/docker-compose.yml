@@ -24,11 +24,13 @@ services:
     image: frappe/bench:latest
     # Only run init.sh on first deployment, not on every restart
     command: >
-      bash -c "if [ ! -f /home/frappe/.initialized ]; then
-        /workspace/init.sh && touch /home/frappe/.initialized;
+      bash -c "if [ -d /home/frappe/frappe-bench ] && [ -f /home/frappe/frappe-bench/sites/apps.txt ]; then
+        echo 'LMS bench exists, starting...';
+        cd /home/frappe/frappe-bench && sed -i '/socketio/d' Procfile 2>/dev/null || true;
+        cd /home/frappe/frappe-bench && bench start;
       else
-        echo 'LMS already initialized, skipping init.sh';
-        bench start;
+        echo 'Initializing LMS...';
+        /workspace/init.sh;
       fi"
     environment:
       - SHELL=/bin/bash
@@ -36,6 +38,7 @@ services:
     working_dir: /home/frappe
     volumes:
       - .:/workspace
+      - ../:/lms-app
       - frappe-data:/home/frappe
     networks:
       - lms-network
@@ -45,7 +48,7 @@ services:
       - "traefik.http.routers.lms.rule=Host(`lms.seemplifyai.com`)"
       - "traefik.http.routers.lms.entrypoints=websecure"
       - "traefik.http.routers.lms.tls.certresolver=letsencrypt"
-      - "traefik.http.services.lms.loadbalancer.server.port=8000"
+      - "traefik.http.services.lms.loadbalancer.server.port=8002"
 
 volumes:
   mariadb-data:

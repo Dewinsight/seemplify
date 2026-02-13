@@ -22,12 +22,13 @@ bench set-redis-cache-host redis://redis:6379
 bench set-redis-queue-host redis://redis:6379
 bench set-redis-socketio-host redis://redis:6379
 
-# Remove redis, watch from Procfile
+# Remove redis, watch, socketio from Procfile (socketio causes "None: not found" crash in Docker)
 sed -i '/redis/d' ./Procfile
 sed -i '/watch/d' ./Procfile
+sed -i '/socketio/d' ./Procfile
 
-# Get fresh LMS app from GitHub
-bench get-app lms
+# Use local LMS app from repo (not upstream GitHub)
+bench get-app /lms-app
 
 # Create new site with fresh database
 bench new-site lms.seemplifyai.com \
