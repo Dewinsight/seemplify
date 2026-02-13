@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api, { handleAuthCallback, isAuthenticated } from '@/lib/api';
 import Link from 'next/link';
 import {
@@ -10,7 +10,6 @@ import {
     Briefcase,
     DollarSign,
     ChevronRight,
-    Filter,
     ArrowLeft,
     Loader2,
     UserPlus,
@@ -23,6 +22,9 @@ type IdpMember = {
     email?: string;
     name?: string;
     role?: string;
+    teamName?: string;
+    team?: { id?: string; name?: string };
+    teams?: Array<{ id?: string; name?: string; role?: string }>;
 };
 
 type EmployeeRow = {
@@ -31,11 +33,38 @@ type EmployeeRow = {
     profile?: any;
 };
 
+function resolveTeamName(row: EmployeeRow): string {
+    const profileTeam = String(row.profile?.employeeInfo?.teamName || '').trim();
+    if (profileTeam) return profileTeam;
+
+    const member = row.member;
+    const directTeamName = String(member?.teamName || member?.team?.name || '').trim();
+    if (directTeamName) return directTeamName;
+
+    if (Array.isArray(member?.teams)) {
+        const firstNamedTeam = member.teams.find((t) => String(t?.name || '').trim());
+        if (firstNamedTeam?.name) return String(firstNamedTeam.name).trim();
+    }
+
+    return 'Unassigned';
+}
+
 export default function EmployeesPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [employees, setEmployees] = useState<EmployeeRow[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [teamFilter, setTeamFilter] = useState<string>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'needs_setup' | 'configured'>(
+        searchParams.get('setup') === 'pending' ? 'needs_setup' : 'all'
+    );
+
+    useEffect(() => {
+        if (searchParams.get('setup') === 'pending') {
+            setStatusFilter('needs_setup');
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         handleAuthCallback();
@@ -90,18 +119,41 @@ export default function EmployeesPage() {
         fetchEmployees();
     }, [router]);
 
-    const filteredEmployees = employees.filter(row => {
-        const p = row.profile;
-        const m = row.member;
+    const availableTeams = useMemo(() => {
+        const set = new Set<string>();
+        employees.forEach((row) => set.add(resolveTeamName(row)));
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [employees]);
 
-        const name = String(p?.employeeInfo?.name || m?.name || '').toLowerCase();
-        const email = String(p?.employeeInfo?.email || m?.email || '').toLowerCase();
-        const department = String(p?.employeeInfo?.department || '').toLowerCase();
+    const filteredEmployees = useMemo(() => {
+        return employees.filter((row) => {
+            const p = row.profile;
+            const m = row.member;
 
-        const q = searchQuery.toLowerCase();
-        return name.includes(q) || email.includes(q) || department.includes(q);
-    }
-    );
+            const needsOnboarding = !p;
+            const needsSetup = !p?.basicSalary || Number(p.basicSalary) === 0;
+            const teamName = resolveTeamName(row);
+
+            const name = String(p?.employeeInfo?.name || m?.name || '').toLowerCase();
+            const email = String(p?.employeeInfo?.email || m?.email || '').toLowerCase();
+            const department = String(p?.employeeInfo?.department || '').toLowerCase();
+            const team = String(teamName || '').toLowerCase();
+
+            const q = searchQuery.toLowerCase().trim();
+            const searchMatch = !q || name.includes(q) || email.includes(q) || department.includes(q) || team.includes(q);
+
+            const teamMatch = teamFilter === 'all' || teamName === teamFilter;
+
+            let statusMatch = true;
+            if (statusFilter === 'needs_setup') {
+                statusMatch = needsOnboarding || needsSetup;
+            } else if (statusFilter === 'configured') {
+                statusMatch = !needsOnboarding && !needsSetup;
+            }
+
+            return searchMatch && teamMatch && statusMatch;
+        });
+    }, [employees, searchQuery, teamFilter, statusFilter]);
 
     if (loading) {
         return (
@@ -142,21 +194,36 @@ export default function EmployeesPage() {
             </div>
 
             {/* Toolbar */}
-            <div className="max-w-6xl mx-auto mb-6 flex gap-4">
+            <div className="max-w-6xl mx-auto mb-6 flex flex-col md:flex-row gap-4">
                 <div className="flex-1 relative">
                     <Search className="absolute left-3 top-2.5 w-5 h-5 text-zinc-500" />
                     <input
                         type="text"
-                        placeholder="Search employees by name, email, or department..."
+                        placeholder="Search by name, email, department, or team..."
                         className="w-full bg-zinc-900 border border-zinc-700/50 rounded-xl pl-10 pr-4 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-600"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <button className="px-4 py-2.5 bg-zinc-900 border border-zinc-700/50 rounded-xl text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all flex items-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    Filters
-                </button>
+                <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as 'all' | 'needs_setup' | 'configured')}
+                    className="px-3 py-2.5 bg-zinc-900 border border-zinc-700/50 rounded-xl text-zinc-300 focus:outline-none focus:border-amber-500/50"
+                >
+                    <option value="all">All Statuses</option>
+                    <option value="needs_setup">Needs Setup</option>
+                    <option value="configured">Configured</option>
+                </select>
+                <select
+                    value={teamFilter}
+                    onChange={(e) => setTeamFilter(e.target.value)}
+                    className="px-3 py-2.5 bg-zinc-900 border border-zinc-700/50 rounded-xl text-zinc-300 focus:outline-none focus:border-amber-500/50"
+                >
+                    <option value="all">All Teams</option>
+                    {availableTeams.map((team) => (
+                        <option key={team} value={team}>{team}</option>
+                    ))}
+                </select>
             </div>
 
             {/* Employees Grid */}
@@ -165,6 +232,7 @@ export default function EmployeesPage() {
                     const employee = row.profile;
                     const member = row.member;
                     const hasProfile = !!employee;
+                    const teamName = resolveTeamName(row);
 
                     const needsOnboarding = !hasProfile;
                     const needsSetup = !employee?.basicSalary || employee.basicSalary === 0;
@@ -221,6 +289,13 @@ export default function EmployeesPage() {
 
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-zinc-500 flex items-center gap-1.5">
+                                        <Users className="w-3.5 h-3.5" /> Team
+                                    </span>
+                                    <span className="text-zinc-300">{teamName}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-zinc-500 flex items-center gap-1.5">
                                         <DollarSign className="w-3.5 h-3.5" /> Basic Salary
                                     </span>
                                     <span className={`font-mono font-medium ${needsSetup ? 'text-zinc-500' : 'text-emerald-400'}`}>
@@ -270,6 +345,11 @@ export default function EmployeesPage() {
                         </div>
                     );
                 })}
+                {filteredEmployees.length === 0 && (
+                    <div className="col-span-full text-center py-12 text-zinc-500 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+                        No employees match your current filters.
+                    </div>
+                )}
             </div>
         </div>
     );

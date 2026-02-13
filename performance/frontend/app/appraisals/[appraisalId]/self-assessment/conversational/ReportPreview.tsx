@@ -26,10 +26,10 @@ interface ReportData {
     selfComments: string;
   }[];
   // AI suggestion (never the final self-rating)
-  suggestedOverallRating: number;
+  suggestedOverallRating: number | null;
   ratingJustification: string;
   aiSuggestedRating?: {
-    suggestedRating: number;
+    suggestedRating: number | null;
     ratingJustification: string;
     confidence?: number;
     keyStrengths?: string[];
@@ -136,8 +136,20 @@ export default function ReportPreview({
   isSubmitting,
   isRegenerating
 }: ReportPreviewProps) {
-  const aiSuggestedRating = report.aiSuggestedRating?.suggestedRating ?? report.suggestedOverallRating;
+  const aiSuggestedRating = report.aiSuggestedRating?.suggestedRating ?? report.suggestedOverallRating ?? null;
   const aiJustification = report.aiSuggestedRating?.ratingJustification ?? report.ratingJustification;
+  const summaryValues = Object.values(report.overallSummary || {});
+  const nonPlaceholderSummaryCount = summaryValues.filter((v) => {
+    const normalized = (v || '').trim().toLowerCase();
+    return normalized && normalized !== 'not provided.';
+  }).length;
+  const hasInsufficientSignal = (report.missingInfo?.length || 0) > 0 && nonPlaceholderSummaryCount < 2;
+  const hasAiSuggestedRating = (
+    typeof aiSuggestedRating === 'number' &&
+    aiSuggestedRating >= 1 &&
+    aiSuggestedRating <= 5 &&
+    !hasInsufficientSignal
+  );
 
   const [overallSelfRating, setOverallSelfRating] = useState<number | null>(report.overallSelfRating ?? null);
 
@@ -225,16 +237,24 @@ export default function ReportPreview({
             AI Suggested Rating (Not Final)
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-          <Rating value={aiSuggestedRating} readOnly size="large" />
-          <Chip
-            label={ratingLabels[aiSuggestedRating]}
-            color={aiSuggestedRating >= 4 ? 'success' : aiSuggestedRating >= 3 ? 'info' : 'warning'}
-          />
-        </Box>
-        <Typography variant="body2" color="text.secondary">
-          <strong>Justification:</strong> {aiJustification || 'Not provided'}
-        </Typography>
+        {hasAiSuggestedRating ? (
+          <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+              <Rating value={aiSuggestedRating} readOnly size="large" />
+              <Chip
+                label={ratingLabels[aiSuggestedRating]}
+                color={aiSuggestedRating >= 4 ? 'success' : aiSuggestedRating >= 3 ? 'info' : 'warning'}
+              />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              <strong>Justification:</strong> {aiJustification || 'Not provided'}
+            </Typography>
+          </>
+        ) : (
+          <Alert severity="info" sx={{ mb: 1 }}>
+            Not enough information yet for AI to suggest a rating.
+          </Alert>
+        )}
         <Alert severity="warning" sx={{ mt: 2 }}>
           This is a suggestion only. Your self-rating is what will be submitted.
         </Alert>

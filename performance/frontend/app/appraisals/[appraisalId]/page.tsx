@@ -96,6 +96,7 @@ export default function AppraisalDetailPage() {
 
   const isEmployee = appraisal.employee?.userId === user?.id || appraisal.employee?.email === user?.email;
   const isAssignedManager = appraisal.manager?.userId === user?.id || appraisal.manager?.email === user?.email;
+  const hasManagerAccess = isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
   const config = statusConfig[appraisal.status] || statusConfig['not_started'];
 
   // Determine active workflow step
@@ -185,7 +186,7 @@ export default function AppraisalDetailPage() {
                 {appraisal.status === 'discussion_completed' ? 'View Discussion' : 'Open Discussion'}
               </Button>
             )}
-            {isAssignedManager && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
+            {hasManagerAccess && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
               <Button
                 variant="contained"
                 startIcon={<PlayArrow />}
@@ -206,7 +207,7 @@ export default function AppraisalDetailPage() {
               </Button>
             )}
 
-            {(isAssignedManager || isHRAdmin) && appraisal.status === 'final_review_pending' && (
+            {hasManagerAccess && appraisal.status === 'final_review_pending' && (
               <Button
                 variant="contained"
                 color="success"
@@ -265,7 +266,7 @@ export default function AppraisalDetailPage() {
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
           {/* <Tab label="Overview" /> REMOVED */}
           <Tab label="Self-Assessment" disabled={!selfAssessment?.submittedAt && !isEmployee} />
-          <Tab label="Manager Review" disabled={!managerReview?.submittedAt && !isAssignedManager && !isHRAdmin} />
+          <Tab label="Manager Review" disabled={!managerReview?.submittedAt && !hasManagerAccess} />
           {appraisal.finalRating?.overall && <Tab label="Final Rating" />}
         </Tabs>
 

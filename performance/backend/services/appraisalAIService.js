@@ -927,6 +927,9 @@ Keep it to 2-3 sentences.`;
     if (!hasEnoughSignal) {
       return {
         ...baseReport,
+        suggestedOverallRating: null,
+        ratingJustification: 'Not enough evidence was captured to suggest a rating yet.',
+        aiSuggestedRating: undefined,
         missingInfo: [
           'Add 2-3 key achievements (ideally with outcomes/metrics)',
           'Add 1-2 challenges and how you addressed them',

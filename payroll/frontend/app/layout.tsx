@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
-import { authApi, handleAuthCallback, isAuthenticated as checkAuthenticated } from '@/lib/api';
-import { useRouter } from 'next/navigation';
+import { authApi, handleAuthCallback } from '@/lib/api';
+import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
 import './globals.css';
 import {
   LayoutGrid,
@@ -46,17 +46,17 @@ interface NavDropdown {
   items: NavItem[];
 }
 
+const VIEW_MODE_STORAGE_KEY = 'payroll:viewMode';
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
   const {
     user,
-    role,
     roleDisplay,
     isHRAdmin,
     organization,
-    primaryTeam,
     isLoading: contextLoading
   } = useUserContext();
 
@@ -68,18 +68,57 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
-  const [hasAccessToken, setHasAccessToken] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [mobileExpandedDropdown, setMobileExpandedDropdown] = useState<string | null>(null);
+  const [viewMode, setViewModeState] = useState<PayrollViewMode>('personal');
 
   useEffect(() => {
-    // Ensure deep-links also process the OIDC callback token.
-    const stored = handleAuthCallback();
-    if (stored) setHasAccessToken(true);
+    handleAuthCallback();
   }, []);
 
-  const isAuthenticated = checkAuthenticated() || hasAccessToken;
+  useEffect(() => {
+    if (contextLoading) return;
+
+    if (!isHRAdmin) {
+      setViewModeState('personal');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(VIEW_MODE_STORAGE_KEY);
+      }
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      const nextMode: PayrollViewMode = stored === 'personal' ? 'personal' : 'admin';
+      setViewModeState(nextMode);
+    }
+  }, [contextLoading, isHRAdmin]);
+
+  useEffect(() => {
+    setOpenDropdown(null);
+    setMobileExpandedDropdown(null);
+    setOrgMenuOpen(false);
+    setUserMenuOpen(false);
+  }, [pathname]);
+
+  const effectiveViewMode: PayrollViewMode = isHRAdmin ? viewMode : 'personal';
+  const isAdminWorkspace = isHRAdmin && effectiveViewMode === 'admin';
+
+  const setViewMode = (mode: PayrollViewMode) => {
+    if (!isHRAdmin) return;
+
+    setViewModeState(mode);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    }
+
+    if (mode === 'personal' && pathname.startsWith('/admin')) {
+      router.push('/dashboard');
+    }
+  };
+
   const userName = user?.name || 'User';
   const userEmail = user?.email || '';
 
@@ -100,9 +139,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       setSwitchingOrg(true);
       setOrgMenuOpen(false);
       const response = await authApi.switchOrganization(orgId);
-      // authApi.switchOrganization returns response.data directly
       if (response?.success) {
-        console.log('✅ Organization switched to:', response.organization?.name);
+        console.log('Organization switched to:', response.organization?.name);
         window.location.reload();
       } else {
         throw new Error(response?.error || 'Failed to switch organization');
@@ -159,14 +197,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Simple nav items (direct links)
-  const simpleNavItems: NavItem[] = [
+  const personalNavItems: NavItem[] = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
     { name: 'My Payslips', href: '/payslips', icon: FileText },
     { name: 'My Requests', href: '/requests', icon: Clock },
   ];
 
-  // Dropdown menus for admin (grouped by functionality)
   const adminDropdowns: NavDropdown[] = [
     {
       name: 'Payroll',
@@ -178,11 +214,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ],
     },
     {
-      name: 'Team',
+      name: 'Employees',
       icon: Users,
       items: [
-        { name: 'My Team', href: '/team', icon: Users },
         { name: 'All Employees', href: '/admin/employees', icon: Users },
+        { name: 'Setup Queue', href: '/admin/employees?setup=pending', icon: CheckCircle },
       ],
     },
     {
@@ -202,424 +238,468 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
-  // For non-admin users, show simple nav with team link
-  const nonAdminNavItems: NavItem[] = [
-    ...simpleNavItems,
-    { name: 'Team', href: '/team', icon: Users },
-  ];
-
   const isDropdownActive = (dropdown: NavDropdown) => {
-    return dropdown.items.some(item => 
-      pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+    return dropdown.items.some(item =>
+      pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href.split('?')[0]))
     );
   };
 
   const showOrgSwitcher = Array.isArray(organizations) && organizations.length > 1;
 
+  const providerValue = {
+    viewMode: effectiveViewMode,
+    isHRAdmin: !!isHRAdmin,
+    setViewMode,
+  };
+
   return (
     <html lang="en">
       <body className="bg-[rgb(var(--background-start-rgb))]">
-        {/* Background Noise */}
         <div className="bg-noise" />
 
-        <div className="min-h-screen">
-          {/* Top Navbar */}
-          <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
-            <div className="mx-auto px-4 lg:px-8">
-              <div className="flex h-16 items-center justify-between">
-                {/* Logo */}
-                <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-                  <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center shadow-lg shadow-amber-500/20 transition-transform duration-300 group-hover:scale-105">
-                    <DollarSign className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="hidden sm:block">
-                    <div className="text-sm font-semibold text-white">Payroll Management</div>
-                    <div className="text-xs text-zinc-400">by Seemplify</div>
-                  </div>
-                </Link>
-
-                {/* Desktop Navigation */}
-                <div className="hidden lg:flex items-center gap-1">
-                  {/* Simple nav items */}
-                  {simpleNavItems.map((item) => {
-                    const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                          active
-                            ? 'bg-zinc-800/80 text-white'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                        )}
-                      >
-                        <item.icon className="h-4 w-4" />
-                        {item.name}
-                      </Link>
-                    );
-                  })}
-
-                  {/* Dropdown menus for admin */}
-                  {isHRAdmin ? (
-                    <>
-                      {adminDropdowns.map((dropdown) => {
-                        const isOpen = openDropdown === dropdown.name;
-                        const isActive = isDropdownActive(dropdown);
-                        return (
-                          <div key={dropdown.name} className="relative">
-                            <button
-                              onClick={() => setOpenDropdown(isOpen ? null : dropdown.name)}
-                              className={cn(
-                                'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                                isActive || isOpen
-                                  ? 'bg-zinc-800/80 text-white'
-                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                              )}
-                            >
-                              <dropdown.icon className="h-4 w-4" />
-                              {dropdown.name}
-                              <ChevronDown className={cn(
-                                "h-3.5 w-3.5 transition-transform duration-200",
-                                isOpen && "rotate-180"
-                              )} />
-                            </button>
-                            {isOpen && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-40"
-                                  onClick={() => setOpenDropdown(null)}
-                                />
-                                <div className="absolute left-0 top-11 w-48 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
-                                  {dropdown.items.map((item) => {
-                                    const itemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-                                    return (
-                                      <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onClick={() => setOpenDropdown(null)}
-                                        className={cn(
-                                          'flex items-center gap-2 px-4 py-2.5 text-sm transition-colors',
-                                          itemActive
-                                            ? 'bg-zinc-800/80 text-white'
-                                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                                        )}
-                                      >
-                                        <item.icon className="h-4 w-4" />
-                                        {item.name}
-                                      </Link>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </>
-                  ) : (
-                    /* Non-admin: just show Team link */
-                    <Link
-                      href="/team"
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                        pathname === '/team'
-                          ? 'bg-zinc-800/80 text-white'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                      )}
-                    >
-                      <Users className="h-4 w-4" />
-                      Team
-                    </Link>
-                  )}
-                </div>
-
-                {/* Right Side Actions */}
-                <div className="flex items-center gap-3">
-                  {/* Organization Switcher */}
-                  {showOrgSwitcher && (
-                    <div className="hidden md:block relative">
-                      <button
-                        onClick={() => setOrgMenuOpen(!orgMenuOpen)}
-                        className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
-                      >
-                        <Building2 className="h-4 w-4" />
-                        <span className="max-w-[120px] truncate">{orgName}</span>
-                        <ChevronDown className="h-4 w-4 text-zinc-500" />
-                      </button>
-                      {orgMenuOpen && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-40"
-                            onClick={() => setOrgMenuOpen(false)}
-                          />
-                          <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
-                            {organizations.map((org: any) => (
-                              <button
-                                key={org.id}
-                                onClick={() => !org.isCurrent && handleSwitchOrganization(org.id)}
-                                disabled={org.isCurrent || switchingOrg}
-                                className={cn(
-                                  'w-full text-left px-4 py-3 text-sm hover:bg-zinc-800/70 transition-colors',
-                                  org.isCurrent && 'bg-zinc-800/70 cursor-default'
-                                )}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-zinc-200 truncate">{org.name}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
-                                    {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
+        <PayrollViewModeProvider value={providerValue}>
+          <div className="min-h-screen">
+            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
+              <div className="mx-auto px-4 lg:px-8">
+                <div className="flex h-16 items-center justify-between">
+                  <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
+                    <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center shadow-lg shadow-amber-500/20 transition-transform duration-300 group-hover:scale-105">
+                      <DollarSign className="h-5 w-5 text-white" />
                     </div>
-                  )}
+                    <div className="hidden sm:block">
+                      <div className="text-sm font-semibold text-white">Payroll Management</div>
+                      <div className="text-xs text-zinc-400">by Seemplify</div>
+                    </div>
+                  </Link>
 
-                  {/* User Menu */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="flex items-center gap-2 rounded-lg hover:bg-zinc-800/50 p-2 transition-colors"
-                    >
-                      <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center ring-2 ring-zinc-800">
-                        <span className="text-sm font-semibold text-white">{userName.charAt(0)}</span>
-                      </div>
-                      <div className="hidden lg:block text-left">
-                        <div className="text-sm font-medium text-white truncate max-w-[120px]">{userName}</div>
-                        <div className="text-xs text-zinc-500 truncate max-w-[120px]">{userEmail}</div>
-                      </div>
-                      <ChevronDown className="hidden lg:block h-4 w-4 text-zinc-500" />
-                    </button>
-                    {userMenuOpen && (
+                  <div className="hidden lg:flex items-center gap-1">
+                    {isAdminWorkspace ? (
                       <>
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={() => setUserMenuOpen(false)}
-                        />
-                        <div className="absolute right-0 top-14 w-56 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
-                          <div className="p-3 border-b border-zinc-800/60">
-                            <div className="text-sm font-medium text-white truncate">{userName}</div>
-                            <div className="text-xs text-zinc-500 truncate">{userEmail}</div>
-                            {roleDisplay && (
-                              <div className="mt-1">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-medium">
-                                  {roleDisplay}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="py-2">
-                            <button
-                              className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors flex items-center gap-2"
-                              onClick={() => {
-                                setUserMenuOpen(false);
-                                handleLogout();
-                              }}
-                            >
-                              <LogOut className="h-4 w-4" />
-                              Logout
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Mobile Menu Button */}
-                  <button
-                    className="lg:hidden p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
-                    onClick={() => setMobileOpen(true)}
-                    aria-label="Open menu"
-                  >
-                    <Menu className="h-5 w-5 text-zinc-300" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </nav>
-
-          {/* Mobile Slide-out Menu */}
-          {mobileOpen && (
-            <>
-              <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
-                onClick={() => setMobileOpen(false)}
-              />
-              <div className="fixed inset-y-0 right-0 w-80 max-w-[85vw] bg-[#0a0a0c] border-l border-white/[0.08] shadow-2xl z-50 lg:hidden overflow-y-auto">
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2">
-                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center shadow-lg">
-                        <DollarSign className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-white">Payroll</div>
-                        <div className="text-xs text-zinc-400">by Seemplify</div>
-                      </div>
-                    </div>
-                    <button
-                      className="p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      <X className="h-5 w-5 text-zinc-400" />
-                    </button>
-                  </div>
-
-                  {/* Mobile Organization Switcher */}
-                  {showOrgSwitcher && (
-                    <div className="mb-6">
-                      <button
-                        onClick={() => setOrgMenuOpen(!orgMenuOpen)}
-                        className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
-                          <span className="text-zinc-200 truncate">{orgName}</span>
-                        </div>
-                        <ChevronDown className="h-4 w-4 text-zinc-500" />
-                      </button>
-                      {orgMenuOpen && (
-                        <div className="mt-2 rounded-lg border border-white/[0.08] bg-[#0a0a0c] overflow-hidden">
-                          {organizations.map((org: any) => (
-                            <button
-                              key={org.id}
-                              onClick={() => {
-                                if (!org.isCurrent) {
-                                  handleSwitchOrganization(org.id);
-                                  setMobileOpen(false);
-                                }
-                              }}
-                              disabled={org.isCurrent || switchingOrg}
-                              className={cn(
-                                'w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800/70 transition-colors',
-                                org.isCurrent && 'bg-zinc-800/70 cursor-default'
-                              )}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-zinc-200 truncate">{org.name}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-zinc-500">{org.role}</span>
-                                  {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Mobile Navigation */}
-                  <div className="space-y-1">
-                    <div className="text-xs font-semibold text-zinc-500 px-2 mb-2">Navigation</div>
-                    
-                    {/* Simple nav items */}
-                    {simpleNavItems.map((item) => {
-                      const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-                      return (
                         <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => setMobileOpen(false)}
+                          href="/dashboard"
                           className={cn(
-                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                            active
+                            'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                            pathname === '/dashboard'
                               ? 'bg-zinc-800/80 text-white'
                               : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                           )}
                         >
-                          <item.icon className="h-4 w-4" />
-                          {item.name}
+                          <LayoutGrid className="h-4 w-4" />
+                          Dashboard
                         </Link>
-                      );
-                    })}
 
-                    {isHRAdmin ? (
-                      <>
-                        {/* Admin dropdown sections */}
                         {adminDropdowns.map((dropdown) => {
-                          const isExpanded = mobileExpandedDropdown === dropdown.name;
+                          const isOpen = openDropdown === dropdown.name;
                           const isActive = isDropdownActive(dropdown);
                           return (
-                            <div key={dropdown.name}>
+                            <div key={dropdown.name} className="relative">
                               <button
-                                onClick={() => setMobileExpandedDropdown(isExpanded ? null : dropdown.name)}
+                                onClick={() => setOpenDropdown(isOpen ? null : dropdown.name)}
                                 className={cn(
-                                  'w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                                  isActive || isExpanded
+                                  'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                                  isActive || isOpen
                                     ? 'bg-zinc-800/80 text-white'
                                     : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                                 )}
                               >
-                                <div className="flex items-center gap-3">
-                                  <dropdown.icon className="h-4 w-4" />
-                                  {dropdown.name}
-                                </div>
-                                <ChevronRight className={cn(
-                                  "h-4 w-4 transition-transform duration-200",
-                                  isExpanded && "rotate-90"
+                                <dropdown.icon className="h-4 w-4" />
+                                {dropdown.name}
+                                <ChevronDown className={cn(
+                                  'h-3.5 w-3.5 transition-transform duration-200',
+                                  isOpen && 'rotate-180'
                                 )} />
                               </button>
-                              {isExpanded && (
-                                <div className="mt-1 ml-4 pl-4 border-l border-zinc-800 space-y-1">
-                                  {dropdown.items.map((item) => {
-                                    const itemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-                                    return (
-                                      <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onClick={() => setMobileOpen(false)}
-                                        className={cn(
-                                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                                          itemActive
-                                            ? 'bg-zinc-800/60 text-white'
-                                            : 'text-zinc-500 hover:text-white hover:bg-zinc-800/40'
-                                        )}
-                                      >
-                                        <item.icon className="h-4 w-4" />
-                                        {item.name}
-                                      </Link>
-                                    );
-                                  })}
-                                </div>
+                              {isOpen && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setOpenDropdown(null)}
+                                  />
+                                  <div className="absolute left-0 top-11 w-52 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                                    {dropdown.items.map((item) => {
+                                      const itemPath = item.href.split('?')[0];
+                                      const itemActive = pathname === itemPath || (itemPath !== '/' && pathname.startsWith(itemPath));
+                                      return (
+                                        <Link
+                                          key={item.href}
+                                          href={item.href}
+                                          onClick={() => setOpenDropdown(null)}
+                                          className={cn(
+                                            'flex items-center gap-2 px-4 py-2.5 text-sm transition-colors',
+                                            itemActive
+                                              ? 'bg-zinc-800/80 text-white'
+                                              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                                          )}
+                                        >
+                                          <item.icon className="h-4 w-4" />
+                                          {item.name}
+                                        </Link>
+                                      );
+                                    })}
+                                  </div>
+                                </>
                               )}
                             </div>
                           );
                         })}
                       </>
                     ) : (
-                      /* Non-admin: just show Team link */
-                      <Link
-                        href="/team"
-                        onClick={() => setMobileOpen(false)}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                          pathname === '/team'
-                            ? 'bg-zinc-800/80 text-white'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                        )}
-                      >
-                        <Users className="h-4 w-4" />
-                        Team
-                      </Link>
+                      <>
+                        {personalNavItems.map((item) => {
+                          const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              className={cn(
+                                'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                                active
+                                  ? 'bg-zinc-800/80 text-white'
+                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                              )}
+                            >
+                              <item.icon className="h-4 w-4" />
+                              {item.name}
+                            </Link>
+                          );
+                        })}
+                      </>
                     )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {isHRAdmin && (
+                      <div className="hidden md:flex items-center rounded-lg border border-zinc-800 bg-zinc-900/70 p-1">
+                        <button
+                          onClick={() => setViewMode('admin')}
+                          className={cn(
+                            'px-3 py-1.5 text-xs rounded-md font-medium transition-colors',
+                            effectiveViewMode === 'admin'
+                              ? 'bg-zinc-700 text-white'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          )}
+                        >
+                          Admin View
+                        </button>
+                        <button
+                          onClick={() => setViewMode('personal')}
+                          className={cn(
+                            'px-3 py-1.5 text-xs rounded-md font-medium transition-colors',
+                            effectiveViewMode === 'personal'
+                              ? 'bg-zinc-700 text-white'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          )}
+                        >
+                          Personal View
+                        </button>
+                      </div>
+                    )}
+
+                    {showOrgSwitcher && (
+                      <div className="hidden md:block relative">
+                        <button
+                          onClick={() => setOrgMenuOpen(!orgMenuOpen)}
+                          className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
+                        >
+                          <Building2 className="h-4 w-4" />
+                          <span className="max-w-[120px] truncate">{orgName}</span>
+                          <ChevronDown className="h-4 w-4 text-zinc-500" />
+                        </button>
+                        {orgMenuOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={() => setOrgMenuOpen(false)}
+                            />
+                            <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
+                              {organizations.map((org: any) => (
+                                <button
+                                  key={org.id}
+                                  onClick={() => !org.isCurrent && handleSwitchOrganization(org.id)}
+                                  disabled={org.isCurrent || switchingOrg}
+                                  className={cn(
+                                    'w-full text-left px-4 py-3 text-sm hover:bg-zinc-800/70 transition-colors',
+                                    org.isCurrent && 'bg-zinc-800/70 cursor-default'
+                                  )}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-zinc-200 truncate">{org.name}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
+                                      {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="relative">
+                      <button
+                        onClick={() => setUserMenuOpen(!userMenuOpen)}
+                        className="flex items-center gap-2 rounded-lg hover:bg-zinc-800/50 p-2 transition-colors"
+                      >
+                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center ring-2 ring-zinc-800">
+                          <span className="text-sm font-semibold text-white">{userName.charAt(0)}</span>
+                        </div>
+                        <div className="hidden lg:block text-left">
+                          <div className="text-sm font-medium text-white truncate max-w-[120px]">{userName}</div>
+                          <div className="text-xs text-zinc-500 truncate max-w-[120px]">{userEmail}</div>
+                        </div>
+                        <ChevronDown className="hidden lg:block h-4 w-4 text-zinc-500" />
+                      </button>
+                      {userMenuOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setUserMenuOpen(false)}
+                          />
+                          <div className="absolute right-0 top-14 w-56 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                            <div className="p-3 border-b border-zinc-800/60">
+                              <div className="text-sm font-medium text-white truncate">{userName}</div>
+                              <div className="text-xs text-zinc-500 truncate">{userEmail}</div>
+                              {roleDisplay && (
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-medium">
+                                    {roleDisplay}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="py-2">
+                              <button
+                                className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors flex items-center gap-2"
+                                onClick={() => {
+                                  setUserMenuOpen(false);
+                                  handleLogout();
+                                }}
+                              >
+                                <LogOut className="h-4 w-4" />
+                                Logout
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <button
+                      className="lg:hidden p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                      onClick={() => setMobileOpen(true)}
+                      aria-label="Open menu"
+                    >
+                      <Menu className="h-5 w-5 text-zinc-300" />
+                    </button>
                   </div>
                 </div>
               </div>
-            </>
-          )}
+            </nav>
 
-          {/* Main Content */}
-          <main className="pt-16 min-h-screen">
-            <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
-              {children}
-            </div>
-          </main>
-        </div>
+            {mobileOpen && (
+              <>
+                <div
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
+                  onClick={() => setMobileOpen(false)}
+                />
+                <div className="fixed inset-y-0 right-0 w-80 max-w-[85vw] bg-[#0a0a0c] border-l border-white/[0.08] shadow-2xl z-50 lg:hidden overflow-y-auto">
+                  <div className="p-4">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-2">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center shadow-lg">
+                          <DollarSign className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-white">Payroll</div>
+                          <div className="text-xs text-zinc-400">by Seemplify</div>
+                        </div>
+                      </div>
+                      <button
+                        className="p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                        onClick={() => setMobileOpen(false)}
+                      >
+                        <X className="h-5 w-5 text-zinc-400" />
+                      </button>
+                    </div>
+
+                    {isHRAdmin && (
+                      <div className="mb-5 rounded-lg border border-zinc-800 bg-zinc-900/70 p-1 flex items-center">
+                        <button
+                          onClick={() => setViewMode('admin')}
+                          className={cn(
+                            'flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors',
+                            effectiveViewMode === 'admin'
+                              ? 'bg-zinc-700 text-white'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          )}
+                        >
+                          Admin
+                        </button>
+                        <button
+                          onClick={() => setViewMode('personal')}
+                          className={cn(
+                            'flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors',
+                            effectiveViewMode === 'personal'
+                              ? 'bg-zinc-700 text-white'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          )}
+                        >
+                          Personal
+                        </button>
+                      </div>
+                    )}
+
+                    {showOrgSwitcher && (
+                      <div className="mb-6">
+                        <button
+                          onClick={() => setOrgMenuOpen(!orgMenuOpen)}
+                          className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
+                            <span className="text-zinc-200 truncate">{orgName}</span>
+                          </div>
+                          <ChevronDown className="h-4 w-4 text-zinc-500" />
+                        </button>
+                        {orgMenuOpen && (
+                          <div className="mt-2 rounded-lg border border-white/[0.08] bg-[#0a0a0c] overflow-hidden">
+                            {organizations.map((org: any) => (
+                              <button
+                                key={org.id}
+                                onClick={() => {
+                                  if (!org.isCurrent) {
+                                    handleSwitchOrganization(org.id);
+                                    setMobileOpen(false);
+                                  }
+                                }}
+                                disabled={org.isCurrent || switchingOrg}
+                                className={cn(
+                                  'w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800/70 transition-colors',
+                                  org.isCurrent && 'bg-zinc-800/70 cursor-default'
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-zinc-200 truncate">{org.name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-zinc-500">{org.role}</span>
+                                    {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-zinc-500 px-2 mb-2">Navigation</div>
+
+                      {isAdminWorkspace ? (
+                        <>
+                          <Link
+                            href="/dashboard"
+                            onClick={() => setMobileOpen(false)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                              pathname === '/dashboard'
+                                ? 'bg-zinc-800/80 text-white'
+                                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                            )}
+                          >
+                            <LayoutGrid className="h-4 w-4" />
+                            Dashboard
+                          </Link>
+
+                          {adminDropdowns.map((dropdown) => {
+                            const isExpanded = mobileExpandedDropdown === dropdown.name;
+                            const isActive = isDropdownActive(dropdown);
+                            return (
+                              <div key={dropdown.name}>
+                                <button
+                                  onClick={() => setMobileExpandedDropdown(isExpanded ? null : dropdown.name)}
+                                  className={cn(
+                                    'w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                                    isActive || isExpanded
+                                      ? 'bg-zinc-800/80 text-white'
+                                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                                  )}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <dropdown.icon className="h-4 w-4" />
+                                    {dropdown.name}
+                                  </div>
+                                  <ChevronRight className={cn(
+                                    'h-4 w-4 transition-transform duration-200',
+                                    isExpanded && 'rotate-90'
+                                  )} />
+                                </button>
+                                {isExpanded && (
+                                  <div className="mt-1 ml-4 pl-4 border-l border-zinc-800 space-y-1">
+                                    {dropdown.items.map((item) => {
+                                      const itemPath = item.href.split('?')[0];
+                                      const itemActive = pathname === itemPath || (itemPath !== '/' && pathname.startsWith(itemPath));
+                                      return (
+                                        <Link
+                                          key={item.href}
+                                          href={item.href}
+                                          onClick={() => setMobileOpen(false)}
+                                          className={cn(
+                                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                                            itemActive
+                                              ? 'bg-zinc-800/60 text-white'
+                                              : 'text-zinc-500 hover:text-white hover:bg-zinc-800/40'
+                                          )}
+                                        >
+                                          <item.icon className="h-4 w-4" />
+                                          {item.name}
+                                        </Link>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          {personalNavItems.map((item) => {
+                            const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                            return (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={() => setMobileOpen(false)}
+                                className={cn(
+                                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                                  active
+                                    ? 'bg-zinc-800/80 text-white'
+                                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                                )}
+                              >
+                                <item.icon className="h-4 w-4" />
+                                {item.name}
+                              </Link>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <main className="pt-16 min-h-screen">
+              <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
+                {children}
+              </div>
+            </main>
+          </div>
+        </PayrollViewModeProvider>
       </body>
     </html>
   );

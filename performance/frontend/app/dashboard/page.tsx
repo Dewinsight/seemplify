@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { useUserContext, useDashboardData, useCurrentTeam } from '@/lib/hooks';
 import Link from 'next/link';
 import {
-  TrendingUp, Target, FileText, MessageSquare, BarChart3, Users, Video, LayoutGrid, Sparkles, Flag, AlertCircle, ChevronDown, Eye
+  Target, FileText, Users, LayoutGrid, Sparkles, Flag, AlertCircle, ChevronDown, Eye
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -140,8 +140,6 @@ export default function DashboardPage() {
 
   const data = dashboard || {
     okrProgress: 0,
-    pendingReviews: 0,
-    recentFeedback: 0,
     totalOkrs: 0,
     completedOkrs: 0,
     upcomingDeadlines: 0
@@ -162,20 +160,20 @@ export default function DashboardPage() {
       href: '/okrs'
     },
     {
-      title: 'Pending Reviews',
-      value: data.pendingReviews,
-      subtitle: data.pendingReviews > 0 ? 'Needs your attention' : 'All caught up!',
-      icon: BarChart3,
+      title: 'Active OKRs',
+      value: data.totalOkrs,
+      subtitle: `${data.completedOkrs} completed`,
+      icon: Target,
       gradient: 'from-amber-500 to-orange-500',
-      href: '/reviews'
+      href: '/okrs'
     },
     {
-      title: 'Recent Feedback',
-      value: data.recentFeedback,
-      subtitle: 'This month',
-      icon: MessageSquare,
+      title: 'Upcoming Deadlines',
+      value: data.upcomingDeadlines,
+      subtitle: 'Next 7 days',
+      icon: FileText,
       gradient: 'from-emerald-500 to-teal-500',
-      href: '/feedback'
+      href: '/appraisals'
     },
     {
       title: 'Team Members',
@@ -191,10 +189,15 @@ export default function DashboardPage() {
   const quickActions = [
     { name: 'Set OKRs', href: '/okrs', icon: Target, color: 'from-purple-500 to-pink-500' },
     { name: 'My Appraisals', href: '/appraisals', icon: FileText, color: 'from-indigo-500 to-blue-500' },
-    { name: 'Give Feedback', href: '/feedback', icon: MessageSquare, color: 'from-green-500 to-emerald-500' },
-    { name: 'View Reviews', href: '/reviews', icon: BarChart3, color: 'from-amber-500 to-orange-500' },
-    { name: 'Schedule 1:1', href: '/one-on-ones', icon: Video, color: 'from-fuchsia-500 to-rose-500' },
   ];
+
+  if (isManager) {
+    quickActions.push({ name: 'My Team', href: '/team', icon: Users, color: 'from-emerald-500 to-teal-500' });
+  }
+
+  if (isHRAdmin) {
+    quickActions.push({ name: 'Cycle Admin', href: '/admin/appraisal-cycles', icon: Flag, color: 'from-rose-500 to-orange-500' });
+  }
 
   return (
     <div className="space-y-8">
@@ -402,7 +405,7 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <div className="glass-card rounded-xl p-6">
           <h2 className="text-lg font-bold text-foreground mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {quickActions.map((action) => (
               <Link
                 key={action.name}

@@ -9,10 +9,6 @@ import {
   TrendingUp,
   Target,
   FileText,
-  MessageSquare,
-  Video,
-  GraduationCap,
-  BarChart3,
   Users,
   Settings,
   LogOut,
@@ -72,12 +68,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
       { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
-      { name: 'My OKRs', href: '/okrs', icon: Target, badge: 'AI', section: 'main' },
-      { name: 'Appraisals', href: '/appraisals', icon: FileText, badge: 'AI', section: 'main' },
-      { name: 'Reviews', href: '/reviews', icon: BarChart3, badge: 'AI', section: 'main' },
-      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'main' },
-      { name: '1:1 Meetings', href: '/one-on-ones', icon: Video, section: 'main' },
-      { name: 'Development', href: '/development', icon: GraduationCap, section: 'main' },
+      { name: 'My OKRs', href: '/okrs', icon: Target, section: 'main' },
+      { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' },
     ];
 
     const manager: NavItem[] = isManager

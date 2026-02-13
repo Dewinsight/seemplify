@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import api, { handleAuthCallback, isAuthenticated } from '@/lib/api';
+import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
 import { ArrowLeft, Download, FileText, Loader2 } from 'lucide-react';
 
 type Money = number;
@@ -29,6 +29,7 @@ export default function MyPayslipsPage() {
   const [loading, setLoading] = useState(true);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isHRAdmin, setIsHRAdmin] = useState(false);
 
   useEffect(() => {
     handleAuthCallback();
@@ -40,8 +41,18 @@ export default function MyPayslipsPage() {
 
     (async () => {
       try {
-        const res = await api.get('/payroll/my-payslips');
-        const data = res.data;
+        const [meRes, payslipRes] = await Promise.all([
+          authApi.getMe(),
+          api.get('/payroll/my-payslips'),
+        ]);
+
+        const currentOrgId = meRes.currentOrganizationId;
+        const currentOrg =
+          meRes.user?.organizations?.find((o: any) => o.id === currentOrgId) ||
+          meRes.user?.organizations?.[0];
+        setIsHRAdmin(!!currentOrg && ['owner', 'admin', 'hr_manager'].includes(currentOrg.role));
+
+        const data = payslipRes.data;
         setPayslips(Array.isArray(data) ? data : data?.payslips || []);
       } catch (err) {
         console.error('Failed to fetch payslips:', err);
@@ -129,6 +140,21 @@ export default function MyPayslipsPage() {
             </div>
             <h3 className="text-zinc-300 font-medium mb-1">No payslips yet</h3>
             <p className="text-zinc-500 text-sm">Your payslips will appear once HR approves and finalizes payroll.</p>
+            {isHRAdmin && (
+              <p className="text-zinc-500 text-xs mt-2">
+                In admin workflows, draft payslips appear after payroll calculation. Open payroll runs to review status.
+              </p>
+            )}
+            {isHRAdmin && (
+              <div className="mt-4">
+                <Link
+                  href="/admin/runs"
+                  className="inline-flex items-center gap-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-2"
+                >
+                  Go to Payroll Runs
+                </Link>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

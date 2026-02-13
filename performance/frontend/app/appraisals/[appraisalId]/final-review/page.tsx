@@ -40,6 +40,7 @@ export default function FinalReviewPage() {
         if (!appraisal || !user) return false;
         return appraisal.manager?.userId === user?.id || appraisal.manager?.email === user?.email;
     }, [appraisal, user]);
+    const hasManagerAccess = isAssignedManager || (!!isManager && !isHRAdmin);
 
     const selfRating = appraisal?.selfAssessment?.overallSelfRating;
     const managerRating = appraisal?.managerReview?.overallManagerRating;
@@ -98,11 +99,11 @@ export default function FinalReviewPage() {
                     <Alert severity="error">Appraisal not found</Alert>
                 )}
 
-                {!isLoading && appraisal && !(isAssignedManager || isHRAdmin) && (
-                    <Alert severity="error">Only the assigned manager or HR can access final review.</Alert>
+                {!isLoading && appraisal && !(hasManagerAccess || isHRAdmin) && (
+                    <Alert severity="error">Only an authorized appraiser can access final review.</Alert>
                 )}
 
-                {!isLoading && appraisal && (isAssignedManager || isHRAdmin) && (
+                {!isLoading && appraisal && (hasManagerAccess || isHRAdmin) && (
                     <>
                         {appraisal.status !== 'final_review_pending' && (
                             <Alert severity="warning" sx={{ mb: 3 }}>

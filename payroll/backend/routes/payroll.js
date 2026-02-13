@@ -22,6 +22,16 @@ const getUserInfo = (req) => ({
   role: req.currentOrganization?.role || req.session?.user?.currentRole
 });
 
+const HR_ADMIN_ORG_ROLES = new Set(['owner', 'admin', 'hr_manager']);
+
+function getVisiblePayslipStatusesForRole(role) {
+  if (HR_ADMIN_ORG_ROLES.has(role)) {
+    // HR/Admin users can see their own draft-to-final lifecycle.
+    return ['draft', 'pending_approval', 'approved', 'exported', 'paid', 'revised'];
+  }
+  return ['approved', 'exported', 'paid'];
+}
+
 const getIdpBaseUrl = () =>
   process.env.IDP_URL ||
   process.env.IDP_ISSUER_URL ||
@@ -99,8 +109,9 @@ router.get('/profile/me', requireAuth, async (req, res) => {
  */
 router.get('/dashboard-stats', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const currentYear = new Date().getFullYear();
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     // Get profile for salary info
     const profile = await PayrollProfile.findOne({ userId, organizationId });
@@ -110,7 +121,7 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
       userId,
       organizationId,
       'payPeriod.year': currentYear,
-      status: { $in: ['approved', 'exported', 'paid'] }
+      status: { $in: visibleStatuses }
     }).sort({ 'payPeriod.month': -1 });
 
     // Calculate YTD
@@ -167,27 +178,81 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
 router.get('/admin/overview', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
 
     const [
-      activeEmployees,
-      profilesNeedingSetup,
+      activeProfiles,
       pendingCompensationRequests,
       pendingRuns,
       latestRun
     ] = await Promise.all([
-      PayrollProfile.countDocuments({ organizationId, isActive: true }),
-      PayrollProfile.countDocuments({ organizationId, isActive: true, basicSalary: { $lte: 0 } }),
+      PayrollProfile.find({ organizationId, isActive: true }, { userId: 1, basicSalary: 1 }).lean(),
       CompensationRequest.countDocuments({ organizationId, status: { $in: ['pending', 'approved_l1'] } }),
       PayrollRun.countDocuments({ organizationId, status: { $in: ['pending_review', 'pending_approval'] } }),
       PayrollRun.getLatestByOrganization(organizationId).lean()
     ]);
+
+    let activeEmployees = activeProfiles.length;
+    let profilesNeedingSetup = activeProfiles.filter((p) => Number(p.basicSalary || 0) <= 0).length;
+
+    const idpSync = {
+      source: 'payroll_profiles',
+      totalMembers: activeEmployees,
+      missingProfiles: 0,
+      syncedProfiles: activeProfiles.length,
+      failed: false
+    };
+
+    if (accessToken) {
+      try {
+        const idpData = await fetchIdpOrgMembers(accessToken, organizationId);
+        const idpMembers = Array.isArray(idpData?.members) ? idpData.members : [];
+        const memberIds = Array.from(new Set(
+          idpMembers
+            .map((m) => String(m?.sub || m?.id || '').trim())
+            .filter(Boolean)
+        ));
+
+        if (memberIds.length > 0) {
+          const profileByUserId = new Map(
+            activeProfiles.map((profile) => [String(profile.userId), profile])
+          );
+
+          let missingProfiles = 0;
+          let incompleteProfiles = 0;
+
+          for (const memberId of memberIds) {
+            const profile = profileByUserId.get(memberId);
+            if (!profile) {
+              missingProfiles += 1;
+              continue;
+            }
+            if (Number(profile.basicSalary || 0) <= 0) {
+              incompleteProfiles += 1;
+            }
+          }
+
+          activeEmployees = memberIds.length;
+          profilesNeedingSetup = missingProfiles + incompleteProfiles;
+          idpSync.source = 'identity_provider';
+          idpSync.totalMembers = memberIds.length;
+          idpSync.missingProfiles = missingProfiles;
+          idpSync.syncedProfiles = memberIds.length - missingProfiles;
+          idpSync.failed = false;
+        }
+      } catch (syncErr) {
+        console.warn('Admin overview IDP sync failed:', syncErr?.message || syncErr);
+        idpSync.failed = true;
+      }
+    }
 
     res.json({
       activeEmployees,
       profilesNeedingSetup,
       pendingCompensationRequests,
       pendingRuns,
-      latestRun
+      latestRun,
+      idpSync
     });
   } catch (err) {
     console.error('Admin Overview Error:', err);
@@ -493,13 +558,13 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
  */
 router.get('/my-payslips', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const { year, limit = 12 } = req.query;
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const query = { userId, organizationId };
     if (year) query['payPeriod.year'] = parseInt(year);
-    // Employees should only see approved/finalized payslips
-    query.status = { $in: ['approved', 'exported', 'paid'] };
+    query.status = { $in: visibleStatuses };
 
     const payslips = await Payslip.find(query)
       .populate('payrollRunId', 'runNumber payPeriod status')
@@ -519,13 +584,14 @@ router.get('/my-payslips', requireAuth, async (req, res) => {
  */
 router.get('/my-payslips/:id', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const payslip = await Payslip.findOne({
       _id: req.params.id,
       userId,
       organizationId,
-      status: { $in: ['approved', 'exported', 'paid'] }
+      status: { $in: visibleStatuses }
     }).populate('payrollRunId');
 
     if (!payslip) {
@@ -1638,14 +1704,15 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
  */
 router.get('/my-ytd', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const payslips = await Payslip.find({
       userId,
       organizationId,
       'payPeriod.year': parseInt(year),
-      status: { $in: ['approved', 'exported', 'paid'] }
+      status: { $in: visibleStatuses }
     });
 
     const ytd = {
