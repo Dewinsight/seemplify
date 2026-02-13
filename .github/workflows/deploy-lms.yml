@@ -52,6 +52,9 @@ jobs:
             
             echo "🗑️ Clearing cache..."
             ssh seemplify@4.180.153.209 "docker exec \$(docker ps -q -f name=lms_redis) redis-cli FLUSHALL"
+            
+            echo "🔄 Restarting Frappe to load new hooks..."
+            ssh seemplify@4.180.153.209 "CONTAINER=\$(docker ps -q -f name=lms_frappe); if [ -n \"\$CONTAINER\" ]; then docker restart \$CONTAINER; else echo 'No frappe container found'; fi"
           else
             echo "⚠️ No running frappe container found, deploying fresh stack..."
             ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
