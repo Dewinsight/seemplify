@@ -17,7 +17,7 @@ import { gradients } from '../../theme';
 import {
   Add, PlayArrow, Pause, CheckCircle, Settings, People, Assessment,
   Schedule, Edit, Delete, Visibility, Rocket, ArrowForward, Warning,
-  TrendingUp, Groups, Star
+  TrendingUp, Groups, Star, Insights
 } from '@mui/icons-material';
 
 interface AppraisalCycle {
@@ -47,6 +47,13 @@ interface AppraisalCycle {
     completedAppraisals: number;
     pendingSelfAssessment: number;
     pendingManagerReview: number;
+    pendingCalibration?: number;
+    pendingFinalReview?: number;
+    selfAssessmentSubmitted?: number;
+    managerReviewSubmitted?: number;
+    finalized?: number;
+    overdueAppraisals?: number;
+    averageRating?: number | null;
   };
 }
 
@@ -285,13 +292,21 @@ export default function AppraisalCyclesAdminPage() {
               {cycle.stats && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">Pending</Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     <Tooltip title="Pending Self-Assessment">
                       <Chip size="small" label={cycle.stats.pendingSelfAssessment} color="warning" />
                     </Tooltip>
                     <Tooltip title="Pending Manager Review">
                       <Chip size="small" label={cycle.stats.pendingManagerReview} color="info" />
                     </Tooltip>
+                    <Tooltip title="Pending Calibration">
+                      <Chip size="small" label={cycle.stats.pendingCalibration || 0} color="secondary" variant="outlined" />
+                    </Tooltip>
+                    {(cycle.stats.overdueAppraisals || 0) > 0 && (
+                      <Tooltip title="Overdue Appraisals">
+                        <Chip size="small" label={cycle.stats.overdueAppraisals} color="error" />
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
               )}
@@ -349,6 +364,26 @@ export default function AppraisalCyclesAdminPage() {
   const activeCycles = cycles.filter((c: AppraisalCycle) => c.status === 'active');
   const draftCycles = cycles.filter((c: AppraisalCycle) => c.status === 'draft');
   const completedCycles = cycles.filter((c: AppraisalCycle) => c.status === 'completed');
+  const aggregatedStats = cycles.reduce((acc: any, cycle: AppraisalCycle) => {
+    const stats = cycle.stats || {} as any;
+    acc.totalEmployees += stats.totalEmployees || 0;
+    acc.completedAppraisals += stats.completedAppraisals || 0;
+    acc.pendingSelfAssessment += stats.pendingSelfAssessment || 0;
+    acc.pendingManagerReview += stats.pendingManagerReview || 0;
+    acc.pendingCalibration += stats.pendingCalibration || 0;
+    acc.overdueAppraisals += stats.overdueAppraisals || 0;
+    return acc;
+  }, {
+    totalEmployees: 0,
+    completedAppraisals: 0,
+    pendingSelfAssessment: 0,
+    pendingManagerReview: 0,
+    pendingCalibration: 0,
+    overdueAppraisals: 0
+  });
+  const completionRate = aggregatedStats.totalEmployees > 0
+    ? Math.round((aggregatedStats.completedAppraisals / aggregatedStats.totalEmployees) * 100)
+    : 0;
 
   return (
     <Box>
@@ -362,13 +397,22 @@ export default function AppraisalCyclesAdminPage() {
             Create, launch, and manage performance appraisal cycles for your organization
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => router.push('/admin/appraisal-cycles/new')}
-        >
-          Create New Cycle
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Insights />}
+            onClick={() => router.push('/admin')}
+          >
+            View Analytics
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => router.push('/admin/appraisal-cycles/new')}
+          >
+            Create New Cycle
+          </Button>
+        </Box>
       </Box>
 
       {/* Summary Cards */}
@@ -423,13 +467,34 @@ export default function AppraisalCyclesAdminPage() {
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">Total Employees</Typography>
+                  <Typography variant="overline" color="text.secondary">Appraisals Launched</Typography>
                   <Typography variant="h3" fontWeight={700}>
-                    {activeCycles.reduce((sum: number, c: AppraisalCycle) => sum + (c.stats?.totalEmployees || 0), 0)}
+                    {aggregatedStats.totalEmployees}
                   </Typography>
                 </Box>
                 <People sx={{ fontSize: 40, color: 'primary.main', opacity: 0.7 }} />
               </Box>
+              <Typography variant="caption" color="text.secondary">
+                {aggregatedStats.completedAppraisals} completed ({completionRate}%)
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">Bottlenecks</Typography>
+                  <Typography variant="h3" fontWeight={700} color="warning.main">
+                    {aggregatedStats.pendingSelfAssessment + aggregatedStats.pendingManagerReview + aggregatedStats.pendingCalibration}
+                  </Typography>
+                </Box>
+                <TrendingUp sx={{ fontSize: 40, color: 'warning.main', opacity: 0.7 }} />
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                Self {aggregatedStats.pendingSelfAssessment} | Manager {aggregatedStats.pendingManagerReview} | Calibration {aggregatedStats.pendingCalibration}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>

@@ -80,7 +80,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     const admin: NavItem[] = isHRAdmin
       ? [
-        { name: 'Admin Panel', href: '/admin/appraisal-cycles', icon: Settings, section: 'admin' },
+        { name: 'Admin Panel', href: '/admin', icon: Settings, section: 'admin' },
       ]
       : [];
 
@@ -266,6 +266,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               >
                 {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
+
+              {isHRAdmin && (
+                <Link
+                  href="/admin"
+                  className={cn(
+                    "hidden lg:inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                    isDarkMode
+                      ? "bg-gradient-to-r from-indigo-500/80 to-cyan-500/80 text-white hover:from-indigo-400 hover:to-cyan-400"
+                      : "bg-gradient-to-r from-indigo-600 to-cyan-600 text-white hover:from-indigo-500 hover:to-cyan-500"
+                  )}
+                >
+                  <Settings className="h-4 w-4" />
+                  Admin Panel
+                </Link>
+              )}
 
               {/* Organization & Team Switcher */}
               <div className="hidden md:block relative">
@@ -470,7 +485,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         )}
                         {isHRAdmin && (
                           <Link
-                            href="/admin/appraisal-cycles"
+                            href="/admin"
                             className={cn(
                               "block px-4 py-2 text-sm transition-colors",
                               isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"

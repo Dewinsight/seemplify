@@ -516,6 +516,20 @@ export function useAlignedOkrs() {
 // ============== APPRAISAL HOOKS ==============
 
 /**
+ * Get HR admin analytics for appraisal management
+ */
+export function useAppraisalAdminAnalytics() {
+  const { data, error, isLoading, mutate } = useSWR('/appraisals/admin/analytics', fetcher, defaultConfig);
+
+  return {
+    analytics: data,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
+/**
  * Get appraisal cycles
  */
 export function useAppraisalCycles(filters?: { status?: string; year?: number }) {

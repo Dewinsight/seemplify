@@ -129,6 +129,140 @@ function getMissingSelfAssessmentSections(summary = {}) {
   return missing;
 }
 
+const APPRAISAL_COMPLETED_STATUSES = ['completed', 'employee_acknowledged'];
+const SELF_ASSESSMENT_PENDING_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
+const MANAGER_REVIEW_PENDING_STATUSES = ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'];
+const CALIBRATION_PENDING_STATUSES = ['calibration_pending', 'calibration_in_progress', 'manager_review_submitted'];
+const FINAL_REVIEW_PENDING_STATUSES = ['final_review_pending', 'discussion_completed', 'discussion_scheduled'];
+
+const DEFAULT_CYCLE_STATS = {
+  totalEmployees: 0,
+  completedAppraisals: 0,
+  pendingSelfAssessment: 0,
+  pendingManagerReview: 0,
+  pendingCalibration: 0,
+  pendingFinalReview: 0,
+  selfAssessmentSubmitted: 0,
+  managerReviewSubmitted: 0,
+  finalized: 0,
+  overdueAppraisals: 0,
+  averageRating: null
+};
+
+function toSafeNumber(value, fallback = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function roundTo(value, decimals = 2) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function mergeCycleStats(storedStats = {}, computedStats = {}) {
+  const merged = {
+    ...DEFAULT_CYCLE_STATS,
+    ...(storedStats || {}),
+    ...(computedStats || {})
+  };
+
+  merged.totalEmployees = toSafeNumber(merged.totalEmployees, 0);
+  merged.completedAppraisals = toSafeNumber(merged.completedAppraisals, 0);
+  merged.pendingSelfAssessment = toSafeNumber(merged.pendingSelfAssessment, 0);
+  merged.pendingManagerReview = toSafeNumber(merged.pendingManagerReview, 0);
+  merged.pendingCalibration = toSafeNumber(merged.pendingCalibration, 0);
+  merged.pendingFinalReview = toSafeNumber(merged.pendingFinalReview, 0);
+  merged.selfAssessmentSubmitted = toSafeNumber(merged.selfAssessmentSubmitted, 0);
+  merged.managerReviewSubmitted = toSafeNumber(merged.managerReviewSubmitted, 0);
+  merged.finalized = toSafeNumber(merged.finalized, 0);
+  merged.overdueAppraisals = toSafeNumber(merged.overdueAppraisals, 0);
+  merged.averageRating = roundTo(merged.averageRating, 2);
+
+  return merged;
+}
+
+async function buildCycleStatsMap(cycleIds = [], orgId = null) {
+  if (!Array.isArray(cycleIds) || cycleIds.length === 0) {
+    return new Map();
+  }
+
+  const normalizedCycleIds = cycleIds.filter(Boolean);
+  if (normalizedCycleIds.length === 0) {
+    return new Map();
+  }
+
+  const matchQuery = {
+    cycleId: { $in: normalizedCycleIds }
+  };
+  if (orgId) {
+    matchQuery.organizationId = orgId;
+  }
+
+  const statsRows = await Appraisal.aggregate([
+    { $match: matchQuery },
+    {
+      $group: {
+        _id: '$cycleId',
+        totalEmployees: { $sum: 1 },
+        completedAppraisals: {
+          $sum: {
+            $cond: [{ $in: ['$status', APPRAISAL_COMPLETED_STATUSES] }, 1, 0]
+          }
+        },
+        pendingSelfAssessment: {
+          $sum: {
+            $cond: [{ $in: ['$status', SELF_ASSESSMENT_PENDING_STATUSES] }, 1, 0]
+          }
+        },
+        pendingManagerReview: {
+          $sum: {
+            $cond: [{ $in: ['$status', MANAGER_REVIEW_PENDING_STATUSES] }, 1, 0]
+          }
+        },
+        pendingCalibration: {
+          $sum: {
+            $cond: [{ $in: ['$status', CALIBRATION_PENDING_STATUSES] }, 1, 0]
+          }
+        },
+        pendingFinalReview: {
+          $sum: {
+            $cond: [{ $in: ['$status', FINAL_REVIEW_PENDING_STATUSES] }, 1, 0]
+          }
+        },
+        selfAssessmentSubmitted: {
+          $sum: {
+            $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+          }
+        },
+        managerReviewSubmitted: {
+          $sum: {
+            $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+          }
+        },
+        finalized: {
+          $sum: {
+            $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+          }
+        },
+        overdueAppraisals: {
+          $sum: {
+            $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+          }
+        },
+        averageRating: { $avg: '$finalRating.overall' }
+      }
+    }
+  ]);
+
+  const statsMap = new Map();
+  for (const row of statsRows) {
+    const key = String(row._id);
+    statsMap.set(key, mergeCycleStats({}, row));
+  }
+
+  return statsMap;
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -188,8 +322,14 @@ router.get('/cycles', requireAuth, async (req, res) => {
       ];
     }
 
-    const cycles = await AppraisalCycle.find(query).sort({ createdAt: -1 });
-    res.json({ success: true, data: cycles });
+    const cycles = await AppraisalCycle.find(query).sort({ createdAt: -1 }).lean();
+    const cycleStatsMap = await buildCycleStatsMap(cycles.map((cycle) => cycle._id), orgId);
+    const enrichedCycles = cycles.map((cycle) => ({
+      ...cycle,
+      stats: mergeCycleStats(cycle.stats, cycleStatsMap.get(String(cycle._id)))
+    }));
+
+    res.json({ success: true, data: enrichedCycles });
   } catch (error) {
     console.error('Get cycles error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch appraisal cycles' });
@@ -251,11 +391,18 @@ router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
     if (req.params.cycleId === 'new') {
       return res.status(400).json({ success: false, error: 'Invalid cycle ID' });
     }
-    const cycle = await AppraisalCycle.findById(req.params.cycleId);
+    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const cycle = await AppraisalCycle.findById(req.params.cycleId).lean();
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });
     }
-    res.json({ success: true, data: cycle });
+    const cycleStatsMap = await buildCycleStatsMap([cycle._id], orgId);
+    const enrichedCycle = {
+      ...cycle,
+      stats: mergeCycleStats(cycle.stats, cycleStatsMap.get(String(cycle._id)))
+    };
+
+    res.json({ success: true, data: enrichedCycle });
   } catch (error) {
     console.error('Get cycle error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch cycle' });
@@ -718,6 +865,374 @@ router.get('/cycles/:cycleId/summary', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get cycle summary error:', error);
     res.status(500).json({ success: false, error: 'Failed to get cycle summary' });
+  }
+});
+
+/**
+ * GET /api/appraisals/admin/analytics
+ * Organization-wide appraisal analytics for HR Admin dashboard
+ */
+router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => {
+  try {
+    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const cycleQuery = orgId ? { organizationId: orgId } : {};
+    const appraisalQuery = orgId ? { organizationId: orgId } : {};
+
+    const trendStart = new Date();
+    trendStart.setMonth(trendStart.getMonth() - 11);
+    trendStart.setDate(1);
+    trendStart.setHours(0, 0, 0, 0);
+
+    const [
+      cycles,
+      totalAppraisals,
+      statusBreakdownRows,
+      workflowRows,
+      ratingRows,
+      ratingDistributionRows,
+      ratingGapRows,
+      teamRows,
+      trendRows,
+      uniqueEmployeesRows
+    ] = await Promise.all([
+      AppraisalCycle.find(cycleQuery)
+        .select('_id name status currentPhase periodStart periodEnd stats')
+        .sort({ createdAt: -1 })
+        .lean(),
+      Appraisal.countDocuments(appraisalQuery),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        {
+          $group: {
+            _id: null,
+            selfSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+              }
+            },
+            managerSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+              }
+            },
+            finalized: {
+              $sum: {
+                $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+              }
+            },
+            completed: {
+              $sum: {
+                $cond: [{ $in: ['$status', APPRAISAL_COMPLETED_STATUSES] }, 1, 0]
+              }
+            },
+            overdue: {
+              $sum: {
+                $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+              }
+            }
+          }
+        }
+      ]),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        {
+          $group: {
+            _id: null,
+            avgSelfRating: { $avg: '$selfAssessment.overallSelfRating' },
+            avgManagerRating: { $avg: '$managerReview.overallManagerRating' },
+            avgFinalRating: { $avg: '$finalRating.overall' }
+          }
+        }
+      ]),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        {
+          $project: {
+            ratingValue: {
+              $ifNull: [
+                '$finalRating.overall',
+                {
+                  $ifNull: [
+                    '$managerReview.overallManagerRating',
+                    '$selfAssessment.overallSelfRating'
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        { $match: { ratingValue: { $ne: null } } },
+        {
+          $group: {
+            _id: { $round: ['$ratingValue', 0] },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      Appraisal.aggregate([
+        {
+          $match: {
+            ...appraisalQuery,
+            'selfAssessment.overallSelfRating': { $ne: null },
+            'managerReview.overallManagerRating': { $ne: null }
+          }
+        },
+        {
+          $project: {
+            gap: {
+              $subtract: [
+                '$selfAssessment.overallSelfRating',
+                '$managerReview.overallManagerRating'
+              ]
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            avgGap: { $avg: '$gap' },
+            highDisagreements: {
+              $sum: {
+                $cond: [{ $gte: [{ $abs: '$gap' }, 2] }, 1, 0]
+              }
+            }
+          }
+        }
+      ]),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        {
+          $group: {
+            _id: {
+              $ifNull: ['$employee.teamName', 'Unassigned']
+            },
+            total: { $sum: 1 },
+            completed: {
+              $sum: {
+                $cond: [{ $in: ['$status', APPRAISAL_COMPLETED_STATUSES] }, 1, 0]
+              }
+            },
+            selfSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+              }
+            },
+            managerSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+              }
+            },
+            overdue: {
+              $sum: {
+                $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+              }
+            },
+            avgFinalRating: { $avg: '$finalRating.overall' }
+          }
+        },
+        { $sort: { total: -1 } },
+        { $limit: 10 }
+      ]),
+      Appraisal.aggregate([
+        {
+          $match: {
+            ...appraisalQuery,
+            createdAt: { $gte: trendStart }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              month: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }
+            },
+            launched: { $sum: 1 },
+            selfSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+              }
+            },
+            managerSubmitted: {
+              $sum: {
+                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+              }
+            },
+            completed: {
+              $sum: {
+                $cond: [{ $in: ['$status', APPRAISAL_COMPLETED_STATUSES] }, 1, 0]
+              }
+            }
+          }
+        },
+        { $sort: { '_id.month': 1 } }
+      ]),
+      Appraisal.aggregate([
+        { $match: appraisalQuery },
+        {
+          $project: {
+            employeeKey: {
+              $ifNull: ['$employee.userId', '$employee.email']
+            }
+          }
+        },
+        { $group: { _id: '$employeeKey' } },
+        { $count: 'count' }
+      ])
+    ]);
+
+    const cycleStatsMap = await buildCycleStatsMap(cycles.map((cycle) => cycle._id), orgId);
+
+    const workflow = workflowRows[0] || {
+      selfSubmitted: 0,
+      managerSubmitted: 0,
+      finalized: 0,
+      completed: 0,
+      overdue: 0
+    };
+
+    const ratings = ratingRows[0] || {
+      avgSelfRating: null,
+      avgManagerRating: null,
+      avgFinalRating: null
+    };
+    const ratingGap = ratingGapRows[0] || {
+      avgGap: null,
+      highDisagreements: 0
+    };
+
+    const ratingDistributionMap = new Map();
+    for (const row of ratingDistributionRows) {
+      ratingDistributionMap.set(Number(row._id), row.count || 0);
+    }
+    const ratingDistribution = [1, 2, 3, 4, 5].map((rating) => ({
+      rating,
+      count: ratingDistributionMap.get(rating) || 0
+    }));
+
+    const phaseBreakdownMap = cycles.reduce((acc, cycle) => {
+      const phase = cycle.currentPhase || 'draft';
+      acc[phase] = (acc[phase] || 0) + 1;
+      return acc;
+    }, {});
+    const phaseBreakdown = Object.entries(phaseBreakdownMap).map(([phase, count]) => ({ phase, count }));
+
+    const cycleHealth = cycles.map((cycle) => {
+      const stats = mergeCycleStats(cycle.stats, cycleStatsMap.get(String(cycle._id)));
+      const completionRate = stats.totalEmployees > 0
+        ? roundTo((stats.completedAppraisals / stats.totalEmployees) * 100, 1)
+        : 0;
+      const daysRemaining = cycle.periodEnd
+        ? Math.ceil((new Date(cycle.periodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      return {
+        cycleId: cycle._id,
+        name: cycle.name,
+        status: cycle.status,
+        currentPhase: cycle.currentPhase,
+        periodStart: cycle.periodStart,
+        periodEnd: cycle.periodEnd,
+        daysRemaining,
+        completionRate,
+        stats
+      };
+    });
+
+    const teamInsights = teamRows.map((team) => ({
+      teamName: team._id || 'Unassigned',
+      total: team.total || 0,
+      completed: team.completed || 0,
+      selfSubmitted: team.selfSubmitted || 0,
+      managerSubmitted: team.managerSubmitted || 0,
+      overdue: team.overdue || 0,
+      completionRate: team.total > 0 ? roundTo((team.completed / team.total) * 100, 1) : 0,
+      avgFinalRating: roundTo(team.avgFinalRating, 2)
+    }));
+
+    const trendMap = new Map(trendRows.map((row) => [row._id.month, row]));
+    const monthlyTrend = [];
+    const iter = new Date(trendStart);
+    const endMonth = new Date();
+    endMonth.setDate(1);
+    endMonth.setHours(0, 0, 0, 0);
+    while (iter <= endMonth) {
+      const monthKey = iter.toISOString().slice(0, 7);
+      const row = trendMap.get(monthKey);
+      monthlyTrend.push({
+        month: monthKey,
+        launched: row?.launched || 0,
+        selfSubmitted: row?.selfSubmitted || 0,
+        managerSubmitted: row?.managerSubmitted || 0,
+        completed: row?.completed || 0
+      });
+      iter.setMonth(iter.getMonth() + 1);
+    }
+
+    const uniqueEmployees = uniqueEmployeesRows[0]?.count || 0;
+    const cycleCounts = cycles.reduce((acc, cycle) => {
+      acc.total += 1;
+      if (cycle.status === 'active') acc.active += 1;
+      else if (cycle.status === 'draft') acc.draft += 1;
+      else if (cycle.status === 'completed') acc.completed += 1;
+      else if (cycle.status === 'cancelled') acc.cancelled += 1;
+      return acc;
+    }, { total: 0, active: 0, draft: 0, completed: 0, cancelled: 0 });
+
+    const overview = {
+      totalCycles: cycleCounts.total,
+      activeCycles: cycleCounts.active,
+      draftCycles: cycleCounts.draft,
+      completedCycles: cycleCounts.completed,
+      cancelledCycles: cycleCounts.cancelled,
+      totalAppraisals,
+      uniqueEmployees,
+      completedAppraisals: workflow.completed || 0,
+      overdueAppraisals: workflow.overdue || 0,
+      completionRate: totalAppraisals > 0
+        ? roundTo(((workflow.completed || 0) / totalAppraisals) * 100, 1)
+        : 0
+    };
+
+    res.json({
+      success: true,
+      data: {
+        overview,
+        workflow: {
+          selfSubmitted: workflow.selfSubmitted || 0,
+          managerSubmitted: workflow.managerSubmitted || 0,
+          finalized: workflow.finalized || 0,
+          completed: workflow.completed || 0,
+          overdue: workflow.overdue || 0,
+          selfCompletionRate: totalAppraisals > 0 ? roundTo(((workflow.selfSubmitted || 0) / totalAppraisals) * 100, 1) : 0,
+          managerCompletionRate: totalAppraisals > 0 ? roundTo(((workflow.managerSubmitted || 0) / totalAppraisals) * 100, 1) : 0,
+          finalizationRate: totalAppraisals > 0 ? roundTo(((workflow.finalized || 0) / totalAppraisals) * 100, 1) : 0,
+          statusBreakdown: statusBreakdownRows.map((row) => ({
+            status: row._id,
+            count: row.count
+          })),
+          phaseBreakdown
+        },
+        ratings: {
+          averageSelfRating: roundTo(ratings.avgSelfRating, 2),
+          averageManagerRating: roundTo(ratings.avgManagerRating, 2),
+          averageFinalRating: roundTo(ratings.avgFinalRating, 2),
+          averageGap: roundTo(ratingGap.avgGap, 2),
+          highDisagreements: ratingGap.highDisagreements || 0,
+          distribution: ratingDistribution
+        },
+        cycleHealth,
+        teamInsights,
+        monthlyTrend
+      }
+    });
+  } catch (error) {
+    console.error('Admin analytics error:', error);
+    res.status(500).json({ success: false, error: 'Failed to load admin analytics' });
   }
 });
 

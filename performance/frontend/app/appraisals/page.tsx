@@ -567,9 +567,9 @@ export default function AppraisalsPage() {
             <Button
               variant="contained"
               startIcon={<Add />}
-              onClick={() => router.push('/admin/appraisal-cycles')}
+              onClick={() => router.push('/admin')}
             >
-              Manage Cycles
+              Admin Panel
             </Button>
           )}
         </Box>

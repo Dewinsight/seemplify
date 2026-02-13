@@ -196,7 +196,7 @@ export default function DashboardPage() {
   }
 
   if (isHRAdmin) {
-    quickActions.push({ name: 'Cycle Admin', href: '/admin/appraisal-cycles', icon: Flag, color: 'from-rose-500 to-orange-500' });
+    quickActions.push({ name: 'Admin Panel', href: '/admin', icon: Flag, color: 'from-rose-500 to-orange-500' });
   }
 
   return (
@@ -459,7 +459,7 @@ export default function DashboardPage() {
                 HR Administration
               </h2>
               <Link
-                href="/admin/appraisal-cycles"
+                href="/admin"
                 className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors font-medium"
               >
                 Admin Panel →
