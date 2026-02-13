@@ -1,6 +1,6 @@
 import dotenv from 'dotenv'
 import { v2 as cloudinary } from 'cloudinary'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 
@@ -13,7 +13,93 @@ const ENV_PATH_CANDIDATES = [
   resolve(process.cwd(), 'Identityprovider/.env')
 ]
 
-const normalizeEnvValue = (value) => (typeof value === 'string' ? value.trim() : '')
+const normalizeEnvValue = (value) => {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+const firstNonEmpty = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeEnvValue(value)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+const parseEnvFile = (envPath) => {
+  try {
+    const raw = readFileSync(envPath, 'utf8')
+    return dotenv.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+const readCloudinaryEnvFromFiles = () => {
+  // Prefer the first non-empty value found in known .env locations.
+  const fileValues = {
+    cloudinaryUrl: '',
+    cloudName: '',
+    apiKey: '',
+    apiSecret: ''
+  }
+
+  for (const envPath of ENV_PATH_CANDIDATES) {
+    if (!existsSync(envPath)) continue
+    const parsed = parseEnvFile(envPath)
+
+    fileValues.cloudinaryUrl = firstNonEmpty(
+      fileValues.cloudinaryUrl,
+      parsed.CLOUDINARY_URL,
+      parsed.CLOUDINARY_URI
+    )
+    fileValues.cloudName = firstNonEmpty(
+      fileValues.cloudName,
+      parsed.CLOUDINARY_CLOUD_NAME,
+      parsed.CLOUD_NAME,
+      parsed.CLOUDINARY_CLOUD
+    )
+    fileValues.apiKey = firstNonEmpty(
+      fileValues.apiKey,
+      parsed.CLOUDINARY_API_KEY,
+      parsed.CLOUDINARY_KEY
+    )
+    fileValues.apiSecret = firstNonEmpty(
+      fileValues.apiSecret,
+      parsed.CLOUDINARY_API_SECRET,
+      parsed.CLOUDINARY_SECRET
+    )
+  }
+
+  return fileValues
+}
+
+const parseCloudinaryUrl = (cloudinaryUrl) => {
+  const normalizedUrl = normalizeEnvValue(cloudinaryUrl)
+  if (!normalizedUrl) return null
+
+  try {
+    const parsed = new URL(normalizedUrl)
+    if (parsed.protocol !== 'cloudinary:') return null
+
+    const cloudName = normalizeEnvValue(parsed.hostname)
+    const apiKey = normalizeEnvValue(decodeURIComponent(parsed.username || ''))
+    const apiSecret = normalizeEnvValue(decodeURIComponent(parsed.password || ''))
+
+    if (!cloudName || !apiKey || !apiSecret) return null
+    return { cloudName, apiKey, apiSecret }
+  } catch {
+    return null
+  }
+}
 
 const applyDotenvFromKnownLocations = () => {
   for (const envPath of ENV_PATH_CANDIDATES) {
@@ -22,12 +108,33 @@ const applyDotenvFromKnownLocations = () => {
   }
 }
 
-const readCloudinaryEnvSnapshot = () => ({
-  cloudinaryUrl: normalizeEnvValue(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_URI || ''),
-  cloudName: normalizeEnvValue(process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUD_NAME || process.env.CLOUDINARY_CLOUD || ''),
-  apiKey: normalizeEnvValue(process.env.CLOUDINARY_API_KEY || process.env.CLOUDINARY_KEY || ''),
-  apiSecret: normalizeEnvValue(process.env.CLOUDINARY_API_SECRET || process.env.CLOUDINARY_SECRET || '')
-})
+const readCloudinaryEnvSnapshot = () => {
+  const fileValues = readCloudinaryEnvFromFiles()
+
+  return {
+    cloudinaryUrl: firstNonEmpty(
+      process.env.CLOUDINARY_URL,
+      process.env.CLOUDINARY_URI,
+      fileValues.cloudinaryUrl
+    ),
+    cloudName: firstNonEmpty(
+      process.env.CLOUDINARY_CLOUD_NAME,
+      process.env.CLOUD_NAME,
+      process.env.CLOUDINARY_CLOUD,
+      fileValues.cloudName
+    ),
+    apiKey: firstNonEmpty(
+      process.env.CLOUDINARY_API_KEY,
+      process.env.CLOUDINARY_KEY,
+      fileValues.apiKey
+    ),
+    apiSecret: firstNonEmpty(
+      process.env.CLOUDINARY_API_SECRET,
+      process.env.CLOUDINARY_SECRET,
+      fileValues.apiSecret
+    )
+  }
+}
 
 applyDotenvFromKnownLocations()
 
@@ -57,11 +164,19 @@ const ensureCloudinaryConfigured = () => {
   const { cloudinaryUrl, cloudName, apiKey, apiSecret } = readCloudinaryEnv()
 
   if (cloudinaryUrl) {
-    // Ensure SDK picks up the normalized URL value.
-    process.env.CLOUDINARY_URL = cloudinaryUrl
-    // Instruct the SDK to (re)load configuration from CLOUDINARY_URL.
-    cloudinary.config(true)
-    return true
+    const parsedFromUrl = parseCloudinaryUrl(cloudinaryUrl)
+    if (parsedFromUrl) {
+      cloudinary.config({
+        cloud_name: parsedFromUrl.cloudName,
+        api_key: parsedFromUrl.apiKey,
+        api_secret: parsedFromUrl.apiSecret
+      })
+      process.env.CLOUDINARY_CLOUD_NAME = parsedFromUrl.cloudName
+      process.env.CLOUDINARY_API_KEY = parsedFromUrl.apiKey
+      process.env.CLOUDINARY_API_SECRET = parsedFromUrl.apiSecret
+      process.env.CLOUDINARY_URL = `cloudinary://${parsedFromUrl.apiKey}:${parsedFromUrl.apiSecret}@${parsedFromUrl.cloudName}`
+      return true
+    }
   }
 
   if (cloudName && apiKey && apiSecret) {
@@ -70,6 +185,10 @@ const ensureCloudinaryConfigured = () => {
       api_key: apiKey,
       api_secret: apiSecret
     })
+    process.env.CLOUDINARY_CLOUD_NAME = cloudName
+    process.env.CLOUDINARY_API_KEY = apiKey
+    process.env.CLOUDINARY_API_SECRET = apiSecret
+    process.env.CLOUDINARY_URL = `cloudinary://${apiKey}:${apiSecret}@${cloudName}`
     return true
   }
 
