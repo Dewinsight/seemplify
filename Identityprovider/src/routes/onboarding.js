@@ -5,6 +5,7 @@ import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
 import { OnboardingTemplate } from '../models/OnboardingTemplate.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
+import { OnboardingActivity } from '../models/OnboardingActivity.js'
 import { emailService } from '../services/emailService.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
@@ -156,6 +157,77 @@ const updateAssignmentStatus = (assignment) => {
   } else {
     assignment.status = 'pending'
   }
+}
+
+const buildActivityMetadata = (metadata = {}) => {
+  const normalized = {}
+
+  if (metadata.template) normalized.template = metadata.template
+  if (metadata.previousStatus) normalized.previousStatus = metadata.previousStatus
+  if (metadata.nextStatus) normalized.nextStatus = metadata.nextStatus
+  if (metadata.triggerItemId) normalized.triggerItemId = metadata.triggerItemId
+  if (metadata.triggerItemType) normalized.triggerItemType = metadata.triggerItemType
+  if (metadata.dueAt) normalized.dueAt = metadata.dueAt
+
+  return normalized
+}
+
+const logOnboardingActivity = async ({
+  organization,
+  assignment,
+  member,
+  actor,
+  type,
+  metadata = {}
+}) => {
+  try {
+    const payload = {
+      organization,
+      assignment,
+      member,
+      actor,
+      type,
+      metadata: buildActivityMetadata(metadata)
+    }
+
+    if (type === 'assignment_completed') {
+      await OnboardingActivity.findOneAndUpdate(
+        { assignment, type },
+        { $setOnInsert: payload },
+        { upsert: true }
+      )
+      return
+    }
+
+    await OnboardingActivity.create(payload)
+  } catch (error) {
+    console.error('Failed to record onboarding activity:', error)
+  }
+}
+
+const logAssignmentCompletionIfNeeded = async ({
+  assignment,
+  previousStatus,
+  actor,
+  triggerItem
+}) => {
+  if (!assignment) return
+  if (previousStatus === 'completed') return
+  if (assignment.status !== 'completed') return
+
+  await logOnboardingActivity({
+    organization: assignment.organization,
+    assignment: assignment._id,
+    member: assignment.member,
+    actor,
+    type: 'assignment_completed',
+    metadata: {
+      previousStatus,
+      nextStatus: assignment.status,
+      triggerItemId: triggerItem?._id,
+      triggerItemType: triggerItem?.type
+    }
+  })
 }
 
 const resolveEsignSigners = async (item, memberId, organization) => {
@@ -502,6 +574,19 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
       dueAt: dueAt ? new Date(dueAt) : undefined
     })
 
+    await logOnboardingActivity({
+      organization: req.params.orgId,
+      assignment: assignment._id,
+      member: memberId,
+      actor: req.user._id,
+      type: 'assignment_created',
+      metadata: {
+        template: template?._id,
+        nextStatus: assignment.status,
+        dueAt: assignment.dueAt
+      }
+    })
+
     const memberAccount = await Account.findById(memberId)
     if (memberAccount?.email) {
       const memberName = memberAccount.profile?.name || memberAccount.email.split('@')[0]
@@ -564,9 +649,22 @@ router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId/cancel'
       return res.json({ message: 'Assignment already cancelled', assignment })
     }
 
+    const previousStatus = assignment.status
     assignment.status = 'cancelled'
     assignment.cancelledAt = new Date()
     await assignment.save()
+
+    await logOnboardingActivity({
+      organization: assignment.organization,
+      assignment: assignment._id,
+      member: assignment.member,
+      actor: req.user._id,
+      type: 'assignment_cancelled',
+      metadata: {
+        previousStatus,
+        nextStatus: assignment.status
+      }
+    })
 
     res.json({ message: 'Assignment cancelled', assignment })
   } catch (error) {
@@ -618,8 +716,15 @@ router.post('/onboarding/:assignmentId/items/:itemId/form', requireAuth, async (
     item.data.form = req.body || {}
     item.status = 'completed'
 
+    const previousStatus = assignment.status
     updateAssignmentStatus(assignment)
     await assignment.save()
+    await logAssignmentCompletionIfNeeded({
+      assignment,
+      previousStatus,
+      actor: req.user._id,
+      triggerItem: item
+    })
 
     res.json({ message: 'Form submitted', assignment })
   } catch (error) {
@@ -673,8 +778,15 @@ router.post('/onboarding/:assignmentId/items/:itemId/upload',
       }
       item.status = 'completed'
 
+      const previousStatus = assignment.status
       updateAssignmentStatus(assignment)
       await assignment.save()
+      await logAssignmentCompletionIfNeeded({
+        assignment,
+        previousStatus,
+        actor: req.user._id,
+        triggerItem: item
+      })
 
       res.json({ message: 'File uploaded', assignment })
     } catch (error) {
@@ -903,8 +1015,15 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     item.data.esign.userAgent = req.headers['user-agent']
 
     item.status = allSigned ? 'completed' : 'submitted'
+    const previousStatus = assignment.status
     updateAssignmentStatus(assignment)
     await assignment.save()
+    await logAssignmentCompletionIfNeeded({
+      assignment,
+      previousStatus,
+      actor: req.user._id,
+      triggerItem: item
+    })
 
     if (previousSignedPublicId && previousSignedPublicId !== uploadResult.public_id) {
       try {

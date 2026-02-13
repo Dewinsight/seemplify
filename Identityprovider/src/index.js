@@ -12,6 +12,7 @@ import { Team } from './models/Team.js'
 import { Notification } from './models/Notification.js'
 import { OnboardingTemplate } from './models/OnboardingTemplate.js'
 import { OnboardingAssignment } from './models/OnboardingAssignment.js'
+import { OnboardingActivity } from './models/OnboardingActivity.js'
 import AppLaunchActivity from './models/AppLaunchActivity.js'
 import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
 import bcrypt from 'bcrypt'
@@ -3691,11 +3692,19 @@ const loadOnboardingAdminContext = async (req, organizationId) => {
     throw new Error('Admin, owner, or HR manager role required')
   }
 
-  const templates = await OnboardingTemplate.find({ organization: organizationId }).sort({ createdAt: -1 })
-  const assignments = await OnboardingAssignment.find({ organization: organizationId })
-    .populate('member', 'email profile.name')
-    .populate('createdBy', 'email profile.name')
-    .sort({ createdAt: -1 })
+  const [templates, assignments, onboardingActivities] = await Promise.all([
+    OnboardingTemplate.find({ organization: organizationId }).sort({ createdAt: -1 }),
+    OnboardingAssignment.find({ organization: organizationId })
+      .populate('member', 'email profile.name')
+      .populate('createdBy', 'email profile.name')
+      .populate('template', 'name')
+      .sort({ createdAt: -1 }),
+    OnboardingActivity.find({ organization: organizationId })
+      .populate('member', 'email profile.name')
+      .populate('actor', 'email profile.name')
+      .sort({ createdAt: -1 })
+      .limit(40)
+  ])
 
   const members = organization.members
     .filter(m => m.status === 'active')
@@ -3707,20 +3716,85 @@ const loadOnboardingAdminContext = async (req, organizationId) => {
     }))
 
   const onboardingStatusByMember = {}
+  const latestAssignmentByMember = {}
   assignments.forEach(assignment => {
     const memberId = assignment.member?._id?.toString() || assignment.member?.toString()
     if (!memberId) return
     if (!onboardingStatusByMember[memberId]) {
       onboardingStatusByMember[memberId] = assignment.status
+      latestAssignmentByMember[memberId] = assignment
     }
   })
+
+  const statusSortOrder = {
+    in_progress: 1,
+    pending: 2,
+    not_started: 3,
+    completed: 4,
+    cancelled: 5
+  }
+
+  const memberOnboardingRows = members
+    .map(m => {
+      const memberId = m.id?.toString ? m.id.toString() : String(m.id || '')
+      const latestAssignment = latestAssignmentByMember[memberId] || null
+      const onboardingStatus = onboardingStatusByMember[memberId] || 'not_started'
+
+      return {
+        ...m,
+        onboardingStatus,
+        latestAssignment: latestAssignment
+          ? {
+              id: latestAssignment._id,
+              status: latestAssignment.status,
+              createdAt: latestAssignment.createdAt,
+              dueAt: latestAssignment.dueAt,
+              completedAt: latestAssignment.completedAt,
+              templateName: latestAssignment.template?.name || null
+            }
+          : null
+      }
+    })
+    .sort((a, b) => {
+      const aOrder = statusSortOrder[a.onboardingStatus] || 999
+      const bOrder = statusSortOrder[b.onboardingStatus] || 999
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+
+  const memberOnboardingSummary = memberOnboardingRows.reduce((acc, row) => {
+    const status = row.onboardingStatus || 'not_started'
+    if (status === 'completed') acc.completedMembers += 1
+    else if (status === 'in_progress') acc.inProgressMembers += 1
+    else if (status === 'pending') acc.pendingMembers += 1
+    else if (status === 'cancelled') acc.cancelledMembers += 1
+    else acc.notStartedMembers += 1
+    return acc
+  }, {
+    totalMembers: memberOnboardingRows.length,
+    completedMembers: 0,
+    inProgressMembers: 0,
+    pendingMembers: 0,
+    notStartedMembers: 0,
+    cancelledMembers: 0,
+    assignedMembers: 0,
+    completionRate: 0
+  })
+
+  memberOnboardingSummary.assignedMembers = memberOnboardingSummary.totalMembers - memberOnboardingSummary.notStartedMembers
+  memberOnboardingSummary.completionRate = memberOnboardingSummary.totalMembers > 0
+    ? Math.round((memberOnboardingSummary.completedMembers / memberOnboardingSummary.totalMembers) * 100)
+    : 0
 
   return {
     organization,
     templates,
     assignments,
+    onboardingActivities,
     members,
     onboardingStatusByMember,
+    memberOnboardingRows,
+    memberOnboardingSummary,
     yourRole: member.role
   }
 }

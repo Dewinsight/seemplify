@@ -353,6 +353,9 @@
 
     <% const templateList = templates || []; %>
     <% const assignmentList = assignments || []; %>
+    <% const memberSummary = memberOnboardingSummary || {}; %>
+    <% const memberRows = memberOnboardingRows || []; %>
+    <% const onboardingActivityFeed = onboardingActivities || []; %>
     <% const defaultTemplate = templateList.find(template => template.isDefault); %>
     <% const activeAssignmentCount = assignmentList.filter(assignment => assignment.status !== 'completed' && assignment.status !== 'cancelled').length; %>
     <% const completedAssignmentCount = assignmentList.filter(assignment => assignment.status === 'completed').length; %>
@@ -379,6 +382,21 @@
           <div class="center-kpi-value"><%= completedAssignmentCount %></div>
           <div class="center-kpi-meta">Done assignments</div>
         </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Members Completed</div>
+          <div class="center-kpi-value"><%= memberSummary.completedMembers || 0 %></div>
+          <div class="center-kpi-meta">People fully onboarded</div>
+        </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Completion Rate</div>
+          <div class="center-kpi-value"><%= memberSummary.completionRate || 0 %>%</div>
+          <div class="center-kpi-meta">Across active members</div>
+        </div>
+        <div class="center-kpi">
+          <div class="center-kpi-label">Not Started</div>
+          <div class="center-kpi-value"><%= memberSummary.notStartedMembers || 0 %></div>
+          <div class="center-kpi-meta">No assignment yet</div>
+        </div>
       </div>
 
     <div class="card center-card-assign assign-onboarding-card">
@@ -391,6 +409,8 @@
         <button type="button" class="assign-tab-button active" data-assign-tab="assign" role="tab" aria-selected="true">Assign</button>
         <button type="button" class="assign-tab-button" data-assign-tab="templates" role="tab" aria-selected="false">Templates</button>
         <button type="button" class="assign-tab-button" data-assign-tab="recent" role="tab" aria-selected="false">Recent Assignments</button>
+        <button type="button" class="assign-tab-button" data-assign-tab="members" role="tab" aria-selected="false">Member Completion</button>
+        <button type="button" class="assign-tab-button" data-assign-tab="notifications" role="tab" aria-selected="false">Notifications</button>
       </div>
 
       <div class="assign-onboarding-tab-panel active" id="assign-tab-assign" data-assign-panel="assign" role="tabpanel" aria-label="New assignment">
@@ -757,6 +777,122 @@ Start Date|date|required"></textarea>
           <p>Assign onboarding to get started.</p>
         </div>
       <% } %>
+        </div>
+      </div>
+
+      <div class="assign-onboarding-tab-panel" id="assign-tab-members" data-assign-panel="members" role="tabpanel" aria-label="Member completion" hidden>
+        <div class="assignment-board">
+          <div class="center-card-header">
+            <h2>Member Completion Analytics</h2>
+            <p>Track who has completed onboarding and who still needs follow-up.</p>
+          </div>
+
+          <div class="center-kpis" aria-label="Member onboarding summary">
+            <div class="center-kpi">
+              <div class="center-kpi-label">Total Members</div>
+              <div class="center-kpi-value"><%= memberSummary.totalMembers || 0 %></div>
+              <div class="center-kpi-meta">Active in organization</div>
+            </div>
+            <div class="center-kpi">
+              <div class="center-kpi-label">Completed</div>
+              <div class="center-kpi-value"><%= memberSummary.completedMembers || 0 %></div>
+              <div class="center-kpi-meta">Fully onboarded</div>
+            </div>
+            <div class="center-kpi">
+              <div class="center-kpi-label">In Progress</div>
+              <div class="center-kpi-value"><%= memberSummary.inProgressMembers || 0 %></div>
+              <div class="center-kpi-meta">Started onboarding</div>
+            </div>
+            <div class="center-kpi">
+              <div class="center-kpi-label">Pending</div>
+              <div class="center-kpi-value"><%= memberSummary.pendingMembers || 0 %></div>
+              <div class="center-kpi-meta">Assigned, not started</div>
+            </div>
+          </div>
+
+          <% if (memberRows.length > 0) { %>
+            <div class="assignment-board-list" style="margin-top: 12px;">
+              <% memberRows.forEach(memberRow => { %>
+                <% const latestAssignment = memberRow.latestAssignment || null; %>
+                <article class="assignment-board-item">
+                  <div class="assignment-board-item-main">
+                    <div class="assignment-board-item-name"><%= memberRow.name %></div>
+                    <div class="assignment-board-item-meta">
+                      <%= memberRow.email %>
+                      <% if (latestAssignment?.createdAt) { %>
+                        - Last assigned <%= new Date(latestAssignment.createdAt).toLocaleDateString() %>
+                      <% } %>
+                      <% if (latestAssignment?.completedAt) { %>
+                        - Completed <%= new Date(latestAssignment.completedAt).toLocaleDateString() %>
+                      <% } %>
+                    </div>
+                  </div>
+                  <div class="assignment-board-item-actions">
+                    <span class="role-badge onboarding-badge onboarding-<%= memberRow.onboardingStatus %>"><%= memberRow.onboardingStatus.replace('_', ' ') %></span>
+                    <% if (latestAssignment?.id) { %>
+                      <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= latestAssignment.id %>">View latest</a>
+                    <% } %>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <div class="empty-state">
+              <h3>No members found</h3>
+              <p>Invite members to start tracking onboarding progress.</p>
+            </div>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="assign-onboarding-tab-panel" id="assign-tab-notifications" data-assign-panel="notifications" role="tabpanel" aria-label="Onboarding notifications" hidden>
+        <div class="assignment-board">
+          <div class="center-card-header">
+            <h2>Onboarding Notifications</h2>
+            <p>Admins can monitor assignment and completion activity in this feed.</p>
+          </div>
+
+          <% if (onboardingActivityFeed.length > 0) { %>
+            <div class="assignment-board-list">
+              <% onboardingActivityFeed.forEach(activity => { %>
+                <% const memberName = activity.member?.profile?.name || activity.member?.email || 'Member'; %>
+                <% const actorName = activity.actor?.profile?.name || activity.actor?.email || 'System'; %>
+                <% const activityAssignmentId = activity.assignment?._id || activity.assignment; %>
+                <% const eventLabel = activity.type === 'assignment_completed'
+                  ? 'Completed'
+                  : (activity.type === 'assignment_cancelled' ? 'Cancelled' : 'Assigned'); %>
+                <% const eventDescription = activity.type === 'assignment_completed'
+                  ? `${memberName} completed onboarding`
+                  : (activity.type === 'assignment_cancelled'
+                    ? `${actorName} cancelled onboarding for ${memberName}`
+                    : `${actorName} assigned onboarding to ${memberName}`); %>
+                <article class="assignment-board-item">
+                  <div class="assignment-board-item-main">
+                    <div class="assignment-board-item-name"><%= eventDescription %></div>
+                    <div class="assignment-board-item-meta">
+                      <%= new Date(activity.createdAt).toLocaleString() %>
+                      <% if (activity.metadata?.triggerItemType) { %>
+                        - Triggered by <%= activity.metadata.triggerItemType %> item
+                      <% } %>
+                    </div>
+                  </div>
+                  <div class="assignment-board-item-actions">
+                    <span class="role-badge onboarding-badge onboarding-<%= activity.type === 'assignment_completed' ? 'completed' : (activity.type === 'assignment_cancelled' ? 'cancelled' : 'pending') %>">
+                      <%= eventLabel %>
+                    </span>
+                    <% if (activityAssignmentId) { %>
+                      <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= activityAssignmentId %>">Open</a>
+                    <% } %>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <div class="empty-state">
+              <h3>No onboarding notifications yet</h3>
+              <p>Activity will appear here once onboarding is assigned or completed.</p>
+            </div>
+          <% } %>
         </div>
       </div>
     </div>
@@ -2662,7 +2798,9 @@ Start Date|date|required"></textarea>
       const panels = {
         assign: document.getElementById('assign-tab-assign'),
         templates: document.getElementById('assign-tab-templates'),
-        recent: document.getElementById('assign-tab-recent')
+        recent: document.getElementById('assign-tab-recent'),
+        members: document.getElementById('assign-tab-members'),
+        notifications: document.getElementById('assign-tab-notifications')
       };
 
       tabs.forEach(button => {
