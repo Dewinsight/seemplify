@@ -45,3 +45,6 @@ build/
 .netlify/
 nul
 
+# LMS restore - contains DB credentials
+lms/docker/site_config_restored.json
+
