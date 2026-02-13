@@ -24,6 +24,7 @@ const {
   logLeaveRequestRejected,
   logLeaveRequestCancelled,
 } = require('../services/auditService');
+const emailService = require('../services/emailService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -419,6 +420,12 @@ router.post('/',
     // Log audit
     await logLeaveRequestCreated(leaveRequest, req.user, req);
 
+    // Email notifications
+    if (policy.notifyApproversOnRequest && leaveRequest.assignedApprover?.userEmail) {
+      await emailService.sendLeaveRequestSubmittedToApprover(leaveRequest);
+    }
+    await emailService.sendLeaveRequestCreatedConfirmation(leaveRequest);
+
     res.status(201).json({
       success: true,
       request: leaveRequest,
@@ -512,6 +519,12 @@ router.post('/:id/approve',
     // Log audit
     await logLeaveRequestApproved(leaveRequest, req.user, req, comment);
 
+    // Email notifications
+    const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+    if (policy.notifyRequesterOnDecision) {
+      await emailService.sendLeaveRequestApproved(leaveRequest);
+    }
+
     res.json({
       success: true,
       request: leaveRequest,
@@ -583,6 +596,12 @@ router.post('/:id/reject',
 
     // Log audit
     await logLeaveRequestRejected(leaveRequest, req.user, req, reason);
+
+    // Email notifications
+    const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+    if (policy.notifyRequesterOnDecision) {
+      await emailService.sendLeaveRequestRejected(leaveRequest);
+    }
 
     res.json({
       success: true,
@@ -662,6 +681,12 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
   // Log audit
   await logLeaveRequestCancelled(leaveRequest, req.user, req, reason);
+
+  // Email notifications
+  const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+  if (policy.notifyApproversOnRequest && leaveRequest.assignedApprover?.userEmail) {
+    await emailService.sendLeaveRequestCancelled(leaveRequest);
+  }
 
   res.json({
     success: true,

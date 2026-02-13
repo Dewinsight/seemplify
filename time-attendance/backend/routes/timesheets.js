@@ -4,6 +4,7 @@ const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('
 const { Timesheet, TimeEntry, AttendancePolicy } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
 const emailService = require('../services/emailService');
+const { generateTimesheetExcelReport } = require('../services/timesheetExportService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -96,6 +97,54 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// Export a detailed timesheet report as Excel (.xlsx)
+router.get('/:id/export', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const organizationId = req.organizationId;
+
+        const timesheet = await Timesheet.findOne({
+            _id: req.params.id,
+            organizationId,
+        });
+
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        // Check access - user can export own, managers can export team's, HR can export all
+        if (timesheet.userId !== userId && !isHRAdmin(req)) {
+            if (!isLineManager(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+        }
+
+        // Refresh timesheet to ensure latest computed totals before export.
+        await refreshTimesheetEntries(timesheet);
+
+        const entries = await TimeEntry.find({
+            userId: timesheet.userId,
+            organizationId,
+            timestamp: { $gte: timesheet.startDate, $lte: timesheet.endDate },
+        }).sort({ timestamp: 1 }).lean();
+
+        const { buffer, filename } = await generateTimesheetExcelReport({
+            timesheet: timesheet.toObject(),
+            entries,
+            organizationName: req.organizationName,
+            exportedByName: req.user.name,
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length);
+        return res.send(buffer);
+    } catch (error) {
+        console.error('Export timesheet error:', error);
+        res.status(500).json({ error: 'Failed to export timesheet' });
+    }
+});
+
 // Submit timesheet for approval
 router.post('/:id/submit', async (req, res) => {
     try {
@@ -135,9 +184,7 @@ router.post('/:id/submit', async (req, res) => {
             timesheet.assignedApprover = {
                 userId: userTeam.managerId,
                 userName: userTeam.managerName,
-                // Email might not be available directly in team claim, rely on userId lookup or store what we have
-                // Ideally we'd have managerEmail too, but managerName is available
-                userEmail: null, // We'll need to fetch this or just store ID/Name
+                userEmail: userTeam.managerEmail || null,
                 teamId: userTeam.id,
                 assignedAt: new Date(),
             };
@@ -149,6 +196,16 @@ router.post('/:id/submit', async (req, res) => {
         timesheet.addAuditLog('submitted', userId, req.user.name, note);
 
         await timesheet.save();
+
+        // Notify assigned manager on submission (if policy allows and manager email is available)
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        if (policy?.notifications?.emailOnSubmission && timesheet.assignedApprover?.userEmail) {
+            await emailService.sendTimesheetSubmitted(
+                timesheet,
+                timesheet.assignedApprover.userEmail,
+                timesheet.assignedApprover.userName
+            );
+        }
 
         res.json({
             success: true,

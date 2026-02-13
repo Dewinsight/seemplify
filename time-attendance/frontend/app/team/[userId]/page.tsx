@@ -1,34 +1,51 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { attendanceApi, timesheetApi } from '@/lib/api';
-import { formatDuration } from '@/lib/utils';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
     ArrowLeft,
     Calendar,
     Clock,
-    User,
     Mail,
     Building2,
     BarChart3,
     AlertCircle,
     ChevronRight,
-    FileText
+    FileText,
+    MapPin,
+    Activity,
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import { cn, formatDuration } from '@/lib/utils';
+
+type TeamMemberDetail = {
+    userId: string;
+    userName: string;
+    userEmail?: string | null;
+    teamName?: string | null;
+    status: 'working' | 'on_break' | 'clocked_out' | 'not_clocked_in';
+    clockInAt?: string | null;
+    clockOutAt?: string | null;
+    clockInLocation?: any;
+    clockOutLocation?: any;
+    workedMinutesToday?: number;
+    lastActivity?: string | null;
+    lastActivityType?: string | null;
+};
 
 export default function MemberDetailPage() {
     const params = useParams();
     const router = useRouter();
     const userId = params.userId as string;
 
-    const [memberData, setMemberData] = useState<any>(null);
+    const [memberData, setMemberData] = useState<TeamMemberDetail | null>(null);
     const [summary, setSummary] = useState<any>(null);
     const [timesheets, setTimesheets] = useState<any[]>([]);
+    const [todayEntries, setTodayEntries] = useState<any[]>([]);
+    const [recentEntries, setRecentEntries] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,53 +60,17 @@ export default function MemberDetailPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch last 30 days summary for this user
-            const summaryPromise = attendanceApi.getSummary({
-                userId,
-                period: 'month'
-            });
-
-            // Fetch timesheets for this user
-            const timesheetsPromise = timesheetApi.list({
-                userId,
-                limit: 10
-            });
-
-            // We also need basic user info. 
-            // Since we don't have a specific "get user profile" API for managers, 
-            // we can reuse the team status list to find this user's details if we are a manager.
-            // OR we can assume the summary endpoint or a new endpoint provides it.
-            // For now, let's try to get it from the team list first as a fallback?
-            // Actually, let's fetch team status for ALL teams to find this user
-            const teamStatusPromise = attendanceApi.getTeamStatus();
-
-            const [summaryRes, timesheetsRes, teamStatusRes] = await Promise.all([
-                summaryPromise,
-                timesheetsPromise,
-                teamStatusPromise
+            const [detailRes, summaryRes, timesheetsRes] = await Promise.all([
+                attendanceApi.getTeamMemberDetail(userId),
+                attendanceApi.getSummary({ userId, period: 'month' }),
+                timesheetApi.list({ userId, limit: 10 }),
             ]);
 
-            setSummary(summaryRes);
-            setTimesheets(timesheetsRes.timesheets || timesheetsRes);
-
-            // Find user in team status
-            // Note: teamStatus returns an array of members
-            const foundMember = (teamStatusRes.team || teamStatusRes).find((m: any) => m.userId === userId || m.user?.id === userId);
-
-            if (foundMember) {
-                setMemberData(foundMember);
-            } else {
-                // Fallback if not currently clocked in or visible in simple team list?
-                // The team list usually shows all assigned members even if offline, so this should work 
-                // as long as the manager manages them.
-                // Construct basic info if possible or show error
-                setMemberData({
-                    userName: 'Team Member',
-                    userId: userId,
-                    status: 'unknown'
-                });
-            }
-
+            setMemberData(detailRes.member || null);
+            setTodayEntries(detailRes.todayEntries || []);
+            setRecentEntries(detailRes.recentEntries || []);
+            setSummary(summaryRes || null);
+            setTimesheets(timesheetsRes.timesheets || timesheetsRes || []);
         } catch (err: any) {
             console.error('Failed to fetch member details', err);
             setError(err.response?.data?.error || 'Failed to load member details');
@@ -98,14 +79,55 @@ export default function MemberDetailPage() {
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'working': return 'bg-emerald-500 text-emerald-500';
-            case 'on_break': return 'bg-amber-500 text-amber-500';
-            case 'clocked_out': return 'bg-zinc-500 text-zinc-500';
-            default: return 'bg-zinc-500 text-zinc-500';
-        }
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return '--';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return '--';
+        return format(parsed, 'MMM d, yyyy h:mm a');
     };
+
+    const formatDateOnly = (value?: string | null) => {
+        if (!value) return '--';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return '--';
+        return format(parsed, 'MMM d, yyyy');
+    };
+
+    const formatLocation = (location: any) => {
+        if (!location) return '--';
+        return (
+            location.address ||
+            location.displayName ||
+            [location.area, location.city, location.state].filter(Boolean).join(', ') ||
+            '--'
+        );
+    };
+
+    const statusBadgeClass = useMemo(() => {
+        switch (memberData?.status) {
+            case 'working':
+                return 'bg-emerald-500/10 text-emerald-400';
+            case 'on_break':
+                return 'bg-amber-500/10 text-amber-400';
+            case 'clocked_out':
+                return 'bg-zinc-700/30 text-zinc-300';
+            default:
+                return 'bg-zinc-800 text-zinc-400';
+        }
+    }, [memberData?.status]);
+
+    const statusText = useMemo(() => {
+        switch (memberData?.status) {
+            case 'working':
+                return 'Working';
+            case 'on_break':
+                return 'On Break';
+            case 'clocked_out':
+                return 'Clocked Out';
+            default:
+                return 'Not Clocked In';
+        }
+    }, [memberData?.status]);
 
     if (loading) {
         return (
@@ -140,7 +162,6 @@ export default function MemberDetailPage() {
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            {/* Header */}
             <div>
                 <button
                     onClick={() => router.back()}
@@ -157,13 +178,14 @@ export default function MemberDetailPage() {
                                 {(memberData?.userName || 'U').charAt(0)}
                             </div>
                             <div className={cn(
-                                "absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-zinc-900",
+                                'absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-zinc-900',
                                 memberData?.status === 'working' ? 'bg-emerald-500' :
                                     memberData?.status === 'on_break' ? 'bg-amber-500' : 'bg-zinc-600'
                             )} />
                         </div>
+
                         <div>
-                            <h1 className="text-3xl font-bold text-white mb-2">{memberData?.userName}</h1>
+                            <h1 className="text-3xl font-bold text-white mb-2">{memberData?.userName || 'Team Member'}</h1>
                             <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-400">
                                 {memberData?.userEmail && (
                                     <div className="flex items-center gap-1.5">
@@ -177,38 +199,27 @@ export default function MemberDetailPage() {
                                         <span>{memberData.teamName}</span>
                                     </div>
                                 )}
-                                <div className={cn(
-                                    "px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider",
-                                    memberData?.status === 'working' ? "bg-emerald-500/10 text-emerald-400" :
-                                        memberData?.status === 'on_break' ? "bg-amber-500/10 text-amber-500" :
-                                            "bg-zinc-800 text-zinc-400"
-                                )}>
-                                    {memberData?.status === 'working' ? 'Online' :
-                                        memberData?.status === 'on_break' ? 'On Break' : 'Offline'}
+                                <div className={cn('px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider', statusBadgeClass)}>
+                                    {statusText}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex gap-3">
-                        {memberData?.status === 'working' && memberData?.lastActivity && (
-                            <div className="text-right">
-                                <div className="text-xs text-zinc-500 uppercase tracking-widest mb-1">Clocked In At</div>
-                                <div className="text-2xl font-mono text-white">
-                                    {format(parseISO(memberData.lastActivity), 'HH:mm')}
-                                </div>
-                            </div>
-                        )}
+                    <div className="text-right">
+                        <div className="text-xs text-zinc-500 uppercase tracking-widest mb-1">Worked Today</div>
+                        <div className="text-2xl font-mono text-white">
+                            {formatDuration(memberData?.workedMinutesToday || 0)}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Stats Overview (Last 30 Days) */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
                     <div className="flex items-center gap-2 text-zinc-500 mb-2">
                         <Clock className="h-4 w-4" />
-                        <span className="text-xs font-medium uppercase tracking-wider">Total Hours</span>
+                        <span className="text-xs font-medium uppercase tracking-wider">Total Hours (30d)</span>
                     </div>
                     <div className="text-2xl font-bold text-white">
                         {summary?.summary?.totalHours || 0}
@@ -250,7 +261,71 @@ export default function MemberDetailPage() {
                 </div>
             </div>
 
-            {/* Recent Timesheets */}
+            <div className="bg-zinc-900/50 border border-white/5 rounded-xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800/60 flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-teal-500" />
+                    <h2 className="text-lg font-semibold text-white">Today Activity Timeline</h2>
+                </div>
+
+                {todayEntries.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">No activity recorded today.</div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[900px]">
+                            <thead className="bg-zinc-900/80 border-b border-zinc-800/60">
+                                <tr className="text-left text-xs uppercase tracking-wider text-zinc-500">
+                                    <th className="px-4 py-3">Time</th>
+                                    <th className="px-4 py-3">Entry Type</th>
+                                    <th className="px-4 py-3">Location</th>
+                                    <th className="px-4 py-3">Source</th>
+                                    <th className="px-4 py-3">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/60">
+                                {todayEntries.map((entry: any) => (
+                                    <tr key={entry._id}>
+                                        <td className="px-4 py-3 text-sm text-zinc-200 font-mono">{formatDateTime(entry.timestamp)}</td>
+                                        <td className="px-4 py-3 text-sm text-zinc-300 uppercase">{String(entry.entryType || '').replace('_', ' ')}</td>
+                                        <td className="px-4 py-3 text-sm text-zinc-300 max-w-[320px]">
+                                            <div className="flex items-start gap-1.5">
+                                                <MapPin className="h-3.5 w-3.5 text-zinc-500 mt-0.5 shrink-0" />
+                                                <span className="truncate">{formatLocation(entry.location)}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-zinc-400">{entry.source || '--'}</td>
+                                        <td className="px-4 py-3 text-sm text-zinc-400">{entry.note || '--'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-zinc-900/50 border border-white/5 rounded-xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800/60">
+                    <h2 className="text-lg font-semibold text-white">Recent Activity (Last 50 Entries)</h2>
+                </div>
+
+                {recentEntries.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">No recent activity found.</div>
+                ) : (
+                    <div className="divide-y divide-zinc-800/60">
+                        {recentEntries.map((entry: any) => (
+                            <div key={entry._id} className="px-5 py-3 flex flex-col md:flex-row md:items-center justify-between gap-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="text-xs uppercase tracking-wider px-2 py-1 rounded border border-zinc-700 text-zinc-400">
+                                        {String(entry.entryType || '').replace('_', ' ')}
+                                    </div>
+                                    <div className="text-sm text-zinc-300">{formatDateTime(entry.timestamp)}</div>
+                                </div>
+                                <div className="text-sm text-zinc-500 truncate max-w-[520px]">{formatLocation(entry.location)}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             <div>
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -282,7 +357,7 @@ export default function MemberDetailPage() {
                                                     Week {ts.weekNumber}, {ts.year}
                                                 </div>
                                                 <div className="text-sm text-zinc-500">
-                                                    {format(parseISO(ts.startDate), 'MMM d')} - {format(parseISO(ts.endDate), 'MMM d, yyyy')}
+                                                    {formatDateOnly(ts.startDate)} - {formatDateOnly(ts.endDate)}
                                                 </div>
                                             </div>
                                         </div>

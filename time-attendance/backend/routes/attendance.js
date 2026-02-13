@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
-const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
+const { TimeEntry, Timesheet } = require('../models');
 const { startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, format } = require('date-fns');
+
+const MANAGER_ROLES = ['line_manager', 'team_lead'];
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -77,126 +79,204 @@ router.get('/dashboard', async (req, res) => {
     }
 });
 
-// Get team attendance (for managers)
+// Get team attendance table dataset (for line managers/admins)
 router.get('/team', async (req, res) => {
     try {
         const organizationId = req.organizationId;
-        const { teamId } = req.query;
+        const selectedTeamId = req.query.teamId ? String(req.query.teamId) : null;
 
-        // Check if user is HR Admin or Line Manager
         if (!isHRAdmin(req) && !isLineManager(req)) {
             return res.status(403).json({ error: 'Manager access required' });
         }
 
-        // Determine which teams to fetch
-        let targetTeamIds = [];
-        if (teamId) {
-            // Verify access to specific team
-            if (!isHRAdmin(req)) {
-                const userTeams = req.user.teams || [];
-                const hasAccess = userTeams.some(t =>
-                    t.id === teamId &&
-                    t.organizationId === organizationId &&
-                    ['line_manager', 'team_lead'].includes(t.role)
-                );
+        const managedTeams = getManagedTeams(req, organizationId);
 
-                if (!hasAccess) {
-                    return res.status(403).json({ error: 'Access denied to this team' });
-                }
-            }
-            targetTeamIds = [teamId];
-        } else {
-            // Default: All teams managed by user
-            if (isHRAdmin(req)) {
-                // HR Admin sees all if no team specified? Or maybe we require team selection?
-                // For now, let's allow all for HR, or maybe partial matching
-                // Actually, finding ALL users in org is fine for HR
-                targetTeamIds = []; // Empty means all
-            } else {
-                const userTeams = req.user.teams || [];
-                targetTeamIds = userTeams
-                    .filter(t => t.organizationId === organizationId && ['line_manager', 'team_lead'].includes(t.role))
-                    .map(t => t.id);
+        if (!isHRAdmin(req) && managedTeams.length === 0) {
+            return res.json({
+                team: [],
+                summary: {
+                    total: 0,
+                    working: 0,
+                    onBreak: 0,
+                    clockedOut: 0,
+                    notClockedIn: 0,
+                },
+            });
+        }
 
-                if (targetTeamIds.length === 0) {
-                    return res.json({ team: [], summary: { total: 0, working: 0, onBreak: 0, clockedOut: 0 } });
-                }
+        if (selectedTeamId && !isHRAdmin(req)) {
+            const hasAccess = managedTeams.some(team => team.id === selectedTeamId);
+            if (!hasAccess) {
+                return res.status(403).json({ error: 'Access denied to this team' });
             }
         }
 
-        // Get all users who have clocked in today
+        const scopedTeams = selectedTeamId
+            ? managedTeams.filter(team => team.id === selectedTeamId)
+            : managedTeams;
+
+        const memberSeed = getManagedUserSeed(scopedTeams);
+        let targetUserIds = Array.from(memberSeed.keys());
+
         const todayStart = startOfDay(new Date());
         const todayEnd = endOfDay(new Date());
 
-        const matchStage = {
+        const todayQuery = {
             organizationId,
             timestamp: { $gte: todayStart, $lte: todayEnd },
         };
 
-        // Filter by team IDs if applicable
-        if (targetTeamIds.length > 0) {
-            matchStage.teamId = { $in: targetTeamIds };
+        if (selectedTeamId) {
+            todayQuery.teamId = selectedTeamId;
         }
 
-        const todayActivity = await TimeEntry.aggregate([
-            { $match: matchStage },
-            { $sort: { timestamp: -1 } },
-            {
-                $group: {
-                    _id: '$userId',
-                    userName: { $first: '$userName' },
-                    userEmail: { $first: '$userEmail' },
-                    teamName: { $first: '$teamName' },
-                    teamId: { $first: '$teamId' },
-                    lastEntry: { $first: '$$ROOT' },
-                    entries: { $push: '$$ROOT' },
+        if (targetUserIds.length > 0) {
+            todayQuery.userId = { $in: targetUserIds };
+        } else if (!isHRAdmin(req)) {
+            return res.json({
+                team: [],
+                summary: {
+                    total: 0,
+                    working: 0,
+                    onBreak: 0,
+                    clockedOut: 0,
+                    notClockedIn: 0,
                 },
-            },
-            {
-                $project: {
-                    userId: '$_id',
-                    userName: 1,
-                    userEmail: 1,
-                    teamName: 1,
-                    teamId: 1,
-                    lastEntry: 1,
-                    entryCount: { $size: '$entries' },
+            });
+        }
+
+        const todayEntries = await TimeEntry.find(todayQuery)
+            .sort({ userId: 1, timestamp: 1 })
+            .lean();
+
+        // HR admin fallback: if no direct reports are available from claims,
+        // roster is derived from users with activity today.
+        if (isHRAdmin(req) && targetUserIds.length === 0) {
+            for (const entry of todayEntries) {
+                if (!memberSeed.has(entry.userId)) {
+                    memberSeed.set(entry.userId, {
+                        userId: entry.userId,
+                        teamId: entry.teamId || null,
+                        teamName: entry.teamName || null,
+                    });
+                }
+            }
+            targetUserIds = Array.from(memberSeed.keys());
+        }
+
+        if (targetUserIds.length === 0) {
+            return res.json({
+                team: [],
+                summary: {
+                    total: 0,
+                    working: 0,
+                    onBreak: 0,
+                    clockedOut: 0,
+                    notClockedIn: 0,
                 },
-            },
+            });
+        }
+
+        const [latestEntryMap, latestTimesheetMap] = await Promise.all([
+            getLatestEntryMap(organizationId, targetUserIds),
+            getLatestTimesheetMap(organizationId, targetUserIds),
         ]);
 
-        // Determine current status for each user
-        const teamStatus = todayActivity.map(user => {
-            const isClockedIn = user.lastEntry.entryType === 'clock_in' ||
-                user.lastEntry.entryType === 'break_end';
-            const isOnBreak = user.lastEntry.entryType === 'break_start';
-
-            return {
-                userId: user.userId,
-                userName: user.userName,
-                userEmail: user.userEmail,
-                teamName: user.teamName,
-                status: isOnBreak ? 'on_break' : (isClockedIn ? 'working' : 'clocked_out'),
-                lastActivity: user.lastEntry.timestamp,
-                lastActivityType: user.lastEntry.entryType,
-            };
+        const entriesByUser = getEntriesByUser(todayEntries);
+        const rows = buildTeamRows({
+            targetUserIds,
+            memberSeed,
+            entriesByUser,
+            latestEntryMap,
+            latestTimesheetMap,
         });
 
-        // Count by status
         const summary = {
-            total: teamStatus.length,
-            working: teamStatus.filter(u => u.status === 'working').length,
-            onBreak: teamStatus.filter(u => u.status === 'on_break').length,
-            clockedOut: teamStatus.filter(u => u.status === 'clocked_out').length,
+            total: rows.length,
+            working: rows.filter(row => row.status === 'working').length,
+            onBreak: rows.filter(row => row.status === 'on_break').length,
+            clockedOut: rows.filter(row => row.status === 'clocked_out' || row.status === 'not_clocked_in').length,
+            notClockedIn: rows.filter(row => row.status === 'not_clocked_in').length,
         };
 
         res.json({
-            team: teamStatus,
+            team: rows,
             summary,
         });
     } catch (error) {
         console.error('Get team attendance error:', error);
         res.status(500).json({ error: 'Failed to get team attendance' });
+    }
+});
+
+// Get detailed attendance information for a single team member
+router.get('/team/:userId', async (req, res) => {
+    try {
+        const organizationId = req.organizationId;
+        const targetUserId = req.params.userId;
+
+        if (!isHRAdmin(req) && !isLineManager(req)) {
+            return res.status(403).json({ error: 'Manager access required' });
+        }
+
+        if (!isHRAdmin(req) && !canManagerAccessUser(req, targetUserId, organizationId)) {
+            return res.status(403).json({ error: 'Access denied to this team member' });
+        }
+
+        const todayStart = startOfDay(new Date());
+        const todayEnd = endOfDay(new Date());
+
+        const [todayEntries, recentEntries, latestTimesheet] = await Promise.all([
+            TimeEntry.find({
+                organizationId,
+                userId: targetUserId,
+                timestamp: { $gte: todayStart, $lte: todayEnd },
+            }).sort({ timestamp: 1 }).lean(),
+            TimeEntry.find({
+                organizationId,
+                userId: targetUserId,
+            }).sort({ timestamp: -1 }).limit(50).lean(),
+            Timesheet.findOne({
+                organizationId,
+                userId: targetUserId,
+            }).sort({ startDate: -1 }).lean(),
+        ]);
+
+        const managerTeam = getManagedTeams(req, organizationId).find(team =>
+            Array.isArray(team.directReports) && team.directReports.includes(targetUserId)
+        );
+
+        const member = buildTeamMemberRow({
+            userId: targetUserId,
+            seed: managerTeam
+                ? {
+                    userId: targetUserId,
+                    teamId: managerTeam.id || null,
+                    teamName: managerTeam.name || null,
+                }
+                : null,
+            todayEntries,
+            latestEntry: recentEntries[0] || null,
+            latestTimesheet,
+        });
+
+        const todaySummary = calculateTodayMemberStats(todayEntries);
+
+        res.json({
+            member,
+            todaySummary: {
+                workedMinutes: todaySummary.workedMinutes,
+                workedHours: todaySummary.workedHours,
+                breakMinutes: todaySummary.breakMinutes,
+                activeClockInAt: todaySummary.activeClockIn?.timestamp || null,
+                latestClockOutAt: todaySummary.latestClockOut?.timestamp || null,
+            },
+            todayEntries,
+            recentEntries,
+        });
+    } catch (error) {
+        console.error('Get team member detail error:', error);
+        res.status(500).json({ error: 'Failed to get team member detail' });
     }
 });
 
@@ -214,8 +294,10 @@ router.get('/summary', async (req, res) => {
             if (!isHRAdmin(req) && !isLineManager(req)) {
                 return res.status(403).json({ error: 'Access denied' });
             }
-            // Ideally we should check if this specific manager manages this user
-            // For now relying on the basic manager role check consistent with other endpoints
+
+            if (!isHRAdmin(req) && !canManagerAccessUser(req, userId, organizationId)) {
+                return res.status(403).json({ error: 'Access denied to this team member' });
+            }
         }
 
         let start, end;
@@ -276,6 +358,273 @@ router.get('/summary', async (req, res) => {
     }
 });
 
+function getManagedTeams(req, organizationId) {
+    return (req.user.teams || []).filter(team =>
+        team.organizationId === organizationId &&
+        MANAGER_ROLES.includes(team.role)
+    );
+}
+
+function getManagedUserSeed(teams) {
+    const seed = new Map();
+
+    for (const team of teams) {
+        const reports = Array.isArray(team.directReports) ? team.directReports : [];
+
+        for (const userId of reports) {
+            if (!seed.has(userId)) {
+                seed.set(userId, {
+                    userId,
+                    teamId: team.id || null,
+                    teamName: team.name || null,
+                });
+            }
+        }
+    }
+
+    return seed;
+}
+
+function canManagerAccessUser(req, userId, organizationId) {
+    if (isHRAdmin(req)) {
+        return true;
+    }
+
+    const managedTeams = getManagedTeams(req, organizationId);
+    return managedTeams.some(team =>
+        Array.isArray(team.directReports) && team.directReports.includes(userId)
+    );
+}
+
+function getEntriesByUser(entries) {
+    const entriesByUser = new Map();
+
+    for (const entry of entries) {
+        if (!entriesByUser.has(entry.userId)) {
+            entriesByUser.set(entry.userId, []);
+        }
+        entriesByUser.get(entry.userId).push(entry);
+    }
+
+    return entriesByUser;
+}
+
+async function getLatestEntryMap(organizationId, userIds) {
+    if (!userIds.length) {
+        return new Map();
+    }
+
+    const latestEntries = await TimeEntry.aggregate([
+        {
+            $match: {
+                organizationId,
+                userId: { $in: userIds },
+            },
+        },
+        { $sort: { timestamp: -1 } },
+        {
+            $group: {
+                _id: '$userId',
+                entry: { $first: '$$ROOT' },
+            },
+        },
+    ]);
+
+    return new Map(latestEntries.map(item => [item._id, item.entry]));
+}
+
+async function getLatestTimesheetMap(organizationId, userIds) {
+    if (!userIds.length) {
+        return new Map();
+    }
+
+    const latestTimesheets = await Timesheet.aggregate([
+        {
+            $match: {
+                organizationId,
+                userId: { $in: userIds },
+            },
+        },
+        { $sort: { startDate: -1 } },
+        {
+            $group: {
+                _id: '$userId',
+                timesheet: {
+                    $first: {
+                        userName: '$userName',
+                        userEmail: '$userEmail',
+                        teamId: '$teamId',
+                        teamName: '$teamName',
+                    },
+                },
+            },
+        },
+    ]);
+
+    return new Map(latestTimesheets.map(item => [item._id, item.timesheet]));
+}
+
+function buildTeamRows({ targetUserIds, memberSeed, entriesByUser, latestEntryMap, latestTimesheetMap }) {
+    const rows = targetUserIds.map(userId => {
+        const todayEntries = entriesByUser.get(userId) || [];
+        return buildTeamMemberRow({
+            userId,
+            seed: memberSeed.get(userId),
+            todayEntries,
+            latestEntry: latestEntryMap.get(userId) || null,
+            latestTimesheet: latestTimesheetMap.get(userId) || null,
+        });
+    });
+
+    const statusOrder = {
+        working: 0,
+        on_break: 1,
+        clocked_out: 2,
+        not_clocked_in: 3,
+    };
+
+    return rows.sort((a, b) => {
+        const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+        if (statusDiff !== 0) return statusDiff;
+
+        return (a.userName || '').localeCompare(b.userName || '');
+    });
+}
+
+function buildTeamMemberRow({ userId, seed, todayEntries, latestEntry, latestTimesheet }) {
+    const todayStats = calculateTodayMemberStats(todayEntries || []);
+    const latestReference = latestEntry || todayStats.lastEntryToday || null;
+
+    const userName =
+        latestReference?.userName ||
+        latestTimesheet?.userName ||
+        seed?.userName ||
+        `User ${String(userId).slice(0, 8)}`;
+
+    const userEmail =
+        latestReference?.userEmail ||
+        latestTimesheet?.userEmail ||
+        seed?.userEmail ||
+        null;
+
+    const teamId =
+        seed?.teamId ||
+        latestReference?.teamId ||
+        latestTimesheet?.teamId ||
+        null;
+
+    const teamName =
+        seed?.teamName ||
+        latestReference?.teamName ||
+        latestTimesheet?.teamName ||
+        null;
+
+    return {
+        userId,
+        userName,
+        userEmail,
+        teamId,
+        teamName,
+        status: deriveStatusFromEntry(latestReference),
+        clockInAt: todayStats.latestClockIn?.timestamp || null,
+        clockOutAt: todayStats.latestClockOut?.timestamp || null,
+        clockInLocation: todayStats.latestClockIn?.location || null,
+        clockOutLocation: todayStats.latestClockOut?.location || null,
+        workedMinutesToday: todayStats.workedMinutes,
+        workedHoursToday: todayStats.workedHours,
+        breakMinutesToday: todayStats.breakMinutes,
+        hasActiveSession: Boolean(todayStats.activeClockIn),
+        lastActivity: latestReference?.timestamp || null,
+        lastActivityType: latestReference?.entryType || null,
+    };
+}
+
+function calculateTodayMemberStats(entries) {
+    if (!entries || entries.length === 0) {
+        return {
+            workedMinutes: 0,
+            workedHours: 0,
+            breakMinutes: 0,
+            latestClockIn: null,
+            latestClockOut: null,
+            activeClockIn: null,
+            lastEntryToday: null,
+        };
+    }
+
+    const sortedEntries = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    let activeClockIn = null;
+    let latestClockIn = null;
+    let latestClockOut = null;
+    let breakStart = null;
+    let totalMinutes = 0;
+    let breakMinutes = 0;
+
+    for (const entry of sortedEntries) {
+        switch (entry.entryType) {
+            case 'clock_in':
+                activeClockIn = entry;
+                latestClockIn = entry;
+                breakStart = null;
+                break;
+            case 'break_start':
+                if (activeClockIn) {
+                    breakStart = new Date(entry.timestamp);
+                }
+                break;
+            case 'break_end':
+                if (breakStart) {
+                    breakMinutes += (new Date(entry.timestamp) - breakStart) / (1000 * 60);
+                    breakStart = null;
+                }
+                break;
+            case 'clock_out':
+                if (activeClockIn) {
+                    totalMinutes += (new Date(entry.timestamp) - new Date(activeClockIn.timestamp)) / (1000 * 60);
+                    activeClockIn = null;
+                }
+                latestClockOut = entry;
+                breakStart = null;
+                break;
+            default:
+                break;
+        }
+    }
+
+    const now = Date.now();
+
+    if (activeClockIn) {
+        totalMinutes += (now - new Date(activeClockIn.timestamp).getTime()) / (1000 * 60);
+    }
+
+    if (breakStart) {
+        breakMinutes += (now - breakStart.getTime()) / (1000 * 60);
+    }
+
+    const workedMinutes = Math.max(0, totalMinutes - breakMinutes);
+
+    return {
+        workedMinutes: Math.round(workedMinutes),
+        workedHours: parseFloat((workedMinutes / 60).toFixed(2)),
+        breakMinutes: Math.round(breakMinutes),
+        latestClockIn,
+        latestClockOut,
+        activeClockIn,
+        lastEntryToday: sortedEntries[sortedEntries.length - 1] || null,
+    };
+}
+
+function deriveStatusFromEntry(entry) {
+    if (!entry) return 'not_clocked_in';
+
+    if (entry.entryType === 'break_start') return 'on_break';
+    if (entry.entryType === 'clock_in' || entry.entryType === 'break_end') return 'working';
+    if (entry.entryType === 'clock_out') return 'clocked_out';
+
+    return 'clocked_out';
+}
+
 // Helper function to calculate day stats from entries
 function calculateDayStats(entries) {
     let clockInTime = null;
@@ -302,6 +651,8 @@ function calculateDayStats(entries) {
                     breakMinutes += (entry.timestamp - breakStartTime) / (1000 * 60);
                     breakStartTime = null;
                 }
+                break;
+            default:
                 break;
         }
     }
@@ -341,7 +692,7 @@ function calculateWeekStats(entries) {
     let totalHours = 0;
     let daysWorked = 0;
 
-    for (const [date, dayEntries] of Object.entries(dayStats)) {
+    for (const [, dayEntries] of Object.entries(dayStats)) {
         const stats = calculateDayStats(dayEntries);
         totalHours += stats.hoursWorked;
         if (stats.hoursWorked > 0) daysWorked++;

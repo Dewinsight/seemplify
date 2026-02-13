@@ -13,6 +13,7 @@ const { initializeOIDC } = require('./config/oidc');
 const { startAutoClockOutScheduler } = require('./services/autoClockOutService');
 const { initializeEmailService } = require('./services/emailService');
 const { startReminderScheduler } = require('./services/reminderService');
+const { startManagerReportScheduler } = require('./services/managerReportService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -120,6 +121,9 @@ const startServer = async () => {
             
             // Start reminder scheduler
             startReminderScheduler();
+
+            // Start manager report scheduler
+            startManagerReportScheduler();
         });
     } catch (error) {
         console.error('Failed to start server:', error);

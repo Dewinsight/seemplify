@@ -1,26 +1,64 @@
 import dotenv from 'dotenv'
 import { v2 as cloudinary } from 'cloudinary'
+import { existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 
-// Load Identityprovider/.env regardless of where the process was started from.
-// This fixes cases where the service is launched from the repo root, which would
-// otherwise make dotenv look for `<repo>/.env` instead of `Identityprovider/.env`.
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-dotenv.config({ path: resolve(__dirname, '../../.env') })
+const ENV_PATH_CANDIDATES = [
+  resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../../../.env'),
+  resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), 'Identityprovider/.env')
+]
 
-const readCloudinaryEnv = () => ({
-  cloudinaryUrl: process.env.CLOUDINARY_URL,
-  cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-  apiKey: process.env.CLOUDINARY_API_KEY,
-  apiSecret: process.env.CLOUDINARY_API_SECRET
+const normalizeEnvValue = (value) => (typeof value === 'string' ? value.trim() : '')
+
+const applyDotenvFromKnownLocations = () => {
+  for (const envPath of ENV_PATH_CANDIDATES) {
+    if (!existsSync(envPath)) continue
+    dotenv.config({ path: envPath, override: false })
+  }
+}
+
+const readCloudinaryEnvSnapshot = () => ({
+  cloudinaryUrl: normalizeEnvValue(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_URI || ''),
+  cloudName: normalizeEnvValue(process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUD_NAME || process.env.CLOUDINARY_CLOUD || ''),
+  apiKey: normalizeEnvValue(process.env.CLOUDINARY_API_KEY || process.env.CLOUDINARY_KEY || ''),
+  apiSecret: normalizeEnvValue(process.env.CLOUDINARY_API_SECRET || process.env.CLOUDINARY_SECRET || '')
 })
+
+applyDotenvFromKnownLocations()
+
+const readCloudinaryEnv = () => {
+  let env = readCloudinaryEnvSnapshot()
+
+  if (!env.cloudinaryUrl && !(env.cloudName && env.apiKey && env.apiSecret)) {
+    // Try loading .env again at runtime in case env values were added after boot
+    // or the process started from a different working directory/layout.
+    applyDotenvFromKnownLocations()
+    env = readCloudinaryEnvSnapshot()
+  }
+
+  return env
+}
+
+const hasRuntimeCloudinaryConfig = () => {
+  const config = cloudinary.config()
+  return !!(
+    normalizeEnvValue(config.cloud_name) &&
+    normalizeEnvValue(config.api_key) &&
+    normalizeEnvValue(config.api_secret)
+  )
+}
 
 const ensureCloudinaryConfigured = () => {
   const { cloudinaryUrl, cloudName, apiKey, apiSecret } = readCloudinaryEnv()
 
   if (cloudinaryUrl) {
+    // Ensure SDK picks up the normalized URL value.
+    process.env.CLOUDINARY_URL = cloudinaryUrl
     // Instruct the SDK to (re)load configuration from CLOUDINARY_URL.
     cloudinary.config(true)
     return true
@@ -35,13 +73,10 @@ const ensureCloudinaryConfigured = () => {
     return true
   }
 
-  return false
+  return hasRuntimeCloudinaryConfig()
 }
 
-export const isCloudinaryConfigured = () => {
-  const { cloudinaryUrl, cloudName, apiKey, apiSecret } = readCloudinaryEnv()
-  return !!(cloudinaryUrl || (cloudName && apiKey && apiSecret))
-}
+export const isCloudinaryConfigured = () => ensureCloudinaryConfigured()
 
 export const uploadBufferToCloudinary = ({
   buffer,
@@ -89,5 +124,5 @@ export const deleteFromCloudinary = async ({ publicId, resourceType = 'raw' }) =
 export default cloudinary
 
 if (!isCloudinaryConfigured()) {
-  console.warn('?? Cloudinary is not fully configured. Uploads will fail until env vars are set.')
+  console.warn('Cloudinary is not fully configured. Uploads will fail until env vars are set.')
 }

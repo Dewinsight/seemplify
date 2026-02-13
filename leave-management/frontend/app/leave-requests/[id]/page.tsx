@@ -140,7 +140,7 @@ export default function LeaveRequestDetailPage() {
         <div className="w-full">
           <Link
             href="/leave-requests"
-            className="inline-flex items-center text-sm text-slate-600 hover:text-slate-900 mb-4 font-medium"
+            className="inline-flex items-center text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 mb-4 font-medium"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to Requests
@@ -259,7 +259,7 @@ export default function LeaveRequestDetailPage() {
                     {formatDate(request.approvedBy.approvedAt)}
                   </p>
                   {request.approvedBy.comment && (
-                    <p className="mt-2 text-green-800">{request.approvedBy.comment}</p>
+                    <p className="mt-2 text-green-800 dark:text-green-200">{request.approvedBy.comment}</p>
                   )}
                 </div>
               </div>
@@ -276,7 +276,7 @@ export default function LeaveRequestDetailPage() {
                     by {request.rejectedBy.userName} on{' '}
                     {formatDate(request.rejectedBy.rejectedAt)}
                   </p>
-                  <p className="mt-2 text-red-800">{request.rejectedBy.rejectionReason}</p>
+                  <p className="mt-2 text-red-800 dark:text-red-200">{request.rejectedBy.rejectionReason}</p>
                 </div>
               </div>
             </div>
@@ -303,23 +303,23 @@ export default function LeaveRequestDetailPage() {
           {request.auditLog && request.auditLog.length > 0 && (
             <div className="p-6 border-b border-border dark:border-slate-200/50">
               <div className="flex items-center mb-4">
-                <History className="h-5 w-5 text-slate-500 mr-2" />
-                <h3 className="font-semibold text-slate-900">Activity History</h3>
+                <History className="h-5 w-5 text-slate-500 dark:text-slate-400 mr-2" />
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100">Activity History</h3>
               </div>
               <div className="space-y-3">
                 {request.auditLog.map((entry, index) => (
                   <div key={index} className="flex items-start text-sm">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/50 dark:bg-slate-600 mt-2 mr-3" />
+                    <div className="w-2 h-2 rounded-full bg-muted-foreground/50 dark:bg-slate-500 mt-2 mr-3" />
                     <div>
                       <p className="text-foreground dark:text-slate-200">
                         <span className="font-medium capitalize">{entry.action}</span>
                         {entry.performedByName && ` by ${entry.performedByName}`}
                       </p>
-                      <p className="text-muted-foreground dark:text-slate-500">
+                      <p className="text-muted-foreground dark:text-slate-400">
                         {formatDate(entry.performedAt, 'MMM dd, yyyy HH:mm')}
                       </p>
                       {entry.details && (
-                        <p className="text-foreground/80 dark:text-slate-400 mt-1">{entry.details}</p>
+                        <p className="text-foreground/80 dark:text-slate-300 mt-1">{entry.details}</p>
                       )}
                     </div>
                   </div>
@@ -336,7 +336,7 @@ export default function LeaveRequestDetailPage() {
                   variant="outline"
                   onClick={handleCancel}
                   disabled={actionLoading}
-                  className="rounded-xl border-red-300 text-red-700 hover:bg-red-50"
+                  className="rounded-xl border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
                 >
                   Cancel Request
                 </Button>
@@ -348,7 +348,7 @@ export default function LeaveRequestDetailPage() {
                     variant="outline"
                     onClick={() => setShowRejectDialog(true)}
                     disabled={actionLoading}
-                    className="rounded-xl border-red-300 text-red-700 hover:bg-red-50"
+                    className="rounded-xl border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
                   >
                     Reject
                   </Button>

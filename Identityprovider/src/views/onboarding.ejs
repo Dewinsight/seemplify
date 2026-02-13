@@ -662,14 +662,13 @@
     function resizeSignatureCanvas() {
       const ratio = window.devicePixelRatio || 1;
       const rect = signatureCanvas.getBoundingClientRect();
-      signatureCanvas.width = rect.width * ratio;
-      signatureCanvas.height = rect.height * ratio;
+      signatureCanvas.width = Math.max(1, Math.round(rect.width * ratio));
+      signatureCanvas.height = Math.max(1, Math.round(rect.height * ratio));
       signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
-      signatureCtx.scale(ratio, ratio);
       signatureCtx.lineCap = 'round';
       signatureCtx.lineJoin = 'round';
       signatureCtx.strokeStyle = '#09090b';
-      signatureCtx.lineWidth = 2;
+      signatureCtx.lineWidth = 2 * (signatureCanvas.width / Math.max(rect.width, 1));
     }
 
     function clearSignature(reset = true, preserveStored = false) {
@@ -692,9 +691,7 @@
       const image = new Image();
       image.onload = () => {
         clearSignature(false);
-        const rect = signatureCanvas.getBoundingClientRect();
-        const ratio = window.devicePixelRatio || 1;
-        signatureCtx.drawImage(image, 0, 0, rect.width, rect.height);
+        signatureCtx.drawImage(image, 0, 0, signatureCanvas.width, signatureCanvas.height);
         hasSignature = true;
         signaturePreviewUrl = dataUrl;
         renderEsignOverlay();
@@ -926,9 +923,11 @@
 
     function getCanvasPoint(event) {
       const rect = signatureCanvas.getBoundingClientRect();
+      const scaleX = signatureCanvas.width / Math.max(rect.width, 1);
+      const scaleY = signatureCanvas.height / Math.max(rect.height, 1);
       return {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top
+        x: clampNumber((event.clientX - rect.left) * scaleX, 0, signatureCanvas.width),
+        y: clampNumber((event.clientY - rect.top) * scaleY, 0, signatureCanvas.height)
       };
     }
 

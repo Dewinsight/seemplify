@@ -10,6 +10,7 @@ import {
     ArrowLeft,
     Clock,
     Send,
+    Download,
     AlertTriangle,
     FileText,
     History,
@@ -63,6 +64,7 @@ export default function TimesheetDetailPage() {
     const [timesheet, setTimesheet] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [exporting, setExporting] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -163,6 +165,32 @@ export default function TimesheetDetailPage() {
         }
     }
 
+    const handleExportExcel = async () => {
+        const timesheetId = timesheet?._id || timesheet?.id || id as string;
+        if (!timesheetId) {
+            alert('Unable to export: timesheet ID not found');
+            return;
+        }
+
+        try {
+            setExporting(true);
+            const { blob, filename } = await timesheetApi.exportExcel(timesheetId);
+            const fileUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = fileUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(fileUrl);
+        } catch (error) {
+            console.error('Failed to export timesheet', error);
+            alert('Failed to export timesheet. Please try again.');
+        } finally {
+            setExporting(false);
+        }
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -216,6 +244,15 @@ export default function TimesheetDetailPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={exporting}
+                        className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg font-medium transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Download className="h-4 w-4" />
+                        {exporting ? 'Exporting...' : 'Export Excel'}
+                    </button>
+
                     {(!timesheet.status || timesheet.status === 'draft') && (
                         <button
                             onClick={handleSubmit}
