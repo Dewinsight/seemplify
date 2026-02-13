@@ -849,9 +849,10 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     }
 
     const baseFileName = (document.fileName || 'signed-document').replace(/\.[^/.]+$/, '')
+    const signedFileName = `${baseFileName}-signed-${Date.now()}.pdf`
     const uploadResult = await uploadBufferToCloudinary({
       buffer: Buffer.from(signedPdfBytes),
-      filename: `${baseFileName}-signed-${Date.now()}.pdf`,
+      filename: signedFileName,
       folder: `seemplify/onboarding/${assignment.organization.toString()}/${assignment.member.toString()}`,
       resourceType: 'raw'
     })
@@ -861,6 +862,8 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     item.data.esign.originalUrl = item.data.esign.originalUrl || document.url
     item.data.esign.signedUrl = uploadResult.secure_url
     item.data.esign.signedPublicId = uploadResult.public_id
+    item.data.esign.signedFileName = signedFileName
+    item.data.esign.signedMimeType = 'application/pdf'
 
     const signersData = Array.isArray(item.data.esign.signers)
       ? item.data.esign.signers

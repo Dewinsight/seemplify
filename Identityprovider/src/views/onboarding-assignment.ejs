@@ -166,7 +166,7 @@
                         <span style="color: var(--muted); font-size: 12px;">(<%= formatBytes(uploadData.size) %>)</span>
                       <% } %>
                       <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?back=<%= encodeURIComponent('/organizations/' + organization._id + '/onboarding/assignments/' + assignment._id) %>" target="_blank" rel="noreferrer">View</a>
-                      <a class="btn btn-secondary btn-sm" href="<%= uploadData.url %>" target="_blank" rel="noreferrer">Open/Download</a>
+                      <a class="btn btn-primary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document/download" rel="noreferrer">Download</a>
                     </div>
                     <% if (uploadData.uploadedAt) { %>
                       <div style="margin-top: 6px; color: var(--muted); font-size: 12px;">
@@ -272,4 +272,3 @@
 </body>
 
 </html>
-

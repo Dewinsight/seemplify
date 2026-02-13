@@ -4234,48 +4234,192 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
   }
 })
 
+const sanitizeDownloadFileName = (value, fallback = 'document') => {
+  const raw = (value || '').toString().trim()
+  const safe = raw
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return safe || fallback
+}
+
+const ensureFileExtension = (fileName, extension) => {
+  const safeFileName = sanitizeDownloadFileName(fileName)
+  if (!extension) return safeFileName
+
+  const normalizedExtension = extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`
+  if (safeFileName.toLowerCase().endsWith(normalizedExtension)) {
+    return safeFileName
+  }
+
+  const base = safeFileName.replace(/\.[^/.]+$/, '')
+  return `${base}${normalizedExtension}`
+}
+
+const normalizeMimeType = (mimeType) => (mimeType || '').toString().toLowerCase().split(';')[0].trim()
+
+const inferMimeTypeFromFileName = (fileName) => {
+  const lower = (fileName || '').toString().toLowerCase()
+  if (lower.endsWith('.pdf')) return 'application/pdf'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.bmp')) return 'image/bmp'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  if (lower.endsWith('.doc')) return 'application/msword'
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  return 'application/octet-stream'
+}
+
+const inferFileExtensionFromMimeType = (mimeType) => {
+  const normalized = normalizeMimeType(mimeType)
+  if (normalized === 'application/pdf') return '.pdf'
+  if (normalized === 'image/png') return '.png'
+  if (normalized === 'image/jpeg') return '.jpg'
+  if (normalized === 'image/gif') return '.gif'
+  if (normalized === 'image/webp') return '.webp'
+  if (normalized === 'image/bmp') return '.bmp'
+  if (normalized === 'image/svg+xml') return '.svg'
+  if (normalized === 'application/msword') return '.doc'
+  if (normalized === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '.docx'
+  return ''
+}
+
+const ensureExtensionForMimeType = (fileName, mimeType) => {
+  const extension = inferFileExtensionFromMimeType(mimeType)
+  if (!extension) return sanitizeDownloadFileName(fileName)
+  return ensureFileExtension(fileName, extension)
+}
+
+const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
+  const normalizedVersion = (requestedVersion || '').toString().toLowerCase()
+
+  if (item.type === 'esign') {
+    const originalUrl = item.config?.document?.url || ''
+    const signedUrl = item.data?.esign?.signedUrl || ''
+    const originalFileName = ensureFileExtension(
+      item.config?.document?.fileName || `${item.title || 'document'}.pdf`,
+      '.pdf'
+    )
+    const generatedSignedName = `${originalFileName.replace(/\.[^/.]+$/, '')}-signed.pdf`
+    const signedFileName = ensureFileExtension(
+      item.data?.esign?.signedFileName || generatedSignedName,
+      '.pdf'
+    )
+
+    let resolvedVersion = normalizedVersion === 'original' ? 'original' : 'signed'
+    if (resolvedVersion === 'signed' && !signedUrl) {
+      resolvedVersion = 'original'
+    }
+
+    let docUrl = resolvedVersion === 'signed' ? signedUrl : originalUrl
+    if (!docUrl) {
+      docUrl = signedUrl || originalUrl
+      resolvedVersion = signedUrl ? 'signed' : 'original'
+    }
+
+    return {
+      docUrl,
+      docType: 'pdf',
+      subtitle: resolvedVersion === 'signed' ? 'Signed document' : 'Original document',
+      docMimeType: 'application/pdf',
+      docFileName: resolvedVersion === 'signed' ? signedFileName : originalFileName,
+      resolvedVersion
+    }
+  }
+
+  const upload = item.data?.upload || {}
+  const docUrl = upload.url || ''
+  const normalizedMimeType = normalizeMimeType(upload.mimeType) || inferMimeTypeFromFileName(upload.fileName)
+  const docFileName = ensureExtensionForMimeType(
+    upload.fileName || item.title || 'uploaded-document',
+    normalizedMimeType
+  )
+  const lowerFileName = docFileName.toLowerCase()
+  const isPdf = normalizedMimeType.includes('pdf') || lowerFileName.endsWith('.pdf')
+  const isImage = normalizedMimeType.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lowerFileName)
+
+  return {
+    docUrl,
+    docType: isPdf ? 'pdf' : (isImage ? 'image' : 'unknown'),
+    subtitle: 'Uploaded document',
+    docMimeType: normalizedMimeType || 'application/octet-stream',
+    docFileName,
+    resolvedVersion: null
+  }
+}
+
+const buildDocumentDownloadUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/download${query ? `?${query}` : ''}`
+}
+
+const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => {
+  const assignment = await OnboardingAssignment.findById(assignmentId)
+    .populate('organization', 'name')
+
+  if (!assignment) {
+    return { error: 'not_found' }
+  }
+
+  const item = assignment.items.id(itemId)
+  if (!item || !['esign', 'upload'].includes(item.type)) {
+    return { error: 'not_found' }
+  }
+
+  const organizationId = assignment.organization?._id || assignment.organization
+  const organization = await Organization.findById(organizationId).select('members')
+  const userIdStr = userId.toString()
+
+  const member = organization?.members?.find(
+    m => m.account.toString() === userIdStr && m.status === 'active'
+  )
+
+  const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
+  const isAssignee = assignment.member?.toString() === userIdStr
+  const isConfiguredSigner = item.type === 'esign'
+    ? (item.config?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+    : false
+  const isSignerInStatus = item.type === 'esign'
+    ? (item.data?.esign?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+    : false
+
+  return {
+    assignment,
+    item,
+    organizationId,
+    isManager,
+    canAccess: isManager || isAssignee || isConfiguredSigner || isSignerInStatus
+  }
+}
+
+const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
+  const rawBack = (backParam || '').toString()
+  const safeBackUrl = rawBack.startsWith('/') && !rawBack.startsWith('//') ? rawBack : null
+  const defaultBackUrl = isManager
+    ? `/organizations/${organizationId.toString()}/onboarding`
+    : '/onboarding'
+  return safeBackUrl || defaultBackUrl
+}
+
 // View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
 app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {
   try {
-    const assignment = await OnboardingAssignment.findById(req.params.assignmentId)
-      .populate('organization', 'name')
-
-    if (!assignment) {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
       return res.redirect('/onboarding?error=Document not found')
     }
 
-    const item = assignment.items.id(req.params.itemId)
-    if (!item || !['esign', 'upload'].includes(item.type)) {
-      return res.redirect('/onboarding?error=Document not found')
-    }
+    const { assignment, item, organizationId, isManager, canAccess } = access
+    const backUrl = resolveOnboardingBackUrl(req.query.back, isManager, organizationId)
 
-    const organizationId = assignment.organization?._id || assignment.organization
-    const organization = await Organization.findById(organizationId).select('members')
-
-    const userIdStr = req.user._id.toString()
-    const member = organization?.members?.find(
-      m => m.account.toString() === userIdStr && m.status === 'active'
-    )
-
-    const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
-
-    const isAssignee = assignment.member?.toString() === userIdStr
-    const isConfiguredSigner = item.type === 'esign'
-      ? (item.config?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
-      : false
-    const isSignerInStatus = item.type === 'esign'
-      ? (item.data?.esign?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
-      : false
-
-    const backParam = (req.query.back || '').toString()
-    // Only allow same-site paths. Disallow protocol-relative URLs like "//evil.com".
-    const safeBackUrl = backParam && backParam.startsWith('/') && !backParam.startsWith('//') ? backParam : null
-    const defaultBackUrl = isManager
-      ? `/organizations/${organizationId.toString()}/onboarding`
-      : '/onboarding'
-    const backUrl = safeBackUrl || defaultBackUrl
-
-    if (!isManager && !isAssignee && !(isConfiguredSigner || isSignerInStatus)) {
+    if (!canAccess) {
       return res.status(403).render('document-viewer', {
         user: req.user,
         activePage: isManager ? 'organizations' : 'onboarding',
@@ -4283,35 +4427,17 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
         subtitle: 'You do not have access to this document.',
         docUrl: null,
         docType: 'unknown',
-        backUrl
+        backUrl,
+        downloadUrl: null
       })
     }
 
-    let docUrl = null
-    let docType = 'pdf'
-    let subtitle = 'Document'
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
+    )
 
-    if (item.type === 'esign') {
-      const version = (req.query.version || '').toString().toLowerCase()
-      const originalUrl = item.config?.document?.url
-      const signedUrl = item.data?.esign?.signedUrl
-      docUrl = version === 'original' ? originalUrl : (signedUrl || originalUrl)
-      subtitle = version === 'original'
-        ? 'Original document'
-        : (signedUrl ? 'Signed document' : 'Document')
-      docType = 'pdf'
-    } else if (item.type === 'upload') {
-      const upload = item.data?.upload || {}
-      docUrl = upload.url
-      const mimeType = (upload.mimeType || '').toString().toLowerCase()
-      const fileName = (upload.fileName || '').toString().toLowerCase()
-      const isPdf = mimeType.includes('pdf') || fileName.endsWith('.pdf')
-      const isImage = mimeType.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp)$/.test(fileName)
-      docType = isPdf ? 'pdf' : (isImage ? 'image' : 'unknown')
-      subtitle = 'Uploaded document'
-    }
-
-    if (!docUrl) {
+    if (!payload.docUrl) {
       return res.redirect('/onboarding?error=Document is not available')
     }
 
@@ -4319,14 +4445,65 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
       user: req.user,
       activePage: isManager ? 'organizations' : 'onboarding',
       title: item.title || 'Document',
-      subtitle,
-      docUrl,
-      docType,
-      backUrl
+      subtitle: payload.subtitle,
+      docUrl: payload.docUrl,
+      docType: payload.docType,
+      backUrl,
+      downloadUrl: buildDocumentDownloadUrl(
+        assignment._id.toString(),
+        item._id.toString(),
+        payload.resolvedVersion
+      )
     })
   } catch (error) {
     console.error('Onboarding document viewer error:', error)
     res.redirect('/onboarding?error=Failed to load document')
+  }
+})
+
+// Download onboarding documents with a stable filename + extension.
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, async (req, res) => {
+  try {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
+      return res.status(404).send('Document not found')
+    }
+
+    const { item, canAccess } = access
+    if (!canAccess) {
+      return res.status(403).send('Unauthorized')
+    }
+
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
+    )
+
+    if (!payload.docUrl) {
+      return res.status(404).send('Document not available')
+    }
+
+    const upstream = await fetch(payload.docUrl)
+    if (!upstream.ok) {
+      throw new Error(`Upstream document fetch failed: ${upstream.status}`)
+    }
+
+    const fileName = sanitizeDownloadFileName(payload.docFileName || 'document')
+    const asciiFileName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_')
+    const buffer = Buffer.from(await upstream.arrayBuffer())
+
+    res.setHeader('Content-Type', payload.docMimeType || 'application/octet-stream')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFileName || 'document'}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    )
+
+    res.send(buffer)
+  } catch (error) {
+    console.error('Onboarding document download error:', error)
+    res.status(500).send('Failed to download document')
   }
 })
 
