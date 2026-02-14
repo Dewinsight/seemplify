@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
 const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const emailService = require('../services/emailService');
+const { generateTeamAttendanceTableExcel } = require('../services/teamAttendanceTableExportService');
 const { startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, format } = require('date-fns');
 
 const MANAGER_ROLES = ['line_manager', 'team_lead'];
@@ -83,122 +84,8 @@ router.get('/dashboard', async (req, res) => {
 // Get team attendance table dataset (for line managers/admins)
 router.get('/team', async (req, res) => {
     try {
-        const organizationId = req.organizationId;
         const selectedTeamId = req.query.teamId ? String(req.query.teamId) : null;
-
-        if (!isHRAdmin(req) && !isLineManager(req)) {
-            return res.status(403).json({ error: 'Manager access required' });
-        }
-
-        const managedTeams = getManagedTeams(req, organizationId);
-
-        if (!isHRAdmin(req) && managedTeams.length === 0) {
-            return res.json({
-                team: [],
-                summary: {
-                    total: 0,
-                    working: 0,
-                    onBreak: 0,
-                    clockedOut: 0,
-                    notClockedIn: 0,
-                },
-            });
-        }
-
-        if (selectedTeamId && !isHRAdmin(req)) {
-            const hasAccess = managedTeams.some(team => team.id === selectedTeamId);
-            if (!hasAccess) {
-                return res.status(403).json({ error: 'Access denied to this team' });
-            }
-        }
-
-        const scopedTeams = selectedTeamId
-            ? managedTeams.filter(team => team.id === selectedTeamId)
-            : managedTeams;
-
-        const memberSeed = getManagedUserSeed(scopedTeams);
-        let targetUserIds = Array.from(memberSeed.keys());
-
-        const todayStart = startOfDay(new Date());
-        const todayEnd = endOfDay(new Date());
-
-        const todayQuery = {
-            organizationId,
-            timestamp: { $gte: todayStart, $lte: todayEnd },
-        };
-
-        if (selectedTeamId) {
-            todayQuery.teamId = selectedTeamId;
-        }
-
-        if (targetUserIds.length > 0) {
-            todayQuery.userId = { $in: targetUserIds };
-        } else if (!isHRAdmin(req)) {
-            return res.json({
-                team: [],
-                summary: {
-                    total: 0,
-                    working: 0,
-                    onBreak: 0,
-                    clockedOut: 0,
-                    notClockedIn: 0,
-                },
-            });
-        }
-
-        const todayEntries = await TimeEntry.find(todayQuery)
-            .sort({ userId: 1, timestamp: 1 })
-            .lean();
-
-        // HR admin fallback: if no direct reports are available from claims,
-        // roster is derived from users with activity today.
-        if (isHRAdmin(req) && targetUserIds.length === 0) {
-            for (const entry of todayEntries) {
-                if (!memberSeed.has(entry.userId)) {
-                    memberSeed.set(entry.userId, {
-                        userId: entry.userId,
-                        teamId: entry.teamId || null,
-                        teamName: entry.teamName || null,
-                    });
-                }
-            }
-            targetUserIds = Array.from(memberSeed.keys());
-        }
-
-        if (targetUserIds.length === 0) {
-            return res.json({
-                team: [],
-                summary: {
-                    total: 0,
-                    working: 0,
-                    onBreak: 0,
-                    clockedOut: 0,
-                    notClockedIn: 0,
-                },
-            });
-        }
-
-        const [latestEntryMap, latestTimesheetMap] = await Promise.all([
-            getLatestEntryMap(organizationId, targetUserIds),
-            getLatestTimesheetMap(organizationId, targetUserIds),
-        ]);
-
-        const entriesByUser = getEntriesByUser(todayEntries);
-        const rows = buildTeamRows({
-            targetUserIds,
-            memberSeed,
-            entriesByUser,
-            latestEntryMap,
-            latestTimesheetMap,
-        });
-
-        const summary = {
-            total: rows.length,
-            working: rows.filter(row => row.status === 'working').length,
-            onBreak: rows.filter(row => row.status === 'on_break').length,
-            clockedOut: rows.filter(row => row.status === 'clocked_out' || row.status === 'not_clocked_in').length,
-            notClockedIn: rows.filter(row => row.status === 'not_clocked_in').length,
-        };
+        const { rows, summary } = await getTeamAttendanceRows(req, selectedTeamId);
 
         res.json({
             team: rows,
@@ -207,6 +94,41 @@ router.get('/team', async (req, res) => {
     } catch (error) {
         console.error('Get team attendance error:', error);
         res.status(500).json({ error: 'Failed to get team attendance' });
+    }
+});
+
+// Export team attendance table as Excel
+router.get('/team/export', async (req, res) => {
+    try {
+        const selectedTeamId = req.query.teamId ? String(req.query.teamId) : null;
+        const statusFilter = req.query.status ? String(req.query.status) : 'all';
+        const searchQuery = req.query.q ? String(req.query.q).trim() : '';
+
+        const { rows, scopeName } = await getTeamAttendanceRows(req, selectedTeamId);
+        const filteredRows = filterTeamRows(rows, { statusFilter, searchQuery });
+        const filteredSummary = buildTeamSummary(filteredRows);
+
+        const { buffer, filename } = await generateTeamAttendanceTableExcel({
+            organizationName: req.organizationName,
+            managerName: req.user.name || req.user.email || req.user.id,
+            teamScopeName: scopeName,
+            rows: filteredRows,
+            summary: filteredSummary,
+            statusFilter,
+            searchQuery,
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length);
+        return res.send(buffer);
+    } catch (error) {
+        if (error?.status) {
+            return res.status(error.status).json({ error: error.message || 'Export failed' });
+        }
+
+        console.error('Export team attendance error:', error);
+        res.status(500).json({ error: 'Failed to export team attendance' });
     }
 });
 
@@ -444,6 +366,158 @@ function getManagedTeams(req, organizationId) {
         team.organizationId === organizationId &&
         MANAGER_ROLES.includes(team.role)
     );
+}
+
+function buildEmptyTeamSummary() {
+    return {
+        total: 0,
+        working: 0,
+        onBreak: 0,
+        clockedOut: 0,
+        notClockedIn: 0,
+    };
+}
+
+function buildTeamSummary(rows) {
+    return {
+        total: rows.length,
+        working: rows.filter(row => row.status === 'working').length,
+        onBreak: rows.filter(row => row.status === 'on_break').length,
+        clockedOut: rows.filter(row => row.status === 'clocked_out' || row.status === 'not_clocked_in').length,
+        notClockedIn: rows.filter(row => row.status === 'not_clocked_in').length,
+    };
+}
+
+function filterTeamRows(rows, { statusFilter = 'all', searchQuery = '' } = {}) {
+    const allowedStatuses = new Set(['working', 'on_break', 'clocked_out', 'not_clocked_in']);
+    const normalizedStatus = String(statusFilter || 'all').toLowerCase();
+    const normalizedQuery = String(searchQuery || '').trim().toLowerCase();
+
+    return rows.filter((row) => {
+        const statusMatch = normalizedStatus === 'all'
+            ? true
+            : (allowedStatuses.has(normalizedStatus) && row.status === normalizedStatus);
+
+        if (!statusMatch) return false;
+        if (!normalizedQuery) return true;
+
+        const haystack = [
+            row.userName,
+            row.userEmail,
+            row.teamName,
+            row.status,
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+        return haystack.includes(normalizedQuery);
+    });
+}
+
+async function getTeamAttendanceRows(req, selectedTeamId = null) {
+    const organizationId = req.organizationId;
+    if (!isHRAdmin(req) && !isLineManager(req)) {
+        const error = new Error('Manager access required');
+        error.status = 403;
+        throw error;
+    }
+
+    const managedTeams = getManagedTeams(req, organizationId);
+    if (!isHRAdmin(req) && managedTeams.length === 0) {
+        return {
+            rows: [],
+            summary: buildEmptyTeamSummary(),
+            scopeName: selectedTeamId || 'All Managed Teams',
+        };
+    }
+
+    if (selectedTeamId && !isHRAdmin(req)) {
+        const hasAccess = managedTeams.some(team => team.id === selectedTeamId);
+        if (!hasAccess) {
+            const error = new Error('Access denied to this team');
+            error.status = 403;
+            throw error;
+        }
+    }
+
+    const scopedTeams = selectedTeamId
+        ? managedTeams.filter(team => team.id === selectedTeamId)
+        : managedTeams;
+
+    const scopeName = selectedTeamId
+        ? (scopedTeams[0]?.name || 'Selected Team')
+        : 'All Managed Teams';
+
+    const memberSeed = getManagedUserSeed(scopedTeams);
+    let targetUserIds = Array.from(memberSeed.keys());
+
+    const todayStart = startOfDay(new Date());
+    const todayEnd = endOfDay(new Date());
+    const todayQuery = {
+        organizationId,
+        timestamp: { $gte: todayStart, $lte: todayEnd },
+    };
+
+    if (selectedTeamId) {
+        todayQuery.teamId = selectedTeamId;
+    }
+
+    if (targetUserIds.length > 0) {
+        todayQuery.userId = { $in: targetUserIds };
+    } else if (!isHRAdmin(req)) {
+        return {
+            rows: [],
+            summary: buildEmptyTeamSummary(),
+            scopeName,
+        };
+    }
+
+    const todayEntries = await TimeEntry.find(todayQuery)
+        .sort({ userId: 1, timestamp: 1 })
+        .lean();
+
+    // HR admin fallback: when direct reports are unavailable in claims, derive users from activity.
+    if (isHRAdmin(req) && targetUserIds.length === 0) {
+        for (const entry of todayEntries) {
+            if (!memberSeed.has(entry.userId)) {
+                memberSeed.set(entry.userId, {
+                    userId: entry.userId,
+                    teamId: entry.teamId || null,
+                    teamName: entry.teamName || null,
+                });
+            }
+        }
+        targetUserIds = Array.from(memberSeed.keys());
+    }
+
+    if (targetUserIds.length === 0) {
+        return {
+            rows: [],
+            summary: buildEmptyTeamSummary(),
+            scopeName,
+        };
+    }
+
+    const [latestEntryMap, latestTimesheetMap] = await Promise.all([
+        getLatestEntryMap(organizationId, targetUserIds),
+        getLatestTimesheetMap(organizationId, targetUserIds),
+    ]);
+
+    const entriesByUser = getEntriesByUser(todayEntries);
+    const rows = buildTeamRows({
+        targetUserIds,
+        memberSeed,
+        entriesByUser,
+        latestEntryMap,
+        latestTimesheetMap,
+    });
+
+    return {
+        rows,
+        summary: buildTeamSummary(rows),
+        scopeName,
+    };
 }
 
 function getManagedUserSeed(teams) {

@@ -35,6 +35,18 @@ services:
     environment:
       - SHELL=/bin/bash
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-secure_password_here}
+      - LMS_SITE_NAME=${LMS_SITE_NAME:-lms.seemplifyai.com}
+      - LMS_HOSTNAME=${LMS_HOSTNAME:-lms.seemplifyai.com}
+      - LMS_APP_NAME=${LMS_APP_NAME:-LMS by AIIN}
+      - LMS_ADMIN_PASSWORD=${LMS_ADMIN_PASSWORD:-admin123}
+      - LMS_DEVELOPER_MODE=${LMS_DEVELOPER_MODE:-1}
+      - LMS_APP_SOURCE_PATH=${LMS_APP_SOURCE_PATH:-/lms-app}
+      - BREVO_SMTP_KEY=${BREVO_SMTP_KEY:-}
+      - BREVO_SMTP_LOGIN=${BREVO_SMTP_LOGIN:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - BREVO_FROM_EMAIL=${BREVO_FROM_EMAIL:-}
+      - SENDER_EMAIL=${SENDER_EMAIL:-}
+      - SENDER_NAME=${SENDER_NAME:-}
     working_dir: /home/frappe
     volumes:
       - .:/workspace
@@ -45,7 +57,7 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lms.rule=Host(`lms.seemplifyai.com`)"
+      - "traefik.http.routers.lms.rule=Host(`${LMS_HOSTNAME:-lms.seemplifyai.com}`)"
       - "traefik.http.routers.lms.entrypoints=websecure"
       - "traefik.http.routers.lms.tls.certresolver=letsencrypt"
       - "traefik.http.services.lms.loadbalancer.server.port=8002"

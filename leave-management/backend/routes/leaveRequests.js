@@ -30,6 +30,38 @@ const emailService = require('../services/emailService');
 router.use(requireAuth);
 router.use(requireOrganization);
 
+function collectLineManagerRecipients(userinfo, organizationId, teamId, requesterId) {
+  const teams = (userinfo?.teams || []).filter(team => {
+    const orgMatch = team.organizationId === organizationId;
+    const teamMatch = teamId ? team.id === teamId : true;
+    return orgMatch && teamMatch;
+  });
+
+  const recipientsByEmail = new Map();
+
+  for (const team of teams) {
+    const email = String(team.managerEmail || '').trim();
+    if (!email) continue;
+
+    const managerId = team.managerId ? String(team.managerId) : null;
+    if (managerId && managerId === String(requesterId)) continue;
+
+    const key = email.toLowerCase();
+    if (recipientsByEmail.has(key)) continue;
+
+    recipientsByEmail.set(key, {
+      userId: managerId,
+      userName: team.managerName || 'Line Manager',
+      userEmail: email,
+      teamId: team.id || null,
+      teamName: team.name || null,
+      assignmentType: 'line_manager',
+    });
+  }
+
+  return Array.from(recipientsByEmail.values());
+}
+
 // Get all leave requests for current user
 router.get('/', asyncHandler(async (req, res) => {
   const { status, leaveType, startDate, endDate, page = 1, limit = 20 } = req.query;
@@ -421,8 +453,43 @@ router.post('/',
     await logLeaveRequestCreated(leaveRequest, req.user, req);
 
     // Email notifications
-    if (policy.notifyApproversOnRequest && leaveRequest.assignedApprover?.userEmail) {
-      await emailService.sendLeaveRequestSubmittedToApprover(leaveRequest);
+    if (policy.notifyApproversOnRequest) {
+      const lineManagerRecipients = collectLineManagerRecipients(
+        userinfo,
+        req.organizationId,
+        teamId,
+        req.user.id
+      );
+
+      const recipientsByEmail = new Map(
+        lineManagerRecipients.map(recipient => [
+          String(recipient.userEmail).toLowerCase(),
+          recipient,
+        ])
+      );
+
+      // Keep assigned approver coverage as fallback/additional recipient.
+      if (leaveRequest.assignedApprover?.userEmail) {
+        const approverEmailKey = String(leaveRequest.assignedApprover.userEmail).toLowerCase();
+        if (!recipientsByEmail.has(approverEmailKey)) {
+          recipientsByEmail.set(approverEmailKey, {
+            userId: leaveRequest.assignedApprover.userId,
+            userName: leaveRequest.assignedApprover.userName,
+            userEmail: leaveRequest.assignedApprover.userEmail,
+            teamId: leaveRequest.assignedApprover.teamId,
+            assignmentType: leaveRequest.assignedApprover.assignmentType,
+          });
+        }
+      }
+
+      const recipients = Array.from(recipientsByEmail.values());
+      if (recipients.length > 0) {
+        await Promise.allSettled(
+          recipients.map(recipient =>
+            emailService.sendLeaveRequestSubmittedToRecipient(leaveRequest, recipient)
+          )
+        );
+      }
     }
     await emailService.sendLeaveRequestCreatedConfirmation(leaveRequest);
 

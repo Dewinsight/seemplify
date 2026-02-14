@@ -66,7 +66,11 @@ function leaveRange(request) {
 
 async function sendLeaveRequestSubmittedToApprover(request) {
   const approver = request.assignedApprover;
-  if (!approver?.userEmail) {
+  return sendLeaveRequestSubmittedToRecipient(request, approver);
+}
+
+async function sendLeaveRequestSubmittedToRecipient(request, recipient) {
+  if (!recipient?.userEmail) {
     return { success: false, reason: 'Approver email unavailable' };
   }
 
@@ -74,7 +78,7 @@ async function sendLeaveRequestSubmittedToApprover(request) {
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.5;">
         <h2>New Leave Request Awaiting Approval</h2>
-        <p>Hello ${approver.userName || 'Approver'},</p>
+        <p>Hello ${recipient.userName || 'Approver'},</p>
         <p><strong>${request.userName || 'An employee'}</strong> submitted a leave request for <strong>${request.leaveType}</strong>.</p>
         <p>Leave period: <strong>${leaveRange(request)}</strong></p>
         <p>Total days: <strong>${request.numberOfDays}</strong></p>
@@ -84,7 +88,7 @@ async function sendLeaveRequestSubmittedToApprover(request) {
   `;
 
   return sendEmail(
-    approver.userEmail,
+    recipient.userEmail,
     `Leave request submitted by ${request.userName || 'employee'}`,
     html
   );
@@ -201,6 +205,7 @@ async function sendLeaveRequestCancelled(request) {
 module.exports = {
   initializeEmailService,
   sendLeaveRequestSubmittedToApprover,
+  sendLeaveRequestSubmittedToRecipient,
   sendLeaveRequestCreatedConfirmation,
   sendLeaveRequestApproved,
   sendLeaveRequestRejected,

@@ -154,6 +154,21 @@ export const attendanceApi = {
         const response = await api.post(`/attendance/team/${userId}/notify-clock-out`);
         return response.data;
     },
+    exportTeamExcel: async (params?: { teamId?: string; status?: string; q?: string }) => {
+        const response = await api.get('/attendance/team/export', {
+            params,
+            responseType: 'blob',
+        });
+
+        const disposition = response.headers['content-disposition'] || '';
+        const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+        const filename = match ? match[1] : 'team-attendance-export.xlsx';
+
+        return {
+            blob: response.data,
+            filename,
+        };
+    },
     getSummary: async (params?: any) => {
         const response = await api.get('/attendance/summary', { params });
         return response.data;

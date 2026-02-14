@@ -16,7 +16,7 @@ app_license = "AGPL"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/lms/css/lms.css"
-# app_include_js = "/assets/lms/js/lms.js"
+app_include_js = ["/assets/lms/js/seemplify_login.js"]
 
 # include js, css files in header of web template
 web_include_css = "lms.bundle.css"
@@ -42,6 +42,9 @@ web_include_js = ["/assets/lms/js/seemplify_login.js"]
 
 # Home Pages
 # ----------
+
+# Dynamic homepage: guests see custom login, logged-in users see LMS
+get_website_user_home_page = "lms.website.get_home_page"
 
 # application home page (will override Website Settings)
 # home_page = "login"
@@ -137,7 +140,7 @@ scheduler_events = {
 	],
 }
 
-fixtures = ["Custom Field", "Function", "Industry", "LMS Category", "Social Login Key"]
+fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
 
 # Testing
 # -------
@@ -173,6 +176,7 @@ website_route_rules = [
 ]
 
 website_redirects = [
+	{"source": "/sign-up", "target": "/lms-login"},
 	{"source": "/update-profile", "target": "/edit-profile"},
 	{"source": "/courses", "target": "/lms/courses"},
 	{

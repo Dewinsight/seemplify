@@ -1,12 +1,12 @@
-# Deploy Frappe LMS to Dokploy Server
+# Deploy LMS to Dokploy
 name: Deploy LMS
 
 on:
   push:
     branches: [main]
     paths:
-      - 'lms/**'
-      - '.github/workflows/deploy-lms.yml'
+      - "lms/**"
+      - ".github/workflows/deploy-lms.yml"
   workflow_dispatch:
 
 env:
@@ -15,57 +15,44 @@ env:
 
 jobs:
   deploy:
-    name: Deploy LMS to Server
+    name: Deploy to Dokploy
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Add server to known hosts
+      - name: Validate Required Secrets
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
-
-      - name: Deploy LMS Stack
-        run: |
-          echo "🚀 Deploying LMS..."
-          
-          # Pull latest code on server
-          ssh seemplify@4.180.153.209 "cd ~/lms-deploy && git fetch origin main && git reset --hard origin/main"
-          
-          # Sync LMS app code to the running container
-          FRAPPE_CONTAINER=$(ssh seemplify@4.180.153.209 "docker ps -q -f name=lms_frappe")
-          echo "📦 Frappe container: $FRAPPE_CONTAINER"
-          
-          if [ -n "$FRAPPE_CONTAINER" ]; then
-            echo "📂 Copying updated LMS code to container..."
-            ssh seemplify@4.180.153.209 "docker cp ~/lms-deploy/lms/. $FRAPPE_CONTAINER:/home/frappe/frappe-bench/apps/lms/"
-            
-            echo "🔨 Building frontend assets..."
-            ssh seemplify@4.180.153.209 "docker exec $FRAPPE_CONTAINER bash -c 'cd /home/frappe/frappe-bench && /home/frappe/.local/bin/bench build --app lms' || echo 'Build skipped (might need manual build)'"
-            
-            echo "🗑️ Clearing cache..."
-            ssh seemplify@4.180.153.209 "docker exec \$(docker ps -q -f name=lms_redis) redis-cli FLUSHALL"
-            
-            echo "🔄 Restarting Frappe to load new hooks..."
-            ssh seemplify@4.180.153.209 "CONTAINER=\$(docker ps -q -f name=lms_frappe); if [ -n \"\$CONTAINER\" ]; then docker restart \$CONTAINER; else echo 'No frappe container found'; fi"
-          else
-            echo "⚠️ No running frappe container found, deploying fresh stack..."
-            ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
+          missing=0
+          for var in DOKPLOY_URL DOKPLOY_TOKEN LMS_APP_ID; do
+            if [ -z "${!var}" ]; then
+              echo "[ERROR] Missing required secret: $var"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Set the missing secrets in GitHub repo settings before deploying."
+            exit 1
           fi
-          
-          echo "✅ LMS deployment triggered!"
-          
-          # Wait for services to stabilize
-          sleep 10
-          
-          # Check service status
-          ssh seemplify@4.180.153.209 "docker service ls | grep lms"
-          
-          echo "✅ LMS deployment complete!"
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          LMS_APP_ID: ${{ secrets.LMS_APP_ID }}
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d "{\"applicationId\": \"${{ secrets.LMS_APP_ID }}\"}")
+
+          if [ "$response" -eq 200 ]; then
+            echo "[OK] ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
+            cat /tmp/response.txt 2>/dev/null || true
+          else
+            echo "[ERROR] Deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi

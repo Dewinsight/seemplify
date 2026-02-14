@@ -16,6 +16,7 @@ import {
     AlertCircle,
     BellRing,
     RefreshCw,
+    Download,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -63,6 +64,7 @@ export default function TeamPage() {
     const [statusFilter, setStatusFilter] = useState<TeamStatusFilter>('all');
     const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
     const [reminderSendingFor, setReminderSendingFor] = useState<string | null>(null);
+    const [exporting, setExporting] = useState(false);
     const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const [selectedTeamId, setSelectedTeamId] = useState<string>('');
@@ -175,6 +177,33 @@ export default function TeamPage() {
         }
     };
 
+    const exportTeamAttendanceExcel = async () => {
+        try {
+            setExporting(true);
+            const { blob, filename } = await attendanceApi.exportTeamExcel({
+                teamId: selectedTeamId || undefined,
+                status: statusFilter,
+                q: searchTerm.trim() || undefined,
+            });
+
+            const fileUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = fileUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(fileUrl);
+        } catch (error: any) {
+            setActionFeedback({
+                type: 'error',
+                text: error?.response?.data?.error || 'Failed to export team attendance.',
+            });
+        } finally {
+            setExporting(false);
+        }
+    };
+
     const getStatusStyles = (status: TeamMember['status']) => {
         switch (status) {
             case 'working':
@@ -280,6 +309,18 @@ export default function TeamPage() {
                     >
                         <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
                         Refresh
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            exportTeamAttendanceExcel();
+                        }}
+                        disabled={loading || exporting}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        title="Export current team table to Excel"
+                    >
+                        <Download className="h-3.5 w-3.5" />
+                        {exporting ? 'Exporting...' : 'Export Excel'}
                     </button>
                     <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300">
                         <span className="text-zinc-500">Total:</span> {summary.total}
