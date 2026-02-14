@@ -22,11 +22,13 @@ services:
 
   frappe:
     image: frappe/bench:latest
-    # Only run init.sh on first deployment, not on every restart
+    # Run init.sh once, then post-deploy sync on each restart so Dokploy/GitHub deployments
+    # always pick up latest code and generated assets (e.g. lms.html for /lms route).
     command: >
       bash -c "if [ -d /home/frappe/frappe-bench ] && [ -f /home/frappe/frappe-bench/sites/apps.txt ]; then
         echo 'LMS bench exists, starting...';
         cd /home/frappe/frappe-bench && sed -i '/socketio/d' Procfile 2>/dev/null || true;
+        cd /home/frappe/frappe-bench && bash /workspace/post-deploy-sync.sh || true;
         cd /home/frappe/frappe-bench && bench start;
       else
         echo 'Initializing LMS...';
@@ -47,6 +49,10 @@ services:
       - BREVO_FROM_EMAIL=${BREVO_FROM_EMAIL:-}
       - SENDER_EMAIL=${SENDER_EMAIL:-}
       - SENDER_NAME=${SENDER_NAME:-}
+      # Optional: expose classic names for compatibility with helper scripts.
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_LOGIN=${SMTP_LOGIN:-}
+      - FROM_EMAIL=${FROM_EMAIL:-}
     working_dir: /home/frappe
     volumes:
       - .:/workspace

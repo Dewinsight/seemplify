@@ -9,6 +9,9 @@ set -euo pipefail
 ENV_FILE="${1:-/workspace-idp-env}"
 SITE_NAME_VALUE="${2:-${LMS_SITE_NAME:-${LMS_HOSTNAME:-localhost}}}"
 
+# Ensure bench is on PATH in container modes that don't load .profile
+export PATH="/home/frappe/.local/bin:${PATH}"
+
 # Optional env file mount. If missing, rely on process environment.
 if [ -f "$ENV_FILE" ]; then
   while IFS='=' read -r key value; do
@@ -40,13 +43,25 @@ fi
 
 cd /home/frappe/frappe-bench
 echo "Configuring Brevo SMTP for LMS site: ${SITE_NAME_VALUE} ..."
-bench --site "${SITE_NAME_VALUE}" set-config mail_server "smtp-relay.brevo.com"
-bench --site "${SITE_NAME_VALUE}" set-config mail_port 587
-bench --site "${SITE_NAME_VALUE}" set-config use_tls 1
-bench --site "${SITE_NAME_VALUE}" set-config mail_login "$SMTP_LOGIN"
-bench --site "${SITE_NAME_VALUE}" set-config mail_password "$SMTP_PASS"
-bench --site "${SITE_NAME_VALUE}" set-config mail_email_id "$FROM_EMAIL"
-bench --site "${SITE_NAME_VALUE}" clear-cache
+
+SITE_CONFIG_PATH="/home/frappe/frappe-bench/sites/${SITE_NAME_VALUE}/site_config.json"
+SENDER_NAME_VALUE="${SENDER_NAME:-Simplify LMS}"
+
+# Site config updates are nice-to-have, but email sending primarily relies on the
+# default outgoing Email Account. Don't fail hard if site_config.json isn't writable.
+if [ -w "${SITE_CONFIG_PATH}" ]; then
+  bench --site "${SITE_NAME_VALUE}" set-config mail_server "smtp-relay.brevo.com" || true
+  bench --site "${SITE_NAME_VALUE}" set-config mail_port 587 || true
+  bench --site "${SITE_NAME_VALUE}" set-config use_tls 1 || true
+  bench --site "${SITE_NAME_VALUE}" set-config mail_login "$SMTP_LOGIN" || true
+  bench --site "${SITE_NAME_VALUE}" set-config mail_password "$SMTP_PASS" || true
+  bench --site "${SITE_NAME_VALUE}" set-config mail_email_id "$FROM_EMAIL" || true
+  bench --site "${SITE_NAME_VALUE}" set-config mail_sender_name "$SENDER_NAME_VALUE" || true
+else
+  echo "Warning: ${SITE_CONFIG_PATH} is not writable; skipping bench set-config and creating Email Account only."
+fi
+
+bench --site "${SITE_NAME_VALUE}" clear-cache || true
 
 # Create/update default outgoing Email Account required by signup/reset/login-link.
 export SMTP_PASS

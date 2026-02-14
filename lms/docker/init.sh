@@ -8,13 +8,25 @@ echo "Initializing LMS application..."
 
 SITE_NAME="${LMS_SITE_NAME:-${LMS_HOSTNAME:-lms.seemplifyai.com}}"
 PUBLIC_HOST="${LMS_HOSTNAME:-$SITE_NAME}"
-APP_NAME_VALUE="${LMS_APP_NAME:-LMS by AIIN}"
+APP_NAME_VALUE="${LMS_APP_NAME:-Simplify LMS}"
 ADMIN_PASSWORD_VALUE="${LMS_ADMIN_PASSWORD:-${ADMIN_PASSWORD:-admin123}}"
 MYSQL_ROOT_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-123}"
-DEVELOPER_MODE_VALUE="${LMS_DEVELOPER_MODE:-1}"
+DEVELOPER_MODE_VALUE="${LMS_DEVELOPER_MODE:-0}"
 APP_SOURCE_PATH="${LMS_APP_SOURCE_PATH:-/lms-app}"
 
-export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
+export PATH="/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+for node_dir in \
+  /home/frappe/.nvm/versions/node/v24.12.0/bin \
+  /home/frappe/.nvm/versions/node/v22.17.0/bin \
+  /home/frappe/.nvm/versions/node/v20.19.0/bin \
+  /home/frappe/.nvm/versions/node/v18.20.2/bin \
+  /home/frappe/.nvm/versions/node/v16.20.2/bin; do
+  if [ -x "${node_dir}/node" ]; then
+    export PATH="${node_dir}:${PATH}"
+    break
+  fi
+done
 
 echo "Using site: ${SITE_NAME}"
 echo "Using host: ${PUBLIC_HOST}"
@@ -50,6 +62,7 @@ bench --site "${SITE_NAME}" set-config developer_mode "${DEVELOPER_MODE_VALUE}"
 # Set app branding dynamically.
 bench --site "${SITE_NAME}" execute "frappe.db.set_single_value('Website Settings', 'app_name', '${APP_NAME_VALUE}')"
 bench --site "${SITE_NAME}" execute "frappe.db.set_single_value('System Settings', 'app_name', '${APP_NAME_VALUE}')"
+bench --site "${SITE_NAME}" execute "frappe.db.set_single_value('System Settings', 'login_with_email_link', 1)"
 bench --site "${SITE_NAME}" execute "frappe.db.commit()"
 
 # Update site_config.json with app_name and host_name.
@@ -80,6 +93,7 @@ if [ -f /workspace/setup-brevo-email.sh ]; then
 fi
 
 bench --site "${SITE_NAME}" clear-cache
+bench --site "${SITE_NAME}" clear-website-cache
 bench use "${SITE_NAME}"
 
 bench start
