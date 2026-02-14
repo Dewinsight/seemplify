@@ -11,6 +11,9 @@ Write-Host "Deploying LMS to local Docker ($container)..." -ForegroundColor Cyan
 
 # Copy changed files (faster than full sync)
 docker cp "$lms/frontend/src/stores/session.js" "${container}:/home/frappe/frappe-bench/apps/lms/frontend/src/stores/session.js"
+docker cp "$lms/frontend/src/index.css" "${container}:/home/frappe/frappe-bench/apps/lms/frontend/src/index.css"
+docker cp "$lms/frontend/src/styles/ui-v2-vars.css" "${container}:/home/frappe/frappe-bench/apps/lms/frontend/src/styles/ui-v2-vars.css"
+docker cp "$lms/frontend/src/styles/ui-v2-layout.css" "${container}:/home/frappe/frappe-bench/apps/lms/frontend/src/styles/ui-v2-layout.css"
 docker cp "$lms/www/lms-login.html" "${container}:/home/frappe/frappe-bench/apps/lms/www/lms-login.html"
 docker cp "$lms/www/lms_login.py" "${container}:/home/frappe/frappe-bench/apps/lms/www/lms_login.py"
 docker cp "$lms/lms/www/lms-login.html" "${container}:/home/frappe/frappe-bench/apps/lms/lms/www/lms-login.html"

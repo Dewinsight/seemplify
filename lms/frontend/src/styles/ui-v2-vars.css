@@ -1,6 +1,7 @@
 .ui-skin-v2 {
 	--v2-font-heading: 'Baloo 2', 'Nunito', 'Inter', sans-serif;
 	--v2-font-body: 'Nunito', 'Inter', sans-serif;
+	--v2-font-playful: 'Fredoka One', var(--v2-font-heading);
 	--v2-sidebar-start: #5f63ea;
 	--v2-sidebar-end: #c24dbf;
 	--v2-sidebar-ink: #f7f9ff;
