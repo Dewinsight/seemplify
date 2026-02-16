@@ -271,33 +271,70 @@ const AdminUsers: React.FC = () => {
             {activeTab === 'organization' ? (
                 <div className="glass-panel">
                     <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', color: 'var(--text-primary)' }}>Organization Settings</h3>
-                    <div style={{ display: 'grid', gap: '2rem', maxWidth: '500px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', maxWidth: '560px' }}>
+                        {/* Organization Name */}
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Organization Name</label>
-                            <form onSubmit={handleSaveOrgName} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Organization Name</label>
+                            <form onSubmit={handleSaveOrgName} style={{ display: 'flex', gap: '0.75rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
                                 <input
                                     value={orgName}
                                     onChange={e => setOrgName(e.target.value)}
                                     placeholder="e.g. Acme Corp"
                                     required
-                                    style={{ flex: 1, padding: '0.75rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', borderRadius: '6px' }}
+                                    style={{ flex: '1 1 200px', minWidth: 0, padding: '0.75rem 1rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '1rem' }}
                                 />
-                                <button type="submit" className="btn-primary" disabled={orgLoading} style={{ padding: '0.75rem 1.5rem' }}>
+                                <button type="submit" className="btn-primary" disabled={orgLoading} style={{ padding: '0.75rem 1.5rem', flexShrink: 0 }}>
                                     {orgLoading ? 'Saving...' : 'Save Name'}
                                 </button>
                             </form>
                         </div>
+
+                        {/* Organization Logo */}
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Organization Logo</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                {activeOrganization?.logo && (
-                                    <img
-                                        src={getLogoUrl(activeOrganization.logo) || ''}
-                                        alt="Organization logo"
-                                        style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: 'rgba(255,255,255,0.05)' }}
-                                    />
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Organization Logo</label>
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1.5rem',
+                                padding: '1.5rem',
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px'
+                            }}>
+                                {activeOrganization?.logo ? (
+                                    <div style={{ flexShrink: 0 }}>
+                                        <img
+                                            src={getLogoUrl(activeOrganization.logo) || ''}
+                                            alt={activeOrganization.name}
+                                            style={{
+                                                width: 96,
+                                                height: 96,
+                                                objectFit: 'contain',
+                                                borderRadius: '10px',
+                                                background: 'rgba(255,255,255,0.06)',
+                                                padding: '8px',
+                                                boxSizing: 'border-box'
+                                            }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        width: 96,
+                                        height: 96,
+                                        borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        border: '2px dashed var(--glass-border)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '2rem',
+                                        flexShrink: 0
+                                    }}>
+                                        🖼️
+                                    </div>
                                 )}
-                                <div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
                                     <input
                                         ref={logoInputRef}
                                         type="file"
@@ -310,11 +347,13 @@ const AdminUsers: React.FC = () => {
                                         onClick={() => logoInputRef.current?.click()}
                                         className="btn-primary"
                                         disabled={logoLoading}
-                                        style={{ padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}
+                                        style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem', marginBottom: '0.5rem' }}
                                     >
                                         {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
                                     </button>
-                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>PNG, JPG, GIF or WebP. Max 2MB.</p>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                        PNG, JPG, GIF or WebP. Max 2MB.
+                                    </p>
                                 </div>
                             </div>
                         </div>
