@@ -133,8 +133,9 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
 ## Initiative Overview
 **Submitter:** ${form.submitterName} (${form.submitterTitle})
 **Email:** ${form.submitterEmail}
-**Group Head:** ${form.groupHeadName}
-**HEART Classification:** ${(form.heartSectorClassification || '').replace(/_/g, ' ')}
+**Group Head:** ${form.groupHeadName || '(not provided)'}
+**Group Head approval confirmed:** ${form.confirmGroupHeadApproval ? 'Yes' : 'No'}
+**HEART Sector Classification:** ${(form.heartSectorClassification || '').replace(/_/g, ' ') || '(not provided)'}
 
 ## Problem Statement
 ${form.problemDescription}

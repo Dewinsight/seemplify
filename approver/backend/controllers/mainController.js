@@ -98,18 +98,8 @@ exports.analyzeProject = async (req, res) => {
     try {
         const { name, description, repoUrl, formData } = req.body;
 
-        // Pre-submission validation (process rules 2 & 3 — not LLM rules)
-        const fd = formData || {};
-        if (!fd.groupHeadName || !fd.groupHeadName.trim()) {
-            return res.status(400).json({ error: 'Group Head approval is required. Please provide the Group Head name and confirm approval before submission.' });
-        }
-        if (!fd.confirmGroupHeadApproval) {
-            return res.status(400).json({ error: 'You must confirm that the Group Head has approved this initiative before submission.' });
-        }
-        const heartOptions = ['direct_heart_impact', 'indirect_heart_impact', 'heart_adjacent', 'non_heart'];
-        if (!fd.heartSectorClassification || !heartOptions.includes(fd.heartSectorClassification)) {
-            return res.status(400).json({ error: 'HEART Sector Classification is required. Please classify the initiative as Direct HEART Impact, Indirect HEART Impact, HEART-Adjacent, or Non-HEART.' });
-        }
+        // No form-level rejection — Group Head and HEART are evaluated as AI rules.
+        // If rules 2 & 3 are active and mandatory, AI will reject when they fail.
 
         // Determine Department
         let department = req.body.department;
