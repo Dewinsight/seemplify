@@ -9,6 +9,9 @@ interface Rule {
     category: string;
     weight: number;
     isMandatory: boolean;
+    isActive: boolean;
+    isSystem?: boolean;
+    isHidden?: boolean;
     department?: { _id: string; name: string } | null;
 }
 
@@ -17,6 +20,15 @@ const CATEGORY_ICONS: Record<string, string> = {
     'Security': '🔒',
     'Performance': '⚡',
     'Architecture': '🏛️',
+    'GATE': '🚪',
+    'ESCALATION': '⬆️',
+    'SCORING': '📊',
+    'STRATEGIC': '🎯',
+    'BOOST': '⬆️',
+    'PENALTY': '⬇️',
+    'CAP': '🔒',
+    'GENERAL': '📦',
+    'MANDATORY': '⚠️',
     'Other': '📦'
 };
 
@@ -24,6 +36,8 @@ const Rules: React.FC = () => {
     const [rules, setRules] = useState<Rule[]>([]);
     const { activeDepartment, activeOrganization } = useAuth();
     const [availableDepartments, setAvailableDepartments] = useState<any[]>([]);
+    const [includeHidden, setIncludeHidden] = useState(false);
+    const [bulkLoading, setBulkLoading] = useState(false);
     // Form state: department is ID string or empty (for Global)
     const [form, setForm] = useState({
         name: '',
@@ -64,16 +78,43 @@ const Rules: React.FC = () => {
 
     useEffect(() => {
         fetchRules();
-    }, [activeDepartment]); // Refetch when context changes
+    }, [activeDepartment, includeHidden]);
 
     const fetchRules = async () => {
         try {
-            // Filter by context if active (and assume controller returns global + dept)
-            const query = activeDepartment ? `?department=${activeDepartment._id}` : '';
+            const params: string[] = [];
+            if (activeDepartment) params.push(`department=${activeDepartment._id}`);
+            if (includeHidden && canEdit) params.push('includeHidden=1');
+            const query = params.length ? '?' + params.join('&') : '';
             const response = await api.get(`/rules${query}`);
             setRules(response.data);
         } catch (error) {
             console.error('Error fetching rules:', error);
+        }
+    };
+
+    const handleToggleRule = async (rule: Rule, field: 'isActive' | 'isHidden', value: boolean) => {
+        if (!rule.isSystem || !canEdit) return;
+        try {
+            await api.patch(`/rules/${rule._id}`, { [field]: value });
+            fetchRules();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to update rule');
+        }
+    };
+
+    const handleBulkSystemRules = async (isActive: boolean) => {
+        if (!activeOrganization?.isAdmin) return;
+        setBulkLoading(true);
+        try {
+            await api.patch('/rules/system/bulk', { isActive });
+            fetchRules();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to update system rules');
+        } finally {
+            setBulkLoading(false);
         }
     };
 
@@ -216,8 +257,28 @@ const Rules: React.FC = () => {
 
                 <div style={{ flex: 1, minWidth: '300px' }}>
                     <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
-                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
                             <h3 style={{ margin: 0 }}>Active Rules Library ({rules.length})</h3>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                {canEdit && (
+                                    <>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                                            <input type="checkbox" checked={includeHidden} onChange={e => setIncludeHidden(e.target.checked)} style={{ accentColor: 'var(--brand-primary)' }} />
+                                            Show hidden
+                                        </label>
+                                        {activeOrganization?.isAdmin && (
+                                            <>
+                                                <button onClick={() => handleBulkSystemRules(false)} disabled={bulkLoading} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'rgba(244,67,54,0.2)', border: '1px solid rgba(244,67,54,0.4)', color: '#f44336', borderRadius: '6px', cursor: 'pointer' }}>
+                                                    Turn off all system rules
+                                                </button>
+                                                <button onClick={() => handleBulkSystemRules(true)} disabled={bulkLoading} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'rgba(76,175,80,0.2)', border: '1px solid rgba(76,175,80,0.4)', color: '#4caf50', borderRadius: '6px', cursor: 'pointer' }}>
+                                                    Turn on all system rules
+                                                </button>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
 
                         {rules.length === 0 ? (
@@ -227,9 +288,22 @@ const Rules: React.FC = () => {
                         ) : (
                             <div style={{ padding: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1.5rem' }}>
                                 {rules.map(rule => (
-                                    <div key={rule._id} className="glass-card" style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', position: 'relative', borderLeft: rule.isMandatory ? '4px solid var(--sterling-red)' : '4px solid transparent' }}>
+                                    <div key={rule._id} className="glass-card" style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', position: 'relative', borderLeft: rule.isMandatory ? '4px solid var(--sterling-red)' : '4px solid transparent', opacity: rule.isActive === false ? 0.7 : 1 }} data-rule-active={rule.isActive}>
                                         {/* Badges Container */}
-                                        <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                                        <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            {rule.isSystem && (
+                                                <div style={{
+                                                    background: 'rgba(155, 81, 224, 0.3)',
+                                                    color: '#b794f6',
+                                                    fontSize: '0.7rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 'bold',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    System
+                                                </div>
+                                            )}
                                             {rule.department ? (
                                                 <div style={{
                                                     background: 'rgba(33, 150, 243, 0.2)',
@@ -268,6 +342,19 @@ const Rules: React.FC = () => {
                                                     Mandatory
                                                 </div>
                                             )}
+                                            {rule.isActive === false && (
+                                                <div style={{
+                                                    background: 'rgba(255,255,255,0.15)',
+                                                    color: 'var(--text-secondary)',
+                                                    fontSize: '0.7rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 'bold',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    Off
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem', paddingRight: '1rem', marginTop: '1.5rem' }}>
@@ -282,11 +369,11 @@ const Rules: React.FC = () => {
                                                 borderRadius: '8px',
                                                 flexShrink: 0
                                             }}>
-                                                {CATEGORY_ICONS[rule.category] || '📦'}
+                                                {CATEGORY_ICONS[rule.category || ''] || '📦'}
                                             </div>
                                             <div>
                                                 <h4 style={{ margin: 0, fontSize: '1.1rem', wordBreak: 'break-word', lineHeight: '1.3', color: 'var(--text-primary)' }}>{rule.name}</h4>
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{rule.category}</span>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{rule.category || 'General'}</span>
                                             </div>
                                         </div>
 
@@ -294,7 +381,7 @@ const Rules: React.FC = () => {
                                             {rule.criteria}
                                         </p>
 
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', gap: '0.5rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Weight:</span>
                                                 <div style={{ display: 'flex', gap: '2px' }}>
@@ -310,25 +397,45 @@ const Rules: React.FC = () => {
                                                 <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{rule.weight}</span>
                                             </div>
 
-                                            {canEdit && (
-                                                <button
-                                                    onClick={() => handleDelete(rule._id)}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        cursor: 'pointer',
-                                                        fontSize: '1rem',
-                                                        opacity: 0.6,
-                                                        transition: 'opacity 0.2s',
-                                                        padding: '4px'
-                                                    }}
-                                                    title="Delete Rule"
-                                                    onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-                                                    onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
-                                                >
-                                                    🗑️
-                                                </button>
-                                            )}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                {canEdit && rule.isSystem && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleToggleRule(rule, 'isActive', !rule.isActive)}
+                                                            title={rule.isActive ? 'Turn off' : 'Turn on'}
+                                                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: rule.isActive ? 'rgba(244,67,54,0.2)' : 'rgba(76,175,80,0.2)', border: `1px solid ${rule.isActive ? 'rgba(244,67,54,0.4)' : 'rgba(76,175,80,0.4)'}`, color: rule.isActive ? '#f44336' : '#4caf50', borderRadius: '4px', cursor: 'pointer' }}
+                                                        >
+                                                            {rule.isActive ? 'Off' : 'On'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleToggleRule(rule, 'isHidden', !rule.isHidden)}
+                                                            title={rule.isHidden ? 'Show' : 'Hide'}
+                                                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.1)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', borderRadius: '4px', cursor: 'pointer' }}
+                                                        >
+                                                            {rule.isHidden ? '👁️ Show' : '🙈 Hide'}
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {canEdit && !rule.isSystem && (
+                                                    <button
+                                                        onClick={() => handleDelete(rule._id)}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            cursor: 'pointer',
+                                                            fontSize: '1rem',
+                                                            opacity: 0.6,
+                                                            transition: 'opacity 0.2s',
+                                                            padding: '4px'
+                                                        }}
+                                                        title="Delete Rule"
+                                                        onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+                                                        onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

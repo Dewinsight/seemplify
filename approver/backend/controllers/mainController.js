@@ -5,12 +5,14 @@ const openAIService = require('../services/OpenAIService');
 
 exports.createRule = async (req, res) => {
     try {
-        // Ensure department is handled (null if empty)
-        const { department } = req.body;
+        const { department, ...rest } = req.body;
+        // User-created rules are never system rules
         const rule = new Rule({
-            ...req.body,
+            ...rest,
             department: department || null,
-            organization: req.organization
+            organization: req.organization,
+            isSystem: false,
+            isHidden: false
         });
         await rule.save();
         res.status(201).json(rule);
@@ -21,14 +23,10 @@ exports.createRule = async (req, res) => {
 
 exports.getRules = async (req, res) => {
     try {
-        const { department } = req.query;
+        const { department, includeHidden } = req.query;
         let query = { organization: req.organization };
 
         if (department) {
-            // Specific Context: Rules for this Dept + General Rules
-            query.$or = [{ department: department }, { department: null }];
-            query.organization = req.organization;
-            // Restructure for $or with org
             query = {
                 organization: req.organization,
                 $or: [{ department: department }, { department: null }]
@@ -36,7 +34,11 @@ exports.getRules = async (req, res) => {
         } else if (!req.user.isAdmin) {
             query.department = null;
         }
-        // If Admin and no department query, query has just org filter (all rules in org)
+
+        // By default exclude hidden rules unless admin requests includeHidden=1
+        if (includeHidden !== '1' && includeHidden !== 'true') {
+            query.isHidden = { $ne: true };
+        }
 
         const rules = await Rule.find(query).populate('department', 'name');
         res.json(rules);
@@ -377,12 +379,52 @@ exports.getDashboardStats = async (req, res) => {
     }
 };
 
-// Delete a rule
+// Bulk update system rules (turn off/on all, or hide/unhide all)
+exports.bulkUpdateSystemRules = async (req, res) => {
+    try {
+        const { isActive, isHidden } = req.body;
+        const update = {};
+        if (typeof isActive === 'boolean') update.isActive = isActive;
+        if (typeof isHidden === 'boolean') update.isHidden = isHidden;
+        if (Object.keys(update).length === 0) {
+            return res.status(400).json({ error: 'Provide isActive and/or isHidden' });
+        }
+        const result = await Rule.updateMany(
+            { organization: req.organization, isSystem: true },
+            { $set: update }
+        );
+        res.json({ modifiedCount: result.modifiedCount, message: 'System rules updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Update rule (isActive, isHidden only — used for system rules)
+exports.updateRule = async (req, res) => {
+    try {
+        const rule = await Rule.findOne({ _id: req.params.id, organization: req.organization });
+        if (!rule) {
+            return res.status(404).json({ error: 'Rule not found in your organization' });
+        }
+        const { isActive, isHidden } = req.body;
+        if (typeof isActive === 'boolean') rule.isActive = isActive;
+        if (typeof isHidden === 'boolean') rule.isHidden = isHidden;
+        await rule.save();
+        res.json(rule);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Delete a rule (system rules cannot be deleted)
 exports.deleteRule = async (req, res) => {
     try {
         const rule = await Rule.findOne({ _id: req.params.id, organization: req.organization });
         if (!rule) {
             return res.status(404).json({ error: 'Rule not found in your organization' });
+        }
+        if (rule.isSystem) {
+            return res.status(403).json({ error: 'System rules cannot be deleted. You can turn them off or hide them.' });
         }
         await Rule.findByIdAndDelete(req.params.id);
         res.json({ message: 'Rule deleted successfully' });

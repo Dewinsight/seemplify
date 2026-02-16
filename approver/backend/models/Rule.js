@@ -9,6 +9,10 @@ const RuleSchema = new mongoose.Schema({
     organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' }, // Null = Global within org
     isActive: { type: Boolean, default: true },
+    isSystem: { type: Boolean, default: false }, // System rules: cannot be deleted, only toggled/hidden
+    isHidden: { type: Boolean, default: false }, // Hidden from default view; admins can unhide
+    category: { type: String }, // GATE, ESCALATION, SCORING, STRATEGIC, BOOST, PENALTY, CAP
+    systemRuleId: { type: Number }, // Id from mosaic_approver_rules_v2.json atomic_rules for deduplication
     createdAt: { type: Date, default: Date.now }
 });
 

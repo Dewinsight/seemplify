@@ -49,6 +49,8 @@ router.patch('/users/role', verifyToken, injectOrgContext, verifyRole(['Admin'])
 // --- Rules ---
 router.post('/rules', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.createRule);
 router.get('/rules', verifyToken, injectOrgContext, mainController.getRules);
+router.patch('/rules/system/bulk', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.bulkUpdateSystemRules);
+router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.updateRule);
 
 // --- Projects ---
 router.post('/projects/analyze', verifyToken, injectOrgContext, mainController.analyzeProject);
