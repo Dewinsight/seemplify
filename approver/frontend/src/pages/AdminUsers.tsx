@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api';
+import React, { useState, useEffect, useRef } from 'react';
+import api, { getLogoUrl } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
 
@@ -44,8 +44,8 @@ const getRoleColor = (role: string) => {
 };
 
 const AdminUsers: React.FC = () => {
-    const { activeOrganization } = useAuth();
-    const [activeTab, setActiveTab] = useState<'users' | 'departments'>('users');
+    const { activeOrganization, refreshOrganizations, switchOrganization } = useAuth();
+    const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'organization'>('users');
 
     // Users State
     const [users, setUsers] = useState<User[]>([]);
@@ -61,9 +61,19 @@ const AdminUsers: React.FC = () => {
     const [deptLoading, setDeptLoading] = useState(false);
     const [deptPage, setDeptPage] = useState(0);
 
+    // Organization State
+    const [orgName, setOrgName] = useState('');
+    const [orgLoading, setOrgLoading] = useState(false);
+    const [logoLoading, setLogoLoading] = useState(false);
+    const logoInputRef = useRef<HTMLInputElement>(null);
+
     useEffect(() => {
         fetchData();
     }, []);
+
+    useEffect(() => {
+        if (activeOrganization?.name) setOrgName(activeOrganization.name);
+    }, [activeOrganization?.name]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -161,6 +171,52 @@ const AdminUsers: React.FC = () => {
         }
     };
 
+    // --- Organization Logic ---
+    const handleSaveOrgName = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!orgName.trim()) return;
+        setOrgLoading(true);
+        try {
+            await api.patch('/organizations/current', { name: orgName.trim() });
+            const orgs = await refreshOrganizations();
+            const updated = orgs.find(o => o._id === activeOrganization?._id);
+            if (updated) switchOrganization(updated);
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to update organization name');
+        } finally {
+            setOrgLoading(false);
+        }
+    };
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file (PNG, JPG, GIF, or WebP)');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            alert('Image must be under 2MB');
+            return;
+        }
+        setLogoLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append('logo', file);
+            await api.post('/organizations/current/logo', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            const orgs = await refreshOrganizations();
+            const updated = orgs.find(o => o._id === activeOrganization?._id);
+            if (updated) switchOrganization(updated);
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to upload logo');
+        } finally {
+            setLogoLoading(false);
+            e.target.value = '';
+        }
+    };
+
     // Only org admins can access this page (matches backend verifyRole(['Admin'])).
     if (!activeOrganization?.isAdmin) {
         return <div className="glass-panel">Access Denied</div>;
@@ -197,11 +253,74 @@ const AdminUsers: React.FC = () => {
                     >
                         Departments
                     </button>
+                    <button
+                        onClick={() => setActiveTab('organization')}
+                        style={{
+                            background: activeTab === 'organization' ? 'var(--brand-primary)' : 'transparent',
+                            color: activeTab === 'organization' ? 'white' : 'var(--text-primary)',
+                            border: 'none', padding: '0.6rem 1.2rem',
+                            borderRadius: '6px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                        }}
+                    >
+                        Organization
+                    </button>
                 </div>
             </div>
 
             {/* Content Area */}
-            {activeTab === 'users' ? (
+            {activeTab === 'organization' ? (
+                <div className="glass-panel">
+                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', color: 'var(--text-primary)' }}>Organization Settings</h3>
+                    <div style={{ display: 'grid', gap: '2rem', maxWidth: '500px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Organization Name</label>
+                            <form onSubmit={handleSaveOrgName} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
+                                <input
+                                    value={orgName}
+                                    onChange={e => setOrgName(e.target.value)}
+                                    placeholder="e.g. Acme Corp"
+                                    required
+                                    style={{ flex: 1, padding: '0.75rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', borderRadius: '6px' }}
+                                />
+                                <button type="submit" className="btn-primary" disabled={orgLoading} style={{ padding: '0.75rem 1.5rem' }}>
+                                    {orgLoading ? 'Saving...' : 'Save Name'}
+                                </button>
+                            </form>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Organization Logo</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                {activeOrganization?.logo && (
+                                    <img
+                                        src={getLogoUrl(activeOrganization.logo) || ''}
+                                        alt="Organization logo"
+                                        style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: 'rgba(255,255,255,0.05)' }}
+                                    />
+                                )}
+                                <div>
+                                    <input
+                                        ref={logoInputRef}
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                                        onChange={handleLogoUpload}
+                                        style={{ display: 'none' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => logoInputRef.current?.click()}
+                                        className="btn-primary"
+                                        disabled={logoLoading}
+                                        style={{ padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}
+                                    >
+                                        {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
+                                    </button>
+                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>PNG, JPG, GIF or WebP. Max 2MB.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : activeTab === 'users' ? (
                 <div className="glass-panel">
                     <div className="table-scroll-container">
                         <table className="data-table table-min-width">

@@ -842,13 +842,14 @@ exports.getMyOrganizations = async (req, res) => {
         const UserOrganization = require('../models/UserOrganization');
 
         const memberships = await UserOrganization.find({ user: req.user.id })
-            .populate('organization', 'name slug')
+            .populate('organization', 'name slug logo')
             .populate('permissions.department', 'name');
 
         const organizations = memberships.map(m => ({
             _id: m.organization._id,
             name: m.organization.name,
             slug: m.organization.slug,
+            logo: m.organization.logo,
             isAdmin: m.isAdmin,
             permissions: m.permissions
         }));

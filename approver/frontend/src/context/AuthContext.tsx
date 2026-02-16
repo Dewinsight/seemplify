@@ -11,6 +11,7 @@ interface OrgMembership {
     _id: string;       // organization _id
     name: string;
     slug: string;
+    logo?: string;     // path to uploaded logo
     isAdmin: boolean;
     permissions: OrgPermission[];
 }

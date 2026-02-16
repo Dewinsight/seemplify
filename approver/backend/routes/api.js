@@ -3,6 +3,8 @@ const router = express.Router();
 const mainController = require('../controllers/mainController');
 const authController = require('../controllers/authController');
 const inviteController = require('../controllers/inviteController');
+const organizationController = require('../controllers/organizationController');
+const upload = require('../middleware/upload');
 const { verifyToken, verifyRole, injectOrgContext, optionalToken } = require('../middleware/auth');
 
 // --- Auth Routes ---
@@ -18,6 +20,13 @@ router.get('/organizations', mainController.getOrganizations); // Public list
 router.post('/organizations', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.createOrganization);
 router.post('/organizations/create-and-join', verifyToken, mainController.createAndJoin); // Onboarding (no org context)
 router.get('/organizations/my', verifyToken, mainController.getMyOrganizations); // My memberships (no org context)
+router.patch('/organizations/current', verifyToken, injectOrgContext, verifyRole(['Admin']), organizationController.updateOrganization);
+router.post('/organizations/current/logo', verifyToken, injectOrgContext, verifyRole(['Admin']), (req, res, next) => {
+    upload.single('logo')(req, res, (err) => {
+        if (err) return res.status(400).json({ error: err.message || 'Invalid file' });
+        next();
+    });
+}, organizationController.uploadLogo);
 
 // --- Invites ---
 router.get('/invites/pending', verifyToken, inviteController.getPendingInvites); // My pending invites (no org context)

@@ -12,6 +12,10 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 80;
 
+// Static files for uploaded logos
+const uploadsPath = path.join(__dirname, 'uploads');
+app.use('/api/uploads', express.static(uploadsPath));
+
 // Middleware
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' ? true : (process.env.FRONTEND_URL || 'http://localhost:5173'),

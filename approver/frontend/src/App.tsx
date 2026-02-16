@@ -4,7 +4,7 @@ import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, Proj
 import { AuthProvider, useAuth } from './context/AuthContext';
 import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import api from './api';
+import api, { getLogoUrl } from './api';
 import { getUserDisplayName, getUserInitials } from './utils/userDisplay';
 
 // Icons as simple SVG components
@@ -202,6 +202,16 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 
         {/* Footer - User Info & Controls */}
         <div className="sidebar-footer">
+          {/* Organization Logo - above user info */}
+          {activeOrganization?.logo && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+              <img
+                src={getLogoUrl(activeOrganization.logo) || ''}
+                alt={activeOrganization.name}
+                style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: '8px', background: 'rgba(255,255,255,0.05)' }}
+              />
+            </div>
+          )}
           {/* User Info */}
           <Link to="/profile" onClick={handleNavClick} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', color: 'inherit', marginBottom: '1rem' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>

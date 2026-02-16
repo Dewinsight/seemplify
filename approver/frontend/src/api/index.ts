@@ -26,4 +26,14 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+/** Build full URL for organization logo from stored path */
+export const getLogoUrl = (logoPath: string | undefined): string | null => {
+    if (!logoPath) return null;
+    const filename = logoPath.split('/').pop();
+    if (!filename) return null;
+    const base = api.defaults.baseURL || '';
+    const origin = base.replace(/\/api\/?$/, '');
+    return `${origin}/api/uploads/logos/${filename}`;
+};
+
 export default api;
