@@ -217,7 +217,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
             const mode = activeOrganization?.logoMode || 'all';
             const showInDark = mode === 'all' || mode === 'dark' || (mode === 'system' && systemPrefersDark);
             const showInLight = mode === 'all' || mode === 'light' || (mode === 'system' && !systemPrefersDark);
-            const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+            const isDark = theme === 'dark' || ((theme as string) === 'system' && systemPrefersDark);
             const shouldShow = (isDark ? showInDark : showInLight) && (
               mode === 'all' ? activeOrganization?.logo :
               isDark ? activeOrganization?.logoDark : activeOrganization?.logoLight

@@ -17,6 +17,8 @@ interface FormData {
     submitterEmail?: string;
     submitterPhone?: string;
     groupHeadName?: string;
+    confirmGroupHeadApproval?: boolean;
+    heartSectorClassification?: string;
     problemDescription?: string;
     whoAffected?: string;
     currentHandling?: string;
