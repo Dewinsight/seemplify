@@ -56,7 +56,12 @@ class OpenAIService {
 
     async analyzeProject(projectDescription, rules) {
         try {
-            const rulePrompts = rules.map(r => `- ${r.name}: ${r.criteria || r.description}`).join('\n');
+            // Build rule list, marking mandatory ones so AI can flag failures
+            const rulePrompts = rules.map(r => {
+                const tag = r.isMandatory ? ' [MANDATORY]' : '';
+                return `- ${r.name}${tag}: ${r.criteria || r.description}`;
+            }).join('\n');
+
             const rubric = loadScoringRubric();
             const scoringSection = rubric ? `
             === TASK 2: PRIORITY SCORE CALCULATION (use rubric from rules) ===
@@ -87,15 +92,17 @@ class OpenAIService {
             
             === TASK 1: RULE ANALYSIS ===
             For each rule listed above, determine if the initiative PASSES or FAILS. Provide a brief reason.
-            IMPORTANT: In "ruleName", use the EXACT rule name as listed above (before the colon). Do not rename or rephrase rules.
+            Rules marked [MANDATORY] are critical — if ANY mandatory rule fails, the initiative must be rejected.
             ${scoringSection}
             
             Return the response in JSON format:
             {
                 "overallStatus": "Approved" | "Rejected",
                 "rulesAnalysis": [
-                    { "ruleName": "Name", "status": "Pass" | "Fail", "reason": "Reasoning" }
+                    { "ruleName": "Rule name", "status": "Pass" | "Fail", "reason": "Brief reason", "mandatory": true | false }
                 ],
+                "mandatoryFailed": true | false,
+                "failedMandatoryRules": ["name of any mandatory rule that failed"],
                 "scoringBreakdown": {
                     "strategicAlignment": { "score": 1-5, "reason": "Brief justification" },
                     "regulatoryRisk": { "score": 1-5, "reason": "Brief justification" },

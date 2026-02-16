@@ -269,9 +269,9 @@ const ProjectDetail: React.FC = () => {
                                 <>Score: {project.score}/100</>
                             )}
                         </div>
-                        {project.priorityScore != null && (
+                        {project.analysisResult?.rulesAnalysis && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8, marginTop: '0.15rem' }}>
-                                Rules: {project.score}/100 passed
+                                Rules: {project.analysisResult.rulesAnalysis.filter(r => r.status.toLowerCase() === 'pass').length}/{project.analysisResult.rulesAnalysis.length} passed
                             </div>
                         )}
                         {project.tier && (

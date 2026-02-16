@@ -243,7 +243,7 @@ const Dashboard: React.FC = () => {
                                             {p.approvalStatus}
                                         </span>
                                         <span style={{ fontWeight: 600, color: 'var(--sterling-gold)' }}>
-                                            {p.score || 0}/100
+                                            {p.priorityScore != null ? `${Number(p.priorityScore).toFixed(1)}/5` : `${p.score || 0}/100`}
                                         </span>
                                     </div>
                                 </div>

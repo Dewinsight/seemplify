@@ -140,56 +140,17 @@ exports.analyzeProject = async (req, res) => {
         // 2. Perform Analysis
         const analysisResult = await openAIService.analyzeProject(description || "No description provided", rules);
 
-        // 3. Compute weighted score and check for mandatory rule failures
-        let totalWeight = 0;
-        let passedWeight = 0;
-        let mandatoryFailed = false;
-        const escalationTriggers = [];
-
-        // Build lookup maps: exact name and normalized name for fuzzy matching
-        const ruleMapExact = {};
-        const ruleMapNorm = {};
-        const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        rules.forEach(r => {
-            ruleMapExact[r.name] = r;
-            ruleMapNorm[normalize(r.name)] = r;
-            totalWeight += r.weight || 1;
-        });
-
-        const findRule = (aiName) => {
-            if (ruleMapExact[aiName]) return ruleMapExact[aiName];
-            const norm = normalize(aiName);
-            if (ruleMapNorm[norm]) return ruleMapNorm[norm];
-            // Partial match: if AI name contains or is contained by a DB rule name
-            for (const r of rules) {
-                const rNorm = normalize(r.name);
-                if (rNorm.includes(norm) || norm.includes(rNorm)) return r;
-            }
-            return null;
-        };
-
+        // 3. Score and mandatory checks — directly from AI response, no name matching needed
         const ruleAnalyses = analysisResult.rulesAnalysis || [];
-        const matchedRuleIds = new Set();
+        const totalRules = ruleAnalyses.length;
+        const passedRules = ruleAnalyses.filter(ra => ra.status && ra.status.toLowerCase() === 'pass').length;
+        const score = totalRules > 0 ? Math.round((passedRules / totalRules) * 100) : 0;
 
-        ruleAnalyses.forEach(ra => {
-            const rule = findRule(ra.ruleName);
-            if (!rule) return;
-            const ruleId = rule._id?.toString() || rule.name;
-            if (matchedRuleIds.has(ruleId)) return; // avoid double-counting
-            matchedRuleIds.add(ruleId);
-            const weight = rule.weight || 1;
-            if (ra.status && ra.status.toLowerCase() === 'pass') {
-                passedWeight += weight;
-            }
-            // Check for mandatory rule failures (these are escalation triggers)
-            if (rule.isMandatory && (!ra.status || ra.status.toLowerCase() !== 'pass')) {
-                mandatoryFailed = true;
-                escalationTriggers.push(rule.name);
-            }
-        });
-
-        const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
+        // Mandatory failure: trust AI's assessment (it knows which rules are mandatory from the prompt)
+        const mandatoryFailed = analysisResult.mandatoryFailed === true ||
+            ruleAnalyses.some(ra => ra.mandatory === true && ra.status && ra.status.toLowerCase() !== 'pass');
+        const escalationTriggers = analysisResult.failedMandatoryRules || 
+            ruleAnalyses.filter(ra => ra.mandatory === true && ra.status && ra.status.toLowerCase() !== 'pass').map(ra => ra.ruleName);
 
         // 4. Priority Score: always compute from breakdown when available (source of truth per rubric)
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
