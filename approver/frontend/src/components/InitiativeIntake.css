@@ -251,6 +251,10 @@
     color: white;
 }
 
+[data-theme='dark'] .form-select {
+    color-scheme: dark;
+}
+
 .form-input:focus,
 .form-textarea:focus,
 .form-select:focus {
@@ -262,7 +266,8 @@
 }
 
 [data-theme='dark'] .form-input:focus,
-[data-theme='dark'] .form-textarea:focus {
+[data-theme='dark'] .form-textarea:focus,
+[data-theme='dark'] .form-select:focus {
     background: rgba(0, 0, 0, 0.4);
 }
 

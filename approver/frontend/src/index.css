@@ -315,6 +315,10 @@ select {
   color: white;
 }
 
+[data-theme='dark'] select {
+  color-scheme: dark;
+}
+
 input:focus,
 textarea:focus {
   outline: 2px solid var(--sterling-gold);
