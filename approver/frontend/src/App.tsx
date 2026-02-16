@@ -202,13 +202,27 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 
         {/* Footer - User Info & Controls */}
         <div className="sidebar-footer">
-          {/* Organization Logo - above user info */}
+          {/* Organization Logo - prominent branding above user info */}
           {activeOrganization?.logo && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '1.25rem',
+              padding: '1rem',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '12px'
+            }}>
               <img
                 src={getLogoUrl(activeOrganization.logo) || ''}
                 alt={activeOrganization.name}
-                style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: '8px', background: 'rgba(255,255,255,0.05)' }}
+                style={{
+                  width: 80,
+                  height: 80,
+                  objectFit: 'contain',
+                  borderRadius: '10px'
+                }}
               />
             </div>
           )}
