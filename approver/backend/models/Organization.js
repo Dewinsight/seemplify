@@ -5,6 +5,8 @@ const OrganizationSchema = new mongoose.Schema({
     slug: { type: String, required: true, unique: true, lowercase: true },
     description: { type: String },
     logo: { type: String }, // Path/filename of uploaded logo (e.g. uploads/logos/orgId-filename.png)
+    logoBackground: { type: String, default: 'transparent' }, // 'transparent' or hex color e.g. '#1a1a2e'
+    logoMode: { type: String, default: 'all', enum: ['dark', 'light', 'system', 'all'] }, // When to show: dark theme only, light only, follow system, or always
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdAt: { type: Date, default: Date.now }
 });

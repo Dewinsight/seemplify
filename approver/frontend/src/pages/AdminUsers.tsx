@@ -65,6 +65,9 @@ const AdminUsers: React.FC = () => {
     const [orgName, setOrgName] = useState('');
     const [orgLoading, setOrgLoading] = useState(false);
     const [logoLoading, setLogoLoading] = useState(false);
+    const [logoBackground, setLogoBackground] = useState<string>('transparent');
+    const [logoMode, setLogoMode] = useState<'dark' | 'light' | 'system' | 'all'>('all');
+    const [logoSettingsLoading, setLogoSettingsLoading] = useState(false);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -73,7 +76,9 @@ const AdminUsers: React.FC = () => {
 
     useEffect(() => {
         if (activeOrganization?.name) setOrgName(activeOrganization.name);
-    }, [activeOrganization?.name]);
+        if (activeOrganization?.logoBackground !== undefined) setLogoBackground(activeOrganization.logoBackground || 'transparent');
+        if (activeOrganization?.logoMode) setLogoMode(activeOrganization.logoMode);
+    }, [activeOrganization?.name, activeOrganization?.logoBackground, activeOrganization?.logoMode]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -217,6 +222,36 @@ const AdminUsers: React.FC = () => {
         }
     };
 
+    const handleRemoveLogo = async () => {
+        if (!activeOrganization?.logo) return;
+        if (!window.confirm('Remove the organization logo?')) return;
+        setLogoLoading(true);
+        try {
+            await api.delete('/organizations/current/logo');
+            const orgs = await refreshOrganizations();
+            const updated = orgs.find(o => o._id === activeOrganization?._id);
+            if (updated) switchOrganization(updated);
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to remove logo');
+        } finally {
+            setLogoLoading(false);
+        }
+    };
+
+    const handleSaveLogoSettings = async () => {
+        setLogoSettingsLoading(true);
+        try {
+            await api.patch('/organizations/current', { logoBackground, logoMode });
+            const orgs = await refreshOrganizations();
+            const updated = orgs.find(o => o._id === activeOrganization?._id);
+            if (updated) switchOrganization(updated);
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to update logo settings');
+        } finally {
+            setLogoSettingsLoading(false);
+        }
+    };
+
     // Only org admins can access this page (matches backend verifyRole(['Admin'])).
     if (!activeOrganization?.isAdmin) {
         return <div className="glass-panel">Access Denied</div>;
@@ -342,19 +377,109 @@ const AdminUsers: React.FC = () => {
                                         onChange={handleLogoUpload}
                                         style={{ display: 'none' }}
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={() => logoInputRef.current?.click()}
-                                        className="btn-primary"
-                                        disabled={logoLoading}
-                                        style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem', marginBottom: '0.5rem' }}
-                                    >
-                                        {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => logoInputRef.current?.click()}
+                                            className="btn-primary"
+                                            disabled={logoLoading}
+                                            style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem' }}
+                                        >
+                                            {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
+                                        </button>
+                                        {activeOrganization?.logo && (
+                                            <button
+                                                type="button"
+                                                onClick={handleRemoveLogo}
+                                                disabled={logoLoading}
+                                                style={{
+                                                    padding: '0.65rem 1.25rem',
+                                                    fontSize: '0.95rem',
+                                                    background: 'rgba(244, 67, 54, 0.15)',
+                                                    border: '1px solid rgba(244, 67, 54, 0.4)',
+                                                    color: '#f44336',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 500
+                                                }}
+                                            >
+                                                Remove Logo
+                                            </button>
+                                        )}
+                                    </div>
                                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                                         PNG, JPG, GIF or WebP. Max 2MB.
                                     </p>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Logo display options */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Logo display options</label>
+                            <div style={{
+                                padding: '1.25rem',
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '1.25rem'
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Background</div>
+                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <select
+                                            value={logoBackground === 'transparent' ? 'transparent' : 'custom'}
+                                            onChange={e => {
+                                                setLogoBackground(e.target.value === 'transparent' ? 'transparent' : '#1a1a2e');
+                                            }}
+                                            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontSize: '0.9rem' }}
+                                        >
+                                            <option value="transparent">Transparent</option>
+                                            <option value="custom">Custom color</option>
+                                        </select>
+                                        {logoBackground !== 'transparent' && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input
+                                                    type="color"
+                                                    value={logoBackground.startsWith('#') ? logoBackground : '#1a1a2e'}
+                                                    onChange={e => setLogoBackground(e.target.value)}
+                                                    style={{ width: 36, height: 36, padding: 2, border: '1px solid var(--glass-border)', borderRadius: '6px', cursor: 'pointer', background: 'transparent' }}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={logoBackground}
+                                                    onChange={e => setLogoBackground(e.target.value)}
+                                                    placeholder="#1a1a2e"
+                                                    style={{ width: 100, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Show logo in</div>
+                                    <select
+                                        value={logoMode}
+                                        onChange={e => setLogoMode(e.target.value as 'dark' | 'light' | 'system' | 'all')}
+                                        style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontSize: '0.9rem', width: '100%', maxWidth: 280 }}
+                                    >
+                                        <option value="all">All themes (always)</option>
+                                        <option value="dark">Dark mode only</option>
+                                        <option value="light">Light mode only</option>
+                                        <option value="system">Follow system preference</option>
+                                    </select>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveLogoSettings}
+                                    disabled={logoSettingsLoading}
+                                    className="btn-primary"
+                                    style={{ alignSelf: 'flex-start', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                                >
+                                    {logoSettingsLoading ? 'Saving...' : 'Save display options'}
+                                </button>
                             </div>
                         </div>
                     </div>

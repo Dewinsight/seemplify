@@ -85,7 +85,17 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
   const [adminDepartments, setAdminDepartments] = useState<any[]>([]);
   const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
   const location = useLocation();
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => setSystemPrefersDark(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = activeOrganization?.isAdmin || false;
@@ -203,29 +213,37 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
         {/* Footer - User Info & Controls */}
         <div className="sidebar-footer">
           {/* Organization Logo - prominent branding above user info */}
-          {activeOrganization?.logo && (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginBottom: '1.25rem',
-              padding: '1rem',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid var(--glass-border)',
-              borderRadius: '12px'
-            }}>
-              <img
-                src={getLogoUrl(activeOrganization.logo) || ''}
-                alt={activeOrganization.name}
-                style={{
-                  width: 80,
-                  height: 80,
-                  objectFit: 'contain',
-                  borderRadius: '10px'
-                }}
-              />
-            </div>
-          )}
+          {(() => {
+            const mode = activeOrganization?.logoMode || 'all';
+            const showInDark = mode === 'all' || mode === 'dark' || (mode === 'system' && systemPrefersDark);
+            const showInLight = mode === 'all' || mode === 'light' || (mode === 'system' && !systemPrefersDark);
+            const shouldShow = activeOrganization?.logo && (theme === 'dark' ? showInDark : showInLight);
+            const bg = activeOrganization?.logoBackground || 'transparent';
+            const containerBg = bg === 'transparent' ? 'transparent' : bg;
+            return shouldShow ? (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: '1.25rem',
+                padding: '1rem',
+                background: containerBg,
+                border: containerBg === 'transparent' ? '1px solid var(--glass-border)' : 'none',
+                borderRadius: '12px'
+              }}>
+                <img
+                  src={getLogoUrl(activeOrganization!.logo) || ''}
+                  alt={activeOrganization!.name}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    objectFit: 'contain',
+                    borderRadius: '10px'
+                  }}
+                />
+              </div>
+            ) : null;
+          })()}
           {/* User Info */}
           <Link to="/profile" onClick={handleNavClick} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', color: 'inherit', marginBottom: '1rem' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>

@@ -27,6 +27,7 @@ router.post('/organizations/current/logo', verifyToken, injectOrgContext, verify
         next();
     });
 }, organizationController.uploadLogo);
+router.delete('/organizations/current/logo', verifyToken, injectOrgContext, verifyRole(['Admin']), organizationController.removeLogo);
 
 // --- Invites ---
 router.get('/invites/pending', verifyToken, inviteController.getPendingInvites); // My pending invites (no org context)

@@ -156,7 +156,7 @@ exports.login = async (req, res) => {
 
         // Query all org memberships from UserOrganization
         const memberships = await UserOrganization.find({ user: user._id })
-            .populate('organization', 'name slug logo')
+            .populate('organization', 'name slug logo logoBackground logoMode')
             .populate('permissions.department', 'name');
 
         // JWT payload = identity only (no org — active org comes via X-Organization-Id header)
@@ -180,6 +180,8 @@ exports.login = async (req, res) => {
             name: m.organization.name,
             slug: m.organization.slug,
             logo: m.organization.logo,
+            logoBackground: m.organization.logoBackground,
+            logoMode: m.organization.logoMode,
             isAdmin: m.isAdmin,
             permissions: m.permissions
         }));

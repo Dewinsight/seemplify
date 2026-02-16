@@ -12,6 +12,8 @@ interface OrgMembership {
     name: string;
     slug: string;
     logo?: string;     // path to uploaded logo
+    logoBackground?: string;  // 'transparent' or hex color
+    logoMode?: 'dark' | 'light' | 'system' | 'all';  // when to show logo
     isAdmin: boolean;
     permissions: OrgPermission[];
 }
