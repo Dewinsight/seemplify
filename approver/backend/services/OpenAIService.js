@@ -87,6 +87,7 @@ class OpenAIService {
             
             === TASK 1: RULE ANALYSIS ===
             For each rule listed above, determine if the initiative PASSES or FAILS. Provide a brief reason.
+            IMPORTANT: In "ruleName", use the EXACT rule name as listed above (before the colon). Do not rename or rephrase rules.
             ${scoringSection}
             
             Return the response in JSON format:

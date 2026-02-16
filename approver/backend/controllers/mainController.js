@@ -145,17 +145,39 @@ exports.analyzeProject = async (req, res) => {
         let passedWeight = 0;
         let mandatoryFailed = false;
         const escalationTriggers = [];
-        const ruleMap = {};
+
+        // Build lookup maps: exact name and normalized name for fuzzy matching
+        const ruleMapExact = {};
+        const ruleMapNorm = {};
+        const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
         rules.forEach(r => {
-            ruleMap[r.name] = r;
+            ruleMapExact[r.name] = r;
+            ruleMapNorm[normalize(r.name)] = r;
             totalWeight += r.weight || 1;
         });
 
+        const findRule = (aiName) => {
+            if (ruleMapExact[aiName]) return ruleMapExact[aiName];
+            const norm = normalize(aiName);
+            if (ruleMapNorm[norm]) return ruleMapNorm[norm];
+            // Partial match: if AI name contains or is contained by a DB rule name
+            for (const r of rules) {
+                const rNorm = normalize(r.name);
+                if (rNorm.includes(norm) || norm.includes(rNorm)) return r;
+            }
+            return null;
+        };
+
         const ruleAnalyses = analysisResult.rulesAnalysis || [];
+        const matchedRuleIds = new Set();
+
         ruleAnalyses.forEach(ra => {
-            const rule = ruleMap[ra.ruleName];
+            const rule = findRule(ra.ruleName);
             if (!rule) return;
+            const ruleId = rule._id?.toString() || rule.name;
+            if (matchedRuleIds.has(ruleId)) return; // avoid double-counting
+            matchedRuleIds.add(ruleId);
             const weight = rule.weight || 1;
             if (ra.status && ra.status.toLowerCase() === 'pass') {
                 passedWeight += weight;
