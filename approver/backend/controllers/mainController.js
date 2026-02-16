@@ -169,9 +169,24 @@ exports.analyzeProject = async (req, res) => {
 
         const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
 
-        // 4. Use AI's calculated priority score and tier (from new scoring parameters)
+        // 4. Priority Score: always compute from breakdown when available (source of truth per rubric)
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
-        let priorityScore = analysisResult.priorityScore || (score / 20);
+        let priorityScore;
+
+        if (scoringBreakdown) {
+            const s = scoringBreakdown.strategicAlignment?.score ?? 0;
+            const r = scoringBreakdown.regulatoryRisk?.score ?? 0;
+            const b = scoringBreakdown.businessImpact?.score ?? 0;
+            const c = scoringBreakdown.implementationComplexity?.score ?? 0;
+            const t = scoringBreakdown.timeToValue?.score ?? 0;
+            const res = scoringBreakdown.resourceRequirements?.score ?? 0;
+            priorityScore = Math.round(((s * 0.25) + (r * 0.25) + (b * 0.20) + (c * 0.15) + (t * 0.10) + (res * 0.05)) * 100) / 100;
+        } else {
+            priorityScore = typeof analysisResult.priorityScore === 'number' && !isNaN(analysisResult.priorityScore)
+                ? analysisResult.priorityScore
+                : score / 20;
+        }
+
         let tier = analysisResult.calculatedTier;
 
         // Validate and default tier if not provided

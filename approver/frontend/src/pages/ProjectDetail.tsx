@@ -263,8 +263,17 @@ const ProjectDetail: React.FC = () => {
                             {project.approvalStatus}
                         </div>
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                            Score: {project.score}/100
+                            {project.priorityScore != null ? (
+                                <>Priority Score: {project.priorityScore.toFixed(2)}/5.0 ({(project.priorityScore / 5 * 100).toFixed(0)}%)</>
+                            ) : (
+                                <>Score: {project.score}/100</>
+                            )}
                         </div>
+                        {project.priorityScore != null && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8, marginTop: '0.15rem' }}>
+                                Rules: {project.score}/100 passed
+                            </div>
+                        )}
                         {project.tier && (
                             <div style={{
                                 fontSize: '0.85rem',

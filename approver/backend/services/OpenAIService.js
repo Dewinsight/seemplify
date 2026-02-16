@@ -1,4 +1,48 @@
 const OpenAI = require('openai');
+const path = require('path');
+const fs = require('fs');
+
+const RULES_JSON_PATH = path.join(__dirname, '..', '..', 'mosaic_approver_rules_v2.json');
+
+function loadScoringRubric() {
+    try {
+        if (!fs.existsSync(RULES_JSON_PATH)) return null;
+        const data = JSON.parse(fs.readFileSync(RULES_JSON_PATH, 'utf8'));
+        const model = data.priority_score_model;
+        const rubrics = data.parameter_rubrics;
+        if (!model || !rubrics) return null;
+        const weights = model.formula?.weights || {};
+        const lines = [];
+        const paramOrder = [
+            { key: 'strategic_alignment', name: 'Strategic Alignment', field: 'strategicAlignment' },
+            { key: 'regulatory_risk', name: 'Regulatory Risk', field: 'regulatoryRisk' },
+            { key: 'business_impact', name: 'Business Impact', field: 'businessImpact' },
+            { key: 'implementation_complexity', name: 'Implementation Complexity', field: 'implementationComplexity' },
+            { key: 'time_to_value', name: 'Time-to-Value', field: 'timeToValue' },
+            { key: 'resource_requirements', name: 'Resource Requirements', field: 'resourceRequirements' }
+        ];
+        paramOrder.forEach(({ key, name }) => {
+            const r = rubrics[key];
+            const w = (weights[key] || 0) * 100;
+            if (r?.top_level_rubric?.scale) {
+                const defs = r.top_level_rubric.scale.map(s => `Score ${s.score}: ${s.label} — ${s.definition}`).join('\n               ');
+                lines.push(`${name} (${w}% weight)\n               ${defs}`);
+            } else if (r?.scale && Array.isArray(r.scale)) {
+                const defs = r.scale.map(s => `Score ${s.score}: ${s.definition || s.profile || s.label || ''}`).filter(Boolean).join('\n               ');
+                if (defs) lines.push(`${name} (${w}% weight)\n               ${defs}`);
+                else if (r.description) lines.push(`${name} (${w}% weight): ${r.description}`);
+            } else if (r?.description) {
+                lines.push(`${name} (${w}% weight): ${r.description}`);
+            }
+        });
+        const formula = model.formula?.expression || '(Strategic×0.25)+(Regulatory×0.25)+(Business×0.20)+(Complexity×0.15)+(TimeToValue×0.10)+(Resources×0.05)';
+        const tiers = model.tier_classification?.tiers?.map(t => `- ${t.tier}: ${t.score_range?.min}–${t.score_range?.max}`).join('\n            ') || '';
+        return { lines: lines.join('\n\n            '), formula, tiers };
+    } catch (e) {
+        console.warn('Could not load scoring rubric from rules JSON:', e.message);
+        return null;
+    }
+}
 
 class OpenAIService {
     constructor() {
@@ -12,7 +56,25 @@ class OpenAIService {
 
     async analyzeProject(projectDescription, rules) {
         try {
-            const rulePrompts = rules.map(r => `- ${r.name}: ${r.criteria}`).join('\n');
+            const rulePrompts = rules.map(r => `- ${r.name}: ${r.criteria || r.description}`).join('\n');
+            const rubric = loadScoringRubric();
+            const scoringSection = rubric ? `
+            === TASK 2: PRIORITY SCORE CALCULATION (use rubric from rules) ===
+            Score each parameter 1-5 (higher = more favorable). Use these definitions:
+            
+            ${rubric.lines}
+            
+            Formula: Priority Score = ${rubric.formula}
+            
+            Tier classification:
+            ${rubric.tiers}
+            ` : `
+            === TASK 2: PRIORITY SCORE CALCULATION ===
+            Score each parameter 1-5: Strategic Alignment (25%), Regulatory Risk (25%), Business Impact (20%), Implementation Complexity (15%), Time-to-Value (10%), Resource Requirements (5%).
+            Formula: (Strategic×0.25)+(Regulatory×0.25)+(Business×0.20)+(Complexity×0.15)+(TimeToValue×0.10)+(Resources×0.05)
+            Tiers: 1.0–2.5 = Tier 1, 2.6–3.5 = Tier 2, 3.6–5.0 = Tier 3
+            `;
+
             const prompt = `
             You are a strict AI Initiative Approver for Sterling Financial Holdings Group. 
             Analyze the following AI initiative based on these approval rules AND calculate priority scoring.
@@ -24,42 +86,8 @@ class OpenAIService {
             ${projectDescription}
             
             === TASK 1: RULE ANALYSIS ===
-            For each rule, determine if the initiative PASSES or FAILS. Provide a brief reason.
-            
-            === TASK 2: PRIORITY SCORE CALCULATION ===
-            Score the initiative on each parameter from 1-5 (higher = more favorable):
-            
-            1. Strategic Alignment (25% weight)
-               - Score 1: Tangential to strategy, no clear business need
-               - Score 5: Transformational/competitive differentiator
-               
-            2. Regulatory Risk (25% weight)
-               - Score 1: Low-risk compliance gap, minimal urgency
-               - Score 5: Critical regulatory mandate, high urgency
-               
-            3. Business Impact (20% weight)
-               - Score 1: <₦50M annual value, limited scope
-               - Score 5: >₦500M or transformational impact
-               
-            4. Implementation Complexity (15% weight)
-               - Score 1: >12 months timeline, major barriers
-               - Score 5: <3 months, straightforward implementation
-               
-            5. Time-to-Value (10% weight)
-               - Score 1: >18 months to realize value
-               - Score 5: <3 months to value realization
-               
-            6. Resource Requirements (5% weight)
-               - Score 1: Extensive (large team, major infrastructure)
-               - Score 5: Minimal (existing capacity)
-            
-            Calculate Priority Score using:
-            Priority Score = (Strategic × 0.25) + (Regulatory × 0.25) + (Business × 0.20) + (Complexity × 0.15) + (TimeToValue × 0.10) + (Resources × 0.05)
-            
-            Determine Tier based on Priority Score:
-            - Tier 1 (Low Risk): 1.0 – 2.5
-            - Tier 2 (Moderate): 2.6 – 3.5
-            - Tier 3 (High Risk): 3.6 – 5.0
+            For each rule listed above, determine if the initiative PASSES or FAILS. Provide a brief reason.
+            ${scoringSection}
             
             Return the response in JSON format:
             {
