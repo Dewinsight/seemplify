@@ -217,10 +217,17 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
             const mode = activeOrganization?.logoMode || 'all';
             const showInDark = mode === 'all' || mode === 'dark' || (mode === 'system' && systemPrefersDark);
             const showInLight = mode === 'all' || mode === 'light' || (mode === 'system' && !systemPrefersDark);
-            const shouldShow = activeOrganization?.logo && (theme === 'dark' ? showInDark : showInLight);
+            const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+            const shouldShow = (isDark ? showInDark : showInLight) && (
+              mode === 'all' ? activeOrganization?.logo :
+              isDark ? activeOrganization?.logoDark : activeOrganization?.logoLight
+            );
+            const logoPath = mode === 'all'
+              ? activeOrganization?.logo
+              : isDark ? activeOrganization?.logoDark : activeOrganization?.logoLight;
             const bg = activeOrganization?.logoBackground || 'transparent';
             const containerBg = bg === 'transparent' ? 'transparent' : bg;
-            return shouldShow ? (
+            return shouldShow && logoPath ? (
               <div style={{
                 display: 'flex',
                 justifyContent: 'center',
@@ -232,7 +239,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                 borderRadius: '12px'
               }}>
                 <img
-                  src={getLogoUrl(activeOrganization!.logo) || ''}
+                  src={getLogoUrl(logoPath) || ''}
                   alt={activeOrganization!.name}
                   style={{
                     width: 80,

@@ -32,7 +32,7 @@ exports.updateOrganization = async (req, res) => {
 
         await org.save();
 
-        res.json({ _id: org._id, name: org.name, slug: org.slug, logo: org.logo, logoBackground: org.logoBackground, logoMode: org.logoMode });
+        res.json({ _id: org._id, name: org.name, slug: org.slug, logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, logoBackground: org.logoBackground, logoMode: org.logoMode });
     } catch (error) {
         if (error && error.code === 11000) {
             return res.status(409).json({ error: 'An organization with that name already exists.' });
@@ -42,6 +42,7 @@ exports.updateOrganization = async (req, res) => {
 };
 
 // Upload organization logo (Admin only)
+// Query param: variant=dark|light — when set, uploads to logoDark/logoLight. Otherwise updates logo (for "all" mode).
 exports.uploadLogo = async (req, res) => {
     try {
         if (!req.file) {
@@ -53,28 +54,28 @@ exports.uploadLogo = async (req, res) => {
             return res.status(404).json({ error: 'Organization not found' });
         }
 
-        // Remove old logo file if exists
-        if (org.logo) {
-            const oldPath = path.join(__dirname, '..', org.logo);
-            if (fs.existsSync(oldPath)) {
-                fs.unlinkSync(oldPath);
-            }
+        const variant = req.query.variant; // 'dark' | 'light'
+        const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
+
+        // Remove old file if exists
+        const oldPath = org[field] ? path.join(__dirname, '..', org[field]) : null;
+        if (oldPath && fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
         }
 
-        // Store relative path: uploads/logos/filename
         const filename = req.file.filename;
-        org.logo = `uploads/logos/${filename}`;
+        org[field] = `uploads/logos/${filename}`;
         await org.save();
 
-        // Return URL path for frontend (API base + /uploads/logos/filename)
         const logoUrl = `/api/uploads/logos/${filename}`;
-        res.json({ logo: org.logo, logoUrl });
+        res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, logoUrl, field });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
 // Remove organization logo (Admin only)
+// Query param: variant=dark|light — when set, removes logoDark/logoLight. Otherwise removes logo.
 exports.removeLogo = async (req, res) => {
     try {
         const org = await Organization.findById(req.organization);
@@ -82,17 +83,20 @@ exports.removeLogo = async (req, res) => {
             return res.status(404).json({ error: 'Organization not found' });
         }
 
-        if (org.logo) {
-            const oldPath = path.join(__dirname, '..', org.logo);
+        const variant = req.query.variant;
+        const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
+
+        if (org[field]) {
+            const oldPath = path.join(__dirname, '..', org[field]);
             if (fs.existsSync(oldPath)) {
                 fs.unlinkSync(oldPath);
             }
         }
 
-        org.logo = undefined;
+        org[field] = undefined;
         await org.save();
 
-        res.json({ logo: null, message: 'Logo removed' });
+        res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, [field]: null, message: 'Logo removed' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

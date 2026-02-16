@@ -904,7 +904,7 @@ exports.getMyOrganizations = async (req, res) => {
         const UserOrganization = require('../models/UserOrganization');
 
         const memberships = await UserOrganization.find({ user: req.user.id })
-            .populate('organization', 'name slug logo logoBackground logoMode')
+            .populate('organization', 'name slug logo logoDark logoLight logoBackground logoMode')
             .populate('permissions.department', 'name');
 
         const organizations = memberships.map(m => ({
@@ -912,6 +912,8 @@ exports.getMyOrganizations = async (req, res) => {
             name: m.organization.name,
             slug: m.organization.slug,
             logo: m.organization.logo,
+            logoDark: m.organization.logoDark,
+            logoLight: m.organization.logoLight,
             logoBackground: m.organization.logoBackground,
             logoMode: m.organization.logoMode,
             isAdmin: m.isAdmin,

@@ -69,6 +69,8 @@ const AdminUsers: React.FC = () => {
     const [logoMode, setLogoMode] = useState<'dark' | 'light' | 'system' | 'all'>('all');
     const [logoSettingsLoading, setLogoSettingsLoading] = useState(false);
     const logoInputRef = useRef<HTMLInputElement>(null);
+    const logoDarkInputRef = useRef<HTMLInputElement>(null);
+    const logoLightInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         fetchData();
@@ -193,7 +195,7 @@ const AdminUsers: React.FC = () => {
         }
     };
 
-    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, variant?: 'dark' | 'light') => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
@@ -208,7 +210,8 @@ const AdminUsers: React.FC = () => {
         try {
             const formData = new FormData();
             formData.append('logo', file);
-            await api.post('/organizations/current/logo', formData, {
+            const url = variant ? `/organizations/current/logo?variant=${variant}` : '/organizations/current/logo';
+            await api.post(url, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             const orgs = await refreshOrganizations();
@@ -222,12 +225,17 @@ const AdminUsers: React.FC = () => {
         }
     };
 
-    const handleRemoveLogo = async () => {
-        if (!activeOrganization?.logo) return;
-        if (!window.confirm('Remove the organization logo?')) return;
+    const handleRemoveLogo = async (variant?: 'dark' | 'light') => {
+        const hasLogo = variant
+            ? (variant === 'dark' ? activeOrganization?.logoDark : activeOrganization?.logoLight)
+            : activeOrganization?.logo;
+        if (!hasLogo) return;
+        const label = variant ? (variant === 'dark' ? 'Dark theme logo' : 'Light theme logo') : 'organization logo';
+        if (!window.confirm(`Remove the ${label}?`)) return;
         setLogoLoading(true);
         try {
-            await api.delete('/organizations/current/logo');
+            const url = variant ? `/organizations/current/logo?variant=${variant}` : '/organizations/current/logo';
+            await api.delete(url);
             const orgs = await refreshOrganizations();
             const updated = orgs.find(o => o._id === activeOrganization?._id);
             if (updated) switchOrganization(updated);
@@ -324,97 +332,7 @@ const AdminUsers: React.FC = () => {
                             </form>
                         </div>
 
-                        {/* Organization Logo */}
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Organization Logo</label>
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '1.5rem',
-                                padding: '1.5rem',
-                                background: 'rgba(255,255,255,0.04)',
-                                border: '1px solid var(--glass-border)',
-                                borderRadius: '12px'
-                            }}>
-                                {activeOrganization?.logo ? (
-                                    <div style={{ flexShrink: 0 }}>
-                                        <img
-                                            src={getLogoUrl(activeOrganization.logo) || ''}
-                                            alt={activeOrganization.name}
-                                            style={{
-                                                width: 96,
-                                                height: 96,
-                                                objectFit: 'contain',
-                                                borderRadius: '10px',
-                                                background: 'rgba(255,255,255,0.06)',
-                                                padding: '8px',
-                                                boxSizing: 'border-box'
-                                            }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div style={{
-                                        width: 96,
-                                        height: 96,
-                                        borderRadius: '10px',
-                                        background: 'rgba(255,255,255,0.04)',
-                                        border: '2px dashed var(--glass-border)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: 'var(--text-secondary)',
-                                        fontSize: '2rem',
-                                        flexShrink: 0
-                                    }}>
-                                        🖼️
-                                    </div>
-                                )}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <input
-                                        ref={logoInputRef}
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-                                        onChange={handleLogoUpload}
-                                        style={{ display: 'none' }}
-                                    />
-                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                                        <button
-                                            type="button"
-                                            onClick={() => logoInputRef.current?.click()}
-                                            className="btn-primary"
-                                            disabled={logoLoading}
-                                            style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem' }}
-                                        >
-                                            {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
-                                        </button>
-                                        {activeOrganization?.logo && (
-                                            <button
-                                                type="button"
-                                                onClick={handleRemoveLogo}
-                                                disabled={logoLoading}
-                                                style={{
-                                                    padding: '0.65rem 1.25rem',
-                                                    fontSize: '0.95rem',
-                                                    background: 'rgba(244, 67, 54, 0.15)',
-                                                    border: '1px solid rgba(244, 67, 54, 0.4)',
-                                                    color: '#f44336',
-                                                    borderRadius: '8px',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 500
-                                                }}
-                                            >
-                                                Remove Logo
-                                            </button>
-                                        )}
-                                    </div>
-                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                                        PNG, JPG, GIF or WebP. Max 2MB.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Logo display options */}
+                        {/* Logo display options — Show logo in first so user picks mode before uploading */}
                         <div>
                             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Logo display options</label>
                             <div style={{
@@ -426,6 +344,24 @@ const AdminUsers: React.FC = () => {
                                 flexDirection: 'column',
                                 gap: '1.25rem'
                             }}>
+                                <div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Show logo in</div>
+                                    <select
+                                        value={logoMode}
+                                        onChange={e => setLogoMode(e.target.value as 'dark' | 'light' | 'system' | 'all')}
+                                        style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontSize: '0.9rem', width: '100%', maxWidth: 280 }}
+                                    >
+                                        <option value="all">All themes (always)</option>
+                                        <option value="dark">Dark mode only</option>
+                                        <option value="light">Light mode only</option>
+                                        <option value="system">Follow system preference</option>
+                                    </select>
+                                    {logoMode !== 'all' && (
+                                        <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            Use dark and light logo versions below for best visibility.
+                                        </p>
+                                    )}
+                                </div>
                                 <div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Background</div>
                                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -458,19 +394,6 @@ const AdminUsers: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
-                                <div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>Show logo in</div>
-                                    <select
-                                        value={logoMode}
-                                        onChange={e => setLogoMode(e.target.value as 'dark' | 'light' | 'system' | 'all')}
-                                        style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontSize: '0.9rem', width: '100%', maxWidth: 280 }}
-                                    >
-                                        <option value="all">All themes (always)</option>
-                                        <option value="dark">Dark mode only</option>
-                                        <option value="light">Light mode only</option>
-                                        <option value="system">Follow system preference</option>
-                                    </select>
-                                </div>
                                 <button
                                     type="button"
                                     onClick={handleSaveLogoSettings}
@@ -482,6 +405,87 @@ const AdminUsers: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Organization Logo — single when "All themes", dark/light when theme-specific */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+                                {logoMode === 'all' ? 'Organization Logo' : 'Theme-specific logos'}
+                            </label>
+                            {logoMode === 'all' ? (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '1.5rem',
+                                    padding: '1.5rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                }}>
+                                    {activeOrganization?.logo ? (
+                                        <div style={{ flexShrink: 0 }}>
+                                            <img src={getLogoUrl(activeOrganization.logo) || ''} alt={activeOrganization.name}
+                                                style={{ width: 96, height: 96, objectFit: 'contain', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', padding: '8px', boxSizing: 'border-box' }} />
+                                        </div>
+                                    ) : (
+                                        <div style={{ width: 96, height: 96, borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '2rem', flexShrink: 0 }}>🖼️</div>
+                                    )}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e)} style={{ display: 'none' }} />
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                                            <button type="button" onClick={() => logoInputRef.current?.click()} className="btn-primary" disabled={logoLoading} style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem' }}>
+                                                {logoLoading ? 'Uploading...' : (activeOrganization?.logo ? 'Change Logo' : 'Upload Logo')}
+                                            </button>
+                                            {activeOrganization?.logo && (
+                                                <button type="button" onClick={() => handleRemoveLogo()} disabled={logoLoading} style={{ padding: '0.65rem 1.25rem', fontSize: '0.95rem', background: 'rgba(244, 67, 54, 0.15)', border: '1px solid rgba(244, 67, 54, 0.4)', color: '#f44336', borderRadius: '8px', cursor: 'pointer', fontWeight: 500 }}>Remove Logo</button>
+                                            )}
+                                        </div>
+                                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>PNG, JPG, GIF or WebP. Max 2MB.</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                    }}>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Dark theme logo</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                            {activeOrganization?.logoDark ? (
+                                                <img src={getLogoUrl(activeOrganization.logoDark) || ''} alt="Dark" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: '#1a1a2e', padding: '6px' }} />
+                                            ) : (
+                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#1a1a2e', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>🌙</div>
+                                            )}
+                                            <div>
+                                                <input ref={logoDarkInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e, 'dark')} style={{ display: 'none' }} />
+                                                <button type="button" onClick={() => logoDarkInputRef.current?.click()} className="btn-primary" disabled={logoLoading} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', marginRight: '0.5rem' }}>
+                                                    {activeOrganization?.logoDark ? 'Change' : 'Upload'}
+                                                </button>
+                                                {activeOrganization?.logoDark && (
+                                                    <button type="button" onClick={() => handleRemoveLogo('dark')} disabled={logoLoading} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', background: 'rgba(244, 67, 54, 0.15)', border: '1px solid rgba(244, 67, 54, 0.4)', color: '#f44336', borderRadius: '8px', cursor: 'pointer' }}>Remove</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                    }}>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Light theme logo</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                            {activeOrganization?.logoLight ? (
+                                                <img src={getLogoUrl(activeOrganization.logoLight) || ''} alt="Light" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: '#f5f5f5', padding: '6px' }} />
+                                            ) : (
+                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#f5f5f5', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>☀️</div>
+                                            )}
+                                            <div>
+                                                <input ref={logoLightInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e, 'light')} style={{ display: 'none' }} />
+                                                <button type="button" onClick={() => logoLightInputRef.current?.click()} className="btn-primary" disabled={logoLoading} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', marginRight: '0.5rem' }}>
+                                                    {activeOrganization?.logoLight ? 'Change' : 'Upload'}
+                                                </button>
+                                                {activeOrganization?.logoLight && (
+                                                    <button type="button" onClick={() => handleRemoveLogo('light')} disabled={logoLoading} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', background: 'rgba(244, 67, 54, 0.15)', border: '1px solid rgba(244, 67, 54, 0.4)', color: '#f44336', borderRadius: '8px', cursor: 'pointer' }}>Remove</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                        Upload dark and light versions for best visibility in each theme.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
                     </div>
                 </div>
             ) : activeTab === 'users' ? (

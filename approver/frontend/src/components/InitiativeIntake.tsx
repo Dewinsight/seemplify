@@ -500,20 +500,55 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                     <div className="review-value">{form.submitterName}</div>
                                 </div>
                                 <div className="review-item">
-                                    <div className="review-label">Group Head</div>
-                                    <div className="review-value">{form.groupHeadName || '—'}</div>
-                                </div>
-                                <div className="review-item">
-                                    <div className="review-label">HEART Classification</div>
-                                    <div className="review-value">{(form.heartSectorClassification || '').replace(/_/g, ' ') || '—'}</div>
-                                </div>
-                                <div className="review-item">
                                     <div className="review-label">Problem</div>
                                     <div className="review-value" style={{ fontSize: '0.9rem' }}>{form.problemDescription.substring(0, 100)}...</div>
                                 </div>
                                 <div className="review-item">
                                     <div className="review-label">Proposed Solution</div>
                                     <div className="review-value" style={{ fontSize: '0.9rem' }}>{form.aiIdea.substring(0, 100)}...</div>
+                                </div>
+                            </div>
+
+                            {/* Required fields — editable on Review so users can complete without going back */}
+                            <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px' }}>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '1rem' }}>Required before submission</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Group Head Name <span style={{ color: '#f44336' }}>*</span></label>
+                                        <input
+                                            className="form-input"
+                                            type="text"
+                                            value={form.groupHeadName}
+                                            onChange={e => setForm({ ...form, groupHeadName: e.target.value })}
+                                            placeholder="Approver name"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={form.confirmGroupHeadApproval}
+                                                onChange={e => setForm({ ...form, confirmGroupHeadApproval: e.target.checked })}
+                                                style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--sterling-red)' }}
+                                            />
+                                            I confirm the Group Head has approved this initiative <span style={{ color: '#f44336' }}>*</span>
+                                        </label>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">HEART Sector Classification <span style={{ color: '#f44336' }}>*</span></label>
+                                        <select
+                                            className="form-select"
+                                            value={form.heartSectorClassification}
+                                            onChange={e => setForm({ ...form, heartSectorClassification: e.target.value as any })}
+                                        >
+                                            <option value="">Select classification</option>
+                                            <option value="direct_heart_impact">Direct HEART Impact</option>
+                                            <option value="indirect_heart_impact">Indirect HEART Impact</option>
+                                            <option value="heart_adjacent">HEART-Adjacent</option>
+                                            <option value="non_heart">Non-HEART</option>
+                                        </select>
+                                        <small style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>HEART: Health, Education, Agriculture, Renewable Energy, Transportation</small>
+                                    </div>
                                 </div>
                             </div>
 

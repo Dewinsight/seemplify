@@ -11,7 +11,9 @@ interface OrgMembership {
     _id: string;       // organization _id
     name: string;
     slug: string;
-    logo?: string;     // path to uploaded logo
+    logo?: string;     // path to uploaded logo (used when logoMode is 'all')
+    logoDark?: string; // logo for dark theme
+    logoLight?: string; // logo for light theme
     logoBackground?: string;  // 'transparent' or hex color
     logoMode?: 'dark' | 'light' | 'system' | 'all';  // when to show logo
     isAdmin: boolean;
