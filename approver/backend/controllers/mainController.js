@@ -98,6 +98,19 @@ exports.analyzeProject = async (req, res) => {
     try {
         const { name, description, repoUrl, formData } = req.body;
 
+        // Pre-submission validation (process rules 2 & 3 — not LLM rules)
+        const fd = formData || {};
+        if (!fd.groupHeadName || !fd.groupHeadName.trim()) {
+            return res.status(400).json({ error: 'Group Head approval is required. Please provide the Group Head name and confirm approval before submission.' });
+        }
+        if (!fd.confirmGroupHeadApproval) {
+            return res.status(400).json({ error: 'You must confirm that the Group Head has approved this initiative before submission.' });
+        }
+        const heartOptions = ['direct_heart_impact', 'indirect_heart_impact', 'heart_adjacent', 'non_heart'];
+        if (!fd.heartSectorClassification || !heartOptions.includes(fd.heartSectorClassification)) {
+            return res.status(400).json({ error: 'HEART Sector Classification is required. Please classify the initiative as Direct HEART Impact, Indirect HEART Impact, HEART-Adjacent, or Non-HEART.' });
+        }
+
         // Determine Department
         let department = req.body.department;
 
@@ -165,7 +178,6 @@ exports.analyzeProject = async (req, res) => {
         });
 
         const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
-        const minPassScore = process.env.MIN_PASS_SCORE ? parseInt(process.env.MIN_PASS_SCORE) : 70;
 
         // 4. Use AI's calculated priority score and tier (from new scoring parameters)
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
@@ -189,21 +201,26 @@ exports.analyzeProject = async (req, res) => {
             priorityScore = Math.max(priorityScore, 3.6);
         }
 
-        // 5. Determine AI decision and workflow routing
-        const aiApproved = !mandatoryFailed && score >= minPassScore;
+        // 5. Process flow: Priority Score thresholds (rule 4 — not LLM rule)
+        const rejectBelow = parseFloat(process.env.PRIORITY_SCORE_REJECT_BELOW || '1.5');
+        const enhancedOversightMax = parseFloat(process.env.PRIORITY_SCORE_ENHANCED_OVERSIGHT_MAX || '2.0');
+        const needEnhancedOversight = priorityScore >= rejectBelow && priorityScore < enhancedOversightMax;
+
+        // AI decision: reject if below threshold OR mandatory rules failed
+        const aiApproved = !mandatoryFailed && priorityScore >= rejectBelow;
 
         let approvalStatus;
         let workflowStage;
         let simpleStatus;
 
-        if (aiApproved) {
-            approvalStatus = 'Pending Center of Excellence';
-            workflowStage = 'Center of Excellence Review';
-            simpleStatus = 'Under Review';
+        if (!aiApproved) {
+            approvalStatus = 'AI Rejected';
+            workflowStage = 'Screening';
+            simpleStatus = 'Rejected';
         } else {
             approvalStatus = 'Pending Center of Excellence';
             workflowStage = 'Center of Excellence Review';
-            simpleStatus = 'Under Review';
+            simpleStatus = needEnhancedOversight ? 'Under Review (Enhanced Oversight)' : 'Under Review';
         }
 
         // 6. Create project with tiered workflow data
@@ -224,14 +241,17 @@ exports.analyzeProject = async (req, res) => {
             priorityScore,
             scoringBreakdown,
             escalationTriggers,
+            needEnhancedOversight: needEnhancedOversight || false,
             workflowStage,
             approvalHistory: [{
                 stage: 'AI',
-                action: aiApproved ? 'Approved' : (tier > 1 ? 'Escalated' : 'Rejected'),
+                action: aiApproved ? (needEnhancedOversight ? 'Escalated' : 'Approved') : 'Rejected',
                 by: null, // AI decision
                 reason: aiApproved
-                    ? `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`
-                    : `AI ${tier > 1 ? 'escalated to Governance' : 'rejected'} - Score: ${score}/100, Priority: ${priorityScore.toFixed(2)}, Tier ${tier}${escalationTriggers.length > 0 ? '. Triggers: ' + escalationTriggers.join(', ') : ''}`,
+                    ? needEnhancedOversight
+                        ? `AI approved with enhanced oversight - Priority Score ${priorityScore.toFixed(2)} (1.5–2.0 range). Score: ${score}/100, Tier ${tier}`
+                        : `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`
+                    : `AI rejected - Priority Score ${priorityScore.toFixed(2)} below ${rejectBelow}${mandatoryFailed ? '. Mandatory rules failed: ' + escalationTriggers.join(', ') : ''}. Score: ${score}/100, Tier ${tier}`,
                 score,
                 timestamp: new Date()
             }]

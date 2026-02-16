@@ -40,6 +40,7 @@ const ProjectSchema = new mongoose.Schema({
     priorityScore: { type: Number }, // Calculated priority score (1.0 - 5.0)
     scoringBreakdown: { type: Object }, // Individual scores for each parameter
     escalationTriggers: [{ type: String }], // List of triggered escalation reasons
+    needEnhancedOversight: { type: Boolean, default: false }, // Priority Score 1.5–2.0: requires enhanced oversight
     workflowStage: {
         type: String,
         enum: ['Screening', 'Analysis', 'AI Review', 'Center of Excellence Review', 'Governance Committee', 'Executive Approval', 'Complete'],

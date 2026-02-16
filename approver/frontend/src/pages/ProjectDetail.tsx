@@ -73,6 +73,7 @@ interface Project {
     priorityScore?: number;
     scoringBreakdown?: ScoringBreakdown;
     escalationTriggers?: string[];
+    needEnhancedOversight?: boolean;
     workflowStage?: string;
     approvalHistory?: ApprovalHistoryItem[];
     submittedAt?: string;
@@ -255,7 +256,7 @@ const ProjectDetail: React.FC = () => {
                         <div style={{
                             fontSize: '1.5rem',
                             fontWeight: 'bold',
-                            color: project.approvalStatus === 'Approved' ? '#4caf50' : '#f44336'
+                            color: project.approvalStatus?.toLowerCase().includes('approved') ? '#4caf50' : project.approvalStatus?.toLowerCase().includes('rejected') ? '#f44336' : '#ffd54f'
                         }}>
                             {project.approvalStatus}
                         </div>
@@ -269,6 +270,11 @@ const ProjectDetail: React.FC = () => {
                                 color: project.tier === 3 ? '#f44336' : project.tier === 2 ? '#ff9800' : '#4caf50'
                             }}>
                                 Tier {project.tier} {project.tier === 1 ? '(Low Risk)' : project.tier === 2 ? '(Moderate)' : '(High Risk)'}
+                            </div>
+                        )}
+                        {project.needEnhancedOversight && (
+                            <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#ff9800' }}>
+                                ⚠️ Enhanced oversight required (Priority Score 1.5–2.0)
                             </div>
                         )}
                     </div>
@@ -286,6 +292,9 @@ const ProjectDetail: React.FC = () => {
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Email:</span> {project.formData.submitterEmail}</div>
                                 {project.formData.submitterPhone && <div><span style={{ color: 'var(--text-secondary)' }}>Phone:</span> {project.formData.submitterPhone}</div>}
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Group Head:</span> {project.formData.groupHeadName}</div>
+                                {project.formData.heartSectorClassification && (
+                                    <div><span style={{ color: 'var(--text-secondary)' }}>HEART Classification:</span> {(project.formData.heartSectorClassification as string).replace(/_/g, ' ')}</div>
+                                )}
                             </div>
                         </div>
 

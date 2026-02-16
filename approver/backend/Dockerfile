@@ -8,6 +8,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production
 
+# Data directory for uploaded logos (mount a volume to persist across deploys)
+VOLUME ["/app/uploads"]
+
 # Copy backend source
 COPY server.js ./
 COPY controllers ./controllers

@@ -2,6 +2,11 @@
  * Upload system rules from mosaic_approver_rules_v2.json to ALL organizations.
  * Uses ONLY the atomic_rules_from_spreadsheet array — no invented rules.
  *
+ * Excludes process rules (ids 2, 3, 4):
+ * - 2: Group Head Pre-Approval — enforced at form validation
+ * - 3: HEART Sector Classification — enforced at form validation
+ * - 4: Minimum Priority Score — enforced in process flow (priorityScore thresholds)
+ *
  * Run with: node scripts/uploadSystemRulesToAllOrgs.js
  *
  * Prerequisites:
@@ -19,6 +24,9 @@ const Organization = require('../models/Organization');
 
 const RULES_JSON_PATH = path.join(__dirname, '..', '..', 'mosaic_approver_rules_v2.json');
 
+/** Process rule IDs: enforced by form/process, not LLM evaluation */
+const PROCESS_RULE_IDS = [2, 3, 4];
+
 function loadRulesFromJson() {
     if (!fs.existsSync(RULES_JSON_PATH)) {
         throw new Error(`Rules file not found: ${RULES_JSON_PATH}`);
@@ -29,7 +37,7 @@ function loadRulesFromJson() {
     if (!Array.isArray(atomic)) {
         throw new Error('atomic_rules_from_spreadsheet not found or not an array in JSON');
     }
-    return atomic;
+    return atomic.filter(r => !PROCESS_RULE_IDS.includes(r.id));
 }
 
 function toRuleDoc(atomic) {
@@ -72,6 +80,16 @@ async function uploadSystemRulesToAllOrgs() {
         for (const org of orgs) {
             let created = 0;
             let skipped = 0;
+
+            // Remove process rules (2, 3, 4) that were previously uploaded — now enforced by form/process
+            const removed = await Rule.deleteMany({
+                organization: org._id,
+                isSystem: true,
+                systemRuleId: { $in: PROCESS_RULE_IDS }
+            });
+            if (removed.deletedCount > 0) {
+                console.log(`  ${org.name}: removed ${removed.deletedCount} process rule(s) (ids 2, 3, 4)`);
+            }
 
             for (const atomic of atomicRules) {
                 const existing = await Rule.findOne({

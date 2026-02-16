@@ -12,6 +12,7 @@ const sampleInitiative = {
     submitterPhone: '+234 801 234 5678',
     groupHeadName: 'Michael Adeyemi',
     groupHeadApproval: true,
+    heartSectorClassification: 'direct_heart_impact' as const,
     problemDescription: 'Our customer service team handles over 5,000 calls daily, with 60% being routine inquiries about account balances, transaction status, and branch locations. This creates long wait times (average 8 minutes) and prevents agents from handling complex issues that truly need human attention.\n\nCustomer satisfaction scores have dropped 15% over the past quarter, primarily due to wait times. Staff turnover in the call center is also increasing due to repetitive work.',
     whoAffected: 'all' as const,
     currentHandling: 'Currently, all calls go through a basic IVR menu, then to human agents. Agents manually look up information across multiple systems. We have no self-service options beyond the IVR.',
@@ -61,6 +62,7 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         submitterPhone: '',
         groupHeadName: '',
         groupHeadApproval: false,
+        heartSectorClassification: '' as '' | 'direct_heart_impact' | 'indirect_heart_impact' | 'heart_adjacent' | 'non_heart',
 
         // Section 2: Problem Statement
         problemDescription: '',
@@ -132,6 +134,7 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
 **Submitter:** ${form.submitterName} (${form.submitterTitle})
 **Email:** ${form.submitterEmail}
 **Group Head:** ${form.groupHeadName}
+**HEART Classification:** ${(form.heartSectorClassification || '').replace(/_/g, ' ')}
 
 ## Problem Statement
 ${form.problemDescription}
@@ -248,8 +251,27 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             </div>
 
                             <div className="form-group">
-                                <label className="form-label">Group Head Name</label>
+                                <label className="form-label">Group Head Name <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                 <input className="form-input" type="text" value={form.groupHeadName} onChange={(e) => setForm({ ...form, groupHeadName: e.target.value })} placeholder="Approver Name" />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input type="checkbox" checked={form.confirmGroupHeadApproval} onChange={(e) => setForm({ ...form, confirmGroupHeadApproval: e.target.checked })} style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--sterling-red)' }} />
+                                    I confirm the Group Head has approved this initiative <span style={{ color: 'var(--sterling-red)' }}>*</span>
+                                </label>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">HEART Sector Classification <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
+                                <select className="form-select" value={form.heartSectorClassification} onChange={(e: any) => setForm({ ...form, heartSectorClassification: e.target.value })}>
+                                    <option value="">Select classification</option>
+                                    <option value="direct_heart_impact">Direct HEART Impact</option>
+                                    <option value="indirect_heart_impact">Indirect HEART Impact</option>
+                                    <option value="heart_adjacent">HEART-Adjacent</option>
+                                    <option value="non_heart">Non-HEART</option>
+                                </select>
+                                <small style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>HEART: Health, Education, Agriculture, Renewable Energy, Transportation</small>
                             </div>
                         </div>
                     )}
@@ -476,6 +498,14 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 <div className="review-item">
                                     <div className="review-label">Submitter</div>
                                     <div className="review-value">{form.submitterName}</div>
+                                </div>
+                                <div className="review-item">
+                                    <div className="review-label">Group Head</div>
+                                    <div className="review-value">{form.groupHeadName || '—'}</div>
+                                </div>
+                                <div className="review-item">
+                                    <div className="review-label">HEART Classification</div>
+                                    <div className="review-value">{(form.heartSectorClassification || '').replace(/_/g, ' ') || '—'}</div>
                                 </div>
                                 <div className="review-item">
                                     <div className="review-label">Problem</div>
