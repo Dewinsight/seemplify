@@ -12,6 +12,7 @@
         "migrate:rule-effects": "node scripts/backfillRuleEffects.js",
         "sanitize:rules": "node scripts/sanitizeRules.js",
         "refine:rules:ai": "node scripts/refineRulesWithAI.js --scope=system --dry-run",
+        "test:smoke:agentic": "node scripts/smokeTestAgenticAnalysis.js",
         "migrate:logo-assets": "node scripts/backfillLogoAssets.js",
         "migrate:logo-assets:from-api": "node scripts/backfillLogoAssetsFromApi.js"
     },

@@ -65,6 +65,49 @@ function inferCategory(rule) {
     return /(escalat|tier\s*3|trigger)/i.test(hint) ? 'ESCALATION' : 'GENERAL';
 }
 
+function stripCodeBlocks(value) {
+    return String(value || '')
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+}
+
+function parseJsonPayload(value) {
+    const cleaned = stripCodeBlocks(value);
+
+    try {
+        return JSON.parse(cleaned);
+    } catch (_) {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            const slice = cleaned.slice(firstBrace, lastBrace + 1);
+            return JSON.parse(slice);
+        }
+        throw new Error('Model response is not valid JSON.');
+    }
+}
+
+function buildRulePrompts(rules) {
+    return rules.map(rule => {
+        const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
+        const category = inferCategory(rule);
+        const ruleId = (rule._id || '').toString();
+        const criteria = rule.criteria || rule.description || '';
+        const effects = Array.isArray(rule.effects) ? rule.effects : [];
+        const effectText = effects.length > 0
+            ? ` | Effects: ${effects.map(effect => {
+                const type = String(effect?.type || '').toUpperCase();
+                const params = effect?.params || {};
+                if (type === 'SET_TIER') return `SET_TIER(${params.tier || '?'})`;
+                if (type === 'SET_FLAG') return `SET_FLAG(${params.key || '?'})`;
+                return type || 'UNKNOWN_EFFECT';
+            }).join(', ')}`
+            : '';
+        return `- Rule ID: ${ruleId} | Category: ${category} | ${mandatoryTag}${effectText} | ${rule.name}: ${criteria}`;
+    }).join('\n');
+}
+
 class OpenAIService {
     constructor() {
         this.client = new OpenAI({
@@ -75,44 +118,39 @@ class OpenAIService {
         });
     }
 
-    async analyzeProject(projectDescription, rules) {
+    async createCompletion(messages, options = {}) {
+        const {
+            temperature = 0,
+            parseJson = true
+        } = options;
+
+        const completion = await this.client.chat.completions.create({
+            messages,
+            model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+            temperature
+        });
+
+        const content = completion?.choices?.[0]?.message?.content || '';
+        return parseJson ? parseJsonPayload(content) : content;
+    }
+
+    async analyzeProject(projectContext, rules) {
         try {
-            const rulePrompts = rules.map(rule => {
-                const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
-                const category = inferCategory(rule);
-                const ruleId = (rule._id || '').toString();
-                const criteria = rule.criteria || rule.description || '';
-                const effects = Array.isArray(rule.effects) ? rule.effects : [];
-                const effectText = effects.length > 0
-                    ? ` | Effects: ${effects.map(effect => {
-                        const type = String(effect?.type || '').toUpperCase();
-                        const params = effect?.params || {};
-                        if (type === 'SET_TIER') return `SET_TIER(${params.tier || '?'})`;
-                        if (type === 'SET_FLAG') return `SET_FLAG(${params.key || '?'})`;
-                        return type || 'UNKNOWN_EFFECT';
-                    }).join(', ')}`
-                    : '';
-                return `- Rule ID: ${ruleId} | Category: ${category} | ${mandatoryTag}${effectText} | ${rule.name}: ${criteria}`;
-            }).join('\n');
+            const rulePrompts = buildRulePrompts(rules);
 
             const rubric = loadScoringRubric();
             const scoringSection = rubric ? `
-            === TASK 2: PRIORITY SCORE CALCULATION (use rubric definitions) ===
-            Score each parameter 1-5 (higher = more favorable). Use these definitions:
+            === TASK 2: PRIORITY SCORING DIMENSIONS (use rubric definitions) ===
+            Score each parameter 1-5 (higher = more favorable). Use these definitions.
+            IMPORTANT: Backend applies organization-specific weights after this step.
 
             ${rubric.lines}
-
-            Formula: Priority Score = ${rubric.formula}
-
-            Tier classification:
-            ${rubric.tiers}
             ` : `
-            === TASK 2: PRIORITY SCORE CALCULATION ===
+            === TASK 2: PRIORITY SCORING DIMENSIONS ===
             Score each parameter 1-5:
             Strategic Alignment (25%), Regulatory Risk (25%), Business Impact (20%),
             Implementation Complexity (15%), Time-to-Value (10%), Resource Requirements (5%).
-            Formula: (Strategic*0.25)+(Regulatory*0.25)+(Business*0.20)+(Complexity*0.15)+(TimeToValue*0.10)+(Resources*0.05)
-            Tiers: 1.0-2.5 = Tier 1, 2.6-3.5 = Tier 2, 3.6-5.0 = Tier 3
+            Backend applies dynamic organization weights and tier ranges.
             `;
 
             const prompt = `
@@ -122,12 +160,14 @@ class OpenAIService {
             === APPROVAL RULES ===
             ${rulePrompts}
 
-            === INITIATIVE DESCRIPTION ===
-            ${projectDescription}
+            === INITIATIVE CONTEXT ===
+            ${projectContext}
 
             === TASK 1: RULE ANALYSIS ===
             Evaluate EVERY listed rule exactly once.
             Return one rulesAnalysis entry for each Rule ID.
+            You must not skip any rule.
+            If evidence is weak or uncertain, still return Pass or Fail with a short reason.
 
             Rule status meaning:
             - For GATE and GENERAL rules: Pass means requirement satisfied. Fail means not satisfied.
@@ -165,23 +205,195 @@ class OpenAIService {
             }
             `;
 
-            const completion = await this.client.chat.completions.create({
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You analyze AI initiatives for a financial institution. Always respond with valid JSON only.'
-                    },
-                    { role: 'user', content: prompt }
-                ],
-                model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-            });
-
-            const content = completion.choices[0].message.content || '';
-            const jsonString = content.replace(/```json/gi, '').replace(/```/g, '').trim();
-            return JSON.parse(jsonString);
+            return await this.createCompletion([
+                {
+                    role: 'system',
+                    content: 'You analyze AI initiatives for a financial institution. Always respond with valid JSON only.'
+                },
+                { role: 'user', content: prompt }
+            ]);
         } catch (error) {
             console.error('OpenAI Analysis Error:', error);
             throw new Error('Failed to analyze project');
+        }
+    }
+
+    async analyzePriorityOnly(projectContext) {
+        try {
+            const rubric = loadScoringRubric();
+            const scoringSection = rubric ? `
+            Use these rubric definitions to score each dimension from 1-5:
+
+            ${rubric.lines}
+            ` : `
+            Score each dimension 1-5:
+            Strategic Alignment, Regulatory Risk, Business Impact,
+            Implementation Complexity, Time-to-Value, Resource Requirements.
+            `;
+
+            const prompt = `
+            You are a strict AI Initiative Approver for Sterling Financial Holdings Group.
+            Evaluate the initiative context and produce only the scoring breakdown.
+
+            === INITIATIVE CONTEXT ===
+            ${projectContext}
+
+            === TASK ===
+            ${scoringSection}
+
+            Return strict JSON only:
+            {
+                "scoringBreakdown": {
+                    "strategicAlignment": { "score": 1-5, "reason": "Brief justification" },
+                    "regulatoryRisk": { "score": 1-5, "reason": "Brief justification" },
+                    "businessImpact": { "score": 1-5, "reason": "Brief justification" },
+                    "implementationComplexity": { "score": 1-5, "reason": "Brief justification" },
+                    "timeToValue": { "score": 1-5, "reason": "Brief justification" },
+                    "resourceRequirements": { "score": 1-5, "reason": "Brief justification" }
+                },
+                "summary": "Short summary of scoring rationale"
+            }
+            `;
+
+            return await this.createCompletion([
+                {
+                    role: 'system',
+                    content: 'You evaluate initiative scoring dimensions. Return valid JSON only.'
+                },
+                { role: 'user', content: prompt }
+            ]);
+        } catch (error) {
+            console.error('OpenAI Priority-Only Analysis Error:', error);
+            throw new Error('Failed to analyze priority scoring');
+        }
+    }
+
+    async evaluateSingleRule(projectContext, rule) {
+        try {
+            const category = inferCategory(rule);
+            const ruleId = (rule._id || '').toString();
+            const criteria = rule.criteria || rule.description || '';
+            const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
+
+            const prompt = `
+            You are a strict AI Initiative Approver for Sterling Financial Holdings Group.
+            Evaluate one rule against the initiative context.
+
+            === RULE ===
+            Rule ID: ${ruleId}
+            Rule Name: ${rule.name}
+            Category: ${category}
+            Mandatory: ${mandatoryTag}
+            Criteria: ${criteria}
+
+            === INITIATIVE CONTEXT ===
+            ${projectContext}
+
+            === DECISION INSTRUCTIONS ===
+            - Return exactly one decision for this rule.
+            - For GATE and GENERAL rules: Pass means requirement satisfied, Fail means not satisfied.
+            - For ESCALATION rules: Pass means trigger condition NOT present, Fail means trigger present.
+            - If uncertain, still return a best-judgment Pass or Fail with concise reason.
+
+            Return strict JSON only:
+            {
+                "ruleId": "${ruleId}",
+                "ruleName": "${rule.name}",
+                "status": "Pass" | "Fail",
+                "reason": "Brief reason",
+                "mandatory": ${rule.isMandatory === true ? 'true' : 'false'}
+            }
+            `;
+
+            return await this.createCompletion([
+                {
+                    role: 'system',
+                    content: 'You evaluate one policy rule at a time. Return valid JSON only.'
+                },
+                { role: 'user', content: prompt }
+            ]);
+        } catch (error) {
+            console.error('OpenAI Single-Rule Evaluation Error:', error);
+            throw new Error('Failed to evaluate rule');
+        }
+    }
+
+    async summarizeFinalDecision(projectContext, payload) {
+        try {
+            const prompt = `
+            You are a strict AI Initiative Approver for Sterling Financial Holdings Group.
+            Write a concise executive summary using the structured analysis payload.
+
+            === INITIATIVE CONTEXT ===
+            ${projectContext}
+
+            === ANALYSIS PAYLOAD ===
+            ${JSON.stringify(payload, null, 2)}
+
+            Output requirements:
+            - 1 short paragraph.
+            - Mention strongest positives and key concerns.
+            - Mention score and tier in plain language.
+            - Do not invent facts.
+            `;
+
+            const content = await this.createCompletion([
+                {
+                    role: 'system',
+                    content: 'You summarize initiative analysis clearly and concisely.'
+                },
+                { role: 'user', content: prompt }
+            ], { parseJson: false, temperature: 0 });
+
+            return stripCodeBlocks(content);
+        } catch (error) {
+            console.error('OpenAI Final Summary Error:', error);
+            return '';
+        }
+    }
+
+    async analyzeRulesOnly(projectContext, rules) {
+        try {
+            const rulePrompts = buildRulePrompts(rules);
+
+            const prompt = `
+            You are a strict AI Initiative Approver for Sterling Financial Holdings Group.
+            Evaluate the initiative against all listed rules.
+
+            === APPROVAL RULES ===
+            ${rulePrompts}
+
+            === INITIATIVE CONTEXT ===
+            ${projectContext}
+
+            Return one rulesAnalysis entry for every rule listed above.
+            You must not skip any rule.
+            If uncertain, still return Pass or Fail with a short reason.
+
+            Return strict JSON only:
+            {
+                "rulesAnalysis": [
+                    {
+                        "ruleId": "exact Rule ID from input",
+                        "ruleName": "Rule name",
+                        "status": "Pass" | "Fail",
+                        "reason": "Brief reason",
+                        "mandatory": true | false
+                    }
+                ]
+            }
+            `;
+
+            return await this.createCompletion([
+                {
+                    role: 'system',
+                    content: 'You analyze AI initiatives for a financial institution. Always respond with valid JSON only.'
+                },
+                { role: 'user', content: prompt }
+            ]);
+        } catch (error) {
+            console.error('OpenAI Rules-Only Analysis Error:', error);
+            throw new Error('Failed to analyze rules');
         }
     }
 }

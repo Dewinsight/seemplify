@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import './InitiativeIntake.css';
@@ -87,6 +87,9 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
     const [error, setError] = useState('');
+    const [analysisJobId, setAnalysisJobId] = useState('');
+    const [analysisProgress, setAnalysisProgress] = useState<any>(null);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Form State
     const [form, setForm] = useState({
@@ -159,9 +162,55 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
     const nextStep = () => setStep(prev => Math.min(prev + 1, totalSteps));
     const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
 
+    const stopPolling = () => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => stopPolling();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const startPolling = (jobId: string) => {
+        stopPolling();
+
+        const poll = async () => {
+            try {
+                const statusRes = await api.get(`/projects/analyze-jobs/${jobId}`);
+                const status = statusRes.data || {};
+                setAnalysisProgress(status);
+
+                if (status.status === 'completed' && status.projectId) {
+                    stopPolling();
+                    navigate(`/projects/${status.projectId}`);
+                    return;
+                }
+
+                if (status.status === 'failed') {
+                    stopPolling();
+                    setAnalyzing(false);
+                    setError(status.error || 'Analysis failed. Please try again.');
+                }
+            } catch (err: any) {
+                stopPolling();
+                setAnalyzing(false);
+                setError(err.response?.data?.error || 'Failed to read analysis progress.');
+            }
+        };
+
+        poll();
+        pollRef.current = setInterval(poll, 1200);
+    };
+
     const handleSubmit = async () => {
         setAnalyzing(true);
         setError('');
+        setAnalysisJobId('');
+        setAnalysisProgress(null);
+        let payload: any = null;
         try {
             // Build description from form fields for AI analysis
             const description = `
@@ -208,17 +257,49 @@ ${form.regulations ? `**Regulations:** ${form.regulations}` : ''}
 ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             `.trim();
 
-            const payload = {
+            payload = {
                 name: form.initiativeName,
                 description,
                 department: activeDepartment?._id,
                 formData: form
             };
-            const res = await api.post('/projects/analyze', payload);
-            navigate(`/projects/${res.data.projectId || res.data._id}`);
+            const res = await api.post('/projects/analyze-async', payload);
+            const jobId = res.data?.jobId;
+            if (!jobId) {
+                throw new Error('No analysis job ID returned.');
+            }
+
+            setAnalysisJobId(jobId);
+            setAnalysisProgress({
+                status: 'running',
+                phase: 'queued',
+                message: 'Analysis queued...',
+                progressPercent: 0
+            });
+            startPolling(jobId);
         } catch (err: any) {
+            // Backward-compatible fallback if async endpoint is not yet deployed.
+            if (err.response?.status === 404) {
+                try {
+                    const fallbackRes = await api.post('/projects/analyze', payload || {
+                        name: form.initiativeName,
+                        description: '',
+                        department: activeDepartment?._id,
+                        formData: form
+                    });
+                    navigate(`/projects/${fallbackRes.data.projectId || fallbackRes.data._id}`);
+                    return;
+                } catch (fallbackErr: any) {
+                    console.error('Fallback analyze failed:', fallbackErr);
+                    const fallbackMsg = fallbackErr.response?.data?.error || 'Analysis failed. Please try again.';
+                    setError(fallbackMsg);
+                    setAnalyzing(false);
+                    return;
+                }
+            }
+
             console.error('Error analyzing project:', err);
-            const errorMsg = err.response?.data?.error || 'Analysis failed. Please try again.';
+            const errorMsg = err.response?.data?.error || err.message || 'Analysis failed. Please try again.';
             setError(errorMsg);
             setAnalyzing(false);
         }
@@ -254,7 +335,12 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                     <div className="steps-progress-fill" style={{ width: `${((step - 1) / (totalSteps - 1)) * 100}%` }}></div>
                 </div>
                 {steps.map((s) => (
-                    <div key={s.id} className={`step-item ${step === s.id ? 'active' : ''} ${step > s.id ? 'completed' : ''}`} onClick={() => setStep(s.id)}>
+                    <div
+                        key={s.id}
+                        className={`step-item ${step === s.id ? 'active' : ''} ${step > s.id ? 'completed' : ''}`}
+                        onClick={() => !analyzing && setStep(s.id)}
+                        style={{ cursor: analyzing ? 'not-allowed' : 'pointer', opacity: analyzing ? 0.8 : 1 }}
+                    >
                         <div className="step-circle">
                             {step > s.id ? '✓' : s.id}
                         </div>
@@ -631,6 +717,38 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 </div>
                             </div>
 
+                            {analyzing && (
+                                <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(33, 150, 243, 0.1)', border: '1px solid rgba(33, 150, 243, 0.4)', borderRadius: '8px' }}>
+                                    <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: '#64b5f6' }}>
+                                        Agentic Rule Analysis In Progress
+                                    </div>
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.65rem' }}>
+                                        {analysisProgress?.message || 'Preparing analysis pipeline...'}
+                                    </div>
+                                    <div style={{ height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)', overflow: 'hidden', marginBottom: '0.65rem' }}>
+                                        <div style={{
+                                            height: '100%',
+                                            width: `${Number(analysisProgress?.progressPercent || 0)}%`,
+                                            background: 'linear-gradient(90deg, #2196f3 0%, #00e676 100%)',
+                                            transition: 'width 0.35s ease'
+                                        }} />
+                                    </div>
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                        <span>Job: {analysisJobId || '...'}</span>
+                                        <span>Phase: {analysisProgress?.phase || 'queued'}</span>
+                                        {typeof analysisProgress?.completedRules === 'number' && typeof analysisProgress?.totalRules === 'number' && analysisProgress.totalRules > 0 && (
+                                            <span>Rules: {analysisProgress.completedRules}/{analysisProgress.totalRules}</span>
+                                        )}
+                                    </div>
+                                    {analysisProgress?.currentRule && (
+                                        <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                                            Current: <strong style={{ color: 'var(--text-primary)' }}>{analysisProgress.currentRule}</strong>{' '}
+                                            ({analysisProgress.currentRuleStatus || '...'})
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {error && (
                                 <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid #f44336', borderRadius: '8px', color: '#f44336' }}>
                                     {error}
@@ -643,12 +761,12 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
 
                 {/* Footer Navigation */}
                 <div className="nav-buttons">
-                    <button className="btn-back" onClick={step === 1 ? onCancel : prevStep}>
+                    <button className="btn-back" onClick={step === 1 ? onCancel : prevStep} disabled={analyzing}>
                         {step === 1 ? 'Cancel' : 'Back'}
                     </button>
 
                     {step < totalSteps ? (
-                        <button className="btn-next" onClick={nextStep}>
+                        <button className="btn-next" onClick={nextStep} disabled={analyzing}>
                             Next Step →
                         </button>
                     ) : (

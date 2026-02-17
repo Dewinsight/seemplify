@@ -66,6 +66,8 @@ router.patch('/rules/system/bulk', verifyToken, injectOrgContext, verifyRole(['r
 router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.updateRule);
 
 // --- Projects ---
+router.post('/projects/analyze-async', verifyToken, injectOrgContext, mainController.analyzeProjectAsync);
+router.get('/projects/analyze-jobs/:jobId', verifyToken, injectOrgContext, mainController.getAnalyzeJobStatus);
 router.post('/projects/analyze', verifyToken, injectOrgContext, mainController.analyzeProject);
 router.get('/projects', verifyToken, injectOrgContext, mainController.getProjects);
 router.get('/projects/:id', verifyToken, injectOrgContext, mainController.getProjectById);
