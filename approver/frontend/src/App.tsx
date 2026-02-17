@@ -6,6 +6,7 @@ import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import api, { getLogoUrl } from './api';
 import { getUserDisplayName, getUserInitials } from './utils/userDisplay';
+import { hasAnyCapability } from './utils/access';
 
 // Icons as simple SVG components
 const DashboardIcon = () => (
@@ -32,6 +33,13 @@ const RulesIcon = () => (
     <path d="M16 13H8" />
     <path d="M16 17H8" />
     <path d="M10 9H8" />
+  </svg>
+);
+
+const NewRuleIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
   </svg>
 );
 
@@ -99,6 +107,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = activeOrganization?.isAdmin || false;
+  const canManageRules = hasAnyCapability(activeOrganization, ['rules.manage']);
   const displayName = getUserDisplayName(user, 'User');
   const initials = getUserInitials(user, 'U');
 
@@ -116,6 +125,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
     { path: '/analyze', label: 'Initiatives', icon: <InitiativesIcon /> },
     { path: '/rules', label: 'Rules', icon: <RulesIcon /> },
+    ...(canManageRules ? [{ path: '/rules/new', label: 'New Rule', icon: <NewRuleIcon /> }] : []),
     { path: '/invites', label: 'Invites', icon: <InvitesIcon /> },
     ...(isAdmin ? [{ path: '/admin/organization', label: 'Organization', icon: <OrgIcon /> }] : []),
   ];
@@ -406,6 +416,7 @@ function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/analyze" element={<Analyze />} />
                 <Route path="/rules" element={<Rules />} />
+                <Route path="/rules/new" element={<Rules />} />
                 <Route path="/invites" element={<InvitesPage />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/profile" element={<Profile />} />
