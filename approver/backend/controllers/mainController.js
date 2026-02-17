@@ -119,12 +119,12 @@ const determineTierFromScore = (priorityScore, workflowPolicy) => {
     return 1;
 };
 
-const applyTriggeredRuleEffects = (failedRuleAnalyses, sourceRuleById) => {
+const applyTriggeredRuleEffects = (effectSourceAnalyses, sourceRuleById) => {
     const appliedEffects = [];
     let forcedTier = null;
     const effectFlags = {};
 
-    failedRuleAnalyses.forEach((analysis) => {
+    effectSourceAnalyses.forEach((analysis) => {
         const sourceRule = sourceRuleById.get(String(analysis.ruleId));
         const effects = Array.isArray(sourceRule?.effects) ? sourceRule.effects : [];
 
@@ -368,6 +368,23 @@ const normalizeRuleStatus = (value) => {
     return null;
 };
 
+const resolveRuleAnalysisStatus = (rule, evaluation) => {
+    const rawStatus = normalizeRuleStatus(evaluation?.status) || 'Fail';
+    const category = String(rule?.category || '').toUpperCase();
+
+    // ESCALATION rule "Fail" means trigger condition is present.
+    if (category === 'ESCALATION' && rawStatus === 'Fail' && evaluation?.hardFailure !== true) {
+        return 'Triggered';
+    }
+
+    return rawStatus;
+};
+
+const isPassEquivalentRuleStatus = (status) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized === 'pass' || normalized === 'triggered';
+};
+
 const inferRuleCategory = (ruleDoc) => {
     const explicit = String(ruleDoc.category || '').trim().toUpperCase();
     if (explicit) return explicit;
@@ -581,7 +598,7 @@ const analyzeProjectPipeline = async ({
 
     const ruleAnalyses = sourceRules.map((rule) => {
         const evaluation = evalById.get(rule.id);
-        const status = normalizeRuleStatus(evaluation?.status) || 'Fail';
+        const status = resolveRuleAnalysisStatus(rule, evaluation);
         return {
             ruleId: rule.id,
             ruleName: rule.name,
@@ -593,24 +610,24 @@ const analyzeProjectPipeline = async ({
     });
 
     const totalRules = ruleAnalyses.length;
-    const passedRules = ruleAnalyses.filter(ra => ra.status === 'Pass').length;
+    const passedRules = ruleAnalyses.filter(ra => isPassEquivalentRuleStatus(ra.status)).length;
     const score = totalRules > 0 ? Math.round((passedRules / totalRules) * 100) : 0;
 
     const failedMandatoryGateRules = ruleAnalyses.filter(ra =>
         ra.mandatory === true &&
         ra.category !== 'ESCALATION' &&
-        ra.status !== 'Pass'
+        ra.status === 'Fail'
     );
     const triggeredEscalationRules = ruleAnalyses.filter(ra =>
         ra.category === 'ESCALATION' &&
-        ra.status !== 'Pass'
+        ra.status === 'Triggered'
     );
 
     const mandatoryFailed = failedMandatoryGateRules.length > 0;
     const escalationTriggers = triggeredEscalationRules.map(ra => ra.ruleName);
-    const failedRuleAnalyses = ruleAnalyses.filter(ra => ra.status !== 'Pass');
+    const effectSourceAnalyses = ruleAnalyses.filter(ra => ra.status === 'Fail' || ra.status === 'Triggered');
     const { appliedEffects, forcedTier, effectFlags } =
-        applyTriggeredRuleEffects(failedRuleAnalyses, sourceRuleById);
+        applyTriggeredRuleEffects(effectSourceAnalyses, sourceRuleById);
 
     const analysisResult = {
         rulesAnalysis: ruleAnalyses,
@@ -682,7 +699,7 @@ const analyzeProjectPipeline = async ({
         mandatoryFailedRules: failedMandatoryGateRules.map(rule => rule.ruleName),
         escalationTriggers,
         topFailedRules: ruleAnalyses
-            .filter(rule => rule.status !== 'Pass')
+            .filter(rule => rule.status === 'Fail')
             .slice(0, 10)
             .map(rule => ({ ruleName: rule.ruleName, reason: rule.reason }))
     };
@@ -1079,9 +1096,21 @@ exports.getProjects = async (req, res) => {
 
 exports.overrideProject = async (req, res) => {
     try {
-        const { projectId, newStatus, reason } = req.body;
+        const projectId = req.params?.id || req.body?.projectId;
+        const { newStatus, reason } = req.body || {};
+
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID is required.' });
+        }
+
+        const normalized = String(newStatus || '').trim().toLowerCase();
+        const finalStatus =
+            normalized === 'approved' ? 'Approved'
+                : normalized === 'rejected' ? 'Rejected'
+                    : null;
+
         // Only allow Approved or Rejected as final statuses
-        if (!['Approved', 'Rejected'].includes(newStatus)) {
+        if (!finalStatus) {
             return res.status(400).json({ error: 'Invalid status for override.' });
         }
         const project = await Project.findOne({ _id: projectId, organization: req.organization });
@@ -1089,10 +1118,22 @@ exports.overrideProject = async (req, res) => {
             return res.status(404).json({ error: 'Project not found.' });
         }
         const previousStatus = project.approvalStatus;
-        project.approvalStatus = newStatus;
-        project.status = newStatus;
+        project.approvalStatus = finalStatus;
+        project.status = finalStatus;
+        project.workflowStage = 'Complete';
+        project.currentStageKey = null;
         project.overrideBy = req.user.id;
         project.overrideReason = reason || '';
+        if (!Array.isArray(project.approvalHistory)) {
+            project.approvalHistory = [];
+        }
+        project.approvalHistory.push({
+            stage: 'AdminOverride',
+            action: finalStatus,
+            by: req.user.id,
+            reason: reason || `Admin override ${finalStatus.toLowerCase()}`,
+            timestamp: new Date()
+        });
         await project.save();
         // Record audit
         const Audit = require('../models/Audit');
@@ -1102,7 +1143,7 @@ exports.overrideProject = async (req, res) => {
             action: 'override',
             performedBy: req.user.id,
             previousStatus,
-            newStatus,
+            newStatus: finalStatus,
             reason,
         });
         res.json(project);

@@ -110,6 +110,34 @@ interface Project {
     createdAt: string;
 }
 
+const isRulePassEquivalent = (status: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized === 'pass' || normalized === 'triggered';
+};
+
+const getRuleStatusVisuals = (status: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'pass') {
+        return {
+            background: 'rgba(76, 175, 80, 0.1)',
+            border: '#4caf50',
+            text: '#4caf50'
+        };
+    }
+    if (normalized === 'triggered') {
+        return {
+            background: 'rgba(255, 193, 7, 0.12)',
+            border: '#ffc107',
+            text: '#ffca28'
+        };
+    }
+    return {
+        background: 'rgba(244, 67, 54, 0.1)',
+        border: '#f44336',
+        text: '#f44336'
+    };
+};
+
 const ProjectDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -223,6 +251,8 @@ const ProjectDetail: React.FC = () => {
 
     // Check if user can perform executive review
     const canExecutiveReview = hasAnyCapability(activeOrganization, ['projects.review.executive'], projectDeptId);
+    const ruleAnalyses = project.analysisResult?.rulesAnalysis || [];
+    const rulesPassEquivalentCount = ruleAnalyses.filter((rule) => isRulePassEquivalent(rule.status)).length;
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -263,7 +293,7 @@ const ProjectDetail: React.FC = () => {
                         </div>
                         {project.analysisResult?.rulesAnalysis && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8, marginTop: '0.15rem' }}>
-                                Rules: {project.analysisResult.rulesAnalysis.filter(r => r.status.toLowerCase() === 'pass').length}/{project.analysisResult.rulesAnalysis.length} passed ({project.score}% rule pass)
+                                Rules: {rulesPassEquivalentCount}/{project.analysisResult.rulesAnalysis.length} compliant ({project.score}% rule pass)
                             </div>
                         )}
                         {project.tier && (
@@ -481,25 +511,28 @@ const ProjectDetail: React.FC = () => {
 
                 {/* Rule Analysis */}
                 <div style={{ display: 'grid', gap: '1rem' }}>
-                    {project.analysisResult?.rulesAnalysis?.map((rule, index) => (
-                        <div key={index} style={{
-                            padding: '1rem',
-                            background: rule.status.toLowerCase() === 'pass' ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
-                            borderLeft: `4px solid ${rule.status.toLowerCase() === 'pass' ? '#4caf50' : '#f44336'}`,
-                            borderRadius: '4px'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <strong>{rule.ruleName}</strong>
-                                <span style={{
-                                    fontWeight: 'bold',
-                                    color: rule.status.toLowerCase() === 'pass' ? '#4caf50' : '#f44336'
-                                }}>
-                                    {rule.status.toUpperCase()}
-                                </span>
+                    {project.analysisResult?.rulesAnalysis?.map((rule, index) => {
+                        const visuals = getRuleStatusVisuals(rule.status);
+                        return (
+                            <div key={index} style={{
+                                padding: '1rem',
+                                background: visuals.background,
+                                borderLeft: `4px solid ${visuals.border}`,
+                                borderRadius: '4px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                    <strong>{rule.ruleName}</strong>
+                                    <span style={{
+                                        fontWeight: 'bold',
+                                        color: visuals.text
+                                    }}>
+                                        {rule.status.toUpperCase()}
+                                    </span>
+                                </div>
+                                <p style={{ margin: 0, fontSize: '0.9rem' }}>{rule.reason}</p>
                             </div>
-                            <p style={{ margin: 0, fontSize: '0.9rem' }}>{rule.reason}</p>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {project.analysisResult?.summary && (

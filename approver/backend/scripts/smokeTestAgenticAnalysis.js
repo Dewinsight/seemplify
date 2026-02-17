@@ -4,7 +4,11 @@
  * What it validates:
  * 1) Sync pipeline (`analyzeProject`) creates a project with rule analyses.
  * 2) Async pipeline (`analyzeProjectAsync`) returns a job and progresses to completion.
- * 3) Every configured rule receives an evaluation result (no omitted-rule fallback text).
+ * 3) Escalation rules are marked as Triggered (not failed) and apply tier effects.
+ * 4) Admin override endpoint works using route param ID and finalizes workflow state.
+ *
+ * Note:
+ * This script stubs OpenAI service calls for deterministic results and does not call external APIs.
  *
  * Usage:
  *   node scripts/smokeTestAgenticAnalysis.js
@@ -15,6 +19,7 @@ const mongoose = require('mongoose');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const mainController = require('../controllers/mainController');
+const openAIService = require('../services/OpenAIService');
 const Organization = require('../models/Organization');
 const Department = require('../models/Department');
 const Rule = require('../models/Rule');
@@ -23,6 +28,7 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 const WorkflowPolicy = require('../models/WorkflowPolicy');
 const UserOrganization = require('../models/UserOrganization');
+const Audit = require('../models/Audit');
 
 function createMockResponse() {
     let statusCode = 200;
@@ -48,6 +54,94 @@ function createMockResponse() {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function installDeterministicOpenAIStubs() {
+    const originalAnalyzePriorityOnly = openAIService.analyzePriorityOnly.bind(openAIService);
+    const originalEvaluateSingleRule = openAIService.evaluateSingleRule.bind(openAIService);
+    const originalSummarizeFinalDecision = openAIService.summarizeFinalDecision.bind(openAIService);
+
+    const includesAny = (text, list) => list.some((item) => text.includes(item));
+
+    openAIService.analyzePriorityOnly = async () => ({
+        scoringBreakdown: {
+            strategicAlignment: { score: 4, reason: 'Deterministic smoke scoring.' },
+            regulatoryRisk: { score: 3, reason: 'Deterministic smoke scoring.' },
+            businessImpact: { score: 4, reason: 'Deterministic smoke scoring.' },
+            implementationComplexity: { score: 3, reason: 'Deterministic smoke scoring.' },
+            timeToValue: { score: 4, reason: 'Deterministic smoke scoring.' },
+            resourceRequirements: { score: 3, reason: 'Deterministic smoke scoring.' }
+        },
+        summary: 'Deterministic smoke scoring summary.'
+    });
+
+    openAIService.evaluateSingleRule = async (projectContext, rule) => {
+        const context = String(projectContext || '').toLowerCase();
+        const name = String(rule?.name || '').toLowerCase();
+
+        if (name.includes('heart')) {
+            const pass = includesAny(context, [
+                '"heartsectorclassification": "direct_heart_impact"',
+                '"heartsectorclassification": "indirect_heart_impact"'
+            ]);
+            return {
+                ruleId: String(rule?._id || ''),
+                ruleName: rule?.name || '',
+                status: pass ? 'Pass' : 'Fail',
+                reason: pass
+                    ? 'HEART classification indicates direct or indirect impact.'
+                    : 'HEART classification is missing or non-HEART.',
+                mandatory: rule?.isMandatory === true
+            };
+        }
+
+        if (name.includes('budget')) {
+            const hasBudgetYes = context.includes('"budgetavailable": "yes"');
+            const amountMatch = context.match(/"budgetamount":\s*"([^"]+)"/);
+            const amount = amountMatch?.[1] || '';
+            const amountValue = Number(String(amount).replace(/[^\d.]/g, ''));
+            const pass = hasBudgetYes && Number.isFinite(amountValue) && amountValue > 0;
+            return {
+                ruleId: String(rule?._id || ''),
+                ruleName: rule?.name || '',
+                status: pass ? 'Pass' : 'Fail',
+                reason: pass
+                    ? `Budget is available with amount ${amount}.`
+                    : 'Budget is unavailable or amount is missing.',
+                mandatory: rule?.isMandatory === true
+            };
+        }
+
+        if (name.includes('sensitive data escalation')) {
+            const trigger = context.includes('"involvespersonalinfo": "yes"');
+            return {
+                ruleId: String(rule?._id || ''),
+                ruleName: rule?.name || '',
+                status: trigger ? 'Fail' : 'Pass',
+                reason: trigger
+                    ? 'Personal data is involved; escalation should trigger.'
+                    : 'No personal data involvement; no escalation.',
+                mandatory: rule?.isMandatory === true
+            };
+        }
+
+        return {
+            ruleId: String(rule?._id || ''),
+            ruleName: rule?.name || '',
+            status: 'Pass',
+            reason: 'Default deterministic pass for smoke test.',
+            mandatory: rule?.isMandatory === true
+        };
+    };
+
+    openAIService.summarizeFinalDecision = async (_projectContext, payload) =>
+        `Deterministic summary. Priority ${payload?.priorityScore ?? 'N/A'}, Tier ${payload?.tier ?? 'N/A'}.`;
+
+    return () => {
+        openAIService.analyzePriorityOnly = originalAnalyzePriorityOnly;
+        openAIService.evaluateSingleRule = originalEvaluateSingleRule;
+        openAIService.summarizeFinalDecision = originalSummarizeFinalDecision;
+    };
+}
 
 async function ensureTestUser() {
     const existing = await User.findOne({}).select('_id username').lean();
@@ -206,7 +300,52 @@ async function runAsyncAnalysis({ organizationId, departmentId, userId }) {
     throw new Error(`Async job timed out. Last status: ${JSON.stringify(lastPayload)}`);
 }
 
-async function validateProject({ projectId, expectedRules }) {
+async function runAdminOverride({ organizationId, projectId, userId, newStatus }) {
+    const req = {
+        organization: organizationId,
+        user: {
+            id: String(userId),
+            isAdmin: true
+        },
+        params: { id: String(projectId) },
+        body: {
+            newStatus,
+            reason: 'Smoke test admin override'
+        }
+    };
+
+    const { res, done } = createMockResponse();
+    await mainController.overrideProject(req, res);
+    const result = await done;
+
+    if (result.statusCode !== 200) {
+        throw new Error(`Override failed: status=${result.statusCode}, body=${JSON.stringify(result.payload)}`);
+    }
+
+    const project = await Project.findById(projectId).lean();
+    if (!project) throw new Error(`Project not found after override: ${projectId}`);
+
+    if (project.approvalStatus !== newStatus) {
+        throw new Error(`Override approvalStatus mismatch: expected ${newStatus}, got ${project.approvalStatus}`);
+    }
+    if (project.status !== newStatus) {
+        throw new Error(`Override status mismatch: expected ${newStatus}, got ${project.status}`);
+    }
+    if (project.workflowStage !== 'Complete') {
+        throw new Error(`Override workflowStage mismatch: expected Complete, got ${project.workflowStage}`);
+    }
+    if (project.currentStageKey !== null) {
+        throw new Error(`Override currentStageKey mismatch: expected null, got ${project.currentStageKey}`);
+    }
+
+    const history = Array.isArray(project.approvalHistory) ? project.approvalHistory : [];
+    const overrideEntry = history.find((row) => String(row.stage) === 'AdminOverride' && String(row.action) === newStatus);
+    if (!overrideEntry) {
+        throw new Error('Override history entry not found on project.');
+    }
+}
+
+async function validateProject({ projectId, expectedRules, expectEscalationTriggered = false }) {
     const project = await Project.findById(projectId).lean();
     if (!project) throw new Error(`Project not found: ${projectId}`);
 
@@ -225,6 +364,22 @@ async function validateProject({ projectId, expectedRules }) {
         throw new Error(`Found ${missingFallbacks.length} rows with omitted-rule fallback text.`);
     }
 
+    if (expectEscalationTriggered) {
+        const escalationRule = rulesAnalysis.find((row) => String(row.ruleName || '').toLowerCase().includes('sensitive data escalation'));
+        if (!escalationRule) {
+            throw new Error('Sensitive Data Escalation rule result was not found.');
+        }
+        if (escalationRule.status !== 'Triggered') {
+            throw new Error(`Expected escalation rule status Triggered, got ${escalationRule.status}`);
+        }
+        if (Number(project.tier) !== 3) {
+            throw new Error(`Expected tier 3 due escalation SET_TIER effect, got tier ${project.tier}`);
+        }
+        if (Number(project.score) !== 100) {
+            throw new Error(`Expected score 100 with pass-equivalent statuses, got ${project.score}`);
+        }
+    }
+
     return project;
 }
 
@@ -233,6 +388,7 @@ async function cleanup(ids) {
 
     await Promise.all([
         Project.deleteMany({ organization: orgId }),
+        Audit.deleteMany({ organization: orgId }),
         Rule.deleteMany({ organization: orgId }),
         Department.deleteMany({ organization: orgId }),
         Role.deleteMany({ organization: orgId }),
@@ -248,10 +404,13 @@ async function main() {
     const tempOrgName = `Agentic Smoke Org ${stamp}`;
     let tempOrg = null;
     let tempDept = null;
+    let restoreOpenAIStubs = null;
 
     try {
         await mongoose.connect(process.env.MONGO_URI);
         console.log('Connected to MongoDB');
+        restoreOpenAIStubs = installDeterministicOpenAIStubs();
+        console.log('Installed deterministic OpenAI stubs for smoke test');
 
         const user = await ensureTestUser();
         console.log(`Using user: ${user.username} (${user._id})`);
@@ -323,9 +482,19 @@ async function main() {
 
         const syncProject = await validateProject({
             projectId: syncResult.payload._id,
-            expectedRules
+            expectedRules,
+            expectEscalationTriggered: true
         });
         console.log(`Sync pipeline passed. Project=${syncProject._id}, Score=${syncProject.score}, Tier=${syncProject.tier}`);
+
+        console.log('Running admin override smoke test...');
+        await runAdminOverride({
+            organizationId: String(tempOrg._id),
+            projectId: String(syncProject._id),
+            userId: String(user._id),
+            newStatus: 'Rejected'
+        });
+        console.log('Admin override smoke test passed.');
 
         console.log('Running async pipeline smoke test...');
         const asyncJob = await runAsyncAnalysis({
@@ -340,7 +509,8 @@ async function main() {
 
         const asyncProject = await validateProject({
             projectId: asyncJob.projectId,
-            expectedRules
+            expectedRules,
+            expectEscalationTriggered: true
         });
         console.log(`Async pipeline passed. Project=${asyncProject._id}, Score=${asyncProject.score}, Tier=${asyncProject.tier}`);
 
@@ -366,6 +536,10 @@ async function main() {
             // ignore
         }
         process.exit(1);
+    } finally {
+        if (typeof restoreOpenAIStubs === 'function') {
+            restoreOpenAIStubs();
+        }
     }
 }
 
