@@ -18,6 +18,7 @@ COPY middleware ./middleware
 COPY models ./models
 COPY routes ./routes
 COPY services ./services
+COPY utils ./utils
 COPY scripts ./scripts
 
 EXPOSE 80
