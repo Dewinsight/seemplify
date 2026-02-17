@@ -117,9 +117,24 @@ function installDeterministicOpenAIStubs() {
                 ruleId: String(rule?._id || ''),
                 ruleName: rule?.name || '',
                 status: trigger ? 'Fail' : 'Pass',
+                conditionPresent: trigger,
                 reason: trigger
                     ? 'Personal data is involved; escalation should trigger.'
                     : 'No personal data involvement; no escalation.',
+                mandatory: rule?.isMandatory === true
+            };
+        }
+
+        if (name.includes('cap trigger smoke rule')) {
+            const trigger = context.includes('executive sponsorship');
+            return {
+                ruleId: String(rule?._id || ''),
+                ruleName: rule?.name || '',
+                status: trigger ? 'Fail' : 'Pass',
+                conditionPresent: trigger,
+                reason: trigger
+                    ? 'Cap condition is present for smoke test.'
+                    : 'Cap condition is not present.',
                 mandatory: rule?.isMandatory === true
             };
         }
@@ -345,7 +360,12 @@ async function runAdminOverride({ organizationId, projectId, userId, newStatus }
     }
 }
 
-async function validateProject({ projectId, expectedRules, expectEscalationTriggered = false }) {
+async function validateProject({
+    projectId,
+    expectedRules,
+    expectEscalationTriggered = false,
+    expectCapTriggered = false
+}) {
     const project = await Project.findById(projectId).lean();
     if (!project) throw new Error(`Project not found: ${projectId}`);
 
@@ -377,6 +397,19 @@ async function validateProject({ projectId, expectedRules, expectEscalationTrigg
         }
         if (Number(project.score) !== 100) {
             throw new Error(`Expected score 100 with pass-equivalent statuses, got ${project.score}`);
+        }
+    }
+
+    if (expectCapTriggered) {
+        const capRule = rulesAnalysis.find((row) => String(row.ruleName || '').toLowerCase().includes('cap trigger smoke rule'));
+        if (!capRule) {
+            throw new Error('Cap Trigger Smoke Rule result was not found.');
+        }
+        if (capRule.status !== 'Triggered') {
+            throw new Error(`Expected CAP rule status Triggered, got ${capRule.status}`);
+        }
+        if (project.approvalStatus === 'AI Rejected') {
+            throw new Error('Mandatory CAP trigger incorrectly caused AI rejection.');
         }
     }
 
@@ -463,6 +496,18 @@ async function main() {
                 isSystem: false,
                 category: 'ESCALATION',
                 effects: [{ type: 'SET_TIER', params: { tier: 3 } }]
+            },
+            {
+                name: 'Cap Trigger Smoke Rule',
+                criteria: 'If initiative has executive sponsorship, cap priority score at 3.0.',
+                weight: 7,
+                isMandatory: true,
+                organization: tempOrg._id,
+                department: null,
+                isActive: true,
+                isSystem: false,
+                category: 'CAP',
+                effects: []
             }
         ]);
 
@@ -483,7 +528,8 @@ async function main() {
         const syncProject = await validateProject({
             projectId: syncResult.payload._id,
             expectedRules,
-            expectEscalationTriggered: true
+            expectEscalationTriggered: true,
+            expectCapTriggered: true
         });
         console.log(`Sync pipeline passed. Project=${syncProject._id}, Score=${syncProject.score}, Tier=${syncProject.tier}`);
 
@@ -510,7 +556,8 @@ async function main() {
         const asyncProject = await validateProject({
             projectId: asyncJob.projectId,
             expectedRules,
-            expectEscalationTriggered: true
+            expectEscalationTriggered: true,
+            expectCapTriggered: true
         });
         console.log(`Async pipeline passed. Project=${asyncProject._id}, Score=${asyncProject.score}, Tier=${asyncProject.tier}`);
 

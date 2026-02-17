@@ -74,6 +74,7 @@ const DEFAULT_SCORING_WEIGHTS = {
 };
 
 const SCORING_WEIGHT_KEYS = Object.keys(DEFAULT_SCORING_WEIGHTS);
+const TRIGGER_RULE_CATEGORIES = new Set(['ESCALATION', 'CAP', 'PENALTY', 'BOOST']);
 
 const normalizeScoringWeights = (weights, fallback = DEFAULT_SCORING_WEIGHTS) => {
     const next = { ...fallback };
@@ -368,12 +369,14 @@ const normalizeRuleStatus = (value) => {
     return null;
 };
 
+const isTriggerRuleCategory = (category) => TRIGGER_RULE_CATEGORIES.has(String(category || '').trim().toUpperCase());
+
 const resolveRuleAnalysisStatus = (rule, evaluation) => {
     const rawStatus = normalizeRuleStatus(evaluation?.status) || 'Fail';
     const category = String(rule?.category || '').toUpperCase();
 
-    // ESCALATION rule "Fail" means trigger condition is present.
-    if (category === 'ESCALATION' && rawStatus === 'Fail' && evaluation?.hardFailure !== true) {
+    // Trigger-style rules: Fail means trigger condition is present.
+    if (isTriggerRuleCategory(category) && rawStatus === 'Fail' && evaluation?.hardFailure !== true) {
         return 'Triggered';
     }
 
@@ -390,6 +393,11 @@ const inferRuleCategory = (ruleDoc) => {
     if (explicit) return explicit;
     const hint = `${ruleDoc.name || ''} ${ruleDoc.description || ''} ${ruleDoc.criteria || ''}`;
     return /(escalat|tier\s*3|trigger)/i.test(hint) ? 'ESCALATION' : 'GENERAL';
+};
+
+const isSummaryScaleInvalid = (summary) => {
+    const text = String(summary || '');
+    return /out of 10/i.test(text) || /\/\s*10(\D|$)/i.test(text);
 };
 
 const resolveDepartmentForAnalysis = async ({ requestedDepartment, user, organization }) => {
@@ -466,7 +474,12 @@ const evaluateRulesWithAgents = async ({ initiativeContext, rules, onProgress })
             for (let attempt = 1; attempt <= RULE_EVAL_MAX_ATTEMPTS; attempt += 1) {
                 try {
                     const response = await openAIService.evaluateSingleRule(initiativeContext, rule);
-                    const status = normalizeRuleStatus(response?.status);
+                    const triggerStyle = isTriggerRuleCategory(inferRuleCategory(rule));
+                    const hasConditionPresent = typeof response?.conditionPresent === 'boolean';
+                    const normalizedFromCondition = triggerStyle && hasConditionPresent
+                        ? (response.conditionPresent ? 'Fail' : 'Pass')
+                        : null;
+                    const status = normalizedFromCondition || normalizeRuleStatus(response?.status);
                     if (!status) {
                         lastError = 'Model returned invalid rule status.';
                     } else {
@@ -523,7 +536,7 @@ const evaluateRulesWithAgents = async ({ initiativeContext, rules, onProgress })
 };
 
 const fallbackSummary = ({ priorityScore, tier, score, passedRules, totalRules }) => {
-    return `Priority score ${priorityScore?.toFixed(2) || 'N/A'} (Tier ${tier}). ` +
+    return `Priority score ${priorityScore?.toFixed(2) || 'N/A'}/5.0 (Tier ${tier}). ` +
         `Rule pass ${passedRules}/${totalRules} (${score}%).`;
 };
 
@@ -615,13 +628,14 @@ const analyzeProjectPipeline = async ({
 
     const failedMandatoryGateRules = ruleAnalyses.filter(ra =>
         ra.mandatory === true &&
-        ra.category !== 'ESCALATION' &&
+        !isTriggerRuleCategory(ra.category) &&
         ra.status === 'Fail'
     );
-    const triggeredEscalationRules = ruleAnalyses.filter(ra =>
-        ra.category === 'ESCALATION' &&
+    const triggeredActionRules = ruleAnalyses.filter(ra =>
+        isTriggerRuleCategory(ra.category) &&
         ra.status === 'Triggered'
     );
+    const triggeredEscalationRules = triggeredActionRules.filter(ra => String(ra.category || '').toUpperCase() === 'ESCALATION');
 
     const mandatoryFailed = failedMandatoryGateRules.length > 0;
     const escalationTriggers = triggeredEscalationRules.map(ra => ra.ruleName);
@@ -636,6 +650,10 @@ const analyzeProjectPipeline = async ({
         mandatoryFailed,
         failedMandatoryRules: failedMandatoryGateRules.map(ra => ra.ruleName),
         escalationTriggers,
+        triggeredRuleActions: triggeredActionRules.map((ra) => ({
+            ruleName: ra.ruleName,
+            category: ra.category
+        })),
         appliedEffects,
         effectFlags
     };
@@ -698,19 +716,25 @@ const analyzeProjectPipeline = async ({
         totalRules,
         mandatoryFailedRules: failedMandatoryGateRules.map(rule => rule.ruleName),
         escalationTriggers,
+        triggeredRuleActions: triggeredActionRules.map(rule => ({
+            ruleName: rule.ruleName,
+            category: rule.category
+        })),
         topFailedRules: ruleAnalyses
             .filter(rule => rule.status === 'Fail')
             .slice(0, 10)
             .map(rule => ({ ruleName: rule.ruleName, reason: rule.reason }))
     };
     const summarized = await openAIService.summarizeFinalDecision(initiativeContext, summarizerPayload);
-    analysisResult.summary = summarized || priorityResult?.summary || fallbackSummary({
+    const fallback = fallbackSummary({
         priorityScore,
         tier,
         score,
         passedRules,
         totalRules
     });
+    const candidateSummary = summarized || priorityResult?.summary || fallback;
+    analysisResult.summary = isSummaryScaleInvalid(candidateSummary) ? fallback : candidateSummary;
     analysisResult.priorityScore = priorityScore;
     analysisResult.calculatedTier = tier;
 

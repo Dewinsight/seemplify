@@ -65,6 +65,11 @@ function inferCategory(rule) {
     return /(escalat|tier\s*3|trigger)/i.test(hint) ? 'ESCALATION' : 'GENERAL';
 }
 
+function isTriggerCategory(category) {
+    const normalized = String(category || '').trim().toUpperCase();
+    return ['ESCALATION', 'PENALTY', 'CAP', 'BOOST'].includes(normalized);
+}
+
 function stripCodeBlocks(value) {
     return String(value || '')
         .replace(/```json/gi, '')
@@ -92,6 +97,7 @@ function buildRulePrompts(rules) {
     return rules.map(rule => {
         const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
         const category = inferCategory(rule);
+        const modeTag = isTriggerCategory(category) ? '[TRIGGER_STYLE]' : '[REQUIREMENT_STYLE]';
         const ruleId = (rule._id || '').toString();
         const criteria = rule.criteria || rule.description || '';
         const effects = Array.isArray(rule.effects) ? rule.effects : [];
@@ -104,7 +110,7 @@ function buildRulePrompts(rules) {
                 return type || 'UNKNOWN_EFFECT';
             }).join(', ')}`
             : '';
-        return `- Rule ID: ${ruleId} | Category: ${category} | ${mandatoryTag}${effectText} | ${rule.name}: ${criteria}`;
+        return `- Rule ID: ${ruleId} | Category: ${category} | ${mandatoryTag} ${modeTag}${effectText} | ${rule.name}: ${criteria}`;
     }).join('\n');
 }
 
@@ -171,10 +177,12 @@ class OpenAIService {
 
             Rule status meaning:
             - For GATE and GENERAL rules: Pass means requirement satisfied. Fail means not satisfied.
-            - For ESCALATION rules: Pass means trigger condition is NOT present.
-              Fail means trigger condition IS present (this indicates escalation trigger).
+            - For ESCALATION, PENALTY, CAP, and BOOST rules:
+              Pass means trigger condition is NOT present.
+              Fail means trigger condition IS present.
 
-            Rules marked [MANDATORY] are critical.
+            Rules marked [MANDATORY] are critical, but trigger-style categories
+            (ESCALATION/PENALTY/CAP/BOOST) should still use trigger semantics above.
             ${scoringSection}
 
             Return strict JSON only:
@@ -274,6 +282,10 @@ class OpenAIService {
             const ruleId = (rule._id || '').toString();
             const criteria = rule.criteria || rule.description || '';
             const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
+            const triggerStyle = isTriggerCategory(category);
+            const categoryDecisionGuide = triggerStyle
+                ? 'For this category, treat the rule as a trigger condition: Pass when condition is NOT present; Fail only when condition IS present.'
+                : 'For this category, treat the rule as a requirement: Pass when requirement is satisfied; Fail when not satisfied.';
 
             const prompt = `
             You are a strict AI Initiative Approver for Sterling Financial Holdings Group.
@@ -291,15 +303,20 @@ class OpenAIService {
 
             === DECISION INSTRUCTIONS ===
             - Return exactly one decision for this rule.
-            - For GATE and GENERAL rules: Pass means requirement satisfied, Fail means not satisfied.
-            - For ESCALATION rules: Pass means trigger condition NOT present, Fail means trigger present.
+            - ${categoryDecisionGuide}
             - If uncertain, still return a best-judgment Pass or Fail with concise reason.
+            - Ensure status is logically consistent with the reason.
+            - "conditionPresent" must be:
+              * true if trigger condition is present (for trigger-style categories),
+              * false if trigger condition is absent (for trigger-style categories),
+              * false for non-trigger categories.
 
             Return strict JSON only:
             {
                 "ruleId": "${ruleId}",
                 "ruleName": "${rule.name}",
                 "status": "Pass" | "Fail",
+                "conditionPresent": true | false,
                 "reason": "Brief reason",
                 "mandatory": ${rule.isMandatory === true ? 'true' : 'false'}
             }
@@ -334,6 +351,8 @@ class OpenAIService {
             - 1 short paragraph.
             - Mention strongest positives and key concerns.
             - Mention score and tier in plain language.
+            - Priority Score is on a 1-5 scale. If you mention it, format as "X.YY/5.0".
+            - Do not use "/10" or "out of 10".
             - Do not invent facts.
             `;
 
@@ -369,6 +388,8 @@ class OpenAIService {
             Return one rulesAnalysis entry for every rule listed above.
             You must not skip any rule.
             If uncertain, still return Pass or Fail with a short reason.
+            For ESCALATION, PENALTY, CAP, and BOOST rules:
+            Pass means trigger condition is NOT present; Fail means trigger condition IS present.
 
             Return strict JSON only:
             {
