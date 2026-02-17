@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { getOrganizationRoles, formatRoleLabel as formatRoleLabelFromOrg } from '../utils/access';
 
 interface PendingInvite {
     _id: string;
@@ -28,21 +29,11 @@ interface Department {
     name: string;
 }
 
-const ROLE_OPTIONS = [
-    { value: 'Requester', label: 'Requester' },
-    { value: 'CenterOfExcellence', label: 'Center of Excellence' },
-    { value: 'GovernanceApprover', label: 'Governance Approver' },
-    { value: 'ExecutiveApprover', label: 'Executive Approver' }
-] as const;
-
-const formatRoleLabel = (role: string) => {
-    const option = ROLE_OPTIONS.find(r => r.value === role);
-    return option?.label || role;
-};
-
 const InvitesPage: React.FC = () => {
     const { activeOrganization, refreshOrganizations } = useAuth();
     const isAdmin = activeOrganization?.isAdmin || false;
+    const roleOptions = useMemo(() => getOrganizationRoles(activeOrganization), [activeOrganization]);
+    const formatRoleLabel = (role: string) => formatRoleLabelFromOrg(activeOrganization, role);
 
     // My pending invites
     const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
@@ -55,7 +46,7 @@ const InvitesPage: React.FC = () => {
 
     // Admin: send invite form
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState('Requester');
+    const [inviteRole, setInviteRole] = useState('');
     const [inviteDept, setInviteDept] = useState('');
     const [inviteIsAdmin, setInviteIsAdmin] = useState(false);
     const [departments, setDepartments] = useState<Department[]>([]);
@@ -73,6 +64,13 @@ const InvitesPage: React.FC = () => {
             fetchDepartments();
         }
     }, [isAdmin, activeOrganization]);
+
+    useEffect(() => {
+        if (!roleOptions.length) return;
+        if (!inviteRole || !roleOptions.some((role) => role.key === inviteRole)) {
+            setInviteRole(roleOptions[0].key);
+        }
+    }, [inviteRole, roleOptions]);
 
     const fetchPendingInvites = async () => {
         try {
@@ -147,7 +145,7 @@ const InvitesPage: React.FC = () => {
             });
             setSendSuccess(`Invite sent to ${inviteEmail}`);
             setInviteEmail('');
-            setInviteRole('Requester');
+            setInviteRole(roleOptions[0]?.key || '');
             setInviteDept('');
             setInviteIsAdmin(false);
             fetchSentInvites();
@@ -294,8 +292,8 @@ const InvitesPage: React.FC = () => {
                                         background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)'
                                     }}
                                 >
-                                    {ROLE_OPTIONS.map((role) => (
-                                        <option key={role.value} value={role.value}>{role.label}</option>
+                                    {roleOptions.map((role) => (
+                                        <option key={role.key} value={role.key}>{role.name}</option>
                                     ))}
                                 </select>
                             </div>

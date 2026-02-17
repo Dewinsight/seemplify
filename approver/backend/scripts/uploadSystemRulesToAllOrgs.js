@@ -1,13 +1,13 @@
 /**
  * Upload system rules from mosaic_approver_rules_v2.json to ALL organizations.
- * Uses ONLY the atomic_rules_from_spreadsheet array — no invented rules.
+ * Uses ONLY the atomic_rules_from_spreadsheet array - no invented rules.
  *
  * Excludes process rule (id 4 only):
- * - 4: Minimum Priority Score — enforced in process flow (priorityScore thresholds)
+ * - 4: Minimum Priority Score - enforced in process flow (priorityScore thresholds)
  *
  * Rules 2 & 3 are AI-evaluated (reject at rules check level):
- * - 2: Group Head Pre-Approval — AI checks description for Group Head name + approval
- * - 3: HEART Sector Classification — AI checks description for HEART classification
+ * - 2: Group Head Pre-Approval - AI checks description for Group Head name + approval
+ * - 3: HEART Sector Classification - AI checks description for HEART classification
  *
  * Run with: node scripts/uploadSystemRulesToAllOrgs.js
  *
@@ -23,6 +23,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Rule = require('../models/Rule');
 const Organization = require('../models/Organization');
+const { ensureGovernanceConfigForOrganization, buildRuleEffectsFromCategory } = require('../services/governanceConfigService');
 
 const RULES_JSON_PATH = path.join(__dirname, '..', '..', 'mosaic_approver_rules_v2.json');
 
@@ -43,6 +44,7 @@ function loadRulesFromJson() {
 }
 
 function toRuleDoc(atomic) {
+    const category = atomic.category || 'GENERAL';
     return {
         name: atomic.name,
         description: atomic.description,
@@ -53,8 +55,23 @@ function toRuleDoc(atomic) {
         isActive: true,
         isSystem: true,
         isHidden: false,
-        category: atomic.category || 'GENERAL',
+        category,
+        effects: buildRuleEffectsFromCategory(category),
         systemRuleId: atomic.id
+    };
+}
+
+function asComparable(rule) {
+    return {
+        name: rule.name,
+        description: rule.description || '',
+        criteria: rule.criteria,
+        weight: rule.weight,
+        isMandatory: rule.isMandatory === true,
+        department: rule.department || null,
+        category: rule.category || null,
+        effects: Array.isArray(rule.effects) ? rule.effects : [],
+        isSystem: rule.isSystem === true
     };
 }
 
@@ -77,13 +94,17 @@ async function uploadSystemRulesToAllOrgs() {
         console.log(`Found ${orgs.length} organization(s)\n`);
 
         let totalCreated = 0;
+        let totalUpdated = 0;
         let totalSkipped = 0;
 
         for (const org of orgs) {
             let created = 0;
+            let updated = 0;
             let skipped = 0;
 
-            // Remove process rule (4) that was previously uploaded — now enforced by process flow
+            await ensureGovernanceConfigForOrganization(org._id, { forcePolicySync: true });
+
+            // Remove process rule (4) that was previously uploaded - now enforced by process flow
             const removed = await Rule.deleteMany({
                 organization: org._id,
                 isSystem: true,
@@ -99,23 +120,48 @@ async function uploadSystemRulesToAllOrgs() {
                     systemRuleId: atomic.id,
                     isSystem: true
                 });
-                if (existing) {
-                    skipped++;
-                    continue;
-                }
 
                 const doc = toRuleDoc(atomic);
                 doc.organization = org._id;
+
+                if (existing) {
+                    // Propagate definition updates while preserving per-org runtime toggles
+                    // (isActive / isHidden can be intentionally changed by admins).
+                    const updateDoc = {
+                        name: doc.name,
+                        description: doc.description,
+                        criteria: doc.criteria,
+                        weight: doc.weight,
+                        isMandatory: doc.isMandatory,
+                        department: doc.department,
+                        category: doc.category,
+                        effects: doc.effects,
+                        isSystem: true
+                    };
+
+                    const currentComparable = asComparable(existing);
+                    const nextComparable = asComparable(updateDoc);
+
+                    if (JSON.stringify(currentComparable) !== JSON.stringify(nextComparable)) {
+                        await Rule.updateOne({ _id: existing._id }, { $set: updateDoc });
+                        updated++;
+                    } else {
+                        skipped++;
+                    }
+                    continue;
+                }
+
                 await Rule.create(doc);
                 created++;
             }
 
             totalCreated += created;
+            totalUpdated += updated;
             totalSkipped += skipped;
-            console.log(`  ${org.name} (${org.slug}): ${created} created, ${skipped} skipped`);
+            console.log(`  ${org.name} (${org.slug}): ${created} created, ${updated} updated, ${skipped} skipped`);
         }
 
-        console.log(`\nDone. Total: ${totalCreated} created, ${totalSkipped} skipped across all orgs.`);
+        console.log(`\nDone. Total: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped across all orgs.`);
         await mongoose.connection.close();
         process.exit(0);
     } catch (error) {

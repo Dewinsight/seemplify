@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { hasAnyCapability } from '../utils/access';
 
 interface Rule {
     _id: string;
@@ -52,10 +53,7 @@ const Rules: React.FC = () => {
     // Determine edit permission: Admin or Governance/Executive Approver
     // Note: Requesters probably can't see this page or can't edit. 
     // ProtectedRoute lets them in. UI should hide form.
-    const canEdit = activeOrganization?.isAdmin || (activeOrganization?.permissions || []).some((p: any) => {
-        const roles = p.roles || (p.role ? [p.role] : []);
-        return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Admin'].includes(r));
-    });
+    const canEdit = hasAnyCapability(activeOrganization, ['rules.manage']);
 
     // Fetch available departments for scope dropdown
     useEffect(() => {

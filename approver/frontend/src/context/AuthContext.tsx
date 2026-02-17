@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api';
 import { hasCompletedNameProfile } from '../utils/userDisplay';
+import type { RoleDefinition } from '../utils/access';
 
 interface OrgPermission {
     department: { _id: string; name: string };
@@ -18,6 +19,8 @@ interface OrgMembership {
     logoMode?: 'dark' | 'light' | 'system' | 'all';  // when to show logo
     isAdmin: boolean;
     permissions: OrgPermission[];
+    capabilities?: string[];
+    roles?: RoleDefinition[];
 }
 
 interface User {
@@ -166,6 +169,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!activeOrganization && orgs.length > 0) {
                 setActiveOrganization(orgs[0]);
                 localStorage.setItem('activeOrganization', JSON.stringify(orgs[0]));
+            }
+            // If active org still exists, refresh it with latest metadata (roles, logos, permissions, etc.)
+            if (activeOrganization) {
+                const refreshedActive = orgs.find(o => o._id === activeOrganization._id);
+                if (refreshedActive) {
+                    setActiveOrganization(refreshedActive);
+                    localStorage.setItem('activeOrganization', JSON.stringify(refreshedActive));
+                }
             }
             // If active org was removed, reset to first
             if (activeOrganization && !orgs.find(o => o._id === activeOrganization._id)) {

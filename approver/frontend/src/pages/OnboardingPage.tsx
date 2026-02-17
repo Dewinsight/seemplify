@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName, hasCompletedNameProfile } from '../utils/userDisplay';
+import { formatRoleLabel as formatRoleLabelFromOrg } from '../utils/access';
 
 interface PendingInvite {
     _id: string;
@@ -13,18 +14,7 @@ interface PendingInvite {
     expiresAt: string;
 }
 
-const formatRoleLabel = (role: string) => {
-    switch (role) {
-        case 'CenterOfExcellence':
-            return 'Center of Excellence';
-        case 'GovernanceApprover':
-            return 'Governance Approver';
-        case 'ExecutiveApprover':
-            return 'Executive Approver';
-        default:
-            return role;
-    }
-};
+const formatRoleLabel = (role: string) => formatRoleLabelFromOrg(null, role);
 
 const OnboardingPage: React.FC = () => {
     const { user, organizations, logout, refreshOrganizations, updateUserProfile } = useAuth();

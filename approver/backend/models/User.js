@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema({
     isAdmin: { type: Boolean, default: false },
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'] }]
+        roles: [{ type: String, trim: true }]
     }],
 
     isVerified: { type: Boolean, default: false },

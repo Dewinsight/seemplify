@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api, { getLogoUrl } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { getOrganizationRoles, formatRoleLabel as formatRoleLabelFromOrg } from '../utils/access';
+import type { RoleDefinition } from '../utils/access';
 
 // --- Interfaces ---
 interface Department {
@@ -26,22 +28,37 @@ interface User {
     isVerified: boolean;
 }
 
-const ROLE_OPTIONS = [
-    { value: 'Requester', label: 'Requester', color: 'var(--brand-primary)' },
-    { value: 'CenterOfExcellence', label: 'Center of Excellence', color: '#2196f3' },
-    { value: 'GovernanceApprover', label: 'Governance Reviewer', color: '#ff9800' },
-    { value: 'ExecutiveApprover', label: 'Executive Approver', color: 'var(--sterling-red)' }
-] as const;
+interface WorkflowPolicyPayload {
+    _id?: string;
+    name: string;
+    description?: string;
+    aiGate: {
+        rejectBelow: number;
+        enhancedOversightMax: number;
+    };
+    escalation: {
+        forcedTierOnEscalation: number;
+    };
+    tiers: Array<{
+        tier: number;
+        label: string;
+        minPriorityScore: number;
+        maxPriorityScore: number;
+        stages: Array<{
+            stageKey: string;
+            label: string;
+            requiredRoleKeys: string[];
+            minApprovals: number;
+            onReject: 'REJECT' | 'ESCALATE_TO_NEXT';
+            pendingStatusLabel?: string;
+            approvedStatusLabel?: string;
+            rejectedStatusLabel?: string;
+        }>;
+    }>;
+    isActive?: boolean;
+}
 
-const formatRoleLabel = (role: string) => {
-    const option = ROLE_OPTIONS.find(r => r.value === role);
-    return option?.label || role;
-};
-
-const getRoleColor = (role: string) => {
-    const option = ROLE_OPTIONS.find(r => r.value === role);
-    return option?.color || 'var(--brand-primary)';
-};
+const ROLE_COLOR_PALETTE = ['var(--brand-primary)', '#2196f3', '#ff9800', 'var(--sterling-red)', '#4caf50', '#9c27b0'];
 
 const AdminUsers: React.FC = () => {
     const { activeOrganization, refreshOrganizations, switchOrganization } = useAuth();
@@ -50,6 +67,7 @@ const AdminUsers: React.FC = () => {
     // Users State
     const [users, setUsers] = useState<User[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]); // Shared resource
+    const [roles, setRoles] = useState<RoleDefinition[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [editIsAdmin, setEditIsAdmin] = useState(false);
@@ -68,9 +86,37 @@ const AdminUsers: React.FC = () => {
     const [logoBackground, setLogoBackground] = useState<string>('transparent');
     const [logoMode, setLogoMode] = useState<'dark' | 'light' | 'system' | 'all'>('all');
     const [logoSettingsLoading, setLogoSettingsLoading] = useState(false);
+    const [roleForm, setRoleForm] = useState({ name: '', key: '', description: '', capabilities: '' });
+    const [roleSaving, setRoleSaving] = useState(false);
+    const [workflowPolicyText, setWorkflowPolicyText] = useState('');
+    const [workflowSaving, setWorkflowSaving] = useState(false);
     const logoInputRef = useRef<HTMLInputElement>(null);
     const logoDarkInputRef = useRef<HTMLInputElement>(null);
     const logoLightInputRef = useRef<HTMLInputElement>(null);
+
+    const roleOptions = useMemo(() => {
+        if (roles.length > 0) {
+            return roles.filter(role => role.isActive !== false);
+        }
+        if (activeOrganization?.roles && activeOrganization.roles.length > 0) {
+            return activeOrganization.roles.filter(role => role.isActive !== false);
+        }
+        return getOrganizationRoles(null);
+    }, [activeOrganization?.roles, roles]);
+
+    const roleNameByKey = useMemo(() => {
+        const map = new Map<string, string>();
+        roleOptions.forEach((role) => map.set(role.key, role.name));
+        return map;
+    }, [roleOptions]);
+
+    const getRoleColor = (roleKey: string) => {
+        const index = roleOptions.findIndex(role => role.key === roleKey);
+        if (index < 0) return ROLE_COLOR_PALETTE[0];
+        return ROLE_COLOR_PALETTE[index % ROLE_COLOR_PALETTE.length];
+    };
+
+    const formatRoleLabel = (roleKey: string) => roleNameByKey.get(roleKey) || formatRoleLabelFromOrg(activeOrganization, roleKey);
 
     useEffect(() => {
         fetchData();
@@ -85,12 +131,16 @@ const AdminUsers: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [usersRes, deptsRes] = await Promise.all([
+            const [usersRes, deptsRes, rolesRes, workflowRes] = await Promise.all([
                 api.get('/users'),
-                api.get('/departments')
+                api.get('/departments'),
+                api.get('/roles'),
+                api.get('/workflow-policy')
             ]);
             setUsers(usersRes.data);
             setDepartments(deptsRes.data);
+            setRoles(rolesRes.data);
+            setWorkflowPolicyText(JSON.stringify(workflowRes.data?.policy || workflowRes.data || {}, null, 2));
         } catch (error) {
             console.error(error);
         } finally {
@@ -257,6 +307,67 @@ const AdminUsers: React.FC = () => {
             alert(err.response?.data?.error || 'Failed to update logo settings');
         } finally {
             setLogoSettingsLoading(false);
+        }
+    };
+
+    const refreshActiveOrganizationContext = async () => {
+        const orgs = await refreshOrganizations();
+        const updated = orgs.find(o => o._id === activeOrganization?._id);
+        if (updated) switchOrganization(updated);
+    };
+
+    const handleCreateRole = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!roleForm.name.trim()) return;
+        setRoleSaving(true);
+        try {
+            const capabilities = roleForm.capabilities
+                .split(',')
+                .map(capability => capability.trim())
+                .filter(Boolean);
+
+            await api.post('/roles', {
+                name: roleForm.name.trim(),
+                key: roleForm.key.trim() || undefined,
+                description: roleForm.description.trim() || undefined,
+                capabilities
+            });
+            setRoleForm({ name: '', key: '', description: '', capabilities: '' });
+            await fetchData();
+            await refreshActiveOrganizationContext();
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to create role');
+        } finally {
+            setRoleSaving(false);
+        }
+    };
+
+    const handleDeleteRole = async (roleId: string, roleName: string) => {
+        if (!window.confirm(`Delete role "${roleName}"? It will be removed from users and workflow stages.`)) return;
+        try {
+            await api.delete(`/roles/${roleId}`);
+            await fetchData();
+            await refreshActiveOrganizationContext();
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to delete role');
+        }
+    };
+
+    const handleSaveWorkflowPolicy = async () => {
+        setWorkflowSaving(true);
+        try {
+            const payload = JSON.parse(workflowPolicyText) as WorkflowPolicyPayload;
+            await api.put('/workflow-policy', payload);
+            const workflowRes = await api.get('/workflow-policy');
+            setWorkflowPolicyText(JSON.stringify(workflowRes.data?.policy || workflowRes.data || {}, null, 2));
+        } catch (err: any) {
+            if (err instanceof SyntaxError) {
+                alert('Workflow policy JSON is invalid.');
+            } else {
+                alert(err.response?.data?.error || 'Failed to save workflow policy');
+            }
+        } finally {
+            setWorkflowSaving(false);
         }
     };
 
@@ -486,6 +597,79 @@ const AdminUsers: React.FC = () => {
                             )}
                         </div>
 
+                        {/* Role Catalog */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Role Catalog</label>
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px', marginBottom: '0.75rem' }}>
+                                <form onSubmit={handleCreateRole} style={{ display: 'grid', gap: '0.75rem' }}>
+                                    <input
+                                        value={roleForm.name}
+                                        onChange={(e) => setRoleForm(prev => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Role name (e.g. Risk Reviewer)"
+                                        required
+                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                    />
+                                    <input
+                                        value={roleForm.key}
+                                        onChange={(e) => setRoleForm(prev => ({ ...prev, key: e.target.value }))}
+                                        placeholder="Role key (optional, auto-generated if empty)"
+                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                    />
+                                    <input
+                                        value={roleForm.description}
+                                        onChange={(e) => setRoleForm(prev => ({ ...prev, description: e.target.value }))}
+                                        placeholder="Description (optional)"
+                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                    />
+                                    <input
+                                        value={roleForm.capabilities}
+                                        onChange={(e) => setRoleForm(prev => ({ ...prev, capabilities: e.target.value }))}
+                                        placeholder="Capabilities (comma-separated, e.g. projects.review.coe,dashboard.review)"
+                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                    />
+                                    <button type="submit" className="btn-primary" disabled={roleSaving} style={{ width: 'fit-content', padding: '0.5rem 1rem' }}>
+                                        {roleSaving ? 'Saving...' : 'Create Role'}
+                                    </button>
+                                </form>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {roles.map((role, index) => (
+                                    <div key={role.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.6rem 0.75rem', border: '1px solid var(--glass-border)', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontWeight: 600, color: ROLE_COLOR_PALETTE[index % ROLE_COLOR_PALETTE.length] }}>{role.name}</div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{role.key}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteRole(role._id || role.key, role.name)}
+                                            style={{ padding: '0.4rem 0.7rem', fontSize: '0.8rem', background: 'rgba(244,67,54,0.15)', border: '1px solid rgba(244,67,54,0.35)', color: '#f44336', borderRadius: '6px', cursor: 'pointer' }}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Workflow Policy */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Workflow Policy (JSON)</label>
+                            <textarea
+                                value={workflowPolicyText}
+                                onChange={(e) => setWorkflowPolicyText(e.target.value)}
+                                rows={18}
+                                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.82rem' }}
+                            />
+                            <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    Edit tiers, stage routing, required roles, and approval counts directly.
+                                </span>
+                                <button type="button" onClick={handleSaveWorkflowPolicy} className="btn-primary" disabled={workflowSaving} style={{ padding: '0.5rem 1rem' }}>
+                                    {workflowSaving ? 'Saving...' : 'Save Workflow Policy'}
+                                </button>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             ) : activeTab === 'users' ? (
@@ -693,8 +877,8 @@ const AdminUsers: React.FC = () => {
                                             }}>
                                                 <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{dept.name}</div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                                                    {ROLE_OPTIONS.map(({ value, label }) => (
-                                                        <label key={value} style={{
+                                                    {roleOptions.map((roleOption) => (
+                                                        <label key={roleOption.key} style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             gap: '0.8rem',
@@ -704,19 +888,19 @@ const AdminUsers: React.FC = () => {
                                                             borderRadius: '6px',
                                                             transition: 'background 0.2s',
                                                             color: 'var(--text-primary)',
-                                                            background: (editPermissions[dept._id] || []).includes(value) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
+                                                            background: (editPermissions[dept._id] || []).includes(roleOption.key) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
                                                         }}>
                                                             <input
                                                                 type="checkbox"
-                                                                checked={(editPermissions[dept._id] || []).includes(value)}
-                                                                onChange={() => handleRoleToggle(dept._id, value)}
-                                                                style={{ width: '1.1rem', height: '1.1rem', accentColor: getRoleColor(value) }}
+                                                                checked={(editPermissions[dept._id] || []).includes(roleOption.key)}
+                                                                onChange={() => handleRoleToggle(dept._id, roleOption.key)}
+                                                                style={{ width: '1.1rem', height: '1.1rem', accentColor: getRoleColor(roleOption.key) }}
                                                             />
                                                             <span style={{
-                                                                fontWeight: (editPermissions[dept._id] || []).includes(value) ? 600 : 400,
-                                                                color: getRoleColor(value)
+                                                                fontWeight: (editPermissions[dept._id] || []).includes(roleOption.key) ? 600 : 400,
+                                                                color: getRoleColor(roleOption.key)
                                                             }}>
-                                                                {label}
+                                                                {roleOption.name}
                                                             </span>
                                                         </label>
                                                     ))}

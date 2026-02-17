@@ -4,6 +4,7 @@ const mainController = require('../controllers/mainController');
 const authController = require('../controllers/authController');
 const inviteController = require('../controllers/inviteController');
 const organizationController = require('../controllers/organizationController');
+const governanceController = require('../controllers/governanceController');
 const upload = require('../middleware/upload');
 const { verifyToken, verifyRole, injectOrgContext, optionalToken } = require('../middleware/auth');
 
@@ -47,28 +48,37 @@ router.delete('/departments/:id', verifyToken, injectOrgContext, verifyRole(['Ad
 router.get('/users', verifyToken, injectOrgContext, verifyRole(['Admin']), authController.getAllUsers);
 router.patch('/users/role', verifyToken, injectOrgContext, verifyRole(['Admin']), authController.updateUserRole);
 
+// --- Role Catalog / Workflow Policy ---
+router.get('/roles', verifyToken, injectOrgContext, governanceController.getRoles);
+router.post('/roles', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.createRole);
+router.patch('/roles/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.updateRole);
+router.delete('/roles/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.deleteRole);
+router.get('/workflow-policy', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.getWorkflowPolicy);
+router.put('/workflow-policy', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.updateWorkflowPolicy);
+router.post('/workflow-policy/reset', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.resetWorkflowPolicy);
+
 // --- Rules ---
-router.post('/rules', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.createRule);
+router.post('/rules', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.createRule);
 router.get('/rules', verifyToken, injectOrgContext, mainController.getRules);
-router.patch('/rules/system/bulk', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.bulkUpdateSystemRules);
-router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.updateRule);
+router.patch('/rules/system/bulk', verifyToken, injectOrgContext, verifyRole(['rules.manage.system']), mainController.bulkUpdateSystemRules);
+router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.updateRule);
 
 // --- Projects ---
 router.post('/projects/analyze', verifyToken, injectOrgContext, mainController.analyzeProject);
 router.get('/projects', verifyToken, injectOrgContext, mainController.getProjects);
 router.get('/projects/:id', verifyToken, injectOrgContext, mainController.getProjectById);
-router.patch('/projects/:id/override', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.overrideProject);
-router.delete('/rules/:id', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.deleteRule);
+router.patch('/projects/:id/override', verifyToken, injectOrgContext, verifyRole(['projects.override']), mainController.overrideProject);
+router.delete('/rules/:id', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.deleteRule);
 router.delete('/projects/:id', verifyToken, injectOrgContext, verifyRole(['Admin']), mainController.deleteProject);
 
 // Dashboard stats
-router.get('/dashboard/stats', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence']), mainController.getDashboardStats);
+router.get('/dashboard/stats', verifyToken, injectOrgContext, verifyRole(['dashboard.review']), mainController.getDashboardStats);
 
 // --- Tiered Approval Workflow ---
-router.post('/projects/governance-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover']), mainController.governanceReview);
-router.post('/projects/executive-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'ExecutiveApprover']), mainController.executiveReview);
-router.post('/projects/coe-review', verifyToken, injectOrgContext, verifyRole(['Admin', 'CenterOfExcellence']), mainController.centerOfExcellenceReview);
-router.get('/projects/pending-reviews', verifyToken, injectOrgContext, verifyRole(['Admin', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence']), mainController.getPendingReviews);
+router.post('/projects/governance-review', verifyToken, injectOrgContext, verifyRole(['projects.review.governance']), mainController.governanceReview);
+router.post('/projects/executive-review', verifyToken, injectOrgContext, verifyRole(['projects.review.executive']), mainController.executiveReview);
+router.post('/projects/coe-review', verifyToken, injectOrgContext, verifyRole(['projects.review.coe']), mainController.centerOfExcellenceReview);
+router.get('/projects/pending-reviews', verifyToken, injectOrgContext, verifyRole(['dashboard.review']), mainController.getPendingReviews);
 
 
 module.exports = router;

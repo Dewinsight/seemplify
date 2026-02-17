@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { getOrganizationRoles, formatRoleLabel as formatRoleLabelFromOrg } from '../utils/access';
 
 const Profile: React.FC = () => {
     const { user, activeOrganization, updateUserProfile } = useAuth();
@@ -15,6 +16,13 @@ const Profile: React.FC = () => {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const displayName = getUserDisplayName(user, 'User');
+    const rolePalette = ['#2196f3', '#4caf50', '#ff9800', '#ef5350', '#9c27b0', '#00bcd4'];
+    const roleOptions = getOrganizationRoles(activeOrganization);
+    const getRoleColor = (roleKey: string) => {
+        const idx = roleOptions.findIndex(role => role.key === roleKey);
+        if (idx >= 0) return rolePalette[idx % rolePalette.length];
+        return '#2196f3';
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -173,16 +181,11 @@ const Profile: React.FC = () => {
                                             <td style={{ padding: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                 {roles.map((role: string) => (
                                                     <span key={role} style={{
-                                                        background: role === 'ExecutiveApprover' ? 'rgba(244, 67, 54, 0.2)' :
-                                                            role === 'GovernanceApprover' ? 'rgba(255, 152, 0, 0.2)' :
-                                                                role === 'Approver' ? 'rgba(76, 175, 80, 0.2)' : 'rgba(33, 150, 243, 0.2)',
-                                                        color: role === 'ExecutiveApprover' ? '#ef5350' :
-                                                            role === 'GovernanceApprover' ? '#ff9800' :
-                                                                role === 'Approver' ? '#4caf50' : '#2196f3',
+                                                        background: `${getRoleColor(role)}22`,
+                                                        color: getRoleColor(role),
                                                         padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold'
                                                     }}>
-                                                        {role === 'GovernanceApprover' ? 'Governance' :
-                                                            role === 'ExecutiveApprover' ? 'Executive' : role}
+                                                        {formatRoleLabelFromOrg(activeOrganization, role)}
                                                     </span>
                                                 ))}
                                             </td>

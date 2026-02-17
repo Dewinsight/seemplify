@@ -18,26 +18,6 @@ const Analyze: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 5;
 
-    // Calculate Priority Score
-    const calculatePriority = (project: any) => {
-        // Weighted logic: (Score * 0.4) + (Tier * 20 * 0.3) + (Urgency * 0.3)
-        // This is a simplified example logic
-        let urgencyScore = 0;
-        if (project.formData?.urgency === 'urgent_3months') urgencyScore = 100;
-        else if (project.formData?.urgency === 'important_6months') urgencyScore = 70;
-        else if (project.formData?.urgency === 'can_wait_1year') urgencyScore = 40;
-        else urgencyScore = 20;
-
-        const tierScore = (project.tier || 3) === 1 ? 100 : (project.tier || 3) === 2 ? 60 : 30;
-        const baseScore = project.score || 0;
-
-        // Formula: Score (40%) + Urgency (30%) + Tier Impact (30%)
-        // Result is 0-100, mapped to 1-5 stars if needed, or just 1-5 number
-        const weighted = (baseScore * 0.4) + (urgencyScore * 0.3) + (tierScore * 0.3);
-        // Normalize to 1-5
-        return (weighted / 20).toFixed(1);
-    };
-
     // Enhanced Sort Handler
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -60,13 +40,7 @@ const Analyze: React.FC = () => {
     };
 
     const sortedProjects = React.useMemo(() => {
-        // Enhance projects with priority score for sorting
-        let enhanced = projects.map(p => ({
-            ...p,
-            priorityScore: parseFloat(calculatePriority(p))
-        }));
-
-        let sortableItems = [...enhanced];
+        let sortableItems = [...projects];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
                 let aValue = a[sortConfig.key];
@@ -80,6 +54,14 @@ const Analyze: React.FC = () => {
                 if (sortConfig.key === 'department') {
                     aValue = a.department?.name || '';
                     bValue = b.department?.name || '';
+                }
+                if (sortConfig.key === 'priorityScore') {
+                    aValue = typeof a.priorityScore === 'number' ? a.priorityScore : -1;
+                    bValue = typeof b.priorityScore === 'number' ? b.priorityScore : -1;
+                }
+                if (sortConfig.key === 'createdAt') {
+                    aValue = new Date(a.createdAt).getTime();
+                    bValue = new Date(b.createdAt).getTime();
                 }
 
                 if (aValue < bValue) {
@@ -104,7 +86,7 @@ const Analyze: React.FC = () => {
                 `"${p.department?.name || 'General'}"`,
                 `"${p.approvalStatus}"`,
                 p.score,
-                p.priorityScore || 'N/A',
+                (typeof p.priorityScore === 'number' ? p.priorityScore.toFixed(2) : 'N/A'),
                 p.tier || 'N/A',
                 `"${new Date(p.createdAt).toLocaleDateString()}"`
             ].join(','))
@@ -297,9 +279,9 @@ const Analyze: React.FC = () => {
                                                 </div>
                                             </td>
                                             <td style={{ textAlign: 'center' }}>
-                                                {p.priorityScore ? (
+                                                {typeof p.priorityScore === 'number' ? (
                                                     <span className="priority-score" style={{ color: p.priorityScore > 3.5 ? '#f44336' : p.priorityScore > 2.5 ? '#ff9800' : '#4caf50' }}>
-                                                        {p.priorityScore}
+                                                        {p.priorityScore.toFixed(2)}
                                                     </span>
                                                 ) : <span style={{ opacity: 0.5 }}>-</span>}
                                             </td>

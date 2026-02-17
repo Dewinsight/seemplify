@@ -16,6 +16,7 @@ const Organization = require('../models/Organization');
 const User = require('../models/User');
 const UserOrganization = require('../models/UserOrganization');
 const Department = require('../models/Department');
+const { ensureGovernanceConfigForOrganization, buildRuleEffectsFromCategory } = require('../services/governanceConfigService');
 
 // Default approval rules (from seedRules.js)
 const defaultRules = [
@@ -58,8 +59,11 @@ async function seedRulesForOrg(org, allRules) {
             skipped++;
             continue;
         }
-        const { category, ...ruleFields } = rule; // Rule schema has no category
-        await Rule.create({ ...ruleFields, organization: org._id });
+        await Rule.create({
+            ...rule,
+            organization: org._id,
+            effects: buildRuleEffectsFromCategory(rule.category)
+        });
         created++;
     }
     return { created, skipped };
@@ -75,6 +79,7 @@ async function ensureOrg(name, slug, user) {
         slug,
         description: `Organization for ${name}`
     }).save();
+    await ensureGovernanceConfigForOrganization(org._id);
 
     // Create General department
     const generalDept = await new Department({
@@ -96,6 +101,7 @@ async function ensureOrg(name, slug, user) {
             console.log(`  Added tonyegboo@gmail.com as admin`);
         }
     }
+    await ensureGovernanceConfigForOrganization(org._id);
     return org;
 }
 

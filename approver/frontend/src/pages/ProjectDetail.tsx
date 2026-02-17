@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { hasAnyCapability } from '../utils/access';
 
 interface RuleAnalysis {
     ruleName: string;
@@ -45,7 +46,7 @@ interface FormData {
 }
 
 interface ApprovalHistoryItem {
-    stage: 'AI' | 'CenterOfExcellence' | 'Governance' | 'Executive';
+    stage: string;
     action: 'Approved' | 'Rejected' | 'Escalated';
     by?: { username?: string; firstName?: string; lastName?: string } | null;
     reason?: string;
@@ -201,36 +202,17 @@ const ProjectDetail: React.FC = () => {
     if (loading) return <div className="glass-panel">Loading...</div>;
     if (!project) return <div className="glass-panel">Project not found</div>;
 
-    const canOverride = (activeOrganization?.isAdmin ||
-        activeOrganization?.permissions?.some((p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
-        })
-    );
+    const projectDeptId = project.department?._id || null;
+    const canOverride = hasAnyCapability(activeOrganization, ['projects.override'], projectDeptId);
 
     // Check if user can perform CoE review
-    const canCoEReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
-        (p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.includes('CenterOfExcellence');
-        }
-    );
+    const canCoEReview = hasAnyCapability(activeOrganization, ['projects.review.coe'], projectDeptId);
 
     // Check if user can perform governance review
-    const canGovernanceReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
-        (p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
-        }
-    );
+    const canGovernanceReview = hasAnyCapability(activeOrganization, ['projects.review.governance'], projectDeptId);
 
     // Check if user can perform executive review
-    const canExecutiveReview = activeOrganization?.isAdmin || activeOrganization?.permissions?.some(
-        (p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.includes('ExecutiveApprover');
-        }
-    );
+    const canExecutiveReview = hasAnyCapability(activeOrganization, ['projects.review.executive'], projectDeptId);
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>

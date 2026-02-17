@@ -12,6 +12,13 @@ const RuleSchema = new mongoose.Schema({
     isSystem: { type: Boolean, default: false }, // System rules: cannot be deleted, only toggled/hidden
     isHidden: { type: Boolean, default: false }, // Hidden from default view; admins can unhide
     category: { type: String }, // GATE, ESCALATION, SCORING, STRATEGIC, BOOST, PENALTY, CAP
+    effects: [{
+        type: {
+            type: String,
+            enum: ['SET_TIER', 'ROUTE_TO_STAGE', 'SET_FLAG']
+        },
+        params: { type: mongoose.Schema.Types.Mixed, default: {} }
+    }],
     systemRuleId: { type: Number }, // Id from mosaic_approver_rules_v2.json atomic_rules for deduplication
     createdAt: { type: Date, default: Date.now }
 });

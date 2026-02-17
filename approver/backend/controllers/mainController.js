@@ -1,18 +1,117 @@
 const Rule = require('../models/Rule');
 const Project = require('../models/Project');
 const Organization = require('../models/Organization');
+const Role = require('../models/Role');
 const openAIService = require('../services/OpenAIService');
+const {
+    getWorkflowPolicyForOrganization,
+    ensureGovernanceConfigForOrganization
+} = require('../services/governanceConfigService');
+const {
+    roleMatches,
+    getDepartmentsForCapabilities,
+    buildRoleCatalog,
+    sanitizePermissions,
+    collectUserCapabilities
+} = require('../utils/access');
+
+const LEGACY_PENDING_STAGE_KEY = {
+    'Pending Center of Excellence': 'CenterOfExcellence',
+    'Pending Governance': 'Governance',
+    'Pending Executive': 'Executive'
+};
+
+const getPendingStatusLabel = (stage) => stage.pendingStatusLabel || `Pending ${stage.label || stage.stageKey}`;
+const getApprovedStatusLabel = (stage) => stage.approvedStatusLabel || `${stage.label || stage.stageKey} Approved`;
+const getRejectedStatusLabel = (stage) => stage.rejectedStatusLabel || `${stage.label || stage.stageKey} Rejected`;
+
+const resolveTierWorkflow = (project, workflowPolicy) => {
+    if (project?.workflowPlan?.tier && Array.isArray(project.workflowPlan.stages) && project.workflowPlan.stages.length > 0) {
+        return project.workflowPlan;
+    }
+    if (!workflowPolicy || !Array.isArray(workflowPolicy.tiers)) return null;
+    const tierDef = workflowPolicy.tiers.find(t => Number(t.tier) === Number(project?.tier));
+    return tierDef || null;
+};
+
+const resolveCurrentStageKey = (project) => project.currentStageKey || LEGACY_PENDING_STAGE_KEY[project.approvalStatus] || null;
+
+const hasUserReviewedStage = (project, stageKey, userId) => {
+    return (project.approvalHistory || []).some((entry) =>
+        String(entry.stage) === String(stageKey) &&
+        entry.by &&
+        String(entry.by) === String(userId)
+    );
+};
+
+const countApprovedReviewsForStage = (project, stageKey) => {
+    const uniqueApprovers = new Set();
+    (project.approvalHistory || []).forEach((entry) => {
+        if (String(entry.stage) !== String(stageKey)) return;
+        if (entry.action !== 'Approved') return;
+        if (!entry.by) return;
+        uniqueApprovers.add(String(entry.by));
+    });
+    return uniqueApprovers.size;
+};
+
+const getTierRouteLabel = (tierWorkflow) => {
+    const stages = (tierWorkflow?.stages || [])
+        .map(stage => stage.label || stage.stageKey)
+        .filter(Boolean);
+    return stages.length > 0 ? stages.join(' -> ') : 'manual workflow';
+};
+
+const applyTriggeredRuleEffects = (failedRuleAnalyses, sourceRuleById) => {
+    const appliedEffects = [];
+    let forcedTier = null;
+    let forcedStageKey = null;
+    const effectFlags = {};
+
+    failedRuleAnalyses.forEach((analysis) => {
+        const sourceRule = sourceRuleById.get(String(analysis.ruleId));
+        const effects = Array.isArray(sourceRule?.effects) ? sourceRule.effects : [];
+
+        effects.forEach((effect) => {
+            const type = String(effect?.type || '').toUpperCase();
+            const params = effect?.params || {};
+
+            if (type === 'SET_TIER') {
+                const tierValue = Number(params.tier);
+                if ([1, 2, 3].includes(tierValue)) {
+                    forcedTier = forcedTier == null ? tierValue : Math.max(forcedTier, tierValue);
+                }
+            } else if (type === 'ROUTE_TO_STAGE') {
+                const stageKey = typeof params.stageKey === 'string' ? params.stageKey.trim() : '';
+                if (stageKey) forcedStageKey = stageKey;
+            } else if (type === 'SET_FLAG') {
+                const key = typeof params.key === 'string' ? params.key.trim() : '';
+                if (key) effectFlags[key] = params.value;
+            }
+
+            appliedEffects.push({
+                ruleId: analysis.ruleId,
+                ruleName: analysis.ruleName,
+                type,
+                params
+            });
+        });
+    });
+
+    return { appliedEffects, forcedTier, forcedStageKey, effectFlags };
+};
 
 exports.createRule = async (req, res) => {
     try {
-        const { department, ...rest } = req.body;
+        const { department, effects, ...rest } = req.body;
         // User-created rules are never system rules
         const rule = new Rule({
             ...rest,
             department: department || null,
             organization: req.organization,
             isSystem: false,
-            isHidden: false
+            isHidden: false,
+            effects: Array.isArray(effects) ? effects : []
         });
         await rule.save();
         res.status(201).json(rule);
@@ -98,10 +197,7 @@ exports.analyzeProject = async (req, res) => {
     try {
         const { name, description, repoUrl, formData } = req.body;
 
-        // No form-level rejection — Group Head and HEART are evaluated as AI rules.
-        // If rules 2 & 3 are active and mandatory, AI will reject when they fail.
-
-        // Determine Department
+        // Determine department
         let department = req.body.department;
 
         // Validate user belongs to this department (unless Admin)
@@ -126,7 +222,7 @@ exports.analyzeProject = async (req, res) => {
             }
         }
 
-        // 1. Fetch active rules for this scope (Dept + Global) within org
+        // 1. Fetch active rules for this scope (dept + global) within org
         const rules = await Rule.find({
             isActive: true,
             organization: req.organization,
@@ -134,25 +230,94 @@ exports.analyzeProject = async (req, res) => {
         });
 
         if (rules.length === 0) {
-            return res.status(400).json({ error: "No active rules defined for approval." });
+            return res.status(400).json({ error: 'No active rules defined for approval.' });
         }
 
-        // 2. Perform Analysis
-        const analysisResult = await openAIService.analyzeProject(description || "No description provided", rules);
+        // 2. Perform analysis
+        const analysisResult = await openAIService.analyzeProject(description || 'No description provided', rules);
 
-        // 3. Score and mandatory checks — directly from AI response, no name matching needed
-        const ruleAnalyses = analysisResult.rulesAnalysis || [];
+        // 3. Deterministic reconciliation of AI output against source rules
+        const normalizeText = (value) => String(value || '').trim().toLowerCase();
+        const normalizeStatus = (value) => {
+            const v = normalizeText(value);
+            if (['pass', 'passed', 'ok', 'true', 'yes'].includes(v)) return 'Pass';
+            if (['fail', 'failed', 'false', 'no', 'triggered', 'escalated'].includes(v)) return 'Fail';
+            return null;
+        };
+        const inferCategory = (ruleDoc) => {
+            const explicit = String(ruleDoc.category || '').trim().toUpperCase();
+            if (explicit) return explicit;
+            const hint = `${ruleDoc.name || ''} ${ruleDoc.description || ''} ${ruleDoc.criteria || ''}`;
+            return /(escalat|tier\s*3|trigger)/i.test(hint) ? 'ESCALATION' : 'GENERAL';
+        };
+
+        const sourceRules = rules.map(r => ({
+            id: (r._id || '').toString(),
+            name: r.name || '',
+            mandatory: r.isMandatory === true,
+            category: inferCategory(r),
+            effects: Array.isArray(r.effects) ? r.effects : []
+        }));
+        const sourceRuleById = new Map(sourceRules.map(rule => [rule.id, rule]));
+
+        const aiRuleAnalyses = Array.isArray(analysisResult.rulesAnalysis) ? analysisResult.rulesAnalysis : [];
+        const aiById = new Map();
+        const aiByName = new Map();
+
+        aiRuleAnalyses.forEach((ra) => {
+            const ruleId = normalizeText(ra.ruleId || ra.id);
+            const ruleName = normalizeText(ra.ruleName);
+            if (ruleId && !aiById.has(ruleId)) aiById.set(ruleId, ra);
+            if (ruleName && !aiByName.has(ruleName)) aiByName.set(ruleName, ra);
+        });
+
+        const ruleAnalyses = sourceRules.map((rule) => {
+            const byId = aiById.get(normalizeText(rule.id));
+            const byName = aiByName.get(normalizeText(rule.name));
+            const aiMatch = byId || byName || null;
+            const normalized = normalizeStatus(aiMatch?.status);
+            return {
+                ruleId: rule.id,
+                ruleName: rule.name,
+                category: rule.category,
+                mandatory: rule.mandatory,
+                status: normalized || 'Fail',
+                reason: aiMatch?.reason || 'No evaluation returned by model for this rule.'
+            };
+        });
+
+        // Persist reconciled analysis
+        analysisResult.rulesAnalysis = ruleAnalyses;
+
         const totalRules = ruleAnalyses.length;
-        const passedRules = ruleAnalyses.filter(ra => ra.status && ra.status.toLowerCase() === 'pass').length;
+        const passedRules = ruleAnalyses.filter(ra => ra.status === 'Pass').length;
         const score = totalRules > 0 ? Math.round((passedRules / totalRules) * 100) : 0;
 
-        // Mandatory failure: trust AI's assessment (it knows which rules are mandatory from the prompt)
-        const mandatoryFailed = analysisResult.mandatoryFailed === true ||
-            ruleAnalyses.some(ra => ra.mandatory === true && ra.status && ra.status.toLowerCase() !== 'pass');
-        const escalationTriggers = analysisResult.failedMandatoryRules || 
-            ruleAnalyses.filter(ra => ra.mandatory === true && ra.status && ra.status.toLowerCase() !== 'pass').map(ra => ra.ruleName);
+        // Mandatory GATE failures reject. ESCALATION failures route to Tier 3.
+        const failedMandatoryGateRules = ruleAnalyses.filter(ra =>
+            ra.mandatory === true &&
+            ra.category !== 'ESCALATION' &&
+            ra.status !== 'Pass'
+        );
+        const triggeredEscalationRules = ruleAnalyses.filter(ra =>
+            ra.category === 'ESCALATION' &&
+            ra.status !== 'Pass'
+        );
 
-        // 4. Priority Score: always compute from breakdown when available (source of truth per rubric)
+        const mandatoryFailed = failedMandatoryGateRules.length > 0;
+        const escalationTriggers = triggeredEscalationRules.map(ra => ra.ruleName);
+        const failedRuleAnalyses = ruleAnalyses.filter(ra => ra.status !== 'Pass');
+        const { appliedEffects, forcedTier, forcedStageKey, effectFlags } =
+            applyTriggeredRuleEffects(failedRuleAnalyses, sourceRuleById);
+
+        // Keep top-level fields consistent with reconciled decisioning
+        analysisResult.mandatoryFailed = mandatoryFailed;
+        analysisResult.failedMandatoryRules = failedMandatoryGateRules.map(ra => ra.ruleName);
+        analysisResult.escalationTriggers = escalationTriggers;
+        analysisResult.appliedEffects = appliedEffects;
+        analysisResult.effectFlags = effectFlags;
+
+        // 4. Priority score from scoring breakdown (source of truth)
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
         let priorityScore;
 
@@ -162,54 +327,97 @@ exports.analyzeProject = async (req, res) => {
             const b = scoringBreakdown.businessImpact?.score ?? 0;
             const c = scoringBreakdown.implementationComplexity?.score ?? 0;
             const t = scoringBreakdown.timeToValue?.score ?? 0;
-            const res = scoringBreakdown.resourceRequirements?.score ?? 0;
-            priorityScore = Math.round(((s * 0.25) + (r * 0.25) + (b * 0.20) + (c * 0.15) + (t * 0.10) + (res * 0.05)) * 100) / 100;
+            const resources = scoringBreakdown.resourceRequirements?.score ?? 0;
+            priorityScore = Math.round(((s * 0.25) + (r * 0.25) + (b * 0.20) + (c * 0.15) + (t * 0.10) + (resources * 0.05)) * 100) / 100;
         } else {
             priorityScore = typeof analysisResult.priorityScore === 'number' && !isNaN(analysisResult.priorityScore)
                 ? analysisResult.priorityScore
                 : score / 20;
         }
 
-        let tier = analysisResult.calculatedTier;
-
-        // Validate and default tier if not provided
+        let tier = Number(analysisResult.calculatedTier);
         if (!tier || tier < 1 || tier > 3) {
-            if (priorityScore >= 3.6) {
-                tier = 3;
-            } else if (priorityScore >= 2.6) {
-                tier = 2;
-            } else {
-                tier = 1;
-            }
+            if (priorityScore >= 3.6) tier = 3;
+            else if (priorityScore >= 2.6) tier = 2;
+            else tier = 1;
         }
 
-        // Escalation triggers automatically push to Tier 3
-        if (escalationTriggers.length > 0) {
-            tier = 3;
-            priorityScore = Math.max(priorityScore, 3.6);
+        const workflowPolicy = await getWorkflowPolicyForOrganization(req.organization);
+        const policyForcedTier = Number(workflowPolicy?.escalation?.forcedTierOnEscalation || 3);
+
+        // Escalation triggers and explicit rule effects can force higher-tier routing.
+        if (escalationTriggers.length > 0 && [1, 2, 3].includes(policyForcedTier)) {
+            tier = Math.max(tier, policyForcedTier);
+        }
+        if ([1, 2, 3].includes(Number(forcedTier))) {
+            tier = Math.max(tier, Number(forcedTier));
         }
 
-        // 5. Process flow: Priority Score thresholds (rule 4 — not LLM rule)
-        const rejectBelow = parseFloat(process.env.PRIORITY_SCORE_REJECT_BELOW || '1.5');
-        const enhancedOversightMax = parseFloat(process.env.PRIORITY_SCORE_ENHANCED_OVERSIGHT_MAX || '2.0');
+        const tierWorkflow = workflowPolicy?.tiers?.find(t => Number(t.tier) === Number(tier)) || null;
+
+        // 5. Process flow thresholds (deterministic process rule)
+        const rejectBelow = Number(workflowPolicy?.aiGate?.rejectBelow ?? process.env.PRIORITY_SCORE_REJECT_BELOW ?? 1.5);
+        const enhancedOversightMax = Number(workflowPolicy?.aiGate?.enhancedOversightMax ?? process.env.PRIORITY_SCORE_ENHANCED_OVERSIGHT_MAX ?? 2.0);
         const needEnhancedOversight = priorityScore >= rejectBelow && priorityScore < enhancedOversightMax;
 
-        // AI decision: reject if below threshold OR mandatory rules failed
-        const aiApproved = !mandatoryFailed && priorityScore >= rejectBelow;
+        // Approval decision:
+        // - Reject for failed mandatory gates.
+        // - Reject below threshold unless escalation trigger exists.
+        const aiApproved = !mandatoryFailed && (priorityScore >= rejectBelow || escalationTriggers.length > 0);
 
         let approvalStatus;
         let workflowStage;
         let simpleStatus;
+        let aiDecisionReason;
+        let currentStageKey = null;
+        const workflowPlanSnapshot = tierWorkflow ? JSON.parse(JSON.stringify(tierWorkflow)) : null;
 
         if (!aiApproved) {
             approvalStatus = 'AI Rejected';
             workflowStage = 'Screening';
             simpleStatus = 'Rejected';
+
+            const rejectReasons = [];
+            if (priorityScore < rejectBelow && escalationTriggers.length === 0) {
+                rejectReasons.push(`Priority Score ${priorityScore.toFixed(2)} below ${rejectBelow}`);
+            }
+            if (mandatoryFailed) {
+                rejectReasons.push(`Mandatory gate rules failed: ${failedMandatoryGateRules.map(r => r.ruleName).join(', ')}`);
+            }
+            aiDecisionReason = `AI rejected - ${rejectReasons.join('. ')}. Score: ${score}/100, Tier ${tier}`;
         } else {
-            approvalStatus = 'Pending Center of Excellence';
-            workflowStage = 'Center of Excellence Review';
-            simpleStatus = needEnhancedOversight ? 'Under Review (Enhanced Oversight)' : 'Under Review';
+            simpleStatus = 'Under Review';
+            const workflowStages = Array.isArray(tierWorkflow?.stages) ? tierWorkflow.stages : [];
+            let initialStage = workflowStages[0] || null;
+
+            if (forcedStageKey) {
+                const forcedStage = workflowStages.find(stage => String(stage.stageKey) === String(forcedStageKey));
+                if (forcedStage) initialStage = forcedStage;
+            }
+
+            if (initialStage) {
+                approvalStatus = getPendingStatusLabel(initialStage);
+                workflowStage = initialStage.label || initialStage.stageKey;
+                currentStageKey = initialStage.stageKey;
+            } else {
+                approvalStatus = 'Under Review';
+                workflowStage = 'Under Review';
+            }
+
+            const tierRoute = getTierRouteLabel(tierWorkflow);
+
+            if (escalationTriggers.length > 0) {
+                aiDecisionReason = `AI approved with escalation triggers: ${escalationTriggers.join(', ')}. Routed to ${tierRoute} review path. Score: ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`;
+            } else if (needEnhancedOversight) {
+                aiDecisionReason = `AI approved with enhanced oversight - Priority Score ${priorityScore.toFixed(2)} (${rejectBelow}-${enhancedOversightMax} range). Routed to ${tierRoute} review path. Score: ${score}/100, Tier ${tier}`;
+            } else {
+                aiDecisionReason = `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier}). Routed to ${tierRoute} review path.`;
+            }
         }
+
+        const aiAction = aiApproved
+            ? (needEnhancedOversight || escalationTriggers.length > 0 ? 'Escalated' : 'Approved')
+            : 'Rejected';
 
         // 6. Create project with tiered workflow data
         const project = new Project({
@@ -231,15 +439,14 @@ exports.analyzeProject = async (req, res) => {
             escalationTriggers,
             needEnhancedOversight: needEnhancedOversight || false,
             workflowStage,
+            workflowPolicy: workflowPolicy?._id || null,
+            currentStageKey,
+            workflowPlan: workflowPlanSnapshot,
             approvalHistory: [{
                 stage: 'AI',
-                action: aiApproved ? (needEnhancedOversight ? 'Escalated' : 'Approved') : 'Rejected',
+                action: aiAction,
                 by: null, // AI decision
-                reason: aiApproved
-                    ? needEnhancedOversight
-                        ? `AI approved with enhanced oversight - Priority Score ${priorityScore.toFixed(2)} (1.5–2.0 range). Score: ${score}/100, Tier ${tier}`
-                        : `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`
-                    : `AI rejected - Priority Score ${priorityScore.toFixed(2)} below ${rejectBelow}${mandatoryFailed ? '. Mandatory rules failed: ' + escalationTriggers.join(', ') : ''}. Score: ${score}/100, Tier ${tier}`,
+                reason: aiDecisionReason,
                 score,
                 timestamp: new Date()
             }]
@@ -261,12 +468,11 @@ exports.getProjects = async (req, res) => {
         if (req.user.isAdmin) {
             // Just org filter
         } else {
-            const approverDeptIds = (req.user.permissions || [])
-                .filter(p => {
-                    const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
-                })
-                .map(p => (p.department._id || p.department).toString());
+            const approverDeptIds = getDepartmentsForCapabilities(
+                req.user,
+                ['projects.review.*', 'projects.override', 'dashboard.review'],
+                req.user.roleCatalog || {}
+            );
 
             query = {
                 organization: req.organization,
@@ -348,12 +554,11 @@ exports.getDashboardStats = async (req, res) => {
     try {
         let query = { organization: req.organization };
         if (!req.user.isAdmin) {
-            const approverDepts = (req.user.permissions || [])
-                .filter(p => {
-                    const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
-                })
-                .map(p => (p.department._id || p.department).toString());
+            const approverDepts = getDepartmentsForCapabilities(
+                req.user,
+                ['projects.review.*', 'projects.override', 'dashboard.review'],
+                req.user.roleCatalog || {}
+            );
 
             query = {
                 organization: req.organization,
@@ -370,9 +575,9 @@ exports.getDashboardStats = async (req, res) => {
         }
 
         const total = await Project.countDocuments(query);
-        const approved = await Project.countDocuments({ ...query, approvalStatus: 'Approved' });
-        const rejected = await Project.countDocuments({ ...query, approvalStatus: 'Rejected' });
-        const pending = await Project.countDocuments({ ...query, approvalStatus: { $in: ['Pending', 'Under Review'] } });
+        const approved = await Project.countDocuments({ ...query, status: 'Approved' });
+        const rejected = await Project.countDocuments({ ...query, status: 'Rejected' });
+        const pending = await Project.countDocuments({ ...query, status: { $in: ['Pending', 'Under Review'] } });
 
         // Aggregate for avg score needs the query match
         const avgScoreAgg = await Project.aggregate([
@@ -455,230 +660,216 @@ exports.deleteProject = async (req, res) => {
     }
 };
 
-// Helper function to check role hierarchy
-const hasMinimumRole = (user, minRole, departmentId) => {
-    if (user.isAdmin) return true;
-
-    const roleHierarchy = {
-        'Requester': 1,
-        'CenterOfExcellence': 2,
-        'GovernanceApprover': 3,
-        'ExecutiveApprover': 4
+const getLegacyTierWorkflow = (tier) => {
+    const workflows = {
+        1: {
+            tier: 1,
+            stages: [
+                {
+                    stageKey: 'CenterOfExcellence',
+                    label: 'Center of Excellence Review',
+                    requiredRoleKeys: ['CenterOfExcellence', 'GovernanceApprover', 'ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'REJECT',
+                    pendingStatusLabel: 'Pending Center of Excellence',
+                    approvedStatusLabel: 'Approved',
+                    rejectedStatusLabel: 'Center of Excellence Rejected'
+                }
+            ]
+        },
+        2: {
+            tier: 2,
+            stages: [
+                {
+                    stageKey: 'CenterOfExcellence',
+                    label: 'Center of Excellence Review',
+                    requiredRoleKeys: ['CenterOfExcellence', 'GovernanceApprover', 'ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'REJECT',
+                    pendingStatusLabel: 'Pending Center of Excellence',
+                    approvedStatusLabel: 'Center of Excellence Approved',
+                    rejectedStatusLabel: 'Center of Excellence Rejected'
+                },
+                {
+                    stageKey: 'Governance',
+                    label: 'Governance Committee',
+                    requiredRoleKeys: ['GovernanceApprover', 'ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'REJECT',
+                    pendingStatusLabel: 'Pending Governance',
+                    approvedStatusLabel: 'Governance Approved',
+                    rejectedStatusLabel: 'Governance Rejected'
+                }
+            ]
+        },
+        3: {
+            tier: 3,
+            stages: [
+                {
+                    stageKey: 'CenterOfExcellence',
+                    label: 'Center of Excellence Review',
+                    requiredRoleKeys: ['CenterOfExcellence', 'GovernanceApprover', 'ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'REJECT',
+                    pendingStatusLabel: 'Pending Center of Excellence',
+                    approvedStatusLabel: 'Center of Excellence Approved',
+                    rejectedStatusLabel: 'Center of Excellence Rejected'
+                },
+                {
+                    stageKey: 'Governance',
+                    label: 'Governance Committee',
+                    requiredRoleKeys: ['GovernanceApprover', 'ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'ESCALATE_TO_NEXT',
+                    pendingStatusLabel: 'Pending Governance',
+                    approvedStatusLabel: 'Governance Approved',
+                    rejectedStatusLabel: 'Governance Rejected'
+                },
+                {
+                    stageKey: 'Executive',
+                    label: 'Executive Approval',
+                    requiredRoleKeys: ['ExecutiveApprover'],
+                    minApprovals: 1,
+                    onReject: 'REJECT',
+                    pendingStatusLabel: 'Pending Executive',
+                    approvedStatusLabel: 'Executive Approved',
+                    rejectedStatusLabel: 'Executive Rejected'
+                }
+            ]
+        }
     };
+    return workflows[Number(tier)] || null;
+};
 
-    const minLevel = roleHierarchy[minRole] || 0;
+const processStageReview = async (req, res, stageKey, auditAction) => {
+    const { projectId, action, reason } = req.body;
 
-    return user.permissions?.some(p => {
-        const deptMatch = !departmentId ||
-            (p.department._id || p.department).toString() === departmentId.toString();
+    if (!['Approved', 'Rejected'].includes(action)) {
+        return res.status(400).json({ error: 'Action must be Approved or Rejected' });
+    }
 
-        // Support both old format (p.role) and new format (p.roles array)
-        const userRoles = p.roles || (p.role ? [p.role] : []);
-        const maxRoleLevel = Math.max(...userRoles.map(r => roleHierarchy[r] || 0));
+    const project = await Project.findOne({ _id: projectId, organization: req.organization });
+    if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+    }
 
-        return deptMatch && maxRoleLevel >= minLevel;
+    const currentStageKey = resolveCurrentStageKey(project);
+    if (currentStageKey !== stageKey) {
+        return res.status(400).json({
+            error: `Project is not pending ${stageKey} review (Current stage: ${currentStageKey || project.approvalStatus})`
+        });
+    }
+
+    const workflowPolicy = await getWorkflowPolicyForOrganization(req.organization);
+    const tierWorkflow = resolveTierWorkflow(project, workflowPolicy) || getLegacyTierWorkflow(project.tier);
+    if (!tierWorkflow || !Array.isArray(tierWorkflow.stages)) {
+        return res.status(400).json({ error: 'Workflow policy for this project tier is not configured.' });
+    }
+
+    const stageIndex = tierWorkflow.stages.findIndex(stage => String(stage.stageKey) === String(stageKey));
+    if (stageIndex < 0) {
+        return res.status(400).json({ error: `Stage ${stageKey} is not configured for Tier ${project.tier}.` });
+    }
+
+    const stageDefinition = tierWorkflow.stages[stageIndex];
+    const nextStage = tierWorkflow.stages[stageIndex + 1] || null;
+
+    if (!roleMatches(req.user, stageDefinition.requiredRoleKeys || [], project.department)) {
+        return res.status(403).json({ error: `You do not have permission to perform ${stageDefinition.label || stageKey} review` });
+    }
+
+    if (hasUserReviewedStage(project, stageKey, req.user.id)) {
+        return res.status(400).json({ error: 'You have already submitted a decision for this stage.' });
+    }
+
+    const previousStatus = project.approvalStatus;
+    if (!project.workflowPolicy && workflowPolicy?._id) {
+        project.workflowPolicy = workflowPolicy._id;
+    }
+    if (!project.workflowPlan && tierWorkflow?.tier) {
+        project.workflowPlan = JSON.parse(JSON.stringify(tierWorkflow));
+    }
+    project.approvalHistory.push({
+        stage: stageKey,
+        action,
+        by: req.user.id,
+        reason: reason || `${stageDefinition.label || stageKey} ${action.toLowerCase()}`,
+        timestamp: new Date()
     });
+
+    if (action === 'Approved') {
+        const minApprovals = Math.max(1, Number(stageDefinition.minApprovals || 1));
+        const approvedCount = countApprovedReviewsForStage(project, stageKey);
+
+        if (approvedCount < minApprovals) {
+            project.approvalStatus = getPendingStatusLabel(stageDefinition);
+            project.workflowStage = stageDefinition.label || stageDefinition.stageKey;
+            project.currentStageKey = stageDefinition.stageKey;
+            project.status = 'Under Review';
+        } else if (nextStage) {
+            project.approvalStatus = getPendingStatusLabel(nextStage);
+            project.workflowStage = nextStage.label || nextStage.stageKey;
+            project.currentStageKey = nextStage.stageKey;
+            project.status = 'Under Review';
+        } else {
+            project.approvalStatus = getApprovedStatusLabel(stageDefinition);
+            project.workflowStage = 'Complete';
+            project.currentStageKey = null;
+            project.status = 'Approved';
+        }
+    } else if (stageDefinition.onReject === 'ESCALATE_TO_NEXT' && nextStage) {
+        project.approvalHistory[project.approvalHistory.length - 1].action = 'Escalated';
+        project.approvalStatus = getPendingStatusLabel(nextStage);
+        project.workflowStage = nextStage.label || nextStage.stageKey;
+        project.currentStageKey = nextStage.stageKey;
+        project.status = 'Under Review';
+    } else {
+        project.approvalStatus = getRejectedStatusLabel(stageDefinition);
+        project.workflowStage = 'Complete';
+        project.currentStageKey = null;
+        project.status = 'Rejected';
+    }
+
+    await project.save();
+
+    const Audit = require('../models/Audit');
+    await Audit.create({
+        project: project._id,
+        organization: req.organization,
+        action: auditAction,
+        performedBy: req.user.id,
+        previousStatus,
+        newStatus: project.approvalStatus,
+        reason
+    });
+
+    return res.json(project);
 };
 
 // Center of Excellence Review
 exports.centerOfExcellenceReview = async (req, res) => {
     try {
-        const { projectId, action, reason } = req.body;
-
-        if (!['Approved', 'Rejected'].includes(action)) {
-            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
-        }
-
-        const project = await Project.findOne({ _id: projectId, organization: req.organization });
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-
-        if (project.approvalStatus !== 'Pending Center of Excellence') {
-            return res.status(400).json({ error: `Project is not pending Center of Excellence review (Current: ${project.approvalStatus})` });
-        }
-
-        if (!hasMinimumRole(req.user, 'CenterOfExcellence', project.department)) {
-            return res.status(403).json({ error: 'You do not have permission to perform Center of Excellence review' });
-        }
-
-        project.approvalHistory.push({
-            stage: 'CenterOfExcellence',
-            action,
-            by: req.user.id,
-            reason: reason || `Center of Excellence ${action.toLowerCase()}`,
-            timestamp: new Date()
-        });
-
-        if (action === 'Approved') {
-            project.approvalStatus = 'Center of Excellence Approved';
-
-            if (project.tier === 1) {
-                project.approvalStatus = 'Approved';
-                project.status = 'Approved';
-                project.workflowStage = 'Complete';
-            } else {
-                project.approvalStatus = 'Pending Governance';
-                project.workflowStage = 'Governance Committee';
-            }
-        } else {
-            project.approvalStatus = 'Center of Excellence Rejected';
-            project.status = 'Rejected';
-            project.workflowStage = 'Complete';
-        }
-
-        await project.save();
-
-        const Audit = require('../models/Audit');
-        await Audit.create({
-            project: project._id,
-            organization: req.organization,
-            action: 'coe_review',
-            performedBy: req.user.id,
-            previousStatus: 'Pending Center of Excellence',
-            newStatus: project.approvalStatus,
-            reason,
-        });
-
-        res.json(project);
+        return await processStageReview(req, res, 'CenterOfExcellence', 'coe_review');
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message });
     }
 };
 
 // Governance Committee Review
 exports.governanceReview = async (req, res) => {
     try {
-        const { projectId, action, reason } = req.body;
-
-        if (!['Approved', 'Rejected'].includes(action)) {
-            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
-        }
-
-        const project = await Project.findOne({ _id: projectId, organization: req.organization });
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-
-        // Check if project is pending governance review
-        if (project.approvalStatus !== 'Pending Governance') {
-            return res.status(400).json({ error: `Project is not pending governance review (Current: ${project.approvalStatus})` });
-        }
-
-        // Check user has governance approver role
-        if (!hasMinimumRole(req.user, 'GovernanceApprover', project.department)) {
-            return res.status(403).json({ error: 'You do not have permission to perform governance review' });
-        }
-
-        // Add to approval history
-        project.approvalHistory.push({
-            stage: 'Governance',
-            action: action === 'Approved' ? 'Approved' : (project.tier === 3 ? 'Escalated' : 'Rejected'),
-            by: req.user.id,
-            reason: reason || `Governance ${action.toLowerCase()}`,
-            timestamp: new Date()
-        });
-
-        if (action === 'Approved') {
-            if (project.tier === 2) {
-                project.approvalStatus = 'Governance Approved';
-                project.status = 'Approved';
-                project.workflowStage = 'Complete';
-            } else if (project.tier === 3) {
-                project.approvalStatus = 'Pending Executive';
-                project.workflowStage = 'Executive Approval';
-            }
-        } else {
-            if (project.tier === 3) {
-                project.approvalStatus = 'Pending Executive';
-                project.workflowStage = 'Executive Approval';
-                project.approvalHistory[project.approvalHistory.length - 1].action = 'Escalated';
-            } else {
-                project.approvalStatus = 'Governance Rejected';
-                project.status = 'Rejected';
-                project.workflowStage = 'Complete';
-            }
-        }
-
-        await project.save();
-
-        // Record audit
-        const Audit = require('../models/Audit');
-        await Audit.create({
-            project: project._id,
-            organization: req.organization,
-            action: 'governance_review',
-            performedBy: req.user.id,
-            previousStatus: 'Pending Governance',
-            newStatus: project.approvalStatus,
-            reason,
-        });
-
-        res.json(project);
+        return await processStageReview(req, res, 'Governance', 'governance_review');
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message });
     }
 };
 
 // Executive Review
 exports.executiveReview = async (req, res) => {
     try {
-        const { projectId, action, reason } = req.body;
-
-        if (!['Approved', 'Rejected'].includes(action)) {
-            return res.status(400).json({ error: 'Action must be Approved or Rejected' });
-        }
-
-        const project = await Project.findOne({ _id: projectId, organization: req.organization });
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-
-        // Check if project is pending executive review
-        if (project.approvalStatus !== 'Pending Executive') {
-            return res.status(400).json({ error: 'Project is not pending executive review' });
-        }
-
-        // Check user has executive approver role
-        if (!hasMinimumRole(req.user, 'ExecutiveApprover', project.department)) {
-            return res.status(403).json({ error: 'You do not have permission to perform executive review' });
-        }
-
-        // Add to approval history
-        project.approvalHistory.push({
-            stage: 'Executive',
-            action,
-            by: req.user.id,
-            reason: reason || `Executive ${action.toLowerCase()}`,
-            timestamp: new Date()
-        });
-
-        if (action === 'Approved') {
-            project.approvalStatus = 'Executive Approved';
-            project.status = 'Approved';
-        } else {
-            project.approvalStatus = 'Executive Rejected';
-            project.status = 'Rejected';
-        }
-        project.workflowStage = 'Complete';
-
-        await project.save();
-
-        // Record audit
-        const Audit = require('../models/Audit');
-        await Audit.create({
-            project: project._id,
-            organization: req.organization,
-            action: 'executive_review',
-            performedBy: req.user.id,
-            previousStatus: 'Pending Executive',
-            newStatus: project.approvalStatus,
-            reason,
-        });
-
-        res.json(project);
+        return await processStageReview(req, res, 'Executive', 'executive_review');
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message });
     }
 };
 
@@ -686,28 +877,57 @@ exports.executiveReview = async (req, res) => {
 exports.getPendingReviews = async (req, res) => {
     try {
         const { stage } = req.query;
+        const stageKeyByQuery = {
+            governance: 'Governance',
+            executive: 'Executive',
+            center_of_excellence: 'CenterOfExcellence'
+        };
+        const pendingStatusByStageKey = {
+            Governance: 'Pending Governance',
+            Executive: 'Pending Executive',
+            CenterOfExcellence: 'Pending Center of Excellence'
+        };
+        const stageCapabilityByKey = {
+            Governance: 'projects.review.governance',
+            Executive: 'projects.review.executive',
+            CenterOfExcellence: 'projects.review.coe'
+        };
 
         let query = { organization: req.organization };
+        const requestedStageKey = stageKeyByQuery[String(stage || '').toLowerCase()] || null;
 
-        if (stage === 'governance') {
-            query.approvalStatus = 'Pending Governance';
-        } else if (stage === 'executive') {
-            query.approvalStatus = 'Pending Executive';
-        } else if (stage === 'center_of_excellence') {
-            query.approvalStatus = 'Pending Center of Excellence';
+        if (requestedStageKey) {
+            query.$or = [
+                { currentStageKey: requestedStageKey },
+                { approvalStatus: pendingStatusByStageKey[requestedStageKey] }
+            ];
         } else {
-            query.approvalStatus = { $in: ['Pending Governance', 'Pending Executive', 'Pending Center of Excellence'] };
+            query.$or = [
+                { currentStageKey: { $exists: true, $ne: null } },
+                {
+                    approvalStatus: {
+                        $in: [
+                            pendingStatusByStageKey.CenterOfExcellence,
+                            pendingStatusByStageKey.Governance,
+                            pendingStatusByStageKey.Executive
+                        ]
+                    }
+                }
+            ];
         }
 
         // Filter by department if not admin
         if (!req.user.isAdmin) {
-            const userDepts = req.user.permissions
-                ?.filter(p => {
-                    const roles = p.roles || (p.role ? [p.role] : []);
-                    return roles.some(r => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
-                })
-                .map(p => (p.department._id || p.department).toString());
-
+            const userDepts = requestedStageKey
+                ? getDepartmentsForCapabilities(
+                    req.user,
+                    [stageCapabilityByKey[requestedStageKey]],
+                    req.user.roleCatalog || {}
+                )
+                : (req.user.permissions || [])
+                    .filter(permission => Array.isArray(permission.roles) && permission.roles.length > 0)
+                    .map(permission => (permission.department?._id || permission.department)?.toString())
+                    .filter(Boolean);
             if (userDepts?.length > 0) {
                 query.department = { $in: userDepts };
             } else {
@@ -715,10 +935,24 @@ exports.getPendingReviews = async (req, res) => {
             }
         }
 
-        const projects = await Project.find(query)
+        let projects = await Project.find(query)
             .populate('requester', 'username firstName lastName')
             .populate('department', 'name')
             .sort({ createdAt: -1 });
+
+        if (!req.user.isAdmin) {
+            projects = projects.filter((project) => {
+                const currentStageKey = resolveCurrentStageKey(project);
+                if (!currentStageKey) return false;
+
+                const tierWorkflow = resolveTierWorkflow(project, null) || getLegacyTierWorkflow(project.tier);
+                const stageDefinition = tierWorkflow?.stages?.find((s) => String(s.stageKey) === String(currentStageKey));
+                if (!stageDefinition) return false;
+
+                const departmentId = project.department?._id || project.department;
+                return roleMatches(req.user, stageDefinition.requiredRoleKeys || [], departmentId);
+            });
+        }
 
         res.json(projects);
     } catch (error) {
@@ -745,6 +979,7 @@ exports.createOrganization = async (req, res) => {
             createdBy: req.user.id
         });
         await org.save();
+        await ensureGovernanceConfigForOrganization(org._id);
         res.status(201).json(org);
     } catch (error) {
         // Duplicate key (e.g. unique org name/slug)
@@ -788,6 +1023,7 @@ exports.createAndJoin = async (req, res) => {
             createdBy: req.user.id
         });
         await org.save();
+        await ensureGovernanceConfigForOrganization(org._id);
 
         // Create General department
         const generalDept = await new Department({
@@ -843,6 +1079,7 @@ exports.createAndJoin = async (req, res) => {
                 // Orphan recovery: org exists but has no members — createdBy matches current user (partial create failed)
                 const isOrphan = existingOrg.createdBy && existingOrg.createdBy.toString() === req.user.id.toString();
                 if (isOrphan) {
+                    await ensureGovernanceConfigForOrganization(existingOrg._id);
                     let generalDept = await Department.findOne({ name: 'General', organization: existingOrg._id });
                     if (!generalDept) {
                         generalDept = await new Department({
@@ -895,18 +1132,56 @@ exports.getMyOrganizations = async (req, res) => {
             .populate('organization', 'name slug logo logoDark logoLight logoBackground logoMode')
             .populate('permissions.department', 'name');
 
-        const organizations = memberships.map(m => ({
-            _id: m.organization._id,
-            name: m.organization.name,
-            slug: m.organization.slug,
-            logo: m.organization.logo,
-            logoDark: m.organization.logoDark,
-            logoLight: m.organization.logoLight,
-            logoBackground: m.organization.logoBackground,
-            logoMode: m.organization.logoMode,
-            isAdmin: m.isAdmin,
-            permissions: m.permissions
-        }));
+        const orgIds = Array.from(new Set(
+            memberships.map(m => m.organization?._id?.toString()).filter(Boolean)
+        ));
+        for (const orgId of orgIds) {
+            await ensureGovernanceConfigForOrganization(orgId);
+        }
+        const roleDocs = await Role.find(
+            { organization: { $in: orgIds } },
+            'organization key name description capabilities isSystem isActive'
+        ).lean();
+
+        const rolesByOrg = new Map();
+        roleDocs.forEach((roleDoc) => {
+            const orgId = roleDoc.organization.toString();
+            if (!rolesByOrg.has(orgId)) rolesByOrg.set(orgId, []);
+            rolesByOrg.get(orgId).push(roleDoc);
+        });
+
+        const organizations = memberships.map((membership) => {
+            const orgId = membership.organization._id.toString();
+            const orgRoles = rolesByOrg.get(orgId) || [];
+            const roleCatalog = buildRoleCatalog(orgRoles);
+            const permissions = sanitizePermissions(
+                membership.permissions || [],
+                Object.keys(roleCatalog).length > 0 ? new Set(Object.keys(roleCatalog)) : null
+            );
+            const capabilities = collectUserCapabilities({ permissions }, roleCatalog);
+
+            return {
+                _id: membership.organization._id,
+                name: membership.organization.name,
+                slug: membership.organization.slug,
+                logo: membership.organization.logo,
+                logoDark: membership.organization.logoDark,
+                logoLight: membership.organization.logoLight,
+                logoBackground: membership.organization.logoBackground,
+                logoMode: membership.organization.logoMode,
+                isAdmin: membership.isAdmin,
+                permissions,
+                capabilities,
+                roles: orgRoles.map((role) => ({
+                    key: role.key,
+                    name: role.name,
+                    description: role.description || '',
+                    capabilities: role.capabilities || [],
+                    isSystem: role.isSystem === true,
+                    isActive: role.isActive !== false
+                }))
+            };
+        });
 
         res.json(organizations);
     } catch (error) {

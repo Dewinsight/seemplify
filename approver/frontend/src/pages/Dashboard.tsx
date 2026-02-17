@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { hasAnyCapability } from '../utils/access';
 
 const Dashboard: React.FC = () => {
     const { user, activeDepartment, activeOrganization } = useAuth();
@@ -74,27 +75,11 @@ const Dashboard: React.FC = () => {
         try {
             setLoading(true);
             const params = activeDepartment ? { department: activeDepartment._id } : {};
-
-            // Determine effective role for this context
-            let showStats = false;
-
-            const hasApproverRole = (perm: any) => {
-                const roles = perm?.roles || (perm?.role ? [perm.role] : []);
-                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'].includes(r));
-            };
-
-            const orgPerms = activeOrganization?.permissions || [];
-
-            if (activeOrganization?.isAdmin) showStats = true;
-            else if (activeDepartment) {
-                const deptPerms = orgPerms.find((p: any) =>
-                    (typeof p.department === 'object' ? p.department._id : p.department) === activeDepartment._id
-                );
-                if (hasApproverRole(deptPerms)) showStats = true;
-            } else {
-                // No active dept (Global view?) - show if they have ANY approver role
-                if (orgPerms.some((p: any) => hasApproverRole(p))) showStats = true;
-            }
+            const showStats = hasAnyCapability(
+                activeOrganization,
+                ['dashboard.review'],
+                activeDepartment?._id || null
+            );
 
             if (showStats) {
                 const statsRes = await api.get('/dashboard/stats', { params });
@@ -205,7 +190,11 @@ const Dashboard: React.FC = () => {
                         <p style={{ color: 'var(--text-secondary)' }}>No projects found. Start a new initiative!</p>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {sortedProjects.slice(0, 5).map(p => (
+                            {sortedProjects.slice(0, 5).map(p => {
+                                const statusText = String(p.approvalStatus || '');
+                                const isApproved = /approved/i.test(statusText);
+                                const isRejected = /rejected/i.test(statusText);
+                                return (
                                 <div
                                     key={p._id}
                                     onClick={() => window.location.href = `/projects/${p._id}`}
@@ -235,10 +224,10 @@ const Dashboard: React.FC = () => {
                                             borderRadius: '20px',
                                             fontSize: '0.8rem',
                                             fontWeight: 500,
-                                            background: p.approvalStatus === 'Approved' ? 'rgba(76, 175, 80, 0.2)' :
-                                                p.approvalStatus === 'Rejected' ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 193, 7, 0.2)',
-                                            color: p.approvalStatus === 'Approved' ? '#81c784' :
-                                                p.approvalStatus === 'Rejected' ? '#e57373' : '#ffd54f'
+                                            background: isApproved ? 'rgba(76, 175, 80, 0.2)' :
+                                                isRejected ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 193, 7, 0.2)',
+                                            color: isApproved ? '#81c784' :
+                                                isRejected ? '#e57373' : '#ffd54f'
                                         }}>
                                             {p.approvalStatus}
                                         </span>
@@ -247,7 +236,8 @@ const Dashboard: React.FC = () => {
                                         </span>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

@@ -7,7 +7,7 @@ const InviteSchema = new mongoose.Schema({
     invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     role: {
         type: String,
-        enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'],
+        trim: true,
         default: 'Requester'
     },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },

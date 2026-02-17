@@ -10,6 +10,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Rule = require('../models/Rule');
 const Organization = require('../models/Organization');
+const { ensureGovernanceConfigForOrganization, buildRuleEffectsFromCategory } = require('../services/governanceConfigService');
 
 const escalationRules = [
     // 4.1 Employment & HR Decisions
@@ -180,6 +181,7 @@ async function seedEscalationRules() {
             }).save();
             console.log('Created Testing organization');
         }
+        await ensureGovernanceConfigForOrganization(org._id);
 
         let created = 0;
         let skipped = 0;
@@ -191,7 +193,12 @@ async function seedEscalationRules() {
                 console.log(`Skipped (exists): ${rule.name}`);
                 skipped++;
             } else {
-                await Rule.create({ ...rule, organization: org._id });
+                await Rule.create({
+                    ...rule,
+                    organization: org._id,
+                    category: 'ESCALATION',
+                    effects: buildRuleEffectsFromCategory('ESCALATION')
+                });
                 console.log(`Created: ${rule.name}`);
                 created++;
             }

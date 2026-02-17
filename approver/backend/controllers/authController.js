@@ -2,7 +2,10 @@ const User = require('../models/User');
 const Department = require('../models/Department');
 const Organization = require('../models/Organization');
 const UserOrganization = require('../models/UserOrganization');
+const Role = require('../models/Role');
 const emailService = require('../services/EmailService');
+const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
+const { buildRoleCatalog, sanitizePermissions, collectUserCapabilities } = require('../utils/access');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -14,6 +17,64 @@ const generateOtp = () => {
 const normalizeName = (value) => (typeof value === 'string' ? value.trim() : '');
 const hasCompletedProfile = (user) => {
     return Boolean(normalizeName(user?.firstName) && normalizeName(user?.lastName));
+};
+
+const enrichMemberships = async (memberships) => {
+    const orgIds = Array.from(new Set(
+        memberships
+            .map((membership) => membership.organization?._id || membership.organization)
+            .filter(Boolean)
+            .map(id => id.toString())
+    ));
+
+    for (const orgId of orgIds) {
+        await ensureGovernanceConfigForOrganization(orgId);
+    }
+
+    const roleDocs = await Role.find(
+        { organization: { $in: orgIds } },
+        'organization key name description capabilities isSystem isActive'
+    ).lean();
+
+    const rolesByOrg = new Map();
+    roleDocs.forEach((roleDoc) => {
+        const orgId = roleDoc.organization.toString();
+        if (!rolesByOrg.has(orgId)) rolesByOrg.set(orgId, []);
+        rolesByOrg.get(orgId).push(roleDoc);
+    });
+
+    return memberships.map((membership) => {
+        const orgId = (membership.organization?._id || membership.organization).toString();
+        const orgRoles = rolesByOrg.get(orgId) || [];
+        const roleCatalog = buildRoleCatalog(orgRoles);
+        const permissions = sanitizePermissions(
+            membership.permissions || [],
+            Object.keys(roleCatalog).length > 0 ? new Set(Object.keys(roleCatalog)) : null
+        );
+        const capabilities = collectUserCapabilities({ permissions }, roleCatalog);
+
+        return {
+            _id: membership.organization._id,
+            name: membership.organization.name,
+            slug: membership.organization.slug,
+            logo: membership.organization.logo,
+            logoDark: membership.organization.logoDark,
+            logoLight: membership.organization.logoLight,
+            logoBackground: membership.organization.logoBackground,
+            logoMode: membership.organization.logoMode,
+            isAdmin: membership.isAdmin,
+            permissions,
+            capabilities,
+            roles: orgRoles.map((role) => ({
+                key: role.key,
+                name: role.name,
+                description: role.description || '',
+                capabilities: role.capabilities || [],
+                isSystem: role.isSystem === true,
+                isActive: role.isActive !== false
+            }))
+        };
+    });
 };
 
 // --- Registration: simple (username, email, password only) ---
@@ -174,19 +235,8 @@ exports.login = async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // Transform memberships for frontend
-        const organizations = memberships.map(m => ({
-            _id: m.organization._id,
-            name: m.organization.name,
-            slug: m.organization.slug,
-            logo: m.organization.logo,
-            logoDark: m.organization.logoDark,
-            logoLight: m.organization.logoLight,
-            logoBackground: m.organization.logoBackground,
-            logoMode: m.organization.logoMode,
-            isAdmin: m.isAdmin,
-            permissions: m.permissions
-        }));
+        // Transform memberships for frontend with dynamic role/capability metadata
+        const organizations = await enrichMemberships(memberships);
 
         res.json({
             token,
@@ -213,6 +263,8 @@ exports.seedAdmin = async (req, res) => {
                 description: 'Default organization'
             }).save();
         }
+
+        await ensureGovernanceConfigForOrganization(testingOrg._id);
 
         const hashedPassword = await bcrypt.hash('password123', 10);
 
@@ -246,9 +298,14 @@ exports.seedAdmin = async (req, res) => {
 // --- User management (reads from UserOrganization) ---
 exports.getAllUsers = async (req, res) => {
     try {
-        const memberships = await UserOrganization.find({ organization: req.organization })
-            .populate('user', '-password')
-            .populate('permissions.department');
+        const [memberships, activeRoles] = await Promise.all([
+            UserOrganization.find({ organization: req.organization })
+                .populate('user', '-password')
+                .populate('permissions.department'),
+            Role.find({ organization: req.organization, isActive: true }, 'key')
+        ]);
+
+        const validRoleKeys = new Set(activeRoles.map(role => role.key));
 
         const users = memberships.map(m => ({
             _id: m.user._id,
@@ -257,7 +314,10 @@ exports.getAllUsers = async (req, res) => {
             lastName: m.user.lastName || '',
             email: m.user.email,
             isAdmin: m.isAdmin,
-            permissions: m.permissions,
+            permissions: sanitizePermissions(
+                m.permissions || [],
+                validRoleKeys.size > 0 ? validRoleKeys : null
+            ),
             isVerified: m.user.isVerified,
             createdAt: m.user.createdAt
         }));
@@ -283,7 +343,23 @@ exports.updateUserRole = async (req, res) => {
         }
 
         if (permissions) {
-            membership.permissions = permissions;
+            const activeRoles = await Role.find({ organization: req.organization, isActive: true }, 'key');
+            const validRoleKeys = new Set(activeRoles.map(role => role.key));
+
+            const incomingRoleKeys = (permissions || [])
+                .flatMap(permission => Array.isArray(permission?.roles) ? permission.roles : [])
+                .filter(Boolean);
+            const invalidRoles = Array.from(new Set(incomingRoleKeys.filter(role => !validRoleKeys.has(role))));
+            if (invalidRoles.length > 0) {
+                return res.status(400).json({
+                    error: `Invalid roles for this organization: ${invalidRoles.join(', ')}`
+                });
+            }
+
+            membership.permissions = sanitizePermissions(
+                permissions,
+                validRoleKeys.size > 0 ? validRoleKeys : null
+            );
         }
 
         await membership.save();

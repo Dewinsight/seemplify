@@ -6,7 +6,7 @@ const UserOrganizationSchema = new mongoose.Schema({
     isAdmin: { type: Boolean, default: false }, // Org-level admin for THIS org
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'] }]
+        roles: [{ type: String, trim: true }]
     }],
     joinedAt: { type: Date, default: Date.now }
 });

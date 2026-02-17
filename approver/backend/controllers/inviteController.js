@@ -2,9 +2,9 @@ const Invite = require('../models/Invite');
 const UserOrganization = require('../models/UserOrganization');
 const Department = require('../models/Department');
 const User = require('../models/User');
+const Role = require('../models/Role');
 const emailService = require('../services/EmailService');
-
-const ALLOWED_INVITE_ROLES = Invite.schema.path('role').enumValues || ['Requester', 'GovernanceApprover', 'ExecutiveApprover', 'CenterOfExcellence'];
+const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
 
 const getDisplayName = (user) => {
     const firstName = typeof user?.firstName === 'string' ? user.firstName.trim() : '';
@@ -13,18 +13,35 @@ const getDisplayName = (user) => {
     return fullName || user?.username || 'Someone';
 };
 
+const getActiveRolesForOrganization = async (organizationId) => {
+    await ensureGovernanceConfigForOrganization(organizationId);
+    return Role.find({ organization: organizationId, isActive: true }, 'key capabilities').lean();
+};
+
+const resolveFallbackRoleKey = (roles) => {
+    const requester = roles.find(role => (role.capabilities || []).includes('projects.submit'));
+    if (requester) return requester.key;
+    return roles[0]?.key || null;
+};
+
 // Admin sends invite to an email
 exports.sendInvite = async (req, res) => {
     try {
         const { email, role, department, isAdmin } = req.body;
-        const selectedRole = role || 'Requester';
+        const orgRoles = await getActiveRolesForOrganization(req.organization);
+        if (orgRoles.length === 0) {
+            return res.status(400).json({ error: 'No active roles are configured for your organization.' });
+        }
+
+        const allowedRoles = orgRoles.map(r => r.key);
+        const selectedRole = role || resolveFallbackRoleKey(orgRoles);
 
         if (!email) {
             return res.status(400).json({ error: 'Email is required' });
         }
-        if (!ALLOWED_INVITE_ROLES.includes(selectedRole)) {
+        if (!selectedRole || !allowedRoles.includes(selectedRole)) {
             return res.status(400).json({
-                error: `Invalid role. Allowed roles: ${ALLOWED_INVITE_ROLES.join(', ')}`
+                error: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}`
             });
         }
 
@@ -146,12 +163,21 @@ exports.acceptInvite = async (req, res) => {
             deptId = generalDept._id;
         }
 
+        const orgRoles = await getActiveRolesForOrganization(invite.organization._id);
+        if (orgRoles.length === 0) {
+            return res.status(400).json({ error: 'No active roles are configured for this organization.' });
+        }
+        const allowedRoleKeys = new Set(orgRoles.map(r => r.key));
+        const assignedRole = allowedRoleKeys.has(invite.role)
+            ? invite.role
+            : resolveFallbackRoleKey(orgRoles);
+
         // Create UserOrganization membership
         const membership = await UserOrganization.create({
             user: req.user.id,
             organization: invite.organization._id,
             isAdmin: invite.isAdmin || false,
-            permissions: [{ department: deptId, roles: [invite.role || 'Requester'] }]
+            permissions: assignedRole ? [{ department: deptId, roles: [assignedRole] }] : []
         });
 
         // Mark invite as accepted
