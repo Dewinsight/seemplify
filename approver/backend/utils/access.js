@@ -1,14 +1,15 @@
 const LEGACY_ROLE_CAPABILITIES = {
     Requester: ['projects.submit'],
-    CenterOfExcellence: ['projects.review.coe', 'dashboard.review'],
-    GovernanceApprover: ['projects.review.governance', 'rules.manage', 'projects.override', 'dashboard.review'],
+    CenterOfExcellence: ['projects.review.coe', 'dashboard.review', 'scoring.manage'],
+    GovernanceApprover: ['projects.review.governance', 'rules.manage', 'projects.override', 'dashboard.review', 'scoring.manage'],
     ExecutiveApprover: [
         'projects.review.executive',
         'projects.review.governance',
         'rules.manage',
         'rules.manage.system',
         'projects.override',
-        'dashboard.review'
+        'dashboard.review',
+        'scoring.manage'
     ]
 };
 

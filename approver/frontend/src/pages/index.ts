@@ -1,6 +1,7 @@
 export { default as Dashboard } from './Dashboard';
 export { default as Analyze } from './Analyze';
 export { default as Rules } from './Rules';
+export { default as ScoringPolicy } from './ScoringPolicy';
 export { default as AdminUsers } from './AdminUsers';
 export { default as ProjectDetail } from './ProjectDetail';
 export { default as Profile } from './Profile';

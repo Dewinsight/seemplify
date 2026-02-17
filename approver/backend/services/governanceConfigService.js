@@ -12,13 +12,19 @@ const DEFAULT_ROLE_DEFINITIONS = [
         key: 'CenterOfExcellence',
         name: 'Center of Excellence',
         description: 'Performs tiered Center of Excellence review.',
-        capabilities: ['projects.review.coe', 'dashboard.review']
+        capabilities: ['projects.review.coe', 'dashboard.review', 'scoring.manage']
     },
     {
         key: 'GovernanceApprover',
         name: 'Governance Approver',
         description: 'Performs governance review and manages business rules.',
-        capabilities: ['projects.review.governance', 'rules.manage', 'projects.override', 'dashboard.review']
+        capabilities: [
+            'projects.review.governance',
+            'rules.manage',
+            'projects.override',
+            'dashboard.review',
+            'scoring.manage'
+        ]
     },
     {
         key: 'ExecutiveApprover',
@@ -30,10 +36,20 @@ const DEFAULT_ROLE_DEFINITIONS = [
             'rules.manage',
             'rules.manage.system',
             'projects.override',
-            'dashboard.review'
+            'dashboard.review',
+            'scoring.manage'
         ]
     }
 ];
+
+const DEFAULT_SCORING_WEIGHTS = {
+    strategicAlignment: 25,
+    regulatoryRisk: 25,
+    businessImpact: 20,
+    implementationComplexity: 15,
+    timeToValue: 10,
+    resourceRequirements: 5
+};
 
 const DEFAULT_WORKFLOW_TIERS = [
     {
@@ -132,6 +148,8 @@ const DEFAULT_WORKFLOW_POLICY = {
     escalation: {
         forcedTierOnEscalation: 3
     },
+    scoringWeights: DEFAULT_SCORING_WEIGHTS,
+    departmentScoringWeights: [],
     tiers: DEFAULT_WORKFLOW_TIERS
 };
 
@@ -201,6 +219,8 @@ async function ensureWorkflowPolicyForOrganization(organizationId, options = {})
         workflowPolicy.description = payload.description;
         workflowPolicy.aiGate = payload.aiGate;
         workflowPolicy.escalation = payload.escalation;
+        workflowPolicy.scoringWeights = payload.scoringWeights;
+        workflowPolicy.departmentScoringWeights = payload.departmentScoringWeights;
         workflowPolicy.tiers = payload.tiers;
         workflowPolicy.isSystem = true;
         workflowPolicy.isActive = preserveIsActive;
@@ -241,6 +261,7 @@ module.exports = {
     DEFAULT_ROLE_DEFINITIONS,
     DEFAULT_WORKFLOW_TIERS,
     DEFAULT_WORKFLOW_POLICY,
+    DEFAULT_SCORING_WEIGHTS,
     normalizeRoleKey,
     buildDefaultWorkflowPolicyPayload,
     upsertSystemRolesForOrganization,

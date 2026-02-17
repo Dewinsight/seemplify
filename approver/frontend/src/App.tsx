@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Dashboard, Rules, Analyze, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage } from './pages';
+import { Dashboard, Rules, Analyze, ScoringPolicy, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -40,6 +40,14 @@ const NewRuleIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M12 5v14" />
     <path d="M5 12h14" />
+  </svg>
+);
+
+const ScoringIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M3 3v18h18" />
+    <path d="M7 16l3-3 3 2 4-6" />
+    <path d="M18 9h2v2" />
   </svg>
 );
 
@@ -108,6 +116,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = activeOrganization?.isAdmin || false;
   const canManageRules = hasAnyCapability(activeOrganization, ['rules.manage']);
+  const canManageScoring = hasAnyCapability(activeOrganization, ['scoring.manage']);
   const displayName = getUserDisplayName(user, 'User');
   const initials = getUserInitials(user, 'U');
 
@@ -126,6 +135,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
     { path: '/analyze', label: 'Initiatives', icon: <InitiativesIcon /> },
     { path: '/rules', label: 'Rules', icon: <RulesIcon /> },
     ...(canManageRules ? [{ path: '/rules/new', label: 'New Rule', icon: <NewRuleIcon /> }] : []),
+    ...(canManageScoring ? [{ path: '/scoring-policy', label: 'Scoring Policy', icon: <ScoringIcon /> }] : []),
     { path: '/invites', label: 'Invites', icon: <InvitesIcon /> },
     ...(isAdmin ? [{ path: '/admin/organization', label: 'Organization', icon: <OrgIcon /> }] : []),
   ];
@@ -417,6 +427,7 @@ function App() {
                 <Route path="/analyze" element={<Analyze />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="/rules/new" element={<Rules />} />
+                <Route path="/scoring-policy" element={<ScoringPolicy />} />
                 <Route path="/invites" element={<InvitesPage />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/profile" element={<Profile />} />

@@ -62,10 +62,64 @@ const getTierRouteLabel = (tierWorkflow) => {
     return stages.length > 0 ? stages.join(' -> ') : 'manual workflow';
 };
 
+const DEFAULT_SCORING_WEIGHTS = {
+    strategicAlignment: 25,
+    regulatoryRisk: 25,
+    businessImpact: 20,
+    implementationComplexity: 15,
+    timeToValue: 10,
+    resourceRequirements: 5
+};
+
+const SCORING_WEIGHT_KEYS = Object.keys(DEFAULT_SCORING_WEIGHTS);
+
+const normalizeScoringWeights = (weights, fallback = DEFAULT_SCORING_WEIGHTS) => {
+    const next = { ...fallback };
+    SCORING_WEIGHT_KEYS.forEach((key) => {
+        const value = Number(weights?.[key]);
+        if (!Number.isNaN(value) && value >= 0 && value <= 100) {
+            next[key] = value;
+        }
+    });
+    return next;
+};
+
+const resolveScoringWeightsForDepartment = (workflowPolicy, departmentId) => {
+    const globalWeights = normalizeScoringWeights(workflowPolicy?.scoringWeights || DEFAULT_SCORING_WEIGHTS);
+    if (!departmentId) return globalWeights;
+
+    const match = (workflowPolicy?.departmentScoringWeights || []).find((row) => {
+        if (!row?.department) return false;
+        return String(row.department) === String(departmentId);
+    });
+
+    if (!match || !match.weights) return globalWeights;
+    return normalizeScoringWeights(match.weights, globalWeights);
+};
+
+const determineTierFromScore = (priorityScore, workflowPolicy) => {
+    const tiers = Array.isArray(workflowPolicy?.tiers) ? [...workflowPolicy.tiers] : [];
+    if (tiers.length > 0) {
+        const sorted = tiers.sort((a, b) => Number(a.tier) - Number(b.tier));
+        const match = sorted.find((tierDef) => {
+            const min = Number(tierDef.minPriorityScore);
+            const max = Number(tierDef.maxPriorityScore);
+            if (Number.isNaN(min) || Number.isNaN(max)) return false;
+            return priorityScore >= min && priorityScore <= max;
+        });
+        if (match && [1, 2, 3].includes(Number(match.tier))) {
+            return Number(match.tier);
+        }
+    }
+
+    if (priorityScore >= 3.6) return 3;
+    if (priorityScore >= 2.6) return 2;
+    return 1;
+};
+
 const applyTriggeredRuleEffects = (failedRuleAnalyses, sourceRuleById) => {
     const appliedEffects = [];
     let forcedTier = null;
-    let forcedStageKey = null;
     const effectFlags = {};
 
     failedRuleAnalyses.forEach((analysis) => {
@@ -81,9 +135,6 @@ const applyTriggeredRuleEffects = (failedRuleAnalyses, sourceRuleById) => {
                 if ([1, 2, 3].includes(tierValue)) {
                     forcedTier = forcedTier == null ? tierValue : Math.max(forcedTier, tierValue);
                 }
-            } else if (type === 'ROUTE_TO_STAGE') {
-                const stageKey = typeof params.stageKey === 'string' ? params.stageKey.trim() : '';
-                if (stageKey) forcedStageKey = stageKey;
             } else if (type === 'SET_FLAG') {
                 const key = typeof params.key === 'string' ? params.key.trim() : '';
                 if (key) effectFlags[key] = params.value;
@@ -98,7 +149,38 @@ const applyTriggeredRuleEffects = (failedRuleAnalyses, sourceRuleById) => {
         });
     });
 
-    return { appliedEffects, forcedTier, forcedStageKey, effectFlags };
+    return { appliedEffects, forcedTier, effectFlags };
+};
+
+const normalizeRuleEffects = (effects) => {
+    if (!Array.isArray(effects)) return [];
+
+    const normalized = [];
+
+    effects.forEach((effect) => {
+        const type = String(effect?.type || '').trim().toUpperCase();
+        const params = effect?.params || {};
+
+        if (type === 'SET_TIER') {
+            const tier = Number(params.tier);
+            if ([1, 2, 3].includes(tier)) {
+                normalized.push({ type: 'SET_TIER', params: { tier } });
+            }
+            return;
+        }
+
+        // Internal metadata; not exposed in standard rule creation UI.
+        if (type === 'SET_FLAG') {
+            const key = typeof params.key === 'string' ? params.key.trim() : '';
+            if (!key) return;
+            normalized.push({
+                type: 'SET_FLAG',
+                params: { key, value: params.value }
+            });
+        }
+    });
+
+    return normalized;
 };
 
 exports.createRule = async (req, res) => {
@@ -111,7 +193,7 @@ exports.createRule = async (req, res) => {
             organization: req.organization,
             isSystem: false,
             isHidden: false,
-            effects: Array.isArray(effects) ? effects : []
+            effects: normalizeRuleEffects(effects)
         });
         await rule.save();
         res.status(201).json(rule);
@@ -307,7 +389,7 @@ exports.analyzeProject = async (req, res) => {
         const mandatoryFailed = failedMandatoryGateRules.length > 0;
         const escalationTriggers = triggeredEscalationRules.map(ra => ra.ruleName);
         const failedRuleAnalyses = ruleAnalyses.filter(ra => ra.status !== 'Pass');
-        const { appliedEffects, forcedTier, forcedStageKey, effectFlags } =
+        const { appliedEffects, forcedTier, effectFlags } =
             applyTriggeredRuleEffects(failedRuleAnalyses, sourceRuleById);
 
         // Keep top-level fields consistent with reconciled decisioning
@@ -317,32 +399,38 @@ exports.analyzeProject = async (req, res) => {
         analysisResult.appliedEffects = appliedEffects;
         analysisResult.effectFlags = effectFlags;
 
-        // 4. Priority score from scoring breakdown (source of truth)
+        const workflowPolicy = await getWorkflowPolicyForOrganization(req.organization);
+        const scoringWeights = resolveScoringWeightsForDepartment(workflowPolicy, department);
         const scoringBreakdown = analysisResult.scoringBreakdown || null;
         let priorityScore;
 
         if (scoringBreakdown) {
-            const s = scoringBreakdown.strategicAlignment?.score ?? 0;
-            const r = scoringBreakdown.regulatoryRisk?.score ?? 0;
-            const b = scoringBreakdown.businessImpact?.score ?? 0;
-            const c = scoringBreakdown.implementationComplexity?.score ?? 0;
-            const t = scoringBreakdown.timeToValue?.score ?? 0;
-            const resources = scoringBreakdown.resourceRequirements?.score ?? 0;
-            priorityScore = Math.round(((s * 0.25) + (r * 0.25) + (b * 0.20) + (c * 0.15) + (t * 0.10) + (resources * 0.05)) * 100) / 100;
+            const s = Number(scoringBreakdown.strategicAlignment?.score ?? 0);
+            const r = Number(scoringBreakdown.regulatoryRisk?.score ?? 0);
+            const b = Number(scoringBreakdown.businessImpact?.score ?? 0);
+            const c = Number(scoringBreakdown.implementationComplexity?.score ?? 0);
+            const t = Number(scoringBreakdown.timeToValue?.score ?? 0);
+            const resources = Number(scoringBreakdown.resourceRequirements?.score ?? 0);
+
+            priorityScore = Math.round((
+                (s * (Number(scoringWeights.strategicAlignment || 0) / 100)) +
+                (r * (Number(scoringWeights.regulatoryRisk || 0) / 100)) +
+                (b * (Number(scoringWeights.businessImpact || 0) / 100)) +
+                (c * (Number(scoringWeights.implementationComplexity || 0) / 100)) +
+                (t * (Number(scoringWeights.timeToValue || 0) / 100)) +
+                (resources * (Number(scoringWeights.resourceRequirements || 0) / 100))
+            ) * 100) / 100;
         } else {
             priorityScore = typeof analysisResult.priorityScore === 'number' && !isNaN(analysisResult.priorityScore)
                 ? analysisResult.priorityScore
                 : score / 20;
         }
 
-        let tier = Number(analysisResult.calculatedTier);
-        if (!tier || tier < 1 || tier > 3) {
-            if (priorityScore >= 3.6) tier = 3;
-            else if (priorityScore >= 2.6) tier = 2;
-            else tier = 1;
-        }
+        analysisResult.scoringWeightsUsed = scoringWeights;
 
-        const workflowPolicy = await getWorkflowPolicyForOrganization(req.organization);
+        // Tier is always computed deterministically from weighted priority score.
+        let tier = determineTierFromScore(priorityScore, workflowPolicy);
+
         const policyForcedTier = Number(workflowPolicy?.escalation?.forcedTierOnEscalation || 3);
 
         // Escalation triggers and explicit rule effects can force higher-tier routing.
@@ -388,12 +476,7 @@ exports.analyzeProject = async (req, res) => {
         } else {
             simpleStatus = 'Under Review';
             const workflowStages = Array.isArray(tierWorkflow?.stages) ? tierWorkflow.stages : [];
-            let initialStage = workflowStages[0] || null;
-
-            if (forcedStageKey) {
-                const forcedStage = workflowStages.find(stage => String(stage.stageKey) === String(forcedStageKey));
-                if (forcedStage) initialStage = forcedStage;
-            }
+            const initialStage = workflowStages[0] || null;
 
             if (initialStage) {
                 approvalStatus = getPendingStatusLabel(initialStage);

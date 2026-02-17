@@ -88,7 +88,6 @@ class OpenAIService {
                         const type = String(effect?.type || '').toUpperCase();
                         const params = effect?.params || {};
                         if (type === 'SET_TIER') return `SET_TIER(${params.tier || '?'})`;
-                        if (type === 'ROUTE_TO_STAGE') return `ROUTE_TO_STAGE(${params.stageKey || '?'})`;
                         if (type === 'SET_FLAG') return `SET_FLAG(${params.key || '?'})`;
                         return type || 'UNKNOWN_EFFECT';
                     }).join(', ')}`

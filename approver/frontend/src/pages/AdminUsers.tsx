@@ -82,6 +82,7 @@ const CAPABILITY_PRESETS: Array<{ key: string; label: string; description: strin
     { key: 'projects.review.governance', label: 'Review Governance Stage', description: 'Can review Governance stage.' },
     { key: 'projects.review.executive', label: 'Review Executive Stage', description: 'Can review Executive stage.' },
     { key: 'dashboard.review', label: 'Review Dashboard', description: 'Can access pending review dashboards.' },
+    { key: 'scoring.manage', label: 'Manage Scoring Policy', description: 'Can manage priority score weights and department overrides.' },
     { key: 'rules.manage', label: 'Manage Rules', description: 'Can create/update organization-level rules.' },
     { key: 'rules.manage.system', label: 'Manage System Rules', description: 'Can update organization system rules.' },
     { key: 'projects.override', label: 'Override Decisions', description: 'Can override project decisions.' }

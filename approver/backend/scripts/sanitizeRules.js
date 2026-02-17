@@ -5,7 +5,8 @@
  * 1) Remove orphan rules (missing org or org no longer exists).
  * 2) Infer and set category where missing.
  * 3) Backfill effects from category mapping (e.g. ESCALATION -> SET_TIER 3).
- * 4) Soft-disable duplicate rules in the same org (hide + deactivate duplicates).
+ * 4) Normalize legacy effects (remove ROUTE_TO_STAGE, keep SET_TIER + SET_FLAG).
+ * 5) Soft-disable duplicate rules in the same org (hide + deactivate duplicates).
  *
  * Usage:
  *   node scripts/sanitizeRules.js
@@ -46,6 +47,14 @@ const inferCategory = (rule) => {
     if (/(architecture|technology stack|integration|third-party|api|devops|infrastructure)/i.test(hint)) return 'Architecture';
 
     return 'Other';
+};
+
+const tierFromStageKey = (stageKey) => {
+    const normalized = String(stageKey || '').trim().toLowerCase();
+    if (normalized === 'centerofexcellence') return 1;
+    if (normalized === 'governance') return 2;
+    if (normalized === 'executive') return 3;
+    return null;
 };
 
 async function findDuplicateGroups(matchFilter, keyBuilder) {
@@ -133,6 +142,56 @@ async function run() {
             effectsUpdated++;
         }
 
+        const rulesWithLegacyEffects = await Rule.find({ effects: { $exists: true, $not: { $size: 0 } } })
+            .select('_id effects')
+            .lean();
+
+        let legacyEffectsNormalized = 0;
+        for (const rule of rulesWithLegacyEffects) {
+            const currentEffects = Array.isArray(rule.effects) ? rule.effects : [];
+            let forcedTier = null;
+            const flags = [];
+
+            currentEffects.forEach((effect) => {
+                const type = String(effect?.type || '').toUpperCase();
+                const params = effect?.params || {};
+
+                if (type === 'SET_TIER') {
+                    const tierValue = Number(params.tier);
+                    if ([1, 2, 3].includes(tierValue)) {
+                        forcedTier = forcedTier == null ? tierValue : Math.max(forcedTier, tierValue);
+                    }
+                    return;
+                }
+
+                if (type === 'ROUTE_TO_STAGE') {
+                    const routeTier = tierFromStageKey(params.stageKey);
+                    if ([1, 2, 3].includes(routeTier)) {
+                        forcedTier = forcedTier == null ? routeTier : Math.max(forcedTier, routeTier);
+                    }
+                    return;
+                }
+
+                if (type === 'SET_FLAG') {
+                    const key = typeof params.key === 'string' ? params.key.trim() : '';
+                    if (!key) return;
+                    flags.push({ type: 'SET_FLAG', params: { key, value: params.value } });
+                }
+            });
+
+            const nextEffects = [];
+            if ([1, 2, 3].includes(Number(forcedTier))) {
+                nextEffects.push({ type: 'SET_TIER', params: { tier: Number(forcedTier) } });
+            }
+            nextEffects.push(...flags);
+
+            if (JSON.stringify(nextEffects) === JSON.stringify(currentEffects)) continue;
+            if (!dryRun) {
+                await Rule.updateOne({ _id: rule._id }, { $set: { effects: nextEffects } });
+            }
+            legacyEffectsNormalized++;
+        }
+
         const customDuplicateGroups = await findDuplicateGroups(
             { isSystem: { $ne: true } },
             (doc) => [toId(doc.organization), toDeptKey(doc.department), doc.name || '', doc.criteria || '', 'custom'].join('|')
@@ -182,6 +241,7 @@ async function run() {
                 orphanRemoved,
                 categoriesUpdated,
                 effectsUpdated,
+                legacyEffectsNormalized,
                 duplicatesDisabled,
                 customDuplicateGroups: customDuplicateGroups.length,
                 systemDuplicateGroups: systemDuplicateGroups.length

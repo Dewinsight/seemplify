@@ -63,6 +63,15 @@ interface ScoringBreakdown {
     resourceRequirements?: { score: number; reason: string };
 }
 
+interface ScoringWeightsUsed {
+    strategicAlignment?: number;
+    regulatoryRisk?: number;
+    businessImpact?: number;
+    implementationComplexity?: number;
+    timeToValue?: number;
+    resourceRequirements?: number;
+}
+
 interface Project {
     _id: string;
     name: string;
@@ -85,6 +94,7 @@ interface Project {
         rulesAnalysis: RuleAnalysis[];
         summary: string;
         scoringBreakdown?: ScoringBreakdown;
+        scoringWeightsUsed?: ScoringWeightsUsed;
         priorityScore?: number;
         calculatedTier?: number;
     };
@@ -253,7 +263,7 @@ const ProjectDetail: React.FC = () => {
                         </div>
                         {project.analysisResult?.rulesAnalysis && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8, marginTop: '0.15rem' }}>
-                                Rules: {project.analysisResult.rulesAnalysis.filter(r => r.status.toLowerCase() === 'pass').length}/{project.analysisResult.rulesAnalysis.length} passed
+                                Rules: {project.analysisResult.rulesAnalysis.filter(r => r.status.toLowerCase() === 'pass').length}/{project.analysisResult.rulesAnalysis.length} passed ({project.score}% rule pass)
                             </div>
                         )}
                         {project.tier && (
@@ -439,6 +449,9 @@ const ProjectDetail: React.FC = () => {
                 {(project.scoringBreakdown || project.analysisResult?.scoringBreakdown) && (
                     <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                         <h4 style={{ margin: '0 0 1rem 0', color: 'var(--sterling-gold)' }}>📊 Priority Score Breakdown</h4>
+                        <div style={{ marginBottom: '0.85rem', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                            Priority score uses weighted dimensions (0-5 scale). Tier is derived from this score, then rules can escalate tier upward via Set Tier effects.
+                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
                             {Object.entries(project.scoringBreakdown || project.analysisResult?.scoringBreakdown || {}).map(([key, val]: [string, any]) => (
                                 <div key={key} style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
@@ -450,6 +463,11 @@ const ProjectDetail: React.FC = () => {
                                             {val?.score}/5
                                         </strong>
                                     </div>
+                                    {typeof project.analysisResult?.scoringWeightsUsed?.[key as keyof ScoringWeightsUsed] === 'number' && (
+                                        <div style={{ fontSize: '0.75rem', opacity: 0.72, marginBottom: '0.15rem' }}>
+                                            Weight: {project.analysisResult?.scoringWeightsUsed?.[key as keyof ScoringWeightsUsed]}%
+                                        </div>
+                                    )}
                                     {val?.reason && <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{val.reason}</div>}
                                 </div>
                             ))}

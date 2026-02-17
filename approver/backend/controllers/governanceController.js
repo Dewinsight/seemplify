@@ -2,6 +2,7 @@ const Role = require('../models/Role');
 const Invite = require('../models/Invite');
 const UserOrganization = require('../models/UserOrganization');
 const WorkflowPolicy = require('../models/WorkflowPolicy');
+const Department = require('../models/Department');
 const {
     normalizeRoleKey,
     ensureGovernanceConfigForOrganization,
@@ -9,6 +10,44 @@ const {
     getWorkflowPolicyForOrganization
 } = require('../services/governanceConfigService');
 const { toRoleArray } = require('../utils/access');
+
+const SCORING_KEYS = [
+    'strategicAlignment',
+    'regulatoryRisk',
+    'businessImpact',
+    'implementationComplexity',
+    'timeToValue',
+    'resourceRequirements'
+];
+
+const DEFAULT_SCORING_WEIGHTS = {
+    strategicAlignment: 25,
+    regulatoryRisk: 25,
+    businessImpact: 20,
+    implementationComplexity: 15,
+    timeToValue: 10,
+    resourceRequirements: 5
+};
+
+const normalizeSingleWeights = (weights, fallback = DEFAULT_SCORING_WEIGHTS) => {
+    const next = { ...fallback };
+    SCORING_KEYS.forEach((key) => {
+        if (weights && Object.prototype.hasOwnProperty.call(weights, key)) {
+            const value = Number(weights[key]);
+            if (!Number.isNaN(value)) next[key] = Math.max(0, Math.min(100, value));
+        }
+    });
+    return next;
+};
+
+const sumWeights = (weights) => {
+    return SCORING_KEYS.reduce((acc, key) => acc + Number(weights[key] || 0), 0);
+};
+
+const weightsTotalIsValid = (weights) => {
+    const total = sumWeights(weights);
+    return Math.abs(total - 100) < 0.001;
+};
 
 const normalizeCapabilities = (value) => {
     if (!Array.isArray(value)) return [];
@@ -60,6 +99,43 @@ const findFallbackRoleKey = (roles, preferredCapability = null) => {
     const requester = roles.find(role => (role.capabilities || []).includes('projects.submit'));
     if (requester) return requester.key;
     return roles[0]?.key || null;
+};
+
+const buildDepartmentWeightRows = (policy, departmentsById) => {
+    return (policy.departmentScoringWeights || [])
+        .map((row) => ({
+            department: row.department,
+            departmentLabel: departmentsById.get(String(row.department)) || null,
+            weights: normalizeSingleWeights(row.weights || {})
+        }))
+        .filter((row) => row.department);
+};
+
+const getPermissionDepartmentId = (permission) => {
+    if (!permission?.department) return null;
+    if (typeof permission.department === 'string') return permission.department;
+    if (permission.department._id) return String(permission.department._id);
+    return String(permission.department);
+};
+
+const getScoringManageDepartmentIds = (user, roleCatalog = {}) => {
+    if (user?.isAdmin) return null;
+
+    const managedDepartmentIds = new Set();
+
+    (user?.permissions || []).forEach((permission) => {
+        const departmentId = getPermissionDepartmentId(permission);
+        if (!departmentId) return;
+
+        const roles = toRoleArray(permission);
+        const canManage = roles.some((roleKey) =>
+            Array.isArray(roleCatalog?.[roleKey]) && roleCatalog[roleKey].includes('scoring.manage')
+        );
+
+        if (canManage) managedDepartmentIds.add(String(departmentId));
+    });
+
+    return managedDepartmentIds;
 };
 
 exports.getRoles = async (req, res) => {
@@ -322,6 +398,149 @@ exports.resetWorkflowPolicy = async (req, res) => {
     try {
         const { workflowPolicy } = await ensureGovernanceConfigForOrganization(req.organization, { forcePolicySync: true });
         res.json({ message: 'Workflow policy reset to system defaults.', workflowPolicy });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.getScoringPolicy = async (req, res) => {
+    try {
+        await ensureGovernanceConfigForOrganization(req.organization);
+
+        const [policy, departments] = await Promise.all([
+            getWorkflowPolicyForOrganization(req.organization),
+            Department.find({ organization: req.organization }, 'name').sort({ name: 1 })
+        ]);
+
+        const departmentsById = new Map(
+            departments.map((department) => [String(department._id), department.name])
+        );
+
+        const canEditGlobal = req.user?.isAdmin === true;
+        const managedDepartmentIds = getScoringManageDepartmentIds(req.user, req.user.roleCatalog || {});
+        const visibleDepartments = canEditGlobal
+            ? departments
+            : departments.filter((department) => managedDepartmentIds?.has(String(department._id)));
+        const visibleOverrides = buildDepartmentWeightRows(policy, departmentsById)
+            .filter((row) => canEditGlobal || managedDepartmentIds?.has(String(row.department)));
+
+        res.json({
+            scoringWeights: normalizeSingleWeights(policy.scoringWeights || {}),
+            departmentScoringWeights: visibleOverrides,
+            departments: visibleDepartments,
+            canEditGlobal,
+            managedDepartmentIds: canEditGlobal ? [] : Array.from(managedDepartmentIds || []),
+            dimensions: [
+                { key: 'strategicAlignment', label: 'Strategic Alignment' },
+                { key: 'regulatoryRisk', label: 'Regulatory Risk' },
+                { key: 'businessImpact', label: 'Business Impact' },
+                { key: 'implementationComplexity', label: 'Implementation Complexity' },
+                { key: 'timeToValue', label: 'Time To Value' },
+                { key: 'resourceRequirements', label: 'Resource Requirements' }
+            ],
+            formula: '(strategic*weight)+(regulatory*weight)+(business*weight)+(complexity*weight)+(timeToValue*weight)+(resources*weight)'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.updateScoringPolicy = async (req, res) => {
+    try {
+        const policy = await ensureWorkflowPolicyForOrganization(req.organization);
+        const departments = await Department.find({ organization: req.organization }, '_id');
+        const validDepartmentIds = new Set(departments.map((department) => String(department._id)));
+
+        const canEditGlobal = req.user?.isAdmin === true;
+        const managedDepartmentIds = getScoringManageDepartmentIds(req.user, req.user.roleCatalog || {});
+        if (!canEditGlobal && (!managedDepartmentIds || managedDepartmentIds.size === 0)) {
+            return res.status(403).json({ error: 'You do not have department access to manage scoring policy.' });
+        }
+
+        const currentGlobalWeights = normalizeSingleWeights(policy.scoringWeights || {});
+        let globalWeights = currentGlobalWeights;
+
+        if (canEditGlobal) {
+            globalWeights = normalizeSingleWeights(req.body.scoringWeights || policy.scoringWeights || {});
+            if (!weightsTotalIsValid(globalWeights)) {
+                return res.status(400).json({ error: 'Global scoring weights must add up to exactly 100.' });
+            }
+        } else if (req.body.scoringWeights) {
+            const requestedGlobalWeights = normalizeSingleWeights(req.body.scoringWeights || {});
+            if (JSON.stringify(requestedGlobalWeights) !== JSON.stringify(currentGlobalWeights)) {
+                return res.status(403).json({ error: 'Only organization admins can update global scoring weights.' });
+            }
+        }
+
+        const existingRows = Array.isArray(policy.departmentScoringWeights)
+            ? policy.departmentScoringWeights
+            : [];
+        const hasIncomingRows = Array.isArray(req.body.departmentScoringWeights);
+        const incomingRows = hasIncomingRows ? req.body.departmentScoringWeights : existingRows;
+
+        const seenDepartments = new Set();
+        const normalizedRows = [];
+
+        // For non-admin users, preserve overrides they are not allowed to manage.
+        if (!canEditGlobal) {
+            for (const row of existingRows) {
+                const departmentId = String(row?.department || '').trim();
+                if (!departmentId) continue;
+                if (managedDepartmentIds?.has(departmentId)) continue;
+
+                const lockedWeights = normalizeSingleWeights(row.weights || {}, globalWeights);
+                if (!weightsTotalIsValid(lockedWeights)) {
+                    return res.status(400).json({ error: `Stored override has invalid total for department: ${departmentId}` });
+                }
+
+                seenDepartments.add(departmentId);
+                normalizedRows.push({
+                    department: departmentId,
+                    weights: lockedWeights
+                });
+            }
+        }
+
+        for (const row of incomingRows) {
+            const departmentId = String(row?.department || '').trim();
+            if (!departmentId) continue;
+
+            if (!validDepartmentIds.has(departmentId)) {
+                return res.status(400).json({ error: `Invalid department in scoring overrides: ${departmentId}` });
+            }
+
+            if (!canEditGlobal && !managedDepartmentIds?.has(departmentId)) {
+                if (hasIncomingRows) {
+                    return res.status(403).json({ error: `You cannot update scoring for department: ${departmentId}` });
+                }
+                continue;
+            }
+
+            if (seenDepartments.has(departmentId)) {
+                return res.status(400).json({ error: 'Duplicate department overrides are not allowed.' });
+            }
+            seenDepartments.add(departmentId);
+
+            const weights = normalizeSingleWeights(row.weights || {}, globalWeights);
+            if (!weightsTotalIsValid(weights)) {
+                return res.status(400).json({ error: `Department override weights must add up to exactly 100 (department: ${departmentId}).` });
+            }
+
+            normalizedRows.push({
+                department: departmentId,
+                weights
+            });
+        }
+
+        policy.scoringWeights = globalWeights;
+        policy.departmentScoringWeights = normalizedRows;
+        await policy.save();
+
+        res.json({
+            message: 'Scoring policy updated successfully.',
+            scoringWeights: policy.scoringWeights,
+            departmentScoringWeights: policy.departmentScoringWeights
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

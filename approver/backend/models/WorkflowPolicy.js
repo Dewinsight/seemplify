@@ -19,6 +19,20 @@ const TierWorkflowSchema = new mongoose.Schema({
     stages: [WorkflowStageSchema]
 }, { _id: false });
 
+const ScoringWeightsSchema = new mongoose.Schema({
+    strategicAlignment: { type: Number, default: 25, min: 0, max: 100 },
+    regulatoryRisk: { type: Number, default: 25, min: 0, max: 100 },
+    businessImpact: { type: Number, default: 20, min: 0, max: 100 },
+    implementationComplexity: { type: Number, default: 15, min: 0, max: 100 },
+    timeToValue: { type: Number, default: 10, min: 0, max: 100 },
+    resourceRequirements: { type: Number, default: 5, min: 0, max: 100 }
+}, { _id: false });
+
+const DepartmentScoringWeightsSchema = new mongoose.Schema({
+    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: true },
+    weights: { type: ScoringWeightsSchema, default: () => ({}) }
+}, { _id: false });
+
 const WorkflowPolicySchema = new mongoose.Schema({
     organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true, unique: true },
     name: { type: String, required: true, default: 'Default Workflow Policy' },
@@ -32,6 +46,8 @@ const WorkflowPolicySchema = new mongoose.Schema({
     escalation: {
         forcedTierOnEscalation: { type: Number, enum: [1, 2, 3], default: 3 }
     },
+    scoringWeights: { type: ScoringWeightsSchema, default: () => ({}) },
+    departmentScoringWeights: [DepartmentScoringWeightsSchema],
     tiers: [TierWorkflowSchema],
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
@@ -41,7 +57,5 @@ WorkflowPolicySchema.pre('save', function (next) {
     this.updatedAt = new Date();
     next();
 });
-
-WorkflowPolicySchema.index({ organization: 1 }, { unique: true });
 
 module.exports = mongoose.model('WorkflowPolicy', WorkflowPolicySchema);

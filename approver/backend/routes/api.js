@@ -56,6 +56,8 @@ router.delete('/roles/:id', verifyToken, injectOrgContext, verifyRole(['Admin'])
 router.get('/workflow-policy', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.getWorkflowPolicy);
 router.put('/workflow-policy', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.updateWorkflowPolicy);
 router.post('/workflow-policy/reset', verifyToken, injectOrgContext, verifyRole(['Admin']), governanceController.resetWorkflowPolicy);
+router.get('/scoring-policy', verifyToken, injectOrgContext, verifyRole(['scoring.manage']), governanceController.getScoringPolicy);
+router.put('/scoring-policy', verifyToken, injectOrgContext, verifyRole(['scoring.manage']), governanceController.updateScoringPolicy);
 
 // --- Rules ---
 router.post('/rules', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.createRule);

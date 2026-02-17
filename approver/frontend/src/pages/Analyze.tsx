@@ -77,7 +77,7 @@ const Analyze: React.FC = () => {
     }, [projects, sortConfig]);
 
     const handleDownload = () => {
-        const headers = ['Project Name', 'Requester', 'Department', 'Status', 'Score', 'Priority Score', 'Tier', 'Date'];
+        const headers = ['Project Name', 'Requester', 'Department', 'Status', 'Rule Pass %', 'Priority Score', 'Tier', 'Date'];
         const csvContent = [
             headers.join(','),
             ...sortedProjects.map(p => [
@@ -232,7 +232,7 @@ const Analyze: React.FC = () => {
                                         Date {renderSortArrow('createdAt')}
                                     </th>
                                     <th style={{ textAlign: 'center' }} onClick={() => handleSort('score')} className={sortConfig?.key === 'score' ? 'sort-active' : ''}>
-                                        AI Score {renderSortArrow('score')}
+                                        Rule Pass % {renderSortArrow('score')}
                                     </th>
                                     <th style={{ textAlign: 'center' }} onClick={() => handleSort('priorityScore')} className={sortConfig?.key === 'priorityScore' ? 'sort-active' : ''}>
                                         Priority {renderSortArrow('priorityScore')}
@@ -275,7 +275,7 @@ const Analyze: React.FC = () => {
                                                     fontWeight: 'bold',
                                                     fontSize: '0.9rem'
                                                 }}>
-                                                    {p.score}
+                                                    {p.score}%
                                                 </div>
                                             </td>
                                             <td style={{ textAlign: 'center' }}>

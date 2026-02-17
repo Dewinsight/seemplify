@@ -21,8 +21,39 @@ const organizationController = require('./controllers/organizationController');
 app.get('/api/uploads/logos/:filename', organizationController.serveLogo);
 
 // Middleware
+const configuredOrigins = (process.env.FRONTEND_URLS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+const devDefaultOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://localhost:5174'
+];
+
+const allowedOrigins = new Set([
+    ...configuredOrigins,
+    ...(process.env.NODE_ENV === 'production' ? [] : devDefaultOrigins)
+]);
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? true : (process.env.FRONTEND_URL || 'http://localhost:5173'),
+    origin: (origin, callback) => {
+        // Allow non-browser requests (no Origin header).
+        if (!origin) return callback(null, true);
+
+        if (process.env.NODE_ENV === 'production') {
+            if (allowedOrigins.size === 0 || allowedOrigins.has(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error('Not allowed by CORS'));
+        }
+
+        if (allowedOrigins.has(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id']
 }));

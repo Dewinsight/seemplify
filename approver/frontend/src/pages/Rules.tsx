@@ -19,7 +19,7 @@ interface Rule {
 }
 
 type RuleEffectType = 'SET_TIER' | 'ROUTE_TO_STAGE' | 'SET_FLAG';
-type CreateEffectType = 'SET_TIER' | 'ROUTE_TO_STAGE';
+type CreateEffectType = 'SET_TIER';
 
 interface RuleEffect {
     type: RuleEffectType;
@@ -50,14 +50,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 const CREATE_EFFECT_OPTIONS: Array<{ value: CreateEffectType; label: string }> = [
-    { value: 'SET_TIER', label: 'Set Tier' },
-    { value: 'ROUTE_TO_STAGE', label: 'Route To Stage' }
-];
-
-const STAGE_OPTIONS = [
-    { value: 'CenterOfExcellence', label: 'Center of Excellence' },
-    { value: 'Governance', label: 'Governance' },
-    { value: 'Executive', label: 'Executive' }
+    { value: 'SET_TIER', label: 'Set Tier' }
 ];
 
 const EMPTY_FORM: RuleFormState = {
@@ -72,13 +65,12 @@ const EMPTY_FORM: RuleFormState = {
 
 const EMPTY_EFFECT_DRAFT = {
     type: 'SET_TIER' as CreateEffectType,
-    tier: 3,
-    stageKey: 'Governance'
+    tier: 3
 };
 
 const formatEffect = (effect: RuleEffect): string => {
     if (effect.type === 'SET_TIER') return `Set Tier ${effect.params?.tier ?? '?'}`;
-    if (effect.type === 'ROUTE_TO_STAGE') return `Route to ${effect.params?.stageKey ?? '?'}`;
+    if (effect.type === 'ROUTE_TO_STAGE') return `Legacy route effect (ignored): ${effect.params?.stageKey ?? '?'}`;
     return `Internal flag: ${effect.params?.key || 'unknown'}`;
 };
 
@@ -171,9 +163,10 @@ const Rules: React.FC = () => {
     }, [rules]);
 
     const handleAddEffect = () => {
-        const effect: RuleEffect = effectDraft.type === 'SET_TIER'
-            ? { type: 'SET_TIER', params: { tier: Math.max(1, Math.min(3, Number(effectDraft.tier || 1))) } }
-            : { type: 'ROUTE_TO_STAGE', params: { stageKey: effectDraft.stageKey } };
+        const effect: RuleEffect = {
+            type: 'SET_TIER',
+            params: { tier: Math.max(1, Math.min(3, Number(effectDraft.tier || 1))) }
+        };
 
         setForm((prev) => ({ ...prev, effects: [...prev.effects, effect] }));
     };
@@ -317,9 +310,9 @@ const Rules: React.FC = () => {
             </div>
 
             <div style={{ border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0.9rem' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Routing Effects</div>
+                <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Tier Effects</div>
                 <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
-                    Effects influence routing. Reviewer roles and approvals still come from Workflow Policy.
+                    Effects can raise the final tier. Workflow Policy controls the actual approval path.
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -333,29 +326,15 @@ const Rules: React.FC = () => {
                         ))}
                     </select>
 
-                    {effectDraft.type === 'SET_TIER' && (
-                        <select
-                            value={effectDraft.tier}
-                            onChange={(e) => setEffectDraft((prev) => ({ ...prev, tier: Number(e.target.value) }))}
-                            style={{ width: 'auto', minWidth: '120px', marginBottom: 0 }}
-                        >
-                            <option value={1}>Tier 1</option>
-                            <option value={2}>Tier 2</option>
-                            <option value={3}>Tier 3</option>
-                        </select>
-                    )}
-
-                    {effectDraft.type === 'ROUTE_TO_STAGE' && (
-                        <select
-                            value={effectDraft.stageKey}
-                            onChange={(e) => setEffectDraft((prev) => ({ ...prev, stageKey: e.target.value }))}
-                            style={{ width: 'auto', minWidth: '200px', marginBottom: 0 }}
-                        >
-                            {STAGE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                        </select>
-                    )}
+                    <select
+                        value={effectDraft.tier}
+                        onChange={(e) => setEffectDraft((prev) => ({ ...prev, tier: Number(e.target.value) }))}
+                        style={{ width: 'auto', minWidth: '120px', marginBottom: 0 }}
+                    >
+                        <option value={1}>Tier 1</option>
+                        <option value={2}>Tier 2</option>
+                        <option value={3}>Tier 3</option>
+                    </select>
 
                     <button type="button" onClick={handleAddEffect} className="btn-primary" style={{ padding: '0.45rem 0.75rem' }}>
                         Add Effect
@@ -397,7 +376,7 @@ const Rules: React.FC = () => {
                     <h2 style={{ margin: 0, fontSize: '1.8rem' }}>{isCreatePage ? 'Create Rule' : 'Rules Library'}</h2>
                     <p style={{ margin: '0.35rem 0 0 0', color: 'var(--text-secondary)' }}>
                         {isCreatePage
-                            ? 'Define a rule and optional routing effects.'
+                            ? 'Define a rule and optional tier effects.'
                             : 'Browse, filter, and manage organization rules.'}
                     </p>
                 </div>
@@ -433,13 +412,10 @@ const Rules: React.FC = () => {
                                     <strong>Set Tier:</strong> pushes initiative to at least the selected tier.
                                 </div>
                                 <div>
-                                    <strong>Route to Stage:</strong> selects the starting stage inside the selected tier path.
-                                </div>
-                                <div>
-                                    <strong>Workflow Policy:</strong> decides who approves each stage and how many approvals are required.
+                                    <strong>Workflow Policy:</strong> decides who approves each stage and how many approvals are required within the chosen tier.
                                 </div>
                                 <div style={{ padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-secondary)' }}>
-                                    `SET_FLAG` is internal metadata and is intentionally hidden from normal rule creation.
+                                    Legacy route effects are deprecated and ignored for new submissions. `SET_FLAG` is internal metadata and hidden from normal rule creation.
                                 </div>
                             </div>
                         </div>
