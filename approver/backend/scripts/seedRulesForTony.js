@@ -47,15 +47,32 @@ const escalationRules = [
     { name: 'Risk: Vulnerable Populations', description: 'Automatically escalates to Tier 3 if AI systems target vulnerable populations', criteria: 'Check if the initiative involves AI systems serving vulnerable populations including elderly, disabled, financially distressed, or other protected groups. If YES, this triggers mandatory Tier 3 escalation.', weight: 10, isMandatory: true, department: null, isActive: true },
     { name: 'Risk: Novel AI Without Precedent', description: 'Automatically escalates to Tier 3 if using novel AI without industry precedent', criteria: 'Check if the initiative involves novel AI technology, experimental approaches, first-of-its-kind in the industry, or AI without established industry precedent. If YES, this triggers mandatory Tier 3 escalation.', weight: 10, isMandatory: true, department: null, isActive: true },
     { name: 'Risk: Cross-Border High-Risk Transfers', description: 'Automatically escalates to Tier 3 if AI involves cross-border transfers to high-risk jurisdictions', criteria: 'Check if the initiative involves cross-border data transfers, international AI processing, or data movement to high-risk jurisdictions with weak data protection. If YES, this triggers mandatory Tier 3 escalation.', weight: 10, isMandatory: true, department: null, isActive: true }
-];
+].map((rule) => ({ ...rule, category: 'ESCALATION' }));
 
 async function seedRulesForOrg(org, allRules) {
     let created = 0;
     let skipped = 0;
+    let updated = 0;
 
     for (const rule of allRules) {
         const existing = await Rule.findOne({ name: rule.name, organization: org._id });
         if (existing) {
+            const nextCategory = rule.category || existing.category || 'Other';
+            const nextEffects = (Array.isArray(existing.effects) && existing.effects.length > 0)
+                ? existing.effects
+                : buildRuleEffectsFromCategory(nextCategory);
+
+            const shouldUpdate =
+                existing.category !== nextCategory ||
+                JSON.stringify(existing.effects || []) !== JSON.stringify(nextEffects);
+
+            if (shouldUpdate) {
+                await Rule.updateOne(
+                    { _id: existing._id },
+                    { $set: { category: nextCategory, effects: nextEffects } }
+                );
+                updated++;
+            }
             skipped++;
             continue;
         }
@@ -66,7 +83,7 @@ async function seedRulesForOrg(org, allRules) {
         });
         created++;
     }
-    return { created, skipped };
+    return { created, skipped, updated };
 }
 
 async function ensureOrg(name, slug, user) {
@@ -131,8 +148,8 @@ async function seedRulesForTony() {
 
         for (const org of orgs) {
             console.log(`Seeding rules for org: ${org.name} (slug: ${org.slug})...`);
-            const { created, skipped } = await seedRulesForOrg(org, allRules);
-            console.log(`  ✓ ${created} created, ${skipped} skipped (already existed)\n`);
+            const { created, skipped, updated } = await seedRulesForOrg(org, allRules);
+            console.log(`[ok] ${created} created, ${updated} updated, ${skipped} skipped (already existed)\n`);
         }
 
         console.log('Rules seeding complete for General and Product orgs!');

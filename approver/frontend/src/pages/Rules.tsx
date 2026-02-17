@@ -14,6 +14,14 @@ interface Rule {
     isSystem?: boolean;
     isHidden?: boolean;
     department?: { _id: string; name: string } | null;
+    effects?: RuleEffect[];
+}
+
+type RuleEffectType = 'SET_TIER' | 'ROUTE_TO_STAGE' | 'SET_FLAG';
+
+interface RuleEffect {
+    type: RuleEffectType;
+    params: Record<string, any>;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -33,6 +41,24 @@ const CATEGORY_ICONS: Record<string, string> = {
     'Other': '📦'
 };
 
+const EFFECT_TYPE_OPTIONS: Array<{ value: RuleEffectType; label: string }> = [
+    { value: 'SET_TIER', label: 'Set Tier' },
+    { value: 'ROUTE_TO_STAGE', label: 'Route To Stage' },
+    { value: 'SET_FLAG', label: 'Set Flag' }
+];
+
+const STAGE_OPTIONS = [
+    { value: 'CenterOfExcellence', label: 'Center of Excellence' },
+    { value: 'Governance', label: 'Governance' },
+    { value: 'Executive', label: 'Executive' }
+];
+
+const formatEffect = (effect: RuleEffect): string => {
+    if (effect.type === 'SET_TIER') return `Set Tier ${effect.params?.tier ?? '?'}`;
+    if (effect.type === 'ROUTE_TO_STAGE') return `Route to ${effect.params?.stageKey ?? '?'}`;
+    return `Set ${effect.params?.key || 'flag'} = ${String(effect.params?.value ?? '')}`;
+};
+
 const Rules: React.FC = () => {
     const [rules, setRules] = useState<Rule[]>([]);
     const { activeDepartment, activeOrganization } = useAuth();
@@ -46,7 +72,15 @@ const Rules: React.FC = () => {
         category: 'Code Quality',
         weight: 5,
         isMandatory: false,
-        department: ''
+        department: '',
+        effects: [] as RuleEffect[]
+    });
+    const [effectDraft, setEffectDraft] = useState({
+        type: 'SET_TIER' as RuleEffectType,
+        tier: 3,
+        stageKey: 'Governance',
+        flagKey: '',
+        flagValue: ''
     });
     const [loading, setLoading] = useState(false);
 
@@ -127,6 +161,35 @@ const Rules: React.FC = () => {
         }
     };
 
+    const handleAddEffect = () => {
+        let effect: RuleEffect | null = null;
+
+        if (effectDraft.type === 'SET_TIER') {
+            const tier = Math.min(3, Math.max(1, Number(effectDraft.tier || 1)));
+            effect = { type: 'SET_TIER', params: { tier } };
+        } else if (effectDraft.type === 'ROUTE_TO_STAGE') {
+            if (!effectDraft.stageKey) return;
+            effect = { type: 'ROUTE_TO_STAGE', params: { stageKey: effectDraft.stageKey } };
+        } else if (effectDraft.type === 'SET_FLAG') {
+            const key = String(effectDraft.flagKey || '').trim();
+            if (!key) {
+                alert('Flag key is required for SET_FLAG effect.');
+                return;
+            }
+            effect = { type: 'SET_FLAG', params: { key, value: effectDraft.flagValue } };
+        }
+
+        if (!effect) return;
+        setForm(prev => ({ ...prev, effects: [...prev.effects, effect] }));
+    };
+
+    const handleRemoveEffect = (index: number) => {
+        setForm(prev => ({
+            ...prev,
+            effects: prev.effects.filter((_, i) => i !== index)
+        }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -137,7 +200,15 @@ const Rules: React.FC = () => {
             });
             // Reset, keeping current scope preference? or reset to default?
             // Resetting to default (Global or as is)
-            setForm({ ...form, name: '', criteria: '', category: 'Code Quality', weight: 5, isMandatory: false });
+            setForm({
+                ...form,
+                name: '',
+                criteria: '',
+                category: 'Code Quality',
+                weight: 5,
+                isMandatory: false,
+                effects: []
+            });
             fetchRules();
         } catch (error) {
             console.error('Error creating rule:', error);
@@ -244,6 +315,96 @@ const Rules: React.FC = () => {
                                         <span style={{ fontWeight: 600, color: form.isMandatory ? 'var(--sterling-red)' : 'var(--text-primary)' }}>Mandatory</span>
                                     </label>
                                 </div>
+                            </div>
+
+                            <div style={{ border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '0.75rem', background: 'rgba(255,255,255,0.03)' }}>
+                                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                                    Effects (Optional)
+                                </label>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                    <select
+                                        value={effectDraft.type}
+                                        onChange={e => setEffectDraft(prev => ({ ...prev, type: e.target.value as RuleEffectType }))}
+                                        style={{ padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                    >
+                                        {EFFECT_TYPE_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+
+                                    {effectDraft.type === 'SET_TIER' && (
+                                        <select
+                                            value={effectDraft.tier}
+                                            onChange={e => setEffectDraft(prev => ({ ...prev, tier: Number(e.target.value) }))}
+                                            style={{ padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                        >
+                                            <option value={1}>Tier 1</option>
+                                            <option value={2}>Tier 2</option>
+                                            <option value={3}>Tier 3</option>
+                                        </select>
+                                    )}
+
+                                    {effectDraft.type === 'ROUTE_TO_STAGE' && (
+                                        <select
+                                            value={effectDraft.stageKey}
+                                            onChange={e => setEffectDraft(prev => ({ ...prev, stageKey: e.target.value }))}
+                                            style={{ padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                        >
+                                            {STAGE_OPTIONS.map((option) => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                    )}
+
+                                    {effectDraft.type === 'SET_FLAG' && (
+                                        <>
+                                            <input
+                                                type="text"
+                                                placeholder="flag key"
+                                                value={effectDraft.flagKey}
+                                                onChange={e => setEffectDraft(prev => ({ ...prev, flagKey: e.target.value }))}
+                                                style={{ padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', minWidth: '120px' }}
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="flag value"
+                                                value={effectDraft.flagValue}
+                                                onChange={e => setEffectDraft(prev => ({ ...prev, flagValue: e.target.value }))}
+                                                style={{ padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)', minWidth: '120px' }}
+                                            />
+                                        </>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={handleAddEffect}
+                                        style={{ padding: '0.45rem 0.7rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(76,175,80,0.18)', color: '#4caf50', cursor: 'pointer' }}
+                                    >
+                                        Add Effect
+                                    </button>
+                                </div>
+
+                                {form.effects.length > 0 ? (
+                                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                        {form.effects.map((effect, index) => (
+                                            <span key={`${effect.type}-${index}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.76rem', padding: '0.2rem 0.45rem', borderRadius: '999px', border: '1px solid var(--glass-border)', background: 'rgba(33,150,243,0.15)', color: '#90caf9' }}>
+                                                {formatEffect(effect)}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveEffect(index)}
+                                                    style={{ background: 'transparent', border: 'none', color: '#90caf9', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                                                    aria-label="Remove effect"
+                                                >
+                                                    x
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                        No effects added. Rule will not force any tier/stage override.
+                                    </div>
+                                )}
                             </div>
 
                             <button type="submit" className="btn-primary" disabled={loading} style={{ marginTop: '0.5rem', padding: '0.8rem' }}>
@@ -378,6 +539,16 @@ const Rules: React.FC = () => {
                                         <p style={{ flex: 1, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.5rem' }}>
                                             {rule.criteria}
                                         </p>
+
+                                        {Array.isArray(rule.effects) && rule.effects.length > 0 && (
+                                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+                                                {rule.effects.map((effect, index) => (
+                                                    <span key={`${rule._id}-effect-${index}`} style={{ fontSize: '0.72rem', padding: '0.18rem 0.45rem', borderRadius: '999px', border: '1px solid rgba(33,150,243,0.4)', background: 'rgba(33,150,243,0.14)', color: '#90caf9' }}>
+                                                        {formatEffect(effect)}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
 
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', gap: '0.5rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

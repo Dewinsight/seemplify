@@ -10,6 +10,7 @@
         "seed:governance": "node scripts/seedGovernancePoliciesAndRoles.js",
         "seed:governance:clear-non-admin": "node scripts/seedGovernancePoliciesAndRoles.js --clear-non-admin-roles",
         "migrate:rule-effects": "node scripts/backfillRuleEffects.js",
+        "sanitize:rules": "node scripts/sanitizeRules.js",
         "migrate:logo-assets": "node scripts/backfillLogoAssets.js",
         "migrate:logo-assets:from-api": "node scripts/backfillLogoAssetsFromApi.js"
     },
