@@ -55,6 +55,10 @@ router.post('/',
         members: [{
           account: req.user._id,
           role: 'owner',
+          appAccess: {
+            mode: 'all',
+            appIds: []
+          },
           joinedAt: new Date(),
           status: 'active'
         }]
@@ -79,6 +83,10 @@ router.post('/',
             organizations: {
               organization: organization._id,
               role: 'owner',
+              appAccess: {
+                mode: 'all',
+                appIds: []
+              },
               joinedAt: new Date(),
               isActive: true
             }

@@ -104,6 +104,17 @@ const AccountSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
     },
+    appAccess: {
+      mode: {
+        type: String,
+        enum: ['all', 'selected'],
+        default: 'all'
+      },
+      appIds: {
+        type: [String],
+        default: []
+      }
+    },
     joinedAt: {
       type: Date,
       default: Date.now
@@ -357,4 +368,3 @@ AccountSchema.statics.findSuperAdmins = function () {
 }
 
 export const Account = mongoose.model('AiinAccount', AccountSchema)
-

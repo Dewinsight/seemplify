@@ -25,6 +25,12 @@ import { emailService } from './services/emailService.js'
 import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
+import {
+  APP_ACCESS_MODE_SELECTED,
+  buildValidAppIdSet,
+  memberCanAccessApp,
+  normalizeAppAccess
+} from './utils/appAccess.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 
@@ -2750,6 +2756,54 @@ async function getSessionFromCookies(req) {
   }
 }
 
+function getHubAppMetadata() {
+  const apps = getHubApps().map(app => ({
+    appId: app.appId,
+    name: app.name,
+    description: app.description || ''
+  }))
+
+  return {
+    apps,
+    appIdSet: buildValidAppIdSet(apps),
+    appNameById: new Map(apps.map(app => [app.appId, app.name]))
+  }
+}
+
+function getMemberAppAccessForOrganization(organizations, currentOrgId, accountId, validAppIds) {
+  if (!currentOrgId || !Array.isArray(organizations)) {
+    return normalizeAppAccess(null, validAppIds)
+  }
+
+  const org = organizations.find(item => item?._id?.toString() === currentOrgId.toString())
+  const member = org?.members?.find(
+    m => m?.status === 'active' && m?.account?.toString() === accountId.toString()
+  )
+
+  return normalizeAppAccess(member?.appAccess, validAppIds)
+}
+
+function getInvitationAccessSummary(invite, appNameById = new Map(), validAppIds = null) {
+  const appAccess = normalizeAppAccess(invite?.appAccess, validAppIds)
+  if (appAccess.mode !== APP_ACCESS_MODE_SELECTED) {
+    return {
+      appAccess,
+      appAccessLabel: 'All apps',
+      appAccessAppNames: []
+    }
+  }
+
+  const appAccessAppNames = appAccess.appIds.map(appId => appNameById.get(appId) || appId)
+
+  return {
+    appAccess,
+    appAccessLabel: appAccessAppNames.length === 1
+      ? '1 selected app'
+      : `${appAccessAppNames.length} selected apps`,
+    appAccessAppNames
+  }
+}
+
 async function logAppLaunchActivity({ req, account = null, app = null, appId = null, status, details = {} }) {
   try {
     const orgId =
@@ -3046,16 +3100,30 @@ app.get('/', async (req, res) => {
       }
     })
 
+    const { appIdSet } = getHubAppMetadata()
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+    const memberAppAccess = getMemberAppAccessForOrganization(
+      userOrganizations,
+      currentOrgId,
+      account._id,
+      appIdSet
+    )
+
     // Get all active apps and add iconSvg for the template
     let apps = getHubApps().map(app => ({
       ...app,
       iconSvg: getAppIcon(app.icon)
     }))
 
+    // Filter hub cards by per-member access scope
+    if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
+      const allowedAppIds = new Set(memberAppAccess.appIds)
+      apps = apps.filter(app => allowedAppIds.has(app.appId))
+    }
+
     // Filter hub cards by plan's hideHubCards (dynamically hide cards per plan)
     // Get coming soon cards for this plan (toggleable per plan, default off)
     let comingSoonCards = []
-    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
     if (currentOrgId) {
       const subscription = await subscriptionService.getSubscriptionForOrg(currentOrgId)
       const hideHubCards = subscription?.plan?.hideHubCards
@@ -3086,6 +3154,9 @@ app.get('/', async (req, res) => {
       apps,
       comingSoonCards,
       organizations,
+      accessError: req.query?.error === 'app_not_assigned'
+        ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
+        : null,
       pendingOnboardingCount: pendingOnboardingAssignments.length,
       pendingOnboardingAssignments,
       activePage: 'home'
@@ -3317,6 +3388,37 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
+    let currentMemberAppAccess = normalizeAppAccess(null)
+
+    if (currentOrgId) {
+      const { appIdSet } = getHubAppMetadata()
+      const currentOrganization = await Organization.findById(currentOrgId)
+        .select('members.account members.status members.appAccess')
+        .lean()
+
+      const currentMember = currentOrganization?.members?.find(
+        m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
+      )
+
+      currentMemberAppAccess = normalizeAppAccess(currentMember?.appAccess, appIdSet)
+    }
+
+    if (!memberCanAccessApp(currentMemberAppAccess, appId)) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_member_scope',
+        details: {
+          organizationId: currentOrgId,
+          appAccessMode: currentMemberAppAccess.mode,
+          assignedApps: currentMemberAppAccess.appIds
+        }
+      })
+
+      const redirectMessage = encodeURIComponent(app.name || appId)
+      return res.redirect(`/?error=app_not_assigned&app=${redirectMessage}`)
+    }
 
     // Check subscription access for apps that require it
     // Map app IDs to subscription feature keys
@@ -4150,9 +4252,17 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
       expiresAt: { $gt: new Date() }
     }).populate('invitedBy', 'email profile.name')
 
+    const { apps: availableApps, appIdSet, appNameById } = getHubAppMetadata()
+    const invitationRows = invitations.map(invite => ({
+      id: invite._id.toString(),
+      ...invite.toObject(),
+      ...getInvitationAccessSummary(invite, appNameById, appIdSet)
+    }))
+
     res.render('invitations', {
       organization,
-      invitations,
+      invitations: invitationRows,
+      availableApps,
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
@@ -4696,6 +4806,8 @@ app.get('/invitations/pending', getSessionUser, async (req, res) => {
       .populate('invitedBy', 'email profile.name')
       .sort({ createdAt: -1 })
 
+    const { appIdSet, appNameById } = getHubAppMetadata()
+
     res.render('pending-invitations', {
       invitations: invitations.map(inv => ({
         id: inv._id.toString(),
@@ -4709,6 +4821,7 @@ app.get('/invitations/pending', getSessionUser, async (req, res) => {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        ...getInvitationAccessSummary(inv, appNameById, appIdSet),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })),
@@ -4769,6 +4882,12 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
 
     // Show confirmation page instead of auto-accepting
     const inviterName = matchedInvite.invitedBy?.profile?.name || matchedInvite.invitedBy?.email || 'A team member'
+    const { appIdSet, appNameById } = getHubAppMetadata()
+    const inviteAccess = getInvitationAccessSummary(matchedInvite, appNameById, appIdSet)
+    const inviteAccessDetail = inviteAccess.appAccess.mode === APP_ACCESS_MODE_SELECTED
+      ? (inviteAccess.appAccessAppNames.join(', ') || 'Selected apps only')
+      : 'All apps available to your organization plan'
+
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -4957,6 +5076,10 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
                 <span class="role-badge role-${matchedInvite.role}">${matchedInvite.role}</span>
               </div>
               <div class="detail-row">
+                <span class="detail-label">App Access</span>
+                <span class="detail-value">${inviteAccessDetail}</span>
+              </div>
+              <div class="detail-row">
                 <span class="detail-label">Invited By</span>
                 <span class="detail-value">${inviterName}</span>
               </div>
@@ -5055,7 +5178,12 @@ app.post('/invitations/accept/do', getSessionUser, async (req, res) => {
 
     // Add user to organization
     const organization = await Organization.findById(matchedInvite.organization._id)
-    await organization.addMember(req.user._id, matchedInvite.role, matchedInvite.invitedBy)
+    await organization.addMember(
+      req.user._id,
+      matchedInvite.role,
+      matchedInvite.invitedBy,
+      normalizeAppAccess(matchedInvite.appAccess)
+    )
 
     console.log(`✅ User ${req.user.email} joined organization ${organization.name} as ${matchedInvite.role}`)
 

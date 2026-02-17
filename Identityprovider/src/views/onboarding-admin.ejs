@@ -52,11 +52,21 @@
               <p>You are all set.</p>
             </div>
           <% } else { %>
+            <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="Filter personal onboarding">
+              <button type="button" class="assignment-status-chip active" data-personal-status-filter="current" aria-selected="true">Current</button>
+              <button type="button" class="assignment-status-chip" data-personal-status-filter="history" aria-selected="false">History</button>
+              <button type="button" class="assignment-status-chip" data-personal-status-filter="all" aria-selected="false">All</button>
+            </div>
             <% personalAssignments.forEach(assignment => { %>
               <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
               <% const currentUserId = user._id.toString(); %>
               <% const isAssignee = assignmentMemberId === currentUserId; %>
-              <div class="card" style="margin-top: 12px;">
+              <div
+                class="card onboarding-assignment-card onboarding-assignment-card--<%= assignment.status %>"
+                style="margin-top: 12px;"
+                data-personal-assignment
+                data-personal-status="<%= assignment.status %>"
+              >
                 <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
                   <div>
                     <div style="font-weight:700; font-size:16px;">
@@ -344,6 +354,10 @@
                 <% } %>
               </div>
             <% }) %>
+            <div class="empty-state assignment-board-empty" data-personal-empty hidden>
+              <h3>No assignments in this view</h3>
+              <p>Switch filter to view current or historical onboarding tasks.</p>
+            </div>
           <% } %>
         </div>
       </div>
@@ -501,10 +515,23 @@
               </label>
             </div>
             <div class="form-group" id="custom-form-fields">
-              <label for="custom-fields">Form fields (one per line: Label|type|required)</label>
-              <textarea id="custom-fields" placeholder="Full Name|text|required
-Phone Number|tel
-Start Date|date|required"></textarea>
+              <label>Form fields</label>
+              <div class="form-builder-shell" data-form-builder="custom">
+                <div class="form-builder-toolbar">
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('custom', 'text')">+ Short text</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('custom', 'textarea')">+ Paragraph</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('custom', 'email')">+ Email</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('custom', 'date')">+ Date</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('custom', 'select')">+ Dropdown</button>
+                </div>
+                <div id="custom-form-field-list" class="form-builder-field-list"></div>
+                <div class="form-builder-preview">
+                  <div class="form-builder-preview-title">Live preview</div>
+                  <div id="custom-form-preview" class="form-builder-preview-body"></div>
+                </div>
+              </div>
+              <textarea id="custom-fields" style="display:none;" aria-hidden="true"></textarea>
+              <div class="form-hint">Drag fields to reorder. Click "Add Custom Item" when the form preview looks right.</div>
             </div>
             <div class="form-group" id="custom-upload-accept" style="display:none;">
               <label for="custom-accept">Accepted file types</label>
@@ -743,7 +770,7 @@ Start Date|date|required"></textarea>
             <% const assignmentName = assignment.member?.profile?.name || assignment.member?.email || 'Member'; %>
             <% const assignmentSearch = (assignmentName + ' ' + (assignment.member?.email || '') + ' ' + assignment.status).toLowerCase(); %>
             <article
-              class="assignment-board-item"
+              class="assignment-board-item assignment-board-item--<%= assignment.status %>"
               data-assignment-item
               data-assignment-status="<%= assignment.status %>"
               data-assignment-search="<%= assignmentSearch %>"
@@ -814,7 +841,7 @@ Start Date|date|required"></textarea>
             <div class="assignment-board-list" style="margin-top: 12px;">
               <% memberRows.forEach(memberRow => { %>
                 <% const latestAssignment = memberRow.latestAssignment || null; %>
-                <article class="assignment-board-item">
+                <article class="assignment-board-item assignment-board-item--<%= memberRow.onboardingStatus %>">
                   <div class="assignment-board-item-main">
                     <div class="assignment-board-item-name"><%= memberRow.name %></div>
                     <div class="assignment-board-item-meta">
@@ -866,7 +893,10 @@ Start Date|date|required"></textarea>
                   : (activity.type === 'assignment_cancelled'
                     ? `${actorName} cancelled onboarding for ${memberName}`
                     : `${actorName} assigned onboarding to ${memberName}`); %>
-                <article class="assignment-board-item">
+                <% const activityStatusClass = activity.type === 'assignment_completed'
+                  ? 'completed'
+                  : (activity.type === 'assignment_cancelled' ? 'cancelled' : 'pending'); %>
+                <article class="assignment-board-item assignment-board-item--<%= activityStatusClass %>">
                   <div class="assignment-board-item-main">
                     <div class="assignment-board-item-name"><%= eventDescription %></div>
                     <div class="assignment-board-item-meta">
@@ -877,7 +907,7 @@ Start Date|date|required"></textarea>
                     </div>
                   </div>
                   <div class="assignment-board-item-actions">
-                    <span class="role-badge onboarding-badge onboarding-<%= activity.type === 'assignment_completed' ? 'completed' : (activity.type === 'assignment_cancelled' ? 'cancelled' : 'pending') %>">
+                    <span class="role-badge onboarding-badge onboarding-<%= activityStatusClass %>">
                       <%= eventLabel %>
                     </span>
                     <% if (activityAssignmentId) { %>
@@ -980,10 +1010,23 @@ Start Date|date|required"></textarea>
             </label>
           </div>
           <div class="form-group" id="template-form-fields">
-            <label for="template-fields">Form fields (one per line: Label|type|required)</label>
-            <textarea id="template-fields" placeholder="Full Name|text|required
-Phone Number|tel
-Start Date|date|required"></textarea>
+            <label>Form fields</label>
+            <div class="form-builder-shell" data-form-builder="template">
+              <div class="form-builder-toolbar">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('template', 'text')">+ Short text</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('template', 'textarea')">+ Paragraph</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('template', 'email')">+ Email</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('template', 'date')">+ Date</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="addFormField('template', 'select')">+ Dropdown</button>
+              </div>
+              <div id="template-form-field-list" class="form-builder-field-list"></div>
+              <div class="form-builder-preview">
+                <div class="form-builder-preview-title">Live preview</div>
+                <div id="template-form-preview" class="form-builder-preview-body"></div>
+              </div>
+            </div>
+            <textarea id="template-fields" style="display:none;" aria-hidden="true"></textarea>
+            <div class="form-hint">Drag fields to reorder. The live preview matches what new members will fill.</div>
           </div>
           <div class="form-group" id="template-upload-accept" style="display:none;">
             <label for="template-accept">Accepted file types</label>
@@ -1233,6 +1276,7 @@ Start Date|date|required"></textarea>
     const orgMembers = <%- JSON.stringify(members || []) %>;
     const templateItems = [];
     const customItems = [];
+    const formFieldState = { template: [], custom: [] };
     const signatureFieldState = { template: [], custom: [] };
     const selectedSignatureFieldIndex = { template: -1, custom: -1 };
     const signerSelectionState = { template: [], custom: [] };
@@ -1250,6 +1294,17 @@ Start Date|date|required"></textarea>
     const centerWizardState = { step: 1, total: 3 };
     const templateModalState = { step: 1, total: 3 };
     const assignmentFilterState = { query: '', status: 'all' };
+    const fieldTypeOptions = ['text', 'textarea', 'email', 'tel', 'number', 'date', 'select'];
+    const fieldTypeLabelMap = {
+      text: 'Short text',
+      textarea: 'Paragraph',
+      email: 'Email',
+      tel: 'Phone',
+      number: 'Number',
+      date: 'Date',
+      select: 'Dropdown'
+    };
+    let fieldIdSeed = 0;
 
     function clampStep(step, max) {
       const n = Number(step);
@@ -1403,6 +1458,36 @@ Start Date|date|required"></textarea>
       if (empty) empty.hidden = visible !== 0;
     }
 
+    function filterPersonalAssignments(scope = 'current') {
+      const chips = Array.from(document.querySelectorAll('[data-personal-status-filter]'));
+      const cards = Array.from(document.querySelectorAll('[data-personal-assignment]'));
+      const empty = document.querySelector('[data-personal-empty]');
+      if (!cards.length || !chips.length) return;
+
+      chips.forEach(chip => {
+        const isActive = chip.dataset.personalStatusFilter === scope;
+        chip.classList.toggle('active', isActive);
+        chip.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      let visible = 0;
+      cards.forEach(card => {
+        const status = String(card.dataset.personalStatus || '').toLowerCase();
+        const isCurrent = status === 'pending' || status === 'in_progress';
+        const isHistory = status === 'completed' || status === 'cancelled';
+        const show = scope === 'all'
+          ? true
+          : (scope === 'history' ? isHistory : isCurrent);
+
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+
+      if (empty) {
+        empty.hidden = visible !== 0;
+      }
+    }
+
     function renderTemplateReview() {
       const name = document.getElementById('template-name')?.value.trim() || '';
       const description = document.getElementById('template-description')?.value.trim() || '';
@@ -1521,21 +1606,313 @@ Start Date|date|required"></textarea>
       document.getElementById(`${prefix}-type`).addEventListener('change', () => toggleItemInputs(prefix));
     });
 
+    function sanitizeFieldKey(label, fallbackIndex = 1, seenKeys = new Set()) {
+      const base = String(label || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || `field_${fallbackIndex}`;
+
+      let candidate = base;
+      let i = 2;
+      while (seenKeys.has(candidate)) {
+        candidate = `${base}_${i++}`;
+      }
+      seenKeys.add(candidate);
+      return candidate;
+    }
+
+    function parseSelectOptions(raw) {
+      if (Array.isArray(raw)) {
+        return raw.map(item => String(item || '').trim()).filter(Boolean);
+      }
+      return String(raw || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+
     function parseFields(raw) {
-      return raw
+      const value = String(raw || '').trim();
+      if (!value) return [];
+
+      if (value.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            return parsed
+              .map(field => ({
+                label: String(field?.label || '').trim(),
+                key: String(field?.key || '').trim(),
+                type: fieldTypeOptions.includes(field?.type) ? field.type : 'text',
+                required: field?.required === true,
+                options: parseSelectOptions(field?.options)
+              }))
+              .filter(field => field.label);
+          }
+        } catch (error) {
+          // Fall through to legacy parser.
+        }
+      }
+
+      return value
         .split('\n')
         .map(line => line.trim())
         .filter(Boolean)
         .map(line => {
-          const [label, type, required] = line.split('|').map(p => p.trim());
+          const [labelPart, typePart, requiredPart, optionsPart] = line.split('|').map(p => p.trim());
+          const type = fieldTypeOptions.includes(typePart) ? typePart : 'text';
           return {
-            label,
-            key: label ? label.toLowerCase().replace(/\s+/g, '_') : '',
-            type: type || 'text',
-            required: required === 'required'
+            label: labelPart,
+            key: sanitizeFieldKey(labelPart),
+            type,
+            required: requiredPart === 'required' || requiredPart === 'true',
+            options: type === 'select' ? parseSelectOptions(optionsPart) : []
           };
         })
         .filter(field => field.label);
+    }
+
+    function createFormField(type = 'text', overrides = {}) {
+      const nextType = fieldTypeOptions.includes(type) ? type : 'text';
+      fieldIdSeed += 1;
+      return {
+        id: `f_${fieldIdSeed}`,
+        label: overrides.label || fieldTypeLabelMap[nextType] || 'Question',
+        type: nextType,
+        required: overrides.required === true,
+        options: nextType === 'select' ? parseSelectOptions(overrides.options || 'Option 1, Option 2') : []
+      };
+    }
+
+    function ensureFormFieldState(prefix) {
+      if (!Array.isArray(formFieldState[prefix])) {
+        formFieldState[prefix] = [];
+      }
+
+      if (formFieldState[prefix].length > 0) return;
+
+      const raw = document.getElementById(`${prefix}-fields`)?.value || '';
+      const parsed = parseFields(raw);
+
+      if (parsed.length > 0) {
+        formFieldState[prefix] = parsed.map(field => createFormField(field.type, field));
+      } else {
+        formFieldState[prefix] = [createFormField('text', { label: 'Question 1', required: true })];
+      }
+    }
+
+    function serializeFormFields(prefix) {
+      const hidden = document.getElementById(`${prefix}-fields`);
+      if (!hidden) return;
+
+      const serialized = getFormFieldsForSubmission(prefix);
+      hidden.value = JSON.stringify(serialized);
+    }
+
+    function getFormFieldsForSubmission(prefix) {
+      const fields = Array.isArray(formFieldState[prefix]) ? formFieldState[prefix] : [];
+      const seen = new Set();
+
+      return fields
+        .map((field, index) => {
+          const label = String(field?.label || '').trim();
+          if (!label) return null;
+          const type = fieldTypeOptions.includes(field?.type) ? field.type : 'text';
+          return {
+            label,
+            key: sanitizeFieldKey(field?.key || label, index + 1, seen),
+            type,
+            required: field?.required === true,
+            options: type === 'select' ? parseSelectOptions(field?.options) : []
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function updateFormField(prefix, fieldId, key, value) {
+      const fields = formFieldState[prefix] || [];
+      const index = fields.findIndex(field => field.id === fieldId);
+      if (index < 0) return;
+
+      if (key === 'required') {
+        fields[index].required = value === true || value === 'true';
+      } else if (key === 'options') {
+        fields[index].options = parseSelectOptions(value);
+      } else if (key === 'type') {
+        fields[index].type = fieldTypeOptions.includes(value) ? value : 'text';
+        if (fields[index].type !== 'select') fields[index].options = [];
+      } else {
+        fields[index][key] = value;
+      }
+
+      renderFormFieldBuilder(prefix);
+    }
+
+    function removeFormField(prefix, fieldId) {
+      const fields = formFieldState[prefix] || [];
+      const nextFields = fields.filter(field => field.id !== fieldId);
+      formFieldState[prefix] = nextFields.length > 0
+        ? nextFields
+        : [createFormField('text', { label: 'Question 1' })];
+      renderFormFieldBuilder(prefix);
+    }
+
+    function addFormField(prefix, type = 'text') {
+      ensureFormFieldState(prefix);
+      const fields = formFieldState[prefix];
+      const nextIndex = fields.length + 1;
+      const label = type === 'select' ? `Dropdown ${nextIndex}` : `Question ${nextIndex}`;
+      fields.push(createFormField(type, { label }));
+      renderFormFieldBuilder(prefix);
+    }
+
+    function moveFormField(prefix, fieldId, direction) {
+      const fields = formFieldState[prefix] || [];
+      const index = fields.findIndex(field => field.id === fieldId);
+      if (index < 0) return;
+
+      const nextIndex = direction === 'up' ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= fields.length) return;
+
+      const temp = fields[index];
+      fields[index] = fields[nextIndex];
+      fields[nextIndex] = temp;
+      renderFormFieldBuilder(prefix);
+    }
+
+    function renderFormFieldBuilder(prefix) {
+      ensureFormFieldState(prefix);
+      const fields = formFieldState[prefix] || [];
+      const listEl = document.getElementById(`${prefix}-form-field-list`);
+      const previewEl = document.getElementById(`${prefix}-form-preview`);
+      if (!listEl || !previewEl) return;
+
+      listEl.innerHTML = fields.map((field, index) => {
+        const type = fieldTypeOptions.includes(field.type) ? field.type : 'text';
+        const optionList = parseSelectOptions(field.options);
+        const typeOptions = fieldTypeOptions
+          .map(option => `<option value="${option}" ${type === option ? 'selected' : ''}>${fieldTypeLabelMap[option] || option}</option>`)
+          .join('');
+        const optionsInput = type === 'select'
+          ? `
+            <div class="form-builder-field-options">
+              <label>Options (comma separated)</label>
+              <input type="text" value="${escapeHtml(optionList.join(', '))}" data-field-input="options" />
+            </div>
+          `
+          : '';
+
+        return `
+          <article class="form-builder-field" draggable="true" data-form-field-id="${field.id}">
+            <div class="form-builder-field-head">
+              <span class="form-builder-drag" title="Drag to reorder">::</span>
+              <span class="form-builder-field-index">${index + 1}</span>
+              <input type="text" value="${escapeHtml(field.label || '')}" placeholder="Field label" data-field-input="label" />
+              <select data-field-input="type">${typeOptions}</select>
+              <label class="form-builder-required-toggle">
+                <input type="checkbox" ${field.required ? 'checked' : ''} data-field-input="required" />
+                Required
+              </label>
+              <div class="form-builder-field-actions">
+                <button class="btn btn-secondary btn-sm" type="button" data-field-move="up">Up</button>
+                <button class="btn btn-secondary btn-sm" type="button" data-field-move="down">Down</button>
+                <button class="btn btn-danger btn-sm" type="button" data-field-remove>Remove</button>
+              </div>
+            </div>
+            ${optionsInput}
+          </article>
+        `;
+      }).join('');
+
+      previewEl.innerHTML = fields.map((field, index) => {
+        const type = fieldTypeOptions.includes(field.type) ? field.type : 'text';
+        const requiredMark = field.required ? ' *' : '';
+        const label = escapeHtml(field.label || `Question ${index + 1}`);
+        if (type === 'textarea') {
+          return `
+            <div class="form-builder-preview-field">
+              <label>${label}${requiredMark}</label>
+              <textarea placeholder="Response..."></textarea>
+            </div>
+          `;
+        }
+        if (type === 'select') {
+          const options = parseSelectOptions(field.options);
+          const optionMarkup = options.length
+            ? options.map(option => `<option>${escapeHtml(option)}</option>`).join('')
+            : '<option>Option 1</option>';
+          return `
+            <div class="form-builder-preview-field">
+              <label>${label}${requiredMark}</label>
+              <select>
+                <option value="">Select an option...</option>
+                ${optionMarkup}
+              </select>
+            </div>
+          `;
+        }
+        const inputType = type === 'textarea' ? 'text' : type;
+        return `
+          <div class="form-builder-preview-field">
+            <label>${label}${requiredMark}</label>
+            <input type="${inputType}" placeholder="Response..." />
+          </div>
+        `;
+      }).join('');
+
+      serializeFormFields(prefix);
+
+      const rows = Array.from(listEl.querySelectorAll('[data-form-field-id]'));
+      rows.forEach(row => {
+        const rowFieldId = row.dataset.formFieldId;
+
+        row.querySelectorAll('[data-field-input]').forEach(input => {
+          const key = input.dataset.fieldInput;
+          input.addEventListener('input', (event) => {
+            const value = key === 'required' ? event.target.checked : event.target.value;
+            updateFormField(prefix, rowFieldId, key, value);
+          });
+          input.addEventListener('change', (event) => {
+            const value = key === 'required' ? event.target.checked : event.target.value;
+            updateFormField(prefix, rowFieldId, key, value);
+          });
+        });
+
+        const removeBtn = row.querySelector('[data-field-remove]');
+        removeBtn?.addEventListener('click', () => removeFormField(prefix, rowFieldId));
+
+        row.querySelectorAll('[data-field-move]').forEach(button => {
+          button.addEventListener('click', () => moveFormField(prefix, rowFieldId, button.dataset.fieldMove));
+        });
+
+        row.addEventListener('dragstart', (event) => {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', rowFieldId);
+          row.classList.add('dragging');
+        });
+        row.addEventListener('dragend', () => row.classList.remove('dragging'));
+        row.addEventListener('dragover', (event) => {
+          event.preventDefault();
+          row.classList.add('drag-over');
+        });
+        row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+        row.addEventListener('drop', (event) => {
+          event.preventDefault();
+          row.classList.remove('drag-over');
+          const draggedId = event.dataTransfer.getData('text/plain');
+          if (!draggedId || draggedId === rowFieldId) return;
+
+          const fieldList = formFieldState[prefix] || [];
+          const fromIndex = fieldList.findIndex(field => field.id === draggedId);
+          const toIndex = fieldList.findIndex(field => field.id === rowFieldId);
+          if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+
+          const [movedField] = fieldList.splice(fromIndex, 1);
+          fieldList.splice(toIndex, 0, movedField);
+          renderFormFieldBuilder(prefix);
+        });
+      });
     }
 
     function getSignerOptions() {
@@ -2793,6 +3170,12 @@ Start Date|date|required"></textarea>
       });
     });
 
+    document.querySelectorAll('[data-personal-status-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        filterPersonalAssignments(button.dataset.personalStatusFilter || 'current');
+      });
+    });
+
     function setActiveAssignTab(tabKey) {
       const tabs = document.querySelectorAll('[data-assign-tab]');
       const panels = {
@@ -2963,8 +3346,12 @@ Start Date|date|required"></textarea>
       const item = { type, title, description, required, config: {} };
 
       if (type === 'form') {
-        const fieldsRaw = document.getElementById(`${prefix}-fields`).value;
-        item.config.fields = parseFields(fieldsRaw);
+        const parsedFields = getFormFieldsForSubmission(prefix);
+        item.config.fields = parsedFields;
+        if (!item.config.fields.length) {
+          alert('Add at least one form field before saving this item');
+          return;
+        }
       }
 
       if (type === 'upload') {
@@ -3869,6 +4256,8 @@ Start Date|date|required"></textarea>
 
     renderItems(templateItems, 'template-items-list');
     renderItems(customItems, 'custom-items-list');
+    renderFormFieldBuilder('template');
+    renderFormFieldBuilder('custom');
     renderSignerOptions('template');
     renderSignerOptions('custom');
     bindSignatureFieldEditor('template');
@@ -3893,6 +4282,9 @@ Start Date|date|required"></textarea>
     if (document.querySelector('[data-onboarding-tab]')) {
       const defaultTab = '<%= (typeof activePage !== "undefined" && activePage === "onboarding") ? "my" : "center" %>';
       setActiveOnboardingTab(defaultTab);
+    }
+    if (document.querySelector('[data-personal-status-filter]')) {
+      filterPersonalAssignments('current');
     }
 
     function initOnboardingFlows() {

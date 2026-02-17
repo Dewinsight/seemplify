@@ -21,6 +21,17 @@ const OrganizationInviteSchema = new mongoose.Schema({
     enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
     default: 'recruiter'
   },
+  appAccess: {
+    mode: {
+      type: String,
+      enum: ['all', 'selected'],
+      default: 'all'
+    },
+    appIds: {
+      type: [String],
+      default: []
+    }
+  },
   // CRITICAL: Store HASHED token, not plain token
   tokenHash: {
     type: String,

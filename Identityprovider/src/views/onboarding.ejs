@@ -36,11 +36,20 @@
         <p>You are all set.</p>
       </div>
     <% } else { %>
+      <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="Filter onboarding assignments">
+        <button type="button" class="assignment-status-chip active" data-personal-status-filter="current" aria-selected="true">Current</button>
+        <button type="button" class="assignment-status-chip" data-personal-status-filter="history" aria-selected="false">History</button>
+        <button type="button" class="assignment-status-chip" data-personal-status-filter="all" aria-selected="false">All</button>
+      </div>
       <% assignments.forEach(assignment => { %>
         <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
         <% const currentUserId = user._id.toString(); %>
         <% const isAssignee = assignmentMemberId === currentUserId; %>
-        <div class="card">
+        <div
+          class="card onboarding-assignment-card onboarding-assignment-card--<%= assignment.status %>"
+          data-personal-assignment
+          data-personal-status="<%= assignment.status %>"
+        >
           <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
             <div>
               <div style="font-weight:700; font-size:16px;">
@@ -328,6 +337,10 @@
           <% } %>
         </div>
       <% }) %>
+      <div class="empty-state assignment-board-empty" data-personal-empty hidden>
+        <h3>No assignments in this view</h3>
+        <p>Switch filter to view current or historical onboarding tasks.</p>
+      </div>
     <% } %>
   </div>
 
@@ -461,6 +474,42 @@
         alert(result.error || 'Failed to upload file');
       }
     }
+
+    function filterPersonalAssignments(scope = 'current') {
+      const chips = Array.from(document.querySelectorAll('[data-personal-status-filter]'));
+      const cards = Array.from(document.querySelectorAll('[data-personal-assignment]'));
+      const empty = document.querySelector('[data-personal-empty]');
+      if (!cards.length || !chips.length) return;
+
+      chips.forEach(chip => {
+        const isActive = chip.dataset.personalStatusFilter === scope;
+        chip.classList.toggle('active', isActive);
+        chip.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      let visible = 0;
+      cards.forEach(card => {
+        const status = String(card.dataset.personalStatus || '').toLowerCase();
+        const isCurrent = status === 'pending' || status === 'in_progress';
+        const isHistory = status === 'completed' || status === 'cancelled';
+        const show = scope === 'all'
+          ? true
+          : (scope === 'history' ? isHistory : isCurrent);
+
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+
+      if (empty) {
+        empty.hidden = visible !== 0;
+      }
+    }
+
+    document.querySelectorAll('[data-personal-status-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        filterPersonalAssignments(button.dataset.personalStatusFilter || 'current');
+      });
+    });
 
     const esignModal = document.getElementById('esignModal');
     const esignDocumentName = document.getElementById('esign-document-name');
@@ -1292,6 +1341,10 @@
         const saved = storageKey ? localStorage.getItem(storageKey) : null;
         selectStep(pickInitialIndex(saved), { persist: false, scroll: false });
       });
+    }
+
+    if (document.querySelector('[data-personal-status-filter]')) {
+      filterPersonalAssignments('current');
     }
 
     initOnboardingFlows();

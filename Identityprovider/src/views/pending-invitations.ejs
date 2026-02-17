@@ -55,9 +55,15 @@
                             <span class="role-badge role-<%= invite.role %>">
                               <%= invite.role %>
                             </span>
+                            <span class="role-badge role-admin" style="background: rgba(56, 189, 248, 0.16); color: #38bdf8;">
+                              <%= invite.appAccessLabel || 'All apps' %>
+                            </span>
                             <span class="status-pending">Pending</span>
                             <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %>
                             </span>
+                            <% if (invite.appAccess && invite.appAccess.mode === 'selected' && invite.appAccessAppNames && invite.appAccessAppNames.length > 0) { %>
+                              <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
+                            <% } %>
                             <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
                           </div>
                     </div>

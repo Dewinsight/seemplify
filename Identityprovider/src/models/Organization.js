@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { normalizeAppAccess } from '../utils/appAccess.js'
 
 const OrganizationSchema = new mongoose.Schema({
   name: {
@@ -27,6 +28,17 @@ const OrganizationSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
       default: 'recruiter'
+    },
+    appAccess: {
+      mode: {
+        type: String,
+        enum: ['all', 'selected'],
+        default: 'all'
+      },
+      appIds: {
+        type: [String],
+        default: []
+      }
     },
     joinedAt: {
       type: Date,
@@ -148,7 +160,9 @@ OrganizationSchema.methods.getMemberRole = function(accountId) {
 }
 
 // Add member to organization
-OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null) {
+OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null) {
+  const normalizedAppAccess = normalizeAppAccess(appAccess)
+
   // Check if already a member
   const existing = this.members.find(
     m => m.account.toString() === accountId.toString()
@@ -161,6 +175,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     // Reactivate inactive member
     existing.status = 'active'
     existing.role = role
+    existing.appAccess = normalizedAppAccess
     existing.joinedAt = new Date()
     existing.invitedBy = invitedBy
     await this.save()
@@ -174,6 +189,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
           organizations: {
             organization: this._id,
             role: role,
+            appAccess: normalizedAppAccess,
             joinedAt: new Date(),
             isActive: true
           }
@@ -187,6 +203,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
   this.members.push({
     account: accountId,
     role: role,
+    appAccess: normalizedAppAccess,
     joinedAt: new Date(),
     invitedBy: invitedBy,
     status: 'active'
@@ -203,6 +220,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
         organizations: {
           organization: this._id,
           role: role,
+          appAccess: normalizedAppAccess,
           joinedAt: new Date(),
           isActive: true
         }

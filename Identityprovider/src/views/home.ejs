@@ -371,6 +371,10 @@
   <%- include('partials/nav', { activePage: 'home' }) %>
 
   <div class="container hub-content">
+    <% if (accessError) { %>
+      <div class="alert alert-error"><%= accessError %></div>
+    <% } %>
+
     <% if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
         <div>

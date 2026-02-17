@@ -3,6 +3,12 @@ import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Account } from '../models/Account.js'
 import { emailService } from '../services/emailService.js'
+import { getHubApps } from '../config/hubApps.js'
+import {
+  APP_ACCESS_MODE_SELECTED,
+  buildValidAppIdSet,
+  normalizeAppAccess
+} from '../utils/appAccess.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -11,6 +17,50 @@ import {
 } from '../middleware/permissions.js'
 
 const router = express.Router()
+
+function getHubAppMetadata() {
+  const apps = getHubApps().map(app => ({
+    appId: app.appId,
+    name: app.name
+  }))
+
+  return {
+    apps,
+    appIdSet: buildValidAppIdSet(apps),
+    appNameById: new Map(apps.map(app => [app.appId, app.name]))
+  }
+}
+
+function parseInvitationAppAccess(reqBody = {}, validAppIds = null) {
+  const appAccessPayload = reqBody.appAccess && typeof reqBody.appAccess === 'object'
+    ? reqBody.appAccess
+    : {
+      mode: reqBody.appAccessMode,
+      appIds: reqBody.selectedAppIds
+    }
+
+  const normalized = normalizeAppAccess(appAccessPayload, validAppIds)
+
+  if (normalized.mode === APP_ACCESS_MODE_SELECTED && normalized.appIds.length === 0) {
+    throw new Error('Select at least one app when using selected apps access')
+  }
+
+  return normalized
+}
+
+function formatAppAccessHtml(appAccess, appNameById = new Map()) {
+  const normalized = normalizeAppAccess(appAccess)
+  if (normalized.mode !== APP_ACCESS_MODE_SELECTED) {
+    return '<p><strong>App Access:</strong> All apps available to your organization plan</p>'
+  }
+
+  const appNames = normalized.appIds.map(appId => appNameById.get(appId) || appId)
+  if (appNames.length === 0) {
+    return '<p><strong>App Access:</strong> Selected apps only</p>'
+  }
+
+  return `<p><strong>App Access:</strong> ${appNames.join(', ')}</p>`
+}
 
 // IMPORTANT: Order matters! More specific routes must come before generic ones
 // Routes for /api/invitations/* (invitation-specific operations)
@@ -45,6 +95,7 @@ router.get('/pending',
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        appAccess: normalizeAppAccess(inv.appAccess),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })))
@@ -96,6 +147,7 @@ router.post('/:invitationId/resend',
 
       // Resend email
       const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
+      const { appNameById } = getHubAppMetadata()
 
       try {
         await emailService.sendEmail({
@@ -105,6 +157,7 @@ router.post('/:invitationId/resend',
             <h2>Reminder: You've been invited to join ${invitation.organization.name}</h2>
             <p>This is a reminder that you have a pending invitation to join this organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${invitation.role}</p>
+            ${formatAppAccessHtml(invitation.appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
             <p style="color: #666; font-size: 14px; margin-top: 16px;">
@@ -198,7 +251,12 @@ router.post('/accept/:invitationId',
 
       // Add user to organization
       const organization = await Organization.findById(invitation.organization._id)
-      await organization.addMember(req.user._id, invitation.role, invitation.invitedBy)
+      await organization.addMember(
+        req.user._id,
+        invitation.role,
+        invitation.invitedBy,
+        normalizeAppAccess(invitation.appAccess)
+      )
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -258,7 +316,12 @@ router.post('/:token/accept',
 
       // Add user to organization
       const organization = await Organization.findById(matchedInvite.organization._id)
-      await organization.addMember(req.user._id, matchedInvite.role, matchedInvite.invitedBy)
+      await organization.addMember(
+        req.user._id,
+        matchedInvite.role,
+        matchedInvite.invitedBy,
+        normalizeAppAccess(matchedInvite.appAccess)
+      )
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -391,6 +454,7 @@ router.get('/:orgId/invitations',
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        appAccess: normalizeAppAccess(inv.appAccess),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })))
@@ -421,6 +485,7 @@ router.post('/:orgId/invitations',
       })
 
       const { email, role = 'recruiter' } = req.body
+      const { appIdSet, appNameById } = getHubAppMetadata()
 
       if (!email || !email.includes('@')) {
         return res.status(400).json({ error: 'Valid email is required' })
@@ -432,6 +497,13 @@ router.post('/:orgId/invitations',
       const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      }
+
+      let appAccess
+      try {
+        appAccess = parseInvitationAppAccess(req.body, appIdSet)
+      } catch (validationError) {
+        return res.status(400).json({ error: validationError.message })
       }
 
       // Check if user is already a member
@@ -461,6 +533,7 @@ router.post('/:orgId/invitations',
         organization: req.params.orgId,
         email: normalizedEmail,
         role,
+        appAccess,
         tokenHash,
         invitedBy: req.user._id,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -477,6 +550,7 @@ router.post('/:orgId/invitations',
             <h2>You've been invited to join ${req.organization.name}</h2>
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
+            ${formatAppAccessHtml(appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
             <p style="color: #666; font-size: 14px; margin-top: 16px;">
@@ -499,6 +573,7 @@ router.post('/:orgId/invitations',
         id: invitation._id,
         email: invitation.email,
         role: invitation.role,
+        appAccess: normalizeAppAccess(invitation.appAccess),
         expiresAt: invitation.expiresAt,
         message: 'Invitation sent successfully'
       })

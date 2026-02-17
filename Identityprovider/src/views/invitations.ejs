@@ -7,6 +7,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
+
+      .access-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(56, 189, 248, 0.16);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.28);
+      }
+
+      .app-access-mode-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .app-access-mode-option {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        cursor: pointer;
+      }
+
+      .app-access-mode-option strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 4px;
+      }
+
+      .app-access-mode-option span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .app-access-selector {
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .app-access-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .app-access-toolbar .btn {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .app-access-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+      }
+
+      .app-access-item {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: rgba(15, 23, 42, 0.45);
+      }
+
+      .app-access-item .app-name {
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      .app-access-item .app-desc {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .app-access-note {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
   </style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
@@ -55,8 +148,14 @@
                       <span class="role-badge role-<%= invite.role %>">
                         <%= invite.role %>
                       </span>
+                      <span class="access-badge">
+                        <%= invite.appAccessLabel || 'All apps' %>
+                      </span>
                       <span class="status-pending">Pending</span>
                       <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
+                      <% if (invite.appAccess && invite.appAccess.mode === 'selected' && invite.appAccessAppNames && invite.appAccessAppNames.length > 0) { %>
+                        <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
+                      <% } %>
                       <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
                     </div>
                   </div>
@@ -104,9 +203,59 @@
             <option value="staff">Staff</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Initial App Access</label>
+          <div class="app-access-mode-list">
+            <label class="app-access-mode-option">
+              <input type="radio" name="appAccessMode" value="all" checked>
+              <div>
+                <strong>All apps</strong>
+                <span>Member gets all apps available to this organization plan.</span>
+              </div>
+            </label>
+            <label class="app-access-mode-option">
+              <input type="radio" name="appAccessMode" value="selected">
+              <div>
+                <strong>Selected apps only</strong>
+                <span>Choose a focused starter set now, and expand later if needed.</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="appAccessSelector" class="app-access-selector" style="display: none;">
+            <div class="app-access-toolbar">
+              <span style="font-size: 12px; color: var(--muted);">Select at least one app</span>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllApps()">Select all</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelectedApps()">Clear</button>
+              </div>
+            </div>
+
+            <% if (availableApps && availableApps.length > 0) { %>
+              <div class="app-access-grid">
+                <% availableApps.forEach(app => { %>
+                  <label class="app-access-item">
+                    <input type="checkbox" class="app-access-checkbox" value="<%= app.appId %>">
+                    <span>
+                      <span class="app-name"><%= app.name %></span>
+                      <% if (app.description) { %>
+                        <span class="app-desc"><%= app.description %></span>
+                      <% } %>
+                    </span>
+                  </label>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div style="font-size: 13px; color: var(--muted);">
+                No apps are currently configured.
+              </div>
+            <% } %>
+            <div class="app-access-note">This controls initial hub access for this member.</div>
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideInviteModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Send Invitation</button>
+          <button type="submit" class="btn btn-primary" id="sendInviteBtn">Send Invitation</button>
         </div>
       </form>
     </div>
@@ -114,26 +263,76 @@
 
   <script>
     const orgId = '<%= organization._id %>';
+    const availableApps = <%- JSON.stringify(availableApps || []) %>;
 
     function showInviteModal() {
       document.getElementById('inviteModal').classList.add('active');
+      updateAppAccessSelectorVisibility();
     }
 
     function hideInviteModal() {
       document.getElementById('inviteModal').classList.remove('active');
       document.getElementById('inviteForm').reset();
+      clearSelectedApps();
+      updateAppAccessSelectorVisibility();
+    }
+
+    function updateAppAccessSelectorVisibility() {
+      const mode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
+      const selector = document.getElementById('appAccessSelector');
+      selector.style.display = mode === 'selected' ? 'block' : 'none';
+    }
+
+    function getSelectedAppIds() {
+      return Array.from(document.querySelectorAll('.app-access-checkbox:checked')).map(cb => cb.value);
+    }
+
+    function selectAllApps() {
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => {
+        cb.checked = true;
+      });
+    }
+
+    function clearSelectedApps() {
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => {
+        cb.checked = false;
+      });
     }
 
     document.getElementById('inviteForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('email').value;
       const role = document.getElementById('role').value;
+      const appAccessMode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
+      const selectedAppIds = appAccessMode === 'selected' ? getSelectedAppIds() : [];
+      const sendInviteBtn = document.getElementById('sendInviteBtn');
+
+      if (appAccessMode === 'selected') {
+        if (availableApps.length === 0) {
+          alert('No apps are configured, so selected access cannot be used yet.');
+          return;
+        }
+        if (selectedAppIds.length === 0) {
+          alert('Select at least one app or switch to "All apps".');
+          return;
+        }
+      }
 
       try {
+        sendInviteBtn.disabled = true;
+        sendInviteBtn.textContent = 'Sending...';
+
         const response = await fetch(`/api/organizations/${orgId}/invitations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, role })
+          body: JSON.stringify({
+            email,
+            role,
+            appAccess: {
+              mode: appAccessMode,
+              appIds: selectedAppIds
+            }
+          })
         });
 
         if (response.ok) {
@@ -141,9 +340,13 @@
         } else {
           const data = await response.json();
           alert(data.error || 'Failed to send invitation');
+          sendInviteBtn.disabled = false;
+          sendInviteBtn.textContent = 'Send Invitation';
         }
       } catch (error) {
         alert('Failed to send invitation');
+        sendInviteBtn.disabled = false;
+        sendInviteBtn.textContent = 'Send Invitation';
       }
     });
 
@@ -191,6 +394,12 @@
         hideInviteModal();
       }
     });
+
+    document.querySelectorAll('input[name="appAccessMode"]').forEach(input => {
+      input.addEventListener('change', updateAppAccessSelectorVisibility);
+    });
+
+    updateAppAccessSelectorVisibility();
   </script>
 </body>
 
