@@ -15,6 +15,10 @@ const PORT = process.env.PORT || 80;
 // Static files for uploaded logos
 const uploadsPath = path.join(__dirname, 'uploads');
 app.use('/api/uploads', express.static(uploadsPath));
+const organizationController = require('./controllers/organizationController');
+
+// Fallback logo serving from MongoDB when filesystem uploads are unavailable after redeploy.
+app.get('/api/uploads/logos/:filename', organizationController.serveLogo);
 
 // Middleware
 app.use(cors({

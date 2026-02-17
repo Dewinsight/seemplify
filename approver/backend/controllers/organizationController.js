@@ -1,6 +1,34 @@
 const Organization = require('../models/Organization');
+const LogoAsset = require('../models/LogoAsset');
 const path = require('path');
 const fs = require('fs');
+
+const resolveFilename = (logoPath) => {
+    if (!logoPath) return null;
+    const filename = path.basename(String(logoPath));
+    return filename && filename !== '.' ? filename : null;
+};
+
+const resolveDiskLogoPath = (filename) => path.join(__dirname, '..', 'uploads', 'logos', filename);
+
+const deleteDiskLogoIfExists = (logoPath) => {
+    if (!logoPath) return;
+    const filename = resolveFilename(logoPath);
+    if (!filename) return;
+    const diskPath = resolveDiskLogoPath(filename);
+    if (fs.existsSync(diskPath)) {
+        fs.unlinkSync(diskPath);
+    }
+};
+
+const loadUploadedLogoBuffer = (file) => {
+    if (!file) return null;
+    if (file.buffer && Buffer.isBuffer(file.buffer)) return file.buffer;
+    if (file.path && fs.existsSync(file.path)) {
+        return fs.readFileSync(file.path);
+    }
+    return null;
+};
 
 // Update organization (name, logo settings) - Admin only
 exports.updateOrganization = async (req, res) => {
@@ -56,18 +84,38 @@ exports.uploadLogo = async (req, res) => {
 
         const variant = req.query.variant; // 'dark' | 'light'
         const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
+        const newFilename = req.file.filename;
+        const newBuffer = loadUploadedLogoBuffer(req.file);
 
-        // Remove old file if exists
-        const oldPath = org[field] ? path.join(__dirname, '..', org[field]) : null;
-        if (oldPath && fs.existsSync(oldPath)) {
-            fs.unlinkSync(oldPath);
+        if (!newFilename || !newBuffer) {
+            return res.status(500).json({ error: 'Failed to process uploaded logo file' });
         }
 
-        const filename = req.file.filename;
-        org[field] = `uploads/logos/${filename}`;
+        // Remove old file if exists
+        const previousLogoPath = org[field];
+        const previousFilename = resolveFilename(previousLogoPath);
+        if (previousFilename && previousFilename !== newFilename) {
+            await LogoAsset.deleteOne({ filename: previousFilename, organization: org._id });
+            deleteDiskLogoIfExists(previousLogoPath);
+        }
+
+        await LogoAsset.findOneAndUpdate(
+            { filename: newFilename },
+            {
+                $set: {
+                    organization: org._id,
+                    mimeType: req.file.mimetype || 'application/octet-stream',
+                    size: Number(req.file.size || newBuffer.length || 0),
+                    data: newBuffer
+                }
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
+        org[field] = `uploads/logos/${newFilename}`;
         await org.save();
 
-        const logoUrl = `/api/uploads/logos/${filename}`;
+        const logoUrl = `/api/uploads/logos/${newFilename}`;
         res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, logoUrl, field });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -87,10 +135,11 @@ exports.removeLogo = async (req, res) => {
         const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
 
         if (org[field]) {
-            const oldPath = path.join(__dirname, '..', org[field]);
-            if (fs.existsSync(oldPath)) {
-                fs.unlinkSync(oldPath);
+            const oldFilename = resolveFilename(org[field]);
+            if (oldFilename) {
+                await LogoAsset.deleteOne({ filename: oldFilename, organization: org._id });
             }
+            deleteDiskLogoIfExists(org[field]);
         }
 
         org[field] = undefined;
@@ -99,5 +148,31 @@ exports.removeLogo = async (req, res) => {
         res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, [field]: null, message: 'Logo removed' });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+// Serve logo from disk first, then fallback to MongoDB-backed logo asset.
+exports.serveLogo = async (req, res) => {
+    try {
+        const filename = path.basename(String(req.params.filename || ''));
+        if (!filename || filename === '.' || filename === '..') {
+            return res.status(404).json({ error: 'Logo not found' });
+        }
+
+        const diskPath = resolveDiskLogoPath(filename);
+        if (fs.existsSync(diskPath)) {
+            return res.sendFile(diskPath);
+        }
+
+        const logoAsset = await LogoAsset.findOne({ filename }).select('mimeType data');
+        if (!logoAsset || !logoAsset.data) {
+            return res.status(404).json({ error: 'Logo not found' });
+        }
+
+        res.setHeader('Content-Type', logoAsset.mimeType || 'application/octet-stream');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(logoAsset.data);
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
     }
 };
