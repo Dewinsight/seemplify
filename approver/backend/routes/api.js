@@ -62,7 +62,9 @@ router.put('/scoring-policy', verifyToken, injectOrgContext, verifyRole(['scorin
 // --- Rules ---
 router.post('/rules', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.createRule);
 router.get('/rules', verifyToken, injectOrgContext, mainController.getRules);
+router.post('/rules/embedding/retry-all', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.retryAllRuleEmbeddings);
 router.patch('/rules/system/bulk', verifyToken, injectOrgContext, verifyRole(['rules.manage.system']), mainController.bulkUpdateSystemRules);
+router.post('/rules/:id/embedding/retry', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.retryRuleEmbedding);
 router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['rules.manage']), mainController.updateRule);
 
 // --- Projects ---

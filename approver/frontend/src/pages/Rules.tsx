@@ -16,6 +16,13 @@ interface Rule {
     isHidden?: boolean;
     department?: { _id: string; name: string } | null;
     effects?: RuleEffect[];
+    embeddingStatus?: {
+        state?: 'pending' | 'indexed' | 'failed' | 'disabled';
+        indexedAt?: string | null;
+        lastAttemptAt?: string | null;
+        source?: string;
+        error?: string;
+    };
 }
 
 type RuleEffectType = 'SET_TIER' | 'ROUTE_TO_STAGE' | 'SET_FLAG';
@@ -74,6 +81,21 @@ const formatEffect = (effect: RuleEffect): string => {
     return `Internal flag: ${effect.params?.key || 'unknown'}`;
 };
 
+const getEmbeddingBadge = (rule: Rule) => {
+    const state = rule.embeddingStatus?.state || 'pending';
+    if (state === 'indexed') return { label: 'Embedded', color: '#4caf50', border: 'rgba(76,175,80,0.45)' };
+    if (state === 'failed') return { label: 'Embed Failed', color: '#f44336', border: 'rgba(244,67,54,0.45)' };
+    if (state === 'disabled') return { label: 'Embedding Off', color: '#9ca3af', border: 'rgba(156,163,175,0.45)' };
+    return { label: 'Embedding Pending', color: '#f59e0b', border: 'rgba(245,158,11,0.45)' };
+};
+
+const formatDateTime = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleString();
+};
+
 const Rules: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -89,6 +111,8 @@ const Rules: React.FC = () => {
     const [scopeFilter, setScopeFilter] = useState<'all' | 'system' | 'custom'>('all');
     const [loadingRules, setLoadingRules] = useState(false);
     const [bulkLoading, setBulkLoading] = useState(false);
+    const [retryAllLoading, setRetryAllLoading] = useState(false);
+    const [retryingRuleIds, setRetryingRuleIds] = useState<Record<string, boolean>>({});
 
     const [form, setForm] = useState<RuleFormState>(EMPTY_FORM);
     const [effectDraft, setEffectDraft] = useState(EMPTY_EFFECT_DRAFT);
@@ -234,6 +258,42 @@ const Rules: React.FC = () => {
             alert('Failed to update system rules.');
         } finally {
             setBulkLoading(false);
+        }
+    };
+
+    const handleRetryRuleEmbedding = async (ruleId: string) => {
+        if (!canEdit) return;
+        setRetryingRuleIds((prev) => ({ ...prev, [ruleId]: true }));
+        try {
+            await api.post(`/rules/${ruleId}/embedding/retry`);
+            await fetchRules();
+        } catch (error) {
+            console.error('Error retrying rule embedding:', error);
+            alert('Failed to retry embedding for this rule.');
+        } finally {
+            setRetryingRuleIds((prev) => {
+                const next = { ...prev };
+                delete next[ruleId];
+                return next;
+            });
+        }
+    };
+
+    const handleRetryAllEmbeddings = async () => {
+        if (!canEdit) return;
+        if (!window.confirm('Retry embeddings for all rules in this organization?')) return;
+
+        setRetryAllLoading(true);
+        try {
+            const res = await api.post('/rules/embedding/retry-all');
+            const data = res.data || {};
+            alert(`Embedding retry complete. Indexed: ${data.indexed || 0}, Failed: ${data.failed || 0}, Disabled: ${data.disabled || 0}.`);
+            await fetchRules();
+        } catch (error) {
+            console.error('Error retrying all rule embeddings:', error);
+            alert('Failed to retry embeddings for all rules.');
+        } finally {
+            setRetryAllLoading(false);
         }
     };
 
@@ -493,6 +553,16 @@ const Rules: React.FC = () => {
                                 </button>
                             </>
                         )}
+
+                        {canEdit && (
+                            <button
+                                onClick={handleRetryAllEmbeddings}
+                                disabled={retryAllLoading}
+                                style={{ border: '1px solid rgba(59,130,246,0.45)', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', borderRadius: '8px', padding: '0.55rem 0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                                {retryAllLoading ? 'Retrying Embeddings...' : 'Retry Embeddings (All Rules)'}
+                            </button>
+                        )}
                     </div>
 
                     {loadingRules ? (
@@ -503,7 +573,11 @@ const Rules: React.FC = () => {
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-                            {visibleRules.map((rule) => (
+                            {visibleRules.map((rule) => {
+                                const embeddingBadge = getEmbeddingBadge(rule);
+                                const indexedAt = formatDateTime(rule.embeddingStatus?.indexedAt);
+                                const lastAttemptAt = formatDateTime(rule.embeddingStatus?.lastAttemptAt);
+                                return (
                                 <div
                                     key={rule._id}
                                     className="glass-card"
@@ -521,11 +595,20 @@ const Rules: React.FC = () => {
                                             {rule.department?.name ? <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>{rule.department.name}</span> : <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Global</span>}
                                             {!rule.isActive && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Off</span>}
                                             {rule.isHidden && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Hidden</span>}
+                                            <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: `1px solid ${embeddingBadge.border}`, color: embeddingBadge.color }}>
+                                                {embeddingBadge.label}
+                                            </span>
                                         </div>
                                     </div>
 
                                     <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.55rem' }}>
                                         {rule.category || 'Other'} | Weight {rule.weight}
+                                    </div>
+
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.55rem', lineHeight: 1.45 }}>
+                                        {indexedAt ? `Indexed: ${indexedAt}` : (lastAttemptAt ? `Last attempt: ${lastAttemptAt}` : 'Never embedded')}
+                                        {rule.embeddingStatus?.source ? ` | Source: ${rule.embeddingStatus.source}` : ''}
+                                        {rule.embeddingStatus?.state === 'failed' && rule.embeddingStatus?.error ? ` | Error: ${rule.embeddingStatus.error}` : ''}
                                     </div>
 
                                     <p style={{ marginTop: 0, color: 'var(--text-secondary)', lineHeight: 1.55 }}>{rule.criteria}</p>
@@ -542,6 +625,13 @@ const Rules: React.FC = () => {
 
                                     {canEdit && (
                                         <div style={{ display: 'flex', gap: '0.45rem', marginTop: '0.9rem', flexWrap: 'wrap' }}>
+                                            <button
+                                                onClick={() => handleRetryRuleEmbedding(rule._id)}
+                                                disabled={Boolean(retryingRuleIds[rule._id])}
+                                                style={{ border: '1px solid rgba(59,130,246,0.45)', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', borderRadius: '6px', padding: '0.35rem 0.55rem', cursor: 'pointer' }}
+                                            >
+                                                {retryingRuleIds[rule._id] ? 'Retrying...' : 'Retry Embedding'}
+                                            </button>
                                             {rule.isSystem ? (
                                                 <>
                                                     <button
@@ -568,7 +658,8 @@ const Rules: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

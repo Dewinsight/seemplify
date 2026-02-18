@@ -13,6 +13,9 @@
         "sanitize:rules": "node scripts/sanitizeRules.js",
         "refine:rules:ai": "node scripts/refineRulesWithAI.js --scope=system --dry-run",
         "test:smoke:agentic": "node scripts/smokeTestAgenticAnalysis.js",
+        "test:weaviate": "node scripts/testWeaviate.js",
+        "embeddings:backfill": "node scripts/indexWeaviateEmbeddings.js",
+        "test:ab:weaviate": "node scripts/abTestWeaviateGrounding.js",
         "migrate:logo-assets": "node scripts/backfillLogoAssets.js",
         "migrate:logo-assets:from-api": "node scripts/backfillLogoAssetsFromApi.js"
     },

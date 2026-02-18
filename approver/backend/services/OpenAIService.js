@@ -4,6 +4,84 @@ const fs = require('fs');
 
 const RULES_JSON_PATH = path.join(__dirname, '..', '..', 'mosaic_approver_rules_v2.json');
 
+function readEnvAny(keys, fallback = '') {
+    for (const key of keys) {
+        const value = process.env[key];
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim();
+        }
+    }
+    return fallback;
+}
+
+function toNumberOr(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveOpenAIConfig() {
+    const profile = readEnvAny(['AZURE_OPENAI_PROFILE', 'OPENAI_PROFILE'], 'default').toLowerCase();
+    const preferKimi = profile.includes('kimi');
+
+    const apiKeyKeys = preferKimi
+        ? ['Azure_openai_kimi2.5_key', 'AZURE_OPENAI_API_KEY']
+        : ['AZURE_OPENAI_API_KEY', 'Azure_openai_kimi2.5_key'];
+    const endpointKeys = preferKimi
+        ? ['Azure_openai_kimi2.5_endpoint', 'AZURE_OPENAI_ENDPOINT']
+        : ['AZURE_OPENAI_ENDPOINT', 'Azure_openai_kimi2.5_endpoint'];
+    const deploymentKeys = preferKimi
+        ? ['Azure_openai_kimi2.5_deployment_name', 'AZURE_OPENAI_DEPLOYMENT_NAME']
+        : ['AZURE_OPENAI_DEPLOYMENT_NAME', 'Azure_openai_kimi2.5_deployment_name'];
+    const versionKeys = preferKimi
+        ? ['Azure_openai_kimi2.5_version', 'AZURE_OPENAI_API_VERSION']
+        : ['AZURE_OPENAI_API_VERSION', 'Azure_openai_kimi2.5_version'];
+    const targetUriKeys = preferKimi
+        ? ['Azure_openai_kimi2.5_target_uri', 'AZURE_OPENAI_TARGET_URI']
+        : ['AZURE_OPENAI_TARGET_URI', 'Azure_openai_kimi2.5_target_uri'];
+
+    const apiKey = readEnvAny(apiKeyKeys);
+    let endpoint = readEnvAny(endpointKeys);
+    let deployment = readEnvAny(deploymentKeys);
+    let apiVersion = readEnvAny(versionKeys);
+    const targetUri = readEnvAny(targetUriKeys);
+
+    if (targetUri) {
+        try {
+            const parsed = new URL(targetUri);
+            if (!endpoint) endpoint = parsed.origin;
+            if (!apiVersion) apiVersion = parsed.searchParams.get('api-version') || apiVersion;
+
+            const deploymentMatch = parsed.pathname.match(/\/openai\/deployments\/([^/]+)/i);
+            if (!deployment && deploymentMatch?.[1]) {
+                deployment = decodeURIComponent(deploymentMatch[1]);
+            }
+        } catch (_) {
+            // Ignore invalid target URI and continue with explicit env vars.
+        }
+    }
+
+    const cleanEndpoint = endpoint.replace(/\/+$/, '');
+    const baseURL = cleanEndpoint && deployment
+        ? `${cleanEndpoint}/openai/deployments/${deployment}`
+        : '';
+
+    const temperatures = {
+        rules: toNumberOr(readEnvAny(['AI_TEMPERATURE_RULE_EVAL']), 0),
+        priority: toNumberOr(readEnvAny(['AI_TEMPERATURE_PRIORITY']), 0),
+        summary: toNumberOr(readEnvAny(['AI_TEMPERATURE_SUMMARY']), 0)
+    };
+
+    return {
+        profile,
+        apiKey,
+        endpoint: cleanEndpoint,
+        deployment,
+        apiVersion,
+        baseURL,
+        temperatures
+    };
+}
+
 function loadScoringRubric() {
     try {
         if (!fs.existsSync(RULES_JSON_PATH)) return null;
@@ -116,11 +194,17 @@ function buildRulePrompts(rules) {
 
 class OpenAIService {
     constructor() {
+        this.config = resolveOpenAIConfig();
+        if (!this.config.apiKey || !this.config.baseURL || !this.config.apiVersion || !this.config.deployment) {
+            throw new Error(
+                'Azure OpenAI config missing. Set AZURE_OPENAI_* vars or Azure_openai_kimi2.5_* vars.'
+            );
+        }
         this.client = new OpenAI({
-            apiKey: process.env.AZURE_OPENAI_API_KEY,
-            baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT_NAME}`,
-            defaultQuery: { 'api-version': process.env.AZURE_OPENAI_API_VERSION },
-            defaultHeaders: { 'api-key': process.env.AZURE_OPENAI_API_KEY }
+            apiKey: this.config.apiKey,
+            baseURL: this.config.baseURL,
+            defaultQuery: { 'api-version': this.config.apiVersion },
+            defaultHeaders: { 'api-key': this.config.apiKey }
         });
     }
 
@@ -129,12 +213,37 @@ class OpenAIService {
             temperature = 0,
             parseJson = true
         } = options;
-
-        const completion = await this.client.chat.completions.create({
+        const requestPayload = {
             messages,
-            model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+            model: this.config.deployment,
             temperature
-        });
+        };
+
+        // Prefer strict JSON mode for structured responses when supported.
+        if (parseJson) {
+            requestPayload.response_format = { type: 'json_object' };
+        }
+
+        let completion;
+        try {
+            completion = await this.client.chat.completions.create(requestPayload);
+        } catch (error) {
+            const message = String(error?.message || '').toLowerCase();
+            const unsupportedJsonMode =
+                parseJson &&
+                (message.includes('response_format') ||
+                    message.includes('json_object') ||
+                    message.includes('unsupported'));
+
+            if (!unsupportedJsonMode) throw error;
+
+            const fallbackPayload = {
+                messages,
+                model: this.config.deployment,
+                temperature
+            };
+            completion = await this.client.chat.completions.create(fallbackPayload);
+        }
 
         const content = completion?.choices?.[0]?.message?.content || '';
         return parseJson ? parseJsonPayload(content) : content;
@@ -269,20 +378,24 @@ class OpenAIService {
                     content: 'You evaluate initiative scoring dimensions. Return valid JSON only.'
                 },
                 { role: 'user', content: prompt }
-            ]);
+            ], { temperature: this.config.temperatures.priority });
         } catch (error) {
             console.error('OpenAI Priority-Only Analysis Error:', error);
             throw new Error('Failed to analyze priority scoring');
         }
     }
 
-    async evaluateSingleRule(projectContext, rule) {
+    async evaluateSingleRule(projectContext, rule, options = {}) {
         try {
             const category = inferCategory(rule);
             const ruleId = (rule._id || '').toString();
             const criteria = rule.criteria || rule.description || '';
             const mandatoryTag = rule.isMandatory ? '[MANDATORY]' : '[OPTIONAL]';
             const triggerStyle = isTriggerCategory(category);
+            const retrievedContext = String(options?.retrievedContext || '').trim();
+            const retrievedSection = retrievedContext
+                ? `\n            === RETRIEVED SUPPORTING CONTEXT (VECTOR SEARCH) ===\n            ${retrievedContext}\n`
+                : '';
             const categoryDecisionGuide = triggerStyle
                 ? 'For this category, treat the rule as a trigger condition: Pass when condition is NOT present; Fail only when condition IS present.'
                 : 'For this category, treat the rule as a requirement: Pass when requirement is satisfied; Fail when not satisfied.';
@@ -300,10 +413,12 @@ class OpenAIService {
 
             === INITIATIVE CONTEXT ===
             ${projectContext}
+            ${retrievedSection}
 
             === DECISION INSTRUCTIONS ===
             - Return exactly one decision for this rule.
             - ${categoryDecisionGuide}
+            - Use retrieved supporting context when present. If retrieved context conflicts with full context, prefer explicit facts from the full context.
             - If uncertain, still return a best-judgment Pass or Fail with concise reason.
             - Ensure status is logically consistent with the reason.
             - "conditionPresent" must be:
@@ -328,7 +443,7 @@ class OpenAIService {
                     content: 'You evaluate one policy rule at a time. Return valid JSON only.'
                 },
                 { role: 'user', content: prompt }
-            ]);
+            ], { temperature: this.config.temperatures.rules });
         } catch (error) {
             console.error('OpenAI Single-Rule Evaluation Error:', error);
             throw new Error('Failed to evaluate rule');
@@ -362,7 +477,7 @@ class OpenAIService {
                     content: 'You summarize initiative analysis clearly and concisely.'
                 },
                 { role: 'user', content: prompt }
-            ], { parseJson: false, temperature: 0 });
+            ], { parseJson: false, temperature: this.config.temperatures.summary });
 
             return stripCodeBlocks(content);
         } catch (error) {

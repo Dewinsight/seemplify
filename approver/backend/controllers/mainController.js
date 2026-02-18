@@ -5,6 +5,7 @@ const Role = require('../models/Role');
 const Department = require('../models/Department');
 const { randomUUID } = require('crypto');
 const openAIService = require('../services/OpenAIService');
+const weaviateVectorService = require('../services/WeaviateVectorService');
 const {
     getWorkflowPolicyForOrganization,
     ensureGovernanceConfigForOrganization
@@ -459,21 +460,62 @@ const buildUserContext = (user) => ({
 
 const RULE_EVAL_CONCURRENCY = Math.max(1, Number(process.env.RULE_EVAL_CONCURRENCY || 12));
 const RULE_EVAL_MAX_ATTEMPTS = Math.max(1, Number(process.env.RULE_EVAL_MAX_ATTEMPTS || 3));
+const RULE_GROUNDING_ENABLED_DEFAULT = process.env.USE_WEAVIATE_RULE_GROUNDING !== 'false';
+const RULE_GROUNDED_FAIL_RESCUE = process.env.RULE_GROUNDED_FAIL_RESCUE !== 'false';
 
-const evaluateRulesWithAgents = async ({ initiativeContext, rules, onProgress }) => {
+const evaluateRulesWithAgents = async ({
+    initiativeContext,
+    rules,
+    organizationId,
+    analysisRunId,
+    onProgress,
+    ruleVectorsById = {}
+}) => {
     let retryAttempts = 0;
     let hardFailures = 0;
     let completed = 0;
+    let groundingApplied = 0;
+    let groundingFailures = 0;
+    let groundingChunksFetched = 0;
+    let groundingHistoryFetched = 0;
+    let consistencyChecks = 0;
+    let overturnedFails = 0;
 
     const evaluations = await runWithConcurrency(
         rules,
         RULE_EVAL_CONCURRENCY,
         async (rule) => {
             let lastError = 'Unknown rule evaluation error';
+            let retrievedContext = '';
+            const ruleId = String(rule?._id || '');
+
+            if (weaviateVectorService.isRuleGroundingEnabled() && RULE_GROUNDING_ENABLED_DEFAULT) {
+                try {
+                    const grounding = await weaviateVectorService.buildRuleGroundingContext({
+                        organizationId,
+                        runId: analysisRunId,
+                        rule,
+                        ruleVector: ruleVectorsById[ruleId]
+                    });
+                    if (grounding?.context) {
+                        retrievedContext = grounding.context;
+                        groundingApplied += 1;
+                    }
+                    groundingChunksFetched += Number(grounding?.chunkCount || 0);
+                    groundingHistoryFetched += Number(grounding?.historyCount || 0);
+                } catch (error) {
+                    groundingFailures += 1;
+                }
+            }
 
             for (let attempt = 1; attempt <= RULE_EVAL_MAX_ATTEMPTS; attempt += 1) {
                 try {
-                    const response = await openAIService.evaluateSingleRule(initiativeContext, rule);
+                    // Primary decision is always full-context only.
+                    const response = await openAIService.evaluateSingleRule(
+                        initiativeContext,
+                        rule,
+                        { retrievedContext: '' }
+                    );
                     const triggerStyle = isTriggerRuleCategory(inferRuleCategory(rule));
                     const hasConditionPresent = typeof response?.conditionPresent === 'boolean';
                     const normalizedFromCondition = triggerStyle && hasConditionPresent
@@ -483,11 +525,44 @@ const evaluateRulesWithAgents = async ({ initiativeContext, rules, onProgress })
                     if (!status) {
                         lastError = 'Model returned invalid rule status.';
                     } else {
+                        let finalStatus = status;
+                        let finalReason = String(response?.reason || `Rule evaluated as ${status}.`).trim();
+
+                        // Grounding rescue: for non-trigger FAILs, allow vector context to rescue false negatives.
+                        if (
+                            RULE_GROUNDED_FAIL_RESCUE &&
+                            retrievedContext &&
+                            !triggerStyle &&
+                            finalStatus === 'Fail'
+                        ) {
+                            try {
+                                consistencyChecks += 1;
+                                const groundedOpinion = await openAIService.evaluateSingleRule(
+                                    initiativeContext,
+                                    rule,
+                                    { retrievedContext }
+                                );
+                                const groundedHasConditionPresent = typeof groundedOpinion?.conditionPresent === 'boolean';
+                                const groundedNormalizedFromCondition = triggerStyle && groundedHasConditionPresent
+                                    ? (groundedOpinion.conditionPresent ? 'Fail' : 'Pass')
+                                    : null;
+                                const groundedStatus = groundedNormalizedFromCondition || normalizeRuleStatus(groundedOpinion?.status);
+
+                                if (groundedStatus === 'Pass') {
+                                    finalStatus = 'Pass';
+                                    finalReason = `Resolved by vector-grounded evidence: ${String(groundedOpinion?.reason || 'Additional context indicates requirement is satisfied.').trim()}`;
+                                    overturnedFails += 1;
+                                }
+                            } catch (_) {
+                                // keep primary full-context result if rescue call fails
+                            }
+                        }
+
                         return {
                             ruleId: String(rule._id || ''),
                             ruleName: rule.name || '',
-                            status,
-                            reason: String(response?.reason || `Rule evaluated as ${status}.`).trim(),
+                            status: finalStatus,
+                            reason: finalReason,
                             attempts: attempt
                         };
                     }
@@ -530,7 +605,14 @@ const evaluateRulesWithAgents = async ({ initiativeContext, rules, onProgress })
             retryAttempts,
             hardFailures,
             concurrency: RULE_EVAL_CONCURRENCY,
-            maxAttempts: RULE_EVAL_MAX_ATTEMPTS
+            maxAttempts: RULE_EVAL_MAX_ATTEMPTS,
+            groundingEnabled: weaviateVectorService.isRuleGroundingEnabled() && RULE_GROUNDING_ENABLED_DEFAULT,
+            groundingApplied,
+            groundingFailures,
+            groundingChunksFetched,
+            groundingHistoryFetched,
+            consistencyChecks,
+            overturnedFails
         }
     };
 };
@@ -576,6 +658,62 @@ const analyzeProjectPipeline = async ({
         formData
     });
 
+    const analysisRunId = randomUUID();
+    let vectorGrounding = {
+        enabled: false,
+        analysisRunId,
+        indexedRules: 0,
+        indexedChunks: 0,
+        embeddingSource: null,
+        error: null
+    };
+    let ruleVectorsById = {};
+
+    if (weaviateVectorService.isEnabled()) {
+        onProgress?.({
+            phase: 'grounding',
+            message: 'Building vector index for initiative and rules...'
+        });
+
+        try {
+            const ruleIndexResult = await weaviateVectorService.indexRules({
+                organizationId: organization,
+                rules
+            });
+
+            const initiativeIndexResult = await weaviateVectorService.indexInitiativeContext({
+                organizationId: organization,
+                runId: analysisRunId,
+                initiativeContext
+            });
+
+            ruleVectorsById = ruleIndexResult?.vectorsByRuleId || {};
+            vectorGrounding = {
+                enabled: true,
+                analysisRunId,
+                indexedRules: Number(ruleIndexResult?.indexedRules || 0),
+                indexedChunks: Number(initiativeIndexResult?.indexedChunks || 0),
+                embeddingSource: initiativeIndexResult?.embeddingSource || ruleIndexResult?.embeddingSource || null,
+                ruleGroundingEnabled: weaviateVectorService.isRuleGroundingEnabled(),
+                initiativeMemoryEnabled: weaviateVectorService.isInitiativeMemoryEnabled(),
+                error: null
+            };
+        } catch (error) {
+            vectorGrounding = {
+                enabled: false,
+                analysisRunId,
+                indexedRules: 0,
+                indexedChunks: 0,
+                embeddingSource: null,
+                error: error.message || 'Vector grounding failed.'
+            };
+            onProgress?.({
+                phase: 'grounding',
+                message: 'Vector grounding unavailable. Continuing with standard analysis.'
+            });
+        }
+    }
+
     onProgress?.({
         phase: 'priority_scoring',
         message: 'Scoring initiative dimensions...'
@@ -594,7 +732,10 @@ const analyzeProjectPipeline = async ({
     const { evaluations, coverage } = await evaluateRulesWithAgents({
         initiativeContext,
         rules,
-        onProgress
+        organizationId: organization,
+        analysisRunId,
+        onProgress,
+        ruleVectorsById
     });
 
     const sourceRules = rules.map((r) => ({
@@ -647,6 +788,7 @@ const analyzeProjectPipeline = async ({
         rulesAnalysis: ruleAnalyses,
         scoringBreakdown,
         ruleEvaluationCoverage: coverage,
+        vectorGrounding,
         mandatoryFailed,
         failedMandatoryRules: failedMandatoryGateRules.map(ra => ra.ruleName),
         escalationTriggers,
@@ -819,6 +961,41 @@ const analyzeProjectPipeline = async ({
         }]
     });
 
+    if (weaviateVectorService.isInitiativeMemoryEnabled()) {
+        try {
+            const initiativeMemoryResult = await weaviateVectorService.upsertInitiativeMemory({
+                organizationId: organization,
+                projectId: project._id,
+                name,
+                initiativeContext,
+                summary: analysisResult.summary,
+                approvalStatus,
+                workflowStage,
+                tier,
+                priorityScore
+            });
+            project.analysisResult = {
+                ...project.analysisResult,
+                vectorGrounding: {
+                    ...(project.analysisResult?.vectorGrounding || {}),
+                    initiativeMemory: initiativeMemoryResult
+                }
+            };
+        } catch (error) {
+            project.analysisResult = {
+                ...project.analysisResult,
+                vectorGrounding: {
+                    ...(project.analysisResult?.vectorGrounding || {}),
+                    initiativeMemory: {
+                        enabled: false,
+                        indexed: false,
+                        error: error.message || 'Initiative memory indexing failed.'
+                    }
+                }
+            };
+        }
+    }
+
     await project.save();
     return project;
 };
@@ -892,6 +1069,65 @@ const updateAnalysisJob = (jobId, patch = {}) => {
     return next;
 };
 
+const syncRuleEmbedding = async ({ organizationId, rule }) => {
+    const now = new Date();
+    const persist = async (patch) => {
+        rule.embeddingStatus = {
+            state: rule.embeddingStatus?.state || 'pending',
+            indexedAt: rule.embeddingStatus?.indexedAt || null,
+            lastAttemptAt: rule.embeddingStatus?.lastAttemptAt || null,
+            source: rule.embeddingStatus?.source || '',
+            error: rule.embeddingStatus?.error || '',
+            ...patch
+        };
+        await rule.save();
+    };
+
+    if (!weaviateVectorService.isEnabled() || !rule) {
+        if (rule) {
+            await persist({
+                state: 'disabled',
+                lastAttemptAt: now,
+                error: 'Weaviate disabled'
+            });
+        }
+        return { enabled: false, indexed: false, state: 'disabled' };
+    }
+
+    try {
+        const result = await weaviateVectorService.indexRules({
+            organizationId,
+            rules: [rule]
+        });
+        const indexed = Number(result?.indexedRules || 0) > 0;
+        await persist({
+            state: indexed ? 'indexed' : 'failed',
+            indexedAt: indexed ? now : (rule.embeddingStatus?.indexedAt || null),
+            lastAttemptAt: now,
+            source: result?.embeddingSource || '',
+            error: indexed ? '' : 'Embedding index returned no indexed rows.'
+        });
+        return {
+            enabled: true,
+            indexed,
+            state: indexed ? 'indexed' : 'failed',
+            embeddingSource: result?.embeddingSource || null
+        };
+    } catch (error) {
+        await persist({
+            state: 'failed',
+            lastAttemptAt: now,
+            error: error.message || 'Rule embedding sync failed.'
+        });
+        return {
+            enabled: true,
+            indexed: false,
+            state: 'failed',
+            error: error.message || 'Rule embedding sync failed.'
+        };
+    }
+};
+
 exports.createRule = async (req, res) => {
     try {
         const { department, effects, ...rest } = req.body;
@@ -905,7 +1141,10 @@ exports.createRule = async (req, res) => {
             effects: normalizeRuleEffects(effects)
         });
         await rule.save();
-        res.status(201).json(rule);
+        const embeddingSync = await syncRuleEmbedding({ organizationId: req.organization, rule });
+        const payload = rule.toObject();
+        payload.embeddingSync = embeddingSync;
+        res.status(201).json(payload);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1267,9 +1506,74 @@ exports.updateRule = async (req, res) => {
         if (typeof isActive === 'boolean') rule.isActive = isActive;
         if (typeof isHidden === 'boolean') rule.isHidden = isHidden;
         await rule.save();
-        res.json(rule);
+        const embeddingSync = await syncRuleEmbedding({ organizationId: req.organization, rule });
+        const payload = rule.toObject();
+        payload.embeddingSync = embeddingSync;
+        res.json(payload);
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+exports.retryRuleEmbedding = async (req, res) => {
+    try {
+        const rule = await Rule.findOne({ _id: req.params.id, organization: req.organization });
+        if (!rule) {
+            return res.status(404).json({ error: 'Rule not found in your organization' });
+        }
+
+        const embeddingSync = await syncRuleEmbedding({ organizationId: req.organization, rule });
+        const payload = rule.toObject();
+        payload.embeddingSync = embeddingSync;
+        return res.json(payload);
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+exports.retryAllRuleEmbeddings = async (req, res) => {
+    try {
+        const query = { organization: req.organization };
+        const rules = await Rule.find(query);
+        if (rules.length === 0) {
+            return res.json({
+                total: 0,
+                indexed: 0,
+                failed: 0,
+                disabled: 0,
+                message: 'No rules found for this organization.'
+            });
+        }
+
+        const EMBEDDING_RETRY_CONCURRENCY = Math.max(1, Number(process.env.RULE_EMBED_RETRY_CONCURRENCY || 8));
+        const results = await runWithConcurrency(
+            rules,
+            EMBEDDING_RETRY_CONCURRENCY,
+            async (rule) => {
+                const sync = await syncRuleEmbedding({ organizationId: req.organization, rule });
+                return {
+                    ruleId: String(rule._id),
+                    ruleName: rule.name,
+                    indexed: sync.indexed === true,
+                    state: sync.state || (sync.indexed ? 'indexed' : 'failed'),
+                    error: sync.error || ''
+                };
+            }
+        );
+
+        const indexed = results.filter((r) => r.indexed).length;
+        const disabled = results.filter((r) => r.state === 'disabled').length;
+        const failed = results.length - indexed - disabled;
+
+        return res.json({
+            total: results.length,
+            indexed,
+            failed,
+            disabled,
+            results
+        });
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
     }
 };
 

@@ -19,6 +19,17 @@ const RuleSchema = new mongoose.Schema({
         },
         params: { type: mongoose.Schema.Types.Mixed, default: {} }
     }],
+    embeddingStatus: {
+        state: {
+            type: String,
+            enum: ['pending', 'indexed', 'failed', 'disabled'],
+            default: 'pending'
+        },
+        indexedAt: { type: Date, default: null },
+        lastAttemptAt: { type: Date, default: null },
+        source: { type: String, default: '' },
+        error: { type: String, default: '' }
+    },
     systemRuleId: { type: Number }, // Id from mosaic_approver_rules_v2.json atomic_rules for deduplication
     createdAt: { type: Date, default: Date.now }
 });
