@@ -60,3 +60,11 @@ jobs:
             cat /tmp/response.txt 2>/dev/null || true
             exit 1
           fi
+
+      - name: Wait for build then fix Traefik port
+        run: |
+          echo "⏳ Waiting 5 min for Dokploy build to complete..."
+          sleep 300
+          echo "🔧 Fixing Traefik port (Dokploy defaults to 3000, UBA uses 8050)..."
+          ssh -o StrictHostKeyChecking=accept-new seemplify@4.180.153.209 'docker exec dokploy-traefik sh -c "for f in /etc/dokploy/traefik/dynamic/uba-fastlane*.yml; do [ -f \"$f\" ] && sed -i \"s|:3000|:8050|g\" \"$f\" && echo Fixed \$f; done"'
+          echo "✅ Traefik config updated. Dashboard: https://uba.seemplifyai.com"
