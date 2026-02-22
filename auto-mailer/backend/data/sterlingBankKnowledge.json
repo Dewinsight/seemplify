@@ -1,0 +1,195 @@
+{
+  "bankInfo": {
+    "name": "Sterling Bank Plc",
+    "headquarters": "Lagos, Nigeria",
+    "type": "Commercial Bank",
+    "website": "www.sterling.ng",
+    "contactCenter": "07008220000",
+    "email": "customercare@sterling.ng",
+    "socialMedia": "@Sterling_Bankng",
+    "ussdCode": "*966#"
+  },
+  "products": {
+    "savingsAccounts": [
+      {
+        "name": "Sterling Savings Account",
+        "description": "Regular savings account with competitive interest rates",
+        "features": ["ATM card", "Internet banking", "Mobile app access"],
+        "minimumBalance": "N1,000"
+      },
+      {
+        "name": "Sterling Smart Savers",
+        "description": "High-yield savings account for goal-oriented savers",
+        "features": ["Higher interest rates", "Flexible withdrawal", "Mobile app management"],
+        "minimumBalance": "N5,000"
+      },
+      {
+        "name": "Fixed Deposit Account",
+        "description": "Time-bound savings with guaranteed returns",
+        "features": ["Fixed interest rate", "3-12 months tenure", "No withdrawal penalties at maturity"],
+        "minimumDeposit": "N100,000"
+      }
+    ],
+    "currentAccounts": [
+      {
+        "name": "Personal Current Account",
+        "description": "Transaction account for personal use",
+        "features": ["Unlimited transactions", "Checkbook", "Internet banking", "Debit card"],
+        "minimumBalance": "N10,000"
+      },
+      {
+        "name": "Business Current Account",
+        "description": "Account for small and medium enterprises",
+        "features": ["Business banking", "Multiple signatories", "Treasury services"],
+        "minimumBalance": "N50,000"
+      }
+    ],
+    "loans": [
+      {
+        "name": "Personal Loan",
+        "description": "Unsecured loan for personal needs",
+        "maxAmount": "Up to N5,000,000",
+        "tenure": "12-36 months",
+        "requirements": ["Salary account", "6 months employment", "Valid ID"]
+      },
+      {
+        "name": "SME Loan",
+        "description": "Business loans for small and medium enterprises",
+        "maxAmount": "Up to N50,000,000",
+        "tenure": "12-60 months",
+        "requirements": ["Business registration", "Financial statements", "Collateral"]
+      },
+      {
+        "name": "Auto Loan",
+        "description": "Vehicle financing",
+        "maxAmount": "Up to N10,000,000",
+        "tenure": "12-48 months",
+        "downPayment": "20-30%"
+      }
+    ],
+    "cards": [
+      {
+        "type": "Debit Card",
+        "brands": ["Mastercard", "Visa", "Verve"],
+        "features": ["Local and international transactions", "Online shopping", "ATM withdrawals"],
+        "fee": "N1,000/year"
+      },
+      {
+        "type": "Credit Card",
+        "description": "Revolving credit facility",
+        "features": ["Interest-free period", "Reward points", "Global acceptance"],
+        "eligibility": "Salary earners with minimum N100,000 monthly income"
+      }
+    ],
+    "digitalBanking": [
+      {
+        "name": "Sterling Mobile App",
+        "description": "Full-featured mobile banking app",
+        "features": ["Fund transfers", "Bill payments", "Airtime purchase", "Card management", "Account statements"],
+        "platforms": ["iOS", "Android"]
+      },
+      {
+        "name": "*966# USSD Banking",
+        "description": "Mobile banking without internet",
+        "features": ["Balance inquiry", "Transfers", "Airtime", "Bill payment"],
+        "access": "Dial *966# from registered number"
+      },
+      {
+        "name": "Internet Banking",
+        "description": "Online banking portal",
+        "features": ["Account management", "Transfers", "Statements", "Bill payments"],
+        "access": "www.sterling.ng"
+      }
+    ]
+  },
+  "faqs": [
+    {
+      "question": "How do I open an account with Sterling Bank?",
+      "answer": "You can open an account by visiting any Sterling Bank branch with your valid ID (National ID, Driver's License, or International Passport), utility bill, and passport photograph. You can also start online via our website or mobile app."
+    },
+    {
+      "question": "What are your account opening requirements?",
+      "answer": "For personal accounts: Valid ID, utility bill (not older than 3 months), passport photograph, and minimum opening deposit. For corporate accounts: CAC documents, Board resolution, ID of directors, and utility bill."
+    },
+    {
+      "question": "How do I activate my debit card?",
+      "answer": "To activate your Sterling Bank debit card: 1) Visit any Sterling ATM, 2) Insert your card, 3) Enter your PIN, 4) Complete a balance inquiry or withdrawal. Your card is now activated."
+    },
+    {
+      "question": "What are your transfer limits?",
+      "answer": "Daily transfer limits vary by account type: Personal accounts - N1,000,000 for mobile/internet banking. You can request limit increases at any branch with proper documentation."
+    },
+    {
+      "question": "How do I reset my mobile app PIN?",
+      "answer": "To reset your Sterling mobile app PIN: 1) Open the app, 2) Click 'Forgot PIN', 3) Enter your registered phone number, 4) Enter OTP sent to your number, 5) Create new PIN. Or call 07008220000 for assistance."
+    },
+    {
+      "question": "How long does it take to process a loan?",
+      "answer": "Loan processing typically takes 5-10 working days after submission of complete documentation. Personal loans are faster (3-5 days) while SME/mortgage loans take longer (7-14 days) due to due diligence requirements."
+    },
+    {
+      "question": "How do I report a lost or stolen card?",
+      "answer": "Immediately call our 24/7 hotline: 07008220000 or send an email to customercare@sterling.ng. You can also block your card instantly via the Sterling mobile app under 'Card Management'."
+    },
+    {
+      "question": "What is the interest rate on savings accounts?",
+      "answer": "Interest rates vary by account type and balance. Regular savings accounts earn 1-3% per annum, while high-yield savings can earn up to 10% based on balance and tenure. Contact your relationship officer for current rates."
+    },
+    {
+      "question": "How do I get my account statement?",
+      "answer": "You can get statements via: 1) Sterling mobile app (instant download), 2) Internet banking, 3) Email request to customercare@sterling.ng, 4) Visit any branch. Email and branch statements may take 24-48 hours."
+    },
+    {
+      "question": "Do you have weekend banking?",
+      "answer": "Yes, select Sterling Bank branches offer Saturday banking from 9am-2pm. All digital channels (mobile app, USSD *966#, internet banking) are available 24/7. Call 07008220000 to find weekend branches near you."
+    }
+  ],
+  "policies": {
+    "workingHours": "Monday-Friday: 8:00 AM - 4:00 PM, Saturday (select branches): 9:00 AM - 2:00 PM",
+    "customerCareHours": "24/7 hotline available",
+    "responseTime": "Email responses within 24-48 hours, calls answered immediately",
+    "complaintResolution": "Complaints resolved within 7 working days",
+    "documentRetention": "Account statements available for last 12 months online, older via branch request"
+  },
+  "escalationKeywords": [
+    "complaint",
+    "fraud",
+    "unauthorized",
+    "stolen",
+    "lawyer",
+    "legal",
+    "sue",
+    "police",
+    "cbn",
+    "regulator",
+    "angry",
+    "disappointed",
+    "terrible service",
+    "manager",
+    "branch manager",
+    "escalate",
+    "unresolved"
+  ],
+  "commonIssues": {
+    "cardIssues": {
+      "declined": "Check if card is activated, has sufficient balance, and transaction is within daily limit. Contact 07008220000 if issue persists.",
+      "blocked": "Card may be blocked for security. Call 07008220000 immediately to unblock or request new card.",
+      "atmIssue": "If ATM swallowed your card, note the ATM location and call 07008220000. Card will be retrieved within 24 hours."
+    },
+    "appIssues": {
+      "loginFailed": "Reset your PIN via 'Forgot PIN' or update the app to latest version from app store.",
+      "transactionFailed": "Check internet connection and try again. If persists, funds will be reversed within 24 hours.",
+      "appCrashing": "Update to latest version, clear cache, or reinstall. Contact support if issue continues."
+    },
+    "transferIssues": {
+      "pendingTransfer": "Transfers typically complete within minutes. If pending after 24 hours, contact customercare@sterling.ng with transaction reference.",
+      "failedTransfer": "Check recipient details and account balance. Failed transfers are automatically reversed within 24 hours.",
+      "limitExceeded": "Daily transfer limit can be increased by visiting any branch with valid ID."
+    }
+  },
+  "greetings": {
+    "opening": "Dear Valued Customer,\n\nThank you for contacting Sterling Bank.",
+    "closing": "Best regards,\nSterling Bank Customer Service\n\nFor further assistance:\n📞 Call: 07008220000\n📧 Email: customercare@sterling.ng\n💬 USSD: *966#"
+  }
+}
+
