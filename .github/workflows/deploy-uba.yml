@@ -1,0 +1,47 @@
+# Deploy UBA FastLane to Dokploy
+# Auto-deploys on push to uba_branch_optimsation/ or manual trigger
+# URL: https://uba.seemplifyai.com
+
+name: Deploy UBA FastLane
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'uba_branch_optimsation/**'
+      - '.github/workflows/deploy-uba.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: uba-fastlane
+  APP_PATH: uba_branch_optimsation
+
+jobs:
+  deploy:
+    name: Deploy UBA FastLane to Dokploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          echo "🚀 Deploying UBA FastLane (queueing theory dashboard) to Dokploy..."
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets.UBA_FASTLANE_APP_ID }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
+            cat /tmp/response.txt 2>/dev/null || true
+            echo ""
+            echo "📍 Dashboard: https://uba.seemplifyai.com"
+            echo "⏱️  Build typically takes 3-5 minutes."
+          else
+            echo "❌ Deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi
