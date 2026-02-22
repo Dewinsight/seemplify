@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uba_queue_dashboard"
+version = "0.0.0"
+description = ""
+authors = [
+    { name = "UBA Branch Intelligence", email = "contact@example.com" }
+]
+license = { text = "Copyright (C) UBA Branch Intelligence. All rights reserved." }
+dependencies = [
+    "dash==2.18.2",
+    "plotly==6.0.0",
+    "numpy==2.3.5",
+    "pandas==2.3.3"
+]
+
+[project.optional-dependencies]
+dev = [
+    "setuptools==80.9.0",
+    "build==1.2.2.post1",
+    "mypy==1.19.1",
+    "ruff==0.9.7",
+    "pandas-stubs==2.3.2.250926",
+    "types-requests==2.32.4.20260107"
+]
+
+[project.urls]
+homepage = "fastlaine.aiinnigeria.com"
+
+[project.scripts]
+uba-queue = "fast_lane.main:main"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+# No package data required for this Dash app (CSS is embedded in index_string).
+uba_queue_dashboard = ["py.typed"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+preview = true
+
+[tool.ruff.lint.per-file-ignores]
+"dash_view.py" = [
+    "B008"
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+# Dash/Plotly may lack complete stubs; keep signal-to-noise high.
+ignore_missing_imports = true
+
+pretty = true
+show_error_codes = true
