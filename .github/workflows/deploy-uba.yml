@@ -30,14 +30,14 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Fix createEnvFile and port (Dokploy)
+      - name: Fix Dokploy app config
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
           ssh -o StrictHostKeyChecking=accept-new seemplify@4.180.153.209 'PG=$(docker ps -q -f name=dokploy-postgres | head -1) && [ -n "$PG" ] && {
-            docker exec $PG psql -U dokploy -d dokploy -c "UPDATE application SET \"createEnvFile\" = false WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'';" 2>/dev/null
+            docker exec $PG psql -U dokploy -d dokploy -c "UPDATE application SET \"createEnvFile\" = false, \"customGitBranch\" = '\''master'\'', \"buildPath\" = '\''./uba_branch_optimsation'\'', dockerfile = '\''./Dockerfile'\'', \"dockerContextPath\" = '\''.'\'', \"applicationStatus\" = '\''idle'\'' WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'';" 2>/dev/null
             docker exec $PG psql -U dokploy -d dokploy -c "UPDATE domain SET port = 8050 WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'' AND host = '\''uba.seemplifyai.com'\'';" 2>/dev/null
-            echo "createEnvFile and port 8050 fix applied"
+            echo "Dokploy config fixed: branch=master, buildPath=./uba_branch_optimsation, port=8050"
           }'
 
       - name: Trigger Dokploy Deployment
