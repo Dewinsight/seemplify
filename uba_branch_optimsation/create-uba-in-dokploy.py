@@ -50,12 +50,12 @@ def main():
             INSERT INTO application (
                 "applicationId", name, "appName", description,
                 "sourceType", "applicationStatus", "buildType", "createdAt",
-                "customGitUrl", "customGitBranch", "buildPath", dockerfile, "dockerContextPath",
+                "customGitUrl", "customGitBranch", "customGitBuildPath", dockerfile, "dockerContextPath",
                 "environmentId", "createEnvFile", replicas, enabled
             ) VALUES (
                 '{app_id}', 'uba-fastlane', 'uba-fastlane-dash', 'UBA FastLane queueing theory dashboard',
                 'git', 'idle', 'dockerfile', NOW(),
-                'https://github.com/michaelegbo/seemplify.git', 'main', './uba_branch_optimsation', './uba_branch_optimsation/Dockerfile', './uba_branch_optimsation',
+                'https://github.com/michaelegbo/seemplify.git', 'master', NULL, './uba_branch_optimsation/Dockerfile', './uba_branch_optimsation',
                 '{eid}', false, 1, true
             );
         """)
