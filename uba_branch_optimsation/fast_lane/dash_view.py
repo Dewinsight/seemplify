@@ -9,7 +9,7 @@ from dash.development.base_component import Component
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from queue_math_model import ( DEMAND_PROFILE, HOUR_LABELS,  erlang_c,  optimal_tellers, staffing_table)
+from fast_lane.queue_math_model import ( DEMAND_PROFILE, HOUR_LABELS,  erlang_c,  optimal_tellers, staffing_table)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SECTION 2 — COLOUR PALETTE & STYLE
