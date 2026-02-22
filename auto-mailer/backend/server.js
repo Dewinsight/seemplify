@@ -3,9 +3,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import session from 'express-session';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { connectDatabase } from './config/database.js';
 import authRoutes from './routes/auth.js';
 import nylasRoutes from './routes/nylas.js';
@@ -19,16 +24,15 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
+const FRONTEND_ORIGIN = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://auto-mailer.seemplifyai.com' : 'http://localhost:5173');
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://yourdomain.com']
-      : ['http://localhost:5173', 'http://localhost:3000'],
+    origin: process.env.NODE_ENV === 'production' ? [FRONTEND_ORIGIN] : ['http://localhost:5173', 'http://localhost:3000'],
     credentials: true,
   },
 });
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5012;
 
 // Security middleware
 app.use(helmet({
@@ -37,9 +41,7 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] // Replace with your production domain
-    : ['http://localhost:5173', 'http://localhost:3000'], // Development origins
+  origin: process.env.NODE_ENV === 'production' ? [FRONTEND_ORIGIN] : ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -80,32 +82,41 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/campaigns', campaignRoutes);
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Welcome to Auto Mailer API',
-    version: '1.0.0',
-    documentation: '/api/docs',
-    endpoints: {
-      health: '/health',
-      auth: '/api/auth',
-      nylas: '/api/nylas',
-      emails: '/api/emails',
-      ai: '/api/ai',
-    }
+// Production: serve frontend static files
+if (process.env.NODE_ENV === 'production') {
+  const frontendDist = path.join(__dirname, 'frontend', 'dist');
+  app.use(express.static(frontendDist));
+  // SPA fallback: serve index.html for non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
   });
-});
+} else {
+  // Development: API root
+  app.get('/', (req, res) => {
+    res.json({
+      success: true,
+      message: 'Welcome to Auto Mailer API',
+      version: '1.0.0',
+      endpoints: {
+        health: '/health',
+        auth: '/api/auth',
+        nylas: '/api/nylas',
+        emails: '/api/emails',
+        ai: '/api/ai',
+      }
+    });
+  });
 
-// 404 handler - catches all unmatched routes
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Endpoint not found',
-    path: req.originalUrl,
-    method: req.method
+  // 404 handler
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      message: 'Endpoint not found',
+      path: req.originalUrl,
+      method: req.method
+    });
   });
-});
+}
 
 // Global error handler
 app.use((error, req, res, next) => {
