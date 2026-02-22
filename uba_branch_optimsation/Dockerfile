@@ -26,8 +26,8 @@ WORKDIR /app
 
 COPY pyproject.toml .
 
-RUN python3.12 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
- && python3.12 -m pip install --no-cache-dir --break-system-packages \
+# Skip pip upgrade - Ubuntu 24.04 system pip cannot be uninstalled (RECORD file not found)
+RUN python3.12 -m pip install --no-cache-dir --break-system-packages \
         dash==2.18.2 \
         plotly==6.0.0 \
         numpy==2.3.5 \
