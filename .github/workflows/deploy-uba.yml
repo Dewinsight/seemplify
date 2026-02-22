@@ -35,7 +35,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
           ssh -o StrictHostKeyChecking=accept-new seemplify@4.180.153.209 'PG=$(docker ps -q -f name=dokploy-postgres | head -1) && [ -n "$PG" ] && {
-            docker exec $PG psql -U dokploy -d dokploy -c "UPDATE application SET \"createEnvFile\" = false, \"customGitBranch\" = '\''master'\'', \"buildPath\" = '\''./uba_branch_optimsation'\'', dockerfile = '\''./Dockerfile'\'', \"dockerContextPath\" = '\''.'\'', \"applicationStatus\" = '\''idle'\'' WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'';" 2>/dev/null
+            docker exec $PG psql -U dokploy -d dokploy -c "UPDATE application SET \"createEnvFile\" = false, \"customGitBranch\" = '\''master'\'', \"buildPath\" = '\''./uba_branch_optimsation'\'', dockerfile = '\''./uba_branch_optimsation/Dockerfile'\'', \"dockerContextPath\" = '\''./uba_branch_optimsation'\'', \"applicationStatus\" = '\''idle'\'' WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'';" 2>/dev/null
             docker exec $PG psql -U dokploy -d dokploy -c "UPDATE domain SET port = 8050 WHERE \"applicationId\" = '\''_3NtFvqF3tUk2gEiRVIzE'\'' AND host = '\''uba.seemplifyai.com'\'';" 2>/dev/null
             echo "Dokploy config fixed: branch=master, buildPath=./uba_branch_optimsation, port=8050"
           }'
