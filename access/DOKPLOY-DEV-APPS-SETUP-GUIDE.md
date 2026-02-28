@@ -38,8 +38,8 @@ Password: Seemplify2026!
 | # | Application Name | Domain | Database | Build Path |
 |---|-----------------|--------|----------|------------|
 | 1 | identity-provider-dev | auth-dev.seemplifyai.com | identity-dev | Identityprovider/ |
-| 2 | recruiter-backend-dev | api-dev.seemplifyai.com | smart_hr_db-dev | recruiter/new/backend/ |
-| 3 | recruiter-frontend-dev | app-dev.seemplifyai.com | - | recruiter/new/frontend/ |
+| 2 | recruiter-backend-dev | api-dev.seemplifyai.com | smart_hr_db-dev | recruiter/backend/ |
+| 3 | recruiter-frontend-dev | app-dev.seemplifyai.com | - | recruiter/frontend/ |
 | 4 | leave-backend-dev | api-leave-dev.seemplifyai.com | leave-management-dev | leave-management/backend/ |
 | 5 | leave-frontend-dev | leave-dev.seemplifyai.com | - | leave-management/frontend/ |
 | 6 | performance-backend-dev | api-performance-dev.seemplifyai.com | performance_db-dev | performance/backend/ |
@@ -67,7 +67,7 @@ Password: Seemplify2026!
 
 1. **Repository:** Select your seemplify repository
 2. **Branch:** Initially set to `main` (we'll create `dev` branch later)
-3. **Build Path:** Set according to the table above (e.g., `recruiter/new/backend/`)
+3. **Build Path:** Set according to the table above (e.g., `recruiter/backend/`)
 
 ### Step 4: Set Application Name
 
@@ -140,7 +140,7 @@ JWT_ACCESS_TTL=10m
 
 **Application Name:** `recruiter-backend-dev`  
 **Domain:** `api-dev.seemplifyai.com`  
-**Build Path:** `recruiter/new/backend/`  
+**Build Path:** `recruiter/backend/`  
 **Database:** `smart_hr_db-dev`
 
 **Environment Variables:**
@@ -185,6 +185,10 @@ USE_NYLAS_FOR_INTERVIEW_EMAILS=true
 
 # Brevo (use dev account if available)
 BREVO_API_KEY=<your_brevo_key>
+
+# Pinecone (vector DB - required for recruiter backend)
+PINECONE_API_KEY=<your_pinecone_api_key>
+PINECONE_PROJECT_ID=<your_pinecone_project_id>
 ```
 
 ---
@@ -193,7 +197,7 @@ BREVO_API_KEY=<your_brevo_key>
 
 **Application Name:** `recruiter-frontend-dev`  
 **Domain:** `app-dev.seemplifyai.com`  
-**Build Path:** `recruiter/new/frontend/`  
+**Build Path:** `recruiter/frontend/`  
 **Database:** None (frontend)
 
 **Environment Variables:**
