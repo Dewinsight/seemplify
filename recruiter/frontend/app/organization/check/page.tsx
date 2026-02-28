@@ -4,8 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
-import organizationService from '@/services/organizationService';
-import { UserPendingInvitation } from '@/services/organizationService';
 import '@/styles/animations.css';
 
 export default function OrganizationCheckPage() {
@@ -20,20 +18,8 @@ export default function OrganizationCheckPage() {
   } = useOrganization();
   const [loadingMessage, setLoadingMessage] = useState('Setting up your workspace');
   const [error, setError] = useState<string | null>(null);
-
-  // Check for invitations
-  const checkInvitations = async (): Promise<UserPendingInvitation[]> => {
-    try {
-      setLoadingMessage('Checking for invitations...');
-      const result = await organizationService.getUserPendingInvitations();
-      console.log('✅ Invitations loaded:', result);
-      return result.pendingInvites || [];
-    } catch (err) {
-      console.error('❌ Error loading invitations:', err);
-      // Don't show error for invitations, just return empty array
-      return [];
-    }
-  };
+  const IDP_REDIRECT_GUARD_KEY = 'organization_check_last_idp_redirect';
+  const IDP_REDIRECT_COOLDOWN_MS = 15000;
 
   // Main organization check flow
   useEffect(() => {
@@ -58,23 +44,40 @@ export default function OrganizationCheckPage() {
 
         // If user has an organization, go straight to dashboard
         if (organizations.length > 0 && currentOrganization) {
-          console.log('✅ User has organization, redirecting to dashboard');
+          sessionStorage.removeItem(IDP_REDIRECT_GUARD_KEY);
+          console.log('User has organization, redirecting to dashboard');
           setLoadingMessage('Loading your dashboard...');
-          // Small delay to show the message
           await new Promise(resolve => setTimeout(resolve, 500));
           router.push('/dashboard');
           return;
         }
 
+        // Only redirect to IdP when setup is explicitly required.
+        if (!needsOrganizationSetup) {
+          console.warn('Organization setup flag is false; skipping IdP redirect to avoid loops.');
+          setError('We could not verify your organization access. Please sign in again.');
+          return;
+        }
+
+        const lastRedirectAt = Number(sessionStorage.getItem(IDP_REDIRECT_GUARD_KEY) || '0');
+        const now = Date.now();
+        if (lastRedirectAt && now - lastRedirectAt < IDP_REDIRECT_COOLDOWN_MS) {
+          console.warn('Recent IdP redirect detected; preventing redirect loop.');
+          setError('Organization setup is still pending. Complete it in the Identity Provider, then try again.');
+          return;
+        }
+
+        sessionStorage.setItem(IDP_REDIRECT_GUARD_KEY, String(now));
+
         // No organization - redirect to IdP to create or join one
-        console.log('🆕 No organization found, redirecting to IdP...');
+        console.log('No organization found, redirecting to IdP...');
         setLoadingMessage('Redirecting to Identity Provider...');
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
         const redirectUrl = `${idpUrl}/organizations`;
-        
-        console.log('🔗 Redirecting to IdP organizations page:', redirectUrl);
+
+        console.log('Redirecting to IdP organizations page:', redirectUrl);
         window.location.href = redirectUrl;
 
       } catch (err) {
@@ -91,6 +94,7 @@ export default function OrganizationCheckPage() {
     isAuthenticated,
     currentOrganization,
     organizations,
+    needsOrganizationSetup,
     router
   ]);
 
@@ -254,3 +258,4 @@ export default function OrganizationCheckPage() {
     </div>
   );
 }
+

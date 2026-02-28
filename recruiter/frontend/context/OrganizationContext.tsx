@@ -156,7 +156,7 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setError(null);
       
       console.log('📡 Calling organizationService.getUserOrganizations()');
-      const orgs = await organizationService.getUserOrganizations();
+      const orgs = await organizationService.getUserOrganizations(forceRefresh);
       console.log('📋 Organizations loaded:', orgs);
       
       if (!orgs || orgs.length === 0) {
