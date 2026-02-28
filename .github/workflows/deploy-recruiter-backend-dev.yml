@@ -5,13 +5,13 @@ on:
   push:
     branches: [dev]
     paths:
-      - 'recruiter/backend/**'
+      - 'recruiter/new/backend/**'
       - '.github/workflows/deploy-recruiter-backend-dev.yml'
   workflow_dispatch:
 
 env:
   APP_NAME: recruiter-backend-dev
-  APP_PATH: recruiter/backend
+  APP_PATH: recruiter/new/backend
   ENVIRONMENT: development
 
 jobs:

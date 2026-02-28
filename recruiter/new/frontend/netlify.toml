@@ -1,0 +1,10 @@
+[build]
+  command = "corepack enable && pnpm install && pnpm run build"
+  publish = ".next"
+  base = "frontend"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs" 
