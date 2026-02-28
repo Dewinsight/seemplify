@@ -1,4 +1,10 @@
 /** @type {import('next').NextConfig} */
+const API_PROXY_TARGET = (
+  process.env.API_PROXY_TARGET ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://api.seemplifyai.com')
+).replace(/\/$/, '')
+
 const nextConfig = {
   // Security: Hide technology information
   poweredByHeader: false,
@@ -7,7 +13,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:5001/api/:path*',
+        destination: `${API_PROXY_TARGET}/api/:path*`,
       },
     ]
   },
@@ -21,7 +27,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://api.nylas.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; connect-src 'self' https://api.nylas.com https://api.brevo.com wss: ws: http://localhost:* https://thesmarthr.netlify.app https://*.azurewebsites.net wss://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self' https://api.nylas.com; worker-src 'self' blob:; child-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://api.nylas.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; connect-src 'self' https://api.nylas.com https://api.brevo.com https://api.seemplifyai.com https://api-dev.seemplifyai.com https://auth.seemplifyai.com https://auth-dev.seemplifyai.com https://*.seemplifyai.com wss: ws: http://localhost:* https://thesmarthr.netlify.app https://*.azurewebsites.net wss://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self' https://api.nylas.com; worker-src 'self' blob:; child-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
           },
           {
             key: 'X-Content-Type-Options',

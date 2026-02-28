@@ -28,6 +28,7 @@ import { MetroQuickActions } from "@/components/ui/metro-quick-actions"
 import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
 import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
+import { getIdpBaseUrl } from "@/utils/env"
 
 export default function Dashboard() {
   const { state, loadAnalytics, getUserDisplayName, isProfileComplete } = useUser()
@@ -229,7 +230,7 @@ export default function Dashboard() {
               className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
             >
               <a
-                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                href={getIdpBaseUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
               >

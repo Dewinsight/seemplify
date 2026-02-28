@@ -14,7 +14,7 @@ class ToolService {
                           process.env.AZURE_FUNCTIONS_ENVIRONMENT;
       
       this.baseURL = isProduction 
-        ? 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net'
+        ? 'https://api.seemplifyai.com'
         : 'http://localhost:5001';
     } else {
       this.baseURL = baseURL;

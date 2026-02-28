@@ -17,6 +17,7 @@ import { Building2, ChevronDown, Check, Settings, Plus, Coins, TrendingUp } from
 import { toast } from 'sonner';
 import { getCreditStatus, CreditStatus } from '@/services/creditsService';
 import { useRouter } from 'next/navigation';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface OrganizationSwitcherProps {
   className?: string;
@@ -43,7 +44,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
   const router = useRouter();
 
   // IDP URL for organization management
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || process.env.NEXT_PUBLIC_OIDC_ISSUER || '';
+  const idpUrl = getIdpBaseUrl();
 
   // Load credits when organization changes
   useEffect(() => {

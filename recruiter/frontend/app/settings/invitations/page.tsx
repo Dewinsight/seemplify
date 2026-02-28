@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import organizationService from '@/services/organizationService';
 import { useOrganization } from '@/context/OrganizationContext';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface PendingInvite {
   _id: string;
@@ -48,7 +49,7 @@ interface PendingInvite {
 
 const InvitationsPage = () => {
   const { loadOrganizations } = useOrganization();
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || '';
+  const idpUrl = getIdpBaseUrl();
   const [invitations, setInvitations] = useState<PendingInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingInvites, setProcessingInvites] = useState<Set<string>>(new Set());

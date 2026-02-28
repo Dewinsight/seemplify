@@ -13,6 +13,7 @@ import organizationService from '@/services/organizationService';
 import { toast } from 'sonner';
 import { Building2, Loader2, LogOut, Mail, Users, Check, X } from 'lucide-react';
 import OrganizationForm from './OrganizationForm';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface OrganizationSetupModalProps {
   isOpen: boolean;
@@ -29,7 +30,7 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
 }) => {
   const { createOrganization, isLoading: contextLoading, getUserPendingInvitations, acceptInvite, organizationLimits } = useOrganization();
   const { logout, isAuthenticated } = useAuth();
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || '';
+  const idpUrl = getIdpBaseUrl();
   const [formData, setFormData] = useState({
     name: '',
     description: '',

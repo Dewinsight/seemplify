@@ -9,7 +9,7 @@ export async function GET(
     
     // Forward the request to the backend
     const backendResponse = await fetch(
-      `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/candidate-emails/templates/${templateName}`,
+      `${process.env.BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com')}/api/candidate-emails/templates/${templateName}`,
       {
         method: 'GET',
       }

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { setGlobalLogoutHandler, initializeInactivityTracking, cleanupInactivityTracking } from '@/services/apiConfig';
 import { tokenManager } from '@/utils/tokenManager';
+import { getApiBaseUrl } from '@/utils/env';
 // Note: This import would create a circular dependency if used immediately, so we'll import dynamically
 
 interface AuthContextType {
@@ -173,7 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || window.location.origin;
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/api/auth/refresh-token`, {
         method: 'POST',
         headers: {

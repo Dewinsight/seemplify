@@ -21,7 +21,10 @@ export async function POST(request: NextRequest) {
     const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000) // 10 minutes
 
     try {
-      const backendResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/candidates/public/upload-cv`, {
+      const backendBaseUrl =
+        process.env.BACKEND_URL ||
+        (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+      const backendResponse = await fetch(`${backendBaseUrl}/api/candidates/public/upload-cv`, {
         method: 'POST',
         body: backendFormData,
         signal: controller.signal,

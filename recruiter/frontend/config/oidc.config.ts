@@ -6,6 +6,7 @@
  */
 
 const isProduction = process.env.NODE_ENV === 'production';
+const DEFAULT_IDP_URL = isProduction ? 'https://auth.seemplifyai.com' : 'http://localhost:4000';
 
 export const oidcConfig = {
   /**
@@ -39,9 +40,10 @@ export const oidcConfig = {
    * Identity Provider URL
    * Automatically uses production URL in production environment
    */
-  identityProviderUrl: isProduction 
-    ? 'https://smarthr-identity.azurewebsites.net'
-    : 'http://localhost:4000',
+  identityProviderUrl:
+    process.env.NEXT_PUBLIC_IDP_URL ||
+    process.env.NEXT_PUBLIC_OIDC_ISSUER ||
+    DEFAULT_IDP_URL,
 } as const;
 
 export type OIDCConfig = typeof oidcConfig;

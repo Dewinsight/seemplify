@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
+import { getIdpBaseUrl } from '@/utils/env';
 import '@/styles/animations.css';
 
 export default function OrganizationCheckPage() {
@@ -74,7 +75,7 @@ export default function OrganizationCheckPage() {
         setLoadingMessage('Redirecting to Identity Provider...');
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+        const idpUrl = getIdpBaseUrl();
         const redirectUrl = `${idpUrl}/organizations`;
 
         console.log('Redirecting to IdP organizations page:', redirectUrl);

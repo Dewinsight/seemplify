@@ -6,6 +6,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { getIdpBaseUrl } from '@/utils/env';
 import { Building2, ExternalLink, LogOut, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -13,7 +14,7 @@ export default function OrganizationSetupPage() {
   const { currentOrganization, isLoading, organizations } = useOrganization();
   const { logout } = useAuth();
   const router = useRouter();
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const idpUrl = getIdpBaseUrl();
   const [redirecting, setRedirecting] = useState(false);
   
   // Redirect if user already has an organization

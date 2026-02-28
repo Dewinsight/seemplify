@@ -873,8 +873,23 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(400).json({ msg: 'Missing returnTo in state' });
     }
 
-    const base = returnTo.replace(/#.*$/, '');
-    const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
+    let target;
+    try {
+      const parsedReturnTo = new URL(returnTo);
+      target = `${parsedReturnTo.origin}/oidc/callback`;
+    } catch (parseError) {
+      const defaultFrontend = process.env.NODE_ENV === 'development'
+        ? 'http://localhost:5000'
+        : 'https://app.seemplifyai.com';
+      const fallbackFrontend = (process.env.FRONTEND_URL || defaultFrontend).replace(/\/$/, '');
+      target = `${fallbackFrontend}/oidc/callback`;
+      console.warn('Could not parse returnTo URL, using FRONTEND_URL fallback:', {
+        returnTo,
+        target,
+        error: parseError.message
+      });
+    }
+
     const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
 
     console.log('🔄 Redirecting to frontend with tokens:', {

@@ -169,7 +169,7 @@ const handleReauthCallback = async (req, res) => {
             } else {
               // Fallback redirect
               setTimeout(() => {
-                window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:5000'}/calendar?reauth=success';
+                window.location.href = '${process.env.FRONTEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://app.seemplifyai.com')}/calendar?reauth=success';
               }, 2000);
             }
           </script>
@@ -247,7 +247,7 @@ const handleReauthCallback = async (req, res) => {
           } else {
             // Fallback redirect
             setTimeout(() => {
-              window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:5000'}/calendar?reauth=error&message=${encodeURIComponent(error.message)}';
+              window.location.href = '${process.env.FRONTEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://app.seemplifyai.com')}/calendar?reauth=error&message=${encodeURIComponent(error.message)}';
             }, 3000);
           }
         </script>

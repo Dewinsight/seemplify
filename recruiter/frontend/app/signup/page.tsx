@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
+import { getApiBaseUrl } from "@/utils/env";
 import {
   Card,
   CardContent,
@@ -236,7 +237,7 @@ export default function SignupPage() {
                             className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl"
                             disabled={isLoading}
                             onClick={() => {
-                              const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+                              const base = getApiBaseUrl()
                               const returnTo = encodeURIComponent(window.location.href)
                               window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
                             }}

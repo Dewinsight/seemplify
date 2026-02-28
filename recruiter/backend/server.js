@@ -92,8 +92,14 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5000', 
+      'http://localhost:5173',
+      'https://app.seemplifyai.com',
+      'https://app-dev.seemplifyai.com',
+      'https://api.seemplifyai.com',
+      'https://api-dev.seemplifyai.com',
+      'https://auth.seemplifyai.com',
+      'https://auth-dev.seemplifyai.com',
       'https://thesmarthr.netlify.app',
-      'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net',
       'https://smarthr.aiinnigeria.com',
       'https://smarthrhandover-dev.sterling.ng',
       'smarthrhandover-dev.sterling.ng',
@@ -120,7 +126,23 @@ const corsOptions = {
   },
   credentials: true, // Allow cookies to be sent
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], // Explicitly allow all methods
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-Nylas-Signature', 'x-admin-auth-token'], // Standard headers + admin token
+  allowedHeaders: [
+    'Accept',
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-Session-ID',
+    'X-Trace-ID',
+    'X-Caller-ID',
+    'X-Organization-Id',
+    'X-Organization-ID',
+    'x-session-id',
+    'x-trace-id',
+    'x-caller-id',
+    'x-organization-id',
+    'X-Nylas-Signature',
+    'x-admin-auth-token'
+  ],
   exposedHeaders: ['X-Session-ID'], // Expose session ID header to frontend
   optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 };

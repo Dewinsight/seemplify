@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
+import { getApiBaseUrl, getIdpBaseUrl } from "@/utils/env";
 import {
   Card,
   CardContent,
@@ -347,7 +348,7 @@ export default function LoginPage() {
                             size="lg"
                             className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold h-12 rounded-xl transition-all duration-300 shadow-lg hover:shadow-2xl border-0 focus:ring-2 focus:ring-blue-400/50 focus:outline-none"
                             onClick={() => {
-                              const base = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+                              const base = getApiBaseUrl()
                               const returnTo = encodeURIComponent(window.location.href)
                               window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
                             }}
@@ -443,7 +444,7 @@ export default function LoginPage() {
               <motion.a
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                href={getIdpBaseUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex w-full items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-left text-white shadow-lg shadow-black/10 transition-all hover:border-white/30 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-blue-400/50"

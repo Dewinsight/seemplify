@@ -2,23 +2,32 @@
 // Dynamically detects environment from hostname
 (function () {
   var hostname = window.location.hostname;
-  var isDev = hostname.includes('-dev') || hostname === 'localhost' || hostname === '127.0.0.1';
+  var isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+  var isDev = hostname.includes('-dev') || hostname.includes('.dev.') || isLocal;
 
   var apiBase = isDev ? 'https://api-dev.seemplifyai.com' : 'https://api.seemplifyai.com';
   var wsBase = isDev ? 'wss://api-dev.seemplifyai.com' : 'wss://api.seemplifyai.com';
+  var idpBase = isDev ? 'https://auth-dev.seemplifyai.com' : 'https://auth.seemplifyai.com';
 
-  // For localhost, use local backend
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  // For localhost, use local backend and IdP
+  if (isLocal) {
     apiBase = 'http://localhost:5001';
     wsBase = 'ws://localhost:5001';
+    idpBase = 'http://localhost:4000';
   }
 
   window.__RUNTIME_CONFIG__ = {
     NEXT_PUBLIC_API_BASE_URL: apiBase,
     NEXT_PUBLIC_WS_BASE_URL: wsBase,
-    NEXT_PUBLIC_INACTIVITY_TIMEOUT: "1800000",
-    NEXT_PUBLIC_INACTIVITY_WARNING_TIME: "300000"
+    NEXT_PUBLIC_IDP_URL: idpBase,
+    NEXT_PUBLIC_INACTIVITY_TIMEOUT: '1800000',
+    NEXT_PUBLIC_INACTIVITY_WARNING_TIME: '300000'
   };
 
-  console.log('🔧 Runtime config loaded:', { hostname: hostname, isDev: isDev, apiBase: apiBase });
+  console.log('Runtime config loaded:', {
+    hostname: hostname,
+    isDev: isDev,
+    apiBase: apiBase,
+    idpBase: idpBase
+  });
 })();

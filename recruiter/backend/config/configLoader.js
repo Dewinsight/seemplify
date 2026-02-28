@@ -26,7 +26,7 @@ class ConfigLoader {
           callbackPath: '/api/interviews/oauth/callback'
         },
         production: {
-          baseUrl: 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net',
+          baseUrl: 'https://api.seemplifyai.com',
           callbackPath: '/api/interviews/oauth/callback'
         }
       };
@@ -46,7 +46,7 @@ class ConfigLoader {
    */
   getCurrentConfig() {
     const env = this.getEnvironment();
-    return this.config[env] || this.config.development;
+    return this.config[env] || this.config.production || this.config.development;
   }
 
   /**
@@ -75,4 +75,3 @@ class ConfigLoader {
 
 // Export a singleton instance
 module.exports = new ConfigLoader();
-

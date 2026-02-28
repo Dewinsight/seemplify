@@ -26,6 +26,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useOrganization } from '@/context/OrganizationContext';
+import { getIdpBaseUrl } from '@/utils/env';
 import OrganizationSettings from '@/components/OrganizationSettings';
 import OrganizationMembers from '@/components/OrganizationMembers';
 import DeleteOrganizationDialog from '@/components/DeleteOrganizationDialog';
@@ -59,7 +60,7 @@ export default function OrganizationPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // IDP URL for organization management
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || process.env.NEXT_PUBLIC_OIDC_ISSUER || '';
+  const idpUrl = getIdpBaseUrl();
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [organizationToDelete, setOrganizationToDelete] = useState<any>(null);
   const [organizationToLeave, setOrganizationToLeave] = useState<any>(null);

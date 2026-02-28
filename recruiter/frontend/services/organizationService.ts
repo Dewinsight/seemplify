@@ -1,4 +1,5 @@
 import { apiRequest } from './apiConfig';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface Organization {
   _id: string;
@@ -928,7 +929,7 @@ class OrganizationService {
    * @param orgId - Optional organization ID for specific org management
    */
   getIdpManagementUrl(section: string = 'organizations', orgId?: string): string {
-    const baseUrl = process.env.NEXT_PUBLIC_IDP_URL || process.env.NEXT_PUBLIC_OIDC_ISSUER || '';
+    const baseUrl = getIdpBaseUrl();
 
     if (!baseUrl) {
       console.warn('⚠️ No IDP URL configured');

@@ -2284,7 +2284,7 @@ const handleOAuthCallback = async (req, res) => {
               }, '*');
             } else {
               // Fallback redirect if not in popup/iframe
-              window.location.href = 'http://localhost:5000/calendar?error=user_not_found&message=User authentication failed during calendar connection';
+              window.location.href = '${process.env.FRONTEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://app.seemplifyai.com')}/calendar?error=user_not_found&message=User authentication failed during calendar connection';
             }
           </script>
         </body>

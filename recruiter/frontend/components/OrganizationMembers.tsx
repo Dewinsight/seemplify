@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
+import { getIdpBaseUrl } from '@/utils/env';
 import { 
   Users, 
   UserPlus, 
@@ -67,7 +68,7 @@ interface OrganizationMembersProps {
 
 const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "", onInviteSuccess }) => {
   const { currentOrganization, inviteUser, removeMember, updateMemberRole, transferOwnership, loadOrganizations, forceRefresh } = useOrganization();
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || '';
+  const idpUrl = getIdpBaseUrl();
   
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isRemoveMemberDialogOpen, setIsRemoveMemberDialogOpen] = useState(false);

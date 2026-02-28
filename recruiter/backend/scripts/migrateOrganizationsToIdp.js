@@ -23,7 +23,10 @@ const User = require('../models/User');
 dotenv.config();
 
 // Configuration
-const IDP_BASE_URL = process.env.OIDC_ISSUER || process.env.IDP_URL || 'http://localhost:4000';
+const DEFAULT_IDP_BASE_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:4000'
+  : 'https://auth.seemplifyai.com';
+const IDP_BASE_URL = process.env.OIDC_ISSUER || process.env.IDP_URL || DEFAULT_IDP_BASE_URL;
 const IDP_API_KEY = process.env.IDP_API_KEY;
 const DRY_RUN = process.argv.includes('--dry-run');
 const FORCE = process.argv.includes('--force');

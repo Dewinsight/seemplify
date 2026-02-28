@@ -29,7 +29,6 @@ const PendingInvitations: React.FC<PendingInvitationsProps> = ({ className = "" 
   const [pendingInvites, setPendingInvites] = useState<PendingInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [cancellingInvite, setCancellingInvite] = useState<string | null>(null);
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || '';
 
   const loadPendingInvitations = async () => {
     try {

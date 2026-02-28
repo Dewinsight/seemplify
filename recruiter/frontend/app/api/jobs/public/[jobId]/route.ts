@@ -8,7 +8,10 @@ export async function GET(
     const { jobId } = params
     
     // Forward the request to the backend
-    const backendResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/jobs/public/${jobId}`, {
+    const backendBaseUrl =
+      process.env.BACKEND_URL ||
+      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+    const backendResponse = await fetch(`${backendBaseUrl}/api/jobs/public/${jobId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

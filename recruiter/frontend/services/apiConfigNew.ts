@@ -5,8 +5,8 @@ import { tokenManager } from '../utils/tokenManager';
 const isBrowser = typeof window !== 'undefined';
 
 // Use runtime configuration
-let FALLBACK_API = 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
-let FALLBACK_WS = 'wss://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
+let FALLBACK_API = 'https://api.seemplifyai.com';
+let FALLBACK_WS = 'wss://api.seemplifyai.com';
 
 // Attempt to load fallback-config.json at startup (best-effort, browser only)
 if (isBrowser) {
@@ -360,3 +360,4 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
 
   return response;
 };
+
