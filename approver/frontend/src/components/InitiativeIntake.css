@@ -67,7 +67,7 @@
 .intake-title {
     font-size: 2.5rem;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-hover) 100%);
+    background: linear-gradient(135deg, var(--brand-primary) 0%, #7B3FC0 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     margin-bottom: 0.5rem;
@@ -141,7 +141,7 @@
     background: var(--brand-primary);
     color: white;
     transform: scale(1.1);
-    box-shadow: 0 0 15px rgba(var(--brand-primary-rgb), 0.4);
+    box-shadow: 0 0 15px rgba(155, 81, 224, 0.4);
 }
 
 .step-item.completed .step-circle {
@@ -199,7 +199,7 @@
 
 .step-icon {
     font-size: 2rem;
-    background: linear-gradient(135deg, rgba(var(--brand-primary-rgb), 0.16) 0%, rgba(var(--brand-primary-rgb), 0.07) 100%);
+    background: linear-gradient(135deg, rgba(155, 81, 224, 0.1) 0%, rgba(155, 81, 224, 0.05) 100%);
     width: 60px;
     height: 60px;
     border-radius: 16px;
@@ -261,7 +261,7 @@
     outline: none;
     border-color: var(--brand-primary);
     background: white;
-    box-shadow: 0 0 0 4px rgba(var(--brand-primary-rgb), 0.16);
+    box-shadow: 0 0 0 4px rgba(155, 81, 224, 0.1);
     transform: translateY(-1px);
 }
 
@@ -308,12 +308,12 @@
 
 .option-card.selected {
     border-color: var(--brand-primary);
-    background: rgba(var(--brand-primary-rgb), 0.08);
+    background: rgba(155, 81, 224, 0.05);
     box-shadow: 0 0 0 2px var(--brand-primary);
 }
 
 [data-theme='dark'] .option-card.selected {
-    background: rgba(var(--brand-primary-rgb), 0.22);
+    background: rgba(155, 81, 224, 0.15);
 }
 
 .option-icon {
@@ -364,7 +364,7 @@
     font-weight: 700;
     font-size: 1rem;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(var(--brand-primary-rgb), 0.32);
+    box-shadow: 0 4px 15px rgba(155, 81, 224, 0.3);
     transition: all 0.2s;
     display: flex;
     align-items: center;
@@ -373,8 +373,8 @@
 
 .btn-next:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(var(--brand-primary-rgb), 0.4);
-    background: var(--brand-primary-hover);
+    box-shadow: 0 8px 25px rgba(155, 81, 224, 0.4);
+    background: #8e44ad;
 }
 
 .btn-next:disabled {

@@ -41,7 +41,7 @@ const Register: React.FC = () => {
                         value={form.username}
                         onChange={(e) => setForm({ ...form, username: e.target.value })}
                         required
-                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
+                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
                     />
                     <input
                         type="email"
@@ -49,7 +49,7 @@ const Register: React.FC = () => {
                         value={form.email}
                         onChange={(e) => setForm({ ...form, email: e.target.value })}
                         required
-                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
+                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
                     />
                     <input
                         type="password"
@@ -57,7 +57,7 @@ const Register: React.FC = () => {
                         value={form.password}
                         onChange={(e) => setForm({ ...form, password: e.target.value })}
                         required
-                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
+                        style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
                     />
 
                     {error && <p style={{ color: '#ff6b6b', margin: '0' }}>{error}</p>}

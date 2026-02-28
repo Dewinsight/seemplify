@@ -1,14 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;900&display=swap');
 
 :root {
-  /* UBA Brand Palette */
-  --brand-primary: #d71920;
-  --brand-primary-hover: #b3131a;
-  --brand-primary-rgb: 215, 25, 32;
-  --brand-secondary: #f4c542;
-  --brand-dark: #0d1016;
-  --brand-light: #ffffff;
-  --brand-grey: #eef1f6;
+  /* Mosaic Brand Palette - Refined */
+  --brand-primary: #9B51E0;
+  /* Amethyst Purple */
+  --brand-secondary: #00E676;
+  /* Accent Green */
+  --brand-dark: #131416;
+  /* Softened Woodsmoke - Less "Black" */
+  --brand-light: #FFFFFF;
+  --brand-grey: #f4f5f7;
 
   /* Legacy Mapping (for compatibility) */
   --sterling-red: var(--brand-primary);
@@ -17,33 +18,27 @@
   --sterling-white: var(--brand-light);
   --sterling-grey: var(--brand-grey);
 
-  /* Surface Variables */
-  --glass-bg: rgba(255, 255, 255, 0.94);
-  --glass-border: rgba(15, 23, 42, 0.12);
+  /* Glassmorphism Variables */
+  --glass-bg: rgba(255, 255, 255, 0.95);
+  /* Reduced transparency for better contrast in light mode */
+  --glass-border: rgba(0, 0, 0, 0.08);
+  /* Darker border for light mode pop */
   --glass-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-  --surface-soft: rgba(15, 23, 42, 0.06);
-  --surface-soft-strong: rgba(15, 23, 42, 0.12);
-  --surface-muted: rgba(15, 23, 42, 0.03);
-  --surface-darkened: rgba(15, 23, 42, 0.08);
-  --input-bg: rgba(255, 255, 255, 0.95);
-  --input-bg-contrast: rgba(15, 23, 42, 0.08);
+  /* Stronger shadow */
 
   --text-primary: #1A202C;
   --text-secondary: #4A5568;
+  /* Darker secondary text for readability */
   --accent: var(--brand-primary);
 
-  /* Backgrounds */
-  --bg-gradient-light:
-    radial-gradient(circle at 12% -18%, rgba(var(--brand-primary-rgb), 0.2) 0%, rgba(var(--brand-primary-rgb), 0) 38%),
-    linear-gradient(135deg, #fff9f9 0%, #f4f6fb 100%);
-  --bg-gradient-dark:
-    radial-gradient(circle at 10% 14%, rgba(var(--brand-primary-rgb), 0.3) 0%, rgba(var(--brand-primary-rgb), 0) 44%),
-    linear-gradient(145deg, #10131a 0%, #090c12 100%);
-  --bg-gradient: var(--bg-gradient-light);
+  /* Backgrounds: Modern Mesh Gradients */
+  /* Cleaner Light Mode Gradient */
+  --bg-gradient-light: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  /* Softer Dark Mode Gradient */
+  --bg-gradient-dark: radial-gradient(circle at 15% 50%, #1A1B1E 0%, #131416 80%);
 
   --logo-text-light: #1A202C;
   --logo-text-dark: #EDF2F7;
-  --logo-secondary: var(--logo-text-light);
 }
 
 @keyframes fadeInDown {
@@ -92,17 +87,14 @@
 }
 
 [data-theme='dark'] {
-  --glass-bg: rgba(13, 16, 22, 0.86);
-  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-bg: rgba(19, 20, 22, 0.85);
+  /* Matches new dark base */
+  --glass-border: rgba(255, 255, 255, 0.08);
+  /* Lighter border for contrast */
   --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-  --surface-soft: rgba(255, 255, 255, 0.06);
-  --surface-soft-strong: rgba(255, 255, 255, 0.12);
-  --surface-muted: rgba(255, 255, 255, 0.04);
-  --surface-darkened: rgba(0, 0, 0, 0.36);
-  --input-bg: rgba(10, 13, 18, 0.85);
-  --input-bg-contrast: rgba(0, 0, 0, 0.36);
-  --text-primary: #edf2f7;
-  --text-secondary: #a0aec0;
+  --text-primary: #EDF2F7;
+  /* Brighter text */
+  --text-secondary: #A0AEC0;
   --bg-gradient: var(--bg-gradient-dark);
   --logo-secondary: var(--logo-text-dark);
 }
@@ -169,6 +161,7 @@ body {
 /* Buttons */
 .btn-primary {
   background: var(--brand-primary);
+  /* Ensure using new brand var */
   color: white;
   border: none;
   padding: 0.8rem 1.5rem;
@@ -179,13 +172,15 @@ body {
   font-size: 0.95rem;
   transition: all 0.2s;
   letter-spacing: 0.5px;
-  box-shadow: 0 4px 10px rgba(var(--brand-primary-rgb), 0.3);
+  box-shadow: 0 4px 6px rgba(155, 81, 224, 0.25);
+  /* Colored shadow for pop */
 }
 
 .btn-primary:hover {
-  background: var(--brand-primary-hover);
+  background: #8A3EC5;
+  /* Slightly darker purple */
   transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(var(--brand-primary-rgb), 0.38);
+  box-shadow: 0 6px 12px rgba(155, 81, 224, 0.35);
 }
 
 .btn-primary:active {
@@ -298,11 +293,12 @@ label {
 input,
 textarea,
 select {
-  background: var(--input-bg);
-  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.9);
+  /* More opaque */
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
   padding: 0.8rem;
-  color: var(--text-primary);
+  color: #1A202C;
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 1rem;
@@ -314,9 +310,9 @@ select {
 [data-theme='dark'] input,
 [data-theme='dark'] textarea,
 [data-theme='dark'] select {
-  background: var(--input-bg-contrast);
+  background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--glass-border);
-  color: var(--text-primary);
+  color: white;
 }
 
 [data-theme='dark'] select {
@@ -325,8 +321,8 @@ select {
 
 input:focus,
 textarea:focus {
-  outline: 2px solid rgba(var(--brand-primary-rgb), 0.35);
-  border-color: var(--brand-primary);
+  outline: 2px solid var(--sterling-gold);
+  border-color: var(--sterling-gold);
 }
 
 /* Links */
@@ -422,12 +418,12 @@ a:hover {
 }
 
 .sidebar-nav-item:hover {
-  background: var(--surface-soft);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
 }
 
 .sidebar-nav-item.active {
-  background: rgba(var(--brand-primary-rgb), 0.12);
+  background: rgba(214, 54, 55, 0.1);
   color: var(--sterling-red);
   border-left-color: var(--sterling-red);
   font-weight: 600;
@@ -693,7 +689,8 @@ a:hover {
   /* Stronger hover lift */
   z-index: 10;
   position: relative;
-  border-color: rgba(var(--brand-primary-rgb), 0.22);
+  border-color: rgba(155, 81, 224, 0.1);
+  /* Subtle purple hint on hover */
 }
 
 [data-theme='dark'] .data-table tbody tr {

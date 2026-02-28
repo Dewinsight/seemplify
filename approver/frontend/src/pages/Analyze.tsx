@@ -153,7 +153,7 @@ const Analyze: React.FC = () => {
                 <div className="mobile-stack" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     {activeTab === 'view' && (
                         <button onClick={handleDownload} style={{
-                            background: 'var(--surface-soft)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)',
+                            background: 'var(--sterling-dark)', color: 'white', border: '1px solid var(--glass-border)',
                             padding: '0.6rem 1.2rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
                             whiteSpace: 'nowrap'
                         }}>
@@ -325,8 +325,8 @@ const Analyze: React.FC = () => {
                                         padding: '0.4rem 0.8rem',
                                         borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: currentPage === 1 ? 'transparent' : 'var(--surface-soft-strong)',
-                                        color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                        background: currentPage === 1 ? 'transparent' : 'rgba(255,255,255,0.1)',
+                                        color: currentPage === 1 ? 'var(--text-secondary)' : 'white',
                                         cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                                         transition: 'all 0.2s'
                                     }}
@@ -343,8 +343,8 @@ const Analyze: React.FC = () => {
                                         padding: '0.4rem 0.8rem',
                                         borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: currentPage === totalPages ? 'transparent' : 'var(--surface-soft-strong)',
-                                        color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                        background: currentPage === totalPages ? 'transparent' : 'rgba(255,255,255,0.1)',
+                                        color: currentPage === totalPages ? 'var(--text-secondary)' : 'white',
                                         cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                                         transition: 'all 0.2s'
                                     }}

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api, { getLogoUrl } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
@@ -772,7 +772,7 @@ const AdminUsers: React.FC = () => {
     return (
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h2 style={{ margin: 0 }}>âš™ï¸ Organization Settings</h2>
+                <h2 style={{ margin: 0 }}>⚙️ Organization Settings</h2>
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
@@ -904,12 +904,12 @@ const AdminUsers: React.FC = () => {
                             </form>
                         </div>
 
-                        {/* Logo display options â€” Show logo in first so user picks mode before uploading */}
+                        {/* Logo display options — Show logo in first so user picks mode before uploading */}
                         <div>
                             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Logo display options</label>
                             <div style={{
                                 padding: '1.25rem',
-                                background: 'var(--surface-soft)',
+                                background: 'rgba(255,255,255,0.04)',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '12px',
                                 display: 'flex',
@@ -978,7 +978,7 @@ const AdminUsers: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Organization Logo â€” single when "All themes", dark/light when theme-specific */}
+                        {/* Organization Logo — single when "All themes", dark/light when theme-specific */}
                         <div>
                             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
                                 {logoMode === 'all' ? 'Organization Logo' : 'Theme-specific logos'}
@@ -986,7 +986,7 @@ const AdminUsers: React.FC = () => {
                             {logoMode === 'all' ? (
                                 <div style={{
                                     display: 'flex', alignItems: 'center', gap: '1.5rem',
-                                    padding: '1.5rem', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                    padding: '1.5rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
                                 }}>
                                     {activeOrganization?.logo ? (
                                         <div style={{ flexShrink: 0 }}>
@@ -994,7 +994,7 @@ const AdminUsers: React.FC = () => {
                                                 style={{ width: 96, height: 96, objectFit: 'contain', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', padding: '8px', boxSizing: 'border-box' }} />
                                         </div>
                                     ) : (
-                                        <div style={{ width: 96, height: 96, borderRadius: '10px', background: 'var(--surface-soft)', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '2rem', flexShrink: 0 }}>ðŸ–¼ï¸</div>
+                                        <div style={{ width: 96, height: 96, borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '2rem', flexShrink: 0 }}>🖼️</div>
                                     )}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e)} style={{ display: 'none' }} />
@@ -1011,14 +1011,14 @@ const AdminUsers: React.FC = () => {
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                                    <div style={{ padding: '1.25rem', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
                                     }}>
                                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Dark theme logo</div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                                             {activeOrganization?.logoDark ? (
                                                 <img src={getLogoUrl(activeOrganization.logoDark) || ''} alt="Dark" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: '#1a1a2e', padding: '6px' }} />
                                             ) : (
-                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#1a1a2e', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>ðŸŒ™</div>
+                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#1a1a2e', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>🌙</div>
                                             )}
                                             <div>
                                                 <input ref={logoDarkInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e, 'dark')} style={{ display: 'none' }} />
@@ -1031,14 +1031,14 @@ const AdminUsers: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                    <div style={{ padding: '1.25rem', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px'
                                     }}>
                                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Light theme logo</div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                                             {activeOrganization?.logoLight ? (
                                                 <img src={getLogoUrl(activeOrganization.logoLight) || ''} alt="Light" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: '8px', background: '#f5f5f5', padding: '6px' }} />
                                             ) : (
-                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#f5f5f5', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>â˜€ï¸</div>
+                                                <div style={{ width: 64, height: 64, borderRadius: '8px', background: '#f5f5f5', border: '2px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '1.5rem' }}>☀️</div>
                                             )}
                                             <div>
                                                 <input ref={logoLightInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onChange={(e) => handleLogoUpload(e, 'light')} style={{ display: 'none' }} />
@@ -1065,7 +1065,7 @@ const AdminUsers: React.FC = () => {
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                                     Roles define who can review projects, approve tiers, manage rules, and override decisions.
                                 </div>
-                                <div style={{ padding: '1rem', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)', borderRadius: '12px' }}>
+                                <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '12px' }}>
                                     <form onSubmit={handleCreateRole} style={{ display: 'grid', gap: '0.75rem' }}>
                                         <input
                                             value={roleForm.name}
@@ -1388,7 +1388,7 @@ const AdminUsers: React.FC = () => {
                                                         const deptName = typeof p.department === 'object' ? p.department.name : 'Unknown';
                                                         const roles = p.roles || (p.role ? [p.role] : []);
                                                         return (
-                                                            <span key={i} style={{ background: 'var(--surface-soft-strong)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
+                                                            <span key={i} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
                                                                 {deptName}: <strong>{roles.map(formatRoleLabel).join(', ') || 'None'}</strong>
                                                             </span>
                                                         );
@@ -1428,7 +1428,7 @@ const AdminUsers: React.FC = () => {
                                     value={deptForm.description}
                                     onChange={e => setDeptForm({ ...deptForm, description: e.target.value })}
                                     placeholder="Brief description of responsibilities..."
-                                    style={{ width: '100%', padding: '0.75rem', background: 'var(--input-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', borderRadius: '6px' }}
+                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '6px' }}
                                 />
                             </div>
                             <button
@@ -1448,7 +1448,7 @@ const AdminUsers: React.FC = () => {
                             {departments.slice(deptPage * 5, (deptPage + 1) * 5).map(dept => (
                                 <div key={dept._id} style={{
                                     padding: '1.5rem',
-                                    background: 'var(--surface-darkened)',
+                                    background: 'rgba(0,0,0,0.2)',
                                     borderRadius: '12px',
                                     border: '1px solid var(--glass-border)',
                                     display: 'flex',
@@ -1491,8 +1491,8 @@ const AdminUsers: React.FC = () => {
                                     disabled={deptPage === 0}
                                     style={{
                                         padding: '0.5rem 1rem',
-                                        background: deptPage === 0 ? 'var(--surface-soft)' : 'var(--surface-soft-strong)',
-                                        color: deptPage === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                        background: deptPage === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)',
+                                        color: deptPage === 0 ? 'rgba(255,255,255,0.3)' : 'white',
                                         border: 'none', borderRadius: '4px', cursor: deptPage === 0 ? 'default' : 'pointer'
                                     }}
                                 >
@@ -1506,8 +1506,8 @@ const AdminUsers: React.FC = () => {
                                     disabled={(deptPage + 1) * 5 >= departments.length}
                                     style={{
                                         padding: '0.5rem 1rem',
-                                        background: (deptPage + 1) * 5 >= departments.length ? 'var(--surface-soft)' : 'var(--surface-soft-strong)',
-                                        color: (deptPage + 1) * 5 >= departments.length ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                        background: (deptPage + 1) * 5 >= departments.length ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)',
+                                        color: (deptPage + 1) * 5 >= departments.length ? 'rgba(255,255,255,0.3)' : 'white',
                                         border: 'none', borderRadius: '4px', cursor: (deptPage + 1) * 5 >= departments.length ? 'default' : 'pointer'
                                     }}
                                 >
@@ -1575,7 +1575,7 @@ const AdminUsers: React.FC = () => {
                                 <h2 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--text-primary)' }}>Edit Permissions</h2>
                                 <p style={{ margin: '0.5rem 0 0 0', color: 'var(--text-secondary)', fontSize: '1rem' }}>User: <strong style={{ color: 'var(--text-primary)' }}>{getUserDisplayName(editingUser, editingUser.username)}</strong></p>
                             </div>
-                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.5rem', cursor: 'pointer' }}>âœ•</button>
+                            <button onClick={() => setEditingUser(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
                         </div>
 
                         {/* Divider */}
@@ -1621,7 +1621,7 @@ const AdminUsers: React.FC = () => {
                                                             borderRadius: '6px',
                                                             transition: 'background 0.2s',
                                                             color: 'var(--text-primary)',
-                                                            background: (editPermissions[dept._id] || []).includes(roleOption.key) ? 'rgba(var(--brand-primary-rgb), 0.12)' : 'transparent'
+                                                            background: (editPermissions[dept._id] || []).includes(roleOption.key) ? 'rgba(155, 81, 224, 0.1)' : 'transparent'
                                                         }}>
                                                             <input
                                                                 type="checkbox"
@@ -1658,4 +1658,3 @@ const AdminUsers: React.FC = () => {
 };
 
 export default AdminUsers;
-

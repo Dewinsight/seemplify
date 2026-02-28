@@ -101,7 +101,7 @@ const InviteNotificationPopup: React.FC = () => {
                         style={{
                             flex: 1,
                             padding: '0.6rem 1rem',
-                            background: 'var(--surface-soft)',
+                            background: 'rgba(255,255,255,0.05)',
                             border: '1px solid var(--glass-border)',
                             borderRadius: '8px',
                             color: 'var(--text-primary)',

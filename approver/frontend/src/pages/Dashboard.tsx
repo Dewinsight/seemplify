@@ -110,7 +110,7 @@ const Dashboard: React.FC = () => {
 
     const getSubtitle = () => {
         if (!stats && recentProjects.length === 0) {
-            return "Welcome to UBA Approver! Submit your first initiative to get started.";
+            return "Welcome to Mosaic! Submit your first initiative to get started.";
         }
         const parts: string[] = [];
         if (stats) {
@@ -280,7 +280,7 @@ const Dashboard: React.FC = () => {
                             }}>2</span>
                             <div>
                                 <strong>AI Analysis</strong>
-                                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>UBA AI evaluates your initiative against company policies.</p>
+                                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Mosaic AI evaluates your initiative against company policies.</p>
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>

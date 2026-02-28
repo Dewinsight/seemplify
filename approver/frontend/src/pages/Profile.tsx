@@ -83,8 +83,8 @@ const Profile: React.FC = () => {
                                 padding: '0.6rem',
                                 borderRadius: '4px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'var(--input-bg)',
-                                color: 'var(--text-primary)'
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white'
                             }}
                         />
 
@@ -99,8 +99,8 @@ const Profile: React.FC = () => {
                                 padding: '0.6rem',
                                 borderRadius: '4px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'var(--input-bg)',
-                                color: 'var(--text-primary)'
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white'
                             }}
                         />
 
@@ -115,8 +115,8 @@ const Profile: React.FC = () => {
                                 padding: '0.6rem',
                                 borderRadius: '4px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'var(--input-bg)',
-                                color: 'var(--text-primary)'
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white'
                             }}
                         />
 
@@ -131,7 +131,7 @@ const Profile: React.FC = () => {
                                 padding: '0.6rem',
                                 borderRadius: '4px',
                                 border: '1px solid var(--glass-border)',
-                                background: 'var(--surface-darkened)',
+                                background: 'rgba(0,0,0,0.2)',
                                 color: 'var(--text-secondary)',
                                 cursor: 'not-allowed'
                             }}
@@ -176,7 +176,7 @@ const Profile: React.FC = () => {
                                     const roles = p.roles || (p.role ? [p.role] : []);
 
                                     return (
-                                        <tr key={idx} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                             <td style={{ padding: '0.5rem' }}>{deptName}</td>
                                             <td style={{ padding: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                 {roles.map((role: string) => (

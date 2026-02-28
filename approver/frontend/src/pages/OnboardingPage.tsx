@@ -4,7 +4,6 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName, hasCompletedNameProfile } from '../utils/userDisplay';
 import { formatRoleLabel as formatRoleLabelFromOrg } from '../utils/access';
-import { UBA_LOGO_URL, APP_BRAND_NAME, APP_BRAND_TAGLINE } from '../constants/branding';
 
 interface PendingInvite {
     _id: string;
@@ -182,14 +181,18 @@ const OnboardingPage: React.FC = () => {
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem' }}>
             {/* Header */}
             <div style={{ textAlign: 'center', marginBottom: '3rem', marginTop: '2rem' }}>
-                <img
-                    src={UBA_LOGO_URL}
-                    alt="UBA logo"
-                    style={{ width: '180px', height: '56px', objectFit: 'contain', display: 'inline-block', marginBottom: '0.75rem' }}
-                />
-                <div style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                    {APP_BRAND_NAME} - {APP_BRAND_TAGLINE}
-                </div>
+                <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ display: 'inline-block', marginBottom: '1rem' }}>
+                    <rect x="4" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" />
+                    <rect x="18" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
+                    <rect x="4" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
+                    <rect x="18" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.6" />
+                    <defs>
+                        <linearGradient id="mosaicGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#9B51E0" />
+                            <stop offset="100%" stopColor="#7B3FC0" />
+                        </linearGradient>
+                    </defs>
+                </svg>
                 <h1 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '2rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>
                     Welcome, {displayName}!
                 </h1>
@@ -219,7 +222,7 @@ const OnboardingPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.8rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'var(--input-bg)', color: 'var(--text-primary)'
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
                                     }}
                                 />
                             </div>
@@ -235,7 +238,7 @@ const OnboardingPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.8rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'var(--input-bg)', color: 'var(--text-primary)'
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
                                     }}
                                 />
                             </div>
@@ -276,7 +279,7 @@ const OnboardingPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.8rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'var(--input-bg)', color: 'var(--text-primary)'
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
                                     }}
                                 />
                             </div>
@@ -292,7 +295,7 @@ const OnboardingPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.8rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'var(--input-bg)', color: 'var(--text-primary)'
+                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
                                     }}
                                 />
                             </div>
@@ -324,7 +327,7 @@ const OnboardingPage: React.FC = () => {
                                         key={invite._id}
                                         style={{
                                             padding: '1.2rem',
-                                            background: 'var(--surface-darkened)',
+                                            background: 'rgba(0,0,0,0.2)',
                                             borderRadius: '10px',
                                             border: '1px solid var(--glass-border)'
                                         }}

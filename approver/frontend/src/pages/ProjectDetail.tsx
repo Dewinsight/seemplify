@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -268,11 +268,11 @@ const ProjectDetail: React.FC = () => {
                                 display: 'inline-block',
                                 marginTop: '0.5rem',
                                 padding: '0.25rem 0.75rem',
-                                background: 'var(--surface-soft-strong)',
+                                background: 'rgba(255,255,255,0.1)',
                                 borderRadius: '12px',
                                 fontSize: '0.8rem'
                             }}>
-                                ðŸ“‹ Stage: {project.workflowStage}
+                                📋 Stage: {project.workflowStage}
                             </span>
                         )}
                     </div>
@@ -307,7 +307,7 @@ const ProjectDetail: React.FC = () => {
                         )}
                         {project.needEnhancedOversight && (
                             <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#ff9800' }}>
-                                âš ï¸ Enhanced oversight required (Priority Score 1.5â€“2.0)
+                                ⚠️ Enhanced oversight required (Priority Score 1.5–2.0)
                             </div>
                         )}
                     </div>
@@ -317,8 +317,8 @@ const ProjectDetail: React.FC = () => {
                 {project.formData ? (
                     <div style={{ marginTop: '1.5rem' }}>
                         {/* Submitter Info */}
-                        <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px', marginBottom: '1rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸ“‹ Submitter Information</h4>
+                        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>📋 Submitter Information</h4>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Name:</span> <strong>{project.formData.submitterName}</strong></div>
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Title:</span> {project.formData.submitterTitle}</div>
@@ -332,14 +332,14 @@ const ProjectDetail: React.FC = () => {
                         </div>
 
                         {/* Problem Statement */}
-                        <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px', marginBottom: '1rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸ” Problem Statement</h4>
+                        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>🔍 Problem Statement</h4>
                             <p style={{ margin: '0 0 0.75rem 0', whiteSpace: 'pre-wrap' }}>{project.formData.problemDescription}</p>
                             <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem' }}>
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Affected:</span> {project.formData.whoAffected?.replace(/_/g, ' ')}</div>
                             </div>
                             {project.formData.currentHandling && (
-                                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--surface-darkened)', borderRadius: '6px' }}>
+                                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
                                     <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Current Handling:</span>
                                     <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>{project.formData.currentHandling}</p>
                                 </div>
@@ -347,13 +347,13 @@ const ProjectDetail: React.FC = () => {
                         </div>
 
                         {/* Proposed AI Solution */}
-                        <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px', marginBottom: '1rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸ¤– Proposed AI Solution</h4>
+                        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>🤖 Proposed AI Solution</h4>
                             <div style={{ marginBottom: '0.75rem' }}>
                                 <span style={{
                                     display: 'inline-block',
                                     padding: '0.3rem 0.75rem',
-                                    background: 'rgba(var(--brand-primary-rgb), 0.2)',
+                                    background: 'rgba(214, 54, 55, 0.2)',
                                     border: '1px solid var(--sterling-red)',
                                     borderRadius: '6px',
                                     fontSize: '0.85rem'
@@ -365,8 +365,8 @@ const ProjectDetail: React.FC = () => {
                         </div>
 
                         {/* Success Metrics */}
-                        <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px', marginBottom: '1rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸŽ¯ Success Metrics</h4>
+                        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>🎯 Success Metrics</h4>
                             {project.formData.improvements && project.formData.improvements.length > 0 && (
                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                                     {project.formData.improvements.map((imp, i) => (
@@ -380,14 +380,14 @@ const ProjectDetail: React.FC = () => {
                                 </div>
                             )}
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', fontSize: '0.9rem' }}>
-                                {project.formData.timeSaved && <div>â±ï¸ Time saved: <strong>{project.formData.timeSaved}</strong></div>}
-                                {project.formData.moneySaved && <div>ðŸ’° Money saved: <strong>{project.formData.moneySaved}</strong></div>}
-                                {project.formData.customerBenefit && <div>ðŸ˜Š Customer benefit: {project.formData.customerBenefit}</div>}
-                                {project.formData.errorReduction && <div>âœ… Error reduction: {project.formData.errorReduction}</div>}
-                                {project.formData.betterDecisions && <div>ðŸ§  Better decisions: {project.formData.betterDecisions}</div>}
+                                {project.formData.timeSaved && <div>⏱️ Time saved: <strong>{project.formData.timeSaved}</strong></div>}
+                                {project.formData.moneySaved && <div>💰 Money saved: <strong>{project.formData.moneySaved}</strong></div>}
+                                {project.formData.customerBenefit && <div>😊 Customer benefit: {project.formData.customerBenefit}</div>}
+                                {project.formData.errorReduction && <div>✅ Error reduction: {project.formData.errorReduction}</div>}
+                                {project.formData.betterDecisions && <div>🧠 Better decisions: {project.formData.betterDecisions}</div>}
                             </div>
                             {project.formData.successMeasure && (
-                                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--surface-darkened)', borderRadius: '6px' }}>
+                                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
                                     <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Success Measure:</span>
                                     <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>{project.formData.successMeasure}</p>
                                 </div>
@@ -397,8 +397,8 @@ const ProjectDetail: React.FC = () => {
                         {/* Data & Resources */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
                             {/* Data Requirements */}
-                            <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px' }}>
-                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸ“Š Data Requirements</h4>
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>📊 Data Requirements</h4>
                                 <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>{project.formData.dataNeeded}</p>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                                     <div>Storage: {project.formData.dataStorage?.replace(/_/g, ' ')}</div>
@@ -407,13 +407,13 @@ const ProjectDetail: React.FC = () => {
                             </div>
 
                             {/* Resources & Timeline */}
-                            <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px' }}>
-                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>â° Resources & Timeline</h4>
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>⏰ Resources & Timeline</h4>
                                 <div style={{ fontSize: '0.9rem' }}>
                                     <div style={{ marginBottom: '0.5rem' }}>
                                         <span style={{
                                             padding: '0.25rem 0.6rem',
-                                            background: project.formData.urgency === 'urgent_3months' ? 'rgba(244, 67, 54, 0.2)' : 'var(--surface-soft-strong)',
+                                            background: project.formData.urgency === 'urgent_3months' ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255,255,255,0.1)',
                                             borderRadius: '4px',
                                             fontSize: '0.85rem'
                                         }}>
@@ -428,8 +428,8 @@ const ProjectDetail: React.FC = () => {
 
                         {/* Additional Context */}
                         {(project.formData.previousAttempts || project.formData.regulations || project.formData.additionalContext) && (
-                            <div style={{ padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px', marginTop: '1rem' }}>
-                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>ðŸ“ Additional Context</h4>
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginTop: '1rem' }}>
+                                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--sterling-gold)' }}>📝 Additional Context</h4>
                                 {project.formData.previousAttempts && (
                                     <div style={{ marginBottom: '0.75rem' }}>
                                         <strong style={{ fontSize: '0.85rem' }}>Previous Attempts:</strong>
@@ -453,12 +453,12 @@ const ProjectDetail: React.FC = () => {
                     </div>
                 ) : (
                     /* Fallback for old projects without formData */
-                    <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px' }}>
+                    <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                         <h4 style={{ margin: '0 0 0.5rem 0' }}>Description</h4>
                         <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{project.description}</p>
                         {project.repoUrl && (
                             <div style={{ marginTop: '0.5rem' }}>
-                                <a href={project.repoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository â†’</a>
+                                <a href={project.repoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository →</a>
                             </div>
                         )}
                     </div>
@@ -466,7 +466,7 @@ const ProjectDetail: React.FC = () => {
 
                 {project.overrideBy && (
                     <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255, 193, 7, 0.1)', border: '1px solid #ffc107', borderRadius: '8px' }}>
-                        <strong>âš ï¸ Overridden by Admin</strong>
+                        <strong>⚠️ Overridden by Admin</strong>
                         <p style={{ margin: '0.5rem 0 0 0' }}>Reason: {project.overrideReason}</p>
                     </div>
                 )}
@@ -477,14 +477,14 @@ const ProjectDetail: React.FC = () => {
 
                 {/* Priority Scoring Breakdown */}
                 {(project.scoringBreakdown || project.analysisResult?.scoringBreakdown) && (
-                    <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--surface-soft)', borderRadius: '8px' }}>
-                        <h4 style={{ margin: '0 0 1rem 0', color: 'var(--sterling-gold)' }}>ðŸ“Š Priority Score Breakdown</h4>
+                    <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                        <h4 style={{ margin: '0 0 1rem 0', color: 'var(--sterling-gold)' }}>📊 Priority Score Breakdown</h4>
                         <div style={{ marginBottom: '0.85rem', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
                             Priority score uses weighted dimensions (0-5 scale). Tier is derived from this score, then rules can escalate tier upward via Set Tier effects.
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
                             {Object.entries(project.scoringBreakdown || project.analysisResult?.scoringBreakdown || {}).map(([key, val]: [string, any]) => (
-                                <div key={key} style={{ padding: '0.75rem', background: 'var(--surface-darkened)', borderRadius: '6px' }}>
+                                <div key={key} style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                                         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                                             {key.replace(/([A-Z])/g, ' $1').trim()}
@@ -546,7 +546,7 @@ const ProjectDetail: React.FC = () => {
             {/* Approval History */}
             {project.approvalHistory && project.approvalHistory.length > 0 && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem' }}>
-                    <h3 style={{ marginBottom: '1rem' }}>ðŸ“œ Approval History</h3>
+                    <h3 style={{ marginBottom: '1rem' }}>📜 Approval History</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {project.approvalHistory.map((item, idx) => (
                             <div key={idx} style={{
@@ -581,13 +581,13 @@ const ProjectDetail: React.FC = () => {
             {/* CoE Review Panel */}
             {project.approvalStatus === 'Pending Center of Excellence' && canCoEReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #2196f3' }}>
-                    <h3 style={{ marginTop: 0, color: '#2196f3' }}>ðŸ¢ Center of Excellence Review Required</h3>
+                    <h3 style={{ marginTop: 0, color: '#2196f3' }}>🏢 Center of Excellence Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This initiative requires Center of Excellence review before proceeding.</p>
                     <textarea
                         placeholder="Review notes (optional)"
                         value={reviewReason}
                         onChange={(e) => setReviewReason(e.target.value)}
-                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'var(--input-bg-contrast)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'white' }}
                     />
                     <div style={{ display: 'flex', gap: '1rem' }}>
                         <button
@@ -596,14 +596,14 @@ const ProjectDetail: React.FC = () => {
                             disabled={reviewLoading}
                             style={{ background: '#4caf50', flex: 1 }}
                         >
-                            âœ… Approve
+                            ✅ Approve
                         </button>
                         <button
                             onClick={() => handleCoEReview('Rejected')}
                             disabled={reviewLoading}
                             style={{ background: '#f44336', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
                         >
-                            âŒ Reject
+                            ❌ Reject
                         </button>
                     </div>
                 </div>
@@ -612,13 +612,13 @@ const ProjectDetail: React.FC = () => {
             {/* Governance Review Panel */}
             {project.approvalStatus === 'Pending Governance' && canGovernanceReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #ff9800' }}>
-                    <h3 style={{ marginTop: 0, color: '#ff9800' }}>âš–ï¸ Governance Committee Review Required</h3>
+                    <h3 style={{ marginTop: 0, color: '#ff9800' }}>⚖️ Governance Committee Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier {project.tier} initiative requires Governance Committee review before proceeding.</p>
                     <textarea
                         placeholder="Review notes (optional)"
                         value={reviewReason}
                         onChange={(e) => setReviewReason(e.target.value)}
-                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'var(--input-bg-contrast)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'white' }}
                     />
                     <div style={{ display: 'flex', gap: '1rem' }}>
                         <button
@@ -627,14 +627,14 @@ const ProjectDetail: React.FC = () => {
                             disabled={reviewLoading}
                             style={{ background: '#4caf50', flex: 1 }}
                         >
-                            âœ… Approve
+                            ✅ Approve
                         </button>
                         <button
                             onClick={() => handleGovernanceReview('Rejected')}
                             disabled={reviewLoading}
                             style={{ background: '#f44336', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
                         >
-                            âŒ Reject
+                            ❌ Reject
                         </button>
                     </div>
                     {project.tier === 3 && (
@@ -648,13 +648,13 @@ const ProjectDetail: React.FC = () => {
             {/* Executive Review Panel */}
             {project.approvalStatus === 'Pending Executive' && canExecutiveReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid var(--sterling-red)' }}>
-                    <h3 style={{ marginTop: 0, color: 'var(--sterling-red)' }}>ðŸ‘” Executive Review Required</h3>
+                    <h3 style={{ marginTop: 0, color: 'var(--sterling-red)' }}>👔 Executive Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier 3 initiative requires Executive approval for final decision.</p>
                     <textarea
                         placeholder="Executive review notes (optional)"
                         value={reviewReason}
                         onChange={(e) => setReviewReason(e.target.value)}
-                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'var(--input-bg-contrast)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'white' }}
                     />
                     <div style={{ display: 'flex', gap: '1rem' }}>
                         <button
@@ -663,14 +663,14 @@ const ProjectDetail: React.FC = () => {
                             disabled={reviewLoading}
                             style={{ background: '#4caf50', flex: 1 }}
                         >
-                            âœ… Executive Approve
+                            ✅ Executive Approve
                         </button>
                         <button
                             onClick={() => handleExecutiveReview('Rejected')}
                             disabled={reviewLoading}
                             style={{ background: '#f44336', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
                         >
-                            âŒ Executive Reject
+                            ❌ Executive Reject
                         </button>
                     </div>
                 </div>
@@ -742,7 +742,7 @@ const ProjectDetail: React.FC = () => {
                             cursor: 'pointer'
                         }}
                     >
-                        ðŸ—‘ï¸ Delete Project
+                        🗑️ Delete Project
                     </button>
                 </div>
             )}
@@ -751,5 +751,3 @@ const ProjectDetail: React.FC = () => {
 };
 
 export default ProjectDetail;
-
-
