@@ -14,7 +14,7 @@ const OrganizationInviteSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
+    enum: ['admin', 'hr_manager', 'recruiter', 'interviewer'],
     default: 'recruiter'
   },
   token: {

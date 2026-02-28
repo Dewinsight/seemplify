@@ -11,22 +11,30 @@ class CreditsService {
   async getOrganizationCredits(organizationId) {
     try {
       const organization = await Organization.findById(organizationId);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
 
       const creditUsage = organization.subscription?.creditUsage || {};
-      const totalCredits = creditUsage.totalCredits || 100;
-      const usedCredits = creditUsage.usedCredits || 0;
-      const remainingCredits = creditUsage.remainingCredits || totalCredits;
+      const configuredTotalCredits = Math.max(creditUsage.totalCredits || 100, 0);
+      const remainingCredits = Math.max(
+        0,
+        creditUsage.remainingCredits != null ? creditUsage.remainingCredits : configuredTotalCredits
+      );
+      // Normalize for display/math so usage never becomes contradictory when remaining exceeds plan credits.
+      const totalCredits = Math.max(configuredTotalCredits, remainingCredits);
+      const usedCredits = Math.max(0, totalCredits - remainingCredits);
       const rolloverCredits = creditUsage.rolloverCredits || 0;
 
       // Calculate cycle info
       const cycleStart = creditUsage.currentCycleStart || new Date();
       const cycleEnd = creditUsage.currentCycleEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       const now = new Date();
-      const daysUntilReset = Math.ceil((cycleEnd - now) / (1000 * 60 * 60 * 24));
+      const daysUntilReset = Math.max(
+        0,
+        Math.ceil((cycleEnd - now) / (1000 * 60 * 60 * 24))
+      );
 
       // Calculate usage breakdown
       const transactions = creditUsage.transactions || [];
@@ -44,21 +52,24 @@ class CreditsService {
       );
 
       // Check warnings
-      // Warning should trigger when REMAINING credits are LOW (below threshold percentage)
-      const percentageUsed = (usedCredits / totalCredits) * 100;
-      const percentageRemaining = (remainingCredits / totalCredits) * 100;
+      const safeTotalCredits = Math.max(totalCredits, 1);
+      const percentageUsed = (usedCredits / safeTotalCredits) * 100;
+      const percentageRemaining = (remainingCredits / safeTotalCredits) * 100;
       const warningThreshold = creditUsage.lowCreditWarning?.threshold || 20;
+      const lowCreditWarningEnabled = creditUsage.lowCreditWarning?.enabled !== false;
       const warnings = {
-        lowCredit: percentageRemaining <= warningThreshold,  // Warn when remaining % is LOW
+        lowCredit: lowCreditWarningEnabled && percentageRemaining <= warningThreshold,
         nearCycleEnd: daysUntilReset <= 5,
         projectedOverage: projectedRunout && projectedRunout < cycleEnd
       };
 
       return {
         totalCredits,
+        configuredTotalCredits,
         usedCredits,
         remainingCredits,
         percentageUsed: Math.round(percentageUsed * 10) / 10,
+        percentageRemaining: Math.round(percentageRemaining * 10) / 10,
         cycleStart,
         cycleEnd,
         daysUntilReset,
@@ -86,21 +97,21 @@ class CreditsService {
   async checkSufficientCredits(organizationId, action) {
     const timestamp = new Date().toISOString();
     console.log(`🔍 [${timestamp}] Checking credits for action: ${action}, Org: ${organizationId}`);
-
+    
     try {
       // Validate inputs
       if (!organizationId) {
         console.error(`❌ [${timestamp}] Invalid organizationId: ${organizationId}`);
         return { allowed: false, cost: 0, remaining: 0, message: 'Invalid organization ID' };
       }
-
+      
       if (!action || typeof action !== 'string') {
         console.error(`❌ [${timestamp}] Invalid action: ${action}`);
         return { allowed: false, cost: 0, remaining: 0, message: 'Invalid action specified' };
       }
-
+      
       const organization = await Organization.findById(organizationId);
-
+      
       if (!organization) {
         console.error(`❌ [${timestamp}] Organization not found: ${organizationId}`);
         return { allowed: false, cost: 0, remaining: 0, message: 'Organization not found' };
@@ -108,12 +119,12 @@ class CreditsService {
 
       // Get credit cost for this action from plan
       const plan = await Plan.findOne({ code: organization.subscription.plan });
-
+      
       if (!plan) {
         console.warn(`⚠️ No plan found for organization ${organizationId}, plan code: ${organization.subscription?.plan}`);
         return { allowed: false, cost: 0, remaining: 0, message: 'No plan configured for organization' };
       }
-
+      
       const creditCosts = plan.credits?.creditCosts || {};
       const cost = creditCosts[action] || 0;
 
@@ -125,11 +136,11 @@ class CreditsService {
       // Initialize credits if not set up yet
       if (!organization.subscription?.creditUsage || organization.subscription.creditUsage.totalCredits === undefined) {
         console.log(`🔧 Auto-initializing credits for organization ${organizationId} from plan ${plan.code}`);
-
+        
         if (!organization.subscription) {
           organization.subscription = {};
         }
-
+        
         organization.subscription.creditUsage = {
           totalCredits: plan.credits.totalCredits,
           usedCredits: 0,
@@ -147,32 +158,32 @@ class CreditsService {
           creditPurchases: [],
           lowCreditWarning: { enabled: true, threshold: 20 }
         };
-
+        
         await organization.save();
         console.log(`✅ Credits initialized: ${plan.credits.totalCredits} credits`);
       }
 
       const creditUsage = organization.subscription.creditUsage;
       const remainingCredits = creditUsage.remainingCredits || 0;
-
+      
       // Validate credit values
       if (remainingCredits < 0) {
         console.error(`❌ [${timestamp}] Negative credits detected: ${remainingCredits} for org ${organizationId}`);
-        return {
-          allowed: false,
-          cost,
-          remaining: 0,
-          message: 'Credit balance error: negative credits detected'
+        return { 
+          allowed: false, 
+          cost, 
+          remaining: 0, 
+          message: 'Credit balance error: negative credits detected' 
         };
       }
-
+      
       if (cost < 0) {
         console.error(`❌ [${timestamp}] Negative cost detected: ${cost} for action ${action}`);
-        return {
-          allowed: false,
-          cost: 0,
-          remaining: remainingCredits,
-          message: 'Invalid action cost configuration'
+        return { 
+          allowed: false, 
+          cost: 0, 
+          remaining: remainingCredits, 
+          message: 'Invalid action cost configuration' 
         };
       }
 
@@ -210,7 +221,7 @@ class CreditsService {
   async consumeCredits(organizationId, action, entityId, entityType, userId, metadata = {}) {
     const timestamp = new Date().toISOString();
     console.log(`💳 [${timestamp}] Consuming credits for action: ${action}, Org: ${organizationId}`);
-
+    
     // Validate inputs before starting transaction
     if (!organizationId || !action || !entityId || !userId) {
       const missingParams = [];
@@ -218,35 +229,35 @@ class CreditsService {
       if (!action) missingParams.push('action');
       if (!entityId) missingParams.push('entityId');
       if (!userId) missingParams.push('userId');
-
+      
       const errorMsg = `Missing required parameters: ${missingParams.join(', ')}`;
       console.error(`❌ [${timestamp}] ${errorMsg}`);
       throw new Error(errorMsg);
     }
-
+    
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
       const organization = await Organization.findById(organizationId).session(session);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
 
       // Get credit cost with validation
       const plan = await Plan.findOne({ code: organization.subscription.plan }).session(session);
-
+      
       if (!plan) {
         console.error(`❌ [${timestamp}] No plan found for organization`);
         throw new Error('No plan configured for organization');
       }
-
+      
       const validActions = Object.keys(plan.credits?.creditCosts || {});
       if (!validActions.includes(action)) {
         console.warn(`⚠️ [${timestamp}] Unknown action '${action}'. Valid actions: ${validActions.join(', ')}`);
       }
-
+      
       const cost = plan?.credits?.creditCosts?.[action] || 0;
 
       // Skip if no cost
@@ -282,7 +293,7 @@ class CreditsService {
           message: 'Credit balance error: negative credits detected'
         };
       }
-
+      
       if (cost < 0) {
         console.error(`❌ [${timestamp}] Negative cost: ${cost} for action ${action}`);
         await session.abortTransaction();
@@ -292,7 +303,7 @@ class CreditsService {
           message: 'Invalid cost configuration'
         };
       }
-
+      
       // Check if sufficient credits
       if (creditUsage.remainingCredits < cost) {
         console.log(`⚠️ [${timestamp}] Insufficient credits: Required ${cost}, Available ${creditUsage.remainingCredits}`);
@@ -307,7 +318,7 @@ class CreditsService {
       // Deduct credits with validation
       creditUsage.usedCredits = (creditUsage.usedCredits || 0) + cost;
       creditUsage.remainingCredits = Math.max(0, creditUsage.remainingCredits - cost);
-
+      
       // Double-check we didn't go negative
       if (creditUsage.remainingCredits < 0) {
         console.error(`❌ [${timestamp}] Credits went negative after deduction!`);
@@ -329,7 +340,12 @@ class CreditsService {
       creditUsage.transactions.push(transaction);
 
       // Check for low credit warning
-      const percentageRemaining = (creditUsage.remainingCredits / creditUsage.totalCredits) * 100;
+      const safeTotalCredits = Math.max(
+        creditUsage.totalCredits || 0,
+        creditUsage.remainingCredits || 0,
+        1
+      );
+      const percentageRemaining = (creditUsage.remainingCredits / safeTotalCredits) * 100;
       if (percentageRemaining <= (creditUsage.lowCreditWarning?.threshold || 20)) {
         if (creditUsage.lowCreditWarning.enabled) {
           // Mark that warning should be sent
@@ -350,7 +366,13 @@ class CreditsService {
         organization: organization.name,
         previousBalance: creditUsage.remainingCredits + cost,
         newBalance: creditUsage.remainingCredits,
-        percentageRemaining: ((creditUsage.remainingCredits / creditUsage.totalCredits) * 100).toFixed(1) + '%'
+        percentageRemaining: (
+          (creditUsage.remainingCredits / Math.max(
+            creditUsage.totalCredits || 0,
+            creditUsage.remainingCredits || 0,
+            1
+          )) * 100
+        ).toFixed(1) + '%'
       });
 
       return {
@@ -384,7 +406,7 @@ class CreditsService {
 
     try {
       const organization = await Organization.findById(organizationId).session(session);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -405,9 +427,7 @@ class CreditsService {
 
       const creditUsage = organization.subscription.creditUsage;
 
-      // Add credits to both total and remaining balance
-      // This ensures percentage calculations remain accurate
-      creditUsage.totalCredits += credits;
+      // Add credits to balance
       creditUsage.remainingCredits += credits;
 
       // Add transaction
@@ -462,7 +482,7 @@ class CreditsService {
   async resetCycleCredits(organizationId) {
     try {
       const organization = await Organization.findById(organizationId);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -473,7 +493,7 @@ class CreditsService {
       const rolloverPercentage = plan?.credits?.rolloverPercentage || 0;
 
       const creditUsage = organization.subscription.creditUsage || {};
-
+      
       // Calculate rollover
       let rolloverCredits = 0;
       if (rolloverEnabled && rolloverPercentage > 0) {
@@ -532,7 +552,7 @@ class CreditsService {
     try {
       const organization = await Organization.findById(organizationId)
         .populate('subscription.creditUsage.transactions.performedBy', 'profile.firstName profile.lastName email');
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -577,7 +597,7 @@ class CreditsService {
   async getCreditUsageAnalytics(organizationId) {
     try {
       const organization = await Organization.findById(organizationId);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -627,13 +647,13 @@ class CreditsService {
   async syncCreditsFromPlan(organizationId) {
     try {
       const organization = await Organization.findById(organizationId);
-
+      
       if (!organization) {
         throw new Error('Organization not found');
       }
 
       const plan = await Plan.findOne({ code: organization.subscription.plan });
-
+      
       if (!plan || !plan.credits) {
         console.log('Plan has no credits configuration, skipping sync');
         return { success: false, message: 'Plan has no credits configuration' };
@@ -654,7 +674,7 @@ class CreditsService {
         };
 
         await organization.save();
-
+        
         console.log(`✅ Credits initialized from plan for org ${organizationId}`);
         return { success: true, message: 'Credits initialized from plan' };
       }
@@ -700,13 +720,13 @@ class CreditsService {
 
   _calculateAverageDailyBurn(transactions) {
     const usageTransactions = transactions.filter(t => t.credits < 0);
-
+    
     if (usageTransactions.length === 0) return 0;
 
     const totalCreditsUsed = usageTransactions.reduce((sum, t) => sum + Math.abs(t.credits), 0);
     const firstTransaction = usageTransactions[usageTransactions.length - 1];
     const lastTransaction = usageTransactions[0];
-
+    
     const daysDiff = Math.max(
       1,
       Math.ceil((new Date(lastTransaction.timestamp) - new Date(firstTransaction.timestamp)) / (1000 * 60 * 60 * 24))
@@ -717,7 +737,7 @@ class CreditsService {
 
   _calculateProjectedRunout(remainingCredits, transactions, cycleEnd) {
     const avgDailyBurn = this._calculateAverageDailyBurn(transactions);
-
+    
     if (avgDailyBurn === 0) return null;
 
     const daysUntilRunout = Math.floor(remainingCredits / avgDailyBurn);
@@ -743,7 +763,7 @@ class CreditsService {
     // More diverse usage = better efficiency
     const actionCount = Object.keys(usageBreakdown).length;
     const maxActions = 8; // Total possible action types
-
+    
     return Math.round((actionCount / maxActions) * 100);
   }
 }

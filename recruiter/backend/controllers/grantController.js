@@ -1,5 +1,6 @@
 const grantVerificationService = require('../services/grantVerificationService');
 const User = require('../models/User');
+const grantManagementService = require('../services/grantManagementService');
 
 /**
  * Check if the current user's grant is valid
@@ -61,7 +62,7 @@ const verifyGrant = async (req, res) => {
 const generateReauthUrl = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { provider = 'google', forceAccountSelection = false } = req.body;
+    const { provider, forceAccountSelection = false } = req.body || {};
     
     const result = await grantVerificationService.generateReauthUrl(userId, provider, forceAccountSelection);
     
@@ -332,12 +333,12 @@ const revokeGrant = async (req, res) => {
       });
     }
     
-    // Clear grant information
-    user.nylasGrantId = null;
-    user.nylasGrantStatus = 'revoked';
-    user.calendarConnected = false;
-    user.lastGrantRevocation = new Date();
-    await user.save();
+    // Revoke in Nylas and clear local grant metadata
+    const revocationResult = await grantManagementService.revokeGrant(
+      userId,
+      'Calendar access manually revoked',
+      true
+    );
     
     // Cancel future interviews
     const cancellationResult = await grantVerificationService.cancelInterviewsForInvalidGrant(
@@ -348,7 +349,8 @@ const revokeGrant = async (req, res) => {
     res.json({
       success: true,
       message: 'Grant revoked successfully',
-      cancelledInterviews: cancellationResult.cancelledCount
+      cancelledInterviews: cancellationResult.cancelledCount,
+      revokedInNylas: Boolean(revocationResult.revokedInNylas)
     });
   } catch (error) {
     console.error('Error revoking grant:', error);

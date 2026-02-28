@@ -56,7 +56,7 @@ router.post('/force-join/:interviewId', async (req, res) => {
     console.log(`🚀 Force joining notetaker ${interview.notetakerId} for interview ${interviewId}`);
     
     // Get current notetaker status
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     console.log('Current notetaker status:', status);
     
     res.json({
@@ -91,7 +91,7 @@ router.post('/refresh-status/:interviewId', async (req, res) => {
     console.log(`🔄 Refreshing notetaker status for ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     console.log('Fresh notetaker status from Nylas:', status);
     
     const notetakerData = status.data || status;
@@ -164,13 +164,13 @@ router.get('/debug/:interviewId', authMiddleware, async (req, res) => {
     console.log(`🐛 Getting raw Nylas data for notetaker ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     
     // Also try to get the transcript to see if it's available
     let transcriptAvailable = false;
     let transcriptError = null;
     try {
-      const transcript = await nylasV3Service.getTranscript(interview.interviewerId.nylasGrantId, interview.notetakerId);
+      const transcript = await nylasV3Service.getStandaloneTranscript(interview.notetakerId);
       if (transcript && transcript.content) {
         transcriptAvailable = true;
       }

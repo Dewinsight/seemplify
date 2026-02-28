@@ -6,6 +6,7 @@ const Candidate = require('../models/Candidate');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const authMiddleware = require('../middleware/authMiddleware');
+const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 
 /**
  * POST /api/candidate-emails/send-rejection
@@ -291,7 +292,7 @@ router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      emailSettings: job.emailSettings || {},
+      emailSettings: decodeObjectHtmlEntities(job.emailSettings || {}),
       jobTitle: job.title
     });
 
@@ -334,7 +335,7 @@ router.put('/job/:jobId/email-settings',
 
       const { jobId } = req.params;
       const organizationId = req.user?.currentOrganization;
-      const emailSettings = req.body;
+      const emailSettings = decodeObjectHtmlEntities(req.body || {});
 
       // Build query to ensure job belongs to organization
       const query = { _id: jobId };
@@ -362,7 +363,7 @@ router.put('/job/:jobId/email-settings',
       res.json({
         success: true,
         message: 'Email settings updated successfully',
-        emailSettings: job.emailSettings
+        emailSettings: decodeObjectHtmlEntities(job.emailSettings)
       });
 
     } catch (error) {

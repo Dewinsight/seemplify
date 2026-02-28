@@ -2,6 +2,22 @@ const User = require('../models/User');
 const Interview = require('../models/Interview');
 const nylasV3Service = require('./nylasV3Service');
 
+function normalizeCalendarProvider(provider = '') {
+  const normalized = String(provider || '').toLowerCase();
+  if (
+    normalized.includes('microsoft') ||
+    normalized.includes('outlook') ||
+    normalized.includes('azure') ||
+    normalized.includes('teams')
+  ) {
+    return 'microsoft';
+  }
+  if (normalized.includes('google') || normalized.includes('gmail')) {
+    return 'google';
+  }
+  return normalized || 'google';
+}
+
 class GrantVerificationService {
   constructor() {
     this.nylasService = nylasV3Service;
@@ -115,23 +131,30 @@ class GrantVerificationService {
    * @param {boolean} forceAccountSelection - Force account selection (for switching accounts)
    * @returns {Object} Auth URL and state data
    */
-  async generateReauthUrl(userId, provider = 'google', forceAccountSelection = false) {
+  async generateReauthUrl(userId, provider = null, forceAccountSelection = false) {
     try {
       const user = await User.findById(userId);
       if (!user) {
         throw new Error('User not found');
       }
 
+      const resolvedProvider = normalizeCalendarProvider(provider || user.calendarProvider);
+
       // Create state data for the OAuth flow
       const stateData = JSON.stringify({
         userId: userId,
         email: user.email,
+        provider: resolvedProvider,
         isReauth: true,
         forceAccountSelection: forceAccountSelection,
         timestamp: Date.now()
       });
 
-      const authUrl = await this.nylasService.createAuthUrl(stateData, provider, forceAccountSelection);
+      const authUrl = await this.nylasService.createAuthUrl(
+        stateData,
+        resolvedProvider,
+        forceAccountSelection
+      );
       
       // Update user status to indicate reauth in progress
       user.nylasGrantStatus = 'reauth_pending';
@@ -139,6 +162,7 @@ class GrantVerificationService {
 
       return {
         authUrl: authUrl,
+        provider: resolvedProvider,
         state: stateData,
         user: user
       };

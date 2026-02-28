@@ -12,6 +12,8 @@ const websocketService = require('./services/websocketService');
 const grantVerificationScheduler = require('./scripts/grantVerificationScheduler');
 const interviewFeedbackEmailService = require('./services/interviewQuestionEmailService');
 const backgroundServiceManager = require('./services/backgroundServiceManager');
+const multiCandidateRetryService = require('./services/multiCandidateRetryService');
+const interviewBotJoinService = require('./services/interviewBotJoinService');
 const { requestValidation } = require('./middleware/requestValidation');
 
 // Load environment variables
@@ -91,9 +93,7 @@ const corsOptions = {
       'http://localhost:3000',
       'http://localhost:5000', 
       'https://thesmarthr.netlify.app',
-      'https://app.seemplifyai.com',
-      'https://api.seemplifyai.com',
-      'https://auth.seemplifyai.com',
+      'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net',
       'https://smarthr.aiinnigeria.com',
       'https://smarthrhandover-dev.sterling.ng',
       'smarthrhandover-dev.sterling.ng',
@@ -326,7 +326,9 @@ const interviewStatusService = require('./services/interviewStatusService');
 backgroundServiceManager.register('interviewFeedbackEmail', interviewFeedbackEmailService);
 backgroundServiceManager.register('interviewCompletion', interviewCompletionService);
 backgroundServiceManager.register('interviewStatus', interviewStatusService);
+backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);
 backgroundServiceManager.register('grantVerification', grantVerificationScheduler);
+backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
 
 // Start all background services
 backgroundServiceManager.startAll();

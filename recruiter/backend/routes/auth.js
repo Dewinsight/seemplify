@@ -8,7 +8,6 @@ const otpService = require('../services/otpService');
 const sessionService = require('../services/sessionService');
 const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
-const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 const router = express.Router();
 
@@ -46,7 +45,97 @@ async function getCachedIssuer(issuerUrl) {
   return issuer;
 }
 
-// Signup is handled by the IDP; no local signup route.
+// @route   POST /api/auth/signup
+// @desc    Register a new user
+// @access  Public
+router.post('/signup', async (req, res) => {
+  const { email, password } = req.body;
+
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ msg: 'Please enter all fields' });
+  }
+
+  try {
+    // Check for existing user
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ msg: 'User already exists' });
+    }
+
+    // Create new user
+    user = new User({
+      email,
+      password,
+    });
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+
+    // Save user to database
+    await user.save();
+
+    try {
+      // Generate browser fingerprint
+      const fingerprintData = browserFingerprintService.generateFingerprint(req);
+
+      // Create session with proper tokens
+      const { accessToken, refreshToken, session } = await sessionService.createSession({
+        user,
+        fingerprint: fingerprintData.fingerprint,
+        userAgent: req.headers['user-agent'] || 'unknown',
+        ip: req.ip,
+      });
+
+      // Trust this browser for future logins
+      await browserFingerprintService.trustBrowser(user, fingerprintData.fingerprint);
+
+      // Return both tokens for proper authentication
+      res.json({
+        token: accessToken,
+        refreshToken,
+        expiresIn: process.env.JWT_ACCESS_TTL || '10m',
+        sessionId: session.accessTokenId,
+        user: {
+          id: user.id,
+          email: user.email
+        }
+      });
+    } catch (sessionErr) {
+      console.error('Session creation error:', sessionErr);
+
+      // Fallback to simple JWT if session creation fails
+      const payload = {
+        user: {
+          id: user.id,
+        },
+      };
+
+      jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' },
+        (err, token) => {
+          if (err) {
+            console.error(err.message);
+            return res.status(500).send('Server error on token generation');
+          }
+          // Note: This fallback doesn't include refresh token
+          // Client should handle this case appropriately
+          res.json({
+            token,
+            fallback: true,
+            message: 'Session creation failed, using fallback authentication'
+          });
+        }
+      );
+    }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
 
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token (with MFA for new browsers)
@@ -475,8 +564,19 @@ router.get('/oidc/callback', async (req, res) => {
     console.log('🎯 OIDC Callback received:', {
       hasCode: !!req.query.code,
       hasState: !!req.query.state,
-      hasError: !!req.query.error
+      hasError: !!req.query.error,
+      error: req.query.error,
+      errorDescription: req.query.error_description
     });
+
+    // Check if IdP returned an error directly in the callback URL
+    if (req.query.error) {
+      console.error('❌ IdP returned error:', req.query.error, req.query.error_description);
+      return res.status(400).json({
+        msg: 'OIDC callback failed',
+        error: `${req.query.error}: ${req.query.error_description || 'Unknown IdP error'}`
+      });
+    }
 
     // Validate required environment variables
     const issuerUrl = process.env.OIDC_ISSUER;
@@ -490,14 +590,11 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(500).json({ msg: 'OIDC client credentials not configured' });
     }
 
-    // CRITICAL: Use the same redirect URI as OIDC start - based on the incoming request
-    // This ensures the redirect_uri matches between authorization and token exchange
-    // Previous bug: Used FRONTEND_URL which defaults to localhost:3001, but OIDC start used localhost:5001
-    const callbackPath = '/api/auth/oidc/callback';
+    // Dynamically determine callback URL from request
     const protocol = req.protocol;
     const host = req.get('host');
+    const callbackPath = '/api/auth/oidc/callback';
     const redirectUri = `${protocol}://${host}${callbackPath}`;
-    console.log('🔗 OIDC redirect URI:', { protocol, host, redirectUri });
 
     // Decode state JWT to extract returnTo and nonce
     const stateCookie = req.cookies['oidc_state'];
@@ -535,72 +632,6 @@ router.get('/oidc/callback', async (req, res) => {
     console.log('✅ OIDC tokens received for:', email);
     console.log('📊 Organization claims:', userinfo.organizations ? userinfo.organizations.length : 0, 'organizations');
     console.log('👥 Team claims:', userinfo.teams ? userinfo.teams.length : 0, 'teams');
-    console.log('🏢 Current organization:', userinfo.current_organization?.name || 'none');
-
-    // ==========================================================================
-    // STAFF ROLE ACCESS CHECK
-    // Staff role users are not allowed to access Recruiter
-    // IMPORTANT: We only check the CURRENT organization's role, not all orgs.
-    // A user can be 'staff' in one org but 'admin' in another - they should
-    // be able to access Recruiter when their current org role allows it.
-    // ==========================================================================
-    const currentOrg = userinfo.current_organization;
-
-    if (currentOrg && userinfo.organizations && userinfo.organizations.length > 0) {
-      // Find the user's role in their current organization
-      const currentOrgMembership = userinfo.organizations.find(org => org.id === currentOrg.id);
-
-      if (currentOrgMembership && currentOrgMembership.role === 'staff') {
-        console.log('🚫 User with staff role in CURRENT organization attempting to access Recruiter:', email);
-        console.log('   Current org:', currentOrg.name, '- Role:', currentOrgMembership.role);
-
-        // Check if user has other organizations with non-staff roles
-        const otherOrgsWithAccess = userinfo.organizations.filter(
-          org => org.id !== currentOrg.id && org.role !== 'staff'
-        );
-        const hasOtherOrgs = otherOrgsWithAccess.length > 0;
-
-        console.log('   Other organizations with access:',
-          hasOtherOrgs ? otherOrgsWithAccess.map(o => `${o.name} (${o.role})`).join(', ') : 'None');
-
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
-        const hubUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
-
-        // Build a helpful error message
-        const errorParams = new URLSearchParams({
-          error: 'staff_role_denied',
-          orgName: currentOrg.name || 'your current organization',
-          hubUrl: hubUrl,
-          hasOtherOrgs: hasOtherOrgs ? 'true' : 'false'
-        });
-
-        return res.redirect(`${frontendUrl}/login?${errorParams.toString()}`);
-      }
-    }
-
-    // ==========================================================================
-    // SUBSCRIPTION ACCESS CHECK
-    // Verify the organization has an active subscription with recruiter access
-    // ==========================================================================
-    if (currentOrg) {
-      console.log('🔒 Verifying subscription access for org:', currentOrg.id);
-      const subscriptionCheck = await verifySubscriptionAccess(
-        currentOrg.id,
-        tokenSet.access_token
-      );
-
-      if (!subscriptionCheck.allowed) {
-        console.log('❌ Subscription access denied for recruiter:', subscriptionCheck.reason);
-        // Redirect to IDP subscription required page
-        const subscriptionUrl = getSubscriptionRequiredUrl(
-          'recruiter',
-          currentOrg.id,
-          subscriptionCheck.reason
-        );
-        return res.redirect(subscriptionUrl);
-      }
-      console.log('✅ Subscription access verified for recruiter');
-    }
 
     let user = await User.findOne({ email });
     if (!user) {
@@ -757,7 +788,7 @@ router.get('/oidc/callback', async (req, res) => {
           if (membership.joinedAt && (!existing.joinedAt || membership.joinedAt > existing.joinedAt)) {
             existing.joinedAt = membership.joinedAt;
           }
-          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, employee: 5, staff: 6 };
+          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, employee: 5 };
           const existingRank = rolePriority[existing.role] ?? 99;
           const incomingRank = rolePriority[membership.role] ?? 99;
           if (incomingRank < existingRank) {
@@ -844,31 +875,7 @@ router.get('/oidc/callback', async (req, res) => {
 
     const base = returnTo.replace(/#.*$/, '');
     const target = base.includes('/login') ? base : `${base.replace(/\/$/, '')}/login`;
-    const tokenParams = `token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
-    const callbackTarget = base.includes('/login')
-      ? base.replace(/\/login.*$/, '') + '/oidc/callback'
-      : `${base.replace(/\/$/, '')}/oidc/callback`;
-    const loc = process.env.NODE_ENV === 'development'
-      ? `${callbackTarget}?${tokenParams}`
-      : `${target}#${tokenParams}`;
-
-    if (process.env.NODE_ENV === 'development') {
-      // Check if this is localhost or deployed dev environment
-      const isLocalhost = returnTo.includes('localhost') || returnTo.includes('127.0.0.1');
-
-      const cookieOptions = isLocalhost
-        ? { sameSite: 'lax', path: '/' }  // Localhost: no secure, no domain restriction
-        : { sameSite: 'lax', secure: true, domain: '.seemplifyai.com', path: '/' };  // Deployed dev
-
-      res.cookie('dev_jwt', accessToken, cookieOptions);
-      res.cookie('dev_refreshToken', refreshToken, cookieOptions);
-      res.cookie('dev_expiresIn', process.env.JWT_ACCESS_TTL || '10m', cookieOptions);
-    }
-
-    const safeLoc = loc
-      .replace(/token=[^&]*/g, 'token=[redacted]')
-      .replace(/refreshToken=[^&]*/g, 'refreshToken=[redacted]')
-      .replace(/expiresIn=[^&]*/g, 'expiresIn=[redacted]');
+    const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;
 
     console.log('🔄 Redirecting to frontend with tokens:', {
       email: email,
@@ -876,7 +883,6 @@ router.get('/oidc/callback', async (req, res) => {
       hasToken: !!accessToken,
       hasRefreshToken: !!refreshToken
     });
-    console.log('🔄 Redirect URL:', safeLoc);
 
     console.log(`⏱️ OIDC Callback total time: ${Date.now() - callbackStartTime}ms`);
     res.redirect(loc);

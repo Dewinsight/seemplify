@@ -5,11 +5,12 @@ const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const creditsController = require('../controllers/creditsController');
 
-// User routes (requires authentication and organization)
-router.get('/status', authMiddleware, requireOrganization, creditsController.getCreditStatus);
-router.get('/transactions', authMiddleware, requireOrganization, creditsController.getCreditTransactions);
-router.get('/analytics', authMiddleware, requireOrganization, creditsController.getCreditAnalytics);
-router.get('/packs', authMiddleware, requireOrganization, creditsController.getCreditPacks);
+// User routes
+router.get('/status', authMiddleware, creditsController.getCreditStatus);
+router.get('/transactions', authMiddleware, creditsController.getCreditTransactions);
+router.get('/analytics', authMiddleware, creditsController.getCreditAnalytics);
+router.get('/packs', authMiddleware, creditsController.getCreditPacks);
+// Purchase requires an active organization context
 router.post('/purchase', authMiddleware, requireOrganization, creditsController.purchaseCredits);
 
 // Admin routes (requires admin authentication)

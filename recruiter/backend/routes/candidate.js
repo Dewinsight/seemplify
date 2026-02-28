@@ -36,7 +36,7 @@ const fileFilter = (req, file, cb) => {
     mimetype: file.mimetype,
     encoding: file.encoding
   });
-  
+
   const allowedTypes = [
     'application/pdf',
     'application/msword',
@@ -46,7 +46,7 @@ const fileFilter = (req, file, cb) => {
     'image/jpg',
     'image/tiff'
   ];
-  
+
   if (allowedTypes.includes(file.mimetype)) {
     console.log('✅ File type accepted:', file.mimetype);
     cb(null, true);
@@ -58,7 +58,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
     files: 1
   },
@@ -81,8 +81,8 @@ const logMulterProcessing = (req, res, next) => {
 // @route   POST api/candidates/upload-cv
 // @desc    Upload CV, parse, and create candidate
 // @access  Private (or Public depending on your requirements)
-router.post('/upload-cv', 
-  authMiddleware, 
+router.post('/upload-cv',
+  authMiddleware,
   requireOrganization,
   requireCredits('uploadCandidate', 'candidate'),
   (req, res, next) => {
@@ -113,7 +113,7 @@ router.post('/upload-cv',
 // @route   POST api/candidates/public/upload-cv
 // @desc    Upload CV, parse, and create candidate (public access for job applications)
 // @access  Public
-router.post('/public/upload-cv', 
+router.post('/public/upload-cv',
   (req, res, next) => {
     console.log('🌐 Public CV upload route hit');
     // Set a longer timeout for CV processing
@@ -144,6 +144,11 @@ router.post('/', authMiddleware, requireOrganization, candidateController.create
 // @desc    Get all candidates
 // @access  Private
 router.get('/', authMiddleware, requireOrganization, candidateController.getAllCandidates);
+
+// @route   GET api/candidates/export
+// @desc    Export candidates to Excel
+// @access  Private
+router.get('/export', authMiddleware, requireOrganization, candidateController.exportCandidates);
 
 // @route   GET api/candidates/:id
 // @desc    Get a single candidate by ID
@@ -181,7 +186,7 @@ router.get('/:id/accessible-resume-url', authMiddleware, requireOrganization, ca
 router.get('/public/:id/accessible-resume-url', candidateController.getAccessibleResumeUrl);
 
 // @route   GET api/candidates/:id/embedding-status
-// @desc    Check if candidate has embedding in Weaviate
+// @desc    Check if candidate has embedding in Pinecone
 // @access  Private
 router.get('/:id/embedding-status', authMiddleware, requireOrganization, candidateController.checkEmbeddingStatus);
 

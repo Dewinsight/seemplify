@@ -1,5 +1,20 @@
 const Interview = require('../models/Interview');
 const nylasV3Service = require('./nylasV3Service');
+const NylasAccount = require('../models/NylasAccount');
+
+async function getAccountCredentials(user) {
+  if (!user?.nylasAccountId) return null;
+
+  const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+  if (!nylasAccount) return null;
+
+  return {
+    apiKey: nylasAccount.apiKey,
+    apiUri: nylasAccount.apiUri,
+    region: nylasAccount.region,
+    clientId: nylasAccount.clientId
+  };
+}
 
 // Helper function to update pipeline status when interview is completed
 async function updatePipelineStatusOnCompletion(interview) {
@@ -92,7 +107,7 @@ async function checkAndCompleteInterviews() {
         $lt: new Date(), // Past interviews only
         $gte: threeDaysAgo // But not older than 3 days
       }
-    }).populate('interviewerId', 'nylasGrantId');
+    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     console.log(`📋 [COMPLETION-CHECK] Found ${candidateInterviews.length} interviews to check`);
     
@@ -162,7 +177,6 @@ async function checkAndCompleteInterviews() {
         // Check notetaker status via API
         // For multi-candidate interviews, get the notetaker ID from session holder if needed
         let notetakerIdToCheck = interview.notetakerId;
-        let grantIdToCheck = interview.interviewerId?.nylasGrantId;
         
         if (interview.isMultiCandidate && interview.multiCandidateSessionId && !notetakerIdToCheck) {
           console.log(`🔍 [COMPLETION-CHECK] Looking for session holder's notetaker ID for interview ${interview._id}`);
@@ -174,11 +188,7 @@ async function checkAndCompleteInterviews() {
             const sessionHolder = sessionInterviews.find(si => si.notetakerId);
             if (sessionHolder) {
               notetakerIdToCheck = sessionHolder.notetakerId;
-              // Use the session holder's interviewer for the grant ID if current interview doesn't have one
-              if (!grantIdToCheck && sessionHolder.interviewerId) {
-                const sessionHolderPopulated = await Interview.findById(sessionHolder._id).setOptions({ sanitizeFilter: false }).populate('interviewerId', 'nylasGrantId');
-                grantIdToCheck = sessionHolderPopulated.interviewerId?.nylasGrantId;
-              }
+              // Standalone notetakers are account-scoped; completion checks only need a notetaker ID.
               console.log(`✅ [COMPLETION-CHECK] Found session holder notetaker: ${notetakerIdToCheck}`);
             }
           } catch (sessionError) {
@@ -186,15 +196,14 @@ async function checkAndCompleteInterviews() {
           }
         }
         
-        if (grantIdToCheck && notetakerIdToCheck) {
+        if (notetakerIdToCheck) {
           try {
-            const notetakerStatus = await nylasV3Service.getNotetakerStatus(
-              grantIdToCheck,
-              notetakerIdToCheck
-            );
-            
-            const state = notetakerStatus.data?.state || notetakerStatus.state;
-            const meetingState = notetakerStatus.data?.meeting_state || notetakerStatus.meeting_state;
+            const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
+            const statusResponse = await nylasV3Service.getStandaloneNotetakerStatus(notetakerIdToCheck, accountCredentials);
+
+            const notetakerData = statusResponse.data || statusResponse;
+            const state = notetakerData.state || notetakerData.status || 'unknown';
+            const meetingState = notetakerData.meeting_state || 'unknown';
             
             console.log(`📊 [COMPLETION-CHECK] Interview ${interview._id} notetaker status: state=${state}, meetingState=${meetingState}`);
             
@@ -202,10 +211,16 @@ async function checkAndCompleteInterviews() {
             const mappedStatus = mapNotetakerStatus(meetingState, state);
             if (interview.notetakerStatus !== mappedStatus) {
               interview.notetakerStatus = mappedStatus;
+              interview.notetakerType = 'standalone';
               await interview.save();
               console.log(`📊 [STATUS-UPDATE] Interview ${interview._id} notetaker status: ${interview.notetakerStatus} → ${mappedStatus}`);
             }
             
+            if (interview.notetakerType !== 'standalone') {
+              interview.notetakerType = 'standalone';
+              await interview.save();
+            }
+
             // If notetaker is completed, check if interview should be completed
             if (mappedStatus === 'completed' && interview.status !== 'completed') {
               console.log(`🤖 [AUTO-COMPLETE] Notetaker completed for interview ${interview._id}`);
@@ -278,7 +293,7 @@ async function checkAndCompleteInterviews() {
             }
           }
         } else {
-          console.log(`⚠️ [COMPLETION-CHECK] Interview ${interview._id} missing grant ID or notetaker ID (checked session holder too)`);
+          console.log(`⚠️ [COMPLETION-CHECK] Interview ${interview._id} missing notetaker ID (checked session holder too)`);
           
           // For multi-candidate interviews without transcript, complete after sufficient time
           if (interview.isMultiCandidate && hoursSinceScheduled > 2) {
@@ -320,7 +335,7 @@ async function cleanupOldInterviews() {
     const oldInterviews = await Interview.find({
       status: { $in: ['scheduled', 'confirmed', 'in_progress'] }, // Only incomplete interviews
       scheduledAt: { $lt: sevenDaysAgo }
-    }).populate('interviewerId', 'nylasGrantId');
+    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (oldInterviews.length > 0) {
       console.log(`🧹 [CLEANUP] Found ${oldInterviews.length} old incomplete interviews to verify`);
@@ -344,6 +359,7 @@ async function cleanupOldInterviews() {
               if (nylasAccount) {
                 accountCredentials = {
                   apiKey: nylasAccount.apiKey,
+                  apiUri: nylasAccount.apiUri,
                   region: nylasAccount.region,
                   clientId: nylasAccount.clientId
                 };

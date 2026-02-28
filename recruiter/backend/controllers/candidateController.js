@@ -64,7 +64,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
   try {
     console.log("🚀 Starting PARALLEL CV processing with retry logic...");
     console.log(`File: ${req.file.originalname}, Type: ${fileType}, Size: ${req.file.size} bytes`);
-    
+
     // ⚡ PARALLEL EXECUTION with retry: Run both services simultaneously
     const uploadWithRetry = async () => {
       return await RetryHelper.withRetry(
@@ -99,7 +99,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       resumeUrl: cloudinaryResult.resumeUrl,
       publicId: cloudinaryResult.publicId
     });
-    
+
     // ✅ MONITORING: Enhanced CV parsing metrics
     const parsingMetrics = {
       success: cvParsingResult.success,
@@ -114,14 +114,14 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       extractedName: !!(cvParsingResult.extractedFields?.firstName && cvParsingResult.extractedFields?.lastName),
       extractedEmail: !!cvParsingResult.extractedFields?.email
     };
-    
+
     console.log('📊 CV Processing Metrics:', parsingMetrics);
-    
+
     // Log warning if parsing quality is low
     if (parsingMetrics.textLength < 100 && parsingMetrics.textLength > 0) {
       console.warn('⚠️ Low text extraction - possible scanned PDF or poor quality file');
     }
-    
+
     if (!parsingMetrics.extractedName || !parsingMetrics.extractedEmail) {
       console.warn('⚠️ Missing critical candidate information in extraction');
     }
@@ -133,17 +133,18 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 
     // ✅ CRITICAL FIX: Prevent candidate creation with insufficient data
     if (!cvParsingResult.success) {
-      throw new Error(`CV parsing failed: ${cvParsingResult.error || 'Could not extract text from CV'}`);
+      // Use the service's detailed error message if available (e.g. image-based CV)
+      throw new Error(cvParsingResult.error || 'Could not extract text from CV');
     }
 
     // ✅ CRITICAL FIX: Validate we have sufficient text to prevent hallucinations
     if (!cvParsingResult.parseSuccess || !cvParsingResult.resumeText || cvParsingResult.resumeText.length < 50) {
-      throw new Error('Unable to extract sufficient information from CV. Please ensure the file is a text-based PDF/DOCX or enter candidate information manually.');
+      throw new Error('IMAGE_BASED_CV: Do NOT use image-based or scanned CVs — we cannot extract text from them. Please upload a text-based PDF or DOCX file with selectable text, or enter your information manually. Ensure the email in your CV is correct — a wrong email can cause issues.');
     }
 
     // Extract results and fix PDF URLs for Free Plan
     let resumeUrl = cloudinaryResult.resumeUrl;
-    
+
     // 🔧 FIX: Generate accessible PDF URL for Free Plan limitations
     if (fileType === 'application/pdf') {
       console.log('📄 Generating accessible PDF URL for Free Plan...');
@@ -155,7 +156,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         // Keep original URL as fallback
       }
     }
-    
+
     const resumeText = cvParsingResult.resumeText || '';
     const extractedFields = cvParsingResult.extractedFields || {};
     const aiAnalysis = cvParsingResult.aiAnalysis || {
@@ -170,7 +171,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 
     // Get organization ID - for public uploads, require jobId and get org from job
     let organizationId = req.user?.currentOrganization;
-    
+
     if (!organizationId && req.body.jobId) {
       // For public applications, get organization from the job being applied to
       const Job = require('../models/Job');
@@ -179,9 +180,9 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         organizationId = job.organization;
       }
     }
-    
+
     if (!organizationId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: 'Organization required. For public applications, please provide a jobId.',
         error: 'Missing organization context'
       });
@@ -193,9 +194,9 @@ exports.uploadAndCreateCandidate = async (req, res) => {
     }
 
     // Ensure we have at least minimal candidate information
-    const hasMinimalInfo = (extractedFields.firstName && extractedFields.lastName) || 
-                          (req.body.firstName && req.body.lastName) ||
-                          resumeText.length > 100; // At least some text was extracted
+    const hasMinimalInfo = (extractedFields.firstName && extractedFields.lastName) ||
+      (req.body.firstName && req.body.lastName) ||
+      resumeText.length > 100; // At least some text was extracted
 
     if (!hasMinimalInfo) {
       console.warn('⚠️ Minimal candidate information not available, but proceeding with defaults');
@@ -209,7 +210,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       lastName: extractedFields.lastName,
       email: extractedFields.email
     });
-    
+
     const candidateData = {
       firstName: extractedFields.firstName || req.body.firstName || 'PARSING_FAILED',
       lastName: extractedFields.lastName || req.body.lastName || 'REVIEW_REQUIRED',
@@ -219,8 +220,8 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       position: req.body.position || extractedFields.position || 'Position TBD', // Prioritize form input
       experience: extractedFields.experience || req.body.experience || 'See resume',
       education: extractedFields.education || req.body.education || 'See resume',
-      skills: Array.isArray(extractedFields.skills) 
-        ? extractedFields.skills.join(', ') 
+      skills: Array.isArray(extractedFields.skills)
+        ? extractedFields.skills.join(', ')
         : (extractedFields.skills || req.body.skills || 'See resume'),
       resumeUrl,
       resumeText: resumeText || '', // Ensure it's at least an empty string
@@ -237,7 +238,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       parsedData: extractedFields || {},
       aiAnalysis: aiAnalysis || {},
       workExperience: cvParsingResult.workExperience || [],
-      
+
       // Store complete structured data for comprehensive candidate profiles
       educationHistory: extractedFields.educationHistory || [],
       certifications: extractedFields.certifications || [],
@@ -250,7 +251,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       portfolioLinks: extractedFields.portfolioLinks || {},
       additionalSections: extractedFields.additionalSections || {},
       fullCVData: extractedFields.fullCVData || extractedFields || {},
-      
+
       // Processing metadata
       processingMetadata: {
         uploadSuccess: cloudinaryResult.success,
@@ -269,19 +270,19 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         publicationsCount: (extractedFields.publications || []).length
       }
     };
-    
+
     console.log('💾 Candidate data prepared:', {
       firstName: candidateData.firstName,
       lastName: candidateData.lastName,
       email: candidateData.email,
       organization: candidateData.organization
     });
-    
+
     // Save candidate to database with retry
     let newCandidate;
     try {
       console.log('💾 Attempting to save candidate to database...');
-      
+
       const saveOperation = async () => {
         const candidate = new Candidate(candidateData);
         console.log('📝 Candidate model created, calling save()...');
@@ -302,19 +303,19 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       console.error('Error stack:', saveError.stack);
       throw new Error(`Database error: Could not save candidate - ${saveError.message}`);
     }
-    
+
     // Handle public job application credit deduction
     if (req.body.jobId) {
       try {
         const Job = require('../models/Job');
         const Organization = require('../models/Organization');
         const Plan = require('../models/Plan');
-        
+
         const job = await Job.findById(req.body.jobId);
-        
+
         if (job && job.isPublic) {
           console.log(`🌐 Candidate applied to public job: ${job.title}`);
-          
+
           // Check if job has reached its application limit - HARD FAIL
           if (job.candidateApplyLimit > 0 && job.publicApplicationCount >= job.candidateApplyLimit) {
             console.warn(`⚠️ Job "${job.title}" has reached its application limit (${job.candidateApplyLimit})`);
@@ -324,32 +325,32 @@ exports.uploadAndCreateCandidate = async (req, res) => {
             const organization = await Organization.findById(organizationId);
             const plan = await Plan.findOne({ code: organization.subscription?.plan });
             const uploadCost = plan?.credits?.creditCosts?.uploadCandidate || 3;
-            
+
             // Check if job has enough reserved credits
             const creditsNeeded = uploadCost;
             const creditsAvailable = job.reservedCredits - (job.publicApplicationCount * uploadCost);
-            
+
             if (creditsAvailable >= creditsNeeded) {
               // Check if this application fills the job
               const newCount = (job.publicApplicationCount || 0) + 1;
               const isNowFull = job.candidateApplyLimit > 0 && newCount >= job.candidateApplyLimit;
-              
+
               // Deduct from reserved credits by incrementing application count
               job.publicApplicationCount = newCount;
-              
+
               // NOTE: Candidate is NOT added to job.applicants here
               // They will be added to job.shortlist when the application form is submitted
               // This prevents the "Candidate already in pipeline" error when applying
-              
+
               await job.save();
-              
+
               const creditsUsed = job.publicApplicationCount * uploadCost;
               const creditsRemaining = job.reservedCredits - creditsUsed;
-              
+
               console.log(`💳 Deducted ${creditsNeeded} credits from public job's reserved pool`);
               console.log(`   Reserved: ${job.reservedCredits}, Used: ${creditsUsed}, Remaining: ${creditsRemaining}`);
               console.log(`   Applications: ${job.publicApplicationCount}/${job.candidateApplyLimit}`);
-              
+
               // Send notification if job just reached limit
               if (isNowFull) {
                 try {
@@ -372,7 +373,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         // Don't fail candidate creation if public job handling fails
       }
     }
-    
+
     // Create activity notification for all organization members
     try {
       if (req.user?.id) {
@@ -383,10 +384,10 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       console.error(`⚠️ Failed to create notifications for candidate ${newCandidate._id}:`, notificationError.message);
       // Don't fail candidate creation if notification fails
     }
-    
+
     // 🔔 Notify GPT cache system of new candidate
     gptAnalysisService.cache.onCandidateAdded(newCandidate._id);
-    
+
     // 📡 Real-time notification via WebSocket (if available)
     try {
       if (websocketService && websocketService.broadcast) {
@@ -401,7 +402,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       console.warn('⚠️ WebSocket notification failed:', wsError.message);
       // Don't fail the request if WebSocket is unavailable
     }
-    
+
     // Create embedding with retry and wait for completion
     let embeddingSuccess = false;
     try {
@@ -414,7 +415,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       // We can retry embedding later
     }
 
-    const responseData = { 
+    const responseData = {
       msg: 'Candidate created successfully from CV',
       candidate: newCandidate,
       processingResults: {
@@ -426,14 +427,14 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         embeddingCreated: embeddingSuccess
       }
     };
-    
+
     console.log('📤 Sending response to client:', {
       status: 201,
       candidateId: newCandidate._id,
       candidateName: `${newCandidate.firstName} ${newCandidate.lastName}`,
       processingResultsKeys: Object.keys(responseData.processingResults)
     });
-    
+
     res.status(201).json(responseData);
 
   } catch (error) {
@@ -443,9 +444,9 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       stack: error.stack,
       name: error.name
     });
-    
+
     // ✅ Send the actual error message to frontend so users see helpful error text
-    res.status(500).json({ 
+    res.status(500).json({
       msg: error.message || 'Server error during CV processing.',
       error: error.message,
       details: error.message
@@ -466,7 +467,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 exports.createCandidateManually = async (req, res) => {
   // Decode HTML entities from request body before saving
   const decodedBody = decodeObjectHtmlEntities(req.body);
-  
+
   const {
     firstName,
     lastName,
@@ -501,10 +502,10 @@ exports.createCandidateManually = async (req, res) => {
     });
 
     await candidate.save();
-    
+
     // 🔔 Notify GPT cache system of new candidate
     gptAnalysisService.cache.onCandidateAdded(candidate._id);
-    
+
     // 📡 Real-time notification via WebSocket (if available)
     try {
       if (websocketService && websocketService.broadcast) {
@@ -519,10 +520,10 @@ exports.createCandidateManually = async (req, res) => {
       console.warn('⚠️ WebSocket notification failed:', wsError.message);
       // Don't fail the request if WebSocket is unavailable
     }
-    
+
     // Create embedding asynchronously (don't wait for it)
     createCandidateEmbedding(candidate);
-    
+
     res.status(201).json({ msg: 'Candidate created successfully', candidate });
 
   } catch (error) {
@@ -537,29 +538,29 @@ exports.checkEmbeddingStatus = async (req, res) => {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
     console.log(`Checking embedding status for candidate: ${id}`);
-    
-    const candidate = await Candidate.findOne({ 
-      _id: id, 
-      organization: organizationId 
+
+    const candidate = await Candidate.findOne({
+      _id: id,
+      organization: organizationId
     });
     if (!candidate) {
       console.log(`Candidate not found: ${id}`);
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
-    console.log(`Candidate found, checking Weaviate for: ${id}`);
-    // Check both database flag and Weaviate existence
-    const existsInWeaviate = await embeddingService.checkEmbeddingExists(id);
-    console.log(`Weaviate check result: ${existsInWeaviate}`);
-    
+    console.log(`Candidate found, checking Pinecone for: ${id}`);
+    // Check both database flag and Pinecone existence
+    const existsInPinecone = await embeddingService.checkEmbeddingExists(id);
+    console.log(`Pinecone check result: ${existsInPinecone}`);
+
     const response = {
       candidateId: id,
       isEmbedded: candidate.isEmbedded,
       embeddingCreatedAt: candidate.embeddingCreatedAt,
-      existsInWeaviate: existsInWeaviate,
-      needsEmbedding: !candidate.isEmbedded || !existsInWeaviate
+      existsInPinecone: existsInPinecone,
+      needsEmbedding: !candidate.isEmbedded || !existsInPinecone
     };
-    
+
     console.log(`Embedding status response:`, response);
     res.json(response);
   } catch (error) {
@@ -573,10 +574,10 @@ exports.createEmbedding = async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
-    
-    const candidate = await Candidate.findOne({ 
-      _id: id, 
-      organization: organizationId 
+
+    const candidate = await Candidate.findOne({
+      _id: id,
+      organization: organizationId
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -584,65 +585,180 @@ exports.createEmbedding = async (req, res) => {
 
     // Create embedding
     await embeddingService.createCandidateEmbedding(candidate);
-    
+
     // Update candidate status
     await Candidate.findByIdAndUpdate(id, {
       isEmbedded: true,
       embeddingCreatedAt: new Date()
     });
 
-    res.json({ 
+    res.json({
       msg: 'Embedding created successfully',
       candidateId: id,
       embeddingCreatedAt: new Date()
     });
   } catch (error) {
     console.error('Error creating embedding manually:', error);
-    res.status(500).json({ 
-      msg: 'Failed to create embedding', 
-      error: error.message 
+    res.status(500).json({
+      msg: 'Failed to create embedding',
+      error: error.message
     });
   }
 };
+
+exports.exportCandidates = async (req, res) => {
+  try {
+    const organizationId = req.user.currentOrganization;
+    const { status, search } = req.query;
+
+    // reuse the same query logic as getAllCandidates but without pagination
+    const query = { organization: organizationId };
+
+    if (status) query.status = status;
+    if (search) {
+      const searchTerms = search.trim().split(/\s+/).filter(term => term.length > 0);
+      const searchRegex = new RegExp(searchTerms.join('|'), 'i');
+      query.$or = [
+        { firstName: searchRegex },
+        { lastName: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { position: searchRegex },
+        { skills: searchRegex },
+        { experience: searchRegex },
+        { education: searchRegex },
+        { location: searchRegex },
+        { resumeText: searchRegex },
+        { coverLetter: searchRegex },
+        { source: searchRegex },
+        { status: searchRegex }
+      ];
+    }
+
+    // Fetch all matching candidates
+    const candidates = await Candidate.find(query)
+      .populate('createdBy', 'profile.firstName profile.lastName')
+      .sort({ createdAt: -1 });
+
+    // Prepare data for Excel
+    const XLSX = require('xlsx');
+    const workbook = XLSX.utils.book_new();
+
+    // --- Sheet 1: Raw Data ---
+    const rawData = candidates.map(c => ({
+      'First Name': c.firstName,
+      'Last Name': c.lastName,
+      'Email': c.email,
+      'Phone': c.phone || 'N/A',
+      'Location': c.location || 'N/A',
+      'Position': c.position || 'N/A',
+      'Current Status': c.status,
+      'Source': c.source || 'Direct',
+      'Experience': c.experience || '',
+      'Education': c.education || '',
+      'Skills': Array.isArray(c.skills) ? c.skills.join(', ') : c.skills || '',
+      'Application Date': c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '',
+      'Added By': c.createdBy ? `${c.createdBy.profile?.firstName} ${c.createdBy.profile?.lastName}` : 'System',
+      'AI Overall Score': c.aiAnalysis?.overallScore || 'N/A',
+      'Resume URL': c.resumeUrl || ''
+    }));
+
+    const rawDataSheet = XLSX.utils.json_to_sheet(rawData);
+    XLSX.utils.book_append_sheet(workbook, rawDataSheet, 'Raw Data');
+
+    // --- Sheet 2: Analytics ---
+
+    // Check if pipeline stages are defined via pipelineService (helper)
+    // For now, we'll just aggregate by status/source from the candidates list
+    // Ideally we would fetch the pipeline config to get proper stage names if 'status' is just internal enum
+
+    const candidatesByStatus = candidates.reduce((acc, c) => {
+      const s = c.status || 'Unknown';
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
+
+    const candidatesBySource = candidates.reduce((acc, c) => {
+      const s = c.source || 'Unknown';
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
+
+    const candidatesByPosition = candidates.reduce((acc, c) => {
+      const p = c.position || 'Unknown';
+      acc[p] = (acc[p] || 0) + 1;
+      return acc;
+    }, {});
+
+    const analyticsData = [
+      ['Total Candidates', candidates.length],
+      ['', ''], // Spacer
+      ['Candidates by Stage', 'Count'],
+      ...Object.entries(candidatesByStatus),
+      ['', ''], // Spacer
+      ['Candidates by Source', 'Count'],
+      ...Object.entries(candidatesBySource),
+      ['', ''], // Spacer
+      ['Candidates by Position', 'Count'],
+      ...Object.entries(candidatesByPosition)
+    ];
+
+    const analyticsSheet = XLSX.utils.aoa_to_sheet(analyticsData);
+    XLSX.utils.book_append_sheet(workbook, analyticsSheet, 'Analytics');
+
+    // Generate buffer
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    // Send response
+    res.setHeader('Content-Disposition', 'attachment; filename="candidates_export.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Error exporting candidates:', error);
+    res.status(500).json({ msg: 'Server error exporting candidates', error: error.message });
+  }
+};
+
 
 exports.getAllCandidates = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const { page = 1, limit = 10, status, search } = req.query;
-    
+
     const query = { organization: organizationId };
-    
+
     if (status) query.status = status;
     if (search) {
       // Create flexible search pattern - split search terms for better matching
       const searchTerms = search.trim().split(/\s+/).filter(term => term.length > 0);
-      
+
       // Create a single regex that matches any of the search terms
       const searchRegex = new RegExp(searchTerms.join('|'), 'i');
-      
+
       // Log for debugging
       console.log('Search query:', search);
       console.log('Search terms:', searchTerms);
       console.log('Search regex:', searchRegex);
-      
+
       query.$or = [
         // Basic info
         { firstName: searchRegex },
         { lastName: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
-        
+
         // Professional info - NOW POSITION SEARCH WILL WORK!
         { position: searchRegex },
         { skills: searchRegex },
         { experience: searchRegex },
         { education: searchRegex },
         { location: searchRegex },
-        
+
         // Resume content
         { resumeText: searchRegex },
         { coverLetter: searchRegex },
-        
+
         // Source and status
         { source: searchRegex },
         { status: searchRegex }
@@ -672,11 +788,11 @@ exports.getAllCandidates = async (req, res) => {
 exports.getCandidateById = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const candidate = await Candidate.findOne({ 
-      _id: req.params.id, 
-      organization: organizationId 
+    const candidate = await Candidate.findOne({
+      _id: req.params.id,
+      organization: organizationId
     });
-    
+
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -693,7 +809,7 @@ exports.getCandidateById = async (req, res) => {
 exports.updateCandidate = async (req, res) => {
   // Decode HTML entities from request body before saving
   const decodedBody = decodeObjectHtmlEntities(req.body);
-  
+
   const {
     firstName,
     lastName,
@@ -707,6 +823,9 @@ exports.updateCandidate = async (req, res) => {
     coverLetter,
     status,
     source,
+    isInternalCandidate,
+    isOrganizationStaff,
+    employeeId,
     notes // Expecting notes to be an array or an object to push
   } = decodedBody;
 
@@ -723,19 +842,26 @@ exports.updateCandidate = async (req, res) => {
   if (coverLetter) candidateFields.coverLetter = coverLetter;
   if (status) candidateFields.status = status;
   if (source) candidateFields.source = source;
+  if (typeof isInternalCandidate === 'boolean') {
+    candidateFields.isInternalCandidate = isInternalCandidate;
+  } else if (typeof isOrganizationStaff === 'boolean') {
+    // Alias used by public job application form.
+    candidateFields.isInternalCandidate = isOrganizationStaff;
+  }
+  if (employeeId !== undefined) candidateFields.employeeId = employeeId;
   // if (req.user) candidateFields.updatedBy = req.user.id; // If using authentication
   candidateFields.updatedAt = Date.now();
 
   try {
     // Handle both authenticated and public route updates
     const organizationId = req.user?.currentOrganization;
-    
+
     // Build query based on whether we have organization context
     const query = { _id: req.params.id };
     if (organizationId) {
       query.organization = organizationId;
     }
-    
+
     let candidate = await Candidate.findOne(query);
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -743,14 +869,14 @@ exports.updateCandidate = async (req, res) => {
 
     // Handle notes update: push new note or update existing
     if (notes) {
-        if (Array.isArray(notes)) { // If a full array of notes is sent
-            candidateFields.notes = notes;
-        } else {
-            if (typeof notes === 'object' && notes.note) { // If a single note object is sent to be added
-                candidate.notes.push(notes); // Mongoose handles pushing to the array
-                // No need to assign to candidateFields.notes here if just pushing
-            }
+      if (Array.isArray(notes)) { // If a full array of notes is sent
+        candidateFields.notes = notes;
+      } else {
+        if (typeof notes === 'object' && notes.note) { // If a single note object is sent to be added
+          candidate.notes.push(notes); // Mongoose handles pushing to the array
+          // No need to assign to candidateFields.notes here if just pushing
         }
+      }
     }
 
 
@@ -762,13 +888,13 @@ exports.updateCandidate = async (req, res) => {
 
     // If notes were pushed directly, save the candidate document
     if (typeof notes === 'object' && notes.note) {
-        await candidate.save();
+      await candidate.save();
     }
 
     // Invalidate AI match cache if candidate profile changed
     const cacheInvalidatingFields = ['experience', 'skills', 'position', 'education', 'coverLetter'];
     const shouldInvalidateCache = cacheInvalidatingFields.some(field => candidateFields[field] !== undefined);
-    
+
     if (shouldInvalidateCache) {
       const aiMatchCacheService = require('../services/aiMatchCacheService');
       aiMatchCacheService.invalidateCandidateCache(candidate._id)
@@ -789,9 +915,9 @@ exports.updateCandidate = async (req, res) => {
 exports.deleteCandidate = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const candidate = await Candidate.findOne({ 
-      _id: req.params.id, 
-      organization: organizationId 
+    const candidate = await Candidate.findOne({
+      _id: req.params.id,
+      organization: organizationId
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -799,10 +925,10 @@ exports.deleteCandidate = async (req, res) => {
 
     console.log(`🗑️ Deleting candidate: ${candidate.firstName} ${candidate.lastName} (${req.params.id})`);
 
-    // Delete embedding from Weaviate first
+    // Delete embedding from Pinecone first
     try {
       await embeddingService.deleteEmbedding(req.params.id);
-      console.log(`✅ Embedding deleted from Weaviate for candidate: ${req.params.id}`);
+      console.log(`✅ Embedding deleted from Pinecone for candidate: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete embedding for candidate ${req.params.id}:`, embeddingError.message);
       // Continue with deletion even if embedding deletion fails
@@ -819,7 +945,7 @@ exports.deleteCandidate = async (req, res) => {
 
     console.log(`✅ Candidate and embedding successfully deleted: ${candidate.firstName} ${candidate.lastName}`);
 
-    res.json({ 
+    res.json({
       msg: 'Candidate removed successfully',
       deletedCandidate: {
         id: req.params.id,
@@ -890,28 +1016,28 @@ exports.getAccessibleResumeUrl = async (req, res) => {
   try {
     // Handle both authenticated and public access
     const organizationId = req.user?.currentOrganization;
-    
+
     // Build query based on whether we have organization context
     const query = { _id: req.params.id };
     if (organizationId) {
       query.organization = organizationId;
     }
-    
+
     const candidate = await Candidate.findOne(query);
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
     if (!candidate.cloudinaryPublicId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: 'No Cloudinary public ID found for this candidate',
-        resumeUrl: candidate.resumeUrl 
+        resumeUrl: candidate.resumeUrl
       });
     }
 
     // Check if it's a PDF that needs accessible URL
     const isPdf = candidate.resumeUrl && candidate.resumeUrl.includes('.pdf');
-    
+
     if (!isPdf) {
       return res.json({
         msg: 'Resume is not a PDF, original URL should work',
@@ -950,17 +1076,17 @@ exports.refreshEmbedding = async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
-    
-    const candidate = await Candidate.findOne({ 
-      _id: id, 
-      organization: organizationId 
+
+    const candidate = await Candidate.findOne({
+      _id: id,
+      organization: organizationId
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
     console.log(`🔄 Refreshing embedding for candidate: ${candidate.firstName} ${candidate.lastName}`);
-    
+
     // Delete existing embedding if it exists
     try {
       await embeddingService.deleteEmbedding(id);
@@ -968,17 +1094,17 @@ exports.refreshEmbedding = async (req, res) => {
     } catch (deleteError) {
       console.log('ℹ️ No existing embedding to delete');
     }
-    
+
     // Create new embedding with enhanced metadata
     await embeddingService.createCandidateEmbedding(candidate);
-    
+
     // Update candidate status
     await Candidate.findByIdAndUpdate(id, {
       isEmbedded: true,
       embeddingCreatedAt: new Date()
     });
 
-    res.json({ 
+    res.json({
       msg: 'Embedding refreshed successfully with enhanced metadata',
       candidateId: id,
       embeddingCreatedAt: new Date(),
@@ -986,9 +1112,9 @@ exports.refreshEmbedding = async (req, res) => {
     });
   } catch (error) {
     console.error('Error refreshing embedding:', error);
-    res.status(500).json({ 
-      msg: 'Failed to refresh embedding', 
-      error: error.message 
+    res.status(500).json({
+      msg: 'Failed to refresh embedding',
+      error: error.message
     });
   }
 };
@@ -1037,16 +1163,16 @@ exports.getGPTStatus = async (req, res) => {
 exports.toggleGPTSystem = async (req, res) => {
   try {
     const { enabled } = req.body;
-    
+
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ msg: 'Invalid enabled value. Must be true or false.' });
     }
-    
+
     // Update the service configuration
     gptAnalysisService.isEnabled = enabled;
-    
+
     console.log(`🔄 GPT Analysis system ${enabled ? 'ENABLED' : 'DISABLED'} via admin toggle`);
-    
+
     res.json({
       msg: `GPT Analysis system ${enabled ? 'enabled' : 'disabled'} successfully`,
       status: {
@@ -1073,13 +1199,13 @@ exports.addComment = async (req, res) => {
   try {
     // Handle both authenticated and public route updates
     const organizationId = req.user?.currentOrganization;
-    
+
     // Build query based on whether we have organization context
     const query = { _id: req.params.id };
     if (organizationId) {
       query.organization = organizationId;
     }
-    
+
     let candidate = await Candidate.findOne(query);
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -1137,13 +1263,13 @@ exports.deleteComment = async (req, res) => {
   try {
     // Handle both authenticated and public route updates
     const organizationId = req.user?.currentOrganization;
-    
+
     // Build query based on whether we have organization context
     const query = { _id: req.params.id };
     if (organizationId) {
       query.organization = organizationId;
     }
-    
+
     let candidate = await Candidate.findOne(query);
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });

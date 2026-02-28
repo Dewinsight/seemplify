@@ -136,13 +136,14 @@ class PipelineProgressionService {
       });
       
       // Update status
+      const previousStatus = applicant.status;
       applicant.status = 'interviewing';
       applicant.statusHistory.push({
         status: 'interviewing',
         changedBy: userId,
         changedAt: new Date(),
         notes: notes || `Advanced to ${targetStage.name}`,
-        previousStatus: applicant.status
+        previousStatus
       });
       
       await job.save();
@@ -219,13 +220,14 @@ class PipelineProgressionService {
       
       // If it's the current stage and result is failed, update status
       if (applicant.currentStage?.stageId?.toString() === stageId.toString() && result === 'failed') {
+        const previousStatus = applicant.status;
         applicant.status = 'rejected';
         applicant.statusHistory.push({
           status: 'rejected',
           changedBy: userId,
           changedAt: new Date(),
           notes: `Failed at ${applicant.currentStage.stageName}: ${feedback}`,
-          previousStatus: applicant.status
+          previousStatus
         });
       }
       
@@ -383,13 +385,14 @@ class PipelineProgressionService {
       }
       
       // Update status
+      const previousStatus = applicant.status;
       applicant.status = 'rejected';
       applicant.statusHistory.push({
         status: 'rejected',
         changedBy: userId,
         changedAt: new Date(),
         notes: reason || 'Candidate rejected',
-        previousStatus: applicant.status
+        previousStatus
       });
       
       await job.save();
@@ -419,6 +422,56 @@ class PipelineProgressionService {
       return applicant;
     } catch (error) {
       console.error('❌ Error rejecting candidate:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Keep candidate in view (pause active progression without rejecting)
+   */
+  async keepCandidateInView(jobId, candidateId, reason, userId) {
+    try {
+      console.log(`👁️ Marking candidate ${candidateId} as keep_in_view`);
+
+      const job = await Job.findById(jobId);
+      if (!job) {
+        throw new Error('Job not found');
+      }
+
+      const applicantIndex = job.applicants.findIndex(
+        app => app.candidate.toString() === candidateId.toString()
+      );
+
+      if (applicantIndex === -1) {
+        throw new Error('Candidate not found in job applicants');
+      }
+
+      const applicant = job.applicants[applicantIndex];
+
+      if (['hired', 'rejected'].includes(applicant.status)) {
+        throw new Error(`Candidate cannot be moved to keep in view from ${applicant.status} status`);
+      }
+
+      if (applicant.status === 'keep_in_view') {
+        return applicant;
+      }
+
+      const previousStatus = applicant.status;
+      applicant.status = 'keep_in_view';
+      applicant.statusHistory.push({
+        status: 'keep_in_view',
+        changedBy: userId,
+        changedAt: new Date(),
+        notes: reason || 'Candidate moved to keep in view',
+        previousStatus
+      });
+
+      await job.save();
+
+      console.log(`✅ Candidate ${candidateId} moved to keep_in_view`);
+      return applicant;
+    } catch (error) {
+      console.error('❌ Error moving candidate to keep_in_view:', error);
       throw error;
     }
   }
@@ -458,13 +511,14 @@ class PipelineProgressionService {
       }
       
       // Update status
+      const previousStatus = applicant.status;
       applicant.status = 'offered';
       applicant.statusHistory.push({
         status: 'offered',
         changedBy: userId,
         changedAt: new Date(),
         notes: `Offer made: ${offerDetails}`,
-        previousStatus: applicant.status
+        previousStatus
       });
       
       // Clear current stage since they've completed the pipeline
@@ -578,13 +632,14 @@ class PipelineProgressionService {
           });
           
           // Update status history
+          const previousStatus = applicant.status;
           applicant.status = 'interviewing';
           applicant.statusHistory.push({
             status: 'interviewing',
             changedBy: userId,
             changedAt: new Date(),
             notes: `Bulk moved to ${targetStage.name} stage`,
-            previousStatus: applicant.status
+            previousStatus
           });
           
           results.successful.push({
@@ -621,6 +676,108 @@ class PipelineProgressionService {
     } catch (error) {
       await session.abortTransaction();
       console.error('❌ Error in bulk move candidates:', error);
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  /**
+   * Bulk keep candidates in view
+   */
+  async bulkKeepCandidatesInView(jobId, candidateIds, reason, userId) {
+    const mongoose = require('mongoose');
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      console.log(`👁️ Bulk keep in view for ${candidateIds.length} candidates`);
+
+      if (!candidateIds || candidateIds.length === 0) {
+        throw new Error('No candidates provided');
+      }
+
+      const job = await Job.findById(jobId).session(session);
+      if (!job) {
+        throw new Error('Job not found');
+      }
+
+      const results = {
+        successful: [],
+        failed: [],
+        totalProcessed: candidateIds.length
+      };
+
+      for (const candidateId of candidateIds) {
+        try {
+          const applicantIndex = job.applicants.findIndex(
+            app => app.candidate.toString() === candidateId.toString()
+          );
+
+          if (applicantIndex === -1) {
+            results.failed.push({
+              candidateId,
+              reason: 'Candidate not found in job applicants'
+            });
+            continue;
+          }
+
+          const applicant = job.applicants[applicantIndex];
+
+          if (['hired', 'rejected'].includes(applicant.status)) {
+            results.failed.push({
+              candidateId,
+              reason: `Candidate is already ${applicant.status}`
+            });
+            continue;
+          }
+
+          if (applicant.status === 'keep_in_view') {
+            results.failed.push({
+              candidateId,
+              reason: 'Candidate is already in keep in view'
+            });
+            continue;
+          }
+
+          const previousStatus = applicant.status;
+          applicant.status = 'keep_in_view';
+          applicant.statusHistory.push({
+            status: 'keep_in_view',
+            changedBy: userId,
+            changedAt: new Date(),
+            notes: reason || 'Candidate moved to keep in view (bulk action)',
+            previousStatus
+          });
+
+          results.successful.push({
+            candidateId,
+            previousStatus
+          });
+        } catch (error) {
+          results.failed.push({
+            candidateId,
+            reason: error.message
+          });
+        }
+      }
+
+      if (results.successful.length > 0) {
+        await job.save({ session });
+      }
+
+      await session.commitTransaction();
+
+      console.log(`✅ Bulk keep in view complete: ${results.successful.length} succeeded, ${results.failed.length} failed`);
+
+      return {
+        success: results.failed.length === 0,
+        partialSuccess: results.successful.length > 0 && results.failed.length > 0,
+        results
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      console.error('❌ Error in bulk keep in view:', error);
       throw error;
     } finally {
       session.endSession();
@@ -727,7 +884,7 @@ class PipelineProgressionService {
       // Overall pipeline stats
       const totalApplicants = job.applicants.length;
       const activeApplicants = job.applicants.filter(app => 
-        !['rejected', 'hired', 'withdrawn'].includes(app.status)
+        !['rejected', 'hired', 'withdrawn', 'keep_in_view'].includes(app.status)
       ).length;
       
       const conversionRates = this._calculateConversionRates(stages, job.applicants);

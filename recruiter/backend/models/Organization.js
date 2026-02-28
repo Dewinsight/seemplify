@@ -154,9 +154,9 @@ const OrganizationSchema = new mongoose.Schema({
       transactions: [{
         action: {
           type: String,
-          enum: ['createJob', 'uploadCandidate', 'scheduleInterview', 'aiMatching', 
-                 'generateQuestions', 'aiAnalysis', 'bulkUpload', 'reEmbed', 
-                 'creditPurchase', 'creditRefund', 'cycleReset'],
+          enum: ['createJob', 'uploadCandidate', 'scheduleInterview', 'aiMatching',
+            'generateQuestions', 'aiAnalysis', 'bulkUpload', 'reEmbed',
+            'creditPurchase', 'creditRefund', 'cycleReset'],
           required: true
         },
         credits: {
@@ -210,8 +210,9 @@ const OrganizationSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee', 'staff'],
-      default: 'recruiter'
+      // Note: 'member' and 'staff' added for IdP compatibility
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee', 'member', 'staff'],
+      default: 'member'
     },
     joinedAt: {
       type: Date,
@@ -249,27 +250,27 @@ OrganizationSchema.index({ isActive: 1 });
 OrganizationSchema.index({ createdAt: -1 });
 
 // Pre-save middleware to update timestamp
-OrganizationSchema.pre('save', function(next) {
+OrganizationSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   next();
 });
 
 // Virtual for member count
-OrganizationSchema.virtual('memberCount').get(function() {
+OrganizationSchema.virtual('memberCount').get(function () {
   return this.members ? this.members.filter(m => m.status === 'active').length : 0;
 });
 
 // Methods
-OrganizationSchema.methods.getMemberRole = function(userId) {
+OrganizationSchema.methods.getMemberRole = function (userId) {
   const member = this.members.find(m => m.user.toString() === userId.toString() && m.status === 'active');
   return member ? member.role : null;
 };
 
-OrganizationSchema.methods.isMember = function(userId) {
+OrganizationSchema.methods.isMember = function (userId) {
   return this.members.some(m => m.user.toString() === userId.toString() && m.status === 'active');
 };
 
-OrganizationSchema.methods.addMember = function(userId, role = 'recruiter', invitedBy = null) {
+OrganizationSchema.methods.addMember = function (userId, role = 'recruiter', invitedBy = null) {
   // Check if user is already a member
   if (this.isMember(userId)) {
     throw new Error('User is already a member of this organization');
@@ -285,12 +286,12 @@ OrganizationSchema.methods.addMember = function(userId, role = 'recruiter', invi
   return this;
 };
 
-OrganizationSchema.methods.removeMember = function(userId) {
+OrganizationSchema.methods.removeMember = function (userId) {
   this.members = this.members.filter(m => m.user.toString() !== userId.toString());
   return this;
 };
 
-OrganizationSchema.methods.updateMemberRole = function(userId, newRole) {
+OrganizationSchema.methods.updateMemberRole = function (userId, newRole) {
   const member = this.members.find(m => m.user.toString() === userId.toString() && m.status === 'active');
   if (member) {
     member.role = newRole;

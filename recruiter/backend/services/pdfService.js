@@ -2,6 +2,8 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const Plan = require('../models/Plan');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { isHtmlLike, htmlToText } = require('../utils/emailHtmlSanitizer');
 
 /**
  * Generate an invoice PDF
@@ -174,6 +176,118 @@ const generateInvoicePdf = async (request, user, organization = null) => {
   });
 };
 
+const normalizeRichText = (value = '') => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  const decoded = decodeHtmlEntities(String(value));
+  const asText = isHtmlLike(decoded) ? htmlToText(decoded) : decoded;
+
+  return asText
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const toSafeFilename = (value = '') =>
+  String(value || 'job-description')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'job-description';
+
+/**
+ * Generate a job description PDF attachment in memory.
+ * @param {Object} job - Job data object.
+ * @param {string} organizationName - Organization display name.
+ * @returns {Promise<{name: string, content: string, contentType: string}|null>}
+ */
+const generateJobDescriptionPdfAttachment = async (job = null, organizationName = 'Organization') => {
+  if (!job) {
+    return null;
+  }
+
+  const jobTitle = normalizeRichText(job.title || 'Job');
+  const description = normalizeRichText(job.description || '');
+  const requirements = normalizeRichText(job.requirements || '');
+  const responsibilities = normalizeRichText(job.responsibilities || '');
+
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks = [];
+
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve({
+          name: `${toSafeFilename(jobTitle)}-job-description.pdf`,
+          content: buffer.toString('base64'),
+          contentType: 'application/pdf'
+        });
+      });
+      doc.on('error', reject);
+
+      doc.info.Title = `${jobTitle} - Job Description`;
+      doc.info.Author = normalizeRichText(organizationName || 'Organization');
+      doc.info.Subject = `Job description for ${jobTitle}`;
+
+      doc.fontSize(18).font('Helvetica-Bold').text(jobTitle || 'Job Description', { align: 'left' });
+      doc.moveDown(0.4);
+      doc.fontSize(11).font('Helvetica').fillColor('#444444').text(`Organization: ${normalizeRichText(organizationName || 'Organization')}`);
+      doc.text(`Generated: ${new Date().toLocaleDateString('en-US')}`);
+
+      const metadataEntries = [
+        ['Location', normalizeRichText(job.location || '')],
+        ['Employment Type', normalizeRichText(job.type || '')],
+        ['Level', normalizeRichText(job.level || '')],
+        ['Experience', normalizeRichText(job.experience || '')],
+        ['Education', normalizeRichText(job.education || '')]
+      ].filter(([, value]) => value);
+
+      if (metadataEntries.length > 0) {
+        doc.moveDown(0.6);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text('Overview');
+        doc.moveDown(0.2);
+        doc.fontSize(10).font('Helvetica').fillColor('#222222');
+        metadataEntries.forEach(([label, value]) => {
+          doc.text(`${label}: ${value}`);
+        });
+      }
+
+      const sections = [
+        ['Description', description],
+        ['Responsibilities', responsibilities],
+        ['Requirements', requirements],
+        ['Skills', normalizeRichText(job.skills || '')],
+        ['Benefits', normalizeRichText(job.benefits || '')]
+      ];
+
+      sections.forEach(([heading, content]) => {
+        if (!content) {
+          return;
+        }
+
+        doc.moveDown(0.8);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text(heading);
+        doc.moveDown(0.2);
+        doc.fontSize(10).font('Helvetica').fillColor('#222222').text(content, {
+          align: 'left',
+          lineGap: 3
+        });
+      });
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
 module.exports = {
-  generateInvoicePdf
+  generateInvoicePdf,
+  generateJobDescriptionPdfAttachment
 };

@@ -190,7 +190,7 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee', 'staff'],
+      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'employee'],
       required: true
     },
     joinedAt: {
@@ -359,8 +359,7 @@ UserSchema.methods.hasOrganizationPermission = function(organizationId, permissi
     hr_manager: ['manage_jobs', 'manage_candidates', 'view_analytics'],
     recruiter: ['manage_candidates', 'view_jobs'],
     interviewer: ['view_candidates', 'view_jobs'],
-    employee: ['view_jobs'], // Employees have minimal read-only access
-    staff: [] // Staff role has no permissions in Recruiter
+    employee: ['view_jobs'] // Employees have minimal read-only access
   };
   
   return permissions[role].includes(permission) || permissions[role].includes('all');

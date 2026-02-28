@@ -60,10 +60,18 @@ const createAccount = async (req, res) => {
     // Check if client ID already exists
     const existing = await NylasAccount.findOne({ clientId });
     if (existing) {
-      return res.status(409).json({
-        success: false,
-        error: 'Nylas account with this Client ID already exists'
-      });
+      // If the existing record is inactive (stale soft-delete leftover), remove it
+      // so the new account can be created cleanly
+      if (!existing.active) {
+        console.log(`🧹 Found inactive/stale account with same clientId. Removing stale record (ID: ${existing._id})...`);
+        await NylasAccount.deleteOne({ _id: existing._id });
+        console.log(`✅ Stale record removed. Proceeding with new account creation.`);
+      } else {
+        return res.status(409).json({
+          success: false,
+          error: 'Nylas account with this Client ID already exists'
+        });
+      }
     }
     
     // Create new account
@@ -169,7 +177,9 @@ const updateAccount = async (req, res) => {
 
 /**
  * DELETE /api/admin/nylas-accounts/:accountId
- * Delete a Nylas account (soft delete by setting active=false)
+ * Hard-delete a Nylas account from the database.
+ * Previously this was a soft delete (active=false) which caused a bug where
+ * re-adding the same clientId was blocked by the unique index + stale document.
  */
 const deleteAccount = async (req, res) => {
   try {
@@ -177,28 +187,25 @@ const deleteAccount = async (req, res) => {
     
     console.log(`🗑️ Deleting Nylas account: ${accountId}`);
     
-    // Check if any users are using this account
+    // Check if any users are using this account (active grants)
     const User = require('../models/User');
-    const usersCount = await User.countDocuments({
+    const activeUsersCount = await User.countDocuments({
       nylasAccountId: accountId,
-      calendarConnected: true
+      calendarConnected: true,
+      nylasGrantId: { $exists: true, $ne: null }
     });
     
-    if (usersCount > 0) {
+    if (activeUsersCount > 0) {
       return res.status(400).json({
         success: false,
         error: 'Cannot delete account with active grants',
-        usersCount,
-        message: `${usersCount} user(s) are currently using this account. Please revoke their grants first.`
+        usersCount: activeUsersCount,
+        message: `${activeUsersCount} user(s) are currently using this account. Please revoke their grants first.`
       });
     }
     
-    // Soft delete (set active=false)
-    const account = await NylasAccount.findByIdAndUpdate(
-      accountId,
-      { active: false },
-      { new: true }
-    );
+    // Hard delete - removes the document entirely so the clientId can be reused
+    const account = await NylasAccount.findByIdAndDelete(accountId);
     
     if (!account) {
       return res.status(404).json({
@@ -207,11 +214,18 @@ const deleteAccount = async (req, res) => {
       });
     }
     
-    console.log(`✅ Nylas account deleted: ${account.name}`);
+    // Clear nylasAccountId references on any users that were linked to this account
+    // (users who previously had grants but are no longer connected)
+    await User.updateMany(
+      { nylasAccountId: accountId, calendarConnected: false },
+      { $unset: { nylasAccountId: 1 } }
+    );
+    
+    console.log(`✅ Nylas account hard-deleted: ${account.name} (clientId: ${account.clientId})`);
     
     res.json({
       success: true,
-      message: 'Account deleted successfully'
+      message: 'Account deleted successfully. The Client ID can now be reused.'
     });
   } catch (error) {
     console.error('Error deleting Nylas account:', error);

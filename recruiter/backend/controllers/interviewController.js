@@ -3,14 +3,17 @@ const InterviewComment = require('../models/InterviewComment');
 const Candidate = require('../models/Candidate');
 const Job = require('../models/Job');
 const User = require('../models/User');
+const Organization = require('../models/Organization');
 const InterviewStage = require('../models/InterviewStage');
 const Notification = require('../models/Notification');
 const nylasV3Service = require('../services/nylasV3Service');
 const nylasEmailService = require('../services/nylasEmailService');
 const grantManagementService = require('../services/grantManagementService'); // NEW: Grant management
 const multiNylasService = require('../services/multiNylasService'); // Multi-account support
+const multiCandidateRetryService = require('../services/multiCandidateRetryService');
 const AzureOpenAIService = require('../services/azureOpenAIService');
 const emailService = require('../services/emailService');
+const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
@@ -203,6 +206,223 @@ function calculateConsensus(values) {
   return Math.round(consensus * 100) / 100;
 }
 
+function isMicrosoftProvider(provider = '') {
+  const normalizedProvider = String(provider || '').toLowerCase();
+  return (
+    normalizedProvider.includes('microsoft') ||
+    normalizedProvider.includes('teams') ||
+    normalizedProvider.includes('outlook') ||
+    normalizedProvider.includes('azure')
+  );
+}
+
+function buildInterviewParticipants({
+  candidate,
+  interviewer,
+  additionalParticipants = [],
+  bccParticipants = [],
+  ccParticipants = []
+}) {
+  const candidateEmail = String(candidate?.email || '').toLowerCase().trim();
+  const isValidNonCandidateParticipant = participant =>
+    participant?.email &&
+    String(participant.email).toLowerCase().trim() !== candidateEmail &&
+    participant.role !== 'candidate';
+
+  const participants = [
+    {
+      email: candidate?.email,
+      name: decodeHtmlEntities(`${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim()),
+      role: 'candidate',
+      status: 'pending'
+    },
+    {
+      email: interviewer?.email,
+      name: decodeHtmlEntities(interviewer?.name || interviewer?.email || ''),
+      role: 'interviewer',
+      status: 'accepted'
+    },
+    ...additionalParticipants
+      .filter(isValidNonCandidateParticipant)
+      .map(participant => ({
+        email: participant.email,
+        name: decodeHtmlEntities(participant.name || participant.email),
+        role: participant.role === 'interviewer' ? 'interviewer' : 'observer',
+        status: 'pending'
+      })),
+    ...bccParticipants
+      .filter(isValidNonCandidateParticipant)
+      .map(participant => ({
+        email: participant.email,
+        name: decodeHtmlEntities(participant.name || participant.email),
+        role: participant.role === 'interviewer' ? 'interviewer' : 'observer',
+        status: 'pending'
+      })),
+    ...ccParticipants
+      .filter(isValidNonCandidateParticipant)
+      .map(participant => ({
+        email: participant.email,
+        name: decodeHtmlEntities(participant.name || participant.email),
+        role: participant.role === 'interviewer' ? 'interviewer' : 'observer',
+        status: 'pending'
+      }))
+  ];
+
+  const dedupedParticipants = [];
+  const emailsSeen = new Set();
+
+  for (const participant of participants) {
+    if (!participant.email) {
+      continue;
+    }
+
+    const key = participant.email.toLowerCase().trim();
+    if (emailsSeen.has(key)) {
+      continue;
+    }
+
+    emailsSeen.add(key);
+    dedupedParticipants.push(participant);
+  }
+
+  return dedupedParticipants;
+}
+
+function buildTeamsPreflightError({ provider, grantVerification }) {
+  if (!isMicrosoftProvider(provider)) {
+    return null;
+  }
+
+  const docs = {
+    conferencing: 'https://developer.nylas.com/docs/v3/calendar/calendar-events/#create-events-with-conferencing-support',
+    teamsProvider: 'https://support.nylas.com/hc/en-us/articles/18881246433949-I-can-t-see-Microsoft-Teams-as-an-available-conferencing-provider',
+    notetaker: 'https://developer.nylas.com/docs/v3/notetaker/support/troubleshooting/'
+  };
+
+  const grantProvider = String(grantVerification?.grantInfo?.provider || '').toLowerCase();
+  const grantScopes = (grantVerification?.grantInfo?.scopes || []).map(scope => String(scope).toLowerCase());
+
+  const hasCalendarReadWrite = grantScopes.some(scope => scope.includes('calendars.readwrite'));
+  const hasOnlineMeetingsReadWrite = grantScopes.some(scope => scope.includes('onlinemeetings.readwrite'));
+
+  const isMicrosoftGrant = ['microsoft', 'outlook', 'azure'].some(providerName => grantProvider.includes(providerName));
+
+  if (!isMicrosoftGrant) {
+    return {
+      error: 'TEAMS_PROVIDER_MISMATCH',
+      message: 'Microsoft Teams scheduling requires a Microsoft calendar grant.',
+      details: {
+        detectedGrantProvider: grantVerification?.grantInfo?.provider || 'unknown',
+        requiredGrantProvider: 'microsoft',
+        docs
+      }
+    };
+  }
+
+  if (!hasCalendarReadWrite || !hasOnlineMeetingsReadWrite) {
+    return {
+      error: 'TEAMS_SCOPE_MISSING',
+      message: 'Microsoft Teams scheduling requires Calendars.ReadWrite and OnlineMeetings.ReadWrite scopes.',
+      details: {
+        missingScopes: [
+          !hasCalendarReadWrite ? 'Calendars.ReadWrite' : null,
+          !hasOnlineMeetingsReadWrite ? 'OnlineMeetings.ReadWrite' : null
+        ].filter(Boolean),
+        grantScopes: grantVerification?.grantInfo?.scopes || [],
+        docs
+      }
+    };
+  }
+
+  return null;
+}
+
+async function resolveOrganizationName({
+  interviewer = null,
+  organizationId = null,
+  fallback = process.env.DEFAULT_ORGANIZATION_NAME || process.env.ORGANIZATION_NAME || process.env.BREVO_SENDER_NAME || 'Organization'
+} = {}) {
+  try {
+    const fromInterviewer = interviewer?.organization?.name;
+    if (fromInterviewer) {
+      return decodeHtmlEntities(fromInterviewer);
+    }
+
+    const resolvedOrganizationId =
+      organizationId ||
+      interviewer?.currentOrganization ||
+      interviewer?.organization?._id ||
+      interviewer?.organization;
+
+    if (resolvedOrganizationId && mongoose.Types.ObjectId.isValid(String(resolvedOrganizationId))) {
+      const org = await Organization.findById(resolvedOrganizationId).select('name');
+      if (org?.name) {
+        return decodeHtmlEntities(org.name);
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to resolve organization name for interview email branding:', error.message);
+  }
+
+  return fallback;
+}
+
+function resolveJobDetailsLink(job = null) {
+  if (!job) {
+    return null;
+  }
+
+  const frontendBaseUrl = decodeHtmlEntities(
+    process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'
+  ).replace(/\/+$/, '');
+
+  const explicitLink = decodeHtmlEntities(
+    String(job.publicUrl || job.internalUrl || '').trim()
+  );
+
+  if (!explicitLink) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(explicitLink)) {
+    return explicitLink;
+  }
+
+  if (explicitLink.startsWith('/')) {
+    return `${frontendBaseUrl}${explicitLink}`;
+  }
+
+  return `${frontendBaseUrl}/${explicitLink}`;
+}
+
+async function buildJobDescriptionAttachment(job, organizationName) {
+  if (!job) {
+    return null;
+  }
+
+  try {
+    return await pdfService.generateJobDescriptionPdfAttachment(
+      {
+        title: job.title,
+        description: job.description,
+        requirements: job.requirements,
+        responsibilities: job.responsibilities,
+        skills: job.skills,
+        location: job.location,
+        type: job.type,
+        level: job.level,
+        experience: job.experience,
+        education: job.education,
+        benefits: job.benefits
+      },
+      organizationName
+    );
+  } catch (error) {
+    console.error('Failed to generate job description PDF attachment:', error.message);
+    return null;
+  }
+}
+
 // ==================== END HELPER FUNCTIONS ====================
 
 // CRITICAL FIX: Schedule interview with proper availability checking
@@ -280,6 +500,7 @@ const scheduleInterview = async (req, res) => {
       if (nylasAccount) {
         accountCredentials = {
           apiKey: nylasAccount.apiKey,
+          apiUri: nylasAccount.apiUri,
           region: nylasAccount.region,
           clientId: nylasAccount.clientId
         };
@@ -307,12 +528,20 @@ const scheduleInterview = async (req, res) => {
     }
     
     console.log(`✅ Grant verified for ${interviewer.email} - ${grantVerification.grantInfo?.provider}`);
+
+    if ((type || 'video') === 'video' && isMicrosoftProvider(provider)) {
+      const teamsPreflightError = buildTeamsPreflightError({ provider, grantVerification });
+      if (teamsPreflightError) {
+        return res.status(400).json(teamsPreflightError);
+      }
+    }
     
-    // Update grant status in database if it was previously invalid
+    // Track grant activity to support LRU rotation when capacity is full.
+    interviewer.lastGrantRefresh = new Date();
     if (interviewer.nylasGrantStatus !== 'active') {
       interviewer.nylasGrantStatus = 'active';
-      await interviewer.save();
     }
+    await interviewer.save();
     
     // Get job information - prioritize jobId from request, then candidate's linked job
     let job = null;
@@ -342,6 +571,11 @@ const scheduleInterview = async (req, res) => {
       title: jobTitle, 
       company: jobCompany,
       source: jobId ? 'request' : (candidate.jobAppliedFor ? 'candidate' : 'fallback')
+    });
+
+    const resolvedOrganizationName = await resolveOrganizationName({
+      interviewer,
+      organizationId: req.user?.currentOrganization
     });
     
     // CRITICAL: Check availability BEFORE creating event
@@ -533,6 +767,10 @@ const scheduleInterview = async (req, res) => {
       startTime: timeData.startTimeISO,  // FIXED: Use processed ISO time
       endTime: timeData.endTimeISO,      // FIXED: Use processed ISO time  
       location: 'Video Call',
+      organizationName: resolvedOrganizationName,
+      addNotetaker,
+      skipServiceNotetaker: true,
+      notifyParticipants: true,
       participants: [
         {
           email: candidate.email,
@@ -566,13 +804,13 @@ const scheduleInterview = async (req, res) => {
         }))
       ],
       conferencing: {
-        provider: provider || 'google_meet'
+        provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet'
       }
     };
 
     console.log('📅 Creating calendar event with data:', eventData);
     
-    // Create the event WITHOUT notetaker (Nylas doesn't support it during creation)
+    // Create the event (service handles Teams warnings and optional notetaker creation).
     const event = await nylasV3Service.createEvent(
       interviewer.nylasGrantId, 
       eventData,
@@ -587,10 +825,22 @@ const scheduleInterview = async (req, res) => {
     if (bccParticipantsFromEventData.length > 0) {
       console.log(`📅 Sending BCC calendar invites to ${bccParticipantsFromEventData.length} recipients`);
       try {
+        // Include the created meeting link so BCC invites reuse the same link
+        // instead of triggering autocreate which generates a new link per BCC participant
+        const createdMeetingLink = event.conferencing?.details?.url || event.conferencing?.details?.meeting_url;
+        const bccEventData = {
+          ...eventData,
+          conferencing: createdMeetingLink ? {
+            ...eventData.conferencing,
+            details: { url: createdMeetingLink }
+          } : eventData.conferencing
+        };
+        
         const bccResults = await nylasV3Service.sendBccCalendarInvites(
           interviewer.nylasGrantId,
-          eventData,
-          bccParticipantsFromEventData
+          bccEventData,
+          bccParticipantsFromEventData,
+          accountCredentials
         );
         console.log(`✅ BCC calendar invites: ${bccResults.message}`);
       } catch (bccError) {
@@ -599,20 +849,29 @@ const scheduleInterview = async (req, res) => {
       }
     }
     
-    // Now add notetaker AFTER event creation if requested
-    let notetakerResult = null;
-    if (addNotetaker && event.conferencing?.details?.url) {
+    // Reuse notetaker created in service layer if present; otherwise create it here.
+    let notetakerResult = event.notetaker?.notetakerId ? event.notetaker : null;
+    if (notetakerResult?.notetakerId) {
+      console.log('✅ Notetaker already created in service layer:', notetakerResult.notetakerId);
+    }
+
+    if (addNotetaker && !notetakerResult && event.conferencing?.details?.url) {
       console.log('🤖 Adding notetaker to the meeting...');
       try {
         // Wait a moment for the meeting to be fully created
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        notetakerResult = await nylasV3Service.enableNotetakerForEvent(
-          interviewer.nylasGrantId,
-          event.id,
+        notetakerResult = await nylasV3Service.createStandaloneNotetaker(
           event.conferencing.details.url,
+          {
+            name: "SmartHR Notetaker Bot",
+            videoRecording: true,
+            audioRecording: true,
+            transcription: true,
+            summary: true
+          },
           new Date(startTime), // Join at meeting start time
-          accountCredentials // Pass account credentials for correct API key
+          accountCredentials
         );
         
         console.log('✅ Notetaker added successfully:', notetakerResult);
@@ -641,6 +900,7 @@ const scheduleInterview = async (req, res) => {
       schedulingSource: 'pipeline',
       notetakerEnabled: addNotetaker && !!notetakerResult,
       notetakerId: notetakerResult?.notetakerId || null,
+      notetakerType: notetakerResult ? 'standalone' : null,
       notetakerStatus: notetakerResult ? 'enabled' : (addNotetaker ? 'failed' : null),
       // Add interviewer questions notification settings
       notifications: {
@@ -656,29 +916,15 @@ const scheduleInterview = async (req, res) => {
             }) 
           : []
       },
-      participants: [
-        {
-          email: candidate.email,
-          name: decodeHtmlEntities(`${candidate.firstName} ${candidate.lastName}`),
-          role: 'candidate',
-          status: 'pending'
-        },
-        {
-          email: interviewer.email,
-          name: decodeHtmlEntities(interviewer.name || interviewer.email),
-          role: 'interviewer',
-          status: 'accepted'
-        },
-        // Add additional participants
-        ...additionalParticipants.map(participant => ({
-          email: participant.email,
-          name: decodeHtmlEntities(participant.name || participant.email),
-          role: participant.role || 'observer',
-          status: 'pending'
-        }))
-      ],
+      participants: buildInterviewParticipants({
+        candidate,
+        interviewer,
+        additionalParticipants,
+        bccParticipants,
+        ccParticipants
+      }),
       conferencing: event.conferencing ? {
-        provider: 'google_meet',
+        provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet',
         details: {
           url: event.conferencing.details?.url,
           meetingCode: event.conferencing.details?.meeting_code
@@ -818,7 +1064,7 @@ const scheduleInterview = async (req, res) => {
     });
     
     // Get organization name from interviewer's organization (interviewer already fetched above)
-    const organizationName = interviewer?.organization?.name || 'SmartHR';
+    const organizationName = resolvedOrganizationName;
     
     // Format interview type
     const formattedType = type === 'video' ? 'Video Call' : 
@@ -827,7 +1073,15 @@ const scheduleInterview = async (req, res) => {
     
     // Get meeting link if available
     const meetingLink = event.conferencing?.details?.url || '';
-    
+    const jobLink = resolveJobDetailsLink(job);
+    const jobDescriptionAttachment = sendCustomEmail
+      ? await buildJobDescriptionAttachment(job, organizationName)
+      : null;
+    const hasJobDetailsPdf = !!jobDescriptionAttachment;
+    const candidateInviteOptions = hasJobDetailsPdf
+      ? { attachments: [jobDescriptionAttachment] }
+      : {};
+
     // Prepare template data
     const templateData = {
       candidateName: `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim(),
@@ -840,7 +1094,9 @@ const scheduleInterview = async (req, res) => {
       notes: description || null,         // ✅ FIX: Use null instead of empty string for conditionals
       interviewerName: interviewer?.name || interviewer?.email || 'Hiring Manager',
       interviewerEmail: interviewer?.email || 'no-reply@smarthr.app',
-      organizationName
+      organizationName,
+      jobLink: jobLink || null,
+      jobDetailsPdfAttached: hasJobDetailsPdf
     };
     
     // Send custom email notification if requested
@@ -865,6 +1121,7 @@ const scheduleInterview = async (req, res) => {
             if (nylasAccount) {
               emailAccountCredentials = {
                 apiKey: nylasAccount.apiKey,
+                apiUri: nylasAccount.apiUri,
                 region: nylasAccount.region,
                 clientId: nylasAccount.clientId
               };
@@ -881,7 +1138,8 @@ const scheduleInterview = async (req, res) => {
             interview.subject, // Use custom subject if provided
             [], // No BCC - interviewers get separate notification
             [],  // No CC - interviewers get separate notification
-            emailAccountCredentials // Pass account credentials
+            emailAccountCredentials, // Pass account credentials
+            candidateInviteOptions
           );
           
           // If Nylas fails due to permissions or other issues, fall back to Brevo
@@ -896,7 +1154,8 @@ const scheduleInterview = async (req, res) => {
               templateData,
               emailTemplate,
               [], // No BCC - interviewers get separate notification
-              []  // No CC - interviewers get separate notification
+              [],  // No CC - interviewers get separate notification
+              candidateInviteOptions
             );
           } else if (!nylasResult.success) {
             console.error(`❌ Nylas email failed: ${nylasResult.error}`);
@@ -907,7 +1166,8 @@ const scheduleInterview = async (req, res) => {
               templateData,
               emailTemplate,
               [], // No BCC - interviewers get separate notification
-              []  // No CC - interviewers get separate notification
+              [],  // No CC - interviewers get separate notification
+              candidateInviteOptions
             );
           }
         } else {
@@ -918,7 +1178,8 @@ const scheduleInterview = async (req, res) => {
             templateData,
             emailTemplate,
             [], // No BCC - interviewers get separate notification
-            []  // No CC - interviewers get separate notification
+            [],  // No CC - interviewers get separate notification
+            candidateInviteOptions
           );
         }
         
@@ -975,6 +1236,7 @@ const scheduleInterview = async (req, res) => {
         if (nylasAccount) {
           emailAccountCredentials = {
             apiKey: nylasAccount.apiKey,
+            apiUri: nylasAccount.apiUri,
             region: nylasAccount.region,
             clientId: nylasAccount.clientId
           };
@@ -1055,12 +1317,12 @@ Best regards,
               candidateName: notificationTemplateData.candidateName,
               feedbackUrl: notificationTemplateData.feedbackUrl
             });
-            const nylasNotificationResult = await nylasEmailService.sendInterviewInviteEmail(
+          const nylasNotificationResult = await nylasEmailService.sendInterviewInviteEmail(
               interviewer.nylasGrantId,
               participant.email,
               notificationTemplateData,
               notificationTemplate, // Custom template for notifications
-              `Interview Notification: ${notificationTemplateData.candidateName} - ${notificationTemplateData.jobTitle}`, // Custom subject
+              `${organizationName} - Interview Notification: ${notificationTemplateData.candidateName} - ${notificationTemplateData.jobTitle}`, // Custom subject
               [], // No BCC for notifications
               [],  // No CC for notifications
               emailAccountCredentials // Pass same account credentials
@@ -1618,6 +1880,7 @@ const getAvailability = async (req, res) => {
       if (nylasAccount) {
         availabilityAccountCredentials = {
           apiKey: nylasAccount.apiKey,
+          apiUri: nylasAccount.apiUri,
           region: nylasAccount.region,
           clientId: nylasAccount.clientId
         };
@@ -2033,6 +2296,42 @@ const handleOAuthCallback = async (req, res) => {
     // Nylas v3 returns grant_id (not grantId) and may not include provider/email directly
     const grantId = grant.grant_id || grant.grantId || grant.id;
     const provider = grant.provider || 'google'; // Default to google if not provided
+    const previousGrantId = user.nylasGrantId;
+    const previousNylasAccountId = user.nylasAccountId ? user.nylasAccountId.toString() : null;
+    const nextNylasAccountId = selectedNylasAccount ? selectedNylasAccount._id.toString() : null;
+    
+    // If the user is switching accounts, revoke the previous grant in Nylas to avoid orphaned grants.
+    if (previousGrantId && previousGrantId !== grantId) {
+      console.log(`Account switch detected for ${user.email}`);
+      console.log(`   Previous grant: ${previousGrantId}`);
+      console.log(`   New grant: ${grantId}`);
+      
+      try {
+        let previousAccountCredentials = null;
+        
+        if (previousNylasAccountId) {
+          const NylasAccount = require('../models/NylasAccount');
+          const previousNylasAccount = await NylasAccount.findById(previousNylasAccountId).select('+apiKey');
+          
+          if (previousNylasAccount) {
+            previousAccountCredentials = {
+              apiKey: previousNylasAccount.apiKey,
+              region: previousNylasAccount.region,
+              clientId: previousNylasAccount.clientId
+            };
+            console.log(`   Revoking previous grant using account: ${previousNylasAccount.name}`);
+          } else {
+            console.warn(`Warning: Previous Nylas account ${previousNylasAccountId} not found. Falling back to default credentials.`);
+          }
+        }
+        
+        await nylasV3Service.deleteGrant(previousGrantId, previousAccountCredentials);
+        console.log(`Previous grant ${previousGrantId} revoked successfully`);
+      } catch (revokeError) {
+        // Do not block new connection if old grant revocation fails.
+        console.error(`Failed to revoke previous grant ${previousGrantId}: ${revokeError.message}`);
+      }
+    }
     
     console.log('Updating user calendar info:');
     console.log('- Grant ID:', grantId);
@@ -2047,10 +2346,13 @@ const handleOAuthCallback = async (req, res) => {
     user.nylasAccountId = selectedNylasAccount ? selectedNylasAccount._id : null; // Link to Nylas account
     await user.save();
     
-    // Update the Nylas account's grant count
-    if (selectedNylasAccount) {
-      const multiNylasService = require('../services/multiNylasService');
-      await multiNylasService.updateGrantCount(selectedNylasAccount._id);
+    // Update grant counts for both old and new accounts when switching.
+    const accountsToUpdate = new Set();
+    if (previousNylasAccountId) accountsToUpdate.add(previousNylasAccountId);
+    if (nextNylasAccountId) accountsToUpdate.add(nextNylasAccountId);
+    
+    for (const accountId of accountsToUpdate) {
+      await multiNylasService.updateGrantCount(accountId);
     }
     
     console.log('User calendar fields after save:', {
@@ -2421,6 +2723,7 @@ const getCalendarStatus = async (req, res) => {
         if (nylasAccount) {
           accountCredentials = {
             apiKey: nylasAccount.apiKey,
+            apiUri: nylasAccount.apiUri,
             region: nylasAccount.region,
             clientId: nylasAccount.clientId
           };
@@ -2716,6 +3019,7 @@ const cancelInterview = async (req, res) => {
             if (nylasAccount) {
               cancelAccountCredentials = {
                 apiKey: nylasAccount.apiKey,
+                apiUri: nylasAccount.apiUri,
                 region: nylasAccount.region,
                 clientId: nylasAccount.clientId
               };
@@ -2856,7 +3160,10 @@ const cancelInterview = async (req, res) => {
         
         // Prepare interviewer info
         const interviewer = populatedInterview.interviewerId;
-        const organizationName = interviewer?.organization?.name || 'SmartHR';
+        const organizationName = await resolveOrganizationName({
+          interviewer,
+          organizationId: populatedInterview.organizationId || req.user?.currentOrganization
+        });
         
         console.log('Cancellation email data preparation:', {
           candidateEmail: populatedInterview.candidateId.email,
@@ -4650,6 +4957,11 @@ const scheduleMultiCandidateInterview = async (req, res) => {
         message: 'Interviewer not found' 
       });
     }
+
+    const sessionOrganizationName = await resolveOrganizationName({
+      interviewer,
+      organizationId
+    });
     
     // Decode timezone string (may be HTML-encoded from frontend)
     const rawSessionTimezone = req.body.timezone || interviewer?.profile?.timezone || 'UTC';
@@ -4680,6 +4992,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
       if (nylasAccount) {
         bulkVerifyAccountCredentials = {
           apiKey: nylasAccount.apiKey,
+          apiUri: nylasAccount.apiUri,
           region: nylasAccount.region,
           clientId: nylasAccount.clientId
         };
@@ -4710,12 +5023,20 @@ const scheduleMultiCandidateInterview = async (req, res) => {
     }
     
     console.log(`✅ Grant verified for ${interviewer.email} - ${grantVerification.grantInfo?.provider}`);
+
+    if ((interviewType || 'video') === 'video' && isMicrosoftProvider(provider)) {
+      const teamsPreflightError = buildTeamsPreflightError({ provider, grantVerification });
+      if (teamsPreflightError) {
+        return res.status(400).json(teamsPreflightError);
+      }
+    }
     
-    // Update grant status in database if it was previously invalid
+    // Track grant activity to support LRU rotation when capacity is full.
+    interviewer.lastGrantRefresh = new Date();
     if (interviewer.nylasGrantStatus !== 'active') {
       interviewer.nylasGrantStatus = 'active';
-      await interviewer.save();
     }
+    await interviewer.save();
 
     // Create a single meeting for the entire session
     let meetingLink = '';
@@ -4757,59 +5078,75 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           }
         });
       }
-
-      // Create event with Google Meet
-      const eventData = {
-        title: decodeHtmlEntities(sessionTitle),
-        description: decodeHtmlEntities(`Multi-candidate interview session with ${candidateSlots.length} candidates.`),
-        startTime: baseStartTime,
-        endTime: sessionEndTime,
-        participants: [{
-          email: interviewer.email,
-          name: decodeHtmlEntities(interviewer.profile?.firstName && interviewer.profile?.lastName
-            ? `${interviewer.profile.firstName} ${interviewer.profile.lastName}`
-            : interviewer.email)
-        }],
-        conferencing: {
-          provider: provider === 'microsoft' ? 'teams' : 'google_meet'
-        },
-        addNotetaker: false // We'll add notetaker separately for the full session
-      };
       
-      // Add timeout tracking for production debugging
-      const eventCreationStart = Date.now();
-      console.log('📅 Starting Nylas event creation at:', new Date(eventCreationStart).toISOString());
-      
-      try {
-        meetingDetails = await nylasV3Service.createEvent(interviewer.nylasGrantId, eventData, bulkAccountCredentials);
-        
-        const eventCreationTime = Date.now() - eventCreationStart;
-        console.log(`✅ Nylas event created in ${eventCreationTime}ms`);
-        
-        meetingLink = meetingDetails.conferencing?.details?.url || 
-                     meetingDetails.conferencing?.details?.meeting_url || 
-                     meetingDetails.conferencing?.join_url || '';
-                     
-        if (!meetingLink) {
-          console.warn('⚠️ No meeting link returned from Nylas');
-        }
-      } catch (nylasError) {
-        const eventCreationTime = Date.now() - eventCreationStart;
-        console.error(`❌ Nylas event creation failed after ${eventCreationTime}ms:`, {
-          error: nylasError.message,
-          statusCode: nylasError.statusCode,
-          details: nylasError.response?.data
-        });
-        throw nylasError;
-      }
+      // NOTE: We no longer create a separate "session" calendar event here.
+      // The meeting link will be generated by the first candidate's calendar event
+      // (via conferencing autocreate) to avoid duplicate calendar entries.
     }
 
     // Create individual interviews for each candidate
     const createdInterviews = [];
     const errors = [];
+    const queuedRetries = [];
     
     // Generate a single session ID for all interviews in this multi-candidate session
     const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const retryReportEmail = grantVerification?.grantInfo?.email || interviewer.email;
+    const participantDigestMap = new Map(); // Brevo-only consolidated notifications
+    const jobEmailContextCache = new Map();
+
+    const addDigestEntryForParticipant = (participant, entry) => {
+      if (!participant?.email) {
+        return;
+      }
+
+      const normalizedEmail = participant.email.toLowerCase().trim();
+      if (!normalizedEmail) {
+        return;
+      }
+
+      if (!participantDigestMap.has(normalizedEmail)) {
+        participantDigestMap.set(normalizedEmail, {
+          email: participant.email,
+          name: participant.name || participant.email.split('@')[0],
+          entries: []
+        });
+      }
+
+      const digest = participantDigestMap.get(normalizedEmail);
+      const exists = digest.entries.some(existing => existing.interviewId?.toString() === entry.interviewId?.toString());
+      if (!exists) {
+        digest.entries.push(entry);
+      }
+    };
+
+    const getJobEmailContext = async (resolvedJobId) => {
+      if (!resolvedJobId) {
+        return { attachment: null, jobLink: null };
+      }
+
+      const cacheKey = String(resolvedJobId);
+      if (jobEmailContextCache.has(cacheKey)) {
+        return jobEmailContextCache.get(cacheKey);
+      }
+
+      try {
+        const attachmentJob = await Job.findById(resolvedJobId).select(
+          'title description requirements responsibilities skills location type level experience education benefits publicUrl internalUrl'
+        );
+        const context = {
+          attachment: await buildJobDescriptionAttachment(attachmentJob, sessionOrganizationName),
+          jobLink: resolveJobDetailsLink(attachmentJob)
+        };
+        jobEmailContextCache.set(cacheKey, context);
+        return context;
+      } catch (error) {
+        console.error(`Failed to build job description attachment for job ${cacheKey}:`, error.message);
+        const emptyContext = { attachment: null, jobLink: null };
+        jobEmailContextCache.set(cacheKey, emptyContext);
+        return emptyContext;
+      }
+    };
     
     for (const slot of candidateSlots) {
       const slotProcessingStart = Date.now();
@@ -4877,7 +5214,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           multiCandidateOrder: slot.order,
           // Add conferencing details
           conferencing: meetingLink ? {
-            provider: provider === 'microsoft' ? 'teams' : 'google_meet',
+            provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet',
             details: {
               url: meetingLink
             }
@@ -4896,7 +5233,14 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             selectedQuestions: selectedQuestionIds && selectedQuestionIds.length > 0 
               ? selectedQuestionIds.map(id => new mongoose.Types.ObjectId(id)) 
               : []
-          }
+          },
+          participants: buildInterviewParticipants({
+            candidate,
+            interviewer,
+            additionalParticipants: additionalInterviewers,
+            bccParticipants,
+            ccParticipants
+          })
         });
 
         await interview.save();
@@ -5137,6 +5481,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           }
         }
 
+        let slotCalendarEventCreated = false;
+
         // Create individual calendar event for this candidate's time slot
         if (interviewer.calendarConnected) {
           try {
@@ -5152,14 +5498,38 @@ const scheduleMultiCandidateInterview = async (req, res) => {
               This is part of a multi-candidate interview session.
             `;
 
+            // Generate shared meeting link from the first *successful* slot, not fixed slot order.
+            const shouldGenerateSharedMeeting = !meetingLink;
+            let conferencingConfig;
+            if (shouldGenerateSharedMeeting) {
+              // Autocreate: let Nylas generate the meeting link
+              conferencingConfig = {
+                provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet'
+              };
+              console.log(`🔗 ${candidateName}: using conferencing autocreate to generate shared meeting link`);
+            } else if (meetingLink) {
+              // Reuse: pass the existing meeting link
+              conferencingConfig = {
+                provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet',
+                details: {
+                  url: meetingLink
+                }
+              };
+            } else {
+              conferencingConfig = null;
+            }
+
             // Create calendar event for this specific time slot
             const calendarEventData = {
               title: eventTitle,
               description: eventDescription,
               startTime: slot.startTime,
               endTime: slot.endTime,
+              organizationName: sessionOrganizationName,
+              notifyParticipants: true,
               participants: [
                 { email: candidate.email, name: candidateName },
+                { email: interviewer.email, name: interviewer.name || interviewer.email, status: 'yes' },
                 ...additionalInterviewers,
                 // Add BCC participants (they will be filtered out but processed separately)
                 ...bccParticipants.map(participant => ({
@@ -5177,12 +5547,9 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                 }))
               ],
               location: location || meetingLink,
-              conferencing: meetingLink ? {
-                provider: provider === 'microsoft' ? 'teams' : 'google_meet',
-                details: {
-                  url: meetingLink
-                }
-              } : null
+              conferencing: conferencingConfig,
+              addNotetaker,
+              skipServiceNotetaker: true
             };
             
             const calendarEvent = await nylasV3Service.createEvent(
@@ -5191,9 +5558,45 @@ const scheduleMultiCandidateInterview = async (req, res) => {
               bulkAccountCredentials
             );
 
+            // Extract meeting link from first successful slot if not already available.
+            if (shouldGenerateSharedMeeting && !meetingLink) {
+              meetingLink = calendarEvent.conferencing?.details?.url || 
+                           calendarEvent.conferencing?.details?.meeting_url || 
+                           calendarEvent.conferencing?.join_url || '';
+              meetingDetails = calendarEvent;
+              
+              if (meetingLink) {
+                console.log(`✅ Meeting link generated from first candidate's event: ${meetingLink}`);
+                try {
+                  const backfillResult = await multiCandidateRetryService.backfillSharedMeetingLinkForSession(
+                    sessionId,
+                    meetingLink
+                  );
+                  if (backfillResult.modifiedCount > 0) {
+                    console.log(`🔁 Backfilled shared meeting link into ${backfillResult.modifiedCount} queued retry task(s)`);
+                  }
+                } catch (backfillError) {
+                  console.error('Failed to backfill shared meeting link to queued retries:', backfillError.message);
+                }
+              } else {
+                console.warn('⚠️ No meeting link returned from first candidate\'s Nylas event');
+              }
+            }
+
             // Update interview record with calendar event ID
             if (calendarEvent && calendarEvent.id) {
               interview.nylasEventId = calendarEvent.id;
+              
+              // Backfill conferencing details when shared link is generated from this slot.
+              if (shouldGenerateSharedMeeting && meetingLink) {
+                interview.conferencing = {
+                  provider: isMicrosoftProvider(provider) ? 'teams' : 'google_meet',
+                  details: { url: meetingLink }
+                };
+                interview.location = location || meetingLink;
+                console.log(`✅ Backfilled shared meeting link into interview record`);
+              }
+              
               await interview.save();
               console.log(`✅ Updated interview ${interview._id} with calendar event ID: ${calendarEvent.id}`);
             }
@@ -5203,10 +5606,19 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             if (bccParticipantsFromEventData.length > 0) {
               console.log(`📅 Sending BCC calendar invites for ${candidateName} to ${bccParticipantsFromEventData.length} recipients`);
               try {
+                // Ensure BCC invites use the existing meeting link (not autocreate)
+                const bccEventData = {
+                  ...calendarEventData,
+                  conferencing: meetingLink ? {
+                    ...calendarEventData.conferencing,
+                    details: { url: meetingLink }
+                  } : calendarEventData.conferencing
+                };
                 const bccResults = await nylasV3Service.sendBccCalendarInvites(
                   interviewer.nylasGrantId,
-                  calendarEventData,
-                  bccParticipantsFromEventData
+                  bccEventData,
+                  bccParticipantsFromEventData,
+                  bulkAccountCredentials
                 );
                 console.log(`✅ BCC calendar invites for ${candidateName}: ${bccResults.message}`);
               } catch (bccError) {
@@ -5219,6 +5631,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             interview.calendarEventId = calendarEvent.id;
             interview.calendarProvider = calendarEvent.grant_id;
             await interview.save();
+            slotCalendarEventCreated = true;
 
             // Send custom email invitation to candidate if requested
             if (sendCustomEmail && candidate.email) {
@@ -5231,71 +5644,92 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                                      'In-Person Meeting';
                 
                 // Prepare template data
+                const attachmentJobId = slot.jobId || jobId;
+                const { attachment: jobDescriptionAttachment, jobLink } = await getJobEmailContext(attachmentJobId);
+                const hasJobDetailsPdf = !!jobDescriptionAttachment;
+                const candidateInviteOptions = hasJobDetailsPdf
+                  ? { attachments: [jobDescriptionAttachment] }
+                  : {};
                 const templateData = {
                   candidateName: candidateName,
-                  jobTitle: slot.jobTitle,
+                  jobTitle: slot.jobTitle || 'Position',
                   interviewDate: formattedSlotDate,
                   interviewTime: formattedSlotTime,
                   duration: slot.duration,
                   interviewType: formattedType,
-                  meetingLink: meetingLink || null,  // ✅ FIX: Use null instead of empty string for conditionals
-                  notes: slot.notes || null,         // ✅ FIX: Use null instead of empty string for conditionals
+                  meetingLink: meetingLink || null,  // Use null instead of empty string for conditionals
+                  notes: slot.notes || null,         // Use null instead of empty string for conditionals
                   interviewerName: interviewer.profile?.firstName && interviewer.profile?.lastName
                     ? `${interviewer.profile.firstName} ${interviewer.profile.lastName}`
                     : interviewer.email,
                   interviewerEmail: interviewer.email,
-                  organizationName: interviewer.organization?.name || 'SmartHR'
+                  organizationName: sessionOrganizationName,
+                  jobLink: jobLink || null,
+                  jobDetailsPdfAttached: hasJobDetailsPdf
                 };
                 
                 // Send the email - Use Nylas if available, fallback to Brevo
                 const useNylasEmail = interviewer.nylasGrantId && process.env.USE_NYLAS_FOR_INTERVIEW_EMAILS === 'true';
-                
-                if (useNylasEmail) {
-                  console.log(`📧 Attempting Nylas connected email for ${candidateName}`);
-                  
-                  // Reuse account credentials from verify step
-                  const bulkEmailAccountCredentials = bulkVerifyAccountCredentials;
-                  
-                  // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
-                  const nylasResult = await nylasEmailService.sendInterviewInviteEmail(
-                    interviewer.nylasGrantId,
-                    candidate.email,
-                    templateData,
-                    emailTemplate,
-                    subject || `Interview Invitation - ${slot.jobTitle}`,
-                    [], // No BCC - interviewers get separate notification
-                    [],  // No CC - interviewers get separate notification
-                    bulkEmailAccountCredentials // Pass account credentials
-                  );
-                  
-                  // If Nylas fails, fall back to Brevo
-                  if (!nylasResult.success) {
-                    console.log(`📧 Nylas failed for ${candidateName}, falling back to Brevo`);
-                    console.warn(`ℹ️ ${candidateName}: User needs to disconnect and reconnect calendar for email permissions`);
-                    console.log(`📧 Using Brevo fallback for ${candidateName} (interview still works)`);
-                    
-                    // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
-                    await emailService.sendInterviewInviteEmail(
-                      candidate.email,
-                      templateData,
-                      emailTemplate,
-                      [], // No BCC - interviewers get separate notification
-                      []  // No CC - interviewers get separate notification
-                    );
+                const maxEmailAttempts = 2;
+                let emailSent = false;
+                let lastEmailError = null;
+
+                for (let attempt = 1; attempt <= maxEmailAttempts; attempt += 1) {
+                  try {
+                    if (useNylasEmail && attempt === 1) {
+                      console.log(`📧 Attempting Nylas connected email for ${candidateName} (attempt ${attempt}/${maxEmailAttempts})`);
+
+                      const nylasResult = await nylasEmailService.sendInterviewInviteEmail(
+                        interviewer.nylasGrantId,
+                        candidate.email,
+                        templateData,
+                        emailTemplate,
+                        subject || `Interview Invitation - ${slot.jobTitle}`,
+                        [],
+                        [],
+                        bulkVerifyAccountCredentials,
+                        candidateInviteOptions
+                      );
+
+                      if (!nylasResult.success) {
+                        console.log(`📧 Nylas failed for ${candidateName}, falling back to Brevo`);
+                        await emailService.sendInterviewInviteEmail(
+                          candidate.email,
+                          templateData,
+                          emailTemplate,
+                          [],
+                          [],
+                          candidateInviteOptions
+                        );
+                      }
+                    } else {
+                      console.log(`📧 Using Brevo email service for ${candidateName} (attempt ${attempt}/${maxEmailAttempts})`);
+                      await emailService.sendInterviewInviteEmail(
+                        candidate.email,
+                        templateData,
+                        emailTemplate,
+                        [],
+                        [],
+                        candidateInviteOptions
+                      );
+                    }
+
+                    emailSent = true;
+                    console.log(`✅ Email sent to ${candidateName}`);
+                    break;
+                  } catch (attemptError) {
+                    lastEmailError = attemptError;
+                    console.error(`Failed to send email to ${candidateName} (attempt ${attempt}/${maxEmailAttempts}):`, attemptError.message);
+
+                    if (attempt < maxEmailAttempts) {
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
                   }
-                } else {
-                  console.log(`📧 Using Brevo email service for ${candidateName}`);
-                  // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
-                  await emailService.sendInterviewInviteEmail(
-                    candidate.email,
-                    templateData,
-                    emailTemplate,
-                    [], // No BCC - interviewers get separate notification
-                    []  // No CC - interviewers get separate notification
-                  );
                 }
-                
-                console.log(`✅ Email sent to ${candidateName}`);
+
+                if (!emailSent && lastEmailError) {
+                  throw lastEmailError;
+                }
                 
                 // This notification code will be moved outside the sendCustomEmail block
                 
@@ -5306,70 +5740,150 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             }
           } catch (calendarError) {
             console.error(`Failed to create calendar event for ${slot.candidateName}:`, calendarError);
+            const retryReason = calendarError?.message || 'Failed to create calendar event';
+
+            // Cleanup unsynchronized interview record so failed slots do not appear as scheduled.
+            await Interview.findByIdAndDelete(interview._id);
+
+            // Cleanup pipeline interview references for this slot if they were added earlier.
+            if (slot.jobId) {
+              try {
+                await Job.updateOne(
+                  { _id: slot.jobId },
+                  { $pull: { 'applicants.$[candidate].interviews': { interviewId: interview._id } } },
+                  { arrayFilters: [{ 'candidate.candidate': candidate._id }] }
+                );
+              } catch (pipelineCleanupError) {
+                console.error(`Failed to cleanup pipeline interview reference for ${candidateName}:`, pipelineCleanupError.message);
+              }
+            }
+
+            let queuedForRetry = false;
+            try {
+              const retryTask = await multiCandidateRetryService.enqueueRetryTask({
+                sessionId,
+                organizationId,
+                interviewerId: userId,
+                reportEmail: retryReportEmail,
+                provider,
+                sharedMeetingLink: meetingLink || null,
+                slot: {
+                  candidateId: candidate._id,
+                  candidateName,
+                  candidateEmail: candidate.email,
+                  jobId: slot.jobId || null,
+                  stageId: slot.stageId || null,
+                  jobTitle: slot.jobTitle || null,
+                  startTime: new Date(slot.startTime),
+                  endTime: new Date(slot.endTime),
+                  duration: slot.duration,
+                  notes: slot.notes || '',
+                  order: slot.order
+                },
+                sessionContext: {
+                  baseStartTime: new Date(baseStartTime),
+                  sessionEndTime: new Date(sessionEndTime),
+                  totalDuration,
+                  organizationName: sessionOrganizationName,
+                  interviewType,
+                  location: location || null,
+                  subject: subject || null,
+                  addNotetaker: !!addNotetaker,
+                  additionalInterviewers,
+                  bccParticipants,
+                  ccParticipants,
+                  sendCustomEmail: !!sendCustomEmail,
+                  emailTemplate: emailTemplate || null,
+                  sendQuestionsToInterviewers: !!sendQuestionsToInterviewers,
+                  questionsSendTime: questionsSendTime || 60,
+                  selectedQuestionIds: selectedQuestionIds || [],
+                  timezone: sessionTimezone
+                },
+                lastError: retryReason
+              });
+
+              queuedRetries.push({
+                taskId: retryTask._id,
+                candidateName,
+                startTime: new Date(slot.startTime).toISOString(),
+                reason: retryReason
+              });
+              queuedForRetry = true;
+            } catch (enqueueError) {
+              console.error(`Failed to enqueue retry for ${candidateName}:`, enqueueError.message);
+            }
+
             errors.push({
-              candidate: slot.candidateName,
-              error: 'Failed to create calendar event'
+              candidate: candidateName,
+              error: retryReason,
+              queuedForRetry
             });
+            continue;
           }
         }
 
-        // ✅ ALWAYS SEND INTERVIEW NOTIFICATION EMAILS TO INTERVIEWERS/OBSERVERS (outside sendCustomEmail block)
-        // Define participants outside try block to avoid scope issues
+        if (!slotCalendarEventCreated) {
+          continue;
+        }
+
+        // ✅ Participant notifications:
+        // - Nylas path: keep existing per-slot behavior.
+        // - Brevo path: aggregate and send one digest after all slots finish.
         const allInterviewParticipants = [
-          // Main interviewer
           { email: interviewer.email, name: interviewer.name || interviewer.email },
-          // Additional interviewers
           ...additionalInterviewers,
-          // BCC participants (they should get notification, not invitation)
           ...bccParticipants,
-          // CC participants (they should get notification, not invitation)  
           ...ccParticipants
-        ];
+        ].filter(participant => participant?.email);
+
+        const notificationEntry = {
+          candidateName: candidateName,
+          jobTitle: slot.jobTitle || 'Multi-Candidate Interview',
+          startTime: new Date(slot.startTime).toISOString(),
+          formattedTime: `${formattedSlotDate} at ${formattedSlotTime}`,
+          duration: slot.duration,
+          interviewId: interview._id,
+          feedbackUrl: `${process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'}/public/feedback/${interview._id}`,
+          meetingLink: meetingLink || ''
+        };
         
         try {
-          console.log(`📧 Sending interview notifications to all participants for ${candidateName}...`);
-          
-          console.log(`🔍 [MULTI] Found ${allInterviewParticipants.length} total participants for notifications for ${candidateName}:`, 
-            allInterviewParticipants.map(p => `${p.email} (${p.name || 'no name'})`));
-          
-          // Remove duplicates and send notification to each unique participant
-          const emailsSeen = new Set();
+          console.log(`📧 Processing participant notification routing for ${candidateName}...`);
+          const participantEmailMode = (process.env.MULTI_CANDIDATE_PARTICIPANT_EMAIL_MODE || 'brevo_digest').toLowerCase();
+          const useNylasForNotification =
+            participantEmailMode === 'nylas_per_slot' &&
+            interviewer.nylasGrantId &&
+            process.env.USE_NYLAS_FOR_INTERVIEW_EMAILS === 'true';
+          console.log(`📧 [MULTI] Participant notification mode: ${participantEmailMode}`);
+          const dedupeForSlot = new Set();
+
           for (const participant of allInterviewParticipants) {
-            if (participant.email && !emailsSeen.has(participant.email.toLowerCase())) {
-              emailsSeen.add(participant.email.toLowerCase());
-              
-              const notificationTemplateData = {
-                candidateName: candidateName,
-                jobTitle: slot.jobTitle || 'Multi-Candidate Interview',
-                interviewDate: formattedSlotDate,
-                interviewTime: formattedSlotTime,
-                duration: slot.duration,
-                interviewType: interviewType === 'video' ? 'Video Call' : 'In-Person Meeting',
-                meetingLink: meetingLink,
-                notes: slot.notes || '',
-                interviewerName: participant.name || participant.email.split('@')[0],
-                interviewerEmail: interviewer?.email || 'no-reply@smarthr.app',
-                organizationName: 'SmartHR',
-                // ✅ ADD CANDIDATE INFORMATION FOR ENHANCED NOTIFICATION
-                interviewId: interview._id,
-                candidateResumeUrl: candidate.cvUrl,
-                candidateCurrentRole: candidate.currentRole,
-                candidateExperience: candidate.yearsOfExperience,
-                feedbackUrl: `${process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'}/public/feedback/${interview._id}`
-              };
-              
-              console.log(`🔍 [MULTI] Sending notification to ${participant.email} for ${candidateName} with template data:`, {
-                candidateName: notificationTemplateData.candidateName,
-                jobTitle: notificationTemplateData.jobTitle,
-                interviewId: notificationTemplateData.interviewId,
-                feedbackUrl: notificationTemplateData.feedbackUrl
-              });
-              
-              // ✅ USE SAME PROVEN EMAIL METHOD AS CANDIDATE INVITATIONS (just different template and recipient)
-              const useNylasForNotification = interviewer.nylasGrantId && process.env.USE_NYLAS_FOR_INTERVIEW_EMAILS === 'true';
-              
-              // Create notification template (different from candidate invitation)
-              const notificationTemplate = `Dear {{interviewerName}},
+            const participantKey = participant.email.toLowerCase().trim();
+            if (dedupeForSlot.has(participantKey)) {
+              continue;
+            }
+            dedupeForSlot.add(participantKey);
+
+            const notificationTemplateData = {
+              candidateName: candidateName,
+              jobTitle: slot.jobTitle || 'Multi-Candidate Interview',
+              interviewDate: formattedSlotDate,
+              interviewTime: formattedSlotTime,
+              duration: slot.duration,
+              interviewType: interviewType === 'video' ? 'Video Call' : 'In-Person Meeting',
+              meetingLink: meetingLink,
+              notes: slot.notes || '',
+              interviewerName: participant.name || participant.email.split('@')[0],
+              interviewerEmail: interviewer?.email || 'no-reply@smarthr.app',
+              organizationName: sessionOrganizationName,
+              interviewId: interview._id,
+              candidateResumeUrl: candidate.cvUrl,
+              candidateCurrentRole: candidate.currentRole,
+              candidateExperience: candidate.yearsOfExperience,
+              feedbackUrl: notificationEntry.feedbackUrl
+            };
+
+            const notificationTemplate = `Dear {{interviewerName}},
 
 You have an upcoming interview to conduct for the {{jobTitle}} position.
 
@@ -5396,55 +5910,32 @@ You can access interview questions and submit feedback at:
 Please review the candidate information before the interview and submit your assessment after completion.
 
 Best regards,
-SmartHR`;
-              
-              if (useNylasForNotification) {
-                console.log(`📧 🚨 [MULTI] ATTEMPTING Nylas notification to ${participant.email} for ${candidateName} with data:`, {
-                  grantId: interviewer.nylasGrantId,
-                  recipient: participant.email,
-                  candidateName: notificationTemplateData.candidateName,
-                  feedbackUrl: notificationTemplateData.feedbackUrl
-                });
-                const nylasNotificationResult = await nylasEmailService.sendInterviewInviteEmail(
-                  interviewer.nylasGrantId,
-                  participant.email,
-                  notificationTemplateData,
-                  notificationTemplate, // Custom template for notifications
-                  `Interview Notification: ${notificationTemplateData.candidateName} - ${notificationTemplateData.jobTitle}`, // Custom subject
-                  [], // No BCC for notifications
-                  [],  // No CC for notifications
-                  bulkVerifyAccountCredentials // Pass same account credentials (same as bulkAccountCredentials)
-                );
-                
-                if (!nylasNotificationResult.success) {
-                  console.log(`📧 ⚠️ [MULTI] Nylas notification failed for ${participant.email}, falling back to Brevo. Error:`, nylasNotificationResult.error);
-                  // Fallback to Brevo using same method
-                  await emailService.sendInterviewInviteEmail(
-                    participant.email,
-                    notificationTemplateData,
-                    notificationTemplate,
-                    [], // No BCC for notifications  
-                    []  // No CC for notifications
-                  );
-                  console.log(`📧 ✅ [MULTI] Brevo fallback notification sent to ${participant.email}`);
-                }
-              } else {
-                console.log(`📧 🚨 [MULTI] ATTEMPTING Brevo notification to ${participant.email} for ${candidateName} (Nylas not available)`);
-                await emailService.sendInterviewInviteEmail(
-                  participant.email,
-                  notificationTemplateData,
-                  notificationTemplate,
-                  [], // No BCC for notifications
-                  []  // No CC for notifications  
-                );
-                console.log(`📧 ✅ [MULTI] Brevo notification sent to ${participant.email}`);
+{{organizationName}}`;
+
+            if (useNylasForNotification) {
+              const nylasNotificationResult = await nylasEmailService.sendInterviewInviteEmail(
+                interviewer.nylasGrantId,
+                participant.email,
+                notificationTemplateData,
+                notificationTemplate,
+                `${sessionOrganizationName} - Interview Notification: ${notificationTemplateData.candidateName} - ${notificationTemplateData.jobTitle}`,
+                [],
+                [],
+                bulkVerifyAccountCredentials
+              );
+
+              if (!nylasNotificationResult.success) {
+                // Brevo fallback path is batched into the session digest.
+                addDigestEntryForParticipant(participant, notificationEntry);
+                console.log(`📧 [MULTI] Queued Brevo digest entry for ${participant.email} after Nylas failure`);
               }
-              
-              console.log(`✅ Interview notification sent to ${participant.email} for ${candidateName}`);
+            } else {
+              // Default path: batch into one Brevo digest per participant for the session.
+              addDigestEntryForParticipant(participant, notificationEntry);
             }
           }
         } catch (notificationError) {
-          console.error(`❌ 🚨 CRITICAL: Failed to send interview notifications for ${candidateName}:`, notificationError);
+          console.error(`❌ 🚨 CRITICAL: Failed to process interview notifications for ${candidateName}:`, notificationError);
           console.error('🔍 Notification error details:', {
             errorMessage: notificationError.message,
             errorStack: notificationError.stack,
@@ -5457,15 +5948,15 @@ SmartHR`;
 
         createdInterviews.push({
           interviewId: interview._id,
-          candidateName: slot.candidateName,
-          candidateEmail: slot.candidateEmail,
+          candidateName: candidateName,
+          candidateEmail: candidate.email,
           startTime: slot.startTime,
           endTime: slot.endTime,
           duration: slot.duration
         });
         
         const slotProcessingTime = Date.now() - slotProcessingStart;
-        console.log(`✅ Slot ${slot.order + 1} processed successfully in ${slotProcessingTime}ms for ${slot.candidateName}`);
+        console.log(`✅ Slot ${slot.order + 1} processed successfully in ${slotProcessingTime}ms for ${candidateName}`);
 
       } catch (slotError) {
         console.error(`Failed to schedule interview for ${slot.candidateName}:`, slotError);
@@ -5480,8 +5971,76 @@ SmartHR`;
       totalSlots: candidateSlots.length,
       successfullyCreated: createdInterviews.length,
       errors: errors.length,
+      queuedRetries: queuedRetries.length,
       errorDetails: errors
     });
+
+    if (queuedRetries.length > 0) {
+      try {
+        await multiCandidateRetryService.sendInitialRetryQueuedEmail({
+          recipientEmail: retryReportEmail,
+          sessionId,
+          queuedCount: queuedRetries.length,
+          failedSlots: queuedRetries,
+          organizationName: sessionOrganizationName
+        });
+      } catch (statusEmailError) {
+        console.error('Failed to send initial queued retry status email:', statusEmailError.message);
+      }
+    }
+
+    if (participantDigestMap.size > 0 && createdInterviews.length > 0) {
+      try {
+        const sessionDigestJobs = [];
+        for (const digest of participantDigestMap.values()) {
+          const sortedEntries = [...digest.entries].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+          if (!sortedEntries.length) {
+            continue;
+          }
+
+          sessionDigestJobs.push({
+            email: digest.email,
+            promise: emailService.sendMultiCandidateParticipantDigestEmail(digest.email, {
+              participantName: digest.name,
+              organizationName: sessionOrganizationName,
+              timezone: sessionTimezone,
+              sessionStartTime: baseStartTime,
+              sessionEndTime: sessionEndTime,
+              sharedMeetingLink: meetingLink || '',
+              entries: sortedEntries
+            })
+          });
+        }
+
+        if (sessionDigestJobs.length > 0) {
+          const digestResults = await Promise.allSettled(sessionDigestJobs.map(job => job.promise));
+          let sentCount = 0;
+          const failedRecipients = [];
+
+          digestResults.forEach((result, index) => {
+            const recipientEmail = sessionDigestJobs[index]?.email;
+            if (result.status === 'fulfilled' && result.value?.success !== false) {
+              sentCount += 1;
+              return;
+            }
+
+            const errorMessage =
+              result.status === 'rejected'
+                ? result.reason?.message || String(result.reason)
+                : result.value?.message || 'Unknown Brevo send failure';
+
+            failedRecipients.push({ email: recipientEmail, error: errorMessage });
+          });
+
+          console.log(`✅ Consolidated Brevo participant digests sent: ${sentCount}/${sessionDigestJobs.length}`);
+          if (failedRecipients.length > 0) {
+            console.error('❌ Consolidated Brevo participant digest failures:', failedRecipients);
+          }
+        }
+      } catch (digestError) {
+        console.error('❌ Failed to send consolidated Brevo participant digest emails:', digestError.message);
+      }
+    }
 
     // Add notetaker for the entire session if requested
     console.log('🔍 Notetaker check:', {
@@ -5516,22 +6075,32 @@ SmartHR`;
         let notetakerResponse;
         if (meetingDetails?.id) {
           console.log('Creating notetaker with main event ID:', meetingDetails.id);
-          notetakerResponse = await nylasV3Service.enableNotetakerForEvent(
-            interviewer.nylasGrantId,
-            meetingDetails.id,
+          notetakerResponse = await nylasV3Service.createStandaloneNotetaker(
             meetingLink,
+            {
+              name: "SmartHR Notetaker Bot",
+              videoRecording: true,
+              audioRecording: true,
+              transcription: true,
+              summary: true
+            },
             joinTime, // Pass the actual session start time
-            bulkVerifyAccountCredentials // Pass account credentials for correct API key
+            bulkVerifyAccountCredentials
           );
         } else {
           console.log('No main event ID available, creating notetaker with meeting link only');
           // Create notetaker without specific event ID (using just the meeting link)
-          notetakerResponse = await nylasV3Service.enableNotetakerForEvent(
-            interviewer.nylasGrantId,
-            null, // No specific event ID
+          notetakerResponse = await nylasV3Service.createStandaloneNotetaker(
             meetingLink,
+            {
+              name: "SmartHR Notetaker Bot",
+              videoRecording: true,
+              audioRecording: true,
+              transcription: true,
+              summary: true
+            },
             joinTime, // Pass the actual session start time
-            bulkVerifyAccountCredentials // Pass account credentials for correct API key
+            bulkVerifyAccountCredentials
           );
         }
 
@@ -5541,13 +6110,14 @@ SmartHR`;
           state: notetakerResponse.state
         });
 
-        // Use the correct field from the response (it's 'id', not 'notetakerId')
-        const actualNotetakerId = notetakerResponse.id;
+        // Normalize ID in case the response shape differs.
+        const actualNotetakerId = notetakerResponse.notetakerId || notetakerResponse.id;
 
         // Update all interviews with notetaker info
         for (const interview of createdInterviews) {
           await Interview.findByIdAndUpdate(interview.interviewId, {
             notetakerId: actualNotetakerId,
+            notetakerType: 'standalone',
             notetakerStatus: 'enabled',
             notetakerEnabled: true
           });
@@ -5574,10 +6144,17 @@ SmartHR`;
     }
 
     console.log(`✅ PRODUCTION DEBUG - About to send response. Total request processing time: ${Date.now() - requestStartTime}ms`);
+    const successCount = createdInterviews.length;
+    const failedCount = errors.length;
+    const queuedRetryCount = queuedRetries.length;
     
     res.status(201).json({
       success: true,
-      message: `Successfully scheduled ${createdInterviews.length} interviews`,
+      message: `Successfully scheduled ${successCount} interviews`,
+      sessionId,
+      successCount,
+      failedCount,
+      queuedRetryCount,
       sessionDetails: {
         sessionType: 'multi-candidate',
         totalDuration,
@@ -5587,6 +6164,7 @@ SmartHR`;
         candidateCount: candidateSlots.length
       },
       interviews: createdInterviews,
+      queuedRetries: queuedRetryCount > 0 ? queuedRetries : undefined,
       errors: errors.length > 0 ? errors : undefined
     });
 

@@ -130,12 +130,6 @@ const JobSchema = new mongoose.Schema({
       max: 1,
     },
   }],
-
-  // Screening questions for job applications
-  screeningQuestions: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ScreeningQuestion',
-  }],
   applicants: [{
     candidate: {
       type: mongoose.Schema.Types.ObjectId,
@@ -154,12 +148,12 @@ const JobSchema = new mongoose.Schema({
     status: {
       type: String,
       default: 'applied',
-      enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'offered', 'hired', 'rejected'],
+      enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'keep_in_view', 'offered', 'hired', 'rejected'],
     },
     statusHistory: [{
       status: {
         type: String,
-        enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'offered', 'hired', 'rejected'],
+        enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'keep_in_view', 'offered', 'hired', 'rejected'],
         required: true,
       },
       changedBy: {
@@ -189,23 +183,6 @@ const JobSchema = new mongoose.Schema({
       max: 100,
     },
     tags: [String],
-    
-    // Screening question answers
-    screeningAnswers: [{
-      questionId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'ScreeningQuestion',
-        required: true
-      },
-      answer: {
-        type: mongoose.Schema.Types.Mixed, // Can be string, boolean, number, array, date
-        required: true
-      },
-      answeredAt: {
-        type: Date,
-        default: Date.now
-      }
-    }],
     
     // Stage Tracking
     currentStage: {

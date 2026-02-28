@@ -1,5 +1,11 @@
 const Nylas = require('nylas').default;
 const configLoader = require('../config/configLoader');
+const emailService = require('./emailService');
+const DEFAULT_ORGANIZATION_NAME =
+  process.env.DEFAULT_ORGANIZATION_NAME ||
+  process.env.ORGANIZATION_NAME ||
+  process.env.BREVO_SENDER_NAME ||
+  'Organization';
 
 class NylasV3Service {
   constructor() {
@@ -26,6 +32,9 @@ class NylasV3Service {
     console.log('   Environment:', configLoader.getEnvironment());
     console.log('   Base URL:', configLoader.getBaseUrl());
     console.log('   API Key present:', !!this.apiKey);
+
+    // Avoid spamming the logs for every Teams meeting creation.
+    this._teamsAdminWarningLogged = false;
   }
 
     // Helper method to generate Basic Auth credentials for Admin API operations
@@ -58,6 +67,176 @@ class NylasV3Service {
     // Return default instance
     return this.nylas;
   }
+
+  formatIcsTimestamp(dateLike) {
+    const date = new Date(dateLike);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+  }
+
+  escapeIcsText(value) {
+    return String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\r?\n/g, '\\n');
+  }
+
+  buildIcsInvite({
+    uid,
+    title,
+    description,
+    location,
+    startTime,
+    endTime,
+    organizerEmail,
+    organizerName,
+    attendeeEmail,
+    attendeeName
+  }) {
+    const dtStamp = this.formatIcsTimestamp(new Date());
+    const dtStart = this.formatIcsTimestamp(startTime);
+    const dtEnd = this.formatIcsTimestamp(endTime);
+
+    if (!dtStart || !dtEnd || !dtStamp) {
+      return null;
+    }
+
+    return [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      `PRODID:-//${this.escapeIcsText(DEFAULT_ORGANIZATION_NAME)}//Interview Scheduler//EN`,
+      'CALSCALE:GREGORIAN',
+      'METHOD:REQUEST',
+      'BEGIN:VEVENT',
+      `UID:${this.escapeIcsText(uid)}`,
+      `DTSTAMP:${dtStamp}`,
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${this.escapeIcsText(title)}`,
+      `DESCRIPTION:${this.escapeIcsText(description)}`,
+      `LOCATION:${this.escapeIcsText(location)}`,
+      organizerEmail
+        ? `ORGANIZER;CN=${this.escapeIcsText(organizerName || organizerEmail)}:mailto:${organizerEmail}`
+        : '',
+      attendeeEmail
+        ? `ATTENDEE;CN=${this.escapeIcsText(attendeeName || attendeeEmail)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${attendeeEmail}`
+        : '',
+      'SEQUENCE:0',
+      'STATUS:CONFIRMED',
+      'TRANSP:OPAQUE',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].filter(Boolean).join('\r\n');
+  }
+
+  async sendBrevoCalendarInviteFallback(event, requestBody, eventData) {
+    try {
+      const fallbackEnabled = process.env.ENABLE_BREVO_CALENDAR_INVITE_FALLBACK === 'true';
+      if (!fallbackEnabled) {
+        return;
+      }
+
+      const participants = Array.isArray(requestBody?.participants) ? requestBody.participants : [];
+      if (participants.length === 0) {
+        return;
+      }
+
+      const organizerEmail = event?.organizer?.email || '';
+      const organizerName = event?.organizer?.name || '';
+      const senderName = eventData?.organizationName || organizerName || DEFAULT_ORGANIZATION_NAME;
+      const meetingLink =
+        event?.conferencing?.details?.url ||
+        event?.conferencing?.details?.meeting_url ||
+        event?.conferencing?.join_url ||
+        eventData?.conferencing?.details?.url ||
+        '';
+
+      const startTimeIso = event?.when?.startTime
+        ? new Date(event.when.startTime * 1000).toISOString()
+        : eventData?.startTime;
+      const endTimeIso = event?.when?.endTime
+        ? new Date(event.when.endTime * 1000).toISOString()
+        : eventData?.endTime;
+
+      const location = event?.location || (meetingLink || eventData?.location || 'Video Call');
+      const descriptionParts = [
+        event?.description || eventData?.description || '',
+        meetingLink ? `Join meeting: ${meetingLink}` : ''
+      ].filter(Boolean);
+      const description = descriptionParts.join('\n\n');
+      const startLabel = startTimeIso ? new Date(startTimeIso).toUTCString() : 'TBD';
+      const endLabel = endTimeIso ? new Date(endTimeIso).toUTCString() : 'TBD';
+
+      const uniqueRecipients = new Map();
+      for (const participant of participants) {
+        const email = String(participant?.email || '').trim().toLowerCase();
+        if (!email) {
+          continue;
+        }
+        if (!uniqueRecipients.has(email)) {
+          uniqueRecipients.set(email, {
+            email,
+            name: participant?.name || participant?.email || email
+          });
+        }
+      }
+
+      console.log(`📅 [Calendar Fallback] Sending .ics invites to ${uniqueRecipients.size} recipients`);
+      for (const recipient of uniqueRecipients.values()) {
+        try {
+          const icsContent = this.buildIcsInvite({
+            uid: event?.icalUid || `${event?.id || Date.now()}@smarthr.aiinnigeria.com`,
+            title: event?.title || eventData?.title || 'Interview Invitation',
+            description,
+            location,
+            startTime: startTimeIso,
+            endTime: endTimeIso,
+            organizerEmail,
+            organizerName,
+            attendeeEmail: recipient.email,
+            attendeeName: recipient.name
+          });
+
+          if (!icsContent) {
+            continue;
+          }
+
+          const messageHtml = `
+            <p>A calendar invite is attached for your interview schedule.</p>
+            <p><strong>Title:</strong> ${event?.title || eventData?.title || 'Interview Invitation'}</p>
+            <p><strong>Start:</strong> ${startLabel}</p>
+            <p><strong>End:</strong> ${endLabel}</p>
+            ${meetingLink ? `<p><strong>Meeting Link:</strong> <a href="${meetingLink}">${meetingLink}</a></p>` : ''}
+          `;
+
+          await emailService.sendUserNotification(
+            recipient.email,
+            `${senderName} - Calendar Invite: ${event?.title || eventData?.title || 'Interview'}`,
+            messageHtml,
+            {
+              senderName,
+              htmlContent: messageHtml,
+              attachments: [
+                {
+                  name: 'interview-invite.ics',
+                  content: Buffer.from(icsContent, 'utf8').toString('base64')
+                }
+              ]
+            }
+          );
+        } catch (recipientError) {
+          console.error(`Calendar invite fallback failed for ${recipient.email}:`, recipientError.message);
+        }
+      }
+    } catch (error) {
+      console.error('Calendar invite fallback processing failed:', error.message);
+    }
+  }
   
   // Grant management (v3 authentication)
   async createAuthUrl(stateData, provider = 'google', forceAccountSelection = false, accountCredentials = null) {
@@ -84,6 +263,7 @@ class NylasV3Service {
             return [
               // Calendar scopes
               'Calendars.ReadWrite',
+              'OnlineMeetings.ReadWrite',
               'User.Read',
               // Email scopes for sending interview invitations
               'Mail.Send',
@@ -506,6 +686,16 @@ class NylasV3Service {
           };
         } else if (eventData.conferencing.provider === 'teams' || eventData.conferencing.provider === 'microsoft_teams' || eventData.conferencing.provider === 'microsoft') {
           // For Microsoft Teams, use autocreate to let Nylas generate the meeting link
+          if (eventData.addNotetaker && !this._teamsAdminWarningLogged) {
+            console.warn('[NYLAS][Teams] Microsoft Teams meetings require Microsoft 365 / Teams admin settings for the Notetaker bot to join reliably.');
+            console.warn('[NYLAS][Teams] Verify these settings in Teams Admin Center:');
+            console.warn('  - Allow participants to join before meeting organizer joins: ENABLED');
+            console.warn('  - Waiting room: DISABLED (or bot allowlisted)');
+            console.warn('  - Cloud recording: ENABLED');
+            console.warn('  - Transcription: ENABLED');
+            console.warn('[NYLAS][Teams] See docs/teams-admin-setup.md for the detailed checklist.');
+            this._teamsAdminWarningLogged = true;
+          }
           conferencingConfig = {
             provider: 'Microsoft Teams',
             autocreate: {}
@@ -552,6 +742,65 @@ class NylasV3Service {
         throw new Error(`End time (${eventData.endTime}) must be after start time (${eventData.startTime})`);
       }
       
+      const dedupedParticipantsMap = new Map();
+
+      const normalizedParticipants = (eventData.participants || []).filter(participant => {
+        // EXCLUDE BCC participants from the main calendar event to keep them hidden
+        // BCC participants should not appear in the guest list
+        return participant.visibility !== 'bcc';
+      }).map(participant => {
+        const participantData = {
+          email: participant.email,
+          name: participant.name
+        };
+
+        // Always request RSVP from attendees so calendar providers dispatch invitations consistently.
+        participantData.status = 'noreply';
+        if (participant.visibility === 'cc') {
+          participantData.comment = 'CC';
+        }
+
+        return participantData;
+      });
+
+      for (const participant of normalizedParticipants) {
+        if (!participant?.email) {
+          continue;
+        }
+
+        const key = String(participant.email).toLowerCase().trim();
+        if (!key) {
+          continue;
+        }
+
+        const existing = dedupedParticipantsMap.get(key);
+        if (!existing) {
+          dedupedParticipantsMap.set(key, {
+            email: participant.email,
+            name: participant.name || participant.email,
+            status: participant.status || 'noreply',
+            ...(participant.comment ? { comment: participant.comment } : {})
+          });
+          continue;
+        }
+
+        if ((!existing.name || existing.name === existing.email) && participant.name) {
+          existing.name = participant.name;
+        }
+
+        if (!existing.comment && participant.comment) {
+          existing.comment = participant.comment;
+        }
+
+        dedupedParticipantsMap.set(key, existing);
+      }
+
+      if (normalizedParticipants.length !== dedupedParticipantsMap.size) {
+        console.warn(
+          `⚠️ Deduped calendar participants from ${normalizedParticipants.length} to ${dedupedParticipantsMap.size}`
+        );
+      }
+
       const requestBody = {
         title: eventData.title,
         description: eventData.description,
@@ -559,27 +808,7 @@ class NylasV3Service {
           startTime: Math.floor(startDate.getTime() / 1000),
           endTime: Math.floor(endDate.getTime() / 1000)
         },
-        participants: (eventData.participants || []).filter(participant => {
-          // EXCLUDE BCC participants from the main calendar event to keep them hidden
-          // BCC participants should not appear in the guest list
-          return participant.visibility !== 'bcc';
-        }).map(participant => {
-          // Handle CC visibility for calendar invites
-          const participantData = {
-            email: participant.email,
-            name: participant.name
-          };
-          
-          // Set participant status based on visibility
-          if (participant.visibility === 'cc') {
-            participantData.status = 'noreply'; 
-            participantData.comment = 'CC';
-          } else {
-            participantData.status = participant.status || 'noreply';
-          }
-          
-          return participantData;
-        })
+        participants: Array.from(dedupedParticipantsMap.values())
       };
       
       // Only add conferencing if it's configured
@@ -608,18 +837,33 @@ class NylasV3Service {
       // Get the appropriate Nylas SDK instance (custom or default)
       const nylasInstance = this.getNylasInstance(accountCredentials);
       
+      const shouldNotifyParticipants = eventData.notifyParticipants !== false;
       const event = await nylasInstance.events.create({
         identifier: grantId,
         requestBody: requestBody,
         queryParams: {
-          calendarId: primaryCalendar.id
+          calendarId: primaryCalendar.id,
+          notifyParticipants: shouldNotifyParticipants
         }
       });
+      console.log('Event notifyParticipants:', shouldNotifyParticipants);
       
       console.log('Event created successfully:', JSON.stringify(event.data, null, 2));
+
+      // Calendar invite fallback should only run when Nylas participant notifications
+      // are not being used, unless explicitly forced for diagnostics.
+      const forceBrevoCalendarFallback =
+        eventData?.forceBrevoCalendarInviteFallback === true ||
+        process.env.FORCE_BREVO_CALENDAR_INVITE_FALLBACK === 'true';
+
+      if (!shouldNotifyParticipants || forceBrevoCalendarFallback) {
+        await this.sendBrevoCalendarInviteFallback(event.data, requestBody, eventData);
+      } else if (process.env.ENABLE_BREVO_CALENDAR_INVITE_FALLBACK === 'true') {
+        console.log('📅 [Calendar Fallback] Skipped: Nylas notifyParticipants=true already requested participant invites');
+      }
       
       // Enable notetaker if requested
-      if (eventData.addNotetaker && event.data.id) {
+      if (eventData.addNotetaker && !eventData.skipServiceNotetaker && event.data.id) {
         try {
           console.log('Attempting to enable notetaker for event:', event.data.id);
           console.log('Event conferencing data:', event.data.conferencing);
@@ -633,7 +877,18 @@ class NylasV3Service {
             console.log('Using meeting URL:', meetingUrl);
             // Calculate join time as event start time
             const joinTime = new Date(eventData.startTime);
-            const notetakerResult = await this.enableNotetakerForEvent(grantId, event.data.id, meetingUrl, joinTime, accountCredentials);
+            const notetakerResult = await this.createStandaloneNotetaker(
+              meetingUrl,
+              {
+                name: "SmartHR Notetaker Bot",
+                videoRecording: true,
+                audioRecording: true,
+                transcription: true,
+                summary: true
+              },
+              joinTime,
+              accountCredentials
+            );
             console.log('Notetaker enabled successfully:', notetakerResult);
             
             // Add notetaker info to the event response
@@ -677,7 +932,7 @@ class NylasV3Service {
    * @param {Array} bccParticipants - Array of BCC participants {email, name, visibility: 'bcc'}
    * @returns {Promise<Object>} Results of sending BCC invites
    */
-  async sendBccCalendarInvites(grantId, eventData, bccParticipants) {
+  async sendBccCalendarInvites(grantId, eventData, bccParticipants, accountCredentials = null) {
     try {
       if (!bccParticipants || bccParticipants.length === 0) {
         return { success: true, message: 'No BCC participants to send to', sent: 0 };
@@ -685,10 +940,50 @@ class NylasV3Service {
 
       console.log(`📅 Sending separate calendar invites to ${bccParticipants.length} BCC recipients`);
       
+      const mainParticipantEmails = new Set(
+        (eventData?.participants || [])
+          .map(participant => String(participant?.email || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      const organizerEmail = String(eventData?.organizer?.email || '').trim().toLowerCase();
+      if (organizerEmail) {
+        mainParticipantEmails.add(organizerEmail);
+      }
+
+      const uniqueBccMap = new Map();
+      for (const participant of bccParticipants) {
+        const email = String(participant?.email || '').trim().toLowerCase();
+        if (!email) {
+          continue;
+        }
+
+        if (mainParticipantEmails.has(email)) {
+          console.log(`📅 Skipping BCC calendar invite for ${email} (already included in main participants)`);
+          continue;
+        }
+
+        if (!uniqueBccMap.has(email)) {
+          uniqueBccMap.set(email, {
+            ...participant,
+            email
+          });
+        }
+      }
+
+      const filteredBccParticipants = Array.from(uniqueBccMap.values());
+      if (filteredBccParticipants.length === 0) {
+        return {
+          success: true,
+          message: 'No unique BCC participants after dedupe against main recipients',
+          sent: 0
+        };
+      }
+
       const results = [];
       
       // Send individual calendar invites to each BCC participant
-      for (const bccParticipant of bccParticipants) {
+      for (const bccParticipant of filteredBccParticipants) {
         try {
           // Create a separate calendar event that includes only the BCC recipient
           // This way they get a proper calendar invite but don't see other participants
@@ -706,7 +1001,7 @@ class NylasV3Service {
           // Keep the original title and description
           // BCC recipients should get a natural-looking calendar invite identical to the main event
 
-          const bccEvent = await this.createEvent(grantId, bccEventData);
+          const bccEvent = await this.createEvent(grantId, bccEventData, accountCredentials);
           
           results.push({
             participant: bccParticipant.email,
@@ -743,69 +1038,62 @@ class NylasV3Service {
     }
   }
 
-  // Notetaker methods - Using official Nylas v3 API
-  async enableNotetakerForEvent(grantId, eventId, meetingLink, joinTime = null, accountCredentials = null) {
+  // Standalone notetaker methods - NO grant required (NEW API)
+  async createStandaloneNotetaker(meetingLink, options = {}, joinTime = null, accountCredentials = null) {
     try {
-      console.log('=== ENABLING NOTETAKER ===');
-      console.log('Event ID:', eventId);
+      console.log('=== CREATING STANDALONE NOTETAKER ===');
       console.log('Meeting link:', meetingLink);
       console.log('Join time:', joinTime);
       console.log('Using account credentials:', !!accountCredentials);
-      
+
       // Use provided credentials or fall back to default
       const apiKey = accountCredentials?.apiKey || this.apiKey;
       const apiUri = accountCredentials?.apiUri || this.apiUri;
-      
-      console.log('📤 Using API Key:', apiKey ? apiKey.substring(0, 15) + '...' : 'none');
-      console.log('📤 Using API URI:', apiUri);
-      
+
+      console.log('Using API key present:', !!apiKey);
+      console.log('Using API URI:', apiUri);
+
+      if (!apiKey) {
+        throw new Error('NYLAS_API_KEY is required to create a standalone notetaker');
+      }
+
       // Validate meeting link format
       if (!meetingLink || typeof meetingLink !== 'string') {
         throw new Error('Invalid meeting link provided');
       }
-      
+
       // Check if it's a supported meeting platform
       const supportedPlatforms = [
         'meet.google.com',
         'teams.microsoft.com',
         'zoom.us'
       ];
-      
+
       const isSupported = supportedPlatforms.some(platform => meetingLink.includes(platform));
       if (!isSupported) {
-        console.warn(`⚠️ Meeting link may not be supported: ${meetingLink}`);
+        console.warn(`Meeting link may not be supported: ${meetingLink}`);
         console.warn('Supported platforms:', supportedPlatforms.join(', '));
       }
-      
-      // Build request body according to official docs
+
       const requestBody = {
         meeting_link: meetingLink,
-        name: "SmartHR Notetaker Bot",
+        name: options.name || "SmartHR Notetaker Bot",
         meeting_settings: {
-          video_recording: true,
-          audio_recording: true,
-          transcription: true
+          video_recording: options.videoRecording ?? true,
+          audio_recording: options.audioRecording ?? true,
+          transcription: options.transcription ?? true,
+          summary: options.summary ?? true,
+          action_items: options.actionItems ?? false,
+          leave_after_silence_seconds: options.leaveAfterSilenceSeconds || 300
         }
       };
-      
-      // Add join_time if provided (for scheduled joining)
+
       if (joinTime) {
         const joinTimeUnix = Math.floor(new Date(joinTime).getTime() / 1000);
         requestBody.join_time = joinTimeUnix;
-        console.log('⏰ Setting notetaker join_time:', {
-          original: joinTime,
-          unix: joinTimeUnix,
-          humanReadable: new Date(joinTimeUnix * 1000).toISOString(),
-          minutesFromNow: Math.round((joinTimeUnix * 1000 - Date.now()) / 60000)
-        });
-      } else {
-        console.log('⏰ No join_time set - bot will join immediately when meeting starts');
       }
-      
-      console.log('📤 Nylas API request body:', JSON.stringify(requestBody, null, 2));
-      
-      // Use grant-specific endpoint for better association
-      const response = await fetch(`${apiUri}/v3/grants/${grantId}/notetakers`, {
+
+      const response = await fetch(`${apiUri}/v3/notetakers`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -817,78 +1105,51 @@ class NylasV3Service {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('❌ Failed to enable notetaker:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: error,
-          meetingLink: meetingLink,
-          grantId: grantId
-        });
-        
-        // Check common error scenarios with detailed messages
+
         if (response.status === 403) {
           throw new Error('NOTETAKER_FEATURE_DISABLED: Notetaker feature is not enabled for your Nylas account. Please contact Nylas support.');
         }
         if (response.status === 400 && error.includes('meeting_link')) {
           throw new Error('INVALID_MEETING_LINK: Invalid meeting link. Notetaker supports Google Meet, Microsoft Teams, and Zoom. Ensure the meeting allows external participants.');
         }
-        if (response.status === 400 && error.includes('grant')) {
-          throw new Error('GRANT_PERMISSION_ERROR: The calendar grant does not have sufficient permissions for notetaker access.');
-        }
         if (response.status === 401) {
-          throw new Error('AUTHENTICATION_ERROR: Invalid API key or grant permissions.');
+          throw new Error('AUTHENTICATION_ERROR: Invalid API key.');
         }
-        
+
         throw new Error(`NOTETAKER_CREATION_FAILED: ${error} (Status: ${response.status})`);
       }
 
       const result = await response.json();
-      console.log('✅ Notetaker created successfully');
-      console.log('📥 Raw Nylas response structure:', JSON.stringify(result, null, 2));
-      
-      // Extract the notetaker ID - check both possible locations
-      const notetakerId = result.data?.notetaker_id || result.notetaker_id || result.data?.id || result.id;
-      console.log('🆔 Extracted notetaker ID:', notetakerId);
-      
-      // Log important notetaker details
-      if (result.data) {
-        console.log('📊 Notetaker details:', {
-          id: result.data.id,
-          state: result.data.state,
-          meeting_state: result.data.meeting_state,
-          join_time: result.data.join_time,
-          join_time_human: result.data.join_time ? new Date(result.data.join_time * 1000).toISOString() : 'N/A',
-          meeting_link: result.data.meeting_link
-        });
-      }
-      
+      const notetakerData = result.data || result;
+      const notetakerId =
+        notetakerData.id ||
+        notetakerData.notetaker_id ||
+        result.notetaker_id ||
+        result.id;
+
       if (!notetakerId) {
         console.error('No notetaker ID found in response:', result);
         throw new Error('Notetaker was created but no ID was returned');
       }
-      
-      // Return the notetaker ID from the response
+
       return {
+        ...notetakerData,
         notetakerId: notetakerId,
-        rawResponse: result,
-        ...result.data
+        id: notetakerId,
+        rawResponse: result
       };
     } catch (error) {
-      console.error('Error enabling notetaker:', error);
+      console.error('Error creating standalone notetaker:', error);
       throw error;
     }
   }
 
-  // Get notetaker status
-  async getNotetakerStatus(grantId, notetakerId, accountCredentials = null) {
+  async getStandaloneNotetakerStatus(notetakerId, accountCredentials = null) {
     try {
-      // Use provided credentials or fall back to environment variables
       const apiKey = accountCredentials?.apiKey || this.apiKey;
-      const region = accountCredentials?.region || this.region || 'us';
       const apiUri = accountCredentials?.apiUri || this.apiUri;
-      
-      // Can use either endpoint according to docs
-      const response = await fetch(`${apiUri}/v3/grants/${grantId}/notetakers/${notetakerId}`, {
+
+      const response = await fetch(`${apiUri}/v3/notetakers/${notetakerId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -898,97 +1159,27 @@ class NylasV3Service {
 
       if (!response.ok) {
         const error = await response.text();
-        
-        // Handle specific 404 case - notetaker not found
+
         if (response.status === 404) {
           throw new Error(`NOTETAKER_NOT_FOUND: The notetaker with ID ${notetakerId} was not found. This may happen if the notetaker was automatically cleaned up due to inactivity, timeout, or failed to join the meeting.`);
         }
-        
-        throw new Error(`Failed to get notetaker status: ${error}`);
+
+        throw new Error(`Failed to get standalone notetaker status: ${error}`);
       }
 
-      const data = await response.json();
-      return data;
+      return await response.json();
     } catch (error) {
-      console.error('Error getting notetaker status:', error);
+      console.error('Error getting standalone notetaker status:', error);
       throw error;
     }
   }
 
-  // Get list of notetakers
-  async getNotetakers(grantId, accountCredentials = null) {
+  async cancelStandaloneNotetaker(notetakerId, accountCredentials = null) {
     try {
-      // Use provided credentials or fall back to environment variables
       const apiKey = accountCredentials?.apiKey || this.apiKey;
-      const region = accountCredentials?.region || this.region || 'us';
       const apiUri = accountCredentials?.apiUri || this.apiUri;
-      
-      const response = await fetch(`${apiUri}/v3/grants/${grantId}/notetakers`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Accept': 'application/json, application/gzip'
-        }
-      });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Failed to get notetakers: ${error}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error getting notetakers:', error);
-      throw error;
-    }
-  }
-
-  // Get notetaker media (recording and transcript)
-  async getNotetakerMedia(grantId, notetakerId, accountCredentials = null) {
-    try {
-      // Use provided credentials or fall back to environment variables
-      const apiKey = accountCredentials?.apiKey || this.apiKey;
-      const region = accountCredentials?.region || this.region || 'us';
-      const apiUri = accountCredentials?.apiUri || this.apiUri;
-      
-      const response = await fetch(`${apiUri}/v3/grants/${grantId}/notetakers/${notetakerId}/media`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Accept': 'application/json, application/gzip'
-        }
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        if (response.status === 404) {
-          throw new Error('Media not available yet. Files may still be processing.');
-        }
-        throw new Error(`Failed to get notetaker media: ${error}`);
-      }
-
-      const result = await response.json();
-      // Media URLs are valid for up to 1 hour
-      return {
-        recording: result.data?.recording,
-        transcript: result.data?.transcript
-      };
-    } catch (error) {
-      console.error('Error getting notetaker media:', error);
-      throw error;
-    }
-  }
-
-  // Cancel a scheduled notetaker
-  async cancelNotetaker(grantId, notetakerId, accountCredentials = null) {
-    try {
-      // Use provided credentials or fall back to environment variables
-      const apiKey = accountCredentials?.apiKey || this.apiKey;
-      const region = accountCredentials?.region || this.region || 'us';
-      const apiUri = accountCredentials?.apiUri || this.apiUri;
-      
-      const response = await fetch(`${apiUri}/v3/grants/${grantId}/notetakers/${notetakerId}/cancel`, {
+      const response = await fetch(`${apiUri}/v3/notetakers/${notetakerId}/cancel`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -998,29 +1189,29 @@ class NylasV3Service {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Failed to cancel notetaker: ${error}`);
+        throw new Error(`Failed to cancel standalone notetaker: ${error}`);
       }
 
-      // DELETE request may return 204 No Content
       if (response.status === 204) {
         return { success: true, message: 'Notetaker cancelled successfully' };
       }
 
-      const data = await response.json();
-      return data;
+      return await response.json();
     } catch (error) {
-      console.error('Error cancelling notetaker:', error);
+      console.error('Error cancelling standalone notetaker:', error);
       throw error;
     }
   }
 
-  // Remove notetaker from active meeting
-  async removeNotetakerFromMeeting(grantId, notetakerId) {
+  async leaveStandaloneNotetaker(notetakerId, accountCredentials = null) {
     try {
-      const response = await fetch(`${this.apiUri}/v3/grants/${grantId}/notetakers/${notetakerId}/leave`, {
+      const apiKey = accountCredentials?.apiKey || this.apiKey;
+      const apiUri = accountCredentials?.apiUri || this.apiUri;
+
+      const response = await fetch(`${apiUri}/v3/notetakers/${notetakerId}/leave`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Accept': 'application/json, application/gzip'
         }
       });
@@ -1033,56 +1224,76 @@ class NylasV3Service {
         } catch {
           errorData = { message: errorText };
         }
-        
-        // Check for specific error cases
+
         if (errorData.error?.message?.includes('not in meeting')) {
           throw new Error('NOTETAKER_NOT_IN_MEETING');
         }
-        
-        throw new Error(`Failed to remove notetaker: ${errorData.error?.message || errorText}`);
+
+        throw new Error(`Failed to make standalone notetaker leave: ${errorData.error?.message || errorText}`);
       }
 
       return { success: true, message: 'Notetaker removed from meeting' };
     } catch (error) {
-      console.error('Error removing notetaker:', error);
+      console.error('Error making standalone notetaker leave:', error);
       throw error;
     }
   }
 
-  // Download transcript content
-  async getTranscript(grantId, notetakerId, accountCredentials = null) {
+  async getStandaloneNotetakerMedia(notetakerId, accountCredentials = null) {
     try {
-      // First get the media URLs
-      const media = await this.getNotetakerMedia(grantId, notetakerId, accountCredentials);
-      
+      const apiKey = accountCredentials?.apiKey || this.apiKey;
+      const apiUri = accountCredentials?.apiUri || this.apiUri;
+
+      const response = await fetch(`${apiUri}/v3/notetakers/${notetakerId}/media`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json, application/gzip'
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        if (response.status === 404) {
+          throw new Error('Media not available yet. Files may still be processing.');
+        }
+        throw new Error(`Failed to get standalone notetaker media: ${error}`);
+      }
+
+      const result = await response.json();
+      return {
+        recording: result.data?.recording,
+        transcript: result.data?.transcript
+      };
+    } catch (error) {
+      console.error('Error getting standalone notetaker media:', error);
+      throw error;
+    }
+  }
+
+  async getStandaloneTranscript(notetakerId, accountCredentials = null) {
+    try {
+      const media = await this.getStandaloneNotetakerMedia(notetakerId, accountCredentials);
+
       if (!media.transcript || !media.transcript.url) {
         throw new Error('Transcript not available yet');
       }
 
-      // Download the transcript content
       const transcriptResponse = await fetch(media.transcript.url);
-
       if (!transcriptResponse.ok) {
         throw new Error('Failed to download transcript');
       }
 
-      // The transcript is returned as text/plain
       const transcriptText = await transcriptResponse.text();
-      
       return {
         content: transcriptText,
         size: media.transcript.size,
         url: media.transcript.url
       };
     } catch (error) {
-      console.error('Error getting transcript:', error);
+      console.error('Error getting standalone transcript:', error);
       throw error;
     }
-  }
-
-  // Legacy methods for backward compatibility
-  async disableNotetakerForEvent(grantId, notetakerId) {
-    return this.cancelNotetaker(grantId, notetakerId);
   }
 
   async updateEvent(grantId, eventId, eventData, accountCredentials = null) {

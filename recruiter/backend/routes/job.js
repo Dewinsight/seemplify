@@ -10,9 +10,6 @@ const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 
-// Screening questions routes
-const screeningQuestionsRouter = require('./screeningQuestions');
-
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -32,13 +29,8 @@ const upload = multer({
   }
 });
 
-// Apply authentication middleware
-router.use(authMiddleware);
-
-// Screening questions routes
-router.use('/jobs/:id', screeningQuestionsRouter);
-
-// Public endpoint to get all public jobs (no authentication required)
+// Public endpoint to get all public, active jobs (no authentication required)
+// IMPORTANT: This route MUST come before /public/:id to avoid route conflicts
 router.get('/public', async (req, res) => {
   try {
     const {
@@ -253,24 +245,20 @@ router.get('/public/:id', async (req, res) => {
   }
 });
 
-// Internal recruitment endpoints (no authentication for viewing/applying)
-// Get internal job by ID
-router.get('/internal/:jobId', jobController.getInternalJobById);
-
-// Submit internal application
-router.post('/internal/:jobId/apply', jobController.submitInternalApplication);
-
-// Internal recruitment management endpoints (authenticated)
-// Enable internal recruitment for a job
-router.post('/:jobId/internal/enable', authMiddleware, requireOrganization, jobController.enableInternalRecruitment);
-
-// Disable internal recruitment for a job
-router.post('/:jobId/internal/disable', authMiddleware, requireOrganization, jobController.disableInternalRecruitment);
-
 // Public endpoint to submit job application (no authentication required)
 router.post('/public/apply', async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, coverLetter, jobId, cvData, source } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      coverLetter,
+      jobId,
+      cvData,
+      source,
+      isOrganizationStaff
+    } = req.body;
     
     // Validate required fields
     if (!firstName || !lastName || !email || !jobId) {
@@ -313,7 +301,8 @@ router.post('/public/apply', async (req, res) => {
           strengths: cvData?.strengths || [],
           parseSuccess: cvData?.parseSuccess || false,
           aiSuccess: cvData?.aiSuccess || false
-        }
+        },
+        isInternalCandidate: Boolean(isOrganizationStaff)
       });
       
       await candidate.save();
@@ -336,6 +325,11 @@ router.post('/public/apply', async (req, res) => {
       if (cvData?.skills && !candidate.skills) candidate.skills = cvData.skills.join(', ');
       if (cvData?.education && !candidate.education) candidate.education = cvData.education;
       if (cvData?.personalInfo?.location && !candidate.location) candidate.location = cvData.personalInfo.location;
+      if (typeof isOrganizationStaff !== 'undefined') {
+        candidate.isInternalCandidate = typeof isOrganizationStaff === 'string'
+          ? isOrganizationStaff.toLowerCase() === 'true'
+          : Boolean(isOrganizationStaff);
+      }
       
       await candidate.save();
     }
@@ -380,13 +374,7 @@ router.post('/public/apply', async (req, res) => {
         changedBy: statusHistoryChangedBy,
         changedAt: new Date(),
         notes: 'Applied through public job page'
-      }],
-      // Save screening question answers if provided
-      screeningAnswers: req.body.screeningAnswers ? req.body.screeningAnswers.map(answer => ({
-        questionId: answer.questionId,
-        answer: answer.answer,
-        answeredAt: new Date()
-      })) : []
+      }]
     };
     
     // If pipeline stages exist, assign the first stage
@@ -518,13 +506,16 @@ router.get('/:jobId/interview-questions/performance-insights', authMiddleware, r
 // New Pipeline Management Routes
 router.post('/:jobId/applicants', authMiddleware, requireOrganization, jobController.addCandidateToJobPipeline);
 router.get('/:jobId/pipeline/detailed', authMiddleware, requireOrganization, jobController.getDetailedPipeline);
+router.get('/:jobId/pipeline/export/excel', authMiddleware, requireOrganization, jobController.exportPipelineExcelReport);
 router.get('/:jobId/pipeline/analytics', authMiddleware, requireOrganization, jobController.getPipelineAnalytics);
 router.post('/:jobId/candidates/:candidateId/advance', authMiddleware, requireOrganization, jobController.advanceCandidateToStage);
+router.post('/:jobId/candidates/:candidateId/keep-in-view', authMiddleware, requireOrganization, jobController.keepCandidateInView);
 router.get('/:jobId/pipeline/stage-analytics', authMiddleware, requireOrganization, jobController.getStageAnalytics);
 router.put('/:jobId/candidates/:candidateId/stages/:stageId/result', authMiddleware, requireOrganization, jobController.updateStageResult);
 router.post('/:jobId/candidates/:candidateId/stages/:stageId/schedule-interview', authMiddleware, requireOrganization, jobController.scheduleInterview);
 router.delete('/:jobId/candidates/:candidateId', authMiddleware, requireOrganization, jobController.removeCandidateFromPipeline);
 router.post('/:jobId/pipeline/bulk-move', authMiddleware, requireOrganization, jobController.bulkMoveCandidates);
+router.post('/:jobId/pipeline/bulk-keep-in-view', authMiddleware, requireOrganization, jobController.bulkKeepCandidatesInView);
 
 // Stage Template Routes
 router.post('/:jobId/save-as-template', authMiddleware, requireOrganization, jobController.saveStagesAsTemplate);
@@ -602,6 +593,6 @@ router.post('/admin/fix-public-counts', authMiddleware, requireOrganization, asy
       error: error.message 
     });
   }
-  });
+});
 
-module.exports = router;
+module.exports = router; 

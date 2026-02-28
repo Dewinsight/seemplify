@@ -117,7 +117,7 @@ class CVParsingService {
         
         return {
           success: false,
-          error: 'Could not extract readable text from CV. The file may be:\n- A scanned image/photo (not text-based PDF)\n- Corrupted or password-protected\n- An unsupported format\n\nPlease try uploading a text-based PDF or DOCX file, or enter candidate information manually.',
+          error: 'IMAGE_BASED_CV: Do NOT use image-based or scanned CVs — we cannot extract text from them. Please upload a text-based PDF or DOCX file with selectable text, or enter your information manually. Ensure the email in your CV is correct — a wrong email can cause issues.',
           resumeText: resumeText || '',
           aiAnalysis: {
             summary: "Text extraction failed - manual review required",

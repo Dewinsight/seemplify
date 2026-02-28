@@ -1,15 +1,51 @@
 const Department = require('../models/Department');
 const Job = require('../models/Job');
+const User = require('../models/User');
+
+const resolveCurrentOrganization = async (req) => {
+  let organizationId = req.user?.currentOrganization;
+
+  if (organizationId) {
+    return organizationId;
+  }
+
+  if (!req.user?.id) {
+    return null;
+  }
+
+  const user = await User.findById(req.user.id).select('currentOrganization organizationMemberships hasCompletedOrganizationSetup');
+  if (!user) {
+    return null;
+  }
+
+  if (user.currentOrganization) {
+    req.user.currentOrganization = user.currentOrganization;
+    return user.currentOrganization;
+  }
+
+  const activeMembership = user.organizationMemberships?.find((membership) => membership.isActive);
+  if (activeMembership?.organization) {
+    user.currentOrganization = activeMembership.organization;
+    user.hasCompletedOrganizationSetup = true;
+    await user.save();
+    req.user.currentOrganization = user.currentOrganization;
+    return user.currentOrganization;
+  }
+
+  return null;
+};
 
 // Get departments for organization
 exports.getDepartments = async (req, res) => {
   try {
-    const organizationId = req.user.currentOrganization;
+    const organizationId = await resolveCurrentOrganization(req);
     
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'No organization selected'
+      return res.json({
+        success: true,
+        departments: [],
+        message: 'No organization selected',
+        requiresOrganizationSetup: true
       });
     }
 

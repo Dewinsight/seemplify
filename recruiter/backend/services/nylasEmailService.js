@@ -2,6 +2,12 @@ const Nylas = require('nylas').default;
 const Handlebars = require('handlebars');
 const configLoader = require('../config/configLoader');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const {
+  isHtmlLike,
+  sanitizeEmailHtml,
+  plainTextToEmailHtml,
+  htmlToText
+} = require('../utils/emailHtmlSanitizer');
 
 class NylasEmailService {
   constructor() {
@@ -26,6 +32,51 @@ class NylasEmailService {
     console.log('   API Key present:', !!this.apiKey);
   }
 
+  applyOrganizationBrand(content, organizationName = null) {
+    if (!content) {
+      return content;
+    }
+    const brand = decodeHtmlEntities(
+      organizationName ||
+      process.env.DEFAULT_ORGANIZATION_NAME ||
+      process.env.ORGANIZATION_NAME ||
+      process.env.BREVO_SENDER_NAME ||
+      'Organization'
+    );
+    // Replace only standalone SmartHR labels in text content.
+    // Do NOT replace when SmartHR is part of URLs/domains/emails (e.g. smarthr.aiinnigeria.com).
+    return String(content).replace(
+      /(^|[^A-Za-z0-9_./@-])(smarthr)(?=$|[^A-Za-z0-9_./@-])/gi,
+      (_match, prefix) => `${prefix}${brand}`
+    );
+  }
+
+  normalizeInterviewTemplate(template) {
+    if (!template) {
+      return template;
+    }
+
+    // Convert known preview/demo literals back to runtime variables.
+    // This protects real sends if a preview-rendered template is accidentally saved.
+    const replacements = [
+      [/jane\s+doe|jane\s+deo/gi, '{{candidateName}}'],
+      [/senior\s+product\s+designer/gi, '{{jobTitle}}'],
+      [/tuesday,\s+february\s+24,\s+2026/gi, '{{interviewDate}}'],
+      [/10:00\s+am\s+est/gi, '{{interviewTime}}'],
+      [/https:\/\/teams\.microsoft\.com\/l\/meetup-join\/example/gi, '{{meetingLink}}'],
+      [/please have your portfolio ready for screen sharing\./gi, '{{notes}}'],
+      [/michael\s+adams/gi, '{{interviewerName}}'],
+      [/smarthr/gi, '{{organizationName}}']
+    ];
+
+    let normalized = String(template);
+    for (const [pattern, variable] of replacements) {
+      normalized = normalized.replace(pattern, variable);
+    }
+
+    return normalized;
+  }
+
   /**
    * Send interview invitation email using Nylas connected email
    * @param {string} grantId - Nylas grant ID for the sender's email
@@ -36,9 +87,23 @@ class NylasEmailService {
    * @param {Array} bccEmails - Array of BCC email addresses
    * @param {Array} ccEmails - Array of CC email addresses
    * @param {Object} accountCredentials - Optional account credentials for multi-account support
+   * @param {Object} options - Optional send options (attachments, etc.)
    */
-  async sendInterviewInviteEmail(grantId, to, templateData, customTemplate = null, customSubject = null, bccEmails = [], ccEmails = [], accountCredentials = null) {
+  async sendInterviewInviteEmail(grantId, to, templateData, customTemplate = null, customSubject = null, bccEmails = [], ccEmails = [], accountCredentials = null, options = {}) {
     try {
+      // Emergency operational switch:
+      // when enabled, skip Nylas send and force controller-level Brevo fallback.
+      if (process.env.FORCE_BREVO_INTERVIEW_EMAILS === 'true') {
+        console.warn('⚠️ FORCE_BREVO_INTERVIEW_EMAILS enabled - skipping Nylas email send');
+        return {
+          success: false,
+          error: 'FORCE_BREVO_INTERVIEW_EMAILS_ENABLED',
+          fallbackToBrevo: true,
+          needsReauth: false,
+          details: 'Nylas email intentionally bypassed by configuration'
+        };
+      }
+
       console.log('📧 Sending interview invitation via Nylas to:', to);
       console.log('📧 customTemplate param:', customTemplate ? `${customTemplate.substring(0, 200)}...` : 'NULL');
       console.log('📧 customTemplate type:', typeof customTemplate);
@@ -75,8 +140,17 @@ class NylasEmailService {
       
       console.log('📝 Template BEFORE processing (first 500 chars):', customTemplate.substring(0, 500));
       
-      // Process the template with the provided data
-      const textContent = this.processTemplate(customTemplate, normalizedData);
+      // Process and sanitize template output.
+      const renderedTemplate = this.processTemplate(customTemplate, normalizedData);
+      const hasHtmlMarkup = isHtmlLike(customTemplate) || isHtmlLike(renderedTemplate);
+      const textContent = hasHtmlMarkup ? htmlToText(renderedTemplate) : renderedTemplate;
+      const htmlContent = hasHtmlMarkup
+        ? sanitizeEmailHtml(renderedTemplate)
+        : sanitizeEmailHtml(plainTextToEmailHtml(renderedTemplate));
+
+      if (!htmlContent) {
+        throw new Error('Email template produced empty content after sanitization.');
+      }
       
       // ✅ CRITICAL: Log the processed result for debugging
       console.log('📝 Template AFTER processing (first 500 chars):', textContent.substring(0, 500));
@@ -86,9 +160,6 @@ class NylasEmailService {
         hasMeetingLinkPlaceholder: textContent.includes('{{meetingLink}}'),
         hasNotesPlaceholder: textContent.includes('{{notes}}')
       });
-      
-      // Create HTML version with basic formatting
-      const htmlContent = this.createHtmlFromText(textContent);
       
       console.log('📧 [sendInterviewInviteEmail] HTML content (first 800 chars):', htmlContent.substring(0, 800));
       console.log('🔍 [sendInterviewInviteEmail] HTML contains {{#if:', htmlContent.includes('{{#if'));
@@ -110,16 +181,46 @@ class NylasEmailService {
         });
       }
 
+      const organizationName = decodeHtmlEntities(
+        templateData.organizationName ||
+        process.env.DEFAULT_ORGANIZATION_NAME ||
+        process.env.ORGANIZATION_NAME ||
+        process.env.BREVO_SENDER_NAME ||
+        'Organization'
+      );
+      const brandedHtmlContent = this.applyOrganizationBrand(htmlContent, organizationName);
+      const baseSubject = decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`);
+      const normalizedSubject = baseSubject.toLowerCase();
+      const normalizedOrganization = organizationName.toLowerCase();
+      const brandedSubject = normalizedSubject.startsWith(`${normalizedOrganization} -`) ||
+        normalizedSubject.startsWith(`${normalizedOrganization}:`)
+        ? baseSubject
+        : `${organizationName} - ${baseSubject}`;
+
       // Prepare the message data for Nylas v3
       const messageData = {
-        subject: decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`),
-        body: htmlContent,
+        subject: brandedSubject,
+        body: brandedHtmlContent,
         to: recipients.filter(r => !r.type || r.type === 'to').map(r => ({ email: r.email })),
         cc: recipients.filter(r => r.type === 'cc').map(r => ({ email: r.email })),
         bcc: recipients.filter(r => r.type === 'bcc').map(r => ({ email: r.email })),
         reply_to: [{ email: templateData.interviewerEmail || templateData.organizationEmail }]
         // Note: tracking_options removed - not available on trial accounts
       };
+
+      if (Array.isArray(options.attachments) && options.attachments.length > 0) {
+        const normalizedAttachments = options.attachments
+          .filter(item => item && item.content && (item.name || item.filename))
+          .map(item => ({
+            filename: item.filename || item.name,
+            contentType: item.contentType || 'application/pdf',
+            content: item.content
+          }));
+
+        if (normalizedAttachments.length > 0) {
+          messageData.attachments = normalizedAttachments;
+        }
+      }
 
       console.log('📧 [sendInterviewInviteEmail] About to send to Nylas API...');
       console.log('📧 [sendInterviewInviteEmail] Body being sent (first 800 chars):', messageData.body.substring(0, 800));
@@ -136,14 +237,26 @@ class NylasEmailService {
         const hostname = `api.${region}.nylas.com`;
         
         message = await new Promise((resolve, reject) => {
-          const postData = JSON.stringify({
+          const directApiAttachments = (messageData.attachments || []).map(item => ({
+            filename: item.filename,
+            content_type: item.contentType,
+            content: item.content
+          }));
+
+          const postBody = {
             subject: messageData.subject,
             body: messageData.body,
             to: messageData.to,
             cc: messageData.cc || [],
             bcc: messageData.bcc || [],
             reply_to: messageData.reply_to || []
-          });
+          };
+
+          if (directApiAttachments.length > 0) {
+            postBody.attachments = directApiAttachments;
+          }
+
+          const postData = JSON.stringify(postBody);
           
           const options = {
             hostname: hostname,
@@ -181,17 +294,23 @@ class NylasEmailService {
         });
       } else {
         // Use default SDK instance
+        const requestBody = {
+          subject: messageData.subject,
+          body: messageData.body,
+          to: messageData.to,
+          cc: messageData.cc || [],
+          bcc: messageData.bcc || [],
+          reply_to: messageData.reply_to || []
+          // tracking_options removed - not available on trial accounts
+        };
+
+        if (messageData.attachments && messageData.attachments.length > 0) {
+          requestBody.attachments = messageData.attachments;
+        }
+
         message = await this.nylas.messages.send({
           identifier: grantId,
-          requestBody: {
-            subject: messageData.subject,
-            body: messageData.body,
-            to: messageData.to,
-            cc: messageData.cc || [],
-            bcc: messageData.bcc || [],
-            reply_to: messageData.reply_to || []
-            // tracking_options removed - not available on trial accounts
-          }
+          requestBody
         });
       }
 
@@ -224,17 +343,6 @@ class NylasEmailService {
   }
 
   /**
-   * Create HTML from plain text with basic formatting
-   */
-  createHtmlFromText(textContent) {
-    return textContent
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>')
-      .replace(/^/, '<p>')
-      .replace(/$/, '</p>');
-  }
-
-  /**
    * Process a simple template with handlebars-like syntax
    */
   processTemplate(template, data) {
@@ -258,6 +366,8 @@ class NylasEmailService {
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'");
+
+    decodedTemplate = this.normalizeInterviewTemplate(decodedTemplate);
     
     console.log('🔍 [processTemplate] After HTML decoding, contains {{/if:', decodedTemplate.includes('{{/if'));
     console.log('🔍 [processTemplate] After HTML decoding (first 200 chars):', decodedTemplate.substring(0, 200));
@@ -306,7 +416,7 @@ class NylasEmailService {
       console.log('⚠️ [processTemplate] Falling back to regex-based processing...');
       
       // Fallback to regex-based processing
-      return this.fallbackProcessTemplate(template, data);
+      return this.fallbackProcessTemplate(decodedTemplate, data);
     }
   }
   
@@ -432,10 +542,18 @@ class NylasEmailService {
       };
 
       const provider = grant.provider || 'unknown';
+      const normalizedProvider = String(provider).toLowerCase();
+      const canonicalProvider = normalizedProvider.includes('microsoft') ||
+        normalizedProvider.includes('outlook') ||
+        normalizedProvider.includes('azure')
+        ? 'microsoft'
+        : normalizedProvider.includes('google') || normalizedProvider.includes('gmail')
+          ? 'google'
+          : normalizedProvider;
       const grantScopes = grant.scope || [];
       
       // Check if any email scope is present
-      const hasEmailScope = emailScopes[provider]?.some(scope => 
+      const hasEmailScope = emailScopes[canonicalProvider]?.some(scope => 
         grantScopes.some(grantScope => 
           grantScope.includes(scope) || scope.includes(grantScope)
         )

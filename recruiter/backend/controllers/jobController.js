@@ -12,6 +12,7 @@ const embeddingService = require('../services/embeddingService');
 const InterviewService = require('../services/interviewService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
+const pipelineReportExportService = require('../services/pipelineReportExportService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
 
@@ -360,8 +361,8 @@ exports.deleteJob = async (req, res) => {
     }
     
     try {
-      await embeddingService.deleteEmbedding(req.params.id, 'jobs');
-      console.log(`✅ Job embedding deleted from Weaviate for job: ${req.params.id}`);
+      await embeddingService.deleteEmbedding(req.params.id, embeddingService.jobIndexName);
+      console.log(`✅ Job embedding deleted from Pinecone for job: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
@@ -499,8 +500,8 @@ exports.getJobEmbeddingStatus = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    const weaviateExists = await embeddingService.checkEmbeddingExists(job._id.toString(), 'jobs');
-    res.json({ jobId: job._id, isEmbedded: job.isEmbedded && weaviateExists, embeddingCreatedAt: job.embeddingCreatedAt, weaviateExists });
+    const pineconeExists = await embeddingService.checkEmbeddingExists(job._id.toString(), embeddingService.jobIndexName);
+    res.json({ jobId: job._id, isEmbedded: job.isEmbedded && pineconeExists, embeddingCreatedAt: job.embeddingCreatedAt, pineconeExists });
   } catch (error) {
     console.error('❌ Error checking job embedding status:', error);
     res.status(500).json({ msg: 'Server error checking embedding status', error: error.message });
@@ -569,7 +570,7 @@ exports.getShortlist = async (req, res) => {
 
     const job = await Job.findOne(query).populate({
       path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone'
+      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
     });
 
     if (!job) {
@@ -578,6 +579,12 @@ exports.getShortlist = async (req, res) => {
 
     // Get current pipeline candidates to check actual pipeline status
     const pipelineCandidateIds = job.applicants?.map(app => app.candidate._id.toString()) || [];
+
+    // Create a map of candidate IDs to application types for quick lookup
+    const applicationTypeMap = new Map();
+    job.applicants?.forEach(app => {
+      applicationTypeMap.set(app.candidate._id.toString(), app.applicationType || 'manual');
+    });
 
     // Filter out any null/deleted candidate references and construct full names
     const validShortlistItems = job.shortlist
@@ -589,9 +596,13 @@ exports.getShortlist = async (req, res) => {
           actualStatus = 'moved_to_pipeline';
         }
 
+        // Get application type from the applicants array
+        const applicationType = applicationTypeMap.get(item.candidate._id.toString()) || 'manual';
+
         return {
           ...item.toObject(),
           status: actualStatus, // Use actual status
+          applicationType, // Include application type (public, internal, manual)
           candidate: {
             ...item.candidate.toObject(),
             name: item.candidate.firstName && item.candidate.lastName 
@@ -627,7 +638,7 @@ exports.getShortlist = async (req, res) => {
 exports.addCandidateToShortlist = async (req, res) => {
   try {
     const { jobId } = req.params;
-    const { candidateId, coverLetter } = req.body;
+    const { candidateId, coverLetter, isOrganizationStaff } = req.body;
     
     // Handle both authenticated and public route access
     const organizationId = req.user?.currentOrganization;
@@ -645,12 +656,32 @@ exports.addCandidateToShortlist = async (req, res) => {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
+    // Ensure candidate exists and belongs to the same organization context.
+    const candidateQuery = { _id: candidateId };
+    if (organizationId) {
+      candidateQuery.organization = organizationId;
+    } else if (job.organization) {
+      candidateQuery.organization = job.organization;
+    }
+    const candidate = await Candidate.findOne(candidateQuery);
+    if (!candidate) {
+      return res.status(404).json({ msg: 'Candidate not found' });
+    }
+
     // Check if candidate is already in the shortlist or pipeline
     if (job.shortlist.some(item => item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in shortlist' });
     }
     if (job.applicants.some(item => item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in pipeline' });
+    }
+
+    if (isPublicApplication && typeof isOrganizationStaff !== 'undefined') {
+      const staffValue = typeof isOrganizationStaff === 'string'
+        ? isOrganizationStaff.toLowerCase() === 'true'
+        : Boolean(isOrganizationStaff);
+      candidate.isInternalCandidate = staffValue;
+      await candidate.save();
     }
 
     job.shortlist.push({ candidate: candidateId, addedBy: req.user?.id });
@@ -768,7 +799,7 @@ exports.getRankedShortlist = async (req, res) => {
     
     const job = await Job.findOne(query).populate({
       path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone'
+      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
     });
 
     if (!job) {
@@ -811,6 +842,10 @@ exports.getRankedShortlist = async (req, res) => {
       const shortlistItem = validShortlistItems.find(item => 
         item.candidate._id.toString() === match.candidateId
       );
+      const shortlistCandidate = shortlistItem?.candidate;
+      const normalizedCandidate = shortlistCandidate && typeof shortlistCandidate.toObject === 'function'
+        ? shortlistCandidate.toObject()
+        : shortlistCandidate;
       
       // Determine actual status: check if in pipeline first, then shortlist status
       let actualStatus = shortlistItem?.status || 'shortlisted';
@@ -820,6 +855,15 @@ exports.getRankedShortlist = async (req, res) => {
       
       return {
         ...match,
+        candidate: {
+          ...(match.candidate || {}),
+          ...(normalizedCandidate || {}),
+          _id: match.candidateId,
+          id: match.candidateId,
+          name: normalizedCandidate?.firstName && normalizedCandidate?.lastName
+            ? `${normalizedCandidate.firstName} ${normalizedCandidate.lastName}`.trim()
+            : normalizedCandidate?.name || match.candidate?.name || 'Unnamed Candidate'
+        },
         similarityPercentage: Math.round(match.similarity * 100),
         // Use actual status (pipeline takes precedence)
         status: actualStatus,
@@ -1546,6 +1590,29 @@ exports.getDetailedPipeline = async (req, res) => {
   }
 };
 
+exports.exportPipelineExcelReport = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const organizationId = req.user.currentOrganization;
+
+    const { buffer, fileName } = await pipelineReportExportService.buildDetailedPipelineWorkbook({
+      jobId,
+      organizationId
+    });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return res.status(404).json({ msg: 'Job not found' });
+    }
+    console.error('Error exporting detailed pipeline report:', error);
+    res.status(500).json({ msg: 'Server error exporting pipeline report', error: error.message });
+  }
+};
+
 exports.advanceCandidateToStage = async (req, res) => {
   try {
     const { jobId, candidateId } = req.params;
@@ -1561,6 +1628,34 @@ exports.advanceCandidateToStage = async (req, res) => {
       } catch (error) {
     console.error('❌ Error advancing candidate to stage:', error);
     res.status(500).json({ msg: 'Server error advancing candidate', error: error.message });
+  }
+};
+
+exports.keepCandidateInView = async (req, res) => {
+  try {
+    const { jobId, candidateId } = req.params;
+    const { reason } = req.body;
+
+    const applicant = await pipelineProgressionService.keepCandidateInView(
+      jobId,
+      candidateId,
+      reason,
+      req.user.id
+    );
+
+    res.json({
+      msg: 'Candidate moved to keep in view successfully',
+      applicant
+    });
+  } catch (error) {
+    console.error('❌ Error moving candidate to keep in view:', error);
+    if (error.message === 'Job not found' || error.message === 'Candidate not found in job applicants') {
+      return res.status(404).json({ msg: error.message });
+    }
+    if (error.message.includes('cannot be moved')) {
+      return res.status(400).json({ msg: error.message });
+    }
+    res.status(500).json({ msg: 'Server error moving candidate to keep in view', error: error.message });
   }
 };
 
@@ -1693,6 +1788,55 @@ exports.bulkMoveCandidates = async (req, res) => {
     res.status(500).json({ 
       msg: 'Server error during bulk move', 
       error: error.message 
+    });
+  }
+};
+
+exports.bulkKeepCandidatesInView = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { candidateIds, reason } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
+      return res.status(400).json({
+        msg: 'candidateIds must be a non-empty array'
+      });
+    }
+
+    const result = await pipelineProgressionService.bulkKeepCandidatesInView(
+      jobId,
+      candidateIds,
+      reason,
+      userId
+    );
+
+    if (result.success) {
+      return res.status(200).json({
+        msg: `Successfully moved ${result.results.successful.length} candidates to keep in view`,
+        result
+      });
+    }
+
+    if (result.partialSuccess) {
+      return res.status(207).json({
+        msg: `Partially successful: ${result.results.successful.length} moved, ${result.results.failed.length} failed`,
+        result
+      });
+    }
+
+    return res.status(400).json({
+      msg: 'Bulk keep in view failed',
+      result
+    });
+  } catch (error) {
+    console.error('❌ Error in bulk keep in view:', error);
+    if (error.message === 'Job not found') {
+      return res.status(404).json({ msg: error.message });
+    }
+    res.status(500).json({
+      msg: 'Server error during bulk keep in view',
+      error: error.message
     });
   }
 };
@@ -2429,7 +2573,7 @@ exports.enableInternalRecruitment = async (req, res) => {
     const { jobId } = req.params;
     const { internalCandidateApplyLimit, requireEmployeeId, notifyHiringManager } = req.body;
     const userId = req.user._id;
-    const organizationId = req.user.organization;
+    const organizationId = req.user.currentOrganization;
 
     // Find the job
     const job = await Job.findOne({ _id: jobId, organization: organizationId });
@@ -2453,7 +2597,7 @@ exports.enableInternalRecruitment = async (req, res) => {
     if (internalCandidateApplyLimit && internalCandidateApplyLimit > 0) {
       creditsNeeded = internalCandidateApplyLimit;
 
-      // Check organization credits
+      // Check organization credits (use subscription.creditUsage)
       const Organization = require('../models/Organization');
       const organization = await Organization.findById(organizationId);
 
@@ -2464,18 +2608,48 @@ exports.enableInternalRecruitment = async (req, res) => {
         });
       }
 
-      const availableCredits = (organization.credits?.available || 0) -
-                               (organization.credits?.reserved || 0);
+      // Ensure subscription.creditUsage exists (match creditsService structure)
+      if (!organization.subscription) organization.subscription = {};
+      if (!organization.subscription.creditUsage) {
+        organization.subscription.creditUsage = {
+          totalCredits: 100,
+          usedCredits: 0,
+          remainingCredits: 100
+        };
+      }
+      const creditUsage = organization.subscription.creditUsage;
+      const totalCredits = creditUsage.totalCredits || 100;
+      // Match creditsService: when remainingCredits is undefined, fall back to totalCredits
+      const remainingCredits = (creditUsage.remainingCredits != null)
+        ? creditUsage.remainingCredits
+        : totalCredits;
 
-      if (availableCredits < creditsNeeded) {
+      if (remainingCredits < creditsNeeded) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient credits. Need ${creditsNeeded}, have ${availableCredits} available`
+          message: `Insufficient credits. Need ${creditsNeeded}, have ${remainingCredits} available`
         });
       }
 
-      // Reserve credits
-      organization.credits.reserved = (organization.credits.reserved || 0) + creditsNeeded;
+      // Reserve credits: deduct from remainingCredits
+      creditUsage.usedCredits = (creditUsage.usedCredits || 0) + creditsNeeded;
+      creditUsage.remainingCredits = remainingCredits - creditsNeeded;
+
+      if (!creditUsage.transactions) creditUsage.transactions = [];
+      creditUsage.transactions.push({
+        action: 'creditPurchase',
+        credits: creditsNeeded,
+        entityId: job._id,
+        entityType: 'job',
+        timestamp: new Date(),
+        balanceAfter: remainingCredits - creditsNeeded,
+        metadata: {
+          type: 'internal_recruitment_reservation',
+          description: `Reserved ${creditsNeeded} credits for internal recruitment`
+        }
+      });
+
+      organization.subscription.creditUsage = creditUsage;
       await organization.save();
     }
 
@@ -2518,7 +2692,7 @@ exports.disableInternalRecruitment = async (req, res) => {
   try {
     const { jobId } = req.params;
     const userId = req.user._id;
-    const organizationId = req.user.organization;
+    const organizationId = req.user.currentOrganization;
 
     // Find the job
     const job = await Job.findOne({ _id: jobId, organization: organizationId });
@@ -2541,14 +2715,8 @@ exports.disableInternalRecruitment = async (req, res) => {
     const creditsToRefund = job.reservedInternalCredits - (job.internalApplicationCount || 0);
 
     if (creditsToRefund > 0) {
-      // Refund unused credits
-      const Organization = require('../models/Organization');
-      const organization = await Organization.findById(organizationId);
-
-      if (organization) {
-        organization.credits.reserved = Math.max(0, (organization.credits.reserved || 0) - creditsToRefund);
-        await organization.save();
-      }
+      // Refund unused credits (add back to subscription.creditUsage)
+      await refundReservedCredits(organizationId, jobId, creditsToRefund, 'Internal recruitment disabled');
     }
 
     // Disable internal recruitment
@@ -2644,10 +2812,12 @@ exports.submitInternalApplication = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { candidateId, employeeId, notes } = req.body;
-    const organizationId = req.user.organization;
+    const organizationId = req.user?.currentOrganization || req.user?.organization;
 
-    // Find the job
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    // Find the job (when unauthenticated, find by id only - internal URL is secret)
+    const jobQuery = organizationId ? { _id: jobId, organization: organizationId } : { _id: jobId };
+    const job = await Job.findOne(jobQuery);
+    const orgId = organizationId || (job && job.organization?.toString());
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -2682,7 +2852,7 @@ exports.submitInternalApplication = async (req, res) => {
 
     // Find or create candidate
     const Candidate = require('../models/Candidate');
-    let candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    let candidate = await Candidate.findOne({ _id: candidateId, organization: orgId });
 
     if (!candidate) {
       return res.status(404).json({
@@ -2710,16 +2880,23 @@ exports.submitInternalApplication = async (req, res) => {
       });
     }
 
-    // Add to applicants with internal type
+    // Add to applicants with internal type (requires auth for addedBy/changedBy)
+    const addedByUserId = req.user?._id;
+    if (!addedByUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to submit internal application'
+      });
+    }
     job.applicants.push({
       candidate: candidateId,
       applicationType: 'internal',
       status: 'applied',
-      addedBy: req.user._id,
+      addedBy: addedByUserId,
       notes: notes || 'Internal application',
       statusHistory: [{
         status: 'applied',
-        changedBy: req.user._id,
+        changedBy: addedByUserId,
         changedAt: new Date(),
         notes: 'Internal application submitted'
       }]
@@ -2730,18 +2907,7 @@ exports.submitInternalApplication = async (req, res) => {
     job.analytics.internalApplications = (job.analytics.internalApplications || 0) + 1;
     job.analytics.applications = (job.analytics.applications || 0) + 1;
 
-    // Consume one credit if using credit system
-    if (job.internalCandidateApplyLimit > 0) {
-      const Organization = require('../models/Organization');
-      const organization = await Organization.findById(organizationId);
-
-      if (organization) {
-        // Move credit from reserved to used
-        organization.credits.reserved = Math.max(0, (organization.credits.reserved || 0) - 1);
-        organization.credits.used = (organization.credits.used || 0) + 1;
-        await organization.save();
-      }
-    }
+    // Credits were already deducted when internal recruitment was enabled; no per-apply deduction needed
 
     await job.save();
 

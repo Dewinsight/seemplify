@@ -80,7 +80,7 @@ const manualTranscriptSync = async (req, res) => {
     const { interviewId } = req.params;
     
     const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -103,7 +103,7 @@ const manualTranscriptSync = async (req, res) => {
       const sessionInterviews = await Interview.find({
         multiCandidateSessionId: interview.multiCandidateSessionId
       }).sort({ multiCandidateOrder: 1 })
-        .populate('interviewerId', 'nylasGrantId');
+        .populate('interviewerId', 'nylasGrantId nylasAccountId');
       
       const sessionHolder = sessionInterviews.find(si => si.notetakerId) || sessionInterviews[0];
       
@@ -114,7 +114,7 @@ const manualTranscriptSync = async (req, res) => {
       console.log(`📝 [MANUAL-SYNC] Found session holder: ${sessionHolder._id}`);
       
       // Try to download transcript from session holder's notetaker
-      if (sessionHolder.notetakerId && sessionHolder.interviewerId?.nylasGrantId) {
+      if (sessionHolder.notetakerId) {
         try {
           // First check if we already have the transcript in the session holder
           if (!sessionHolder.transcript?.content) {
@@ -122,12 +122,13 @@ const manualTranscriptSync = async (req, res) => {
             
             // Get account credentials if interviewer has a linked Nylas account
             let accountCredentials = null;
-            if (sessionHolder.interviewerId.nylasAccountId) {
+            if (sessionHolder.interviewerId?.nylasAccountId) {
               const NylasAccount = require('../models/NylasAccount');
               const nylasAccount = await NylasAccount.findById(sessionHolder.interviewerId.nylasAccountId).select('+apiKey');
               if (nylasAccount) {
                 accountCredentials = {
                   apiKey: nylasAccount.apiKey,
+                  apiUri: nylasAccount.apiUri,
                   region: nylasAccount.region,
                   clientId: nylasAccount.clientId
                 };
@@ -135,11 +136,7 @@ const manualTranscriptSync = async (req, res) => {
             }
             
             // Get media from Nylas
-            const media = await nylasV3Service.getNotetakerMedia(
-              sessionHolder.interviewerId.nylasGrantId,
-              sessionHolder.notetakerId,
-              accountCredentials
-            );
+            const media = await nylasV3Service.getStandaloneNotetakerMedia(sessionHolder.notetakerId, accountCredentials);
             
             if (!media.transcript?.url) {
               return res.status(404).json({ 
@@ -150,10 +147,7 @@ const manualTranscriptSync = async (req, res) => {
             }
             
             // Download the transcript content
-            const transcript = await nylasV3Service.getTranscript(
-              sessionHolder.interviewerId.nylasGrantId,
-              sessionHolder.notetakerId
-            );
+            const transcript = await nylasV3Service.getStandaloneTranscript(sessionHolder.notetakerId, accountCredentials);
             
             if (!transcript.content) {
               return res.status(404).json({ 
@@ -174,6 +168,7 @@ const manualTranscriptSync = async (req, res) => {
               confidence: null
             };
             sessionHolder.transcriptAvailableAt = new Date();
+            sessionHolder.notetakerType = 'standalone';
             
             if (media.recording?.url) {
               sessionHolder.recordingUrl = media.recording.url;
@@ -239,8 +234,8 @@ const manualTranscriptSync = async (req, res) => {
         }
       } else {
         return res.status(400).json({
-          error: 'Session holder missing notetaker ID or grant ID',
-          message: 'Cannot download transcript without notetaker information'
+          error: 'Session holder missing notetaker ID',
+          message: 'Cannot download transcript without a notetaker ID'
         });
       }
     }
@@ -256,22 +251,16 @@ const manualTranscriptSync = async (req, res) => {
         });
       }
       
-      if (!interview.interviewerId?.nylasGrantId) {
-        return res.status(400).json({
-          error: 'Interviewer grant ID not found',
-          message: 'Cannot access notetaker without valid grant'
-        });
-      }
-      
       try {
         // Get account credentials if interviewer has a linked Nylas account
         let accountCredentials = null;
-        if (interview.interviewerId.nylasAccountId) {
+        if (interview.interviewerId?.nylasAccountId) {
           const NylasAccount = require('../models/NylasAccount');
           const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
           if (nylasAccount) {
             accountCredentials = {
               apiKey: nylasAccount.apiKey,
+              apiUri: nylasAccount.apiUri,
               region: nylasAccount.region,
               clientId: nylasAccount.clientId
             };
@@ -279,11 +268,7 @@ const manualTranscriptSync = async (req, res) => {
         }
         
         // Get media from Nylas
-        const media = await nylasV3Service.getNotetakerMedia(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId,
-          accountCredentials
-        );
+        const media = await nylasV3Service.getStandaloneNotetakerMedia(interview.notetakerId, accountCredentials);
         
         if (!media.transcript?.url) {
           return res.status(404).json({
@@ -294,10 +279,7 @@ const manualTranscriptSync = async (req, res) => {
         }
         
         // Download the transcript content
-        const transcript = await nylasV3Service.getTranscript(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId
-        );
+        const transcript = await nylasV3Service.getStandaloneTranscript(interview.notetakerId, accountCredentials);
         
         if (!transcript.content) {
           return res.status(404).json({
@@ -318,6 +300,7 @@ const manualTranscriptSync = async (req, res) => {
           confidence: null
         };
         interview.transcriptAvailableAt = new Date();
+        interview.notetakerType = 'standalone';
         
         if (media.recording?.url) {
           interview.recordingUrl = media.recording.url;
