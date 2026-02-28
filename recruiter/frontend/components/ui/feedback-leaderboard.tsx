@@ -335,8 +335,8 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
     if (rank === 2) return <span className="text-2xl">🥈</span>
     if (rank === 3) return <span className="text-2xl">🥉</span>
     return (
-      <div className="w-8 h-8 rounded-full bg-muted/50 dark:bg-card/40 flex items-center justify-center">
-        <span className="text-sm font-bold text-foreground">{rank}</span>
+      <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{rank}</span>
       </div>
     )
   }
@@ -363,7 +363,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
       <Card>
         <CardContent className="p-12 flex flex-col items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-          <p className="text-muted-foreground">Loading leaderboard...</p>
+          <p className="text-gray-500">Loading leaderboard...</p>
         </CardContent>
       </Card>
     )
@@ -373,9 +373,9 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
     return (
       <Card>
         <CardContent className="p-12 flex flex-col items-center justify-center text-center">
-          <Trophy className="h-16 w-16 text-muted-foreground/60 mb-4" />
-          <h3 className="text-lg font-semibold text-foreground mb-2">No Feedback Data Available</h3>
-          <p className="text-muted-foreground max-w-md">
+          <Trophy className="h-16 w-16 text-gray-300 mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Feedback Data Available</h3>
+          <p className="text-gray-500 max-w-md">
             There is no interview feedback available yet for this job. 
             Feedback will appear here once interviews are completed and assessors submit their evaluations.
           </p>
@@ -514,7 +514,7 @@ function StageLeaderboardSection({
   return (
     <Card>
       <CardHeader 
-        className="cursor-pointer hover:bg-muted/30 dark:hover:bg-gray-800 transition-colors"
+        className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center justify-between">
@@ -533,7 +533,7 @@ function StageLeaderboardSection({
           </div>
           <div className="flex items-center gap-4">
             {statistics.topPerformer && (
-              <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="hidden md:flex items-center gap-2 text-sm text-gray-600">
                 <Medal className="h-4 w-4 text-yellow-500" />
                 <span>Top: {statistics.topPerformer.name} ({statistics.topPerformer.score.toFixed(1)})</span>
               </div>
@@ -588,8 +588,8 @@ function StageLeaderboardSection({
 
       {isExpanded && leaderboard.length === 0 && (
         <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/60" />
+          <div className="text-center py-8 text-gray-500">
+            <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
             <p>No candidates with feedback in this stage yet.</p>
           </div>
         </CardContent>
@@ -614,7 +614,7 @@ function CandidateCard({
   getPerformanceLabel
 }: CandidateCardProps) {
   return (
-    <div className="border rounded-lg p-4 hover:shadow-lg transition-shadow glass-card bg-popover/40 dark:bg-card/30 border-border/60">
+    <div className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white dark:bg-gray-900">
       <div className="flex items-start gap-4">
         {/* Rank Badge */}
         <div className="flex-shrink-0 pt-1">
@@ -634,18 +634,18 @@ function CandidateCard({
               <div>
                 <Link 
                   href={`/candidates/${candidate.candidateId}`}
-                  className="font-semibold text-foreground dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
+                  className="font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
                 >
                   {candidate.candidateName}
                 </Link>
-                <p className="text-sm text-muted-foreground">{candidate.candidatePosition || 'Candidate'}</p>
+                <p className="text-sm text-gray-500">{candidate.candidatePosition || 'Candidate'}</p>
               </div>
             </div>
             
             {/* Overall Score */}
             <div className="text-right">
               <div className="text-3xl font-bold text-blue-600">{candidate.overallScore.toFixed(1)}</div>
-              <div className="text-xs text-muted-foreground">out of 100</div>
+              <div className="text-xs text-gray-500">out of 100</div>
             </div>
           </div>
 
@@ -663,7 +663,7 @@ function CandidateCard({
             {candidate.scoreBreakdown?.systemFields && Object.entries(candidate.scoreBreakdown.systemFields).map(([label, data]: [string, any]) => (
               <div key={label}>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">{label}</span>
+                  <span className="text-gray-600">{label}</span>
                   <span className="font-medium">{((data.average / 5) * 100).toFixed(0)}</span>
                 </div>
                 <Progress value={(data.average / 5) * 100} className="h-2" />
@@ -688,7 +688,7 @@ function CandidateCard({
                   <span className="text-amber-600 dark:text-amber-400">{label}</span>
                   <span className="font-medium">{data.value.toFixed(2)}</span>
                 </div>
-                <div className="text-xs text-muted-foreground font-mono truncate" title={data.formula}>
+                <div className="text-xs text-gray-500 font-mono truncate" title={data.formula}>
                   {data.formula}
                 </div>
               </div>
@@ -698,7 +698,7 @@ function CandidateCard({
             {!candidate.scoreBreakdown?.systemFields && candidate.scoreBreakdown?.technical !== undefined && candidate.scoreBreakdown.technical > 0 && (
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">Technical</span>
+                  <span className="text-gray-600">Technical</span>
                   <span className="font-medium">{candidate.scoreBreakdown.technical.toFixed(0)}</span>
                 </div>
                 <Progress value={candidate.scoreBreakdown.technical} className="h-2" />
@@ -707,7 +707,7 @@ function CandidateCard({
             {!candidate.scoreBreakdown?.systemFields && candidate.scoreBreakdown?.communication !== undefined && candidate.scoreBreakdown.communication > 0 && (
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">Communication</span>
+                  <span className="text-gray-600">Communication</span>
                   <span className="font-medium">{candidate.scoreBreakdown.communication.toFixed(0)}</span>
                 </div>
                 <Progress value={candidate.scoreBreakdown.communication} className="h-2" />
@@ -716,7 +716,7 @@ function CandidateCard({
             {!candidate.scoreBreakdown?.systemFields && candidate.scoreBreakdown?.cultural !== undefined && candidate.scoreBreakdown.cultural > 0 && (
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">Cultural Fit</span>
+                  <span className="text-gray-600">Cultural Fit</span>
                   <span className="font-medium">{candidate.scoreBreakdown.cultural.toFixed(0)}</span>
                 </div>
                 <Progress value={candidate.scoreBreakdown.cultural} className="h-2" />
@@ -725,7 +725,7 @@ function CandidateCard({
           </div>
 
           {/* Feedback Stats */}
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-4 text-sm text-gray-500">
             <div className="flex items-center gap-1">
               <MessageSquare className="h-4 w-4" />
               <span>{candidate.feedbackStats.totalResponses} responses</span>

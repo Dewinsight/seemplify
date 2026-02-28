@@ -16,7 +16,7 @@ export interface PipelineApplicant {
     resumeUrl?: string
     score?: number
   }
-  status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'offered' | 'hired' | 'rejected'
+  status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'keep_in_view' | 'offered' | 'hired' | 'rejected'
   appliedAt: string
   addedAt: string
   addedBy?: string
@@ -130,6 +130,31 @@ export interface BulkMoveResult {
   }
 }
 
+export interface KeepInViewRequest {
+  reason?: string
+}
+
+export interface BulkKeepInViewRequest {
+  candidateIds: string[]
+  reason?: string
+}
+
+export interface BulkKeepInViewResult {
+  success: boolean
+  partialSuccess: boolean
+  results: {
+    successful: Array<{
+      candidateId: string
+      previousStatus: string
+    }>
+    failed: Array<{
+      candidateId: string
+      reason: string
+    }>
+    totalProcessed: number
+  }
+}
+
 export interface AddToPipelineRequest {
   candidateId: string
   initialStatus?: string
@@ -182,6 +207,39 @@ class PipelineService {
     return response.json();
   }
 
+  // Export detailed job pipeline report (Excel workbook)
+  async exportPipelineExcelReport(jobId: string): Promise<{ blob: Blob; fileName: string }> {
+    const response = await apiRequest(`/api/jobs/${jobId}/pipeline/export/excel`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      let message = 'Failed to export pipeline report';
+      try {
+        const error = await response.json();
+        message = error.msg || error.message || message;
+      } catch {
+        // Ignore JSON parsing errors
+      }
+      throw new Error(message);
+    }
+
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const fileNameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+    let fileName = `pipeline_full_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+    if (fileNameMatch) {
+      const rawName = fileNameMatch[1].replace(/"/g, '').trim();
+      try {
+        fileName = decodeURIComponent(rawName);
+      } catch {
+        fileName = rawName;
+      }
+    }
+
+    const blob = await response.blob();
+    return { blob, fileName };
+  }
+
   // Move candidate to next stage
   async advanceCandidateToStage(jobId: string, candidateId: string, stageId: string, notes?: string): Promise<any> {
     const response = await apiRequest(`/api/jobs/${jobId}/candidates/${candidateId}/advance`, {
@@ -191,6 +249,19 @@ class PipelineService {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.msg || 'Failed to advance candidate');
+    }
+    return response.json();
+  }
+
+  // Put a candidate in keep-in-view status
+  async keepCandidateInView(jobId: string, candidateId: string, data: KeepInViewRequest = {}): Promise<any> {
+    const response = await apiRequest(`/api/jobs/${jobId}/candidates/${candidateId}/keep-in-view`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.msg || 'Failed to keep candidate in view');
     }
     return response.json();
   }
@@ -336,6 +407,23 @@ class PipelineService {
       throw new Error(error.message || 'Failed to bulk remove candidates');
     }
     return response.json();
+  }
+
+  // Bulk keep candidates in view
+  async bulkKeepCandidatesInView(jobId: string, data: BulkKeepInViewRequest): Promise<BulkKeepInViewResult> {
+    const response = await apiRequest(
+      `/api/jobs/${jobId}/pipeline/bulk-keep-in-view`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.msg || 'Failed to bulk keep candidates in view');
+    }
+    const result = await response.json();
+    return result.result;
   }
 
 }

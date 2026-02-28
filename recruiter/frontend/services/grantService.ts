@@ -109,7 +109,7 @@ class GrantService {
    * @param provider - OAuth provider (default: 'google')
    * @param forceAccountSelection - Force account selection to allow switching accounts
    */
-  async generateReauthUrl(provider: string = 'google', forceAccountSelection: boolean = false): Promise<string> {
+  async generateReauthUrl(provider?: string, forceAccountSelection: boolean = false): Promise<string> {
     try {
       const response = await apiRequest(`${this.baseUrl}/reauth`, {
         method: 'POST',

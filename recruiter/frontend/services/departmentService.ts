@@ -27,10 +27,33 @@ class DepartmentService {
   async getDepartments(): Promise<Department[]> {
     const response = await apiRequest(this.baseUrl);
     if (!response.ok) {
-      throw new Error('Failed to fetch departments');
+      let errorData: any = null;
+      try {
+        errorData = await response.json();
+      } catch {
+        // Ignore JSON parse issues and use fallback error handling below.
+      }
+
+      // Organization context can be briefly unavailable during new-org setup/switch.
+      // Treat this as an empty department list instead of a hard UI error.
+      const errorMessage = (errorData?.error || errorData?.msg || '').toLowerCase();
+      const isMissingOrgContext =
+        response.status === 400 &&
+        (
+          errorMessage.includes('no organization selected') ||
+          errorMessage.includes('no current organization set') ||
+          errorMessage.includes('must belong to an organization') ||
+          errorData?.requiresOrganizationSetup === true
+        );
+
+      if (isMissingOrgContext) {
+        return [];
+      }
+
+      throw new Error(errorData?.error || errorData?.msg || 'Failed to fetch departments');
     }
     const data = await response.json();
-    return data.departments;
+    return Array.isArray(data?.departments) ? data.departments : [];
   }
 
   async createDepartment(data: CreateDepartmentData): Promise<Department> {

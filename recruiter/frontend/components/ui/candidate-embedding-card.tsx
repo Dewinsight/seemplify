@@ -16,13 +16,13 @@ interface CandidateEmbeddingCardProps {
   candidateName?: string
 }
 
-export function CandidateEmbeddingCard({
-  embeddingStatus,
-  checkingEmbedding,
-  handleCreateEmbedding,
+export function CandidateEmbeddingCard({ 
+  embeddingStatus, 
+  checkingEmbedding, 
+  handleCreateEmbedding, 
   creatingEmbedding,
   candidateId,
-  candidateName
+  candidateName 
 }: CandidateEmbeddingCardProps) {
   const [refreshing, setRefreshing] = useState(false)
   const { toast } = useToast()
@@ -40,12 +40,12 @@ export function CandidateEmbeddingCard({
     try {
       setRefreshing(true)
       const result = await candidateService.refreshEmbedding(candidateId)
-
+      
       toast({
         title: "Success",
         description: `Enhanced embedding refreshed for ${result.candidateName}`,
       })
-
+      
       // The parent component should handle refreshing the status
       // You might want to add a callback prop for this
     } catch (error: any) {
@@ -74,29 +74,29 @@ export function CandidateEmbeddingCard({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {embeddingStatus.isEmbedded && (embeddingStatus.existsInWeaviate || embeddingStatus.existsInPinecone) ? (
+            {embeddingStatus.isEmbedded && embeddingStatus.existsInPinecone ? (
               <CheckCircle className="h-5 w-5 text-green-600" />
             ) : (
               <XCircle className="h-5 w-5 text-red-600" />
             )}
             <div>
               <p className="text-sm font-medium">
-                {embeddingStatus.isEmbedded && (embeddingStatus.existsInWeaviate || embeddingStatus.existsInPinecone)
-                  ? "Embedded & Searchable"
+                {embeddingStatus.isEmbedded && embeddingStatus.existsInPinecone 
+                  ? "Embedded & Searchable" 
                   : "Not Embedded"}
               </p>
               {embeddingStatus.embeddingCreatedAt && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   Created: {new Date(embeddingStatus.embeddingCreatedAt).toLocaleDateString()}
                 </p>
               )}
             </div>
           </div>
         </div>
-
+        
         <div className="flex gap-2">
           {embeddingStatus.needsEmbedding && (
-            <Button
+            <Button 
               onClick={handleCreateEmbedding}
               disabled={creatingEmbedding}
               className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
@@ -114,10 +114,10 @@ export function CandidateEmbeddingCard({
               )}
             </Button>
           )}
-
+          
           {embeddingStatus.isEmbedded && candidateId && (
-            <Button
-              onClick={refreshEmbedding}
+            <Button 
+              onClick={refreshEmbedding} 
               disabled={refreshing}
               variant="outline"
               className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
@@ -139,15 +139,15 @@ export function CandidateEmbeddingCard({
 
         {/* Enhanced Features Notice */}
         {embeddingStatus.isEmbedded && candidateId && (
-          <div className="p-4 rounded-lg bg-gradient-to-r from-amber-950/30 to-orange-950/30 border border-amber-500/20">
+          <div className="p-4 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
               <div>
-                <h4 className="font-medium text-amber-200 mb-1">Enhanced Matching Available</h4>
-                <p className="text-sm text-amber-400/90 mb-3">
+                <h4 className="font-medium text-amber-800 mb-1">Enhanced Matching Available</h4>
+                <p className="text-sm text-amber-700 mb-3">
                   Click "Refresh with Enhanced Data" to upgrade your embedding with:
                 </p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-amber-300/80">
+                <div className="grid grid-cols-2 gap-2 text-xs text-amber-700">
                   <div className="flex items-center gap-1">
                     <CheckCircle className="h-3 w-3" />
                     Detailed work experience
@@ -177,10 +177,10 @@ export function CandidateEmbeddingCard({
             </div>
           </div>
         )}
-
-        <div className="text-xs text-muted-foreground bg-white/5 border border-white/5 p-3 rounded-lg flex items-center gap-4">
-          <p className="flex items-center gap-1.5"><span className={embeddingStatus.isEmbedded ? "text-emerald-400" : "text-zinc-500"}>●</span> <strong>Database:</strong> {embeddingStatus.isEmbedded ? "Flagged" : "Not flagged"}</p>
-          <p className="flex items-center gap-1.5"><span className={(embeddingStatus.existsInWeaviate || embeddingStatus.existsInPinecone) ? "text-emerald-400" : "text-zinc-500"}>●</span> <strong>Vector DB:</strong> {(embeddingStatus.existsInWeaviate || embeddingStatus.existsInPinecone) ? "Stored" : "Not stored"}</p>
+        
+        <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+          <p className="mb-1"><strong>Database:</strong> {embeddingStatus.isEmbedded ? "✓ Flagged" : "✗ Not flagged"}</p>
+          <p><strong>Pinecone:</strong> {embeddingStatus.existsInPinecone ? "✓ Stored" : "✗ Not stored"}</p>
         </div>
       </div>
     )
@@ -193,8 +193,8 @@ export function CandidateEmbeddingCard({
         <AlertTriangle className="h-5 w-5" />
         <span>Unable to check embedding status</span>
       </div>
-
-      <Button
+      
+      <Button 
         onClick={handleCreateEmbedding}
         disabled={creatingEmbedding}
         className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
@@ -211,8 +211,8 @@ export function CandidateEmbeddingCard({
           </>
         )}
       </Button>
-
-      <p className="text-xs text-amber-300/80 bg-amber-950/20 p-3 rounded-lg border border-amber-500/20">
+      
+      <p className="text-xs text-gray-500 bg-amber-50 p-3 rounded-lg border border-amber-200">
         ⚠️ Status check failed, but you can still try to create the embedding. This will work if the candidate has sufficient data.
       </p>
     </div>

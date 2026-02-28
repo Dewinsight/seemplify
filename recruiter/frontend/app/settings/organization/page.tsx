@@ -100,14 +100,16 @@ export default function OrganizationPage() {
     }
   };
 
-  const getCreditsColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-red-500';
+  const getCreditsColor = (percentage: number, isLowCredit = false) => {
+    if (isLowCredit) return 'text-red-500';
+    if (percentage >= 80) return 'text-amber-500';
     if (percentage >= 50) return 'text-yellow-500';
     return 'text-green-500';
   };
 
-  const getCreditsProgressColor = (percentage: number) => {
-    if (percentage >= 80) return 'bg-red-500';
+  const getCreditsProgressColor = (percentage: number, isLowCredit = false) => {
+    if (isLowCredit) return 'bg-red-500';
+    if (percentage >= 80) return 'bg-amber-500';
     if (percentage >= 50) return 'bg-yellow-500';
     return 'bg-green-500';
   };
@@ -205,7 +207,7 @@ export default function OrganizationPage() {
       case 'owner': return <Crown className="w-4 h-4 text-purple-600" />;
       case 'admin': return <Shield className="w-4 h-4 text-blue-600" />;
       case 'hr_manager': return <UserCheck className="w-4 h-4 text-green-600" />;
-      default: return <User className="w-4 h-4 text-muted-foreground" />;
+      default: return <User className="w-4 h-4 text-gray-600" />;
     }
   };
 
@@ -215,8 +217,8 @@ export default function OrganizationPage() {
       case 'admin': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'hr_manager': return 'bg-green-100 text-green-800 border-green-200';
       case 'recruiter': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'interviewer': return 'bg-muted/50 text-gray-800 border-gray-200';
-      default: return 'bg-muted/50 text-gray-800 border-gray-200';
+      case 'interviewer': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -237,7 +239,7 @@ export default function OrganizationPage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading organization...</p>
+            <p className="text-gray-500">Loading organization...</p>
           </div>
         </div>
       </div>
@@ -258,7 +260,7 @@ export default function OrganizationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">
+            <p className="text-gray-600">
               Please create an organization or contact an administrator to get invited to an existing organization.
             </p>
           </CardContent>
@@ -273,7 +275,7 @@ export default function OrganizationPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Organization</h1>
-          <p className="text-muted-foreground text-sm sm:text-base mt-1">
+          <p className="text-gray-600 text-sm sm:text-base mt-1">
             Manage your organization settings, team members, and switch between organizations
           </p>
         </div>
@@ -315,7 +317,7 @@ export default function OrganizationPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Coins className={`w-5 h-5 ${getCreditsColor(credits.percentageUsed)}`} />
+                <Coins className={`w-5 h-5 ${getCreditsColor(credits.percentageUsed, credits.warnings.lowCredit)}`} />
                 Organization Credits
               </CardTitle>
               <Button 
@@ -339,24 +341,24 @@ export default function OrganizationPage() {
                 {/* Credits Overview */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-white rounded-lg border">
-                    <div className={`text-3xl font-bold mb-1 ${getCreditsColor(credits.percentageUsed)}`}>
+                    <div className={`text-3xl font-bold mb-1 ${getCreditsColor(credits.percentageUsed, credits.warnings.lowCredit)}`}>
                       {credits.remainingCredits}
                     </div>
-                    <div className="text-sm text-muted-foreground">Credits Remaining</div>
+                    <div className="text-sm text-gray-600">Credits Remaining</div>
                   </div>
                   
                   <div className="text-center p-4 bg-white rounded-lg border">
                     <div className="text-3xl font-bold text-gray-700 mb-1">
                       {credits.totalCredits}
                     </div>
-                    <div className="text-sm text-muted-foreground">Total Credits</div>
+                    <div className="text-sm text-gray-600">Total Credits</div>
                   </div>
                   
                   <div className="text-center p-4 bg-white rounded-lg border">
                     <div className="text-3xl font-bold text-blue-600 mb-1">
-                      {credits.daysUntilReset}
+                      {Math.max(0, credits.daysUntilReset)}
                     </div>
-                    <div className="text-sm text-muted-foreground">Days Until Reset</div>
+                    <div className="text-sm text-gray-600">Days Until Reset</div>
                   </div>
                 </div>
 
@@ -364,11 +366,11 @@ export default function OrganizationPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-gray-700">Usage: {credits.percentageUsed.toFixed(1)}%</span>
-                    <span className="text-muted-foreground">{credits.usedCredits} / {credits.totalCredits} used</span>
+                    <span className="text-gray-500">{credits.usedCredits} / {credits.totalCredits} used</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                     <div
-                      className={`h-full transition-all duration-500 ${getCreditsProgressColor(credits.percentageUsed)}`}
+                      className={`h-full transition-all duration-500 ${getCreditsProgressColor(credits.percentageUsed, credits.warnings.lowCredit)}`}
                       style={{ width: `${Math.min(credits.percentageUsed, 100)}%` }}
                     />
                   </div>
@@ -390,7 +392,7 @@ export default function OrganizationPage() {
                 {/* Recent Transactions */}
                 {creditTransactions.length > 0 && (
                   <div className="border-t pt-4">
-                    <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
                       Recent Transactions
                     </h4>
@@ -401,9 +403,9 @@ export default function OrganizationPage() {
                             <div className={`font-medium ${transaction.credits > 0 ? 'text-green-600' : 'text-red-600'}`}>
                               {transaction.credits > 0 ? '+' : ''}{transaction.credits}
                             </div>
-                            <div className="text-muted-foreground">{formatActionName(transaction.action)}</div>
+                            <div className="text-gray-600">{formatActionName(transaction.action)}</div>
                           </div>
-                          <div className="text-muted-foreground text-xs">
+                          <div className="text-gray-500 text-xs">
                             {new Date(transaction.timestamp).toLocaleDateString()}
                           </div>
                         </div>
@@ -414,12 +416,12 @@ export default function OrganizationPage() {
 
                 {/* Credit Costs */}
                 <div className="border-t pt-4">
-                  <h4 className="font-semibold text-foreground mb-3">Credit Costs</h4>
+                  <h4 className="font-semibold text-gray-900 mb-3">Credit Costs</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {Object.entries(credits.creditCosts).map(([action, cost]) => (
                       <div key={action} className="p-2 bg-white rounded border text-center">
                         <div className="font-bold text-blue-600">{cost}</div>
-                        <div className="text-xs text-muted-foreground">{formatActionName(action)}</div>
+                        <div className="text-xs text-gray-600">{formatActionName(action)}</div>
                       </div>
                     ))}
                   </div>
@@ -589,7 +591,7 @@ export default function OrganizationPage() {
                 
                 <CardContent className="pt-0">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-6 text-sm text-gray-600">
                       {org.industry && (
                         <div className="flex items-center gap-1">
                           <Building2 className="w-4 h-4" />
@@ -675,7 +677,7 @@ export default function OrganizationPage() {
             <Card className="text-center py-12">
               <CardContent>
                 <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <CardTitle className="text-xl text-muted-foreground mb-2">No Organizations</CardTitle>
+                <CardTitle className="text-xl text-gray-600 mb-2">No Organizations</CardTitle>
                 <CardDescription className="mb-4">
                   You don't belong to any organizations yet. Create your first organization to get started.
                 </CardDescription>

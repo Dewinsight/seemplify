@@ -91,11 +91,11 @@ export function ResponsiveCard({
       case 'gradient':
         return 'bg-gradient-to-br from-white via-blue-50 to-purple-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-0 shadow-xl'
       case 'glass':
-        return 'bg-card/60 dark:bg-slate-800/60 backdrop-blur-xl border-0 shadow-lg'
+        return 'bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-0 shadow-lg'
       case 'bordered':
-        return 'bg-card dark:bg-slate-800 border-2 border-blue-200 dark:border-blue-800 shadow-md'
+        return 'bg-white dark:bg-slate-800 border-2 border-blue-200 dark:border-blue-800 shadow-md'
       default:
-        return 'bg-card dark:bg-slate-800 border border-gray-200 dark:border-gray-700 shadow-sm'
+        return 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 shadow-sm'
     }
   }
 
@@ -252,13 +252,13 @@ export function MobileStatCard({
     switch (trend) {
       case 'up': return 'text-green-600 dark:text-green-400'
       case 'down': return 'text-red-600 dark:text-red-400'
-      default: return 'text-muted-foreground dark:text-gray-400'
+      default: return 'text-gray-600 dark:text-gray-400'
     }
   }
 
   return (
     <div className={cn(
-      "p-4 bg-card dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700",
+      "p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700",
       "shadow-sm hover:shadow-md transition-shadow duration-200",
       className
     )}>
@@ -273,7 +273,7 @@ export function MobileStatCard({
             <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {value}
             </div>
-            <div className="text-sm text-muted-foreground dark:text-gray-400">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
               {title}
             </div>
           </div>
@@ -341,7 +341,7 @@ export function StickyMobileToolbar({
   if (!visible) return null
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card dark:bg-slate-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
       <div className="px-4 py-3">
         {children}
       </div>
@@ -370,7 +370,7 @@ export function MobileContentSection({
       <div className={cn("border-b border-gray-200 dark:border-gray-700 last:border-b-0", className)}>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full px-4 py-4 text-left hover:bg-muted/30 dark:hover:bg-gray-800/50 transition-colors"
+          className="w-full px-4 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
         >
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
@@ -485,10 +485,10 @@ export function ResponsiveInfoList({
           )}
         >
           <div className="flex items-center space-x-2 min-w-0">
-            {item.icon && <div className="flex-shrink-0 text-muted-foreground">{item.icon}</div>}
+            {item.icon && <div className="flex-shrink-0 text-gray-500">{item.icon}</div>}
             <span className={cn(
               "font-medium text-gray-700 dark:text-gray-300 text-sm sm:text-base",
-              orientation === 'horizontal' && "sm:text-xs sm:text-muted-foreground sm:dark:text-gray-400"
+              orientation === 'horizontal' && "sm:text-xs sm:text-gray-500 sm:dark:text-gray-400"
             )}>
               {item.label}
             </span>
@@ -520,7 +520,7 @@ export function ResponsiveDataList({
       {data.map((item, index) => (
         <div
           key={item[keyField] || index}
-          className="p-4 glass-card bg-muted/30 dark:bg-card/30 rounded-lg border border-border/60"
+          className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700"
         >
           {renderItem(item, index)}
         </div>

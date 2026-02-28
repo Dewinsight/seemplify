@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle, AlertCircle, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
+import { Calendar, CheckCircle, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
 import { Button } from '../button';
 import { Alert, AlertDescription, AlertTitle } from '../alert';
 import { Badge } from '../badge';
@@ -60,6 +60,26 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     }
   ];
 
+  const isMicrosoftGrantProvider = (provider?: string) => {
+    const normalized = String(provider || '').toLowerCase();
+    return normalized.includes('microsoft') || normalized.includes('outlook') || normalized.includes('azure');
+  };
+
+  const normalizeProviderId = (provider?: string): 'google' | 'microsoft' => {
+    return isMicrosoftGrantProvider(provider) ? 'microsoft' : 'google';
+  };
+
+  const getMissingTeamsScopes = (scopes: any[] = []) => {
+    const normalizedScopes = scopes.map(scope => String(scope).toLowerCase());
+    const hasCalendarsReadWrite = normalizedScopes.some(scope => scope.includes('calendars.readwrite'));
+    const hasOnlineMeetingsReadWrite = normalizedScopes.some(scope => scope.includes('onlinemeetings.readwrite'));
+
+    return [
+      !hasCalendarsReadWrite ? 'Calendars.ReadWrite' : null,
+      !hasOnlineMeetingsReadWrite ? 'OnlineMeetings.ReadWrite' : null
+    ].filter(Boolean) as string[];
+  };
+
   useEffect(() => {
     if (state.user?._id) {
       checkCalendarStatus();
@@ -80,19 +100,48 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
       console.log('Grant verification result:', verification);
       
       if (verification.valid && verification.calendarConnected) {
-        console.log(`✅ Calendar verified with Nylas - Provider: ${verification.grantInfo?.provider}`);
+        const grantProvider = verification.grantInfo?.provider || 'google';
+        const providerId = normalizeProviderId(grantProvider);
+        const missingTeamsScopes = isMicrosoftGrantProvider(grantProvider)
+          ? getMissingTeamsScopes(verification.grantInfo?.scopes || [])
+          : [];
+
+        if (missingTeamsScopes.length > 0) {
+          const missingScopeText = missingTeamsScopes.join(', ');
+          const scopeErrorMessage = `Microsoft Teams permissions are incomplete. Missing: ${missingScopeText}. Reconnect Microsoft calendar and accept all requested scopes.`;
+          console.warn(`Teams scope check failed: ${scopeErrorMessage}`);
+          setServerError(scopeErrorMessage);
+          setCalendarStatus({
+            connected: false,
+            provider: 'microsoft',
+            verified: false,
+            error: 'TEAMS_SCOPE_MISSING'
+          });
+          updateData({
+            calendarConnected: false,
+            calendarProvider: 'microsoft',
+            provider: 'microsoft'
+          });
+          setSelectedProvider('microsoft');
+
+          return { connected: false, provider: 'microsoft', missingScopes: missingTeamsScopes };
+        }
+
+        console.log(`Calendar verified with Nylas - Provider: ${grantProvider}`);
         setCalendarStatus({
           connected: true,
-          provider: verification.grantInfo?.provider || 'google',
+          provider: providerId,
           verified: true
         });
         updateData({ 
           calendarConnected: true, 
-          calendarProvider: verification.grantInfo?.provider || 'google',
-          provider: verification.grantInfo?.provider || 'google'
+          calendarProvider: providerId,
+          calendarEmail: verification.grantInfo?.email || '',
+          provider: providerId
         });
+        setSelectedProvider(providerId);
         
-        return { connected: true, provider: verification.grantInfo?.provider };
+        return { connected: true, provider: providerId };
       } else {
         console.log(`❌ Calendar not connected or invalid - Status: ${verification.status}`);
         
@@ -441,6 +490,42 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
             </div>
           </div>
 
+          {selectedProvider === 'microsoft' && (
+            <Alert variant="warning" className="max-w-md mx-auto">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Microsoft Teams configuration required (for Notetaker)</AlertTitle>
+              <AlertDescription>
+                <p className="mt-2">
+                  If you plan to use Teams meetings with the AI notetaker, your Microsoft 365 admin must enable:
+                </p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>
+                    Allow participants to join before meeting organizer joins: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Waiting room: <strong>DISABLED</strong> (or bot allowlisted)
+                  </li>
+                  <li>
+                    Cloud recording: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Transcription: <strong>ENABLED</strong>
+                  </li>
+                </ul>
+                <p className="mt-2">
+                  <a
+                    href="/docs/teams-admin-setup"
+                    className="text-blue-700 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View detailed setup guide -&gt;
+                  </a>
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex justify-center">
             <Button
               onClick={() => handleConnectCalendar(false)}
@@ -484,11 +569,12 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
         }}
       />
 
-      <div className="flex justify-between pt-6">
+      <div className="step-nav-actions hidden flex justify-between pt-6">
         <Button
           variant="outline"
           onClick={() => checkCalendarStatus()}
           disabled={isVerifying}
+          data-step-action="refresh"
         >
           {isVerifying ? (
             <>
@@ -506,6 +592,7 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
         <Button
           onClick={handleContinue}
           disabled={!calendarStatus.connected || !calendarStatus.verified}
+          data-step-action="next"
         >
           Continue
         </Button>
@@ -513,3 +600,4 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     </div>
   );
 }
+

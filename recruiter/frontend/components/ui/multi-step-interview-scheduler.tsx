@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, AlertCircle, Copy } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Check, ChevronLeft, ChevronRight, AlertCircle, Copy, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from './button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './dialog';
@@ -13,6 +13,7 @@ import { useUser } from '@/context/UserContext';
 import interviewService from '@/services/interviewService';
 import { useCreditError } from '@/hooks/useCreditError';
 import { CreditErrorDialog } from '@/components/ui/credit-error-dialog';
+import { getDefaultEmailTemplate } from '@/lib/emailTemplatePresets';
 
 // Import step components
 import {
@@ -61,6 +62,7 @@ export interface InterviewSchedulerData {
   // Calendar
   calendarConnected: boolean;
   calendarProvider?: string;
+  calendarEmail?: string;
   
   // Interview details
   startTime: string;
@@ -143,10 +145,15 @@ const SINGLE_STEPS = [
   {
     id: 5,
     title: 'Communication',
-    description: 'Configure email notifications and questions',
+    description: 'Configure invitation email notifications',
   },
   {
     id: 6,
+    title: 'Interviewer Questions',
+    description: 'Select questions and when to send them',
+  },
+  {
+    id: 7,
     title: 'Review & Schedule',
     description: 'Review all details and schedule the interview',
   },
@@ -181,10 +188,15 @@ const MULTI_STEPS = [
   {
     id: 6,
     title: 'Communication',
-    description: 'Configure email notifications',
+    description: 'Configure invitation email notifications',
   },
   {
     id: 7,
+    title: 'Interviewer Questions',
+    description: 'Select questions and when to send them',
+  },
+  {
+    id: 8,
     title: 'Review & Schedule',
     description: 'Review all details and schedule interviews',
   },
@@ -200,7 +212,7 @@ export function MultiStepInterviewScheduler({
   onScheduled,
   onCancel,
   forceMultiCandidate = false,
-  skipTypeSelection = false,
+  skipTypeSelection = true,
   onNavigateToShortlist,
 }: MultiStepInterviewSchedulerProps) {
   const { state } = useUser();
@@ -211,6 +223,7 @@ export function MultiStepInterviewScheduler({
   // Start at step 2 (Calendar Connection) if skipping type selection, otherwise step 1 (Interview Type)
   const [currentStep, setCurrentStep] = useState(shouldSkipTypeSelection ? 2 : 1);
   const [isLoading, setIsLoading] = useState(false);
+  const stepContentRef = useRef<HTMLDivElement | null>(null);
   
   // Credit error handling
   const { creditError, showCreditDialog, setShowCreditDialog, handleError: handleCreditError } = useCreditError();
@@ -222,34 +235,13 @@ export function MultiStepInterviewScheduler({
     message: string;
     details?: string;
     suggestions?: string[];
+    code?: string;
   } | null>(null);
   
   // Determine initial interview type
   const initialInterviewType = forceMultiCandidate ? 'multi' : 'single';
   
-  // Default email template - always used
-  const DEFAULT_EMAIL_TEMPLATE = `Dear {{candidateName}},
-
-We're pleased to confirm your upcoming interview for the {{jobTitle}} position.
-
-Date: {{interviewDate}}
-Time: {{interviewTime}}
-Duration: {{duration}} minutes
-Format: {{interviewType}}
-{{#if meetingLink}}
-Meeting Link: {{meetingLink}}
-{{/if}}
-
-{{#if notes}}
-Additional Notes:
-{{notes}}
-{{/if}}
-
-Please be prepared to discuss your experience and qualifications. If you need to reschedule or have any questions, please contact us as soon as possible.
-
-Best regards,
-{{interviewerName}}
-{{organizationName}}`;
+  const DEFAULT_EMAIL_TEMPLATE = getDefaultEmailTemplate();
   
   const [data, setData] = useState<InterviewSchedulerData>({
     // Pre-set interview type if skipping type selection, otherwise default to 'single'
@@ -285,6 +277,14 @@ Best regards,
 
   // Use the appropriate steps based on interview type
   const STEPS = data.interviewType === 'single' ? SINGLE_STEPS : MULTI_STEPS;
+  const VISIBLE_STEPS = shouldSkipTypeSelection
+    ? STEPS.filter(step => step.id !== 1)
+    : STEPS;
+  const currentVisibleStepIndex = Math.max(
+    0,
+    VISIBLE_STEPS.findIndex(step => step.id === currentStep)
+  );
+  const currentVisibleStep = VISIBLE_STEPS[currentVisibleStepIndex] || VISIBLE_STEPS[0];
 
   const updateData = (updates: Partial<InterviewSchedulerData>) => {
     setData(prev => ({ ...prev, ...updates }));
@@ -301,6 +301,11 @@ Best regards,
       setCurrentStep(currentStep - 1);
     }
   };
+
+  const extractApiErrorData = (error: any) => error?.data || error?.response?.data || null;
+
+  const isTeamsScopeErrorCode = (code?: string) =>
+    code === 'TEAMS_SCOPE_MISSING' || code === 'TEAMS_PROVIDER_MISMATCH';
 
   const handleSchedule = async () => {
     if (!state.user?._id) {
@@ -397,9 +402,17 @@ Best regards,
         console.log('📤 Sending multi-candidate schedule data:', multiScheduleData);
         const result = await interviewService.scheduleMultiCandidateInterview(multiScheduleData);
 
-        toast.success(
-          `Successfully scheduled ${result.successCount} interviews!`
-        );
+        const successCount = result?.successCount ?? result?.interviews?.length ?? 0;
+        const queuedRetryCount = result?.queuedRetryCount ?? result?.queuedRetries?.length ?? 0;
+        const failedCount = result?.failedCount ?? result?.errors?.length ?? 0;
+
+        if (queuedRetryCount > 0 || failedCount > 0) {
+          toast.success(
+            `Scheduled ${successCount} interviews. ${queuedRetryCount} slot(s) queued for retry.`
+          );
+        } else {
+          toast.success(`Successfully scheduled ${successCount} interviews!`);
+        }
         onScheduled?.(result);
       }
     } catch (error: any) {
@@ -409,17 +422,40 @@ Best regards,
       const isCreditError = handleCreditError(error);
       
       if (!isCreditError) {
-        // Extract detailed error information for non-credit errors
-        const errorMessage = error?.response?.data?.message || 
-                            error?.response?.data?.error || 
-                            error?.message || 
+        const apiErrorData = extractApiErrorData(error) || {};
+        const errorCode = apiErrorData?.error || error?.message;
+        const errorMessage = apiErrorData?.message ||
+                            error?.response?.data?.message ||
+                            error?.response?.data?.error ||
+                            error?.message ||
                             'Failed to schedule interview';
-        
-        // Show generic error modal for non-credit errors
+
+        if (isTeamsScopeErrorCode(errorCode)) {
+          const details = apiErrorData?.details || {};
+          const missingScopes = Array.isArray(details?.missingScopes) ? details.missingScopes : [];
+          const missingScopesText = missingScopes.length > 0
+            ? missingScopes.join(', ')
+            : 'Calendars.ReadWrite, OnlineMeetings.ReadWrite';
+
+          setErrorDetails({
+            title: 'Microsoft Teams Scopes Required',
+            message: apiErrorData?.message || 'Microsoft Teams scheduling requires additional permissions.',
+            details: `Missing scopes: ${missingScopesText}`,
+            suggestions: [
+              'Click "Fix Teams Scopes" below',
+              'Reconnect Microsoft calendar and accept all requested permissions',
+              'Return to review and schedule again'
+            ],
+            code: errorCode
+          });
+          setShowErrorModal(true);
+          return;
+        }
+
         setErrorDetails({
           title: 'Interview Scheduling Failed',
           message: errorMessage,
-          details: error?.response?.data?.details || error?.stack?.split('\n')[0],
+          details: apiErrorData?.details || error?.response?.data?.details || error?.stack?.split('\n')[0],
           suggestions: [
             'Check all required fields are filled correctly',
             'Verify your calendar is still connected',
@@ -483,9 +519,20 @@ Best regards,
               updateData={updateData}
               onNext={handleNext}
               onPrevious={handlePrevious}
+              mode="email"
             />
           );
         case 6:
+          return (
+            <CommunicationStep
+              data={data}
+              updateData={updateData}
+              onNext={handleNext}
+              onPrevious={handlePrevious}
+              mode="questions"
+            />
+          );
+        case 7:
           return (
             <ReviewScheduleStep
               data={data}
@@ -544,9 +591,20 @@ Best regards,
               updateData={updateData}
               onNext={handleNext}
               onPrevious={handlePrevious}
+              mode="email"
             />
           );
         case 7:
+          return (
+            <CommunicationStep
+              data={data}
+              updateData={updateData}
+              onNext={handleNext}
+              onPrevious={handlePrevious}
+              mode="questions"
+            />
+          );
+        case 8:
           return (
             <MultiCandidateReviewStep
               data={data}
@@ -562,8 +620,56 @@ Best regards,
     return null;
   };
 
+  const minimumStep = shouldSkipTypeSelection ? 2 : 1;
+  const isFirstStep = currentStep === 1;
+  const canGoPrevious = currentStep > minimumStep;
+  const isReviewStep = currentStep === STEPS.length;
+  const isCalendarStep = currentStep === 2;
+
+  const triggerStepAction = (action: 'next' | 'schedule' | 'refresh') => {
+    const target = stepContentRef.current?.querySelector(
+      `[data-step-action="${action}"]`
+    ) as HTMLButtonElement | null;
+
+    if (!target) return { found: false, disabled: false };
+    if (target.disabled) return { found: true, disabled: true };
+
+    target.click();
+    return { found: true, disabled: false };
+  };
+
+  const handleFooterPrimaryAction = async () => {
+    if (isReviewStep) {
+      const result = triggerStepAction('schedule');
+      if (result.disabled) {
+        toast.error('Resolve required fields before scheduling');
+        return;
+      }
+      if (!result.found) {
+        await handleSchedule();
+      }
+      return;
+    }
+
+    const result = triggerStepAction('next');
+    if (result.disabled) {
+      toast.error('Please complete required fields before continuing');
+      return;
+    }
+    if (!result.found) {
+      handleNext();
+    }
+  };
+
+  const handleFooterRefresh = () => {
+    const result = triggerStepAction('refresh');
+    if (result.disabled) {
+      toast.info('Calendar status check is already running');
+    }
+  };
+
   return (
-    <div className="w-full h-full flex flex-col bg-background">
+    <div className="w-full h-full min-h-0 flex flex-col bg-background">
       {/* Fixed Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b">
         <div className="space-y-4">
@@ -583,48 +689,48 @@ Best regards,
           {/* Progress indicator */}
           <div className="space-y-2">
             <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Step {currentStep} of {STEPS.length}</span>
-              <span>{STEPS[currentStep - 1].title}</span>
+              <span>Step {currentVisibleStepIndex + 1} of {VISIBLE_STEPS.length}</span>
+              <span>{currentVisibleStep?.title}</span>
             </div>
-            <Progress value={(currentStep / STEPS.length) * 100} />
+            <Progress value={((currentVisibleStepIndex + 1) / VISIBLE_STEPS.length) * 100} />
           </div>
           
           {/* Step indicators */}
           <div className="flex justify-between">
-            {STEPS.map((step, index) => (
+            {VISIBLE_STEPS.map((step, index) => (
               <div
                 key={step.id}
                 className={cn(
                   "flex items-center",
-                  index < STEPS.length - 1 && "flex-1"
+                  index < VISIBLE_STEPS.length - 1 && "flex-1"
                 )}
               >
                 <div className="flex flex-col items-center">
                   <div
                     className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium",
-                      currentStep > step.id
+                      index < currentVisibleStepIndex
                         ? "bg-primary text-primary-foreground"
-                        : currentStep === step.id
+                        : index === currentVisibleStepIndex
                         ? "bg-primary/20 text-primary border-2 border-primary"
                         : "bg-muted text-muted-foreground"
                     )}
                   >
-                    {currentStep > step.id ? (
+                    {index < currentVisibleStepIndex ? (
                       <Check className="w-4 h-4" />
                     ) : (
-                      step.id
+                      shouldSkipTypeSelection ? index + 1 : step.id
                     )}
                   </div>
                   <span className="text-xs mt-1 hidden sm:block text-center max-w-[100px]">
                     {step.title}
                   </span>
                 </div>
-                {index < STEPS.length - 1 && (
+                {index < VISIBLE_STEPS.length - 1 && (
                   <div
                     className={cn(
                       "flex-1 h-[2px] mx-2 mt-4",
-                      currentStep > step.id ? "bg-primary" : "bg-muted"
+                      index < currentVisibleStepIndex ? "bg-primary" : "bg-muted"
                     )}
                   />
                 )}
@@ -635,19 +741,55 @@ Best regards,
       </div>
       
       {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto px-6 py-4" style={{ maxHeight: 'calc(70vh - 200px)' }}>
+      <div ref={stepContentRef} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4">
         {renderStep()}
       </div>
       
       {/* Fixed Footer */}
       <div className="flex-shrink-0 px-6 py-4 border-t">
-        <div className="flex justify-between">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-          >
-            Cancel
-          </Button>
+        <div className="flex justify-between items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            {canGoPrevious && (
+              <Button variant="outline" onClick={handlePrevious}>
+                <ChevronLeft className="h-4 w-4 mr-2" />
+                Previous
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isCalendarStep && (
+              <Button variant="outline" onClick={handleFooterRefresh}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Status
+              </Button>
+            )}
+
+            {!isFirstStep && (
+              <Button onClick={handleFooterPrimaryAction} disabled={isLoading}>
+                {isReviewStep ? (
+                  isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Scheduling...
+                    </>
+                  ) : data.interviewType === 'multi' ? (
+                    `Schedule ${data.multiCandidateSlots.length} Interviews`
+                  ) : (
+                    'Schedule Interview'
+                  )
+                ) : (
+                  <>
+                    Continue
+                    <ChevronRight className="h-4 w-4 ml-2" />
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -672,7 +814,7 @@ Best regards,
             {/* Technical details (if available) */}
             {errorDetails?.details && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                <Label className="text-xs font-semibold text-gray-600 uppercase">
                   Technical Details
                 </Label>
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
@@ -686,7 +828,7 @@ Best regards,
             {/* Suggestions */}
             {errorDetails?.suggestions && errorDetails.suggestions.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                <Label className="text-xs font-semibold text-gray-600 uppercase">
                   Suggested Actions
                 </Label>
                 <ul className="space-y-2">
@@ -702,6 +844,23 @@ Best regards,
 
             {/* Actions */}
             <div className="flex gap-2 justify-end pt-2">
+              {(errorDetails?.code === 'TEAMS_SCOPE_MISSING' || errorDetails?.code === 'TEAMS_PROVIDER_MISMATCH') && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowErrorModal(false);
+                    updateData({
+                      calendarConnected: false,
+                      calendarProvider: 'microsoft',
+                      provider: 'microsoft'
+                    });
+                    setCurrentStep(2);
+                    toast.info('Reconnect Microsoft calendar and accept Calendars.ReadWrite + OnlineMeetings.ReadWrite.');
+                  }}
+                >
+                  Fix Teams Scopes
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {

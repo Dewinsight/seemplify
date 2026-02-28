@@ -37,7 +37,6 @@ import {
 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import pipelineService, { type PipelineAnalytics } from "@/services/pipelineService"
-import { useTheme } from "next-themes"
 
 interface PipelineAnalyticsProps {
   jobId: string
@@ -65,16 +64,8 @@ const STAGE_LABELS = {
 }
 
 export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === 'dark'
   const [analytics, setAnalytics] = useState<PipelineAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const chartGridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
-  const chartTextColor = isDark ? "#9CA3AF" : "#6B7280"
-  const chartTooltipBg = isDark ? "#1A1A1A" : "#FFFFFF"
-  const chartTooltipBorder = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
-  const chartTooltipText = isDark ? "#fff" : "#000"
 
   const fetchAnalytics = async () => {
     try {
@@ -102,20 +93,20 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-foreground">Pipeline Analytics</h3>
-          <Button variant="outline" size="sm" disabled className="border-white/10 text-gray-400">
+          <h3 className="text-lg font-semibold">Pipeline Analytics</h3>
+          <Button variant="outline" size="sm" disabled>
             <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
             Loading...
           </Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse glass-card border-border/50 dark:border-white/5">
+            <Card key={i} className="animate-pulse">
               <CardHeader className="pb-2">
-                <div className="h-4 bg-secondary/50 dark:bg-white/10 rounded w-3/4"></div>
+                <div className="h-4 bg-muted rounded w-3/4"></div>
               </CardHeader>
               <CardContent>
-                <div className="h-8 bg-secondary/50 dark:bg-white/10 rounded w-1/2"></div>
+                <div className="h-8 bg-muted rounded w-1/2"></div>
               </CardContent>
             </Card>
           ))}
@@ -127,8 +118,8 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
   if (!analytics || !analytics.statusDistribution || !analytics.conversionRates || !analytics.averageTimeInStage) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-400">No analytics data available</p>
-        <Button onClick={fetchAnalytics} className="mt-4 bg-blue-600 hover:bg-blue-700 text-white">
+        <p className="text-muted-foreground">No analytics data available</p>
+        <Button onClick={fetchAnalytics} className="mt-4">
           <RefreshCw className="h-4 w-4 mr-2" />
           Retry
         </Button>
@@ -175,7 +166,7 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
   const totalHired = sanitizeNumber(analytics.statusDistribution.hired)
   const totalApplicants = sanitizeNumber(analytics.totalApplicants)
   const hireRate = totalApplicants > 0 ? Math.round((totalHired / totalApplicants) * 100) : 0
-
+  
   const interviewToOfferRate = Math.round(sanitizeNumber(analytics.conversionRates['interviewing_to_offered']))
   const offerToHireRate = Math.round(sanitizeNumber(analytics.conversionRates['offered_to_hired']))
 
@@ -183,8 +174,8 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-foreground">Pipeline Analytics</h3>
-        <Button variant="outline" size="sm" onClick={fetchAnalytics} className="border-border/50 dark:border-white/10 text-muted-foreground hover:text-foreground hover:bg-secondary/50 dark:hover:bg-white/5">
+        <h3 className="text-lg font-semibold">Pipeline Analytics</h3>
+        <Button variant="outline" size="sm" onClick={fetchAnalytics}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Refresh
         </Button>
@@ -192,52 +183,52 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground dark:text-gray-300">Total Candidates</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Candidates</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{totalApplicants}</div>
+            <div className="text-2xl font-bold">{totalApplicants}</div>
             <p className="text-xs text-muted-foreground">
               In pipeline
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground dark:text-gray-300">Hire Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Hire Rate</CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{hireRate}%</div>
+            <div className="text-2xl font-bold">{hireRate}%</div>
             <p className="text-xs text-muted-foreground">
               {totalHired} hired of {totalApplicants}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground dark:text-gray-300">Interview Success</CardTitle>
+            <CardTitle className="text-sm font-medium">Interview Success</CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{interviewToOfferRate}%</div>
+            <div className="text-2xl font-bold">{interviewToOfferRate}%</div>
             <p className="text-xs text-muted-foreground">
               Interview to offer rate
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground dark:text-gray-300">Offer Acceptance</CardTitle>
+            <CardTitle className="text-sm font-medium">Offer Acceptance</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{offerToHireRate}%</div>
+            <div className="text-2xl font-bold">{offerToHireRate}%</div>
             <p className="text-xs text-muted-foreground">
               Offer to hire rate
             </p>
@@ -248,10 +239,10 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status Distribution */}
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">Status Distribution</CardTitle>
-            <CardDescription className="text-muted-foreground">Current candidate distribution across stages</CardDescription>
+            <CardTitle>Status Distribution</CardTitle>
+            <CardDescription>Current candidate distribution across stages</CardDescription>
           </CardHeader>
           <CardContent>
             {statusDistributionData.length > 0 ? (
@@ -271,7 +262,7 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: chartTooltipBg, border: `1px solid ${chartTooltipBorder}`, borderRadius: '8px', color: chartTooltipText }} itemStyle={{ color: chartTooltipText }} />
+                  <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -283,29 +274,23 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
         </Card>
 
         {/* Conversion Rates */}
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">Conversion Rates</CardTitle>
-            <CardDescription className="text-muted-foreground">Stage-to-stage conversion percentages</CardDescription>
+            <CardTitle>Conversion Rates</CardTitle>
+            <CardDescription>Stage-to-stage conversion percentages</CardDescription>
           </CardHeader>
           <CardContent>
             {conversionData.length > 0 && conversionData.some(item => item.rate > 0) ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={conversionData} layout="horizontal">
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                  <XAxis
-                    type="number"
-                    domain={[0, 'dataMax']}
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    type="number" 
+                    domain={[0, 'dataMax']} 
                     tickFormatter={(value) => `${Math.round(Number(value))}%`}
-                    stroke={chartTextColor}
                   />
-                  <YAxis dataKey="name" type="category" width={120} stroke={chartTextColor} />
-                  <Tooltip
-                    formatter={(value) => [`${Math.round(Number(value))}%`, 'Conversion Rate']}
-                    contentStyle={{ backgroundColor: chartTooltipBg, border: `1px solid ${chartTooltipBorder}`, borderRadius: '8px' }}
-                    itemStyle={{ color: chartTooltipText }}
-                    labelStyle={{ color: chartTooltipText }}
-                  />
+                  <YAxis dataKey="name" type="category" width={120} />
+                                     <Tooltip formatter={(value) => [`${Math.round(Number(value))}%`, 'Conversion Rate']} />
                   <Bar dataKey="rate" fill="#3b82f6" />
                 </BarChart>
               </ResponsiveContainer>
@@ -318,24 +303,19 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
         </Card>
 
         {/* Time in Stage */}
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">Average Time in Stage</CardTitle>
-            <CardDescription className="text-muted-foreground">Average days spent in each stage</CardDescription>
+            <CardTitle>Average Time in Stage</CardTitle>
+            <CardDescription>Average days spent in each stage</CardDescription>
           </CardHeader>
           <CardContent>
             {timeInStageData.length > 0 && timeInStageData.some(item => item.days > 0) ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={timeInStageData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                  <XAxis dataKey="name" stroke={chartTextColor} />
-                  <YAxis domain={[0, 'dataMax']} stroke={chartTextColor} />
-                  <Tooltip
-                    formatter={(value) => [`${Math.round(Number(value))} days`, 'Average Time']}
-                    contentStyle={{ backgroundColor: chartTooltipBg, border: `1px solid ${chartTooltipBorder}`, borderRadius: '8px' }}
-                    itemStyle={{ color: chartTooltipText }}
-                    labelStyle={{ color: chartTooltipText }}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis domain={[0, 'dataMax']} />
+                  <Tooltip formatter={(value) => [`${Math.round(Number(value))} days`, 'Average Time']} />
                   <Bar dataKey="days" fill="#8b5cf6" />
                 </BarChart>
               </ResponsiveContainer>
@@ -348,28 +328,28 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
         </Card>
 
         {/* Pipeline Health */}
-        <Card className="glass-card border-border/50 dark:border-white/5">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">Pipeline Health</CardTitle>
-            <CardDescription className="text-muted-foreground">Bottlenecks and recommendations</CardDescription>
+            <CardTitle>Pipeline Health</CardTitle>
+            <CardDescription>Bottlenecks and recommendations</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {analytics.pipelineHealth.bottlenecks.length > 0 ? (
               <div>
-                <h4 className="font-medium text-sm mb-2 flex items-center text-foreground">
+                <h4 className="font-medium text-sm mb-2 flex items-center">
                   <AlertTriangle className="h-4 w-4 mr-2 text-orange-500" />
                   Bottlenecks Detected
                 </h4>
                 <div className="space-y-2">
                   {analytics.pipelineHealth.bottlenecks.map((bottleneck, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-orange-500/10 border border-orange-500/20 rounded">
+                    <div key={index} className="flex items-center justify-between p-2 bg-orange-50 rounded">
                       <div>
-                        <span className="font-medium text-foreground dark:text-white">{STAGE_LABELS[bottleneck.stage as keyof typeof STAGE_LABELS]}</span>
+                        <span className="font-medium">{STAGE_LABELS[bottleneck.stage as keyof typeof STAGE_LABELS]}</span>
                         <p className="text-xs text-muted-foreground">
                           {bottleneck.candidateCount} candidates, {bottleneck.averageDays} days avg
                         </p>
                       </div>
-                      <Badge variant={bottleneck.severity === 'high' ? 'destructive' : 'secondary'} className={bottleneck.severity === 'high' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-secondary dark:bg-white/10 text-muted-foreground dark:text-gray-300'}>
+                      <Badge variant={bottleneck.severity === 'high' ? 'destructive' : 'secondary'}>
                         {bottleneck.severity}
                       </Badge>
                     </div>
@@ -377,7 +357,7 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
                 </div>
               </div>
             ) : (
-              <div className="flex items-center text-green-500 dark:text-green-400">
+              <div className="flex items-center text-green-600">
                 <CheckCircle className="h-4 w-4 mr-2" />
                 <span className="text-sm">No bottlenecks detected</span>
               </div>
@@ -385,7 +365,7 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
 
             {analytics.pipelineHealth.recommendations.length > 0 && (
               <div>
-                <h4 className="font-medium text-sm mb-2 text-foreground">Recommendations</h4>
+                <h4 className="font-medium text-sm mb-2">Recommendations</h4>
                 <ul className="space-y-1">
                   {analytics.pipelineHealth.recommendations.map((recommendation, index) => (
                     <li key={index} className="text-sm text-muted-foreground flex items-start">
@@ -401,26 +381,26 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
       </div>
 
       {/* Stage Details */}
-      <Card className="glass-card border-border/50 dark:border-white/5">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-foreground">Stage Details</CardTitle>
-          <CardDescription className="text-muted-foreground">Detailed breakdown by pipeline stage</CardDescription>
+          <CardTitle>Stage Details</CardTitle>
+          <CardDescription>Detailed breakdown by pipeline stage</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {Object.entries(analytics.statusDistribution).map(([status, count]) => {
               const avgTime = analytics.averageTimeInStage[status]
               const percentage = Math.round((count / totalApplicants) * 100)
-
+              
               return (
-                <div key={status} className="flex items-center justify-between p-3 border border-border/50 dark:border-white/10 rounded-lg bg-secondary/30 dark:bg-white/5">
+                <div key={status} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <div
-                      className="w-4 h-4 rounded-full shadow-[0_0_8px_currentColor]"
+                    <div 
+                      className="w-4 h-4 rounded-full"
                       style={{ backgroundColor: STAGE_COLORS[status as keyof typeof STAGE_COLORS] }}
                     />
                     <div>
-                      <span className="font-medium text-foreground">{STAGE_LABELS[status as keyof typeof STAGE_LABELS]}</span>
+                      <span className="font-medium">{STAGE_LABELS[status as keyof typeof STAGE_LABELS]}</span>
                       <p className="text-sm text-muted-foreground">
                         {count} candidates ({percentage}%)
                       </p>
@@ -428,7 +408,7 @@ export function PipelineAnalytics({ jobId, refreshTrigger }: PipelineAnalyticsPr
                   </div>
                   <div className="text-right">
                     {avgTime && (
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-sm">
                         <Clock className="h-3 w-3 inline mr-1" />
                         {avgTime} days avg
                       </div>

@@ -245,12 +245,14 @@ export default function UploadCVPage() {
         let errorTitle = "Upload Error";
         let errorDesc = error.message || "Could not upload or process the CV.";
         
-        // Detect parsing/extraction failures
-        if (error.message?.includes('Could not extract readable text') || 
+        // Detect parsing/extraction failures (image-based CV, OCR failure, etc.)
+        if (error.message?.includes('IMAGE_BASED_CV') || 
+            error.message?.includes('Could not extract readable text') || 
             error.message?.includes('insufficient information') ||
-            error.message?.includes('CV parsing failed')) {
-          errorTitle = "Unable to Read CV File";
-          errorDesc = "The file appears to be a scanned PDF, image, or corrupted. Please try:\n• Uploading a text-based PDF\n• Uploading a DOCX file\n• Entering candidate details manually below";
+            error.message?.includes('CV parsing failed') ||
+            error.message?.includes('image-based')) {
+          errorTitle = "Image-Based CV Detected";
+          errorDesc = "There is a problem with your CV: it appears to be image-based or scanned. Do NOT use image-based or scanned CVs — we cannot extract information from them.\n\nPlease upload a text-based CV instead:\n• A PDF or DOCX file with selectable text (not a scan)\n• Or enter the candidate details manually below\n\nImportant: Ensure the email in your CV is correct — a wrong email can cause issues (application not received, contact problems).";
         }
         
         toast({
@@ -299,6 +301,9 @@ export default function UploadCVPage() {
                           Drag and drop your CV file here, or click to browse.
                           <br />
                           Supports PDF, DOC, DOCX (Max 5MB)
+                        </p>
+                        <p className="mb-4 text-center text-xs text-amber-600/90">
+                          Do NOT use image-based or scanned CVs — use text-based PDF/DOCX only. Ensure the email in the CV is correct; a wrong email can cause issues.
                         </p>
                         <Button variant="outline" className="relative">
                           <FileText className="mr-2 h-4 w-4" />

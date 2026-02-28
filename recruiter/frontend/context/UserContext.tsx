@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import userService, { UserProfile, DashboardAnalytics, ProfileSuggestion } from '@/services/userService';
+import { tokenManager } from '@/utils/tokenManager';
 
 interface UserState {
   user: UserProfile | null;
@@ -208,8 +209,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🔐 UserContext: Starting login process...');
       dispatch({ type: 'SET_LOADING', payload: true });
-      localStorage.setItem('jwt', token); // Use 'jwt' to match AuthContext
-      console.log('🔐 UserContext: JWT token stored in localStorage');
+      // Token-only login path (e.g., callback flows without refresh token).
+      // Reset refresh state to prevent stale cross-user token refresh.
+      tokenManager.setAccessToken(token);
+      console.log('UserContext: Access token set via tokenManager (refresh token cleared)');
       
       // Skip profile API call during signup to prevent 401 errors
       if (isSignupFlow) {
@@ -375,3 +378,4 @@ export function useUser() {
   }
   return context;
 } 
+

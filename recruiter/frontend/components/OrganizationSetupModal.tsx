@@ -213,7 +213,7 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
         </DialogHeader>
         
         <div className="py-2">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-600">
             {mode === 'create' && organizationLimits
               ? `Create another organization to manage different teams or projects. You can create ${typeof organizationLimits.remainingSlots === 'number' ? organizationLimits.remainingSlots : 0} more organizations on your ${organizationLimits.userPlan || 'current'} plan.`
               : 'To get started with SmartHR, you need to create an organization or join an existing one.'
@@ -275,7 +275,7 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
 
             <TabsContent value="create" className="space-y-4">
               <div className="py-2">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-600">
                   Create your own organization workspace to manage jobs, candidates, and collaborate with your team.
                 </p>
 
@@ -304,7 +304,7 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
 
                 {idpUrl && (
                   <div className="mt-3 pt-3 border-t border-gray-200">
-                    <p className="text-xs text-muted-foreground mb-2">Or create directly (will sync with Identity Provider):</p>
+                    <p className="text-xs text-gray-500 mb-2">Or create directly (will sync with Identity Provider):</p>
                   </div>
                 )}
               </div>
@@ -321,7 +321,7 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
 
             <TabsContent value="join" className="space-y-4">
               <div className="py-2">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-600">
                   Join an existing organization by accepting a pending invitation.
                 </p>
               </div>
@@ -329,13 +329,13 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
               {loadingInvites && !hasLoadedOnce ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-muted-foreground">Loading invitations...</p>
+                  <p className="text-gray-500">Loading invitations...</p>
                 </div>
               ) : pendingInvites.length === 0 ? (
                 <div className="text-center py-8">
                   <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-foreground mb-2">No Pending Invitations</h3>
-                  <p className="text-muted-foreground">You don't have any pending organization invitations.</p>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Invitations</h3>
+                  <p className="text-gray-500">You don't have any pending organization invitations.</p>
                   <p className="text-sm text-gray-400 mt-2">
                     Ask your team leader to send you an invitation, or switch to the "Create Organization" tab to create your own.
                   </p>

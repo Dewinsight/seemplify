@@ -25,11 +25,11 @@ export function GPTCacheMonitor() {
     try {
       setRefreshing(true)
       const response = await fetch('/api/candidates/cache/stats')
-
+      
       if (!response.ok) {
         throw new Error('Failed to fetch cache statistics')
       }
-
+      
       const data = await response.json()
       setStats(data.stats)
     } catch (error: any) {
@@ -108,7 +108,7 @@ export function GPTCacheMonitor() {
           Real-time monitoring of GPT-4.1 analysis caching performance
         </CardDescription>
       </CardHeader>
-
+      
       <CardContent className="p-6 space-y-6">
         {stats ? (
           <>
@@ -124,11 +124,11 @@ export function GPTCacheMonitor() {
                   <div className={`text-2xl font-bold ${getHitRateColor(stats.hitRate)}`}>
                     {stats.hitRate.toFixed(1)}%
                   </div>
-                  <Progress
-                    value={stats.hitRate}
+                  <Progress 
+                    value={stats.hitRate} 
                     className="h-2"
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-gray-600">
                     Target: >70%
                   </p>
                 </div>
@@ -143,7 +143,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-purple-600">
                   {stats.totalRequests.toLocaleString()}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Analysis requests
                 </p>
               </div>
@@ -157,7 +157,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-blue-600">
                   {stats.cacheSize.toLocaleString()}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Stored analyses
                 </p>
               </div>
@@ -171,7 +171,7 @@ export function GPTCacheMonitor() {
                 <div className="text-2xl font-bold text-indigo-600">
                   {stats.candidatesTracked.toLocaleString()}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   For cache invalidation
                 </p>
               </div>
@@ -180,22 +180,23 @@ export function GPTCacheMonitor() {
             {/* Performance Insights */}
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Performance Insights</h3>
-
+              
               <div className="grid gap-3">
                 {/* Hit Rate Analysis */}
                 <div className="p-3 rounded border bg-gray-50">
                   <div className="flex items-start gap-3">
-                    <div className={`w-2 h-2 rounded-full mt-2 ${stats.hitRate >= 80 ? 'bg-green-500' :
-                        stats.hitRate >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                      }`}></div>
+                    <div className={`w-2 h-2 rounded-full mt-2 ${
+                      stats.hitRate >= 80 ? 'bg-green-500' : 
+                      stats.hitRate >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Cache Efficiency</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {stats.hitRate >= 80 ?
+                      <p className="text-sm text-gray-600">
+                        {stats.hitRate >= 80 ? 
                           "🟢 Excellent cache performance! Most requests are served instantly from cache." :
                           stats.hitRate >= 60 ?
-                            "🟡 Good cache performance, but there's room for improvement." :
-                            "🔴 Cache hit rate is below target. Consider optimizing cache strategies."
+                          "🟡 Good cache performance, but there's room for improvement." :
+                          "🔴 Cache hit rate is below target. Consider optimizing cache strategies."
                         }
                       </p>
                     </div>
@@ -208,12 +209,12 @@ export function GPTCacheMonitor() {
                     <div className="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Usage Volume</h4>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-gray-600">
                         {stats.totalRequests > 1000 ?
                           `High usage system with ${stats.totalRequests.toLocaleString()} total analysis requests.` :
                           stats.totalRequests > 100 ?
-                            `Moderate usage with ${stats.totalRequests.toLocaleString()} analysis requests.` :
-                            `Early stage usage with ${stats.totalRequests.toLocaleString()} analysis requests.`
+                          `Moderate usage with ${stats.totalRequests.toLocaleString()} analysis requests.` :
+                          `Early stage usage with ${stats.totalRequests.toLocaleString()} analysis requests.`
                         }
                       </p>
                     </div>
@@ -226,7 +227,7 @@ export function GPTCacheMonitor() {
                     <div className="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
                     <div className="flex-1">
                       <h4 className="font-medium text-sm mb-1">Cache Management</h4>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-gray-600">
                         {stats.candidatesTracked > 0 ?
                           `Tracking ${stats.candidatesTracked.toLocaleString()} candidates for smart cache invalidation.` :
                           "No candidates being tracked for cache invalidation yet."
@@ -246,7 +247,7 @@ export function GPTCacheMonitor() {
                   <Badge variant={stats.hitRate >= 70 ? "default" : "secondary"} className="text-xs">
                     Cache Hit Rate: >70%
                   </Badge>
-                  <span className={stats.hitRate >= 70 ? "text-green-600" : "text-muted-foreground"}>
+                  <span className={stats.hitRate >= 70 ? "text-green-600" : "text-gray-500"}>
                     {stats.hitRate >= 70 ? "✓" : "○"}
                   </span>
                 </div>
@@ -258,7 +259,7 @@ export function GPTCacheMonitor() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
-                    API Cost: &lt;$0.01/match
+                    API Cost: <$0.01/match
                   </Badge>
                   <span className="text-green-600">✓</span>
                 </div>
@@ -266,14 +267,14 @@ export function GPTCacheMonitor() {
             </div>
 
             {/* Last Updated */}
-            <div className="text-xs text-muted-foreground text-center border-t pt-3">
+            <div className="text-xs text-gray-500 text-center border-t pt-3">
               Last updated: {new Date(stats.timestamp).toLocaleString()}
               <br />
               Auto-refreshes every 30 seconds
             </div>
           </>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
+          <div className="text-center py-8 text-gray-500">
             <BarChart3 className="h-12 w-12 mx-auto mb-3 text-gray-300" />
             <p>No cache statistics available</p>
             <p className="text-sm">GPT analysis may not be enabled</p>

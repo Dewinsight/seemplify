@@ -26,7 +26,6 @@ interface MetroAction {
 	color: string;
 	bgPattern?: string;
 	size?: "small" | "medium" | "large" | "wide" | "tall";
-	emphasis?: boolean;
 	stats?: {
 		value: string;
 		label: string;
@@ -84,7 +83,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			color: "metro-tile-indigo",
 			bgPattern: "dots",
 			size: "large",
-			emphasis: true,
 			stats: {
 				value: String(analytics?.overview?.totalCandidates?.value ?? 0),
 				label: "Total",
@@ -99,7 +97,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			icon: <Briefcase />,
 			color: "metro-tile-teal",
 			size: "wide",
-			emphasis: true,
 			stats: {
 				value: String(analytics?.overview?.activeJobs?.value ?? 0),
 				label: "Active"
@@ -114,7 +111,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			color: "metro-tile-slate",
 			bgPattern: "grid",
 			size: "wide",
-			emphasis: true,
 			stats: {
 				value: String(todayInterviews),
 				label: "Today"
@@ -174,7 +170,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 						"metro-tile",
 						getSizeClass(action.size || "small"),
 						action.color,
-						action.emphasis && "metro-tile-emphasis",
 						"metro-tile-animate"
 					)}
 					style={{

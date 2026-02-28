@@ -91,7 +91,7 @@ export function GrantVerification({ onGrantStatusChange, showAdminControls = fal
         setReauthenticating(true);
       }
       
-      const authUrl = await grantService.generateReauthUrl('google', forceAccountSelection);
+      const authUrl = await grantService.generateReauthUrl(undefined, forceAccountSelection);
       
       // Open the auth URL in a new window
       const authWindow = window.open(authUrl, 'grant-reauth', 'width=600,height=700,scrollbars=yes,resizable=yes');
@@ -117,7 +117,7 @@ export function GrantVerification({ onGrantStatusChange, showAdminControls = fal
       toast({
         title: forceAccountSelection ? "Account Selection Started" : "Re-authentication Started",
         description: forceAccountSelection 
-          ? "Please select the Google account you want to use in the popup window"
+          ? "Please select the calendar account you want to use in the popup window"
           : "Please complete the authentication in the popup window",
       });
     } catch (error) {

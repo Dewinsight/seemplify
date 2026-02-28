@@ -135,21 +135,12 @@ export default function PerformanceTab({ analytics }: PerformanceTabProps) {
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
-                    style={{ fill: 'hsl(var(--foreground))', fontSize: '12px' }}
                   >
                     {jobStatusData.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--popover))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px',
-                      color: 'hsl(var(--popover-foreground))',
-                    }}
-                    labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
-                  />
+                  <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -173,9 +164,7 @@ export default function PerformanceTab({ analytics }: PerformanceTabProps) {
                       backgroundColor: 'hsl(var(--popover))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '6px',
-                      color: 'hsl(var(--popover-foreground))',
                     }}
-                    labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
                   />
                   <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -203,9 +192,7 @@ export default function PerformanceTab({ analytics }: PerformanceTabProps) {
                       backgroundColor: 'hsl(var(--popover))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '6px',
-                      color: 'hsl(var(--popover-foreground))',
                     }}
-                    labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
                   />
                   <Bar dataKey="count" fill="#14b8a6" radius={[0, 4, 4, 0]} />
                 </BarChart>

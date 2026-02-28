@@ -656,8 +656,8 @@ export function MultiCandidateSlotsStep({ data, updateData, onNext, onPrevious, 
       </Dialog>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-6">
-        <Button variant="outline" onClick={onPrevious}>
+      <div className="step-nav-actions hidden flex justify-between pt-6">
+        <Button variant="outline" onClick={onPrevious} data-step-action="previous">
           <ChevronLeft className="h-4 w-4 mr-2" />
           Previous
         </Button>
@@ -665,6 +665,7 @@ export function MultiCandidateSlotsStep({ data, updateData, onNext, onPrevious, 
         <Button 
           onClick={handleContinue}
           disabled={slots.length < 2}
+          data-step-action="next"
         >
           Continue
           <ChevronRight className="h-4 w-4 ml-2" />

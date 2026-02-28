@@ -49,11 +49,5 @@ package-lock.json
 ehthumbs.db
 Thumbs.db
 
-# Environment variables - KEEP SECRETS PRIVATE!
-.env
-.env.local
-.env.production
-!.env.example
-
 # Firebase (if not needed for deployment)
 .firebase/

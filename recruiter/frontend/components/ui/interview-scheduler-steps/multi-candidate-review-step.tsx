@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Calendar, Clock, MapPin, Video, Phone, Users, Mail, AlertCircle, ChevronLeft, Loader2, Bot } from 'lucide-react';
+import { Calendar, MapPin, Video, Phone, Users, Mail, AlertCircle, ChevronLeft, Loader2, Bot } from 'lucide-react';
 import { Button } from '../button';
 import { Card, CardContent } from '../card';
 import { Badge } from '../badge';
@@ -10,8 +10,6 @@ import { Checkbox } from '../checkbox';
 import { Label } from '../label';
 import { InterviewSchedulerData } from '../multi-step-interview-scheduler';
 import { format } from 'date-fns';
-import { toast } from 'sonner';
-import { useUser } from '@/context/UserContext';
 
 interface MultiCandidateReviewStepProps {
   data: InterviewSchedulerData;
@@ -21,17 +19,15 @@ interface MultiCandidateReviewStepProps {
   isLoading: boolean;
 }
 
-export function MultiCandidateReviewStep({ 
-  data, 
-  updateData, 
-  onPrevious, 
+export function MultiCandidateReviewStep({
+  data,
+  updateData,
+  onPrevious,
   onSchedule,
-  isLoading 
+  isLoading
 }: MultiCandidateReviewStepProps) {
-  const { state } = useUser();
   const [skipAvailabilityCheck, setSkipAvailabilityCheck] = useState(data.skipAvailabilityCheck || false);
 
-  // Get user's timezone
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const formatDateTime = (dateTimeString: string) => {
@@ -84,22 +80,26 @@ export function MultiCandidateReviewStep({
     return data.multiCandidateSlots.reduce((sum, slot) => sum + slot.duration, 0);
   };
 
+  const totalAudience =
+    data.multiCandidateSlots.length +
+    1 +
+    data.additionalParticipants.length +
+    data.ccParticipants.length +
+    data.bccParticipants.length;
+
   const handleSchedule = async () => {
-    // Update skip availability check
     updateData({ skipAvailabilityCheck });
-    
-    // Call the parent's schedule function
     await onSchedule();
   };
 
   const SectionCard = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center gap-2 mb-4">
+    <Card className="border-border/70 shadow-sm">
+      <CardContent className="p-0">
+        <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
           {icon}
-          <h4 className="font-medium">{title}</h4>
+          <h4 className="font-semibold">{title}</h4>
         </div>
-        {children}
+        <div className="p-4">{children}</div>
       </CardContent>
     </Card>
   );
@@ -113,156 +113,189 @@ export function MultiCandidateReviewStep({
         </p>
       </div>
 
-      {/* Session Overview */}
-      <SectionCard title="Session Overview" icon={<Calendar className="h-4 w-4" />}>
-        <div className="space-y-3">
-          <div className="flex justify-between items-start">
-            <span className="text-sm text-muted-foreground">Session Start</span>
-            <div className="text-right">
-              <p className="text-sm font-medium">{formatDateTime(data.startTime)}</p>
-            </div>
-          </div>
-          
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Total Duration</span>
-            <span className="text-sm font-medium">{getTotalDuration()} minutes</span>
-          </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Card className="border-border/70">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Session Start</p>
+            <p className="mt-1 text-sm font-semibold">{formatDateTime(data.startTime)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/70">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Candidates</p>
+            <p className="mt-1 text-2xl font-semibold">{data.multiCandidateSlots.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/70">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Duration</p>
+            <p className="mt-1 text-2xl font-semibold">{getTotalDuration()}m</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/70">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Audience</p>
+            <p className="mt-1 text-2xl font-semibold">{totalAudience}</p>
+          </CardContent>
+        </Card>
+      </div>
 
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Number of Candidates</span>
-            <Badge>{data.multiCandidateSlots.length}</Badge>
-          </div>
-          
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Type</span>
-            <div className="flex items-center gap-2">
-              {getInterviewTypeIcon()}
-              <span className="text-sm">{getInterviewTypeLabel()}</span>
-            </div>
-          </div>
-
-          {data.location && (
-            <div className="flex justify-between items-start">
-              <span className="text-sm text-muted-foreground">Location</span>
-              <span className="text-sm text-right">{data.location}</span>
-            </div>
-          )}
-
-          {data.addNotetaker && data.type === 'video' && (
-            <div className="flex items-center gap-2 pt-2 border-t">
-              <Bot className="h-4 w-4 text-primary" />
-              <span className="text-sm">AI Notetaker will join the session</span>
-            </div>
-          )}
-        </div>
-      </SectionCard>
-
-      {/* Candidate Slots */}
-      <SectionCard title="Candidate Schedule" icon={<Users className="h-4 w-4" />}>
-        <div className="space-y-3">
-          {data.multiCandidateSlots.map((slot, index) => (
-            <div key={slot.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
-                  {index + 1}
-                </div>
-                <div>
-                  <p className="font-medium">{slot.candidateName}</p>
-                  <p className="text-sm text-muted-foreground">{slot.candidateEmail}</p>
-                  {slot.jobTitle && (
-                    <Badge variant="outline" className="mt-1 text-xs">{slot.jobTitle}</Badge>
-                  )}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <SectionCard title="Session Overview" icon={<Calendar className="h-4 w-4" />}>
+            <div className="space-y-3">
+              <div className="flex justify-between items-start">
+                <span className="text-sm text-muted-foreground">Session Start</span>
+                <div className="text-right">
+                  <p className="text-sm font-medium">{formatDateTime(data.startTime)}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-medium">{formatTime(slot.startTime)}</p>
-                <p className="text-xs text-muted-foreground">{slot.duration} min</p>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Total Duration</span>
+                <span className="text-sm font-medium">{getTotalDuration()} minutes</span>
               </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
 
-      {/* Additional Participants */}
-      {data.additionalParticipants.length > 0 && (
-        <SectionCard title="Additional Interviewers" icon={<Users className="h-4 w-4" />}>
-          <div className="space-y-2">
-            {data.additionalParticipants.map((p) => (
-              <div key={p.email} className="flex justify-between items-center">
-                <span className="text-sm">{p.name}</span>
-                <Badge variant="outline" className="text-xs">{p.role}</Badge>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Interview Type</span>
+                <div className="flex items-center gap-2">
+                  {getInterviewTypeIcon()}
+                  <span className="text-sm">{getInterviewTypeLabel()}</span>
+                </div>
               </div>
-            ))}
-          </div>
-        </SectionCard>
-      )}
 
-      {/* Communication Settings */}
-      <SectionCard title="Communication" icon={<Mail className="h-4 w-4" />}>
-        <div className="space-y-3">
-          {data.subject && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Custom Subject</p>
-              <p className="text-sm">{data.subject}</p>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Email Notifications:</p>
-            <ul className="text-sm text-muted-foreground space-y-1">
-              <li>• Each candidate will receive an individual invitation with their specific time slot</li>
-              <li>• All candidates will receive the same meeting link</li>
-              {data.sendCustomEmail && <li>• Custom email template will be used</li>}
-              {data.sendQuestionsToInterviewers && (
-                <li>• Interview questions will be sent to interviewers {data.questionsSendTime} minutes before</li>
+              {data.location && (
+                <div className="flex justify-between items-start">
+                  <span className="text-sm text-muted-foreground">Location</span>
+                  <span className="text-sm text-right">{data.location}</span>
+                </div>
               )}
-            </ul>
-          </div>
-        </div>
-      </SectionCard>
 
-      {/* Availability Check */}
-      <Card className="border-orange-200 bg-orange-50">
-        <CardContent className="pt-6">
-          <div className="space-y-3">
-            <div className="flex items-start space-x-3">
-              <Checkbox
-                id="skipAvailability"
-                checked={skipAvailabilityCheck}
-                onCheckedChange={(checked) => setSkipAvailabilityCheck(checked as boolean)}
-              />
-              <div className="space-y-1">
-                <Label htmlFor="skipAvailability" className="font-medium cursor-pointer">
-                  Skip Availability Check
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Schedule even if there are calendar conflicts (not recommended)
-                </p>
+              {data.addNotetaker && data.type === 'video' && (
+                <div className="flex items-center gap-2 pt-2 border-t">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <span className="text-sm">AI Notetaker will join the session</span>
+                </div>
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Candidate Schedule" icon={<Users className="h-4 w-4" />}>
+            <div className="space-y-3">
+              {data.multiCandidateSlots.map((slot, index) => (
+                <div key={slot.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/40">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium shrink-0">
+                      {index + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{slot.candidateName}</p>
+                      <p className="text-sm text-muted-foreground truncate">{slot.candidateEmail}</p>
+                      {slot.jobTitle && (
+                        <Badge variant="outline" className="mt-1 text-xs">{slot.jobTitle}</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-medium">{formatTime(slot.startTime)}</p>
+                    <p className="text-xs text-muted-foreground">{slot.duration} min</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          {data.additionalParticipants.length > 0 && (
+            <SectionCard title="Additional Interviewers" icon={<Users className="h-4 w-4" />}>
+              <div className="space-y-2">
+                {data.additionalParticipants.map((p) => (
+                  <div key={p.email} className="flex justify-between items-center">
+                    <span className="text-sm">{p.name}</span>
+                    <Badge variant="outline" className="text-xs">{p.role}</Badge>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard title="Communication" icon={<Mail className="h-4 w-4" />}>
+            <div className="space-y-3">
+              {data.subject && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Custom Subject</p>
+                  <p className="text-sm">{data.subject}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Email Notifications</p>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>1. Each candidate receives an individual invite with their specific slot.</li>
+                  <li>2. All candidates use the same meeting link for one continuous session.</li>
+                  {data.sendCustomEmail && <li>3. Custom email template is enabled.</li>}
+                  {data.sendQuestionsToInterviewers && (
+                    <li>4. Interview questions send {data.questionsSendTime} minutes before start.</li>
+                  )}
+                </ul>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </SectionCard>
+        </div>
 
-      {/* Important Notes */}
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>
-          <strong>Important:</strong> All candidates will receive the same meeting link but with different scheduled times. 
-          Make sure to manage the session transitions smoothly between candidates.
-        </AlertDescription>
-      </Alert>
+        <div className="space-y-4">
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="pt-6">
+              <div className="space-y-3">
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="skipAvailability"
+                    checked={skipAvailabilityCheck}
+                    onCheckedChange={(checked) => setSkipAvailabilityCheck(checked as boolean)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="skipAvailability" className="font-medium cursor-pointer">
+                      Skip Availability Check
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Schedule even if there are calendar conflicts (not recommended)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardContent className="p-4 space-y-2">
+              <h4 className="text-sm font-semibold">Session Notes</h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>1. Keep handoffs smooth between candidate slots.</li>
+                <li>2. Meeting link is shared across all interviews.</li>
+                <li>3. Timezone confirmed: {userTimezone}</li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Important:</strong> all candidates receive the same meeting link with different schedule windows.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-6">
-        <Button variant="outline" onClick={onPrevious}>
+      <div className="step-nav-actions hidden flex justify-between pt-6">
+        <Button variant="outline" onClick={onPrevious} data-step-action="previous">
           <ChevronLeft className="h-4 w-4 mr-2" />
           Previous
         </Button>
-        
-        <Button 
+
+        <Button
           onClick={handleSchedule}
           disabled={isLoading}
+          data-step-action="schedule"
         >
           {isLoading ? (
             <>

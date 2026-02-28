@@ -92,7 +92,7 @@ const UserPendingInvitationsSection: React.FC = () => {
       <div className="space-y-4">
         <div className="text-center py-8">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading pending invitations...</p>
+          <p className="text-gray-500">Loading pending invitations...</p>
         </div>
       </div>
     );
@@ -103,7 +103,7 @@ const UserPendingInvitationsSection: React.FC = () => {
       <div className="text-center py-8">
         <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Invitations</h3>
-        <p className="text-muted-foreground mb-4">You don't have any pending organization invitations.</p>
+        <p className="text-gray-500 mb-4">You don't have any pending organization invitations.</p>
         <Button 
           variant="outline" 
           onClick={loadPendingInvitations}
@@ -120,7 +120,7 @@ const UserPendingInvitationsSection: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-600">
             You have {pendingInvites.length} pending invitation{pendingInvites.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -154,10 +154,10 @@ const UserPendingInvitationsSection: React.FC = () => {
                   </div>
                   
                   {invite.organization.description && (
-                    <p className="text-sm text-muted-foreground mb-3">{invite.organization.description}</p>
+                    <p className="text-sm text-gray-600 mb-3">{invite.organization.description}</p>
                   )}
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted-foreground">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-500">
                     <div className="flex items-center space-x-2">
                       <User className="w-4 h-4" />
                       <span>

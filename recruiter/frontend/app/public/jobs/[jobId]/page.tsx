@@ -251,9 +251,9 @@ export default function PublicJobPage() {
             <Button 
               size="sm"
               className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
-              onClick={() => router.push('/login')}
+              onClick={() => router.push('/signup')}
             >
-              Login
+              Sign Up
             </Button>
               </div>
               
@@ -285,10 +285,10 @@ export default function PublicJobPage() {
                   className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
                   onClick={() => {
                     setIsMobileMenuOpen(false)
-                    router.push('/login')
+                    router.push('/signup')
                   }}
                 >
-                  Login
+                  Sign Up
                 </Button>
               </div>
             </motion.div>
@@ -370,28 +370,6 @@ export default function PublicJobPage() {
               {job.level}
                 </Badge>
             </div>
-
-          {/* Application Counter */}
-          {job.candidateApplyLimit && job.candidateApplyLimit > 0 && (
-            <div className="mb-6 bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-300">Applications Received</span>
-                <span className="font-semibold text-blue-300">
-                  {job.publicApplicationCount || 0} / {job.candidateApplyLimit}
-                </span>
-              </div>
-              <Progress 
-                value={((job.publicApplicationCount || 0) / job.candidateApplyLimit) * 100} 
-                className="h-2 bg-slate-700"
-              />
-              {job.publicApplicationCount && job.candidateApplyLimit && 
-               job.publicApplicationCount < job.candidateApplyLimit && (
-                <p className="text-xs text-slate-400 mt-2">
-                  {job.candidateApplyLimit - job.publicApplicationCount} spots remaining
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Apply Button & Posted Date */}
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">

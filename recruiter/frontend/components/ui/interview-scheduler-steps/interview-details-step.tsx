@@ -9,6 +9,8 @@ import { Textarea } from '../textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Checkbox } from '../checkbox';
 import { Alert, AlertDescription } from '../alert';
+import { Card, CardContent } from '../card';
+import { Badge } from '../badge';
 import { InterviewSchedulerData } from '../multi-step-interview-scheduler';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -133,140 +135,200 @@ export function InterviewDetailsStep({ data, updateData, onNext, onPrevious }: I
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4">
-        {/* Date and Time */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="startTime">Start Time</Label>
-            <Input
-              id="startTime"
-              type="datetime-local"
-              value={localFormData.startTime}
-              onChange={(e) => handleInputChange('startTime', e.target.value)}
-              min={getMinDateTime()}
-              className={errors.startTime ? 'border-red-500' : ''}
-            />
-            {errors.startTime && (
-              <p className="text-sm text-red-500">{errors.startTime}</p>
-            )}
-            {localFormData.startTime && (
-              <p className="text-xs text-muted-foreground">
-                {formatDateTimeForDisplay(localFormData.startTime)}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="duration">Duration (minutes)</Label>
-            <Select
-              value={localFormData.duration.toString()}
-              onValueChange={(value) => handleInputChange('duration', parseInt(value))}
-            >
-              <SelectTrigger id="duration" className={errors.duration ? 'border-red-500' : ''}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="15">15 minutes</SelectItem>
-                <SelectItem value="30">30 minutes</SelectItem>
-                <SelectItem value="45">45 minutes</SelectItem>
-                <SelectItem value="60">1 hour</SelectItem>
-                <SelectItem value="90">1.5 hours</SelectItem>
-                <SelectItem value="120">2 hours</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.duration && (
-              <p className="text-sm text-red-500">{errors.duration}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Interview Type */}
-        <div className="space-y-2">
-          <Label htmlFor="type">Interview Type</Label>
-          <Select
-            value={localFormData.type}
-            onValueChange={(value) => handleInputChange('type', value)}
-          >
-            <SelectTrigger id="type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="video">
-                <div className="flex items-center">
-                  <Video className="h-4 w-4 mr-2" />
-                  Video Call
-                </div>
-              </SelectItem>
-              <SelectItem value="phone">
-                <div className="flex items-center">
-                  <Phone className="h-4 w-4 mr-2" />
-                  Phone Call
-                </div>
-              </SelectItem>
-              <SelectItem value="in_person">
-                <div className="flex items-center">
-                  <MapPin className="h-4 w-4 mr-2" />
-                  In Person
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Location (for in-person interviews) */}
-        {localFormData.type === 'in_person' && (
-          <div className="space-y-2">
-            <Label htmlFor="location">Location</Label>
-            <Input
-              id="location"
-              type="text"
-              placeholder="Enter the interview location"
-              value={localFormData.location}
-              onChange={(e) => handleInputChange('location', e.target.value)}
-              className={errors.location ? 'border-red-500' : ''}
-            />
-            {errors.location && (
-              <p className="text-sm text-red-500">{errors.location}</p>
-            )}
-          </div>
-        )}
-
-        {/* Notes */}
-        <div className="space-y-2">
-          <Label htmlFor="notes">Notes (Optional)</Label>
-          <Textarea
-            id="notes"
-            placeholder="Add any additional notes or instructions"
-            value={localFormData.notes}
-            onChange={(e) => handleInputChange('notes', e.target.value)}
-            rows={3}
-          />
-        </div>
-
-        {/* AI Notetaker */}
-        {localFormData.type === 'video' && (
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-start space-x-3">
-              <Checkbox
-                id="addNotetaker"
-                checked={localFormData.addNotetaker}
-                onCheckedChange={(checked) => handleInputChange('addNotetaker', checked)}
-              />
-              <div className="space-y-1">
-                <Label htmlFor="addNotetaker" className="font-medium cursor-pointer">
-                  Add AI Notetaker
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  An AI assistant will join the meeting to take notes and provide a summary
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary" className="gap-1">
+          <Calendar className="h-3.5 w-3.5" />
+          {localFormData.startTime ? formatDateTimeForDisplay(localFormData.startTime) : 'Choose start time'}
+        </Badge>
+        <Badge variant="outline" className="gap-1">
+          <Clock className="h-3.5 w-3.5" />
+          {localFormData.duration} minutes
+        </Badge>
+        <Badge variant="outline" className="gap-1">
+          <MapPin className="h-3.5 w-3.5" />
+          {userTimezone}
+        </Badge>
       </div>
 
-      {/* Timezone Notice */}
-      <Alert>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2 border-border/70 shadow-sm">
+          <CardContent className="p-5 space-y-5">
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold">Schedule Window</h4>
+              <p className="text-xs text-muted-foreground">
+                Set the exact start time and meeting length.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="startTime">Start Time</Label>
+                <Input
+                  id="startTime"
+                  type="datetime-local"
+                  value={localFormData.startTime}
+                  onChange={(e) => handleInputChange('startTime', e.target.value)}
+                  min={getMinDateTime()}
+                  className={errors.startTime ? 'border-red-500' : ''}
+                />
+                {errors.startTime && (
+                  <p className="text-sm text-red-500">{errors.startTime}</p>
+                )}
+                {localFormData.startTime && (
+                  <p className="text-xs text-muted-foreground">
+                    {formatDateTimeForDisplay(localFormData.startTime)}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="duration">Duration (minutes)</Label>
+                <Select
+                  value={localFormData.duration.toString()}
+                  onValueChange={(value) => handleInputChange('duration', parseInt(value))}
+                >
+                  <SelectTrigger id="duration" className={errors.duration ? 'border-red-500' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="15">15 minutes</SelectItem>
+                    <SelectItem value="30">30 minutes</SelectItem>
+                    <SelectItem value="45">45 minutes</SelectItem>
+                    <SelectItem value="60">1 hour</SelectItem>
+                    <SelectItem value="90">1.5 hours</SelectItem>
+                    <SelectItem value="120">2 hours</SelectItem>
+                  </SelectContent>
+                </Select>
+                {errors.duration && (
+                  <p className="text-sm text-red-500">{errors.duration}</p>
+                )}
+              </div>
+            </div>
+
+            {localFormData.startTime && localFormData.endTime && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2 text-xs text-blue-900">
+                Expected end time: <span className="font-semibold">{formatDateTimeForDisplay(localFormData.endTime)}</span>
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="type">Interview Type</Label>
+                <Select
+                  value={localFormData.type}
+                  onValueChange={(value) => handleInputChange('type', value)}
+                >
+                  <SelectTrigger id="type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="video">
+                      <div className="flex items-center">
+                        <Video className="h-4 w-4 mr-2" />
+                        Video Call
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="phone">
+                      <div className="flex items-center">
+                        <Phone className="h-4 w-4 mr-2" />
+                        Phone Call
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="in_person">
+                      <div className="flex items-center">
+                        <MapPin className="h-4 w-4 mr-2" />
+                        In Person
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {localFormData.type === 'in_person' && (
+                <div className="space-y-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    type="text"
+                    placeholder="Enter the interview location"
+                    value={localFormData.location}
+                    onChange={(e) => handleInputChange('location', e.target.value)}
+                    className={errors.location ? 'border-red-500' : ''}
+                  />
+                  {errors.location && (
+                    <p className="text-sm text-red-500">{errors.location}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                placeholder="Add any additional notes or instructions"
+                value={localFormData.notes}
+                onChange={(e) => handleInputChange('notes', e.target.value)}
+                rows={4}
+              />
+            </div>
+
+            {localFormData.type === 'video' && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="addNotetaker"
+                    checked={localFormData.addNotetaker}
+                    onCheckedChange={(checked) => handleInputChange('addNotetaker', checked)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="addNotetaker" className="font-medium cursor-pointer">
+                      Add AI Notetaker
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      An AI assistant will join the meeting to capture transcript, summary, and key moments.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="h-fit border-border/70 bg-muted/30 shadow-sm">
+          <CardContent className="p-5 space-y-4">
+            <h4 className="text-sm font-semibold">Live Summary</h4>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Start</span>
+                <span className="font-medium text-right">
+                  {localFormData.startTime ? formatDateTimeForDisplay(localFormData.startTime) : 'Not set'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Duration</span>
+                <span className="font-medium">{localFormData.duration} min</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Type</span>
+                <span className="font-medium capitalize">{localFormData.type.replace('_', ' ')}</span>
+              </div>
+              {localFormData.type === 'in_person' && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Location</span>
+                  <span className="font-medium text-right">{localFormData.location || 'Not set'}</span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Notetaker</span>
+                <span className="font-medium">{localFormData.addNotetaker ? 'Enabled' : 'Disabled'}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Alert className="border-blue-200 bg-blue-50/70 text-blue-900">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           All times are shown in your timezone: {userTimezone}
@@ -274,13 +336,13 @@ export function InterviewDetailsStep({ data, updateData, onNext, onPrevious }: I
       </Alert>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-6">
-        <Button variant="outline" onClick={onPrevious}>
+      <div className="step-nav-actions hidden flex justify-between pt-6">
+        <Button variant="outline" onClick={onPrevious} data-step-action="previous">
           <ChevronLeft className="h-4 w-4 mr-2" />
           Previous
         </Button>
         
-        <Button onClick={handleContinue}>
+        <Button onClick={handleContinue} data-step-action="next">
           Continue
           <ChevronRight className="h-4 w-4 ml-2" />
         </Button>

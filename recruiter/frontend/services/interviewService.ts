@@ -244,7 +244,7 @@ export interface Interview {
   };
   notetakerEnabled?: boolean;
   notetakerId?: string;
-  notetakerStatus?: 'pending' | 'enabled' | 'joined' | 'recording' | 'processing' | 'completed' | 'failed' | 'cancelled' | null;
+  notetakerStatus?: 'pending' | 'scheduled' | 'enabled' | 'joining' | 'joined' | 'recording' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'stopped' | 'deleted' | null;
   transcript?: {
     content: string | null;
     summary: string | null;
@@ -665,8 +665,10 @@ class InterviewService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to schedule interview');
+        const errorData = await response.json();
+        const apiError: any = new Error(errorData.message || errorData.error || 'Failed to schedule interview');
+        apiError.data = errorData;
+        throw apiError;
       }
 
       const result = await response.json();
@@ -704,8 +706,10 @@ class InterviewService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to schedule interview from pipeline');
+        const errorData = await response.json();
+        const apiError: any = new Error(errorData.message || errorData.error || 'Failed to schedule interview from pipeline');
+        apiError.data = errorData;
+        throw apiError;
       }
 
       const result = await response.json();
@@ -820,8 +824,10 @@ class InterviewService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to connect calendar');
+        const errorData = await response.json();
+        const apiError: any = new Error(errorData.message || errorData.error || 'Failed to connect calendar');
+        apiError.data = errorData;
+        throw apiError;
       }
 
       return await response.json();
@@ -1066,6 +1072,8 @@ class InterviewService {
   async joinMeetingNow(interviewId: string, meetingLink?: string): Promise<{
     success: boolean;
     notetakerId?: string;
+    status?: string;
+    alreadyActive?: boolean;
     message: string;
   }> {
     try {
@@ -1679,7 +1687,9 @@ class InterviewService {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || errorData.message || 'Failed to schedule multi-candidate interview');
+        const apiError: any = new Error(errorData.message || errorData.error || 'Failed to schedule multi-candidate interview');
+        apiError.data = errorData;
+        throw apiError;
       }
 
       return await response.json();

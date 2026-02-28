@@ -42,6 +42,7 @@ interface UploadedFile {
   name: string
   size: number
   type: string
+  file: File  // Store the actual File object
   status: FileStatus
   progress: number
   errorMessage?: string
@@ -56,6 +57,7 @@ export default function BulkUploadPage() {
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<UploadedFile[]>([])
+  const activeProcessingCount = useRef(0)  // Track concurrent processing batches
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingComplete, setProcessingComplete] = useState(false)
   const [processingStats, setProcessingStats] = useState({
@@ -80,6 +82,7 @@ export default function BulkUploadPage() {
           name: file.name,
           size: file.size,
           type: file.type,
+          file: file,  // Store the actual File object
           status: "uploading" as FileStatus,
           progress: 0,
         }))
@@ -94,12 +97,19 @@ export default function BulkUploadPage() {
       }
 
       setFiles([...files, ...newFiles])
+      
+      // Clear file input to allow selecting more files
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+      
       processFiles(newFiles);
     }
   }
 
   // Process uploaded files
   const processFiles = async (filesToProcess: UploadedFile[]) => {
+    activeProcessingCount.current += 1;
     setIsProcessing(true);
     
     for (const fileData of filesToProcess) {
@@ -113,19 +123,19 @@ export default function BulkUploadPage() {
           )
         );
 
-        // Get the actual file from the file input
-        const fileInput = fileInputRef.current;
-        if (!fileInput?.files) continue;
+        // Use the stored File object directly
+        const actualFile = fileData.file;
         
-        const actualFile = Array.from(fileInput.files).find(f => 
-          f.name === fileData.name && f.size === fileData.size
-        );
-        
-        if (!actualFile) continue;
+        if (!actualFile) {
+          console.error('No file object found for:', fileData.name);
+          continue;
+        }
 
         // Create FormData and upload
         const formData = new FormData();
         formData.append("resume", actualFile);
+        
+        console.log('📤 Uploading CV:', actualFile.name, 'Size:', actualFile.size);
         
         const result = await uploadCV(formData);
         
@@ -154,10 +164,12 @@ export default function BulkUploadPage() {
         
         if (isCreditError) {
           errorMessage = "Insufficient credits";
-        } else if (error.message?.includes('Could not extract readable text') || 
+        } else if (error.message?.includes('IMAGE_BASED_CV') ||
+                   error.message?.includes('Could not extract readable text') || 
                    error.message?.includes('insufficient information') ||
-                   error.message?.includes('CV parsing failed')) {
-          errorMessage = "Unable to read file (scanned PDF or corrupted). Try text-based PDF/DOCX.";
+                   error.message?.includes('CV parsing failed') ||
+                   error.message?.includes('image-based')) {
+          errorMessage = "Image-based or scanned CV: Do NOT use image-based or scanned CVs. Please upload a text-based PDF or DOCX. Also ensure the email in the CV is correct — a wrong email can cause issues.";
         }
         
         // Update file status to error
@@ -176,10 +188,14 @@ export default function BulkUploadPage() {
       }
     }
 
+    // Decrement active processing counter
+    activeProcessingCount.current -= 1;
+    
     // Update processing stats
     setFiles(prevFiles => {
       const successCount = prevFiles.filter(f => f.status === "success").length;
       const errorCount = prevFiles.filter(f => f.status === "error").length;
+      const stillProcessing = prevFiles.filter(f => f.status === "uploading" || f.status === "processing").length;
       
       setProcessingStats({
         total: prevFiles.length,
@@ -188,13 +204,16 @@ export default function BulkUploadPage() {
         warnings: 0,
       });
       
-      setIsProcessing(false);
-      setProcessingComplete(true);
-      
-      toast({
-        title: "Bulk processing complete",
-        description: `Successfully created ${successCount} candidates from ${prevFiles.length} CVs.`,
-      });
+      // Only mark as complete if no more files are being processed
+      if (stillProcessing === 0 && activeProcessingCount.current === 0) {
+        setIsProcessing(false);
+        setProcessingComplete(true);
+        
+        toast({
+          title: "Bulk processing complete",
+          description: `Successfully created ${successCount} candidates from ${prevFiles.length} CVs.`,
+        });
+      }
       
       return prevFiles;
     });
@@ -252,7 +271,7 @@ export default function BulkUploadPage() {
       case "error":
         return <AlertCircle className="h-4 w-4 text-red-500" />
       default:
-        return <File className="h-4 w-4 text-muted-foreground" />
+        return <File className="h-4 w-4 text-gray-500" />
     }
   }
 
@@ -297,33 +316,52 @@ export default function BulkUploadPage() {
             <CardDescription>
               Select multiple CV files (PDF, DOC, DOCX) to automatically create candidate profiles.
               Each CV will be processed with AI to extract candidate information.
+              Do NOT use image-based or scanned CVs — use text-based PDFs or Word documents only.
+              Ensure the email in each CV is correct — a wrong email can cause issues (application not received, contact problems).
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div
-              className="relative rounded-lg border-2 border-dashed border-gray-300 p-12 text-center hover:border-gray-400 transition-colors"
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
+                className={`relative rounded-lg border-2 p-12 text-center transition-all duration-300 ${
+                  files.length === 0
+                    ? 'border-dashed border-gray-300 hover:border-gray-400'
+                    : 'border-solid border-blue-400 bg-blue-50/30 hover:border-blue-500 hover:bg-blue-50/50'
+                }`}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
             >
               <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-                <div className="flex items-center justify-center w-12 h-12 mx-auto bg-gray-100 rounded-lg mb-4">
-                  <Upload className="w-6 h-6 text-muted-foreground" />
+                <div className={`flex items-center justify-center w-12 h-12 mx-auto rounded-lg mb-4 transition-all duration-300 ${
+                  files.length === 0
+                    ? 'bg-gray-100'
+                    : 'bg-blue-100 animate-pulse'
+                }`}>
+                  <Upload className={`w-6 h-6 transition-colors ${
+                    files.length === 0 ? 'text-gray-600' : 'text-blue-600'
+                  }`} />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">
+                <h3 className="text-lg font-semibold mb-2 transition-colors">
                   {files.length === 0 ? "Upload CV Files" : "Add More CVs"}
                 </h3>
-                <p className="text-sm text-muted-foreground mb-6">
+                <p className="text-sm mb-6">
                   Drag and drop your CV files here, or click to browse.
                   <br />
                   Supports PDF, DOC, DOCX files up to 5MB each.
                 </p>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={files.length === 0 ? "outline" : "default"}
                   onClick={() => fileInputRef.current?.click()}
+                  className={`transition-all duration-300 ${
+                    files.length === 0
+                      ? ''
+                      : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 hover:shadow-lg'
+                  }`}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Select CV Files
+                  <Plus className={`mr-2 h-4 w-4 transition-transform duration-300 ${
+                    files.length > 0 ? 'animate-bounce' : ''
+                  }`} />
+                  {files.length === 0 ? "Select CV Files" : "Add More CVs"}
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -333,6 +371,12 @@ export default function BulkUploadPage() {
                   className="hidden"
                   onChange={handleFileSelect}
                 />
+                {files.length > 0 && (
+                  <div className="mt-4 flex items-center justify-center gap-2 text-sm text-blue-600 animate-fade-in">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>{files.length} CV{files.length !== 1 ? 's' : ''} ready for upload</span>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -381,7 +425,7 @@ export default function BulkUploadPage() {
                         {getStatusIcon(file.status)}
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{file.name}</p>
-                          <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
+                          <p className="text-sm text-gray-500">{formatFileSize(file.size)}</p>
                           <p className="text-xs text-gray-400">{getStatusText(file)}</p>
                           {file.status === "processing" && (
                             <Progress value={file.progress} className="w-full mt-2" />

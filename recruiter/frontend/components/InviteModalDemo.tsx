@@ -113,7 +113,7 @@ export default function InviteModalDemo() {
                 <Shield className="w-4 h-4 text-blue-600" />
                 <div>
                   <div className="font-medium">Admin</div>
-                  <div className="text-xs text-muted-foreground">Full access to manage users, jobs, and candidates</div>
+                  <div className="text-xs text-gray-500">Full access to manage users, jobs, and candidates</div>
                 </div>
               </div>
 
@@ -121,7 +121,7 @@ export default function InviteModalDemo() {
                 <UserCheck className="w-4 h-4 text-green-600" />
                 <div>
                   <div className="font-medium">HR Manager</div>
-                  <div className="text-xs text-muted-foreground">Can manage jobs, candidates, and view analytics</div>
+                  <div className="text-xs text-gray-500">Can manage jobs, candidates, and view analytics</div>
                 </div>
               </div>
 
@@ -129,7 +129,7 @@ export default function InviteModalDemo() {
                 <User className="w-4 h-4 text-purple-600" />
                 <div>
                   <div className="font-medium">Recruiter</div>
-                  <div className="text-xs text-muted-foreground">Can manage candidates and view jobs</div>
+                  <div className="text-xs text-gray-500">Can manage candidates and view jobs</div>
                 </div>
               </div>
 
@@ -137,7 +137,7 @@ export default function InviteModalDemo() {
                 <Eye className="w-4 h-4 text-orange-600" />
                 <div>
                   <div className="font-medium">Interviewer</div>
-                  <div className="text-xs text-muted-foreground">Can view candidates and jobs for interviews</div>
+                  <div className="text-xs text-gray-500">Can view candidates and jobs for interviews</div>
                 </div>
               </div>
             </div>
@@ -150,32 +150,32 @@ export default function InviteModalDemo() {
               
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Invalid Email Format</h4>
-                <p className="text-sm text-muted-foreground">Real-time validation for email format</p>
+                <p className="text-sm text-gray-600">Real-time validation for email format</p>
               </div>
 
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Self-Invitation</h4>
-                <p className="text-sm text-muted-foreground">Prevents users from inviting themselves</p>
+                <p className="text-sm text-gray-600">Prevents users from inviting themselves</p>
               </div>
 
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Duplicate Member</h4>
-                <p className="text-sm text-muted-foreground">Checks against existing members</p>
+                <p className="text-sm text-gray-600">Checks against existing members</p>
               </div>
 
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Organization Limit</h4>
-                <p className="text-sm text-muted-foreground">Respects plan-based member limits</p>
+                <p className="text-sm text-gray-600">Respects plan-based member limits</p>
               </div>
 
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Permission Denied</h4>
-                <p className="text-sm text-muted-foreground">Role-based access control</p>
+                <p className="text-sm text-gray-600">Role-based access control</p>
               </div>
 
               <div className="p-4 border rounded-md">
                 <h4 className="font-medium text-red-600 mb-2">❌ Network Errors</h4>
-                <p className="text-sm text-muted-foreground">Graceful handling of API failures</p>
+                <p className="text-sm text-gray-600">Graceful handling of API failures</p>
               </div>
             </div>
           </div>

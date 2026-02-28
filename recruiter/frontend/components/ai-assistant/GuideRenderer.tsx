@@ -104,7 +104,7 @@ export function GuideRenderer({ guide }: GuideRendererProps) {
                   <div className="font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
                     {feature.name}
                   </div>
-                  <div className="text-xs text-muted-foreground dark:text-gray-400">
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
                     {feature.description}
                   </div>
                 </div>
@@ -128,7 +128,7 @@ export function GuideRenderer({ guide }: GuideRendererProps) {
                 </h5>
                 <ul className="space-y-1">
                   {topic.examples.map((example, i) => (
-                    <li key={i} className="text-xs text-muted-foreground dark:text-gray-400">
+                    <li key={i} className="text-xs text-gray-600 dark:text-gray-400">
                       • "{example}"
                     </li>
                   ))}

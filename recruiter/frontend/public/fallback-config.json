@@ -1,4 +1,5 @@
 {
-  "NEXT_PUBLIC_API_BASE_URL": "https://api.seemplifyai.com",
-  "NEXT_PUBLIC_WS_BASE_URL": "wss://api.seemplifyai.com"
+  "NEXT_PUBLIC_API_BASE_URL": "https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net",
+  "NEXT_PUBLIC_WS_BASE_URL": "wss://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net"
 }
+

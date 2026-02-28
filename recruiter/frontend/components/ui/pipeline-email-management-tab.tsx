@@ -63,7 +63,7 @@ export function PipelineEmailManagementTab({
       setError('Failed to load pipeline data')
       toast({
         title: "Error",
-        description: "Failed to load pipeline data for email management",
+        description: "Failed to load pipeline data for bulk rejection emails",
         variant: "destructive"
       })
     } finally {
@@ -113,7 +113,7 @@ export function PipelineEmailManagementTab({
           <div className="text-center">
             <p className="text-muted-foreground mb-2">No pipeline stages found</p>
             <p className="text-sm text-muted-foreground">
-              Configure pipeline stages first to manage candidate emails
+              Configure pipeline stages first to send bulk rejection emails
             </p>
           </div>
         </CardContent>

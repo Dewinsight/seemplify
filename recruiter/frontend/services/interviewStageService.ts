@@ -276,11 +276,13 @@ class InterviewStageService {
       body: JSON.stringify(updateData)
     });
     
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to update stage');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || 'Failed to update stage');
     }
     
-    return response.stage;
+    const data = await response.json();
+    return data.stage;
   }
 
   /**
@@ -593,30 +595,6 @@ class InterviewStageService {
 
     if (!stage.type) {
       errors.push('Stage type is required');
-    }
-
-    if (!stage.defaultDuration || stage.defaultDuration < 15 || stage.defaultDuration > 480) {
-      errors.push('Duration must be between 15 and 480 minutes');
-    }
-
-    if (!stage.requiredInterviewers || stage.requiredInterviewers < 1 || stage.requiredInterviewers > 10) {
-      errors.push('Required interviewers must be between 1 and 10');
-    }
-
-    if (stage.evaluationCriteria) {
-      const totalWeight = stage.evaluationCriteria.reduce((sum, criterion) => sum + (criterion.weight || 0), 0);
-      if (totalWeight !== 100) {
-        errors.push('Evaluation criteria weights must sum to 100%');
-      }
-
-      stage.evaluationCriteria.forEach((criterion, index) => {
-        if (!criterion.name?.trim()) {
-          errors.push(`Evaluation criterion ${index + 1} name is required`);
-        }
-        if (!criterion.type) {
-          errors.push(`Evaluation criterion ${index + 1} type is required`);
-        }
-      });
     }
 
     return {

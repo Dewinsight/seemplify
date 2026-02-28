@@ -77,7 +77,7 @@ export interface JobData {
       location: string;
       resumeUrl?: string;
     };
-    status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'offered' | 'hired' | 'rejected';
+    status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'keep_in_view' | 'offered' | 'hired' | 'rejected';
     appliedAt?: string;
     addedAt?: string;
     addedBy?: string;

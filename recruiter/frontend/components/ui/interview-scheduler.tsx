@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, MapPin, Video, Phone, Users, AlertCircle, CheckCircle, RefreshCw, UserCheck, ExternalLink, X, Plus, Mail, UserPlus, Trash2, Copy, ChevronUp, ChevronDown, Loader2, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Calendar, Clock, MapPin, Video, Phone, Users, AlertCircle, AlertTriangle, CheckCircle, RefreshCw, UserCheck, ExternalLink, X, Plus, Mail, UserPlus, Trash2, Copy, ChevronUp, ChevronDown, Loader2, MessageCircle } from 'lucide-react';
 import { InterviewQuestionSelector } from './interview-question-selector';
 import { Button } from './button';
 import { Input } from './input';
@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from './checkbox';
 import { ScrollArea } from './scroll-area';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
+import { EmailTemplateDesigner } from './email-template-designer';
 import interviewService from '@/services/interviewService';
 import { useCreditError } from '@/hooks/useCreditError';
 import { CreditErrorDialog } from '@/components/ui/credit-error-dialog';
@@ -25,6 +26,7 @@ import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
 import { getAllCandidates } from '@/services/candidateService';
 import { getAllJobs } from '@/services/jobService';
+import { getDefaultEmailTemplate } from '@/lib/emailTemplatePresets';
 
 interface InterviewSchedulerProps {
   candidateId: string;
@@ -99,29 +101,7 @@ export function InterviewScheduler({
 }: InterviewSchedulerProps) {
   const { state } = useUser();
   
-  // Default email template (defined before state so it can be used in initialization)
-  const DEFAULT_EMAIL_TEMPLATE = `Dear {{candidateName}},
-
-We're pleased to confirm your upcoming interview for the {{jobTitle}} position.
-
-Date: {{interviewDate}}
-Time: {{interviewTime}}
-Duration: {{duration}} minutes
-Format: {{interviewType}}
-{{#if meetingLink}}
-Meeting Link: {{meetingLink}}
-{{/if}}
-
-{{#if notes}}
-Additional Notes:
-{{notes}}
-{{/if}}
-
-Please be prepared to discuss your experience and qualifications. If you need to reschedule or have any questions, please contact us as soon as possible.
-
-Best regards,
-{{interviewerName}}
-{{organizationName}}`;
+  const DEFAULT_EMAIL_TEMPLATE = getDefaultEmailTemplate();
 
   const [formData, setFormData] = useState({
     startTime: '',
@@ -150,6 +130,8 @@ Best regards,
   const [selectedProvider, setSelectedProvider] = useState<string>('google');
   const [serverError, setServerError] = useState<string | null>(null);
   const [defaultProvider, setDefaultProvider] = useState<string>('google');
+  const [activeTab, setActiveTab] = useState<'single' | 'multi'>('single');
+  const [showMultiInterviewModal, setShowMultiInterviewModal] = useState(false);
   
   // Participant management state
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -179,6 +161,7 @@ Best regards,
   // Multi-candidate interview questions
   const [multiSendQuestionsToInterviewers, setMultiSendQuestionsToInterviewers] = useState(false);
   const [multiQuestionsSendTime, setMultiQuestionsSendTime] = useState(60);
+  const [multiCommunicationTab, setMultiCommunicationTab] = useState<'email' | 'questions'>('email');
   
   // System candidates and jobs
   const [systemCandidates, setSystemCandidates] = useState<any[]>([]);
@@ -191,6 +174,7 @@ Best regards,
   // Interview questions for interviewers
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [showQuestionSelector, setShowQuestionSelector] = useState(false);
+  const [singleCommunicationTab, setSingleCommunicationTab] = useState<'email' | 'questions'>('email');
   
   // Credit error handling
   const { creditError, showCreditDialog, setShowCreditDialog, handleError: handleCreditError } = useCreditError();
@@ -202,6 +186,7 @@ Best regards,
     message: string;
     details?: string;
     suggestions?: string[];
+    code?: string;
   } | null>(null);
   
   // Multi-candidate email template
@@ -522,9 +507,9 @@ Best regards,
     switch (role) {
       case 'candidate': return 'bg-blue-100 text-blue-800';
       case 'interviewer': return 'bg-green-100 text-green-800';
-      case 'observer': return 'bg-muted/50 text-gray-800';
+      case 'observer': return 'bg-gray-100 text-gray-800';
       case 'external': return 'bg-purple-100 text-purple-800';
-      default: return 'bg-muted/50 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -649,6 +634,17 @@ Best regards,
     try {
       const status = await interviewService.getCalendarStatus(state.user._id);
       setCalendarStatus(status);
+      const normalizedProvider = String(status?.provider || '').toLowerCase();
+      if (
+        normalizedProvider.includes('microsoft') ||
+        normalizedProvider.includes('outlook') ||
+        normalizedProvider.includes('azure') ||
+        normalizedProvider.includes('teams')
+      ) {
+        setSelectedProvider('microsoft');
+      } else if (normalizedProvider.includes('google') || normalizedProvider.includes('gmail')) {
+        setSelectedProvider('google');
+      }
     } catch (error) {
       console.error('Failed to check calendar status:', error);
     }
@@ -782,9 +778,11 @@ Best regards,
     } catch (error: any) {
       console.error('Calendar connection error:', error);
       clearTimeout(safetyTimeout);
-      toast.error(forceAccountSelection 
-        ? 'Failed to switch Google account' 
-        : 'Failed to connect calendar');
+      toast.error(
+        forceAccountSelection
+          ? `Failed to switch ${providerName} account`
+          : `Failed to connect ${providerName}`
+      );
       setIsConnecting(false);
       setIsSwitchingAccount(false);
     }
@@ -792,7 +790,17 @@ Best regards,
 
   const handleReconnectCalendar = async () => {
     try {
-      const authUrl = await grantService.generateReauthUrl('google', false);
+      const providerFromGrant = String(calendarStatus.provider || '').toLowerCase();
+      const providerToReconnect =
+        providerFromGrant.includes('microsoft') ||
+        providerFromGrant.includes('outlook') ||
+        providerFromGrant.includes('azure') ||
+        providerFromGrant.includes('teams')
+          ? 'microsoft'
+          : providerFromGrant.includes('google') || providerFromGrant.includes('gmail')
+            ? 'google'
+            : selectedProvider;
+      const authUrl = await grantService.generateReauthUrl(providerToReconnect, false);
       const authWindow = window.open(authUrl, 'grant-reauth', 'width=600,height=700,scrollbars=yes,resizable=yes');
       
       // Use similar postMessage approach for reconnection
@@ -845,12 +853,13 @@ Best regards,
       await handleConnectCalendar(selectedProvider, true);
     };
 
+    const providerName = providers.find(p => p.id === selectedProvider)?.name || 'calendar';
     // Show a more detailed explanation
     if (confirm(
-      'To switch to a different Google account:\n\n' +
+      `To switch to a different ${providerName} account:\n\n` +
       '1. Click "OK" to open the authentication window\n' +
       '2. If you see the same account, click "Use another account"\n' +
-      '3. Or log out of Google in another browser tab first\n\n' +
+      `3. Or log out of ${providerName} in another browser tab first\n\n` +
       'Would you like to continue?'
     )) {
       await switchAccount();
@@ -863,6 +872,33 @@ Best regards,
     setIsConnecting(false);
     setIsSwitchingAccount(false);
     toast.info('Connection states reset. You can try again.');
+  };
+
+  const extractApiErrorData = (error: any) => error?.data || error?.response?.data || null;
+
+  const isTeamsScopeErrorCode = (code?: string) =>
+    code === 'TEAMS_SCOPE_MISSING' || code === 'TEAMS_PROVIDER_MISMATCH';
+
+  const showTeamsScopeErrorModal = (error: any) => {
+    const apiErrorData = extractApiErrorData(error) || {};
+    const details = apiErrorData?.details || {};
+    const missingScopes = Array.isArray(details?.missingScopes) ? details.missingScopes : [];
+    const missingScopesText = missingScopes.length > 0
+      ? `Missing scopes: ${missingScopes.join(', ')}`
+      : 'Missing required Microsoft scopes.';
+
+    setErrorDetails({
+      title: 'Microsoft Teams Scopes Required',
+      message: apiErrorData?.message || 'Microsoft Teams scheduling requires additional permissions.',
+      details: `${missingScopesText}\nCurrent scopes: ${JSON.stringify(details?.grantScopes || [])}`,
+      suggestions: [
+        'Click "Reconnect Microsoft Scopes" below',
+        'Accept all requested Microsoft permissions in the popup',
+        'Return and schedule the interview again'
+      ],
+      code: apiErrorData?.error || error?.message || 'TEAMS_SCOPE_MISSING'
+    });
+    setShowErrorModal(true);
   };
 
   const handleSchedule = async () => {
@@ -1037,6 +1073,13 @@ Best regards,
                           error?.message || 
                           'Failed to schedule interview';
       setServerError(errorMessage);
+
+      const apiErrorData = extractApiErrorData(error) || {};
+      const errorCode = apiErrorData?.error || error?.message;
+      if (isTeamsScopeErrorCode(errorCode)) {
+        showTeamsScopeErrorModal(error);
+        return;
+      }
       
       // Check if it's a grant error
       if (isGrantError(error.message)) {
@@ -1372,7 +1415,15 @@ Best regards,
       
       const response = await interviewService.scheduleMultiCandidateInterview(multiScheduleData);
 
-      toast.success(`Successfully scheduled ${multiCandidateSlots.length} interviews in one session!`);
+      const successCount = response?.successCount ?? response?.interviews?.length ?? 0;
+      const queuedRetryCount = response?.queuedRetryCount ?? response?.queuedRetries?.length ?? 0;
+      const failedCount = response?.failedCount ?? response?.errors?.length ?? 0;
+
+      if (queuedRetryCount > 0 || failedCount > 0) {
+        toast.success(`Scheduled ${successCount} interviews. ${queuedRetryCount} slot(s) queued for retry.`);
+      } else {
+        toast.success(`Successfully scheduled ${successCount} interviews in one session!`);
+      }
       onScheduled?.(response);
     } catch (error: any) {
       console.error('Multi-interview scheduling error:', error);
@@ -1382,7 +1433,14 @@ Best regards,
                           error?.message || 
                           'Failed to schedule multi-candidate interview';
       setServerError(errorMessage);
-      toast.error(errorMessage);
+
+      const apiErrorData = extractApiErrorData(error) || {};
+      const errorCode = apiErrorData?.error || error?.message;
+      if (isTeamsScopeErrorCode(errorCode)) {
+        showTeamsScopeErrorModal(error);
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setIsScheduling(false);
     }
@@ -1396,9 +1454,143 @@ Best regards,
     setMultiEmailTemplate(DEFAULT_EMAIL_TEMPLATE);
   };
 
+  const getInterviewTypeLabel = (type: 'video' | 'phone' | 'in_person') => {
+    if (type === 'phone') return 'Phone Call';
+    if (type === 'in_person') return 'In Person';
+    return 'Video Call';
+  };
+
+  const formatPreviewDateTime = (dateValue?: string) => {
+    if (!dateValue) {
+      return { interviewDate: '', interviewTime: '' };
+    }
+
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) {
+      return { interviewDate: '', interviewTime: '' };
+    }
+
+    return {
+      interviewDate: parsed.toLocaleDateString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      interviewTime: parsed.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      })
+    };
+  };
+
+  const interviewerName =
+    [state.user?.profile?.firstName, state.user?.profile?.lastName]
+      .filter(Boolean)
+      .join(' ') ||
+    (state.user as any)?.fullName ||
+    state.user?.email ||
+    '';
+
+  const organizationName =
+    (state.user as any)?.organization?.name ||
+    (state.user as any)?.currentOrganizationName ||
+    state.user?.company?.name ||
+    'Organization';
+
+  const singleTemplatePreviewData = useMemo(() => {
+    const { interviewDate, interviewTime } = formatPreviewDateTime(formData.startTime);
+    const meetingLinkCandidate = formData.location || '';
+    const previewMeetingLink = /^https?:\/\//i.test(meetingLinkCandidate) ? meetingLinkCandidate : '';
+    const previewJobLink =
+      jobId && typeof window !== 'undefined'
+        ? `${window.location.origin}/public/jobs/${jobId}`
+        : '';
+
+    return {
+      candidateName: candidateName || '',
+      jobTitle: jobTitle || '',
+      interviewDate,
+      interviewTime,
+      duration: formData.duration,
+      interviewType: getInterviewTypeLabel(formData.type),
+      meetingLink: previewMeetingLink,
+      notes: formData.notes || '',
+      interviewerName,
+      interviewerEmail: state.user?.email || '',
+      organizationName,
+      jobLink: previewJobLink,
+      jobDetailsPdfAttached: true
+    };
+  }, [
+    candidateName,
+    formData.duration,
+    formData.location,
+    formData.notes,
+    formData.startTime,
+    formData.type,
+    interviewerName,
+    jobId,
+    jobTitle,
+    organizationName,
+    state.user?.email
+  ]);
+
+  const multiTemplatePreviewData = useMemo(() => {
+    const firstSlot = multiCandidateSlots?.[0];
+    const previewStartTime = firstSlot?.startTime || multiBaseStartTime;
+    const { interviewDate, interviewTime } = formatPreviewDateTime(previewStartTime);
+    const meetingLinkCandidate = multiLocation || '';
+    const previewMeetingLink = /^https?:\/\//i.test(meetingLinkCandidate) ? meetingLinkCandidate : '';
+    const previewJobId = (firstSlot as any)?.jobId || jobId;
+    const previewJobLink =
+      previewJobId && typeof window !== 'undefined'
+        ? `${window.location.origin}/public/jobs/${previewJobId}`
+        : '';
+
+    return {
+      candidateName: firstSlot?.candidateName || candidateName || '',
+      jobTitle: firstSlot?.jobTitle || jobTitle || '',
+      interviewDate,
+      interviewTime,
+      duration: firstSlot?.duration || formData.duration || '',
+      interviewType: getInterviewTypeLabel(multiInterviewType),
+      meetingLink: previewMeetingLink,
+      notes: firstSlot?.notes || '',
+      interviewerName,
+      interviewerEmail: state.user?.email || '',
+      organizationName,
+      jobLink: previewJobLink,
+      jobDetailsPdfAttached: true
+    };
+  }, [
+    candidateName,
+    formData.duration,
+    interviewerName,
+    jobId,
+    jobTitle,
+    multiBaseStartTime,
+    multiCandidateSlots,
+    multiInterviewType,
+    multiLocation,
+    organizationName,
+    state.user?.email
+  ]);
+
   return (
     <div className="flex flex-col h-full max-h-[calc(80vh-120px)] overflow-hidden">
-      <Tabs defaultValue="single" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const nextTab = value as 'single' | 'multi';
+          setActiveTab(nextTab);
+          if (nextTab === 'multi') {
+            setShowMultiInterviewModal(true);
+          }
+        }}
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
+      >
         <div className="pb-2">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="single" className="text-xs sm:text-sm">Single interview</TabsTrigger>
@@ -1473,7 +1665,7 @@ Best regards,
                                     </Avatar>
                                     <div>
                                       <p className="text-sm font-medium">{memberName}</p>
-                                      <p className="text-xs text-muted-foreground">{member.user.email}</p>
+                                      <p className="text-xs text-gray-500">{member.user.email}</p>
                                     </div>
                                   </div>
                                   <Button
@@ -1489,7 +1681,7 @@ Best regards,
                             })}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
+                        <p className="text-sm text-gray-500 text-center py-4">
                           No team members available
                         </p>
                       )}
@@ -1568,7 +1760,7 @@ Best regards,
                           <Badge variant="secondary" className="text-xs">Required</Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground">{participant.email}</p>
+                      <p className="text-xs text-gray-500">{participant.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1644,11 +1836,47 @@ Best regards,
               >
                 Set as Default
               </Button>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-gray-500">
                 Default: {providers.find(p => p.id === defaultProvider)?.name}
               </span>
             </div>
           </div>
+
+          {selectedProvider === 'microsoft' && (
+            <Alert variant="warning" className="mt-3">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Microsoft Teams configuration required</AlertTitle>
+              <AlertDescription>
+                <p className="mt-2">
+                  For the notetaker bot to join Teams meetings reliably, your Microsoft 365 admin must configure:
+                </p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>
+                    Allow participants to join before meeting organizer joins: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Waiting room: <strong>DISABLED</strong> (or bot allowlisted)
+                  </li>
+                  <li>
+                    Cloud recording: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Transcription: <strong>ENABLED</strong>
+                  </li>
+                </ul>
+                <p className="mt-2">
+                  <a
+                    href="/docs/teams-admin-setup"
+                    className="text-blue-700 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View detailed setup guide -&gt;
+                  </a>
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
           
           {/* Calendar Connection Status */}
           <div className="space-y-2">
@@ -1917,129 +2145,134 @@ Best regards,
                 Add AI Notetaker to record and transcribe the interview
               </label>
             </div>
-            <p className="text-xs text-muted-foreground ml-6">
+            <p className="text-xs text-gray-500 ml-6">
               The AI notetaker will automatically join the meeting to provide transcripts and summaries.
               All participants will be notified that the meeting is being recorded.
             </p>
           </div>
         )}
         
-        {/* Interview Questions for Interviewers Section */}
-        <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-base font-medium">Questions for Interviewers</h4>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="sendQuestionsToInterviewers"
-                checked={formData.sendQuestionsToInterviewers}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, sendQuestionsToInterviewers: checked as boolean }))}
-              />
-              <label htmlFor="sendQuestionsToInterviewers" className="text-sm font-medium text-gray-700">
-                Send selected questions to interviewers
-              </label>
-            </div>
-          </div>
-          
-          {formData.sendQuestionsToInterviewers && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="questionsSendTime">Send questions before interview</Label>
-                <Select
-                  value={formData.questionsSendTime.toString()}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, questionsSendTime: parseInt(value) }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5 minutes before</SelectItem>
-                    <SelectItem value="10">10 minutes before</SelectItem>
-                    <SelectItem value="15">15 minutes before</SelectItem>
-                    <SelectItem value="30">30 minutes before</SelectItem>
-                    <SelectItem value="45">45 minutes before</SelectItem>
-                    <SelectItem value="60">1 hour before</SelectItem>
-                    <SelectItem value="120">2 hours before</SelectItem>
-                    <SelectItem value="240">4 hours before</SelectItem>
-                    <SelectItem value="480">8 hours before</SelectItem>
-                    <SelectItem value="1440">24 hours before</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="border rounded-lg p-4 bg-muted/30">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="h-5 w-5 text-primary" />
-                    <h5 className="font-medium">Interview Questions</h5>
+        {/* Communication Tabs */}
+        <div className="border-t border-gray-200 pt-4 mt-4">
+          <Tabs
+            value={singleCommunicationTab}
+            onValueChange={(value) => setSingleCommunicationTab(value as 'email' | 'questions')}
+            className="space-y-4"
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="email" className="text-xs sm:text-sm">Email Notification</TabsTrigger>
+              <TabsTrigger value="questions" className="text-xs sm:text-sm">Interviewer Questions</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="email" className="mt-0">
+              <div className="space-y-4 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-base font-medium">Email Notification</h4>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sendCustomEmail"
+                      checked={formData.sendCustomEmail}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, sendCustomEmail: checked as boolean }))}
+                    />
+                    <label htmlFor="sendCustomEmail" className="text-sm font-medium text-gray-700">
+                      Send custom email notification
+                    </label>
                   </div>
-                  
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowQuestionSelector(!showQuestionSelector)}
-                  >
-                    {showQuestionSelector ? 'Hide Questions' : 'Select Questions'}
-                  </Button>
                 </div>
-                
-                {showQuestionSelector ? (
-                  <InterviewQuestionSelector
-                    jobId={jobId}
-                    selectedQuestionIds={selectedQuestionIds}
-                    onSelectionChange={setSelectedQuestionIds}
-                  />
-                ) : (
-                  <div className="text-sm text-muted-foreground">
-                    {selectedQuestionIds.length === 0 ? (
-                      <p>No questions selected. Click "Select Questions" to choose questions to send to interviewers.</p>
-                    ) : (
-                      <p>{selectedQuestionIds.length} questions selected for interviewers. Click "Select Questions" to modify selection.</p>
-                    )}
+
+                {formData.sendCustomEmail && (
+                  <div className="space-y-2">
+                    <EmailTemplateDesigner
+                      value={formData.emailTemplate}
+                      onChange={(nextTemplate) => setFormData(prev => ({ ...prev, emailTemplate: nextTemplate }))}
+                      previewData={singleTemplatePreviewData}
+                      helperText="Pick one of the design presets, then customize with variables and HTML."
+                    />
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Custom Email Section */}
-        <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-base font-medium">Email Notification</h4>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="sendCustomEmail"
-                checked={formData.sendCustomEmail}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, sendCustomEmail: checked as boolean }))}
-              />
-              <label htmlFor="sendCustomEmail" className="text-sm font-medium text-gray-700">
-                Send custom email notification
-              </label>
-            </div>
-          </div>
-          
-          {formData.sendCustomEmail && (
-            <div className="space-y-2">
-              <Label htmlFor="emailTemplate">Email Template</Label>
-              <div className="relative">
-                <Textarea
-                  id="emailTemplate"
-                  value={formData.emailTemplate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, emailTemplate: e.target.value }))}
-                  rows={10}
-                  className="font-mono text-sm"
-                />
-                <div className="absolute top-2 right-2 bg-muted/50 px-2 py-1 rounded text-xs text-muted-foreground">
-                  Template
+            </TabsContent>
+
+            <TabsContent value="questions" className="mt-0">
+              <div className="space-y-4 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-base font-medium">Questions for Interviewers</h4>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sendQuestionsToInterviewers"
+                      checked={formData.sendQuestionsToInterviewers}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, sendQuestionsToInterviewers: checked as boolean }))}
+                    />
+                    <label htmlFor="sendQuestionsToInterviewers" className="text-sm font-medium text-gray-700">
+                      Send selected questions to interviewers
+                    </label>
+                  </div>
                 </div>
+
+                {formData.sendQuestionsToInterviewers && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="questionsSendTime">Send questions before interview</Label>
+                      <Select
+                        value={formData.questionsSendTime.toString()}
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, questionsSendTime: parseInt(value) }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5">5 minutes before</SelectItem>
+                          <SelectItem value="10">10 minutes before</SelectItem>
+                          <SelectItem value="15">15 minutes before</SelectItem>
+                          <SelectItem value="30">30 minutes before</SelectItem>
+                          <SelectItem value="45">45 minutes before</SelectItem>
+                          <SelectItem value="60">1 hour before</SelectItem>
+                          <SelectItem value="120">2 hours before</SelectItem>
+                          <SelectItem value="240">4 hours before</SelectItem>
+                          <SelectItem value="480">8 hours before</SelectItem>
+                          <SelectItem value="1440">24 hours before</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-5 w-5 text-primary" />
+                          <h5 className="font-medium">Interview Questions</h5>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowQuestionSelector(!showQuestionSelector)}
+                        >
+                          {showQuestionSelector ? 'Hide Questions' : 'Select Questions'}
+                        </Button>
+                      </div>
+
+                      {showQuestionSelector ? (
+                        <InterviewQuestionSelector
+                          jobId={jobId}
+                          selectedQuestionIds={selectedQuestionIds}
+                          onSelectionChange={setSelectedQuestionIds}
+                        />
+                      ) : (
+                        <div className="text-sm text-muted-foreground">
+                          {selectedQuestionIds.length === 0 ? (
+                            <p>No questions selected. Click "Select Questions" to choose questions to send to interviewers.</p>
+                          ) : (
+                            <p>{selectedQuestionIds.length} questions selected for interviewers. Click "Select Questions" to modify selection.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Available placeholders: &#123;&#123;candidateName&#125;&#125;, &#123;&#123;jobTitle&#125;&#125;, &#123;&#123;interviewDate&#125;&#125;, &#123;&#123;interviewTime&#125;&#125;, 
-                &#123;&#123;duration&#125;&#125;, &#123;&#123;interviewType&#125;&#125;, &#123;&#123;meetingLink&#125;&#125;, &#123;&#123;notes&#125;&#125;, &#123;&#123;interviewerName&#125;&#125;, &#123;&#123;organizationName&#125;&#125;
-              </p>
-            </div>
-          )}
+            </TabsContent>
+          </Tabs>
         </div>
 
         {/* Skip Availability Check - Temporary for testing */}
@@ -2126,8 +2359,24 @@ Best regards,
           </TabsContent>
 
           <TabsContent value="multi" className="mt-0 flex-1 overflow-hidden">
-            <div className="h-full overflow-y-auto p-3 sm:p-6">
-              <div className="space-y-4 sm:space-y-6">
+            <Dialog
+              open={showMultiInterviewModal}
+              onOpenChange={(open) => {
+                setShowMultiInterviewModal(open);
+                if (!open) {
+                  setActiveTab('single');
+                }
+              }}
+            >
+              <DialogContent className="w-[98vw] max-w-[1600px] h-[96vh] max-h-[96vh] p-0 overflow-hidden flex flex-col gap-0 scheduler-dialog">
+                <DialogHeader className="px-4 sm:px-6 py-3 border-b">
+                  <DialogTitle className="text-base sm:text-lg">Multi-candidate Interview Scheduler</DialogTitle>
+                  <DialogDescription className="text-xs sm:text-sm">
+                    Schedule an entire interview session with one shared workflow.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6">
+                  <div className="space-y-4 sm:space-y-6">
               {/* Beta Disclaimer */}
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                 <div className="flex items-start gap-3">
@@ -2400,9 +2649,9 @@ Best regards,
                 {/* Candidate List */}
                 {multiCandidateSlots.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                    <Users className="h-8 w-8 text-muted-foreground/70 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No candidates added yet</p>
-                    <p className="text-xs text-muted-foreground mt-1">Add at least 2 candidates to create a multi-candidate session</p>
+                    <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600">No candidates added yet</p>
+                    <p className="text-xs text-gray-500 mt-1">Add at least 2 candidates to create a multi-candidate session</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2423,14 +2672,14 @@ Best regards,
                                 {slot.jobTitle}
                               </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground">{slot.candidateEmail}</p>
+                            <p className="text-sm text-gray-500">{slot.candidateEmail}</p>
                             {multiBaseStartTime && slotWithTime && (
                               <p className="text-sm text-blue-600 mt-1">
                                 {formatTimeRange(slotWithTime.startTime, slot.duration)}
                               </p>
                             )}
                             {slot.notes && (
-                              <p className="text-xs text-muted-foreground mt-1 italic">{slot.notes}</p>
+                              <p className="text-xs text-gray-500 mt-1 italic">{slot.notes}</p>
                             )}
                           </div>
                           
@@ -2540,7 +2789,7 @@ Best regards,
                           </Avatar>
                           <div>
                             <p className="text-sm font-medium">{participant.name}</p>
-                            <p className="text-xs text-muted-foreground">{participant.email}</p>
+                            <p className="text-xs text-gray-500">{participant.email}</p>
                           </div>
                           <Badge variant="outline" className="text-xs">
                             {participant.role}
@@ -2564,119 +2813,124 @@ Best regards,
                 )}
               </div>
 
-              {/* Interview Questions for Interviewers Section */}
-              <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-base font-medium">Questions for Interviewers</h4>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="multiSendQuestionsToInterviewers"
-                      checked={multiSendQuestionsToInterviewers}
-                      onCheckedChange={(checked) => setMultiSendQuestionsToInterviewers(checked as boolean)}
-                    />
-                    <label htmlFor="multiSendQuestionsToInterviewers" className="text-sm font-medium text-gray-700">
-                      Send selected questions to interviewers
-                    </label>
-                  </div>
-                </div>
-                
-                {multiSendQuestionsToInterviewers && (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="multiQuestionsSendTime">Send questions before interview</Label>
-                      <Select
-                        value={multiQuestionsSendTime.toString()}
-                        onValueChange={(value) => setMultiQuestionsSendTime(parseInt(value))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="5">5 minutes before</SelectItem>
-                          <SelectItem value="15">15 minutes before</SelectItem>
-                          <SelectItem value="30">30 minutes before</SelectItem>
-                          <SelectItem value="60">1 hour before</SelectItem>
-                          <SelectItem value="120">2 hours before</SelectItem>
-                          <SelectItem value="1440">24 hours before</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="border rounded-lg p-4 bg-muted/30">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-2">
-                          <MessageCircle className="h-5 w-5 text-primary" />
-                          <h5 className="font-medium">Interview Questions</h5>
+              {/* Communication Tabs */}
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <Tabs
+                  value={multiCommunicationTab}
+                  onValueChange={(value) => setMultiCommunicationTab(value as 'email' | 'questions')}
+                  className="space-y-4"
+                >
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="email" className="text-xs sm:text-sm">Email Notifications</TabsTrigger>
+                    <TabsTrigger value="questions" className="text-xs sm:text-sm">Interviewer Questions</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="email" className="mt-0">
+                    <div className="space-y-4 border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-base font-medium">Email Notifications</h4>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="multiSendCustomEmail"
+                            checked={multiSendCustomEmail}
+                            onCheckedChange={(checked) => setMultiSendCustomEmail(checked as boolean)}
+                          />
+                          <label htmlFor="multiSendCustomEmail" className="text-sm font-medium text-gray-700">
+                            Send custom email to each candidate
+                          </label>
                         </div>
-                        
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowQuestionSelector(!showQuestionSelector)}
-                        >
-                          {showQuestionSelector ? 'Hide Questions' : 'Select Questions'}
-                        </Button>
                       </div>
-                      
-                      {showQuestionSelector ? (
-                        <InterviewQuestionSelector
-                          jobId={selectedJobId || undefined}
-                          selectedQuestionIds={selectedQuestionIds}
-                          onSelectionChange={setSelectedQuestionIds}
-                        />
-                      ) : (
-                        <div className="text-sm text-muted-foreground">
-                          {selectedQuestionIds.length === 0 ? (
-                            <p>No questions selected. Click "Select Questions" to choose questions to send to interviewers.</p>
-                          ) : (
-                            <p>{selectedQuestionIds.length} questions selected for interviewers. Click "Select Questions" to modify selection.</p>
-                          )}
+
+                      {multiSendCustomEmail && (
+                        <div className="space-y-2">
+                          <EmailTemplateDesigner
+                            value={multiEmailTemplate}
+                            onChange={setMultiEmailTemplate}
+                            previewData={multiTemplatePreviewData}
+                            label="Email Template (sent to each candidate)"
+                            helperText="Choose a template style, customize it, and each candidate gets their own rendered version."
+                          />
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
-              </div>
+                  </TabsContent>
 
-              {/* Email Template for Multi */}
-              <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-base font-medium">Email Notifications</h4>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="multiSendCustomEmail"
-                      checked={multiSendCustomEmail}
-                      onCheckedChange={(checked) => setMultiSendCustomEmail(checked as boolean)}
-                    />
-                    <label htmlFor="multiSendCustomEmail" className="text-sm font-medium text-gray-700">
-                      Send custom email to each candidate
-                    </label>
-                  </div>
-                </div>
-                
-                {multiSendCustomEmail && (
-                  <div className="space-y-2">
-                    <Label htmlFor="multiEmailTemplate">Email Template (sent to each candidate)</Label>
-                    <div className="relative">
-                      <Textarea
-                        id="multiEmailTemplate"
-                        value={multiEmailTemplate}
-                        onChange={(e) => setMultiEmailTemplate(e.target.value)}
-                        rows={10}
-                        className="font-mono text-sm"
-                      />
-                      <div className="absolute top-2 right-2 bg-muted/50 px-2 py-1 rounded text-xs text-muted-foreground">
-                        Template
+                  <TabsContent value="questions" className="mt-0">
+                    <div className="space-y-4 border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-base font-medium">Questions for Interviewers</h4>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="multiSendQuestionsToInterviewers"
+                            checked={multiSendQuestionsToInterviewers}
+                            onCheckedChange={(checked) => setMultiSendQuestionsToInterviewers(checked as boolean)}
+                          />
+                          <label htmlFor="multiSendQuestionsToInterviewers" className="text-sm font-medium text-gray-700">
+                            Send selected questions to interviewers
+                          </label>
+                        </div>
                       </div>
+
+                      {multiSendQuestionsToInterviewers && (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="multiQuestionsSendTime">Send questions before interview</Label>
+                            <Select
+                              value={multiQuestionsSendTime.toString()}
+                              onValueChange={(value) => setMultiQuestionsSendTime(parseInt(value))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="5">5 minutes before</SelectItem>
+                                <SelectItem value="15">15 minutes before</SelectItem>
+                                <SelectItem value="30">30 minutes before</SelectItem>
+                                <SelectItem value="60">1 hour before</SelectItem>
+                                <SelectItem value="120">2 hours before</SelectItem>
+                                <SelectItem value="1440">24 hours before</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="border rounded-lg p-4 bg-gray-50">
+                            <div className="flex justify-between items-center mb-4">
+                              <div className="flex items-center gap-2">
+                                <MessageCircle className="h-5 w-5 text-primary" />
+                                <h5 className="font-medium">Interview Questions</h5>
+                              </div>
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowQuestionSelector(!showQuestionSelector)}
+                              >
+                                {showQuestionSelector ? 'Hide Questions' : 'Select Questions'}
+                              </Button>
+                            </div>
+
+                            {showQuestionSelector ? (
+                              <InterviewQuestionSelector
+                                jobId={selectedJobId || undefined}
+                                selectedQuestionIds={selectedQuestionIds}
+                                onSelectionChange={setSelectedQuestionIds}
+                              />
+                            ) : (
+                              <div className="text-sm text-muted-foreground">
+                                {selectedQuestionIds.length === 0 ? (
+                                  <p>No questions selected. Click "Select Questions" to choose questions to send to interviewers.</p>
+                                ) : (
+                                  <p>{selectedQuestionIds.length} questions selected for interviewers. Click "Select Questions" to modify selection.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Each candidate will receive this email with their specific time slot. 
-                      Available placeholders: &#123;&#123;candidateName&#125;&#125;, &#123;&#123;jobTitle&#125;&#125;, &#123;&#123;interviewDate&#125;&#125;, &#123;&#123;interviewTime&#125;&#125;, 
-                      &#123;&#123;duration&#125;&#125;, &#123;&#123;interviewType&#125;&#125;, &#123;&#123;meetingLink&#125;&#125;, &#123;&#123;notes&#125;&#125;, &#123;&#123;interviewerName&#125;&#125;, &#123;&#123;organizationName&#125;&#125;
-                    </p>
-                  </div>
-                )}
+                  </TabsContent>
+                </Tabs>
               </div>
 
               {/* Action Buttons */}
@@ -2710,8 +2964,10 @@ Best regards,
                   </Button>
                 )}
               </div>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
       </Tabs>
 
@@ -2816,10 +3072,10 @@ Best regards,
                                 }}
                                 className={`p-2 sm:p-3 rounded-lg cursor-pointer transition-colors ${
                                   isAlreadyAdded 
-                                    ? 'bg-muted/30 opacity-50 cursor-not-allowed'
+                                    ? 'bg-gray-50 opacity-50 cursor-not-allowed'
                                     : isSelected
                                     ? 'bg-blue-100 border-blue-500 border'
-                                    : 'hover:bg-muted/50 border border-gray-200'
+                                    : 'hover:bg-gray-100 border border-gray-200'
                                 }`}
                               >
                                 <div className="flex items-start gap-2 sm:gap-3">
@@ -2831,11 +3087,11 @@ Best regards,
                                   <div className="flex-1 min-w-0">
                                     <p className="font-medium text-sm sm:text-base truncate">
                                       {candidate.firstName} {candidate.lastName}
-                                      {isAlreadyAdded && <span className="text-xs text-muted-foreground ml-1 sm:ml-2">(Added)</span>}
+                                      {isAlreadyAdded && <span className="text-xs text-gray-500 ml-1 sm:ml-2">(Added)</span>}
                                     </p>
-                                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{candidate.email}</p>
+                                    <p className="text-xs sm:text-sm text-gray-500 truncate">{candidate.email}</p>
                                     {candidate.position && (
-                                      <p className="text-xs text-muted-foreground/70 truncate">Position: {candidate.position}</p>
+                                      <p className="text-xs text-gray-400 truncate">Position: {candidate.position}</p>
                                     )}
                                     {candidate.status && (
                                       <Badge variant="outline" className="mt-1 text-xs">
@@ -2849,10 +3105,10 @@ Best regards,
                           })}
                         {systemCandidates.length === 0 && (
                           <div className="text-center py-4">
-                            <p className="text-muted-foreground">
+                            <p className="text-gray-500">
                               {stageId ? 'No candidates in this stage' : 'No candidates in the pipeline'}
                             </p>
-                            <p className="text-xs text-muted-foreground/70 mt-1">
+                            <p className="text-xs text-gray-400 mt-1">
                               {stageId ? 'Move candidates to this interview stage first' : 'Add candidates to the job pipeline first'}
                             </p>
                           </div>
@@ -2993,7 +3249,7 @@ Best regards,
                                 </Avatar>
                                 <div>
                                   <p className="text-sm font-medium">{memberName}</p>
-                                  <p className="text-xs text-muted-foreground">{member.user.email}</p>
+                                  <p className="text-xs text-gray-500">{member.user.email}</p>
                                 </div>
                               </div>
                               <Button
@@ -3009,7 +3265,7 @@ Best regards,
                         })}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">
+                    <p className="text-sm text-gray-500 text-center py-4">
                       No team members available
                     </p>
                   )}
@@ -3088,10 +3344,10 @@ Best regards,
                 {/* Technical details (if available) */}
                 {errorDetails?.details && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                    <Label className="text-xs font-semibold text-gray-600 uppercase">
                       Technical Details
                     </Label>
-                    <div className="p-3 bg-muted/30 border border-gray-200 rounded-lg">
+                    <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                       <code className="text-xs text-gray-700 font-mono break-all">
                         {errorDetails.details}
                       </code>
@@ -3102,7 +3358,7 @@ Best regards,
                 {/* Suggestions */}
                 {errorDetails?.suggestions && errorDetails.suggestions.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                    <Label className="text-xs font-semibold text-gray-600 uppercase">
                       Suggested Actions
                     </Label>
                     <ul className="space-y-2">
@@ -3118,6 +3374,18 @@ Best regards,
 
                 {/* Actions */}
                 <div className="flex gap-2 justify-end pt-2">
+                  {(errorDetails?.code === 'TEAMS_SCOPE_MISSING' || errorDetails?.code === 'TEAMS_PROVIDER_MISMATCH') && (
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        setShowErrorModal(false);
+                        setSelectedProvider('microsoft');
+                        await handleConnectCalendar('microsoft', true);
+                      }}
+                    >
+                      Reconnect Microsoft Scopes
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => {

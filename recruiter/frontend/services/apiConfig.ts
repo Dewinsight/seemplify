@@ -5,25 +5,12 @@ import { handleCreditError, extractCreditError } from '../utils/creditErrorHandl
 
 const isBrowser = typeof window !== 'undefined';
 
-// Detect if running in local development environment
-function isLocalDevelopment(): boolean {
-  if (!isBrowser) {
-    return process.env.NODE_ENV === 'development';
-  }
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || 
-         hostname === '127.0.0.1' || 
-         hostname.startsWith('192.168.') ||
-         hostname.startsWith('10.') ||
-         hostname.endsWith('.local');
-}
+// Use runtime configuration
+let FALLBACK_API = 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
+let FALLBACK_WS = 'wss://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
 
-// Set appropriate fallback URLs based on environment
-let FALLBACK_API = isLocalDevelopment() ? 'http://localhost:5001' : 'https://api.seemplifyai.com';
-let FALLBACK_WS = isLocalDevelopment() ? 'ws://localhost:5001' : 'wss://api.seemplifyai.com';
-
-// Attempt to load fallback-config.json at startup (best-effort, browser only, production only)
-if (isBrowser && !isLocalDevelopment()) {
+// Attempt to load fallback-config.json at startup (best-effort, browser only)
+if (isBrowser) {
   fetch('/fallback-config.json')
     .then((r) => r.ok ? r.json() : null)
     .then((cfg) => {
@@ -210,6 +197,11 @@ async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise
 
 // Centralized API request wrapper with 401 handling and security
 export const apiRequest = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const incomingHeaders = options.headers as Record<string, string> | undefined;
+  const skipBodySanitization =
+    incomingHeaders?.['X-Skip-Body-Sanitization'] === 'true' ||
+    incomingHeaders?.['x-skip-body-sanitization'] === 'true';
+
   // Prevent clickjacking on first request
   if (isBrowser && !window.__clickjackingChecked) {
     preventClickjacking();
@@ -225,7 +217,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   }
   
   // Sanitize request body to prevent injection attacks
-  if (options.body && typeof options.body === 'string') {
+  if (!skipBodySanitization && options.body && typeof options.body === 'string') {
     try {
       const parsed = JSON.parse(options.body);
       const sanitized = sanitizeObject(parsed);
@@ -256,6 +248,11 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   // Check if this is an admin API call
   const isAdminCall = url.includes('/api/admin');
   const headers = options.headers as any || {};
+  const {
+    ['X-Skip-Body-Sanitization']: _skipBodySanitizationUpper,
+    ['x-skip-body-sanitization']: _skipBodySanitizationLower,
+    ...requestHeaders
+  } = headers;
   
   // Check if this is a file upload (FormData in body)
   const isFileUpload = options.body instanceof FormData;
@@ -268,13 +265,13 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
     const token = isBrowser ? tokenManager.getAccessToken() : null;
     finalHeaders = {
       ...(token && { 'Authorization': `Bearer ${token}` }),
-      ...headers
+      ...requestHeaders
     };
     console.log('📎 File upload detected - letting browser set Content-Type automatically');
-  } else if (isAdminCall && headers['x-admin-auth-token']) {
-    finalHeaders = { ...headers };
+  } else if (isAdminCall && requestHeaders['x-admin-auth-token']) {
+    finalHeaders = { ...requestHeaders };
   } else {
-    finalHeaders = { ...getAuthHeaders(), ...headers };
+    finalHeaders = { ...getAuthHeaders(), ...requestHeaders };
   }
 
   // Helper to build URL from base
@@ -324,6 +321,24 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
     }
   }
 
+  // Helper function to check if we're in signup flow
+  const isInSignupFlow = () => {
+    if (!isBrowser) return false;
+    
+    // Check for signup flags in sessionStorage
+    const signupSuccess = sessionStorage.getItem('signupSuccess');
+    const inSignupFlow = sessionStorage.getItem('inSignupFlow');
+    
+    // Check for recent signup time (within last 60 seconds)
+    const signupTime = sessionStorage.getItem('signupTime');
+    const isRecentSignup = signupTime && (Date.now() - parseInt(signupTime)) < 60000;
+    
+    // Check for signup success page in URL
+    const isOnSignupSuccessPage = window.location.pathname.includes('/signup/success');
+    
+    return (signupSuccess === 'true' || inSignupFlow === 'true' || isRecentSignup || isOnSignupSuccessPage);
+  };
+
   // Handle 402 Payment Required (Insufficient Credits) responses
   if (response.status === 402 && isBrowser) {
     // Clone and read the error data
@@ -346,6 +361,12 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
       errorData = await response.clone().json();
     } catch (parseErr) {
       console.warn('⚠️ Unable to parse 401 response JSON', parseErr);
+    }
+    
+    // Skip auto-logout during signup flow
+    if (isInSignupFlow()) {
+      console.log('⚠️ 401 received during signup flow - suppressing auto-logout');
+      return response;
     }
     
     console.warn('🚨 401 Unauthorized response:', errorData);

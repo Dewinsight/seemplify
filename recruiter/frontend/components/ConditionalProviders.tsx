@@ -18,15 +18,12 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith('/admin');
   const isPublicRoute = pathname?.startsWith('/public');
-  const isOidcRoute = pathname?.startsWith('/oidc');
-  const isLoginRoute = pathname?.startsWith('/login');
-  const isSignupRoute = pathname?.startsWith('/signup'); // redirect-only pages
 
-  console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute, isOidcRoute });
+  console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute });
 
-  // For admin, public, oidc, login, and signup (redirect) routes, skip all the regular providers and just render children
-  if (isAdminRoute || isPublicRoute || isOidcRoute || isLoginRoute || isSignupRoute) {
-    console.log('🚀 Lightweight route detected - skipping regular providers');
+  // For admin and public routes, skip all the regular providers and just render children
+  if (isAdminRoute || isPublicRoute) {
+    console.log('🚀 Admin or Public route detected - skipping regular providers');
     return <>{children}</>;
   }
 

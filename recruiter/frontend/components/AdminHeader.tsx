@@ -21,79 +21,76 @@ interface AdminHeaderProps {
 const AdminHeader = ({ children }: AdminHeaderProps) => {
   const { admin, logout } = useAdmin();
   const pathname = usePathname();
-
+  
+  // Extract page title from pathname
   const getPageTitle = () => {
     const path = pathname?.split('/').filter(Boolean);
     if (!path || path.length < 2) return 'Dashboard';
-
+    
+    // Get the last part of the path and format it
     const pageName = path[path.length - 1];
     return pageName.charAt(0).toUpperCase() + pageName.slice(1).replace(/-/g, ' ');
   };
 
   return (
-    <header className="bg-[#0a0a0c]/80 backdrop-blur-xl border-b border-white/[0.08] px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-40">
+    <header className="bg-gray-800 border-b border-gray-700 px-4 sm:px-6 py-3 sm:py-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center space-x-2 sm:space-x-4">
           {children}
-          <h2 className="text-lg sm:text-xl font-semibold text-white truncate tracking-tight">
+          <h2 className="text-lg sm:text-xl font-semibold text-white truncate">
             {getPageTitle()}
           </h2>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Notifications */}
+        <div className="flex items-center space-x-2 sm:space-x-4">
+          {/* Notifications - Hidden on smallest screens */}
           <Button
             variant="ghost"
             size="icon"
-            className="hidden sm:flex h-9 w-9 text-zinc-400 hover:text-white hover:bg-white/5"
+            className="hidden sm:flex text-gray-400 hover:text-white hover:bg-gray-700"
           >
-            <Bell className="h-4 w-4" />
+            <Bell className="h-5 w-5" />
           </Button>
 
-          {/* User Menu */}
+          {/* User Menu - Optimized for mobile */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className="flex items-center gap-2 text-zinc-300 hover:text-white hover:bg-white/5 p-1.5 sm:p-2 h-auto"
+                className="flex items-center space-x-2 text-gray-300 hover:text-white hover:bg-gray-700 p-1 sm:p-2"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-semibold">
                     {admin?.name?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <span className="hidden sm:inline max-w-[100px] md:max-w-[200px] truncate text-sm">
+                <span className="hidden sm:inline max-w-[100px] md:max-w-[200px] truncate">
                   {admin?.name}
                 </span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-56 bg-[#0a0a0c]/95 backdrop-blur-xl border-white/[0.08]"
-            >
-              <DropdownMenuLabel className="text-zinc-400 text-xs font-normal">
-                My Account
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/[0.08]" />
-              <DropdownMenuItem className="text-zinc-300 hover:text-white hover:bg-white/5 focus:bg-white/5 focus:text-white cursor-pointer">
-                <User className="mr-2 h-4 w-4" />
+            <DropdownMenuContent align="end" className="w-56 bg-gray-800 border-gray-700">
+              <DropdownMenuLabel className="text-gray-300">My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-gray-700" />
+              <DropdownMenuItem className="text-gray-300 hover:text-white hover:bg-gray-700 focus:bg-gray-700">
+                <User className="mr-2 h-5 w-5" />
                 <span>Profile</span>
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 hover:text-white hover:bg-white/5 focus:bg-white/5 focus:text-white cursor-pointer">
-                <Settings className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="text-gray-300 hover:text-white hover:bg-gray-700 focus:bg-gray-700">
+                <Settings className="mr-2 h-5 w-5" />
                 <span>Settings</span>
               </DropdownMenuItem>
               {/* Mobile-only notification menu item */}
-              <DropdownMenuItem className="sm:hidden text-zinc-300 hover:text-white hover:bg-white/5 focus:bg-white/5 focus:text-white cursor-pointer">
-                <Bell className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="sm:hidden text-gray-300 hover:text-white hover:bg-gray-700 focus:bg-gray-700">
+                <Bell className="mr-2 h-5 w-5" />
                 <span>Notifications</span>
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-white/[0.08]" />
+              <DropdownMenuSeparator className="bg-gray-700" />
               <DropdownMenuItem
                 onClick={logout}
-                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 focus:bg-red-500/10 focus:text-red-300 cursor-pointer"
+                className="text-red-400 hover:text-red-300 hover:bg-gray-700 focus:bg-gray-700"
               >
-                <LogOut className="mr-2 h-4 w-4" />
+                <LogOut className="mr-2 h-5 w-5" />
                 <span>Log out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>

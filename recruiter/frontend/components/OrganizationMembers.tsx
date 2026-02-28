@@ -453,9 +453,8 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'admin': return <Shield className="w-4 h-4 text-blue-600" />;
       case 'hr_manager': return <UserCheck className="w-4 h-4 text-green-600" />;
       case 'recruiter': return <User className="w-4 h-4 text-orange-600" />;
-      case 'interviewer': return <Eye className="w-4 h-4 text-muted-foreground" />;
-      case 'staff': return <User className="w-4 h-4 text-gray-600" />;
-      default: return <User className="w-4 h-4 text-muted-foreground" />;
+      case 'interviewer': return <Eye className="w-4 h-4 text-gray-600" />;
+      default: return <User className="w-4 h-4 text-gray-600" />;
     }
   };
 
@@ -465,9 +464,8 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'admin': return 'bg-blue-100 text-blue-800';
       case 'hr_manager': return 'bg-green-100 text-green-800';
       case 'recruiter': return 'bg-orange-100 text-orange-800';
-      case 'interviewer': return 'bg-muted/50 text-gray-800';
-      case 'staff': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-muted/50 text-gray-800';
+      case 'interviewer': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -478,7 +476,6 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       case 'hr_manager': return 'HR Manager';
       case 'recruiter': return 'Recruiter';
       case 'interviewer': return 'Interviewer';
-      case 'staff': return 'Staff';
       default: return role;
     }
   };
@@ -496,7 +493,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-muted-foreground">No organization selected</p>
+          <p className="text-gray-500">No organization selected</p>
         </div>
       </div>
     );
@@ -537,7 +534,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Team Members</h1>
-          <p className="text-muted-foreground">
+          <p className="text-gray-600">
             {memberSource === 'idp' 
               ? 'View your organization\'s team members (managed by Identity Provider)'
               : 'Manage your organization\'s team members and their roles'
@@ -647,7 +644,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-xs text-gray-500 mt-1">
                     Separate multiple emails with commas, semicolons, or line breaks
                   </p>
                   {/* Email-specific error */}
@@ -676,7 +673,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                           <Shield className="w-4 h-4 text-blue-600" />
                           <div>
                             <div className="font-medium">Admin</div>
-                            <div className="text-xs text-muted-foreground">Full access to manage users, jobs, and candidates</div>
+                            <div className="text-xs text-gray-500">Full access to manage users, jobs, and candidates</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -685,7 +682,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                           <UserCheck className="w-4 h-4 text-green-600" />
                           <div>
                             <div className="font-medium">HR Manager</div>
-                            <div className="text-xs text-muted-foreground">Can manage jobs, candidates, and view analytics</div>
+                            <div className="text-xs text-gray-500">Can manage jobs, candidates, and view analytics</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -694,7 +691,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                           <User className="w-4 h-4 text-purple-600" />
                           <div>
                             <div className="font-medium">Recruiter</div>
-                            <div className="text-xs text-muted-foreground">Can manage candidates and view jobs</div>
+                            <div className="text-xs text-gray-500">Can manage candidates and view jobs</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -703,16 +700,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                           <Eye className="w-4 h-4 text-orange-600" />
                           <div>
                             <div className="font-medium">Interviewer</div>
-                            <div className="text-xs text-muted-foreground">Can view candidates and jobs for interviews</div>
-                          </div>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="staff">
-                        <div className="flex items-center space-x-2">
-                          <User className="w-4 h-4 text-gray-600" />
-                          <div>
-                            <div className="font-medium">Staff</div>
-                            <div className="text-xs text-muted-foreground">Basic staff member access</div>
+                            <div className="text-xs text-gray-500">Can view candidates and jobs for interviews</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -779,7 +767,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
               </div>
               
               {errorModalDetails.limit && errorModalDetails.current && (
-                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="text-sm">
                     <div className="font-medium text-gray-700">Current Members</div>
                     <div className="text-2xl font-bold text-gray-900">{errorModalDetails.current}</div>
@@ -848,7 +836,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           ) : members.length === 0 ? (
             <div className="text-center py-8">
               <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-muted-foreground">No members found</p>
+              <p className="text-gray-500">No members found</p>
             </div>
           ) : (
             <Table>
@@ -865,7 +853,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                   <TableRow 
                     key={member._id}
                     onClick={() => handleMemberClick(member)}
-                    className="cursor-pointer hover:bg-muted/30 dark:hover:bg-gray-800/50 transition-colors group"
+                    className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group"
                   >
                     <TableCell>
                       <div className="flex items-center space-x-3">
@@ -890,11 +878,11 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                               'Unknown User'
                             }
                           </p>
-                          <p className="text-sm text-muted-foreground truncate" title={member.user?.email}>
+                          <p className="text-sm text-gray-600 truncate" title={member.user?.email}>
                             {member.user?.email || 'No email available'}
                           </p>
                           {member.user?.profile?.title && (
-                            <p className="text-xs text-muted-foreground truncate">
+                            <p className="text-xs text-gray-500 truncate">
                               {member.user?.profile?.title}
                             </p>
                           )}
@@ -912,7 +900,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                       </Badge>
                     </TableCell>
                     
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-gray-600">
                       {formatDate(member.joinedAt)}
                     </TableCell>
                     
@@ -1068,16 +1056,14 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
               <div className="font-semibold text-lg">
                   {selectedMemberForActions?.user?.profile?.firstName} {selectedMemberForActions?.user?.profile?.lastName}
                 </div>
-              <div className="text-sm text-muted-foreground">{selectedMemberForActions?.user?.email}</div>
+              <div className="text-sm text-gray-500">{selectedMemberForActions?.user?.email}</div>
               <div className="flex items-center gap-2 mt-1">
                 <Badge variant={selectedMemberForActions?.role === 'owner' ? 'default' : 'secondary'}>
                   {selectedMemberForActions?.role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
                   {selectedMemberForActions?.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'hr_manager' && <UserCheck className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'recruiter' && <User className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'interviewer' && <Eye className="w-3 h-3 mr-1" />}
-                  {selectedMemberForActions?.role === 'staff' && <User className="w-3 h-3 mr-1" />}
-                  {getRoleLabel(selectedMemberForActions?.role)}
+                  {selectedMemberForActions?.role === 'recruiter' && <UserCheck className="w-3 h-3 mr-1" />}
+                  {selectedMemberForActions?.role === 'viewer' && <Eye className="w-3 h-3 mr-1" />}
+                  {selectedMemberForActions?.role?.charAt(0).toUpperCase() + selectedMemberForActions?.role?.slice(1)}
                 </Badge>
                 <Badge 
                   variant={
@@ -1098,11 +1084,11 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           {/* Member Details */}
           <div className="space-y-3 py-4 border-b">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Joined</span>
+              <span className="text-gray-500">Joined</span>
               <span>{selectedMemberForActions?.joinedAt ? new Date(selectedMemberForActions.joinedAt).toLocaleDateString() : 'N/A'}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Last Active</span>
+              <span className="text-gray-500">Last Active</span>
               <span>{selectedMemberForActions?.user?.lastActive ? new Date(selectedMemberForActions.user.lastActive).toLocaleDateString() : 'N/A'}</span>
             </div>
             {canManageMembers && (
@@ -1123,7 +1109,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           
           {/* Actions Section */}
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-muted-foreground mb-3">Actions</h4>
+            <h4 className="text-sm font-medium text-gray-500 mb-3">Actions</h4>
 
             {/* IdP Managed - Show link to IdP instead of local actions */}
             {memberSource === 'idp' && canManageMembers && selectedMemberForActions?.role !== 'owner' && (
@@ -1161,7 +1147,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                     <UserCog className="h-4 w-4 mr-3" />
                     <div className="flex-1">
                       <div className="font-medium">Change Role</div>
-                      <div className="text-xs text-muted-foreground">Update member permissions</div>
+                      <div className="text-xs text-gray-500">Update member permissions</div>
                     </div>
                   </Button>
                 )}
@@ -1273,7 +1259,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-muted/30 p-4 rounded-lg">
+            <div className="bg-gray-50 p-4 rounded-lg">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Members</span>
                 <Badge variant="outline">
@@ -1290,14 +1276,14 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
               </div>
             </div>
             
-            <div className="bg-muted/30 p-4 rounded-lg">
+            <div className="bg-gray-50 p-4 rounded-lg">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Plan</span>
                 <Badge className="capitalize">
                   {currentOrganization.subscription?.planName || currentOrganization.subscription?.plan || 'Free'}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-gray-600 mt-1">
                 Current subscription plan
               </p>
             </div>
@@ -1316,7 +1302,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                 </p>
               </div>
               <Badge className={`${
-                currentOrganization.subscription?.plan === 'free' ? 'bg-muted/300' :
+                currentOrganization.subscription?.plan === 'free' ? 'bg-gray-500' :
                 currentOrganization.subscription?.plan === 'basic' ? 'bg-blue-500' :
                 currentOrganization.subscription?.plan === 'pro' ? 'bg-purple-500' :
                 'bg-gradient-to-r from-yellow-500 to-orange-500'

@@ -905,7 +905,7 @@ class AssistantService {
           console.log('🌐 Sterling deployment detected, using fallback streaming API directly');
           const response = await fetch('/fallback-config.json');
           const config = response.ok ? await response.json() : {};
-          const fallbackUrl = config.NEXT_PUBLIC_API_BASE_URL || 'https://api.seemplifyai.com';
+          const fallbackUrl = config.NEXT_PUBLIC_API_BASE_URL || 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
           return tryStreamFetch(fallbackUrl);
         })()
       : tryStreamFetch(getCurrentApiBaseUrl())
@@ -913,7 +913,7 @@ class AssistantService {
             console.warn('🔁 Default streaming API failed, trying fallback...', defaultError);
             const response = await fetch('/fallback-config.json');
             const config = response.ok ? await response.json() : {};
-            const fallbackUrl = config.NEXT_PUBLIC_API_BASE_URL || 'https://api.seemplifyai.com';
+            const fallbackUrl = config.NEXT_PUBLIC_API_BASE_URL || 'https://seemplify-eqh4hvgbcag3bug3.uksouth-01.azurewebsites.net';
             return tryStreamFetch(fallbackUrl);
           });
 

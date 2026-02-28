@@ -812,10 +812,10 @@ export default function PublicFeedbackPage() {
                 <div className="w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
                 </div>
-                <h1 className="text-3xl font-bold text-foreground dark:text-white mb-4">
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
                   Thank You for Your Feedback!
                 </h1>
-                <div className="text-lg text-muted-foreground dark:text-gray-300 space-y-3">
+                <div className="text-lg text-gray-600 dark:text-gray-300 space-y-3">
                   <p>Your feedback has been successfully submitted and recorded.</p>
                   {candidateInfo && (
                     <p className="text-blue-600 dark:text-blue-400">
@@ -856,7 +856,7 @@ export default function PublicFeedbackPage() {
                 </div>
               )}
 
-              <div className="text-sm text-muted-foreground dark:text-gray-400">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
                 <p>This feedback was submitted on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
                 {!isInternalUser && (
                   <p className="mt-2">You can now safely close this window.</p>

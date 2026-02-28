@@ -69,7 +69,7 @@ export function PageLoader({
           {getIcon()}
         </div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{message}</h2>
-        <p className="text-muted-foreground dark:text-muted-foreground/70">Please wait while we load your content</p>
+        <p className="text-gray-600 dark:text-gray-400">Please wait while we load your content</p>
         <div className="mt-4">
           <div className="w-48 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto overflow-hidden">
             <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse"></div>
@@ -84,7 +84,7 @@ export function PageLoader({
 export function CardSkeleton({ variant = "default" }: { variant?: "default" | "job" | "candidate" | "stat" }) {
   if (variant === "job") {
     return (
-      <div className="bg-card rounded-lg border border-border/60 p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <Skeleton className="h-12 w-12 rounded-xl" />
@@ -116,7 +116,7 @@ export function CardSkeleton({ variant = "default" }: { variant?: "default" | "j
 
   if (variant === "candidate") {
     return (
-      <div className="bg-card rounded-lg border border-border/60">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div className="p-4">
           <div className="flex items-center gap-3 mb-3">
             <Skeleton className="h-10 w-10 rounded-full" />
@@ -138,7 +138,7 @@ export function CardSkeleton({ variant = "default" }: { variant?: "default" | "j
 
   if (variant === "stat") {
     return (
-      <div className="bg-card rounded-lg border border-border/60 p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 rounded-lg" />
           <div className="flex-1">
@@ -151,7 +151,7 @@ export function CardSkeleton({ variant = "default" }: { variant?: "default" | "j
   }
 
   return (
-    <div className="bg-card rounded-lg border border-border/60 p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <Skeleton className="h-6 w-3/4 mb-4" />
       <Skeleton className="h-4 w-full mb-2" />
       <Skeleton className="h-4 w-5/6 mb-2" />
@@ -169,7 +169,7 @@ export function TableSkeleton({
   columns?: number 
 }) {
   return (
-    <div className="bg-card rounded-lg border border-border/60 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div className="border-b border-gray-200 dark:border-gray-700 p-4">
         <div className="flex gap-4">
           {Array.from({ length: columns }).map((_, i) => (
@@ -213,10 +213,10 @@ export function LoadingOverlay({
     <div className="relative">
       {children}
       {isLoading && (
-        <div className="absolute inset-0 bg-card/80 dark:bg-background/70 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
           <div className="text-center">
             <Spinner size="lg" className="mb-2" />
-            <p className="text-sm text-muted-foreground dark:text-muted-foreground/70">{message}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{message}</p>
           </div>
         </div>
       )}
@@ -233,7 +233,7 @@ export function InlineLoader({
   className?: string
 }) {
   return (
-    <div className={cn("flex items-center gap-2 text-muted-foreground dark:text-muted-foreground/70", className)}>
+    <div className={cn("flex items-center gap-2 text-gray-600 dark:text-gray-400", className)}>
       <Spinner size="sm" />
       <span className="text-sm">{message}</span>
     </div>
@@ -260,7 +260,7 @@ export function EmptyState({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
         {title}
       </h3>
-      <p className="text-muted-foreground dark:text-muted-foreground/70 mb-6">
+      <p className="text-gray-600 dark:text-gray-400 mb-6">
         {description}
       </p>
       {action}
@@ -288,7 +288,7 @@ export function ErrorState({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
         {title}
       </h3>
-      <p className="text-muted-foreground dark:text-muted-foreground/70 mb-6">
+      <p className="text-gray-600 dark:text-gray-400 mb-6">
         {description}
       </p>
       {showRetry && onRetry && (

@@ -238,7 +238,7 @@ export default function BulkJobUploadPage() {
       case "error":
         return <AlertCircle className="h-4 w-4 text-red-500" />
       default:
-        return <File className="h-4 w-4 text-muted-foreground" />
+        return <File className="h-4 w-4 text-gray-500" />
     }
   }
 
@@ -335,12 +335,12 @@ export default function BulkJobUploadPage() {
             >
               <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
                 <div className="flex items-center justify-center w-12 h-12 mx-auto bg-gray-100 rounded-lg mb-4">
-                  <FileSpreadsheet className="w-6 h-6 text-muted-foreground" />
+                  <FileSpreadsheet className="w-6 h-6 text-gray-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
                   {files.length === 0 ? "Upload Job Files" : "Add More Files"}
                 </h3>
-                <p className="text-sm text-muted-foreground mb-6">
+                <p className="text-sm text-gray-500 mb-6">
                   Drag and drop your CSV or Excel files here, or click to browse.
                   <br />
                   Supported formats: .csv, .xlsx
@@ -410,7 +410,7 @@ export default function BulkJobUploadPage() {
                         {getStatusIcon(file.status)}
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{file.name}</p>
-                          <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
+                          <p className="text-sm text-gray-500">{formatFileSize(file.size)}</p>
                           <p className="text-xs text-gray-400">{getStatusText(file)}</p>
                           {file.status === "processing" && (
                             <Progress value={file.progress} className="w-full mt-2" />

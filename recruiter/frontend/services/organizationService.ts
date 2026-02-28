@@ -174,29 +174,17 @@ class OrganizationService {
   private orgCache = {
     data: null as Organization[] | null,
     timestamp: 0,
-    ttl: 5000 // 5 seconds cache TTL (reduced from 10s for faster updates)
+    ttl: 10000 // 10 seconds cache TTL
   };
-
-  // Clear organization cache - call this when you need fresh data
-  clearCache() {
-    console.log('🧹 Clearing organization cache');
-    this.orgCache.data = null;
-    this.orgCache.timestamp = 0;
-  }
   
-  async getUserOrganizations(forceRefresh = false): Promise<Organization[]> {
-    console.log('🔍 OrganizationService.getUserOrganizations called', { forceRefresh });
+  async getUserOrganizations(): Promise<Organization[]> {
+    console.log('🔍 OrganizationService.getUserOrganizations called');
     
-    // Check if we have valid cached data (skip cache if forceRefresh is true)
+    // Check if we have valid cached data
     const now = Date.now();
-    if (!forceRefresh && this.orgCache.data && (now - this.orgCache.timestamp < this.orgCache.ttl)) {
+    if (this.orgCache.data && (now - this.orgCache.timestamp < this.orgCache.ttl)) {
       console.log(`🏢 Using cached organization data (${Math.round((now - this.orgCache.timestamp)/1000)}s old)`);
       return this.orgCache.data;
-    }
-    
-    // Clear cache if force refresh
-    if (forceRefresh) {
-      this.clearCache();
     }
     
     const requestUrl = `/api/organizations/user`;

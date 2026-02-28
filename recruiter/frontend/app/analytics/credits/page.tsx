@@ -41,10 +41,10 @@ export default function CreditsAnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-muted/30 dark:bg-slate-900">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto mb-4"></div>
-          <p className="text-muted-foreground dark:text-slate-400">Loading credits data...</p>
+          <p className="text-gray-600 dark:text-slate-400">Loading credits data...</p>
         </div>
       </div>
     );
@@ -52,10 +52,10 @@ export default function CreditsAnalyticsPage() {
 
   if (!credits) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-muted/30 dark:bg-slate-900">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-900">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-red-500 dark:text-red-400 mx-auto mb-4" />
-          <p className="text-muted-foreground dark:text-slate-400">Failed to load credits data</p>
+          <p className="text-gray-600 dark:text-slate-400">Failed to load credits data</p>
         </div>
       </div>
     );
@@ -74,7 +74,7 @@ export default function CreditsAnalyticsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Credits Management</h1>
-            <p className="text-muted-foreground dark:text-slate-400">Monitor and manage your organization's credit usage</p>
+            <p className="text-gray-600 dark:text-slate-400">Monitor and manage your organization's credit usage</p>
           </div>
           
           <Button className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700">
@@ -112,7 +112,7 @@ export default function CreditsAnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{credits.totalCredits}</div>
-              <p className="text-sm text-muted-foreground dark:text-slate-400 mt-1">Monthly allocation</p>
+              <p className="text-sm text-gray-600 dark:text-slate-400 mt-1">Monthly allocation</p>
             </CardContent>
           </Card>
 
@@ -128,7 +128,7 @@ export default function CreditsAnalyticsPage() {
                 {credits.usedCredits}
               </div>
               <div className="flex items-center justify-between mt-2">
-                <p className="text-sm text-muted-foreground dark:text-slate-400">{credits.percentageUsed.toFixed(1)}% of total</p>
+                <p className="text-sm text-gray-600 dark:text-slate-400">{credits.percentageUsed.toFixed(1)}% of total</p>
                 <Progress value={credits.percentageUsed} className="w-20 h-2" />
               </div>
             </CardContent>
@@ -143,7 +143,7 @@ export default function CreditsAnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-green-600 dark:text-green-400">{credits.remainingCredits}</div>
-              <p className="text-sm text-muted-foreground dark:text-slate-400 mt-1">Credits available</p>
+              <p className="text-sm text-gray-600 dark:text-slate-400 mt-1">Credits available</p>
             </CardContent>
           </Card>
 
@@ -155,8 +155,8 @@ export default function CreditsAnalyticsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{credits.daysUntilReset}</div>
-              <p className="text-sm text-muted-foreground dark:text-slate-400 mt-1">Days remaining</p>
+              <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{Math.max(0, credits.daysUntilReset)}</div>
+              <p className="text-sm text-gray-600 dark:text-slate-400 mt-1">Days remaining</p>
             </CardContent>
           </Card>
         </div>
@@ -172,18 +172,18 @@ export default function CreditsAnalyticsPage() {
               {Object.entries(credits.usageBreakdown).map(([action, data]) => (
                 <div key={action} className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <BarChart3 className="w-4 h-4 text-muted-foreground dark:text-slate-400" />
+                    <BarChart3 className="w-4 h-4 text-gray-600 dark:text-slate-400" />
                     <span className="text-gray-900 dark:text-slate-200 capitalize">{action.replace(/([A-Z])/g, ' $1').trim()}</span>
                   </div>
                   <div className="flex items-center space-x-4">
-                    <span className="text-muted-foreground dark:text-slate-400 text-sm">{data.count} actions</span>
+                    <span className="text-gray-600 dark:text-slate-400 text-sm">{data.count} actions</span>
                     <span className="text-gray-900 dark:text-white font-semibold">{data.credits} credits</span>
                   </div>
                 </div>
               ))}
               
               {Object.keys(credits.usageBreakdown).length === 0 && (
-                <p className="text-muted-foreground dark:text-slate-400 text-center py-4">No credit usage this cycle</p>
+                <p className="text-gray-600 dark:text-slate-400 text-center py-4">No credit usage this cycle</p>
               )}
             </div>
           </CardContent>
@@ -203,7 +203,7 @@ export default function CreditsAnalyticsPage() {
               {transactions.map((transaction, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 dark:bg-slate-700/30 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors"
+                  className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-slate-700/30 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     {transaction.credits < 0 ? (
@@ -215,7 +215,7 @@ export default function CreditsAnalyticsPage() {
                       <div className="text-gray-900 dark:text-slate-200 font-medium capitalize">
                         {transaction.action.replace(/([A-Z])/g, ' $1').trim()}
                       </div>
-                      <div className="text-xs text-muted-foreground dark:text-slate-400">
+                      <div className="text-xs text-gray-600 dark:text-slate-400">
                         {new Date(transaction.timestamp).toLocaleString()}
                       </div>
                     </div>
@@ -225,7 +225,7 @@ export default function CreditsAnalyticsPage() {
                     <div className={`font-semibold ${transaction.credits < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                       {transaction.credits > 0 ? '+' : ''}{transaction.credits}
                     </div>
-                    <div className="text-xs text-muted-foreground dark:text-slate-400">
+                    <div className="text-xs text-gray-600 dark:text-slate-400">
                       Balance: {transaction.balanceAfter}
                     </div>
                   </div>
@@ -233,7 +233,7 @@ export default function CreditsAnalyticsPage() {
               ))}
               
               {transactions.length === 0 && (
-                <p className="text-muted-foreground dark:text-slate-400 text-center py-8">No transactions yet</p>
+                <p className="text-gray-600 dark:text-slate-400 text-center py-8">No transactions yet</p>
               )}
             </div>
           </CardContent>
@@ -253,7 +253,7 @@ export default function CreditsAnalyticsPage() {
                   className={`relative p-4 rounded-lg border ${
                     pack.popular 
                       ? 'border-blue-500 dark:border-blue-500 bg-blue-50 dark:bg-blue-500/10' 
-                      : 'border-gray-300 dark:border-slate-600 bg-muted/30 dark:bg-slate-700/30'
+                      : 'border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/30'
                   }`}
                 >
                   {pack.popular && (
@@ -267,12 +267,12 @@ export default function CreditsAnalyticsPage() {
                     <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">
                       {pack.credits}
                     </div>
-                    <p className="text-xs text-muted-foreground dark:text-slate-400 mb-4">credits</p>
+                    <p className="text-xs text-gray-600 dark:text-slate-400 mb-4">credits</p>
                     
                     <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                       ${pack.price}
                     </div>
-                    <p className="text-xs text-muted-foreground dark:text-slate-400 mb-4">
+                    <p className="text-xs text-gray-600 dark:text-slate-400 mb-4">
                       ${pack.pricePerCredit.toFixed(2)}/credit
                     </p>
                     
@@ -286,7 +286,7 @@ export default function CreditsAnalyticsPage() {
                       Purchase
                     </Button>
                     
-                    <p className="text-xs text-muted-foreground dark:text-slate-500 mt-2">{pack.bestFor}</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-2">{pack.bestFor}</p>
                   </div>
                 </div>
               ))}

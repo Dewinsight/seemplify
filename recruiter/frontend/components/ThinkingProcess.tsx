@@ -141,7 +141,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
             
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-gray-600 dark:text-muted-foreground/70 uppercase tracking-wider">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                   {message.chunkType || 'thinking'}
                 </span>
                 {message.status && (
@@ -152,7 +152,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
                       ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
                       : message.status === 'executing'
                       ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                      : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-muted-foreground/70'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
                   }`}>
                     {message.status}
                   </span>
@@ -165,7 +165,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
               
               {/* Show detailed chunk information */}
               {message.chunk && (
-                <div className="mt-2 text-xs text-muted-foreground dark:text-muted-foreground/70">
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {formatChunkContent(message.chunk)}
                 </div>
               )}
@@ -188,7 +188,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
               )}
             </div>
             
-            <div className="flex-shrink-0 text-xs text-muted-foreground/70 dark:text-muted-foreground">
+            <div className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500">
               {new Date(message.timestamp).toLocaleTimeString([], { 
                 hour: '2-digit', 
                 minute: '2-digit',

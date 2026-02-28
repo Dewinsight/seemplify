@@ -18,7 +18,9 @@ import {
   XCircle,
   Briefcase,
   Mail,
-  Wand2
+  Wand2,
+  FileSpreadsheet,
+  Loader2
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -46,10 +48,12 @@ interface MobileJobHeaderProps {
   onBack: () => void
   onEdit: () => void
   onDelete: () => void
+  onExportReport: () => void
   onTogglePublic: () => void
   onEmailSettings: () => void
   onSetupWizard: () => void
   isUpdatingPublicStatus: boolean
+  isExportingReport?: boolean
   formatSalaryDisplay: (salary: any) => string
 }
 
@@ -59,10 +63,12 @@ export function MobileJobHeader({
   onBack,
   onEdit,
   onDelete,
+  onExportReport,
   onTogglePublic,
   onEmailSettings,
   onSetupWizard,
   isUpdatingPublicStatus,
+  isExportingReport = false,
   formatSalaryDisplay
 }: MobileJobHeaderProps) {
   const [showMobileDetails, setShowMobileDetails] = useState(false)
@@ -145,6 +151,23 @@ export function MobileJobHeader({
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Job
+                  </Button>
+                </div>
+
+                <div className="w-full">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onExportReport}
+                    disabled={isExportingReport}
+                    className="w-full border-white/30 text-white hover:bg-white/10 backdrop-blur-sm bg-blue-700/50"
+                  >
+                    {isExportingReport ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    )}
+                    {isExportingReport ? 'Exporting Report...' : 'Export Excel Report'}
                   </Button>
                 </div>
 
@@ -258,6 +281,19 @@ export function MobileJobHeader({
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <Button
+                onClick={onExportReport}
+                disabled={isExportingReport}
+                className="bg-white text-slate-900 hover:bg-slate-100 border border-white shadow-sm"
+              >
+                {isExportingReport ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                )}
+                {isExportingReport ? 'Exporting...' : 'Export Excel Report'}
+              </Button>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

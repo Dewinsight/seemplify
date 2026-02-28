@@ -107,7 +107,7 @@ export default function GrantLimitWarningModal({
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
-              <span className="ml-2 text-muted-foreground">Loading grant information...</span>
+              <span className="ml-2 text-gray-600">Loading grant information...</span>
             </div>
           ) : stats ? (
             <>
@@ -165,12 +165,12 @@ export default function GrantLimitWarningModal({
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">{stats.oldestGrant.userName}</p>
-                      <p className="text-sm text-muted-foreground">{stats.oldestGrant.email}</p>
+                      <p className="text-sm text-gray-600">{stats.oldestGrant.email}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <Badge className={`${getProviderBadge(stats.oldestGrant.provider)} text-white text-xs`}>
                           {stats.oldestGrant.provider}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-gray-500">
                           Connected {stats.oldestGrant.ageInDays} days ago
                         </span>
                       </div>
@@ -181,7 +181,7 @@ export default function GrantLimitWarningModal({
               )}
 
               {/* Note */}
-              <div className="text-xs text-muted-foreground bg-gray-50 p-3 rounded-lg">
+              <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
                 <strong>Note:</strong> This is an automatic process to ensure smooth calendar connections. 
                 The system always maintains the 5 most recently connected calendars.
               </div>
@@ -189,7 +189,7 @@ export default function GrantLimitWarningModal({
           ) : (
             <div className="text-center py-8">
               <AlertTriangle className="w-12 h-12 mx-auto text-amber-500 mb-4" />
-              <p className="text-muted-foreground">Unable to load grant information</p>
+              <p className="text-gray-600">Unable to load grant information</p>
             </div>
           )}
         </div>

@@ -129,6 +129,9 @@ class CandidateEmailService {
   async updateEmailSettings(jobId: string, settings: EmailSettings): Promise<{ emailSettings: EmailSettings }> {
     const response = await apiRequest(`/api/candidate-emails/job/${jobId}/email-settings`, {
       method: 'PUT',
+      headers: {
+        'X-Skip-Body-Sanitization': 'true'
+      },
       body: JSON.stringify(settings)
     });
 

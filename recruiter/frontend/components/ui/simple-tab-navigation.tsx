@@ -140,7 +140,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
 
   if (isMobile) {
     return (
-      <Card className="glass-card border-0 shadow-lg mb-4 overflow-hidden">
+      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg mb-4 overflow-hidden">
         {/* Swipeable Carousel Area */}
         <div
           className="relative"
@@ -152,19 +152,19 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
           {currentIndex > 0 && (
             <button
               onClick={goToPrevTab}
-              className="absolute left-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-background/70 dark:bg-black/40 border border-border/60 dark:border-white/10 shadow-md backdrop-blur-sm opacity-70 hover:opacity-100 transition-opacity"
+              className="absolute left-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-700/80 shadow-md backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity"
               aria-label="Previous tab"
             >
-              <ChevronLeft className="h-4 w-4 text-foreground dark:text-white" />
+              <ChevronLeft className="h-4 w-4 text-gray-600 dark:text-gray-300" />
             </button>
           )}
           {currentIndex < tabs.length - 1 && (
             <button
               onClick={goToNextTab}
-              className="absolute right-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-background/70 dark:bg-black/40 border border-border/60 dark:border-white/10 shadow-md backdrop-blur-sm opacity-70 hover:opacity-100 transition-opacity"
+              className="absolute right-1 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-700/80 shadow-md backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity"
               aria-label="Next tab"
             >
-              <ChevronRight className="h-4 w-4 text-foreground dark:text-white" />
+              <ChevronRight className="h-4 w-4 text-gray-600 dark:text-gray-300" />
             </button>
           )}
 
@@ -183,25 +183,26 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                     data-tab-id={tab.id}
                     onClick={() => onTabChange(tab.id)}
                     className={cn(
-                      "group flex-shrink-0 snap-center",
-                      "min-w-[88px] h-16 flex flex-col items-center justify-center gap-1 px-4 py-2",
-                      "rounded-xl border transition-all duration-300 ease-out",
+                      "flex-shrink-0 snap-center",
+                      "min-w-[80px] h-16 flex flex-col items-center justify-center gap-1 px-4 py-2",
+                      "rounded-xl transition-all duration-300 ease-out",
+                      "border-2",
                       isActive
-                        ? "bg-primary/10 text-primary shadow-lg border-primary/30 backdrop-blur-md"
-                        : "bg-transparent text-muted-foreground border-transparent hover:border-border/60 hover:bg-muted/40 hover:text-foreground"
+                        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30 border-blue-500 scale-105"
+                        : "bg-white/80 dark:bg-slate-700/80 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border-transparent hover:border-gray-200 dark:hover:border-slate-500"
                     )}
                   >
                     <div className={cn(
                       "transition-colors duration-200",
-                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                      isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
                     )}>
-                      {React.cloneElement(tab.icon as React.ReactElement<any>, {
+                      {React.cloneElement(tab.icon as React.ReactElement, {
                         className: "h-5 w-5"
                       })}
                     </div>
                     <span className={cn(
                       "text-xs font-medium leading-tight text-center",
-                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                      isActive ? "text-white" : "text-gray-700 dark:text-gray-300"
                     )}>
                       {tab.shortLabel}
                     </span>
@@ -211,8 +212,8 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                         className={cn(
                           "text-[10px] px-1.5 py-0 min-w-[18px] h-4",
                           isActive
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "bg-muted/40 text-muted-foreground border-border/60"
+                            ? "bg-white/25 text-white border-white/30"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
                         )}
                       >
                         {candidateCount}
@@ -233,8 +234,8 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 className={cn(
                   "h-2 rounded-full transition-all duration-300 ease-out",
                   activeTab === tab.id
-                    ? "bg-primary w-6"
-                    : "bg-muted-foreground/30 w-2 hover:bg-muted-foreground/50"
+                    ? "bg-blue-600 w-6"
+                    : "bg-gray-300 dark:bg-gray-600 w-2 hover:bg-gray-400 dark:hover:bg-gray-500"
                 )}
                 aria-label={`Go to ${tab.label} tab`}
               />
@@ -242,8 +243,8 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
           </div>
 
           {/* Swipe Hint - shows briefly on mount */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground/70 pointer-events-none opacity-50">
-            {'<- swipe to navigate ->'}
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 dark:text-gray-500 pointer-events-none opacity-50">
+            ← swipe to navigate →
           </div>
         </div>
       </Card>
@@ -251,7 +252,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
   }
 
   return (
-    <Card className="glass-card border-0 shadow-lg mb-6">
+    <Card className="border-0 bg-white/60 backdrop-blur-xl shadow-lg mb-6">
       <CardContent className="p-4 sm:p-6">
         {/* Desktop Tab Grid */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 lg:gap-4">
@@ -260,13 +261,13 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={cn(
-                "group relative p-3 sm:p-4 rounded-lg",
-                "border bg-transparent shadow-none",
+                "relative p-3 sm:p-4 rounded-lg",
+                "border-2 bg-white/80 shadow-sm",
                 "simple-tab-transition simple-tab-hover simple-tab-focus",
-                "focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-transparent",
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
                 activeTab === tab.id
-                  ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_15px_rgba(59,130,246,0.12)]"
-                  : "border-transparent hover:border-border/60 hover:bg-muted/40 text-muted-foreground hover:text-foreground"
+                  ? "border-blue-500 bg-blue-50 text-blue-700 shadow-md"
+                  : "border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-slate-700"
               )}
             >
               {/* Tab Content */}
@@ -274,39 +275,39 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 {/* Icon */}
                 <div className={cn(
                   "transition-colors duration-200",
-                  activeTab === tab.id ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                  activeTab === tab.id ? "text-blue-600" : "text-slate-600"
                 )}>
                   {tab.icon}
                 </div>
-
+                
                 {/* Label */}
                 <div className={cn(
                   "text-sm font-medium leading-tight",
-                  activeTab === tab.id ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                  activeTab === tab.id ? "text-blue-700" : "text-slate-700"
                 )}>
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">{tab.shortLabel}</span>
                 </div>
-
+                
                 {/* Candidate Count Badge */}
                 {tab.id === 'candidates' && candidateCount !== undefined && candidateCount > 0 && (
-                  <Badge
-                    variant="outline"
+                  <Badge 
+                    variant="outline" 
                     className={cn(
                       "text-xs px-2 py-0.5",
-                      activeTab === tab.id
-                        ? "border-primary/20 bg-primary/10 text-primary"
-                        : "border-border/60 bg-muted/40 text-muted-foreground"
+                      activeTab === tab.id 
+                        ? "border-blue-300 bg-blue-100 text-blue-700" 
+                        : "border-slate-300 bg-slate-100 text-slate-600"
                     )}
                   >
                     {candidateCount}
                   </Badge>
                 )}
               </div>
-
+              
               {/* Active Indicator */}
               {activeTab === tab.id && (
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-primary rounded-full simple-tab-active-indicator" />
+                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-blue-600 rounded-full simple-tab-active-indicator" />
               )}
             </button>
           ))}

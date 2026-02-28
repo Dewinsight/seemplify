@@ -43,13 +43,15 @@ export default function CreditsBadge() {
   }
 
   const getStatusColor = () => {
-    if (credits.percentageUsed >= 80) return 'text-red-500';
+    if (credits.warnings.lowCredit) return 'text-red-500';
+    if (credits.percentageUsed >= 80) return 'text-amber-500';
     if (credits.percentageUsed >= 50) return 'text-yellow-500';
     return 'text-green-500';
   };
 
   const getProgressColor = () => {
-    if (credits.percentageUsed >= 80) return 'bg-red-500';
+    if (credits.warnings.lowCredit) return 'bg-red-500';
+    if (credits.percentageUsed >= 80) return 'bg-amber-500';
     if (credits.percentageUsed >= 50) return 'bg-yellow-500';
     return 'bg-green-500';
   };
@@ -105,7 +107,7 @@ export default function CreditsBadge() {
               
               <div className="flex justify-between">
                 <span className="text-slate-400">Reset in:</span>
-                <span className="font-medium">{credits.daysUntilReset} days</span>
+                <span className="font-medium">{Math.max(0, credits.daysUntilReset)} days</span>
               </div>
               
               {credits.rolloverCredits > 0 && (

@@ -110,7 +110,7 @@ const OrganizationSettings: React.FC<OrganizationSettingsProps> = ({ className =
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-muted-foreground">No organization selected</p>
+          <p className="text-gray-500">No organization selected</p>
         </div>
       </div>
     );
@@ -125,7 +125,7 @@ const OrganizationSettings: React.FC<OrganizationSettingsProps> = ({ className =
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Organization Settings</h1>
-          <p className="text-muted-foreground">Manage your organization's details and preferences</p>
+          <p className="text-gray-600">Manage your organization's details and preferences</p>
         </div>
         <Badge variant="secondary" className="px-3 py-1">
           {currentOrganization.userRole === 'owner' ? 'Owner' : 
@@ -237,7 +237,7 @@ const OrganizationSettings: React.FC<OrganizationSettingsProps> = ({ className =
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Allow Public Job Applications</Label>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-600">
                   Allow candidates to apply to jobs without invitation
                 </p>
               </div>
@@ -253,7 +253,7 @@ const OrganizationSettings: React.FC<OrganizationSettingsProps> = ({ className =
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Require Approval for New Members</Label>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-600">
                   New team members need approval before joining
                 </p>
               </div>
@@ -284,7 +284,7 @@ const OrganizationSettings: React.FC<OrganizationSettingsProps> = ({ className =
                   <SelectItem value="Under Review">Under Review</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-gray-600 mt-1">
                 Status automatically assigned to new candidates
               </p>
             </div>

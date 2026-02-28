@@ -188,7 +188,7 @@ export function QuestionQualityDisplay({
                   value={(1 - metrics.biasScore) * 100} 
                   className="h-2"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   Higher is better (100% = bias-free)
                 </p>
               </div>
@@ -213,7 +213,7 @@ export function QuestionQualityDisplay({
                   value={metrics.biasScore * 100} 
                   className="h-2"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   Raw bias score: {(metrics.biasScore * 100).toFixed(1)}%
                 </p>
               </div>
@@ -236,7 +236,7 @@ export function QuestionQualityDisplay({
             )}
 
             {/* Legal Compliance */}
-            <div className="flex items-center justify-between p-3 bg-muted/30 dark:bg-card/30 border border-border/40 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4 text-blue-600" />
                 <span className="text-sm font-medium">Legal Compliance</span>
@@ -344,7 +344,7 @@ export function QuestionQualityDisplay({
                     <div className="grid grid-cols-1 gap-2">
                       {Object.entries(metrics.biasAnalysis).map(([type, score]) => (
                         score !== undefined && (
-                          <div key={type} className="flex items-center justify-between p-2 glass-card bg-popover/40 dark:bg-card/30 border border-border/60 rounded">
+                          <div key={type} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border rounded">
                             <div className="flex items-center gap-2">
                               {getBiasIcon(type)}
                               <span className="text-sm">{formatBiasType(type)}</span>
@@ -410,7 +410,7 @@ export function QuestionQualityDisplay({
 
             {/* AI Generation Metadata */}
             {question.isAIGenerated && question.aiGenerationMetadata && (
-              <div className="text-xs text-muted-foreground pt-2 border-t">
+              <div className="text-xs text-gray-500 pt-2 border-t">
                 <div className="flex justify-between">
                   <span>Model: {question.aiGenerationMetadata.model}</span>
                   <span>Confidence: {Math.round(question.aiGenerationMetadata.confidence * 100)}%</span>
@@ -422,8 +422,8 @@ export function QuestionQualityDisplay({
             )}
           </>
         ) : (
-          <div className="text-center py-4 text-muted-foreground">
-            <Shield className="h-8 w-8 mx-auto mb-2 text-muted-foreground/70" />
+          <div className="text-center py-4 text-gray-500">
+            <Shield className="h-8 w-8 mx-auto mb-2 text-gray-400" />
             <p className="text-sm">No quality analysis available</p>
             <p className="text-xs mt-1">Click "Analyze" to generate quality metrics</p>
           </div>

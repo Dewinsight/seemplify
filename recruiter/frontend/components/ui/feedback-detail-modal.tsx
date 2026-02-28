@@ -234,14 +234,14 @@ export function FeedbackDetailModal({ open, onOpenChange, feedback, question }: 
             )}
 
             {/* Feedback Content */}
-            <div className="glass-card bg-popover/40 dark:bg-card/30 border-border/60 rounded-lg border p-6">
+            <div className="bg-white dark:bg-gray-900 rounded-lg border p-6">
               <h3 className="font-semibold mb-4 flex items-center gap-2">
                 <MessageSquare className="h-5 w-5" />
                 Feedback Content
               </h3>
               <div className="prose prose-sm dark:prose-invert max-w-none">
-                <div className="bg-muted/40 dark:bg-card/40 rounded-lg p-4 border-l-4 border-blue-500">
-                  <p className="text-foreground whitespace-pre-wrap leading-relaxed">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 border-l-4 border-blue-500">
+                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
                     {feedback.content}
                   </p>
                 </div>

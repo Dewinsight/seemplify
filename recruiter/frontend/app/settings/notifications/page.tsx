@@ -165,7 +165,7 @@ const NotificationsPage = () => {
             <div className="text-center">
               <Bell className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications</h3>
-              <p className="text-muted-foreground">
+              <p className="text-gray-500">
                 You don't have any notifications at the moment.
               </p>
             </div>
@@ -244,7 +244,7 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification, onCli
                   )}
                 </h4>
                 <p className="text-sm text-gray-600 mb-2">{notification.message}</p>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-4 text-xs text-gray-500">
                   {notification.organization?.id && (
                     <Badge variant="outline" className="text-[10px] flex items-center gap-1">
                       <Building2 className="h-3 w-3" />

@@ -27,7 +27,7 @@ import {
 import {
   Users, Calendar, Clock, AlertTriangle, CalendarPlus, Trash2, Search,
   RefreshCw, Mail, Phone, Star, ArrowRight, ArrowLeft, MoreHorizontal,
-  Settings, Copy, ExternalLink, User, MoveRight
+  Settings, Copy, ExternalLink, User, MoveRight, Eye
 } from 'lucide-react'
 import { toast } from 'sonner'
 import pipelineService from '@/services/pipelineService'
@@ -83,7 +83,7 @@ interface PipelineCandidate {
   }
   applicationDate: string
   source: string
-  status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'offered' | 'hired' | 'rejected'
+  status: 'applied' | 'reviewing' | 'shortlisted' | 'interviewing' | 'keep_in_view' | 'offered' | 'hired' | 'rejected'
   priority: 'high' | 'medium' | 'low'
   tags: string[]
 }
@@ -123,6 +123,7 @@ export function ImprovedPipelineBoard({
   const [refreshing, setRefreshing] = useState(false)
   const [selectedCandidate, setSelectedCandidate] = useState<PipelineCandidate | null>(null)
   const [movingCandidate, setMovingCandidate] = useState<Set<string>>(new Set())
+  const [keepingInViewCandidates, setKeepingInViewCandidates] = useState<Set<string>>(new Set())
 
   // Bulk move selection state
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set())
@@ -193,10 +194,10 @@ export function ImprovedPipelineBoard({
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return 'border-l-red-500 bg-gradient-to-br from-red-950/40 via-red-900/20 to-red-950/10 dark:from-red-950/40 dark:via-red-900/20 dark:to-red-950/10 shadow-lg'
-      case 'medium': return 'border-l-yellow-500 bg-gradient-to-br from-yellow-950/40 via-yellow-900/20 to-yellow-950/10 dark:from-yellow-950/40 dark:via-yellow-900/20 dark:to-yellow-950/10 shadow-lg'
-      case 'low': return 'border-l-green-500 bg-gradient-to-br from-green-950/40 via-green-900/20 to-green-950/10 dark:from-green-950/40 dark:via-green-900/20 dark:to-green-950/10 shadow-lg'
-      default: return 'border-l-gray-500 bg-card/30 glass-card'
+      case 'high': return 'border-l-red-500 bg-gradient-to-r from-red-50 via-white to-white dark:from-red-950/30 dark:via-slate-800 dark:to-slate-800 shadow-red-100 dark:shadow-red-900/20'
+      case 'medium': return 'border-l-yellow-500 bg-gradient-to-r from-yellow-50 via-white to-white dark:from-yellow-950/30 dark:via-slate-800 dark:to-slate-800 shadow-yellow-100 dark:shadow-yellow-900/20'
+      case 'low': return 'border-l-green-500 bg-gradient-to-r from-green-50 via-white to-white dark:from-green-950/30 dark:via-slate-800 dark:to-slate-800 shadow-green-100 dark:shadow-green-900/20'
+      default: return 'border-l-gray-300 bg-gradient-to-r from-gray-50 via-white to-white dark:from-gray-800 dark:via-slate-800 dark:to-slate-800'
     }
   }
 
@@ -420,6 +421,41 @@ export function ImprovedPipelineBoard({
     await handleMoveCandidate(candidateId, targetStage.stage._id)
   }
 
+  const handleKeepInViewCandidate = async (candidateId: string, reason?: string) => {
+    if (keepingInViewCandidates.has(candidateId)) return
+
+    try {
+      setKeepingInViewCandidates(prev => new Set([...prev, candidateId]))
+      const candidate = stageColumns.flatMap(col => col.candidates).find(c => c._id === candidateId)
+      if (!candidate) return
+
+      toast.loading(`Moving ${candidate.firstName} ${candidate.lastName} to Keep in View...`, {
+        id: `keep-in-view-${candidateId}`
+      })
+
+      await pipelineService.keepCandidateInView(jobId, candidateId, {
+        reason: reason || 'Moved to keep in view from pipeline board'
+      })
+
+      toast.success(`${candidate.firstName} ${candidate.lastName} is now in Keep in View`, {
+        id: `keep-in-view-${candidateId}`
+      })
+
+      fetchPipelineData()
+      onStageUpdate?.()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to move candidate to Keep in View', {
+        id: `keep-in-view-${candidateId}`
+      })
+    } finally {
+      setKeepingInViewCandidates(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(candidateId)
+        return newSet
+      })
+    }
+  }
+
   const handleScheduleInterview = (candidate: any, stage: any) => {
     console.log('🎯 handleScheduleInterview called:', {
       candidateId: candidate._id,
@@ -440,8 +476,36 @@ export function ImprovedPipelineBoard({
     setShowScheduleDialog(false)
     setSelectedCandidate(null) // Close candidate popup after successful interview scheduling
     toast.success('Interview scheduled successfully!')
-    await fetchPipelineData()
     onStageUpdate?.()
+  }
+
+  const handleBulkKeepInView = async () => {
+    try {
+      const candidateIds = Array.from(selectedCandidates)
+      const result = await pipelineService.bulkKeepCandidatesInView(jobId, {
+        candidateIds,
+        reason: 'Moved to keep in view from pipeline board bulk action'
+      })
+
+      if (result.success) {
+        toast.success(`Successfully moved ${result.results.successful.length} candidate${result.results.successful.length !== 1 ? 's' : ''} to Keep in View`)
+      } else if (result.partialSuccess) {
+        toast.warning(
+          `${result.results.successful.length} moved to Keep in View, ${result.results.failed.length} failed`,
+          {
+            description: result.results.failed.map(f => f.reason).join(', ')
+          }
+        )
+      }
+
+      clearSelection()
+      fetchPipelineData()
+      onStageUpdate?.()
+    } catch (error: any) {
+      toast.error('Failed to keep candidates in view', {
+        description: error.message
+      })
+    }
   }
 
   if (loading) {
@@ -457,19 +521,19 @@ export function ImprovedPipelineBoard({
 
   if (stageColumns.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-6 glass-card rounded-xl border border-white/5 shadow-2xl">
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-blue-100 shadow-lg">
         <div className="text-center max-w-md">
-          <div className="mb-4 bg-blue-500/10 p-4 rounded-full inline-flex border border-blue-500/20">
-            <AlertTriangle className="h-10 w-10 text-blue-400" />
+          <div className="mb-4 bg-blue-50 p-4 rounded-full inline-flex">
+            <AlertTriangle className="h-10 w-10 text-blue-600" />
           </div>
-          <h3 className="text-xl font-semibold mb-2 dark:text-blue-100 text-gray-900">No Interview Stages Configured</h3>
-          <p className="text-muted-foreground mb-6">
+          <h3 className="text-xl font-semibold mb-2 text-blue-700">No Interview Stages Configured</h3>
+          <p className="text-gray-600 mb-6">
             You need to set up interview stages before you can use the pipeline.
           </p>
           <Button
             onClick={() => onNavigateToStages?.()}
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
           >
             <Settings className="mr-2 h-4 w-4" />
             Configure Stages
@@ -485,13 +549,12 @@ export function ImprovedPipelineBoard({
         {/* Header with Controls */}
         <div className="flex flex-col space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="hidden sm:block">
-              <h2 className="text-xl sm:text-2xl font-bold dark:text-white text-gray-900">Interview Pipeline</h2>
+            <div className="hidden sm:block">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Interview Pipeline</h2>
               <p className="text-sm text-muted-foreground mt-1">Manage candidates through your multi-stage interview process</p>
             </div>
 
             <Button variant="outline" size="sm" onClick={() => onNavigateToStages?.()} className="text-sm w-fit">
-              <Settings className="h-4 w-4 mr-2" />
               Manage Stages
             </Button>
           </div>
@@ -504,19 +567,19 @@ export function ImprovedPipelineBoard({
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   ref={searchInputRef}
                   placeholder="Search candidates..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full sm:w-48 glass-card border-white/10 dark:text-white text-gray-900 dark:placeholder-gray-500 placeholder-gray-600"
+                  className="pl-10 w-full sm:w-48"
                 />
               </div>
 
               <div className="flex gap-2">
                 <Select value={filterBy} onValueChange={(value: any) => setFilterBy(value)}>
-                  <SelectTrigger className="w-full sm:w-36 glass-card border-white/10 dark:text-white text-gray-900">
+                  <SelectTrigger className="w-full sm:w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -528,7 +591,7 @@ export function ImprovedPipelineBoard({
                 </Select>
 
                 <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-                  <SelectTrigger className="w-full sm:w-32 glass-card border-white/10 dark:text-white text-gray-900">
+                  <SelectTrigger className="w-full sm:w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -540,7 +603,7 @@ export function ImprovedPipelineBoard({
                 </Select>
               </div>
 
-              <Button variant="outline" size="sm" onClick={() => fetchPipelineData()} disabled={refreshing} className="w-full sm:w-auto border-white/10 bg-transparent text-gray-300 hover:bg-white/5 hover:text-white">
+              <Button variant="outline" size="sm" onClick={() => fetchPipelineData()} disabled={refreshing} className="w-full sm:w-auto">
                 <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
@@ -550,9 +613,9 @@ export function ImprovedPipelineBoard({
 
         {/* Bulk Action Toolbar */}
         {selectedCandidates.size > 0 && (
-          <div className="glass-card border border-white/10 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Badge variant="secondary" className="bg-blue-500/20 text-blue-200 border border-blue-500/30">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
                 {selectedCandidates.size} selected
               </Badge>
               <Button
@@ -565,6 +628,14 @@ export function ImprovedPipelineBoard({
               </Button>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleBulkKeepInView}
+                className="border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Keep in View
+              </Button>
               <Button
                 onClick={() => setShowBulkMoveModal(true)}
                 className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
@@ -579,15 +650,15 @@ export function ImprovedPipelineBoard({
         {/* Pipeline Health Summary */}
         <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4" data-tutorial="pipeline-analytics-summary">
           {stageColumns.map((column, index) => (
-            <Card key={column.stage._id} className="relative overflow-hidden border-0 glass-card shadow-lg group hover:bg-white/5 transition-all">
+            <Card key={column.stage._id} className="relative overflow-hidden border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg">
               <CardHeader className="pb-2 px-3 sm:px-4 pt-3 sm:pt-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-2 dark:text-white text-gray-900">
-                    <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
+                  <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                    <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
                     <span className="truncate">{column.stage.name}</span>
                   </CardTitle>
                   <div className="flex items-center gap-1 sm:gap-2">
-                    <Badge variant="outline" className="text-xs border-white/10 dark:text-gray-300 text-gray-700">{column.analytics.totalCandidates}</Badge>
+                    <Badge variant="outline" className="text-xs">{column.analytics.totalCandidates}</Badge>
                     {column.analytics.healthScore < 70 && (
                       <Tooltip>
                         <TooltipTrigger><AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" /></TooltipTrigger>
@@ -596,26 +667,26 @@ export function ImprovedPipelineBoard({
                     )}
                   </div>
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-muted-foreground">
                   {column.stage.defaultDuration} min • {column.stage.requiredInterviewers} interviewer{column.stage.requiredInterviewers !== 1 ? 's' : ''}
                 </div>
               </CardHeader>
               <CardContent className="px-3 sm:px-4 pb-3 sm:pb-4">
                 <div className="space-y-1 sm:space-y-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>Health Score</span>
                     <div className="flex items-center gap-1 sm:gap-2">
-                      <Progress value={column.analytics.healthScore} className="w-8 sm:w-12 h-1 sm:h-2 bg-white/10" />
-                      <span className="font-medium text-xs dark:text-gray-300 text-gray-700">{column.analytics.healthScore}%</span>
+                      <Progress value={column.analytics.healthScore} className="w-8 sm:w-12 h-1 sm:h-2" />
+                      <span className="font-medium text-xs">{column.analytics.healthScore}%</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>New this week</span>
-                    <span className="font-medium dark:text-gray-300 text-gray-700">{column.analytics.newThisWeek > 0 && '+'}{column.analytics.newThisWeek}</span>
+                    <span className="font-medium">{column.analytics.newThisWeek > 0 && '+'}{column.analytics.newThisWeek}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>Avg. time</span>
-                    <span className="font-medium dark:text-gray-300 text-gray-700">{column.analytics.averageTimeInStage}d</span>
+                    <span className="font-medium">{column.analytics.averageTimeInStage}d</span>
                   </div>
                   {column.analytics.overdueCandidates > 0 && (
                     <div className="flex items-center gap-1 text-xs text-red-600">
@@ -624,7 +695,7 @@ export function ImprovedPipelineBoard({
                     </div>
                   )}
                   {column.analytics.scheduledInterviews > 0 && (
-                    <div className="flex items-center gap-1 text-xs text-blue-400">
+                    <div className="flex items-center gap-1 text-xs text-blue-600">
                       <Calendar className="h-2 w-2 sm:h-3 sm:w-3" />
                       <span>{column.analytics.scheduledInterviews} scheduled</span>
                     </div>
@@ -650,12 +721,12 @@ export function ImprovedPipelineBoard({
                   <CarouselPrevious className="relative left-0 top-0 translate-y-0 h-8 w-8 sm:h-10 sm:w-10" />
                   <CarouselNext className="relative right-0 top-0 translate-y-0 h-8 w-8 sm:h-10 sm:w-10" />
                 </div>
-              <div className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
-                <span className="font-medium dark:text-gray-300 text-gray-700">{stageColumns.length}</span>
-                <span>stage{stageColumns.length !== 1 ? 's' : ''}</span>
-                <span className="hidden sm:inline">•</span>
-                <span className="hidden sm:inline">Swipe or use arrows to navigate</span>
-              </div>
+                <div className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
+                  <span className="font-medium">{stageColumns.length}</span>
+                  <span>stage{stageColumns.length !== 1 ? 's' : ''}</span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="hidden sm:inline">Swipe or use arrows to navigate</span>
+                </div>
               </div>
               <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
                 <span>Use dropdowns to move candidates</span>
@@ -667,17 +738,17 @@ export function ImprovedPipelineBoard({
                 <CarouselItem key={column.stage._id} className="pl-2 md:pl-4 basis-[336px] sm:basis-[360px] md:basis-[400px] lg:basis-[420px] xl:basis-[450px]">
                   <div className="space-y-4 h-full">
                     {/* Stage Header */}
-                    <div className="sticky top-0 z-10 pb-2">
-                      <Card className="border-0 glass-card shadow-md">
-                        <CardHeader className="pb-3 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-white/5 bg-gradient-to-r from-card/50 to-card/30">
+                    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur pb-2">
+                      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-md">
+                        <CardHeader className="pb-3 px-3 sm:px-4 pt-3 sm:pt-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
+                              <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full" style={{ backgroundColor: getStageColor(column.stage.type, index) }} />
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                              <CardTitle className="text-sm sm:text-lg truncate cursor-help dark:text-white text-gray-900">
-                                {column.stage.name}
-                              </CardTitle>
+                                  <CardTitle className="text-sm sm:text-lg truncate cursor-help text-gray-900 dark:text-gray-100">
+                                    {column.stage.name}
+                                  </CardTitle>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <div>
@@ -692,7 +763,7 @@ export function ImprovedPipelineBoard({
                                 </TooltipContent>
                               </Tooltip>
                             </div>
-                            <Badge variant="secondary" className="text-xs bg-white/10 dark:text-gray-300 text-gray-700 border-0">{column.candidates.length}</Badge>
+                            <Badge variant="secondary" className="text-xs">{column.candidates.length}</Badge>
                           </div>
                           <div className="flex items-center gap-3 sm:gap-4 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
@@ -709,9 +780,9 @@ export function ImprovedPipelineBoard({
                     </div>
 
                     {/* Candidates Area */}
-                    <div className="min-h-[400px] sm:min-h-[500px] space-y-3 p-2 rounded-lg bg-white/5 border border-white/5">
+                    <div className="min-h-[400px] sm:min-h-[500px] space-y-3 p-2 rounded-lg bg-gray-50/50 dark:bg-slate-800/30 border-2 border-transparent">
                       {column.candidates.map((candidate) => {
-                        const isMoving = movingCandidate.has(candidate._id)
+                        const isMoving = movingCandidate.has(candidate._id) || keepingInViewCandidates.has(candidate._id)
                         const isSelected = selectedCandidates.has(candidate._id)
 
                         return (
@@ -721,7 +792,7 @@ export function ImprovedPipelineBoard({
                               <Checkbox
                                 checked={isSelected}
                                 onCheckedChange={() => toggleCandidateSelection(candidate._id)}
-                                className="bg-card border-white/20 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                                className="bg-white dark:bg-slate-800 border-2 shadow-sm"
                               />
                             </div>
 
@@ -745,6 +816,7 @@ export function ImprovedPipelineBoard({
                               getDaysInStage={getDaysInStage}
                               getInitials={getInitials}
                               onEmailSent={fetchPipelineData}
+                              onKeepInView={handleKeepInViewCandidate}
                             />
                           </div>
                         )
@@ -752,11 +824,11 @@ export function ImprovedPipelineBoard({
 
                       {/* Empty State */}
                       {column.candidates.length === 0 && (
-                        <div className="flex items-center justify-center h-32 border-2 border-dashed border-white/5 rounded-lg">
+                        <div className="flex items-center justify-center h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg">
                           <div className="text-center">
-                            <Users className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-gray-600 dark:text-gray-500" />
+                            <Users className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-muted-foreground/50" />
                             <p className="text-xs sm:text-sm text-muted-foreground">No candidates in this stage</p>
-                            <p className="text-xs text-muted-foreground">Use dropdown menus to move candidates here</p>
+                            <p className="text-xs text-muted-foreground/75">Use dropdown menus to move candidates here</p>
                           </div>
                         </div>
                       )}
@@ -801,12 +873,13 @@ export function ImprovedPipelineBoard({
           }}
           getDaysInStage={getDaysInStage}
           getInitials={getInitials}
+          onKeepInView={handleKeepInViewCandidate}
         />
 
         {/* Schedule Interview Dialog */}
         <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
           <DialogContent
-            className="max-w-[90vw] sm:max-w-4xl h-[85vh] p-0 overflow-hidden multi-step-scheduler-portal"
+            className="w-[98vw] max-w-[1600px] h-[96vh] max-h-[96vh] p-0 overflow-hidden multi-step-scheduler-portal"
           >
             {/* Hidden DialogTitle for accessibility */}
             <DialogHeader className="sr-only">

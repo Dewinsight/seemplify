@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +42,7 @@ const applicationFormSchema = z.object({
   phone: z.string().min(10, {
     message: "Please enter a valid phone number.",
   }),
+  isOrganizationStaff: z.boolean().default(false),
   coverLetter: z.string().optional(),
 })
 
@@ -77,6 +79,7 @@ export function PublicJobApplicationForm({
       lastName: '',
       email: '',
       phone: '',
+      isOrganizationStaff: false,
       coverLetter: '',
     },
   })
@@ -167,18 +170,19 @@ export function PublicJobApplicationForm({
       // ✅ Display error directly in the form UI instead of toast
       let errorMessage = error.message || 'Failed to upload CV. Please try again.'
       
-      // Detect parsing/extraction failures and provide helpful guidance
-      if (error.message?.includes('Could not extract readable text') || 
+      // Detect parsing/extraction failures (image-based CV, OCR failure, etc.)
+      if (error.message?.includes('IMAGE_BASED_CV') || 
+          error.message?.includes('Could not extract readable text') || 
           error.message?.includes('insufficient information') ||
-          error.message?.includes('CV parsing failed')) {
-        errorMessage = '⚠️ Unable to Read Resume File\n\n' +
-                      'We couldn\'t extract text from your file. This usually happens with:\n\n' +
-                      '• Scanned PDFs or images (not text-based)\n' +
-                      '• Password-protected or corrupted files\n' +
-                      '• Unsupported file formats\n\n' +
-                      'What you can do:\n\n' +
-                      '✓ Try uploading a text-based PDF or DOCX file\n' +
-                      '✓ Or enter your information manually in the form below'
+          error.message?.includes('CV parsing failed') ||
+          error.message?.includes('image-based')) {
+        errorMessage = '⚠️ Unable to Read Your CV\n\n' +
+                      'There is a problem with your CV: it appears to be image-based or scanned. Do NOT use image-based or scanned CVs — we cannot extract information from them.\n\n' +
+                      'Please upload a text-based CV instead:\n\n' +
+                      '✓ A PDF or DOCX file with selectable text (not a scan)\n' +
+                      '✓ Create a new document and copy your text into it, then save as PDF\n' +
+                      '✓ Or enter your information manually in the form below\n\n' +
+                      'Important: Ensure the email in your CV is correct — a wrong email can cause issues (application not received, contact problems).'
       }
       
       // Set error state to display in UI
@@ -215,6 +219,7 @@ export function PublicJobApplicationForm({
         },
         body: JSON.stringify({
           ...data,
+          isInternalCandidate: data.isOrganizationStaff,
           notes: data.coverLetter || '',
           source: 'public'
         }),
@@ -233,6 +238,7 @@ export function PublicJobApplicationForm({
         },
         body: JSON.stringify({
           candidateId: candidateId,
+          isOrganizationStaff: data.isOrganizationStaff,
           coverLetter: data.coverLetter || '',
           notes: data.coverLetter || 'Applied through public job page'
         }),
@@ -312,11 +318,14 @@ export function PublicJobApplicationForm({
                 <div className="space-y-2">
                   <Upload className="h-8 w-8 mx-auto text-gray-400" />
                   <div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-gray-600">
                       Click to upload or drag and drop your CV
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-gray-500">
                       PDF, DOC, or DOCX (max 10MB)
+                    </p>
+                    <p className="text-xs text-amber-600/90 mt-1">
+                      Do NOT use image-based or scanned CVs. Ensure the email in your CV is correct — a wrong email can cause issues.
                     </p>
                   </div>
                   <Button
@@ -354,7 +363,7 @@ export function PublicJobApplicationForm({
                     <File className="h-5 w-5 text-blue-500" />
                     <div>
                       <p className="text-sm font-medium">{uploadedFile.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-gray-500">
                         {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
@@ -398,7 +407,7 @@ export function PublicJobApplicationForm({
                 </div>
                 <Progress value={uploadProgress} className="h-2" />
                 {uploadProgress > 30 && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-gray-500">
                     CV processing can take several minutes. Please wait...
                   </p>
                 )}
@@ -501,6 +510,27 @@ export function PublicJobApplicationForm({
                       <Input placeholder="+1234567890" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isOrganizationStaff"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(checked) => field.onChange(Boolean(checked))}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Are you currently staff of this organization?</FormLabel>
+                      <FormDescription>
+                        Select this only if you currently work at this company.
+                      </FormDescription>
+                    </div>
                   </FormItem>
                 )}
               />

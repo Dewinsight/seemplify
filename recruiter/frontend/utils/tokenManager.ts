@@ -59,6 +59,34 @@ class TokenManager {
   }
 
   /**
+   * Set an access token without a refresh token.
+   * Used in token-only callback flows to avoid stale refresh token reuse.
+   */
+  setAccessToken(accessToken: string, expiresIn: string = '10m') {
+    const expiryMs = this.parseExpiryTime(expiresIn);
+    const expiresAt = Date.now() + expiryMs;
+
+    // Clear any previous refresh cycle/state before switching principal.
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+
+    this.tokenData = {
+      accessToken,
+      refreshToken: '',
+      expiresIn,
+      expiresAt
+    };
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('jwt', accessToken);
+      localStorage.removeItem('refreshToken');
+      localStorage.setItem('tokenExpiresAt', expiresAt.toString());
+    }
+  }
+
+  /**
    * Get current access token
    */
   getAccessToken(): string | null {
@@ -88,6 +116,11 @@ class TokenManager {
    */
   needsRefresh(): boolean {
     if (typeof window === 'undefined') return false;
+
+    // If we don't have a refresh token, we cannot refresh safely.
+    // This avoids accidental cross-account refresh with stale tokens.
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken) return false;
     
     const expiresAt = localStorage.getItem('tokenExpiresAt');
     if (!expiresAt) return true;

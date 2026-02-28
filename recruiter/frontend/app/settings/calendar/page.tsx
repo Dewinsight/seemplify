@@ -27,6 +27,22 @@ export default function CalendarSettingsPage() {
   const [connecting, setConnecting] = useState(false);
   const [switchingAccount, setSwitchingAccount] = useState(false);
 
+  const normalizeProviderId = (provider?: string): 'google' | 'microsoft' => {
+    const normalized = String(provider || '').toLowerCase();
+    if (
+      normalized.includes('microsoft') ||
+      normalized.includes('outlook') ||
+      normalized.includes('azure') ||
+      normalized.includes('teams')
+    ) {
+      return 'microsoft';
+    }
+    return 'google';
+  };
+
+  const getProviderLabel = (provider?: string) =>
+    normalizeProviderId(provider) === 'microsoft' ? 'Microsoft Outlook' : 'Google Calendar';
+
   useEffect(() => {
     checkCalendarStatus();
     
@@ -59,7 +75,7 @@ export default function CalendarSettingsPage() {
       
       setCalendarStatus({
         connected: verification.calendarConnected,
-        provider: verification.grantInfo?.provider || 'google',
+        provider: normalizeProviderId(verification.grantInfo?.provider || 'google'),
         status: verification.valid ? 'active' : verification.status,
         verified: verification.valid,
         error: !verification.valid ? verification.message : undefined
@@ -86,11 +102,12 @@ export default function CalendarSettingsPage() {
     }
   };
 
-  const handleConnectCalendar = async (provider: string = 'google', forceAccountSelection: boolean = false) => {
+  const handleConnectCalendar = async (provider: string = normalizeProviderId(calendarStatus.provider), forceAccountSelection: boolean = false) => {
+    const providerLabel = getProviderLabel(provider);
     if (forceAccountSelection) {
       setSwitchingAccount(true);
       // For Nylas v3, provide guidance to users
-      toast.info('To switch accounts, please select a different Google account in the popup window, or log out of Google in your browser first.');
+      toast.info(`To switch accounts, please select a different ${providerLabel} account in the popup window, or log out of ${providerLabel} in your browser first.`);
     } else {
       setConnecting(true);
       // Inform users about email permissions
@@ -116,16 +133,23 @@ export default function CalendarSettingsPage() {
           }
           
           // Check connection status
-          const status = await interviewService.getCalendarStatus('current-user-id');
-          if (status.connected) {
-            setCalendarStatus(status);
+          const verification = await grantService.verifyGrantStatus();
+          if (verification.valid && verification.calendarConnected) {
+            setCalendarStatus({
+              connected: true,
+              provider: normalizeProviderId(verification.grantInfo?.provider || provider),
+              status: 'active',
+              verified: true
+            });
             clearInterval(pollInterval);
             setConnecting(false);
             setSwitchingAccount(false);
             authWindow?.close();
-            toast.success(forceAccountSelection 
-              ? 'Successfully switched Google account with email permissions!' 
-              : 'Calendar connected successfully with email permissions!');
+            toast.success(
+              forceAccountSelection
+                ? `Successfully switched ${providerLabel} account with email permissions!`
+                : `${providerLabel} connected successfully with email permissions!`
+            );
           }
         } catch (error) {
           console.error('Polling error:', error);
@@ -142,8 +166,8 @@ export default function CalendarSettingsPage() {
     } catch (error) {
       console.error('Connect calendar error:', error);
       toast.error(forceAccountSelection 
-        ? 'Failed to switch Google account' 
-        : 'Failed to connect calendar');
+        ? `Failed to switch ${providerLabel} account` 
+        : `Failed to connect ${providerLabel}`);
       setConnecting(false);
       setSwitchingAccount(false);
     }
@@ -165,16 +189,18 @@ export default function CalendarSettingsPage() {
   };
 
   const handleSwitchAccountWithGuidance = async () => {
+    const providerId = normalizeProviderId(calendarStatus.provider);
+    const providerLabel = getProviderLabel(providerId);
     const switchAccount = async () => {
-      await handleConnectCalendar('google', true);
+      await handleConnectCalendar(providerId, true);
     };
 
     // Show a more detailed explanation
     if (confirm(
-      'To switch to a different Google account:\n\n' +
+      `To switch to a different ${providerLabel} account:\n\n` +
       '1. Click "OK" to open the authentication window\n' +
       '2. If you see the same account, click "Use another account"\n' +
-      '3. Or log out of Google in another browser tab first\n\n' +
+      `3. Or log out of ${providerLabel} in another browser tab first\n\n` +
       'Would you like to continue?'
     )) {
       await switchAccount();
@@ -216,8 +242,8 @@ export default function CalendarSettingsPage() {
     <div className="container mx-auto p-6 max-w-4xl space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Calendar Settings</h1>
-        <p className="text-muted-foreground">Manage your calendar integration for interview scheduling</p>
+        <h1 className="text-3xl font-bold text-gray-900">Calendar Settings</h1>
+        <p className="text-gray-600">Manage your calendar integration for interview scheduling</p>
       </div>
 
       {/* Dynamic Grant Verification Alert */}
@@ -236,7 +262,7 @@ export default function CalendarSettingsPage() {
                 </p>
               </div>
               <Button
-                onClick={() => handleConnectCalendar('google', false)}
+                onClick={() => handleConnectCalendar(normalizeProviderId(calendarStatus.provider), false)}
                 variant="destructive"
                 size="sm"
                 className="ml-4 whitespace-nowrap"
@@ -270,7 +296,7 @@ export default function CalendarSettingsPage() {
               
               {calendarStatus.provider && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Provider:</span>
+                  <span className="text-sm text-gray-600">Provider:</span>
                   <span className="text-sm font-medium capitalize">{calendarStatus.provider}</span>
                 </div>
               )}
@@ -312,7 +338,7 @@ export default function CalendarSettingsPage() {
               
               <div className="flex gap-2">
                 <Button
-                  onClick={() => handleConnectCalendar('google', false)}
+                  onClick={() => handleConnectCalendar(normalizeProviderId(calendarStatus.provider), false)}
                   variant="outline"
                   size="sm"
                   disabled={connecting}
@@ -405,7 +431,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Automatic Scheduling
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 Create calendar events automatically when interviews are scheduled
               </p>
             </div>
@@ -415,7 +441,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Availability Checking
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 Prevent double-booking by checking availability before scheduling
               </p>
             </div>
@@ -425,7 +451,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Real-time Sync
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 Keep interviews in sync with external calendar changes
               </p>
             </div>
@@ -435,7 +461,7 @@ export default function CalendarSettingsPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 Meeting Links
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 Automatically generate video meeting links for remote interviews
               </p>
             </div>
@@ -470,7 +496,7 @@ export default function CalendarSettingsPage() {
           
           <Separator />
           
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-gray-500">
             <p>
               Your calendar data is securely encrypted and only used for interview scheduling purposes. 
               You can disconnect your calendar at any time.

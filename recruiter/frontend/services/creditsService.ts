@@ -5,6 +5,7 @@ export interface CreditStatus {
   usedCredits: number;
   remainingCredits: number;
   percentageUsed: number;
+  percentageRemaining?: number;
   cycleStart: string;
   cycleEnd: string;
   daysUntilReset: number;
@@ -57,15 +58,101 @@ export interface CreditPack {
   popular?: boolean;
 }
 
+const DEFAULT_CREDIT_COSTS = {
+  createJob: 0,
+  uploadCandidate: 0,
+  scheduleInterview: 0,
+  aiMatching: 0,
+  generateQuestions: 0,
+  aiAnalysis: 0,
+  bulkUpload: 0,
+  reEmbed: 0
+};
+
+const buildDefaultCreditStatus = (): CreditStatus => {
+  const cycleStart = new Date();
+  const cycleEnd = new Date(cycleStart.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  return {
+    totalCredits: 0,
+    usedCredits: 0,
+    remainingCredits: 0,
+    percentageUsed: 0,
+    cycleStart: cycleStart.toISOString(),
+    cycleEnd: cycleEnd.toISOString(),
+    daysUntilReset: 30,
+    rolloverCredits: 0,
+    purchasedCredits: 0,
+    creditCosts: { ...DEFAULT_CREDIT_COSTS },
+    usageBreakdown: {},
+    projectedRunout: null,
+    warnings: {
+      lowCredit: false,
+      nearCycleEnd: false,
+      projectedOverage: false
+    }
+  };
+};
+
+const buildDefaultCreditAnalytics = () => {
+  const periodStart = new Date();
+  const periodEnd = new Date(periodStart.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  return {
+    usageBreakdown: {},
+    dailyUsage: [],
+    avgDailyBurn: 0,
+    topActions: [],
+    efficiencyScore: 0,
+    totalTransactions: 0,
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString()
+  };
+};
+
+const parseErrorPayload = async (response: Response): Promise<any> => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const isMissingOrganizationContext = (response: Response, errorData: any): boolean => {
+  const errorMessage = `${errorData?.error || errorData?.msg || errorData?.message || ''}`.toLowerCase();
+
+  return response.status === 400 && (
+    errorData?.requiresOrganizationSetup === true ||
+    errorMessage.includes('organization context required') ||
+    errorMessage.includes('no organization selected') ||
+    errorMessage.includes('no current organization set') ||
+    errorMessage.includes('must belong to an organization')
+  );
+};
+
 /**
  * Get current credit status for the organization
  */
 export const getCreditStatus = async (): Promise<{ success: boolean; credits: CreditStatus }> => {
   const response = await apiRequest('/api/credits/status');
   if (!response.ok) {
-    throw new Error('Failed to get credit status');
+    const errorData = await parseErrorPayload(response);
+
+    if (isMissingOrganizationContext(response, errorData)) {
+      return {
+        success: true,
+        credits: buildDefaultCreditStatus()
+      };
+    }
+
+    throw new Error(errorData?.error || errorData?.msg || errorData?.message || 'Failed to get credit status');
   }
-  return await response.json();
+
+  const data = await response.json();
+  return {
+    success: data?.success !== false,
+    credits: data?.credits || buildDefaultCreditStatus()
+  };
 };
 
 /**
@@ -85,9 +172,26 @@ export const getCreditTransactions = async (filters: {
   
   const response = await apiRequest(`/api/credits/transactions?${params.toString()}`);
   if (!response.ok) {
-    throw new Error('Failed to get credit transactions');
+    const errorData = await parseErrorPayload(response);
+
+    if (isMissingOrganizationContext(response, errorData)) {
+      return {
+        success: true,
+        transactions: [],
+        count: 0
+      };
+    }
+
+    throw new Error(errorData?.error || errorData?.msg || errorData?.message || 'Failed to get credit transactions');
   }
-  return await response.json();
+
+  const data = await response.json();
+  const transactions = Array.isArray(data?.transactions) ? data.transactions : [];
+  return {
+    success: data?.success !== false,
+    transactions,
+    count: typeof data?.count === 'number' ? data.count : transactions.length
+  };
 };
 
 /**
@@ -96,9 +200,23 @@ export const getCreditTransactions = async (filters: {
 export const getCreditAnalytics = async (): Promise<{ success: boolean; analytics: any }> => {
   const response = await apiRequest('/api/credits/analytics');
   if (!response.ok) {
-    throw new Error('Failed to get credit analytics');
+    const errorData = await parseErrorPayload(response);
+
+    if (isMissingOrganizationContext(response, errorData)) {
+      return {
+        success: true,
+        analytics: buildDefaultCreditAnalytics()
+      };
+    }
+
+    throw new Error(errorData?.error || errorData?.msg || errorData?.message || 'Failed to get credit analytics');
   }
-  return await response.json();
+
+  const data = await response.json();
+  return {
+    success: data?.success !== false,
+    analytics: data?.analytics || buildDefaultCreditAnalytics()
+  };
 };
 
 /**

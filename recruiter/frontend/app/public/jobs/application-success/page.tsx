@@ -194,7 +194,7 @@ function ApplicationSuccessContent() {
         </Card>
 
         {/* Footer */}
-        <div className="text-center mt-8 text-sm text-muted-foreground">
+        <div className="text-center mt-8 text-sm text-gray-500">
           <p>Thank you for choosing to be part of our team!</p>
         </div>
       </div>
