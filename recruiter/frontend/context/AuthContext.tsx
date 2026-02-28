@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import { setGlobalLogoutHandler, initializeInactivityTracking, cleanupInactivityTracking } from '@/services/apiConfig';
 import { tokenManager } from '@/utils/tokenManager';
 // Note: This import would create a circular dependency if used immediately, so we'll import dynamically
@@ -17,12 +16,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const getCookie = (name: string): string => {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : '';
+};
+
+const clearTokenArtifactsFromUrlAndCookies = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.searchParams.delete('token');
+    url.searchParams.delete('refreshToken');
+    url.searchParams.delete('expiresIn');
+    const cleanPath = `${url.pathname}${url.search}`;
+    window.history.replaceState({}, '', cleanPath);
+  } catch (error) {
+    console.warn('Failed to clear token params from URL:', error);
+  }
+
+  document.cookie = 'dev_jwt=; Max-Age=0; path=/';
+  document.cookie = 'dev_refreshToken=; Max-Age=0; path=/';
+  document.cookie = 'dev_expiresIn=; Max-Age=0; path=/';
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const router = useRouter();
 
   useEffect(() => {
     // Set global logout handler
@@ -31,9 +55,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Check if we're in the browser before accessing localStorage
     if (typeof window !== 'undefined') {
       try {
+        // Bootstrap from OIDC URL/cookie tokens on any route.
+        const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlToken = hashParams.get('token') || searchParams.get('token') || getCookie('dev_jwt') || '';
+        const urlRefreshToken =
+          hashParams.get('refreshToken') || searchParams.get('refreshToken') || getCookie('dev_refreshToken') || '';
+        const urlExpiresIn =
+          hashParams.get('expiresIn') || searchParams.get('expiresIn') || getCookie('dev_expiresIn') || '10m';
+
+        if (urlToken) {
+          if (urlRefreshToken) {
+            tokenManager.initialize(urlToken, urlRefreshToken, urlExpiresIn);
+            setToken(urlToken);
+            setRefreshToken(urlRefreshToken);
+          } else {
+            tokenManager.setAccessToken(urlToken, urlExpiresIn);
+            setToken(urlToken);
+            setRefreshToken(null);
+          }
+          setIsAuthenticated(true);
+          initializeInactivityTracking();
+          clearTokenArtifactsFromUrlAndCookies();
+          setIsLoading(false);
+          return;
+        }
+
         const storedToken = localStorage.getItem('jwt');
         const storedRefresh = localStorage.getItem('refreshToken');
-        if (storedToken && storedRefresh) {
+        if (storedToken) {
           setToken(storedToken);
           setRefreshToken(storedRefresh);
           setIsAuthenticated(true);
