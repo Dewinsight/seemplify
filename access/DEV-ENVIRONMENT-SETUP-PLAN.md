@@ -243,13 +243,13 @@ on:
   push:
     branches: [dev]  # Changed from main
     paths:
-      - 'recruiter/backend/**'
+      - 'recruiter/new/backend/**'
       - '.github/workflows/deploy-recruiter-backend-dev.yml'
   workflow_dispatch:
 
 env:
   APP_NAME: recruiter-backend-dev
-  APP_PATH: recruiter/backend
+  APP_PATH: recruiter/new/backend
 
 jobs:
   deploy:
@@ -368,14 +368,14 @@ if ($env -eq "dev") {
 **Test Scenarios:**
 
 **1. Dev Branch Deployment:**
-- [ ] Make a small change in `recruiter/backend/` on dev branch
+- [ ] Make a small change in `recruiter/new/backend/` on dev branch
 - [ ] Commit and push to dev branch
 - [ ] Verify GitHub Actions workflow triggers
 - [ ] Verify Dokploy deploys the application
 - [ ] Verify changes appear at https://api-dev.seemplifyai.com
 
 **2. Main Branch Deployment (verify prod still works):**
-- [ ] Make a small change in `recruiter/backend/` on main branch
+- [ ] Make a small change in `recruiter/new/backend/` on main branch
 - [ ] Commit and push to main branch
 - [ ] Verify GitHub Actions workflow triggers
 - [ ] Verify Dokploy deploys to production app
