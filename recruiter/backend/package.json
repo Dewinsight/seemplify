@@ -39,7 +39,6 @@
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.4.394",
     "pdfkit": "^0.15.0",
-    "smarthr-ecosystem": "file:..",
     "tesseract.js": "^6.0.1",
     "touch": "^3.1.1",
     "ua-parser-js": "^2.0.5",
