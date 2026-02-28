@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -591,7 +591,7 @@ const Rules: React.FC = () => {
                                         <h4 style={{ margin: 0, lineHeight: 1.3 }}>{rule.name}</h4>
                                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                             {rule.isSystem && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>System</span>}
-                                            {rule.isMandatory && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid rgba(214,54,55,0.5)', color: 'var(--sterling-red)' }}>Mandatory</span>}
+                                            {rule.isMandatory && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid rgba(var(--brand-primary-rgb),0.5)', color: 'var(--sterling-red)' }}>Mandatory</span>}
                                             {rule.department?.name ? <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>{rule.department.name}</span> : <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Global</span>}
                                             {!rule.isActive && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Off</span>}
                                             {rule.isHidden && <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', borderRadius: '999px', border: '1px solid var(--glass-border)' }}>Hidden</span>}
@@ -669,3 +669,4 @@ const Rules: React.FC = () => {
 };
 
 export default Rules;
+

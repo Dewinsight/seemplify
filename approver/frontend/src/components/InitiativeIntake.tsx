@@ -365,8 +365,8 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             <div style={{
                                 marginBottom: '1.5rem',
                                 padding: '1.25rem',
-                                background: 'rgba(214, 54, 55, 0.08)',
-                                border: '1px solid rgba(214, 54, 55, 0.3)',
+                                background: 'rgba(var(--brand-primary-rgb), 0.08)',
+                                border: '1px solid rgba(var(--brand-primary-rgb), 0.3)',
                                 borderRadius: '12px'
                             }}>
                                 <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
@@ -377,18 +377,18 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 </p>
 
                                 <div className="form-group">
-                                    <label className="form-label">Group Head Name <span style={{ color: '#d63637' }}>*</span></label>
+                                    <label className="form-label">Group Head Name <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                     <input className="form-input" type="text" value={form.groupHeadName} onChange={(e) => setForm({ ...form, groupHeadName: e.target.value })} placeholder="e.g. Michael Adeyemi" />
                                 </div>
 
                                 <div className="form-group" style={{ marginTop: '1rem' }}>
-                                    <label className="form-label">Group Head approval <span style={{ color: '#d63637' }}>*</span></label>
+                                    <label className="form-label">Group Head approval <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.75rem',
                                         padding: '0.75rem 1rem',
-                                        background: 'rgba(255,255,255,0.04)',
+                                        background: 'var(--surface-soft)',
                                         borderRadius: '8px',
                                         border: '1px solid var(--glass-border)',
                                         cursor: 'pointer'
@@ -404,7 +404,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 </div>
 
                                 <div className="form-group" style={{ marginTop: '1rem' }}>
-                                    <label className="form-label">HEART Sector Classification <span style={{ color: '#d63637' }}>*</span></label>
+                                    <label className="form-label">HEART Sector Classification <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                     <select
                                         className="form-select"
                                         value={form.heartSectorClassification}
@@ -675,12 +675,12 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                             </div>
 
                             {/* Required fields — editable on Review; AI rules reject if missing */}
-                            <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(214, 54, 55, 0.08)', border: '1px solid rgba(214, 54, 55, 0.3)', borderRadius: '12px' }}>
+                            <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(var(--brand-primary-rgb), 0.08)', border: '1px solid rgba(var(--brand-primary-rgb), 0.3)', borderRadius: '12px' }}>
                                 <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Required for AI evaluation</div>
                                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Complete these — AI rules will reject initiatives if missing.</p>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     <div className="form-group">
-                                        <label className="form-label">Group Head Name <span style={{ color: '#d63637' }}>*</span></label>
+                                        <label className="form-label">Group Head Name <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                         <input
                                             className="form-input"
                                             type="text"
@@ -690,14 +690,14 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Group Head approval <span style={{ color: '#d63637' }}>*</span></label>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid var(--glass-border)', cursor: 'pointer' }} onClick={() => setForm({ ...form, confirmGroupHeadApproval: !form.confirmGroupHeadApproval })}>
+                                        <label className="form-label">Group Head approval <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--surface-soft)', borderRadius: '8px', border: '1px solid var(--glass-border)', cursor: 'pointer' }} onClick={() => setForm({ ...form, confirmGroupHeadApproval: !form.confirmGroupHeadApproval })}>
                                             <input type="checkbox" checked={form.confirmGroupHeadApproval} onChange={e => setForm({ ...form, confirmGroupHeadApproval: e.target.checked })} style={{ width: '1.25rem', height: '1.25rem', accentColor: 'var(--sterling-red)', cursor: 'pointer' }} />
                                             <span>I confirm the Group Head has approved this initiative</span>
                                         </div>
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">HEART Sector Classification <span style={{ color: '#d63637' }}>*</span></label>
+                                        <label className="form-label">HEART Sector Classification <span style={{ color: 'var(--sterling-red)' }}>*</span></label>
                                         <select
                                             className="form-select"
                                             value={form.heartSectorClassification}

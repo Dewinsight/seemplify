@@ -7,6 +7,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import api, { getLogoUrl } from './api';
 import { getUserDisplayName, getUserInitials } from './utils/userDisplay';
 import { hasAnyCapability } from './utils/access';
+import { UBA_LOGO_URL, APP_BRAND_NAME, APP_BRAND_TAGLINE } from './constants/branding';
 
 // Icons as simple SVG components
 const DashboardIcon = () => (
@@ -69,21 +70,15 @@ const MenuIcon = () => (
 );
 
 const Logo = () => (
-  <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-      <rect x="4" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" />
-      <rect x="18" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
-      <rect x="4" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
-      <rect x="18" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.6" />
-      <defs>
-        <linearGradient id="mosaicGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#9B51E0" />
-          <stop offset="100%" stopColor="#7B3FC0" />
-        </linearGradient>
-      </defs>
-    </svg>
-    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-      <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1.5rem', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>MOSAIC</span>
+  <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none' }}>
+    <img
+      src={UBA_LOGO_URL}
+      alt="UBA logo"
+      style={{ width: '84px', height: '30px', objectFit: 'contain' }}
+    />
+    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+      <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>{APP_BRAND_NAME}</span>
+      <span style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 500, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{APP_BRAND_TAGLINE}</span>
     </div>
   </Link>
 );
@@ -165,7 +160,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                   onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
                   style={{
                     width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
+                    background: 'rgba(var(--brand-primary-rgb), 0.08)', border: '1px solid rgba(var(--brand-primary-rgb), 0.28)',
                     borderRadius: '8px', padding: '0.6rem 0.8rem', color: 'var(--text-primary)',
                     cursor: 'pointer', fontSize: '0.85rem'
                   }}
@@ -185,7 +180,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                         style={{
                           padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem',
                           fontWeight: activeOrganization?._id === org._id ? 'bold' : 'normal',
-                          background: activeOrganization?._id === org._id ? 'rgba(155, 81, 224, 0.15)' : 'transparent'
+                          background: activeOrganization?._id === org._id ? 'rgba(var(--brand-primary-rgb), 0.14)' : 'transparent'
                         }}
                       >
                         {org.name}
@@ -197,7 +192,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
               </>
             ) : (
               <div style={{
-                padding: '0.6rem 0.8rem', background: 'rgba(155, 81, 224, 0.1)', border: '1px solid rgba(155, 81, 224, 0.3)',
+                padding: '0.6rem 0.8rem', background: 'rgba(var(--brand-primary-rgb), 0.08)', border: '1px solid rgba(var(--brand-primary-rgb), 0.28)',
                 borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)'
               }}>
                 {activeOrganization?.name || 'No organization'}
@@ -238,29 +233,34 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
               : isDark ? activeOrganization?.logoDark : activeOrganization?.logoLight;
             const bg = activeOrganization?.logoBackground || 'transparent';
             const containerBg = bg === 'transparent' ? 'transparent' : bg;
-            return shouldShow && logoPath ? (
+            const shouldUseOrgLogo = Boolean(shouldShow && logoPath);
+            const logoSrc = shouldUseOrgLogo ? (getLogoUrl(logoPath) || UBA_LOGO_URL) : UBA_LOGO_URL;
+
+            return (
               <div style={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
                 marginBottom: '1.25rem',
                 padding: '1rem',
-                background: containerBg,
-                border: containerBg === 'transparent' ? '1px solid var(--glass-border)' : 'none',
+                background: shouldUseOrgLogo ? containerBg : 'var(--surface-soft)',
+                border: shouldUseOrgLogo && containerBg !== 'transparent'
+                  ? 'none'
+                  : '1px solid var(--glass-border)',
                 borderRadius: '12px'
               }}>
                 <img
-                  src={getLogoUrl(logoPath) || ''}
-                  alt={activeOrganization!.name}
+                  src={logoSrc}
+                  alt={shouldUseOrgLogo ? activeOrganization!.name : APP_BRAND_NAME}
                   style={{
-                    width: 80,
-                    height: 80,
+                    width: shouldUseOrgLogo ? 80 : 124,
+                    height: shouldUseOrgLogo ? 80 : 40,
                     objectFit: 'contain',
                     borderRadius: '10px'
                   }}
                 />
               </div>
-            ) : null;
+            );
           })()}
           {/* User Info */}
           <Link to="/profile" onClick={handleNavClick} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', color: 'inherit', marginBottom: '1rem' }}>
@@ -280,7 +280,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                 onClick={() => setDeptDropdownOpen(!deptDropdownOpen)}
                 style={{
                   width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                  background: 'var(--surface-soft)', border: '1px solid var(--glass-border)',
                   borderRadius: '8px', padding: '0.6rem 0.8rem', color: 'var(--text-primary)',
                   cursor: 'pointer', fontSize: '0.85rem'
                 }}
@@ -292,13 +292,13 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                 <div style={{ marginTop: '0.5rem', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', overflow: 'hidden' }}>
                   {isAdmin && (
                     <div onClick={() => { switchDepartment(null); setDeptDropdownOpen(false); }}
-                      style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: activeDepartment === null ? 'bold' : 'normal', background: activeDepartment === null ? 'rgba(214,54,55,0.1)' : 'transparent' }}>
+                      style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: activeDepartment === null ? 'bold' : 'normal', background: activeDepartment === null ? 'rgba(var(--brand-primary-rgb), 0.12)' : 'transparent' }}>
                       All Departments
                     </div>
                   )}
                   {availableDepartments.map((dept: any) => (
                     <div key={dept._id} onClick={() => { switchDepartment(dept); setDeptDropdownOpen(false); }}
-                      style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', background: activeDepartment?._id === dept._id ? 'rgba(214,54,55,0.1)' : 'transparent' }}>
+                      style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', background: activeDepartment?._id === dept._id ? 'rgba(var(--brand-primary-rgb), 0.12)' : 'transparent' }}>
                       {dept.name}
                     </div>
                   ))}
@@ -310,7 +310,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           {/* Actions Row */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button onClick={toggleTheme} title="Toggle Theme"
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '0.6rem', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1rem' }}>
+              style={{ flex: 1, background: 'var(--surface-soft)', border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '0.6rem', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1rem' }}>
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
             <button onClick={logout}
@@ -359,7 +359,7 @@ const AppLayout = () => {
         {/* Context bar: Organization + Department */}
         {(activeOrganization || activeDepartment) && (
           <div style={{
-            padding: '0.5rem 0', marginBottom: '1rem', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--glass-border)',
+            padding: '0.5rem 0', marginBottom: '1rem', background: 'var(--surface-muted)', borderBottom: '1px solid var(--glass-border)',
             fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '1rem', flexWrap: 'wrap'
           }}>
             {activeOrganization?.name && (
@@ -433,3 +433,4 @@ function App() {
 }
 
 export default App;
+

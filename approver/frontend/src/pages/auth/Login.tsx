@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { UBA_LOGO_URL, APP_BRAND_NAME, APP_BRAND_TAGLINE } from '../../constants/branding';
 
 const Login: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -41,19 +42,13 @@ const Login: React.FC = () => {
     return (
         <div style={{ maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
             <div style={{ marginBottom: '2rem' }}>
-                <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ display: 'inline-block', marginBottom: '1rem' }}>
-                    <rect x="4" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" />
-                    <rect x="18" y="4" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
-                    <rect x="4" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.8" />
-                    <rect x="18" y="18" width="10" height="10" rx="2" fill="url(#mosaicGrad)" opacity="0.6" />
-                    <defs>
-                        <linearGradient id="mosaicGrad" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0%" stopColor="#9B51E0" />
-                            <stop offset="100%" stopColor="#7B3FC0" />
-                        </linearGradient>
-                    </defs>
-                </svg>
-                <h1 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '2rem', color: 'var(--text-primary)', margin: 0, lineHeight: 1 }}>MOSAIC</h1>
+                <img
+                    src={UBA_LOGO_URL}
+                    alt="UBA logo"
+                    style={{ width: '170px', height: '52px', objectFit: 'contain', display: 'inline-block', marginBottom: '0.75rem' }}
+                />
+                <h1 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-primary)', margin: 0, lineHeight: 1.1 }}>{APP_BRAND_NAME}</h1>
+                <p style={{ margin: '0.4rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{APP_BRAND_TAGLINE}</p>
             </div>
             <h2 style={{ marginBottom: '2rem', color: 'var(--text-primary)' }}>Welcome Back</h2>
             <div className="glass-panel">

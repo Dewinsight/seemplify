@@ -217,7 +217,7 @@ const InvitesPage: React.FC = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
                         {pendingInvites.map(invite => (
                             <div key={invite._id} style={{
-                                padding: '1.2rem', background: 'rgba(0,0,0,0.2)',
+                                padding: '1.2rem', background: 'var(--surface-darkened)',
                                 borderRadius: '10px', border: '1px solid var(--glass-border)'
                             }}>
                                 <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
@@ -277,7 +277,7 @@ const InvitesPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.7rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)'
+                                        background: 'var(--input-bg)', color: 'var(--text-primary)'
                                     }}
                                 />
                             </div>
@@ -289,7 +289,7 @@ const InvitesPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.7rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)'
+                                        background: 'var(--input-bg-contrast)', color: 'var(--text-primary)'
                                     }}
                                 >
                                     {roleOptions.map((role) => (
@@ -305,7 +305,7 @@ const InvitesPage: React.FC = () => {
                                     style={{
                                         width: '100%', padding: '0.7rem', borderRadius: '6px',
                                         border: '1px solid var(--glass-border)',
-                                        background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)'
+                                        background: 'var(--input-bg-contrast)', color: 'var(--text-primary)'
                                     }}
                                 >
                                     <option value="">General (default)</option>
