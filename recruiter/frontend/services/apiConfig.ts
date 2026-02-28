@@ -163,32 +163,33 @@ export const getAuthHeaders = () => {
 // Removed throttling for organization API calls as it was causing issues
 
 // Internal fetch with token refresh
-async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise<Response> {
+async function fetchWithTokenRefresh(
+  url: string,
+  options: RequestInit,
+  hasRetriedAfterRefresh = false
+): Promise<Response> {
   // Check if token needs refresh before making request
   if (isBrowser && tokenManager.needsRefresh()) {
-    console.log('🔄 Token needs refresh before request');
+    console.log('Token needs refresh before request');
     await tokenManager.refreshTokens();
   }
 
   // Make the request
   const response = await fetch(url, options);
 
-  // If 401 and not already refreshing, try to refresh and retry once
-  const headers = options.headers as Record<string, string> | undefined;
-  if (response.status === 401 && !headers?.['X-Retry-After-Refresh']) {
-    console.log('🔄 Got 401, attempting token refresh and retry');
-    
+  // If 401, try to refresh and retry once (avoid custom retry headers that trigger CORS preflight)
+  if (response.status === 401 && !hasRetriedAfterRefresh) {
+    console.log('Got 401, attempting token refresh and retry');
+
     const refreshResult = await tokenManager.refreshTokens();
     if (refreshResult) {
-      // Update headers with new token
       const newHeaders = {
         ...options.headers,
-        'Authorization': `Bearer ${refreshResult.accessToken}`,
-        'X-Retry-After-Refresh': 'true' // Prevent infinite retry
+        Authorization: `Bearer ${refreshResult.accessToken}`,
       };
 
-      // Retry the request with new token
-      return fetch(url, { ...options, headers: newHeaders });
+      // Retry once after refresh
+      return fetchWithTokenRefresh(url, { ...options, headers: newHeaders }, true);
     }
   }
 
@@ -411,4 +412,5 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
 
   return response;
 };
+
 
