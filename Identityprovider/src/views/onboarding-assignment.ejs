@@ -25,6 +25,14 @@
     <% const dueAtLabel = assignment.dueAt ? new Date(assignment.dueAt).toLocaleDateString() : ''; %>
     <% const completedAtLabel = assignment.completedAt ? new Date(assignment.completedAt).toLocaleString() : ''; %>
     <% const cancelledAtLabel = assignment.cancelledAt ? new Date(assignment.cancelledAt).toLocaleString() : ''; %>
+    <% const workflowType = assignment.workflowType || 'onboarding'; %>
+    <% const workflowLabels = {
+      onboarding: 'Onboarding',
+      agreement: 'Agreement Signing',
+      policy: 'Policy Acknowledgement',
+      general: 'General Document Workflow'
+    }; %>
+    <% const workflowLabel = workflowLabels[workflowType] || 'Onboarding'; %>
 
     <% const totalItems = (assignment.items || []).length; %>
     <% const completedItems = (assignment.items || []).filter(i => i.status === 'completed').length; %>
@@ -57,6 +65,7 @@
         <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
           <%= String(assignment.status || 'pending').replace('_', ' ') %>
         </span>
+        <span class="role-badge workflow-type-badge workflow-type-badge--<%= workflowType %>"><%= workflowLabel %></span>
         <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
           <button class="btn btn-danger" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel assignment</button>
         <% } %>

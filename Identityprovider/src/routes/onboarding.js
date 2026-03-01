@@ -18,8 +18,29 @@ const upload = multer({
 })
 
 const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general']
+const WORKFLOW_LABELS = {
+  onboarding: 'Onboarding',
+  agreement: 'Agreement Signing',
+  policy: 'Policy Acknowledgement',
+  general: 'General Document Workflow'
+}
 
 const canManageOnboarding = (role) => ONBOARDING_MANAGER_ROLES.includes(role)
+
+const normalizeWorkflowType = (value, options = {}) => {
+  const allowAll = options.allowAll === true
+  const fallback = options.fallback || 'onboarding'
+  const raw = String(value || '').trim().toLowerCase()
+
+  if (allowAll && raw === 'all') {
+    return 'all'
+  }
+
+  return WORKFLOW_TYPES.includes(raw) ? raw : fallback
+}
+
+const getWorkflowLabel = (value) => WORKFLOW_LABELS[normalizeWorkflowType(value)] || WORKFLOW_LABELS.onboarding
 
 const parseJson = (value, fallback) => {
   if (!value) return fallback
@@ -307,20 +328,26 @@ const resolveEsignSigners = async (item, memberId, organization) => {
   return item
 }
 
-const buildOnboardingEmail = (memberName, orgName, issuerUrl) => {
+const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'onboarding') => {
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType)
+  const workflowLabel = getWorkflowLabel(normalizedWorkflowType)
   const baseUrl = issuerUrl || 'http://localhost:4000'
-  const onboardingUrl = `${baseUrl}/onboarding`
+  const workspaceUrl = `${baseUrl}/documents?workflow=${encodeURIComponent(normalizedWorkflowType)}`
+  const actionLabel = normalizedWorkflowType === 'onboarding' ? 'Complete Onboarding' : `Open ${workflowLabel}`
+  const introLine = normalizedWorkflowType === 'onboarding'
+    ? 'Your onboarding tasks are ready. Please complete them to finish your setup.'
+    : `You have ${workflowLabel.toLowerCase()} tasks ready for review and signing.`
 
   return {
-    subject: `Complete your onboarding for ${orgName}`,
+    subject: `${workflowLabel} action required for ${orgName}`,
     html: `
       <h2>Welcome to ${orgName}</h2>
       <p>Hi ${memberName},</p>
-      <p>Your onboarding tasks are ready. Please complete them to finish your setup.</p>
-      <p><a href="${onboardingUrl}" style="display:inline-block;padding:12px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;">Complete Onboarding</a></p>
-      <p style="font-size:12px;color:#94a3b8;">If the button doesn't work, copy and paste this link: ${onboardingUrl}</p>
+      <p>${introLine}</p>
+      <p><a href="${workspaceUrl}" style="display:inline-block;padding:12px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;">${actionLabel}</a></p>
+      <p style="font-size:12px;color:#94a3b8;">If the button doesn't work, copy and paste this link: ${workspaceUrl}</p>
     `,
-    text: `Hi ${memberName},\n\nYour onboarding tasks are ready for ${orgName}. Complete them here: ${onboardingUrl}`
+    text: `Hi ${memberName},\n\n${introLine}\n\nOpen it here: ${workspaceUrl}`
   }
 }
 
@@ -333,8 +360,23 @@ router.get('/organizations/:orgId/onboarding/templates', requireAuth, requireOrg
   }
 
   try {
-    const templates = await OnboardingTemplate.find({ organization: req.params.orgId })
+    const workflowType = normalizeWorkflowType(req.query.workflowType || req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const query = { organization: req.params.orgId }
+    if (workflowType !== 'all') {
+      query.workflowType = workflowType
+    }
+
+    const templates = await OnboardingTemplate.find(query)
       .sort({ createdAt: -1 })
+
+    templates.forEach(template => {
+      if (!template.workflowType) {
+        template.workflowType = 'onboarding'
+      }
+    })
 
     res.json(templates)
   } catch (error) {
@@ -350,6 +392,7 @@ router.post('/organizations/:orgId/onboarding/templates', requireAuth, requireOr
 
   try {
     const { name, description, isDefault } = req.body
+    const workflowType = normalizeWorkflowType(req.body.workflowType)
     const itemsInput = parseJson(req.body.items, [])
     const items = normalizeItems(itemsInput)
 
@@ -361,6 +404,7 @@ router.post('/organizations/:orgId/onboarding/templates', requireAuth, requireOr
       organization: req.params.orgId,
       name: String(name).trim(),
       description: description ? String(description).trim() : '',
+      workflowType,
       isDefault: isDefault === true || isDefault === 'true',
       items,
       createdBy: req.user._id
@@ -368,7 +412,11 @@ router.post('/organizations/:orgId/onboarding/templates', requireAuth, requireOr
 
     if (template.isDefault) {
       await OnboardingTemplate.updateMany(
-        { organization: req.params.orgId, _id: { $ne: template._id } },
+        {
+          organization: req.params.orgId,
+          workflowType: template.workflowType,
+          _id: { $ne: template._id }
+        },
         { $set: { isDefault: false } }
       )
     }
@@ -399,6 +447,9 @@ router.patch('/organizations/:orgId/onboarding/templates/:templateId', requireAu
     if (req.body.isDefault !== undefined) {
       updates.isDefault = req.body.isDefault === true || req.body.isDefault === 'true'
     }
+    if (req.body.workflowType !== undefined) {
+      updates.workflowType = normalizeWorkflowType(req.body.workflowType)
+    }
 
     const template = await OnboardingTemplate.findOneAndUpdate(
       { _id: req.params.templateId, organization: req.params.orgId },
@@ -412,7 +463,11 @@ router.patch('/organizations/:orgId/onboarding/templates/:templateId', requireAu
 
     if (template.isDefault) {
       await OnboardingTemplate.updateMany(
-        { organization: req.params.orgId, _id: { $ne: template._id } },
+        {
+          organization: req.params.orgId,
+          workflowType: template.workflowType,
+          _id: { $ne: template._id }
+        },
         { $set: { isDefault: false } }
       )
     }
@@ -530,6 +585,7 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
 
   try {
     const { memberId, templateId, useDefaultTemplate, dueAt } = req.body
+    const requestedWorkflowType = normalizeWorkflowType(req.body.workflowType)
     const customItemsInput = parseJson(req.body.customItems, [])
     const customItems = normalizeItems(customItemsInput)
 
@@ -551,11 +607,18 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
     if (templateId) {
       template = await OnboardingTemplate.findOne({ _id: templateId, organization: req.params.orgId })
     } else if (useDefaultTemplate === true || useDefaultTemplate === 'true') {
-      template = await OnboardingTemplate.findOne({ organization: req.params.orgId, isDefault: true })
+      template = await OnboardingTemplate.findOne({
+        organization: req.params.orgId,
+        workflowType: requestedWorkflowType,
+        isDefault: true
+      })
     }
 
     const templateItems = template ? normalizeItems(template.items.map(item => item.toObject())) : []
     const items = [...templateItems, ...customItems]
+    const resolvedWorkflowType = template
+      ? normalizeWorkflowType(template.workflowType, { fallback: requestedWorkflowType })
+      : requestedWorkflowType
 
     if (items.length === 0) {
       return res.status(400).json({ error: 'At least one onboarding item is required' })
@@ -570,6 +633,7 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
       member: memberId,
       createdBy: req.user._id,
       template: template?._id,
+      workflowType: resolvedWorkflowType,
       items: resolvedItems,
       dueAt: dueAt ? new Date(dueAt) : undefined
     })
@@ -591,7 +655,12 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
     if (memberAccount?.email) {
       const memberName = memberAccount.profile?.name || memberAccount.email.split('@')[0]
       const orgName = organization.name
-      const { subject, html, text } = buildOnboardingEmail(memberName, orgName, process.env.ISSUER_URL)
+      const { subject, html, text } = buildOnboardingEmail(
+        memberName,
+        orgName,
+        process.env.ISSUER_URL,
+        resolvedWorkflowType
+      )
 
       try {
         await emailService.sendEmail({
@@ -618,10 +687,25 @@ router.get('/organizations/:orgId/onboarding/assignments', requireAuth, requireO
   }
 
   try {
-    const assignments = await OnboardingAssignment.find({ organization: req.params.orgId })
+    const workflowType = normalizeWorkflowType(req.query.workflowType || req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const query = { organization: req.params.orgId }
+    if (workflowType !== 'all') {
+      query.workflowType = workflowType
+    }
+
+    const assignments = await OnboardingAssignment.find(query)
       .populate('member', 'email profile.name')
       .populate('createdBy', 'email profile.name')
       .sort({ createdAt: -1 })
+
+    assignments.forEach(assignment => {
+      if (!assignment.workflowType) {
+        assignment.workflowType = 'onboarding'
+      }
+    })
 
     res.json(assignments)
   } catch (error) {
@@ -678,16 +762,31 @@ router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId/cancel'
 // =========================
 router.get('/onboarding/my', requireAuth, async (req, res) => {
   try {
-    const assignments = await OnboardingAssignment.find({
+    const workflowType = normalizeWorkflowType(req.query.workflowType || req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const query = {
       $or: [
         { member: req.user._id },
         { 'items.config.signers.member': req.user._id },
         { 'items.data.esign.signers.member': req.user._id }
       ],
       status: { $ne: 'completed' }
-    })
+    }
+    if (workflowType !== 'all') {
+      query.workflowType = workflowType
+    }
+
+    const assignments = await OnboardingAssignment.find(query)
       .populate('organization', 'name')
       .sort({ createdAt: -1 })
+
+    assignments.forEach(assignment => {
+      if (!assignment.workflowType) {
+        assignment.workflowType = 'onboarding'
+      }
+    })
 
     res.json(assignments)
   } catch (error) {

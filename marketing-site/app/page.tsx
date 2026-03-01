@@ -11,6 +11,9 @@ import BookDemoModal from '@/components/BookDemoModal'
 
 import HeroBannerBeautiful from '../public/hero-banner-beautiful.png'
 import HeroBannerDark from '../public/hero-banner-dark.png'
+import HRProfessionalsImage from '../public/images/hr-professionals.png'
+import LeadersReviewingImage from '../public/images/leaders-reviewing.png'
+import { CheckCircle, Shield, Zap, TrendingUp, UserPlus, FileSignature, Laptop, Award } from 'lucide-react'
 
 const IDP_URL = 'https://auth.seemplifyai.com'
 
@@ -34,23 +37,35 @@ type InfoCardProps = {
 
 const ModuleCard = ({ title, description, tag, accent, className = '', visual }: ModuleCardProps) => (
   <motion.div
-    className={`group relative h-full overflow-hidden rounded-3xl border border-black/10 bg-white p-6 shadow-[0_30px_60px_-50px_rgba(15,23,42,0.35)] backdrop-blur-xl transition dark:border-white/20 dark:bg-white/[0.04] dark:shadow-none ${className}`}
-    whileHover={{ y: -6 }}
-    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+    className={`group relative h-full overflow-hidden rounded-[2rem] border border-black/5 bg-white/60 p-8 shadow-xl backdrop-blur-2xl transition-all duration-500 hover:border-black/10 dark:border-white/10 dark:bg-[#0b0b11]/80 hover:dark:border-white/20 dark:shadow-[0_0_40px_-20px_rgba(0,0,0,0.5)] ${className}`}
+    whileHover={{ y: -8, scale: 1.01 }}
+    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
   >
-    <div className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
-      <div className="absolute inset-0 bg-gradient-to-br from-black/5 via-white/70 to-transparent dark:from-white/10 dark:via-white/5" />
-      <div className="absolute -top-12 left-1/2 h-24 w-24 -translate-x-1/2 rounded-full bg-black/10 blur-3xl dark:bg-white/20" />
+    {/* Dynamic Background Glow */}
+    <div className="absolute inset-0 opacity-0 transition-opacity duration-700 group-hover:opacity-100">
+      <div className={`absolute -inset-2 bg-gradient-to-br ${accent} opacity-10 dark:opacity-20 blur-2xl transition-all duration-700 group-hover:opacity-20 dark:group-hover:opacity-30`} />
+      <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-white/40 blur-3xl dark:bg-white/10" />
     </div>
+
     <div className="relative z-10 flex h-full flex-col">
-      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.28em] text-zinc-600 dark:text-white/60">
-        <span>{tag}</span>
-        <span className="text-zinc-400 dark:text-white/40">Module</span>
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-zinc-500 dark:text-white/50">
+        <span className="font-semibold tracking-[0.3em] text-zinc-800 dark:text-white/80">{tag}</span>
+        <span>Module</span>
       </div>
-      <div className={`mt-4 h-[2px] w-10 rounded-full bg-gradient-to-r ${accent}`} />
-      <h3 className="mt-4 font-display text-2xl text-zinc-900 dark:text-white">{title}</h3>
-      <p className="mt-2 text-sm text-zinc-700 dark:text-white/75">{description}</p>
-      <div className="mt-6 flex-1">{visual}</div>
+
+      <div className={`mt-6 h-[3px] w-12 rounded-full bg-gradient-to-r ${accent}`} />
+
+      <h3 className="mt-5 font-display text-3xl font-medium tracking-tight text-zinc-900 transition-colors group-hover:text-black dark:text-white dark:group-hover:text-white/90">
+        {title}
+      </h3>
+
+      <p className="mt-3 leading-relaxed text-zinc-600 dark:text-white/60">
+        {description}
+      </p>
+
+      <div className="mt-8 flex-1 transition-transform duration-500 group-hover:-translate-y-1">
+        {visual}
+      </div>
     </div>
   </motion.div>
 )
@@ -86,210 +101,307 @@ const InfoCard = ({ title, description, eyebrow, variant = 'default' }: InfoCard
 
 
 const RecruitingKanban = () => (
-  <div className="relative h-32 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-black/30">
-    <div className="grid grid-cols-3 text-[10px] uppercase tracking-[0.2em] text-zinc-700 dark:text-white/60">
-      <span>Screen</span>
-      <span>Interview</span>
-      <span>Hired</span>
-    </div>
-    <div className="mt-2 grid grid-cols-3 gap-2">
-      {[0, 1, 2].map((col) => (
-        <div key={col} className="space-y-2">
-          <div className="h-3 rounded-md bg-black/10 dark:bg-white/10" />
-          <div className="h-3 rounded-md bg-black/5 opacity-70 dark:bg-white/10 dark:opacity-80" />
+  <div className="relative h-40 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-zinc-900/40 overflow-hidden">
+    <div className="grid grid-cols-3 gap-3 h-full">
+      {/* Sourced Column */}
+      <div className="flex flex-col gap-2">
+        <div className="text-[9px] uppercase tracking-widest text-zinc-400 font-semibold mb-1">Sourced</div>
+        <div className="h-6 rounded-md bg-zinc-50 dark:bg-white/5 border border-black/5 dark:border-white/5 flex items-center px-2 gap-2">
+          <div className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-white/20" />
+          <div className="h-1.5 w-8 rounded-sm bg-zinc-200 dark:bg-white/20" />
         </div>
-      ))}
+        <div className="h-6 rounded-md bg-zinc-50 dark:bg-white/5 border border-black/5 dark:border-white/5 flex items-center px-2 gap-2">
+          <div className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-white/20" />
+          <div className="h-1.5 w-6 rounded-sm bg-zinc-200 dark:bg-white/20" />
+        </div>
+      </div>
+
+      {/* Interview Column */}
+      <div className="flex flex-col gap-2 relative">
+        <div className="text-[9px] uppercase tracking-widest text-zinc-400 font-semibold mb-1">Interview</div>
+        <div className="h-10 rounded-md bg-white dark:bg-white/[0.08] shadow-sm flex flex-col justify-center px-2 gap-1.5 ring-1 ring-black/5 dark:ring-white/10 relative z-10">
+          <div className="flex items-center gap-2">
+            <div className="h-3 w-3 rounded-full bg-sky-400/80" />
+            <div className="h-1.5 w-8 rounded-sm bg-zinc-200 dark:bg-white/20" />
+          </div>
+          <div className="h-1 w-full rounded-sm bg-zinc-100 dark:bg-white/5 overflow-hidden">
+            <motion.div className="h-full bg-sky-400/80" animate={{ width: ['30%', '80%', '40%'] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Hired Column */}
+      <div className="flex flex-col gap-2">
+        <div className="text-[9px] uppercase tracking-widest text-zinc-400 font-semibold mb-1">Hired</div>
+        <div className="h-6 rounded-md bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/10 border-dashed flex items-center px-2 gap-2 justify-center">
+          <span className="text-zinc-300 dark:text-white/20 text-xs">+</span>
+        </div>
+      </div>
     </div>
+
+    {/* Animated Card moving across columns (Smoother, Slower) */}
     <motion.div
-      className="absolute left-3 top-9 h-7 w-[28%] rounded-lg border border-sky-300/40 bg-gradient-to-r from-sky-400/40 to-indigo-400/40 p-1 shadow-[0_0_15px_rgba(99,102,241,0.4)]"
-      animate={{ x: ['0%', '36%', '72%'], opacity: [0.5, 1, 0.85] }}
-      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+      className="absolute top-[68px] left-3 h-8 w-[28%] rounded-md bg-white dark:bg-zinc-800 border border-black/10 dark:border-white/20 shadow-md flex items-center px-2 gap-2 z-20"
+      animate={{
+        x: ['0%', '115%', '230%'],
+        opacity: [0, 1, 0.8]
+      }}
+      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', times: [0, 0.5, 1] }}
     >
-      <div className="h-2 w-3/4 rounded-sm bg-white/80 dark:bg-white/90" />
-      <div className="mt-1 h-1 w-1/2 rounded-sm bg-white/60 dark:bg-white/70" />
-    </motion.div>
-    <motion.div
-      className="absolute left-3 top-[86px] h-6 w-[26%] rounded-lg border border-black/10 bg-black/5 p-1 dark:border-white/20 dark:bg-white/15"
-      animate={{ x: ['0%', '36%', '72%'], opacity: [0.35, 0.8, 0.5] }}
-      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}
-    >
-      <div className="h-1.5 w-2/3 rounded-sm bg-zinc-200/80 dark:bg-white/75" />
-      <div className="mt-1 h-1 w-1/3 rounded-sm bg-zinc-200/70 dark:bg-white/60" />
+      <div className="h-3 w-3 rounded-full bg-emerald-400/80 flex items-center justify-center">
+      </div>
+      <div className="h-1.5 w-6 rounded-sm bg-zinc-300 dark:bg-white/60" />
     </motion.div>
   </div>
 )
 
 const IdentityOrbit = () => (
-  <div className="relative flex h-32 items-center justify-center">
-    <div className="absolute h-16 w-16 rounded-2xl border border-black/10 bg-white/70 backdrop-blur dark:border-white/25 dark:bg-white/10">
-      <div className="absolute inset-2 rounded-xl border border-black/10 dark:border-white/20" />
-      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-600 dark:text-white/75">
-        SSO
-      </div>
+  <div className="relative flex h-40 items-center justify-center overflow-hidden rounded-2xl">
+    {/* Central Hub */}
+    <div className="absolute h-14 w-14 rounded-2xl border border-black/10 bg-white/70 backdrop-blur-md shadow-sm dark:border-white/20 dark:bg-white/5 z-20 flex flex-col items-center justify-center">
+      <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500 dark:text-white/60">SSO</div>
     </div>
+
+    {/* Subtle Orbit Rings */}
+    <div className="absolute h-24 w-24 rounded-full border border-black/5 dark:border-white/5" />
+    <div className="absolute h-36 w-36 rounded-full border border-black/5 dark:border-white/5" />
+
+    {/* Slower Orbiting Elements */}
     <motion.div
-      className="absolute h-28 w-28 rounded-full border border-black/10 dark:border-white/20"
+      className="absolute h-24 w-24 rounded-full"
       animate={{ rotate: 360 }}
-      transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+      transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
     >
-      <div className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-      <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
-      <div className="absolute right-1 top-1/3 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.7)]" />
+      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-cyan-400/80 shadow-[0_0_12px_rgba(34,211,238,0.4)]" />
     </motion.div>
+
     <motion.div
-      className="absolute h-40 w-40 rounded-full border border-black/5 dark:border-white/15"
+      className="absolute h-36 w-36 rounded-full"
       animate={{ rotate: -360 }}
-      transition={{ duration: 26, repeat: Infinity, ease: 'linear' }}
+      transition={{ duration: 32, repeat: Infinity, ease: 'linear' }}
     >
-      <div className="absolute right-6 bottom-2 h-1.5 w-1.5 rounded-full bg-zinc-400/60 dark:bg-white/70" />
-      <div className="absolute left-6 top-4 h-1.5 w-1.5 rounded-full bg-zinc-400/50 dark:bg-white/60" />
+      <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 h-3 w-3 rounded-full bg-violet-400/80 shadow-[0_0_12px_rgba(167,139,250,0.4)]" />
     </motion.div>
   </div>
 )
 
 const PerformanceBars = () => {
-  const bars = [52, 78, 64, 90]
+  const metrics = [
+    { label: 'Q1', value: 65, color: 'bg-zinc-200 dark:bg-white/10' },
+    { label: 'Q2', value: 45, color: 'bg-zinc-200 dark:bg-white/10' },
+    { label: 'Q3', value: 82, color: 'bg-zinc-300 dark:bg-white/20 border-t border-white/20' },
+    { label: 'Q4', value: 95, color: 'bg-gradient-to-t from-violet-500/80 to-fuchsia-400/80 shadow-[0_0_15px_rgba(167,139,250,0.2)]' }
+  ]
+
   return (
-    <div className="flex h-32 items-end gap-3">
-      {bars.map((height, index) => (
-        <div key={`${height}-${index}`} className="relative flex-1 h-full">
-          <div className="absolute inset-0 rounded-md bg-black/5 dark:bg-white/5" />
-          <motion.div
-            className="absolute inset-x-0 bottom-0 rounded-md bg-gradient-to-t from-violet-500/70 via-fuchsia-400/70 to-cyan-300/60"
-            animate={{ height: ['25%', `${height}%`] }}
-            transition={{
-              duration: 3 + index * 0.6,
-              repeat: Infinity,
-              repeatType: 'mirror',
-              ease: 'easeInOut',
-            }}
-          />
-        </div>
-      ))}
+    <div className="relative h-40 flex flex-col justify-end gap-2 pb-2 px-2">
+      {/* Subtle Background Grid Lines */}
+      <div className="absolute inset-x-2 bottom-6 top-4 flex flex-col justify-between z-0 opacity-10">
+        {[...Array(4)].map((_, i) => <div key={i} className="w-full h-px bg-zinc-500 border-dashed" />)}
+      </div>
+
+      <div className="relative z-10 flex h-24 items-end gap-3 px-2">
+        {metrics.map((metric, index) => (
+          <div key={metric.label} className="relative flex-1 h-full flex items-end justify-center">
+            <motion.div
+              className={`w-full max-w-[28px] rounded-t-sm ${metric.color}`}
+              initial={{ height: '10%' }}
+              animate={{ height: `${metric.value}%` }}
+              transition={{ duration: 2, delay: index * 0.15, ease: [0.25, 1, 0.5, 1] }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Minimum viable labels for cleanliness */}
+      <div className="flex px-2 gap-3">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="flex-1 text-center text-[9px] font-mono tracking-wider text-zinc-400 dark:text-white/40">
+            {metric.label}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
 const LeaveCalendar = () => {
   const days = Array.from({ length: 28 }, (_, i) => i + 1)
-  const approved = new Set([3, 4, 11, 17, 24])
+  const approved = new Set([12, 13, 14, 15, 16])
+  const pending = new Set([24, 25])
+
   return (
-    <div className="grid grid-cols-7 gap-1 text-[10px]">
-      {days.map((day) => {
-        const isApproved = approved.has(day)
-        return (
-          <motion.div
-            key={day}
-            className={`flex h-6 items-center justify-center rounded-md border text-zinc-600 dark:text-white/70 ${isApproved
-              ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-700 dark:text-emerald-200'
-              : 'border-black/10 bg-white/70 dark:border-white/20 dark:bg-white/[0.04]'
-              }`}
-            animate={
-              isApproved
-                ? {
-                  opacity: [0.4, 1, 0.4],
-                  scale: [1, 1.05, 1],
-                }
-                : undefined
-            }
-            transition={
-              isApproved
-                ? {
-                  duration: 2.4,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
-                }
-                : undefined
-            }
-          >
-            {day}
-          </motion.div>
-        )
-      })}
+    <div className="relative h-40 flex flex-col pt-2">
+      <div className="flex justify-between items-center mb-3 px-2">
+        <div className="text-[10px] font-bold tracking-widest uppercase text-zinc-800 dark:text-white/80">October</div>
+        <div className="flex gap-2 text-[8px] uppercase tracking-wider font-semibold">
+          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><div className="w-2 h-2 rounded bg-emerald-400" /> Approved</span>
+          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><div className="w-2 h-2 rounded bg-amber-400" /> Pending</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-[10px] px-1">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => (
+          <div key={`header-${d}`} className="text-center font-bold text-zinc-400 mb-1">{d}</div>
+        ))}
+        {days.map((day) => {
+          const isApproved = approved.has(day)
+          const isPending = pending.has(day)
+
+          let baseClass = "flex h-6 items-center justify-center rounded-md font-medium text-zinc-600 dark:text-white/70 "
+
+          if (isApproved) {
+            baseClass += "bg-emerald-400/20 text-emerald-700 dark:text-emerald-200 border-b-2 border-emerald-500"
+          } else if (isPending) {
+            baseClass += "bg-amber-400/20 text-amber-700 dark:text-amber-200 border-b-2 border-amber-500 border-dashed"
+          }
+
+          return (
+            <motion.div
+              key={day}
+              className={baseClass}
+              whileHover={{ scale: 1.1 }}
+              animate={isPending ? { opacity: [0.6, 1, 0.6] } : undefined}
+              transition={isPending ? { duration: 2, repeat: Infinity } : undefined}
+            >
+              {day}
+            </motion.div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 const PayrollLedger = () => {
   const rows = [
-    { label: 'Base', value: '$4,800' },
-    { label: 'Bonus', value: '$620' },
-    { label: 'Tax', value: '-$940' },
-    { label: 'Net', value: '$4,480' },
+    { label: 'Base Salary', value: '$8,400', type: 'plus' },
+    { label: 'Commissions', value: '$1,250', type: 'plus' },
+    { label: 'Taxes & Ded.', value: '-$2,140', type: 'minus' },
   ]
 
   return (
-    <div className="relative h-32 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-white/[0.05]">
-      <div className="space-y-2 text-[11px] text-zinc-700 dark:text-white/80">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between">
-            <span className="text-zinc-700 dark:text-white/70">{row.label}</span>
-            <span className="font-mono text-zinc-800 dark:text-white/90">{row.value}</span>
-          </div>
+    <div className="relative h-40 rounded-2xl border border-black/10 bg-white p-4 dark:border-white/20 dark:bg-[#0b0b11]/80 shadow-inner flex flex-col justify-between overflow-hidden">
+      <div className="space-y-3 z-10">
+        {rows.map((row, i) => (
+          <motion.div
+            key={row.label}
+            className="flex items-center justify-between text-[11px]"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.2, duration: 0.8 }}
+          >
+            <span className="text-zinc-500 dark:text-white/60 font-medium">{row.label}</span>
+            <span className={`font-mono font-semibold ${row.type === 'plus' ? 'text-zinc-800 dark:text-white/90' : 'text-rose-500 dark:text-rose-400'}`}>
+              {row.value}
+            </span>
+          </motion.div>
         ))}
       </div>
+
+      <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10 flex items-center justify-between z-10">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-400 dark:text-white/40 font-bold">Net Pay</span>
+        <motion.span
+          className="font-display text-lg text-emerald-600 dark:text-emerald-400 font-bold"
+          animate={{ scale: [1, 1.05, 1] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          $7,510
+        </motion.span>
+      </div>
+
+      {/* Scanning effect */}
       <motion.div
-        className="absolute left-3 right-3 bottom-4 h-px bg-gradient-to-r from-transparent via-amber-400/80 to-transparent"
-        animate={{ x: ['-30%', '30%'] }}
-        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute inset-x-0 h-8 bg-gradient-to-b from-transparent via-emerald-400/10 to-transparent z-0 pointer-events-none"
+        animate={{ top: ['-20%', '120%'] }}
+        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
       />
     </div>
   )
 }
 
 const TimeClock = () => (
-  <div className="relative flex h-32 flex-col items-center justify-center">
+  <div className="relative flex h-40 flex-col items-center justify-center overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900/50 dark:to-black/50">
+    {/* Concentric pulsing circles */}
     <motion.div
-      className="absolute h-24 w-24 rounded-full border border-cyan-400/40"
-      animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.6, 0.2] }}
-      transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+      className="absolute h-32 w-32 rounded-full border border-cyan-400/20"
+      animate={{ scale: [1, 1.5], opacity: [0.8, 0] }}
+      transition={{ duration: 3, repeat: Infinity, ease: 'easeOut' }}
     />
-    <div className="relative z-10 font-mono text-3xl tracking-[0.3em] text-zinc-900 dark:text-white">
-      09
-      <motion.span
-        className="text-cyan-600 dark:text-cyan-200"
-        animate={{ opacity: [0.3, 1, 0.3] }}
-        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+    <motion.div
+      className="absolute h-32 w-32 rounded-full border border-cyan-500/30"
+      animate={{ scale: [1, 1.5], opacity: [0.8, 0] }}
+      transition={{ duration: 3, repeat: Infinity, ease: 'easeOut', delay: 1 }}
+    />
+
+    <div className="absolute h-24 w-24 rounded-full bg-white dark:bg-zinc-900 shadow-[0_0_30px_rgba(34,211,238,0.15)] z-0" />
+
+    <div className="relative z-10 flex flex-col items-center">
+      <div className="font-mono text-4xl font-light tracking-tight text-zinc-800 dark:text-white mb-2">
+        09<span className="text-cyan-500 animate-pulse">:</span>41<span className="text-xl text-zinc-400 ml-1">AM</span>
+      </div>
+
+      <motion.div
+        className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 shadow-sm backdrop-blur-sm"
+        whileHover={{ scale: 1.05 }}
       >
-        :
-      </motion.span>
-      41
+        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-[9px] uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-bold">Clocked In</span>
+      </motion.div>
     </div>
-    <div className="relative z-10 mt-3 rounded-full border border-emerald-400/40 bg-emerald-400/15 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-emerald-700 dark:text-emerald-100">
-      Clocked In
+
+    {/* Abstract location pin */}
+    <div className="absolute bottom-2 right-3 flex items-center gap-1 opacity-50">
+      <div className="h-3 w-3 rounded-full border border-zinc-500 flex items-center justify-center"><div className="h-1 w-1 rounded-full bg-zinc-500" /></div>
+      <span className="text-[8px] font-mono text-zinc-500">HQ-NY</span>
     </div>
   </div>
 )
 
 const LMSChecklist = () => {
   const courses = [
-    { title: 'Onboarding Core', progress: 92 },
-    { title: 'Security Compliance', progress: 68 },
-    { title: 'Leadership Tracks', progress: 44 },
+    { title: 'Security & Compliance 2024', progress: 100, completed: true },
+    { title: 'Leadership Fundamentals', progress: 68, completed: false },
+    { title: 'New Feature Rollout', progress: 15, completed: false },
   ]
 
   return (
-    <div className="space-y-3">
+    <div className="relative h-40 flex flex-col justify-center space-y-4 px-2">
       {courses.map((course, index) => (
-        <div key={course.title} className="flex items-center gap-3">
-          <div className="flex h-4 w-4 items-center justify-center rounded border border-black/10 bg-black/5 dark:border-white/25 dark:bg-white/15">
-            <motion.div
-              className="h-2 w-2 rounded-sm bg-emerald-400"
-              animate={{ scale: [0.6, 1, 0.6] }}
-              transition={{ duration: 2.4, repeat: Infinity, delay: index * 0.3 }}
-            />
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] text-zinc-700 dark:text-white/80">{course.title}</div>
-            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
+        <div key={course.title} className="flex items-center gap-4 group">
+
+          {/* Status Icon */}
+          <div className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${course.completed ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800'}`}>
+            {course.completed ? (
+              <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            ) : (
               <motion.div
-                className="h-full bg-gradient-to-r from-emerald-400/80 to-cyan-400/60"
-                animate={{ width: [`${Math.max(10, course.progress - 20)}%`, `${course.progress}%`] }}
-                transition={{ duration: 2.6, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+                className="h-2 w-2 rounded-full bg-teal-500"
+                animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity, delay: index * 0.3 }}
+              />
+            )}
+          </div>
+
+          {/* Course Details & Progress */}
+          <div className="flex-1 space-y-1.5">
+            <div className="flex justify-between items-center text-[11px]">
+              <span className={`font-medium ${course.completed ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-700 dark:text-white/90'}`}>
+                {course.title}
+              </span>
+              <span className="text-[9px] font-mono text-zinc-500">{course.progress}%</span>
+            </div>
+
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+              <motion.div
+                className={`h-full ${course.completed ? 'bg-emerald-500' : 'bg-gradient-to-r from-teal-400 to-emerald-400'}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${course.progress}%` }}
+                transition={{ duration: 1.5, delay: index * 0.2, ease: "easeOut" }}
               />
             </div>
           </div>
-          <span className="text-[10px] text-zinc-600 dark:text-white/60">{course.progress}%</span>
+
         </div>
       ))}
     </div>
@@ -317,62 +429,101 @@ const MarqueeStrip = () => (
   </div>
 )
 
+const OnboardingFlow = () => {
+  return (
+    <div className="relative h-40 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/20 dark:bg-white/[0.03] overflow-hidden">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-6 w-6 shrink-0 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-[10px] font-bold">1</div>
+        <div className="h-2 w-full rounded-md bg-black/5 dark:bg-white/10" />
+      </div>
+      <div className="flex items-center gap-3 mb-3 opacity-60">
+        <div className="h-6 w-6 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-white/40 flex items-center justify-center text-[10px] font-bold">2</div>
+        <div className="h-2 w-3/4 rounded-md bg-black/5 dark:bg-white/5" />
+      </div>
+      <div className="flex items-center gap-3 opacity-30">
+        <div className="h-6 w-6 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-white/40 flex items-center justify-center text-[10px] font-bold">3</div>
+        <div className="h-2 w-1/2 rounded-md bg-black/5 dark:bg-white/5" />
+      </div>
+
+      {/* Slower, smoother completion block */}
+      <motion.div
+        className="absolute top-2 left-11 right-3 h-8 rounded-md bg-gradient-to-r from-indigo-500/10 to-violet-500/20 border-l border-indigo-400"
+        initial={{ width: '0%', opacity: 0 }}
+        animate={{ width: 'calc(100% - 44px)', opacity: [0, 1, 0] }}
+        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+      >
+        <div className="h-full w-full flex items-center justify-end px-3">
+          <CheckCircle className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 const modules: ModuleCardProps[] = [
   {
     title: 'Recruiting',
-    tag: 'Talent',
-    description: 'Move candidates from signal to hire with precision routing and automation.',
-    accent: 'from-sky-400/80 via-indigo-400/70 to-transparent',
+    tag: 'Talent Acquisition',
+    description: 'Move candidates from signal to hire with precision routing, automated pipelines, and custom scorecards.',
+    accent: 'from-sky-500 via-indigo-500 to-transparent',
     visual: <RecruitingKanban />,
-    className: 'md:col-span-7 min-h-[300px]',
+    className: 'md:col-span-8 min-h-[340px]',
   },
   {
-    title: 'Identity',
-    tag: 'Access',
-    description: 'Centralized SSO with policy enforcement and continuous trust scoring.',
-    accent: 'from-emerald-400/80 via-cyan-400/70 to-transparent',
+    title: 'Identity Provider',
+    tag: 'Access & Security',
+    description: 'Centralized SSO with granular policy enforcement, role-based access control, and continuous trust scoring.',
+    accent: 'from-cyan-500 via-blue-500 to-transparent',
     visual: <IdentityOrbit />,
-    className: 'md:col-span-5 min-h-[300px]',
+    className: 'md:col-span-4 min-h-[340px]',
   },
   {
     title: 'Performance',
-    tag: 'Growth',
-    description: 'Live OKR calibration and continuous feedback loops across teams.',
-    accent: 'from-violet-400/80 via-fuchsia-400/70 to-transparent',
+    tag: 'Growth & Reviews',
+    description: 'Live OKR calibration, continuous feedback loops, and automated cyclical review cycles across dynamic teams.',
+    accent: 'from-violet-500 via-fuchsia-500 to-transparent',
     visual: <PerformanceBars />,
-    className: 'md:col-span-4 min-h-[260px]',
+    className: 'md:col-span-4 min-h-[340px]',
+  },
+  {
+    title: 'Time & Attendance',
+    tag: 'Workforce',
+    description: 'Pulse-accurate, geofenced time tracking with biometric capabilities and automatic compliance alerts.',
+    accent: 'from-blue-400 via-cyan-400 to-transparent',
+    visual: <TimeClock />,
+    className: 'md:col-span-4 min-h-[340px]',
   },
   {
     title: 'Leave',
     tag: 'Time Off',
-    description: 'Automated policy checks with real-time balance sync and approvals.',
-    accent: 'from-emerald-300/80 via-lime-300/60 to-transparent',
+    description: 'Automated global policy checks with real-time accrual balance sync, public holidays, and instant approvals.',
+    accent: 'from-amber-400 via-orange-400 to-transparent',
     visual: <LeaveCalendar />,
-    className: 'md:col-span-4 min-h-[260px]',
+    className: 'md:col-span-4 min-h-[340px]',
   },
   {
     title: 'Payroll',
-    tag: 'Finance',
-    description: 'Run payroll with audit-ready precision and instant reconciliation.',
-    accent: 'from-amber-300/80 via-orange-300/70 to-transparent',
+    tag: 'Finance & Comp',
+    description: 'Run global payroll with audit-ready precision, instant reconciliation, and automated tax compliance routing.',
+    accent: 'from-emerald-500 via-teal-500 to-transparent',
     visual: <PayrollLedger />,
-    className: 'md:col-span-4 min-h-[260px]',
+    className: 'md:col-span-4 min-h-[340px]',
   },
   {
-    title: 'Time',
-    tag: 'Attendance',
-    description: 'Pulse-accurate time tracking with automatic compliance alerts.',
-    accent: 'from-cyan-300/80 via-blue-300/70 to-transparent',
-    visual: <TimeClock />,
-    className: 'md:col-span-6 min-h-[260px]',
-  },
-  {
-    title: 'LMS',
-    tag: 'Learning',
-    description: 'Skill pathways that adapt to role changes and certification cadence.',
-    accent: 'from-emerald-300/80 via-teal-300/70 to-transparent',
+    title: 'Learning (LMS)',
+    tag: 'Development',
+    description: 'Curated skill pathways that adapt to role changes, automated certification tracking, and compliance cadences.',
+    accent: 'from-teal-400 via-emerald-400 to-transparent',
     visual: <LMSChecklist />,
-    className: 'md:col-span-6 min-h-[260px]',
+    className: 'md:col-span-8 min-h-[340px]',
+  },
+  {
+    title: 'Onboarding',
+    tag: 'Employee Journey',
+    description: 'Automate compliance forms, remote equipment provisioning, and deeply engaging orientation tasks before day one.',
+    accent: 'from-purple-500 via-pink-500 to-transparent',
+    visual: <OnboardingFlow />,
+    className: 'md:col-span-12 min-h-[320px]',
   },
 ]
 
@@ -564,37 +715,255 @@ export default function HomePage() {
             <div className="absolute bottom-[-120px] right-0 h-80 w-80 rounded-full bg-emerald-400/15 blur-[160px]" />
           </div>
           <div className="container relative z-10 mx-auto px-6">
-            <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+              <motion.div
+                className="relative"
+                initial={{ opacity: 0, x: -50 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7 }}
+              >
+                <div className="relative z-10 rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+                  <Image
+                    src={HRProfessionalsImage}
+                    alt="HR Professionals collaborating"
+                    width={700}
+                    height={500}
+                    className="w-full object-cover rounded-2xl"
+                    placeholder="blur"
+                  />
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent" />
+
+                  {/* Floating elements */}
+                  <motion.div
+                    className="absolute top-6 right-6 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20 shadow-lg"
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      <span className="text-sm font-medium text-white">Workflow Authorized</span>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    className="absolute bottom-6 left-6 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 shadow-lg"
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.7 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Zap className="w-5 h-5 text-cyan-400" />
+                      <div>
+                        <div className="text-xs text-white/70">Data Synced</div>
+                        <div className="text-sm font-medium text-white">Real-time update</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-white/60">How It Works</p>
                 <h2 className="mt-4 font-display text-4xl text-white md:text-5xl">
                   From signal to action in three steps.
                 </h2>
-                <p className="mt-4 text-white/70">
+                <p className="mt-4 text-white/70 mb-8">
                   Seemplify normalizes data across your workforce stack, then orchestrates automation
                   through verified workflows. Every action is auditable and reversible.
                 </p>
+                <div className="grid gap-4">
+                  {[
+                    {
+                      eyebrow: '01',
+                      title: 'Connect',
+                      description: 'Sync HRIS, payroll, ATS, and time signals into one secure graph.',
+                    },
+                    {
+                      eyebrow: '02',
+                      title: 'Orchestrate',
+                      description: 'Automate approvals, reviews, and compliance routing with guardrails.',
+                    },
+                    {
+                      eyebrow: '03',
+                      title: 'Measure',
+                      description: 'Track outcomes with live dashboards and continuous optimization.',
+                    },
+                  ].map((item) => (
+                    <InfoCard key={item.title} variant="inverse" {...item} />
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {[
-                  {
-                    eyebrow: '01',
-                    title: 'Connect',
-                    description: 'Sync HRIS, payroll, ATS, and time signals into one secure graph.',
-                  },
-                  {
-                    eyebrow: '02',
-                    title: 'Orchestrate',
-                    description: 'Automate approvals, reviews, and compliance routing with guardrails.',
-                  },
-                  {
-                    eyebrow: '03',
-                    title: 'Measure',
-                    description: 'Track outcomes with live dashboards and continuous optimization.',
-                  },
-                ].map((item) => (
-                  <InfoCard key={item.title} variant="inverse" {...item} />
-                ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Onboarding Section */}
+        <section id="onboarding" className="relative py-24 overflow-hidden">
+          <div className="absolute inset-0 bg-[#f8efe6] dark:bg-transparent" />
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">First Impressions</p>
+                <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
+                  Seamless Digital Onboarding.
+                </h2>
+                <p className="mt-4 text-zinc-700 dark:text-white/75 mb-8">
+                  Welcome new hires with structured, engaging digital journeys. Ensure compliance, equipment provisioning, and cultural integration happens automatically on day one.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <InfoCard
+                    eyebrow="Journey"
+                    title="Guided Paths"
+                    description="Personalized 30-60-90 day playbooks for every role."
+                  />
+                  <InfoCard
+                    eyebrow="IT Sync"
+                    title="Auto-Provisioning"
+                    description="Hardware and software access granted before day one."
+                  />
+                </div>
+              </div>
+
+              <motion.div
+                className="relative lg:order-last order-first"
+                initial={{ opacity: 0, x: 50 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7 }}
+              >
+                <div className="relative z-10 rounded-3xl overflow-hidden border border-black/10 dark:border-white/10 shadow-2xl">
+                  <Image
+                    src="https://images.unsplash.com/photo-1573164574572-cb89e39749b4?auto=format&fit=crop&q=80&w=800"
+                    alt="Black professional onboarding"
+                    width={800}
+                    height={600}
+                    className="w-full object-cover rounded-3xl"
+                  />
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent" />
+
+                  <motion.div
+                    className="absolute top-8 right-8 bg-white/95 dark:bg-black/60 backdrop-blur-md p-4 rounded-xl border border-black/5 dark:border-white/10 shadow-lg"
+                    initial={{ opacity: 0, y: -20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <UserPlus className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
+                      <div>
+                        <div className="text-xs text-zinc-500 dark:text-white/60">Welcome Packet</div>
+                        <div className="text-sm font-bold text-zinc-900 dark:text-white">Sent & Viewed</div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    className="absolute bottom-8 left-8 bg-white/95 dark:bg-black/60 backdrop-blur-md p-4 rounded-xl border border-black/5 dark:border-white/10 shadow-lg"
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.7 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Award className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+                      <div>
+                        <div className="text-xs text-zinc-500 dark:text-white/60">Training Status</div>
+                        <div className="text-sm font-bold text-zinc-900 dark:text-white">100% Complete</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        {/* Document Signing Section */}
+        <section id="documents" className="relative py-24 bg-[#0b0b11] text-white">
+          <div className="absolute inset-0 opacity-50">
+            <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-cyan-500/10 blur-[120px]" />
+          </div>
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+              <motion.div
+                className="relative"
+                initial={{ opacity: 0, x: -50 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7 }}
+              >
+                <div className="relative z-10 rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+                  <Image
+                    src="https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?auto=format&fit=crop&q=80&w=800"
+                    alt="Black professional signing document digitally"
+                    width={800}
+                    height={600}
+                    className="w-full object-cover rounded-3xl"
+                  />
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent" />
+
+                  <motion.div
+                    className="absolute top-8 left-8 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 shadow-lg"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileSignature className="w-6 h-6 text-emerald-400" />
+                      <div>
+                        <div className="text-xs text-white/70">Offer Letter</div>
+                        <div className="text-sm font-bold text-white">Document Signed ✓</div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    className="absolute bottom-8 right-8 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 shadow-lg"
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.7 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Shield className="w-5 h-5 text-blue-400" />
+                      <div className="text-sm font-medium text-white">Audit Trail Secured</div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-white/60">Compliance & Trust</p>
+                <h2 className="mt-4 font-display text-4xl text-white md:text-5xl">
+                  Secure Digital Signatures.
+                </h2>
+                <p className="mt-4 text-white/70 mb-8">
+                  Execute contracts, NDAs, and policy updates instantly with our legally binding electronic signature flows. Every signature generates a traceable audit ledger.
+                </p>
+                <div className="grid gap-4">
+                  {[
+                    {
+                      eyebrow: 'Legal',
+                      title: 'Binding Signatures',
+                      description: 'ESIGN and eIDAS compliant signatures embedded in your workflows.',
+                    },
+                    {
+                      eyebrow: 'Storage',
+                      title: 'Immutable Vaulting',
+                      description: 'Documents are encrypted at rest and permanently accessible via the employee record.',
+                    }
+                  ].map((item) => (
+                    <InfoCard key={item.title} variant="inverse" {...item} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -645,34 +1014,56 @@ export default function HomePage() {
                   ))}
                 </div>
               </div>
-              <div className="rounded-3xl border border-black/15 bg-white p-8 shadow-[0_30px_80px_-60px_rgba(15,23,42,0.35)] dark:border-white/20 dark:bg-white/[0.06] dark:shadow-none">
-                <div className="flex items-center justify-between text-xs text-zinc-700 dark:text-white/70">
-                  <span className="font-mono uppercase tracking-[0.35em]">System Map</span>
-                  <span className="text-zinc-400 dark:text-white/50">Live View</span>
-                </div>
-                <div className="mt-6 grid gap-4">
-                  {[
-                    { title: 'Identity', detail: 'Access & trust graph', value: '99.9% uptime' },
-                    { title: 'Recruiting', detail: 'Pipeline velocity', value: '−42% time‑to‑hire' },
-                    { title: 'Performance', detail: 'Feedback cadence', value: '+3.1x touchpoints' },
-                  ].map((row) => (
-                    <div key={row.title} className="rounded-2xl border border-black/15 bg-white p-4 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.35)] dark:border-white/20 dark:bg-white/[0.05] dark:shadow-none">
-                      <div className="flex items-center justify-between text-sm text-zinc-900 dark:text-white/80">
-                        <span className="font-medium text-zinc-900 dark:text-white">{row.title}</span>
-                        <span className="text-xs text-zinc-700 dark:text-white/60">{row.value}</span>
-                      </div>
-                      <p className="mt-2 text-xs text-zinc-800 dark:text-white/65">{row.detail}</p>
-                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
-                        <motion.div
-                          className="h-full bg-gradient-to-r from-cyan-400/80 to-emerald-400/70"
-                          animate={{ width: ['35%', '80%', '35%'] }}
-                          transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
-                        />
+              <motion.div
+                className="relative"
+                initial={{ opacity: 0, x: 50 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7 }}
+              >
+                <div className="relative z-10 rounded-3xl overflow-hidden border border-black/10 dark:border-white/10 shadow-2xl">
+                  <Image
+                    src={LeadersReviewingImage}
+                    alt="Leaders reviewing platform data"
+                    width={800}
+                    height={600}
+                    className="w-full object-cover rounded-3xl"
+                    placeholder="blur"
+                  />
+
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900/40 dark:to-slate-900/60" />
+
+                  {/* Floating elements */}
+                  <motion.div
+                    className="absolute top-8 left-8 bg-white/90 dark:bg-black/50 backdrop-blur-md p-4 rounded-xl border border-black/5 dark:border-white/10 shadow-lg"
+                    initial={{ opacity: 0, y: -20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <TrendingUp className="w-6 h-6 text-emerald-500 dark:text-emerald-400" />
+                      <div>
+                        <div className="text-xs text-zinc-500 dark:text-white/60">System Uptime</div>
+                        <div className="text-sm font-bold text-zinc-900 dark:text-white">99.99%</div>
                       </div>
                     </div>
-                  ))}
+                  </motion.div>
+
+                  <motion.div
+                    className="absolute bottom-8 right-8 bg-white/90 dark:bg-black/50 backdrop-blur-md p-4 rounded-xl border border-black/5 dark:border-white/10 shadow-lg"
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.7 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Shield className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+                      <span className="text-sm font-medium text-zinc-900 dark:text-white">Zero-Trust Active</span>
+                    </div>
+                  </motion.div>
                 </div>
-              </div>
+              </motion.div>
             </div>
           </div>
         </section>

@@ -130,6 +130,12 @@ const OnboardingAssignmentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AiinOnboardingTemplate'
   },
+  workflowType: {
+    type: String,
+    enum: ['onboarding', 'agreement', 'policy', 'general'],
+    default: 'onboarding',
+    index: true
+  },
   status: {
     type: String,
     enum: ['pending', 'in_progress', 'completed', 'cancelled'],
@@ -150,5 +156,7 @@ const OnboardingAssignmentSchema = new mongoose.Schema({
 
 OnboardingAssignmentSchema.index({ organization: 1, member: 1, status: 1 })
 OnboardingAssignmentSchema.index({ member: 1, status: 1 })
+OnboardingAssignmentSchema.index({ organization: 1, workflowType: 1, status: 1, createdAt: -1 })
+OnboardingAssignmentSchema.index({ member: 1, workflowType: 1, status: 1, createdAt: -1 })
 
 export const OnboardingAssignment = mongoose.model('AiinOnboardingAssignment', OnboardingAssignmentSchema)

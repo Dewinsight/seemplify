@@ -92,6 +92,12 @@ const OnboardingTemplateSchema = new mongoose.Schema({
     trim: true,
     maxlength: 1000
   },
+  workflowType: {
+    type: String,
+    enum: ['onboarding', 'agreement', 'policy', 'general'],
+    default: 'onboarding',
+    index: true
+  },
   isDefault: {
     type: Boolean,
     default: false,
@@ -105,5 +111,6 @@ const OnboardingTemplateSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 OnboardingTemplateSchema.index({ organization: 1, isDefault: 1 })
+OnboardingTemplateSchema.index({ organization: 1, workflowType: 1, createdAt: -1 })
 
 export const OnboardingTemplate = mongoose.model('AiinOnboardingTemplate', OnboardingTemplateSchema)

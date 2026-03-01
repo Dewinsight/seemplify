@@ -61,7 +61,8 @@
     "setup-pinecone": "node scripts/setupPinecone.js",
     "cleanup-sessions": "node scripts/sessionCleanup.js",
     "test-email": "node scripts/test-email.js",
-    "test-questions": "node scripts/testInterviewQuestions.js"
+    "test-questions": "node scripts/testInterviewQuestions.js",
+    "compare-cv-models": "node scripts/compareCvExtractionModels.js"
   },
   "keywords": [],
   "author": "",

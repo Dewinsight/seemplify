@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>My Onboarding - Seemplify</title>
+  <title><%= workspaceMode ? 'My Documents' : 'My Onboarding' %> - Seemplify</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
@@ -13,13 +13,13 @@
 </head>
 
 <body>
-  <%- include('partials/nav', { activePage: 'onboarding' }) %>
+  <%- include('partials/nav', { activePage: (typeof activePage !== 'undefined' ? activePage : 'documents') }) %>
 
   <div class="container">
     <div class="header">
       <div>
-        <h1>My Onboarding</h1>
-        <div class="header-subtitle">Complete required steps to finish setup.</div>
+        <h1><%= workspaceMode ? 'My Documents' : 'My Onboarding' %></h1>
+        <div class="header-subtitle"><%= workspaceMode ? 'Track and complete all assigned document workflows.' : 'Complete required steps to finish setup.' %></div>
       </div>
     </div>
 
@@ -32,23 +32,35 @@
 
     <% if (!assignments || assignments.length === 0) { %>
       <div class="empty-state">
-        <h3>No onboarding tasks</h3>
+        <h3><%= workspaceMode ? 'No document tasks' : 'No onboarding tasks' %></h3>
         <p>You are all set.</p>
       </div>
     <% } else { %>
-      <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="Filter onboarding assignments">
+      <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="<%= workspaceMode ? 'Filter document assignments by status' : 'Filter onboarding assignments' %>">
         <button type="button" class="assignment-status-chip active" data-personal-status-filter="current" aria-selected="true">Current</button>
         <button type="button" class="assignment-status-chip" data-personal-status-filter="history" aria-selected="false">History</button>
         <button type="button" class="assignment-status-chip" data-personal-status-filter="all" aria-selected="false">All</button>
       </div>
+      <% if (workspaceMode) { %>
+        <div class="assignment-board-status" style="margin-bottom: 12px;" role="tablist" aria-label="Filter by workflow">
+          <button type="button" class="assignment-status-chip active" data-workflow-filter="all" aria-selected="true">All Workflows</button>
+          <% (workflowTypes || ['onboarding', 'agreement', 'policy', 'general']).forEach(workflowType => { %>
+            <% const workflowLabel = (workflowLabels && workflowLabels[workflowType]) || workflowType; %>
+            <button type="button" class="assignment-status-chip" data-workflow-filter="<%= workflowType %>" aria-selected="false"><%= workflowLabel %></button>
+          <% }) %>
+        </div>
+      <% } %>
       <% assignments.forEach(assignment => { %>
         <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
         <% const currentUserId = user._id.toString(); %>
         <% const isAssignee = assignmentMemberId === currentUserId; %>
+        <% const assignmentWorkflowType = assignment.workflowType || 'onboarding'; %>
+        <% const assignmentWorkflowLabel = (workflowLabels && workflowLabels[assignmentWorkflowType]) || 'Onboarding'; %>
         <div
           class="card onboarding-assignment-card onboarding-assignment-card--<%= assignment.status %>"
           data-personal-assignment
           data-personal-status="<%= assignment.status %>"
+          data-personal-workflow="<%= assignmentWorkflowType %>"
         >
           <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
             <div>
@@ -59,9 +71,14 @@
                 Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
               </div>
             </div>
-            <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
-              <%= assignment.status.replace('_', ' ') %>
-            </span>
+            <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+              <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                <%= assignment.status.replace('_', ' ') %>
+              </span>
+              <span class="role-badge workflow-type-badge workflow-type-badge--<%= assignmentWorkflowType %>">
+                <%= assignmentWorkflowLabel %>
+              </span>
+            </div>
           </div>
 
           <% if (assignment.status === 'cancelled') { %>
@@ -81,8 +98,8 @@
 
             <% if (visibleItems.length === 0) { %>
               <div class="empty-state" style="padding: 18px 0;">
-                <h3>No onboarding steps</h3>
-                <p>No items are assigned to you on this onboarding.</p>
+                <h3><%= workspaceMode ? 'No workflow steps' : 'No onboarding steps' %></h3>
+                <p><%= workspaceMode ? 'No items are assigned to you in this workflow.' : 'No items are assigned to you on this onboarding.' %></p>
               </div>
             <% } else { %>
               <div class="onboarding-flow" data-onboarding-flow data-assignment="<%= assignment._id %>">
@@ -339,7 +356,7 @@
       <% }) %>
       <div class="empty-state assignment-board-empty" data-personal-empty hidden>
         <h3>No assignments in this view</h3>
-        <p>Switch filter to view current or historical onboarding tasks.</p>
+        <p><%= workspaceMode ? 'Try another status or workflow filter.' : 'Switch filter to view current or historical onboarding tasks.' %></p>
       </div>
     <% } %>
   </div>
@@ -423,6 +440,32 @@
 
   <script src="/vendor/pdfjs/pdf.min.js"></script>
   <script>
+    const workflowLabels = <%- JSON.stringify(workflowLabels || {
+      onboarding: 'Onboarding',
+      agreement: 'Agreement Signing',
+      policy: 'Policy Acknowledgement',
+      general: 'General Document Workflow'
+    }) %>;
+    const workflowOptions = <%- JSON.stringify(workflowTypes || ['onboarding', 'agreement', 'policy', 'general']) %>;
+    const workspaceModeEnabled = <%= workspaceMode ? 'true' : 'false' %>;
+    const workflowFilterState = { active: '<%= activeWorkflow || (workspaceMode ? "all" : "onboarding") %>' };
+
+    function setWorkflowFilter(scope = 'all') {
+      const normalized = scope === 'all' || workflowOptions.includes(scope)
+        ? scope
+        : (workspaceModeEnabled ? 'all' : 'onboarding');
+      workflowFilterState.active = normalized;
+
+      document.querySelectorAll('[data-workflow-filter]').forEach(button => {
+        const isActive = button.dataset.workflowFilter === normalized;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      const activeScopeChip = document.querySelector('[data-personal-status-filter].active');
+      filterPersonalAssignments(activeScopeChip?.dataset.personalStatusFilter || 'current');
+    }
+
     async function submitForm(form) {
       const assignmentId = form.dataset.assignment;
       const itemId = form.dataset.item;
@@ -480,6 +523,7 @@
       const cards = Array.from(document.querySelectorAll('[data-personal-assignment]'));
       const empty = document.querySelector('[data-personal-empty]');
       if (!cards.length || !chips.length) return;
+      const workflow = workflowFilterState.active || 'all';
 
       chips.forEach(chip => {
         const isActive = chip.dataset.personalStatusFilter === scope;
@@ -490,11 +534,14 @@
       let visible = 0;
       cards.forEach(card => {
         const status = String(card.dataset.personalStatus || '').toLowerCase();
+        const workflowType = String(card.dataset.personalWorkflow || 'onboarding').toLowerCase();
         const isCurrent = status === 'pending' || status === 'in_progress';
         const isHistory = status === 'completed' || status === 'cancelled';
-        const show = scope === 'all'
+        const scopeMatches = scope === 'all'
           ? true
           : (scope === 'history' ? isHistory : isCurrent);
+        const workflowMatches = workflow === 'all' || workflowType === workflow;
+        const show = scopeMatches && workflowMatches;
 
         card.hidden = !show;
         if (show) visible += 1;
@@ -508,6 +555,12 @@
     document.querySelectorAll('[data-personal-status-filter]').forEach(button => {
       button.addEventListener('click', () => {
         filterPersonalAssignments(button.dataset.personalStatusFilter || 'current');
+      });
+    });
+
+    document.querySelectorAll('[data-workflow-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        setWorkflowFilter(button.dataset.workflowFilter || 'all');
       });
     });
 
@@ -1342,6 +1395,8 @@
         selectStep(pickInitialIndex(saved), { persist: false, scroll: false });
       });
     }
+
+    setWorkflowFilter(workflowFilterState.active || (workspaceModeEnabled ? 'all' : 'onboarding'));
 
     if (document.querySelector('[data-personal-status-filter]')) {
       filterPersonalAssignments('current');

@@ -378,9 +378,9 @@
     <% if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">Complete your onboarding</div>
+          <div style="font-weight: 700; font-size: 16px;">Documents need your attention</div>
           <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
-            You have <%= pendingOnboardingCount %> onboarding task<%= pendingOnboardingCount === 1 ? '' : 's' %> waiting.
+            You have <%= pendingOnboardingCount %> pending document step<%= pendingOnboardingCount === 1 ? '' : 's' %> waiting.
           </div>
           <% if (pendingOnboardingAssignments && pendingOnboardingAssignments.length > 0) { %>
             <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
@@ -393,7 +393,7 @@
             </div>
           <% } %>
         </div>
-        <a href="/onboarding" class="btn btn-primary">Go to Onboarding</a>
+        <a href="/documents" class="btn btn-primary">Open Documents Workspace</a>
       </div>
     <% } %>
 
@@ -478,6 +478,31 @@
       <div class="section-title">Choose an app to launch with single sign-on</div>
       <% if (apps && apps.length > 0) { %>
         <div class="app-grid">
+          <a href="/documents" class="card app-card app-card--primary" style="--app-color: #0ea5e9;">
+            <div class="app-card__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="8" y1="13" x2="16" y2="13"></line>
+                <line x1="8" y1="17" x2="13" y2="17"></line>
+              </svg>
+            </div>
+            <div class="app-card__body">
+              <div class="app-card__title">
+                Document Workspace
+                <span class="app-card__badge" style="background: linear-gradient(135deg, #0284c7, #22c55e);">Core</span>
+              </div>
+              <div class="app-card__desc">Onboarding, agreements, policy acknowledgements, and document signing in one flow.</div>
+              <div class="app-card__meta">
+                <span class="pill pill--soft">Inside IDP</span>
+              </div>
+            </div>
+            <div class="app-card__arrow">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </div>
+          </a>
           <% apps.forEach(app => { %>
             <% if (app.isBeta) { %>
               <div onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')" class="card app-card <%= app.appId === 'smarthr' ? 'app-card--primary' : '' %>" style="--app-color: <%= app.color || '#6366f1' %>; cursor: pointer;">

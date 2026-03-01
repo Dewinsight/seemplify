@@ -3141,7 +3141,11 @@ app.get('/', async (req, res) => {
     }
 
     const pendingOnboardingAssignments = await OnboardingAssignment.find({
-      member: account._id,
+      $or: [
+        { member: account._id },
+        { 'items.config.signers.member': account._id },
+        { 'items.data.esign.signers.member': account._id }
+      ],
       status: { $nin: ['completed', 'cancelled'] }
     })
       .populate('organization', 'name')
@@ -3755,8 +3759,71 @@ const updateOnboardingAssignmentStatus = (assignment) => {
 }
 
 const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general']
+const WORKFLOW_LABELS = {
+  onboarding: 'Onboarding',
+  agreement: 'Agreement Signing',
+  policy: 'Policy Acknowledgement',
+  general: 'General Document Workflow'
+}
 
-const buildPersonalOnboardingQuery = (userId, organizationId) => {
+const normalizeWorkflowType = (value, options = {}) => {
+  const allowAll = options.allowAll === true
+  const fallback = options.fallback || 'onboarding'
+  const raw = String(value || '').trim().toLowerCase()
+
+  if (allowAll && raw === 'all') {
+    return 'all'
+  }
+
+  return WORKFLOW_TYPES.includes(raw) ? raw : fallback
+}
+
+const withWorkflowType = (entry) => {
+  if (!entry) return entry
+  const current = typeof entry.toObject === 'function' ? entry.toObject() : entry
+  return {
+    ...current,
+    workflowType: normalizeWorkflowType(current.workflowType, { fallback: 'onboarding' })
+  }
+}
+
+const buildWorkflowSummary = ({ templates = [], assignments = [] } = {}) => {
+  const summary = {}
+  WORKFLOW_TYPES.forEach(type => {
+    summary[type] = {
+      type,
+      label: WORKFLOW_LABELS[type],
+      templates: 0,
+      assignments: 0,
+      active: 0,
+      completed: 0
+    }
+  })
+
+  templates.forEach(template => {
+    const type = normalizeWorkflowType(template.workflowType)
+    summary[type].templates += 1
+  })
+
+  assignments.forEach(assignment => {
+    const type = normalizeWorkflowType(assignment.workflowType)
+    summary[type].assignments += 1
+    if (assignment.status === 'completed') {
+      summary[type].completed += 1
+    } else if (assignment.status !== 'cancelled') {
+      summary[type].active += 1
+    }
+  })
+
+  return summary
+}
+
+const buildPersonalOnboardingQuery = (userId, organizationId, options = {}) => {
+  const workflowType = normalizeWorkflowType(options.workflowType, {
+    allowAll: true,
+    fallback: 'all'
+  })
   const base = {
     $or: [
       { member: userId },
@@ -3768,17 +3835,26 @@ const buildPersonalOnboardingQuery = (userId, organizationId) => {
   if (organizationId) {
     base.organization = organizationId
   }
+  if (workflowType !== 'all') {
+    base.workflowType = workflowType
+  }
 
   return base
 }
 
-const getPersonalOnboardingAssignments = async (userId, organizationId) => {
-  return OnboardingAssignment.find(buildPersonalOnboardingQuery(userId, organizationId))
+const getPersonalOnboardingAssignments = async (userId, organizationId, options = {}) => {
+  const assignments = await OnboardingAssignment.find(buildPersonalOnboardingQuery(userId, organizationId, options))
     .populate('organization', 'name')
     .sort({ createdAt: -1 })
+
+  return assignments.map(withWorkflowType)
 }
 
-const loadOnboardingAdminContext = async (req, organizationId) => {
+const loadOnboardingAdminContext = async (req, organizationId, options = {}) => {
+  const workflowTypeFilter = normalizeWorkflowType(options.workflowType, {
+    allowAll: true,
+    fallback: 'all'
+  })
   const organization = await Organization.findById(organizationId)
     .populate('members.account', 'email profile.name')
 
@@ -3794,19 +3870,35 @@ const loadOnboardingAdminContext = async (req, organizationId) => {
     throw new Error('Admin, owner, or HR manager role required')
   }
 
-  const [templates, assignments, onboardingActivities] = await Promise.all([
-    OnboardingTemplate.find({ organization: organizationId }).sort({ createdAt: -1 }),
-    OnboardingAssignment.find({ organization: organizationId })
+  const templateQuery = { organization: organizationId }
+  const assignmentQuery = { organization: organizationId }
+  if (workflowTypeFilter !== 'all') {
+    templateQuery.workflowType = workflowTypeFilter
+    assignmentQuery.workflowType = workflowTypeFilter
+  }
+
+  const [rawTemplates, rawAssignments] = await Promise.all([
+    OnboardingTemplate.find(templateQuery).sort({ createdAt: -1 }),
+    OnboardingAssignment.find(assignmentQuery)
       .populate('member', 'email profile.name')
       .populate('createdBy', 'email profile.name')
       .populate('template', 'name')
-      .sort({ createdAt: -1 }),
-    OnboardingActivity.find({ organization: organizationId })
+      .sort({ createdAt: -1 })
+  ])
+  const templates = rawTemplates.map(withWorkflowType)
+  const assignments = rawAssignments.map(withWorkflowType)
+  const workflowSummary = buildWorkflowSummary({ templates, assignments })
+  const assignmentIds = assignments.map(assignment => assignment._id).filter(Boolean)
+  const onboardingActivities = assignmentIds.length
+    ? await OnboardingActivity.find({
+      organization: organizationId,
+      assignment: { $in: assignmentIds }
+    })
       .populate('member', 'email profile.name')
       .populate('actor', 'email profile.name')
       .sort({ createdAt: -1 })
       .limit(40)
-  ])
+    : []
 
   const members = organization.members
     .filter(m => m.status === 'active')
@@ -3897,6 +3989,10 @@ const loadOnboardingAdminContext = async (req, organizationId) => {
     onboardingStatusByMember,
     memberOnboardingRows,
     memberOnboardingSummary,
+    workflowSummary,
+    workflowLabels: WORKFLOW_LABELS,
+    workflowTypes: WORKFLOW_TYPES,
+    workflowTypeFilter,
     yourRole: member.role
   }
 }
@@ -4277,14 +4373,16 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
 // Onboarding admin page
 app.get('/organizations/:orgId/onboarding', getSessionUser, async (req, res) => {
   try {
-    const adminContext = await loadOnboardingAdminContext(req, req.params.orgId)
-    const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, req.params.orgId)
+    const adminContext = await loadOnboardingAdminContext(req, req.params.orgId, { workflowType: 'onboarding' })
+    const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, req.params.orgId, { workflowType: 'onboarding' })
 
     res.render('onboarding-admin', {
       ...adminContext,
       personalAssignments,
       defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
       activePage: 'organizations',
+      activeWorkflow: 'onboarding',
+      workspaceMode: false,
       user: req.user,
       error: req.query.error,
       success: req.query.success
@@ -4588,7 +4686,7 @@ const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
   const safeBackUrl = rawBack.startsWith('/') && !rawBack.startsWith('//') ? rawBack : null
   const defaultBackUrl = isManager
     ? `/organizations/${organizationId.toString()}/onboarding`
-    : '/onboarding'
+    : '/documents'
   return safeBackUrl || defaultBackUrl
 }
 
@@ -4597,7 +4695,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
   try {
     const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
     if (access.error === 'not_found') {
-      return res.redirect('/onboarding?error=Document not found')
+      return res.redirect('/documents?error=Document not found')
     }
 
     const { assignment, item, organizationId, isManager, canAccess } = access
@@ -4606,7 +4704,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
     if (!canAccess) {
       return res.status(403).render('document-viewer', {
         user: req.user,
-        activePage: isManager ? 'organizations' : 'onboarding',
+        activePage: isManager ? 'organizations' : 'documents',
         title: 'Unauthorized',
         subtitle: 'You do not have access to this document.',
         docUrl: null,
@@ -4622,12 +4720,12 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
     )
 
     if (!payload.docUrl) {
-      return res.redirect('/onboarding?error=Document is not available')
+      return res.redirect('/documents?error=Document is not available')
     }
 
     res.render('document-viewer', {
       user: req.user,
-      activePage: isManager ? 'organizations' : 'onboarding',
+      activePage: isManager ? 'organizations' : 'documents',
       title: item.title || 'Document',
       subtitle: payload.subtitle,
       docUrl: payload.docUrl,
@@ -4641,7 +4739,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
     })
   } catch (error) {
     console.error('Onboarding document viewer error:', error)
-    res.redirect('/onboarding?error=Failed to load document')
+    res.redirect('/documents?error=Failed to load document')
   }
 })
 
@@ -4691,21 +4789,73 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download',
   }
 })
 
-// Employee onboarding page
+// Document workspace page (onboarding + agreements + policy + general docs)
+app.get('/documents', getSessionUser, async (req, res) => {
+  try {
+    const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+
+    if (currentOrgId) {
+      try {
+        const adminContext = await loadOnboardingAdminContext(req, currentOrgId, { workflowType: 'all' })
+        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId, { workflowType: 'all' })
+
+        return res.render('onboarding-admin', {
+          ...adminContext,
+          personalAssignments,
+          defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+          activePage: 'documents',
+          activeWorkflow,
+          workspaceMode: true,
+          user: req.user,
+          error: req.query.error,
+          success: req.query.success
+        })
+      } catch (adminError) {
+        // Fall back to personal document view if user isn't an admin/HR in the current org.
+      }
+    }
+
+    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
+
+    res.render('onboarding', {
+      assignments,
+      user: req.user,
+      activePage: 'documents',
+      activeWorkflow,
+      workspaceMode: true,
+      workflowLabels: WORKFLOW_LABELS,
+      workflowTypes: WORKFLOW_TYPES,
+      workflowSummary: buildWorkflowSummary({ assignments }),
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Documents page error:', error)
+    res.redirect('/?error=Failed to load documents')
+  }
+})
+
+// Backward-compatible onboarding route
 app.get('/onboarding', getSessionUser, async (req, res) => {
   try {
     const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
 
     if (currentOrgId) {
       try {
-        const adminContext = await loadOnboardingAdminContext(req, currentOrgId)
-        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId)
+        const adminContext = await loadOnboardingAdminContext(req, currentOrgId, { workflowType: 'onboarding' })
+        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId, { workflowType: 'onboarding' })
 
         return res.render('onboarding-admin', {
           ...adminContext,
           personalAssignments,
           defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
-          activePage: 'onboarding',
+          activePage: 'documents',
+          activeWorkflow: 'onboarding',
+          workspaceMode: false,
           user: req.user,
           error: req.query.error,
           success: req.query.success
@@ -4715,11 +4865,17 @@ app.get('/onboarding', getSessionUser, async (req, res) => {
       }
     }
 
-    const assignments = await getPersonalOnboardingAssignments(req.user._id)
+    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'onboarding' })
 
     res.render('onboarding', {
       assignments,
       user: req.user,
+      activePage: 'documents',
+      activeWorkflow: 'onboarding',
+      workspaceMode: false,
+      workflowLabels: WORKFLOW_LABELS,
+      workflowTypes: WORKFLOW_TYPES,
+      workflowSummary: buildWorkflowSummary({ assignments }),
       error: req.query.error,
       success: req.query.success
     })

@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Onboarding - <%= organization.name %> - Seemplify</title>
+  <title><%= (workspaceMode ? 'Documents Workspace' : 'Onboarding') %> - <%= organization.name %> - Seemplify</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
@@ -16,17 +16,23 @@
   <%- include('partials/nav', { activePage: (typeof activePage !== 'undefined' ? activePage : 'organizations') }) %>
 
   <div class="container">
-    <a href="/organizations/<%= organization._id %>/members" class="back-link">? Back to Members</a>
+    <% const workspaceHeading = workspaceMode ? 'Document Workspace' : 'Onboarding Center'; %>
+    <% const workspaceSubtitle = workspaceMode
+      ? `${organization.name} - Create and manage onboarding, agreements, policy acknowledgements, and general document flows.`
+      : organization.name; %>
+    <% const workspaceBackUrl = workspaceMode ? '/' : `/organizations/${organization._id}/members`; %>
+    <% const workspaceBackLabel = workspaceMode ? '&larr; Back to Hub' : '&larr; Back to Members'; %>
+    <a href="<%= workspaceBackUrl %>" class="back-link"><%- workspaceBackLabel %></a>
 
     <div class="header">
       <div>
-        <h1>Onboarding Center</h1>
+        <h1><%= workspaceHeading %></h1>
         <div class="header-subtitle">
-          <%= organization.name %>
+          <%= workspaceSubtitle %>
         </div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" onclick="showTemplateModal()">+ Create Template</button>
+        <button class="btn btn-primary" onclick="showTemplateModal()">+ Create Workflow Template</button>
       </div>
     </div>
 
@@ -39,33 +45,46 @@
 
     <% if (typeof personalAssignments !== 'undefined') { %>
       <div class="tab-bar">
-        <button class="tab-button" data-onboarding-tab="my">My Onboarding</button>
-        <button class="tab-button" data-onboarding-tab="center">Onboarding Center</button>
+        <button class="tab-button" data-onboarding-tab="my"><%= workspaceMode ? 'My Documents' : 'My Onboarding' %></button>
+        <button class="tab-button" data-onboarding-tab="center"><%= workspaceMode ? 'Document Workspace' : 'Onboarding Center' %></button>
       </div>
 
       <div class="tab-panel" id="tab-my-onboarding">
         <div class="card">
-          <h2 style="margin-top:0">My Onboarding</h2>
+          <h2 style="margin-top:0"><%= workspaceMode ? 'My Documents' : 'My Onboarding' %></h2>
           <% if (!personalAssignments || personalAssignments.length === 0) { %>
             <div class="empty-state" style="padding: 32px 16px;">
-              <h3>No onboarding tasks</h3>
+              <h3><%= workspaceMode ? 'No document tasks' : 'No onboarding tasks' %></h3>
               <p>You are all set.</p>
             </div>
           <% } else { %>
-            <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="Filter personal onboarding">
+            <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="<%= workspaceMode ? 'Filter personal document assignments' : 'Filter personal onboarding' %>">
               <button type="button" class="assignment-status-chip active" data-personal-status-filter="current" aria-selected="true">Current</button>
               <button type="button" class="assignment-status-chip" data-personal-status-filter="history" aria-selected="false">History</button>
               <button type="button" class="assignment-status-chip" data-personal-status-filter="all" aria-selected="false">All</button>
             </div>
+            <% if (workspaceMode) { %>
+              <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="Filter by workflow">
+                <button type="button" class="assignment-status-chip" data-workflow-lane data-workflow="all">All Workflows</button>
+                <% (workflowTypes || ['onboarding', 'agreement', 'policy', 'general']).forEach(workflowType => { %>
+                  <button type="button" class="assignment-status-chip" data-workflow-lane data-workflow="<%= workflowType %>">
+                    <%= (workflowLabels && workflowLabels[workflowType]) || workflowType %>
+                  </button>
+                <% }) %>
+              </div>
+            <% } %>
             <% personalAssignments.forEach(assignment => { %>
               <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
               <% const currentUserId = user._id.toString(); %>
               <% const isAssignee = assignmentMemberId === currentUserId; %>
+              <% const assignmentWorkflowType = assignment.workflowType || 'onboarding'; %>
+              <% const assignmentWorkflowLabel = (workflowLabels && workflowLabels[assignmentWorkflowType]) || 'Onboarding'; %>
               <div
                 class="card onboarding-assignment-card onboarding-assignment-card--<%= assignment.status %>"
                 style="margin-top: 12px;"
                 data-personal-assignment
                 data-personal-status="<%= assignment.status %>"
+                data-personal-workflow="<%= assignmentWorkflowType %>"
               >
                 <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
                   <div>
@@ -76,14 +95,19 @@
                       Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
                     </div>
                   </div>
-                  <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
-                    <%= assignment.status.replace('_', ' ') %>
-                  </span>
+                  <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+                    <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                      <%= assignment.status.replace('_', ' ') %>
+                    </span>
+                    <span class="role-badge workflow-type-badge workflow-type-badge--<%= assignmentWorkflowType %>">
+                      <%= assignmentWorkflowLabel %>
+                    </span>
+                  </div>
                 </div>
 
                 <% if (assignment.status === 'cancelled') { %>
                   <div class="onboarding-flow">
-                    <div class="alert alert-error" style="margin:0;">This onboarding assignment was cancelled.</div>
+                    <div class="alert alert-error" style="margin:0;"><%= workspaceMode ? 'This workflow assignment was cancelled.' : 'This onboarding assignment was cancelled.' %></div>
                   </div>
                 <% } else { %>
                   <% const visibleItems = []; %>
@@ -98,8 +122,8 @@
 
                   <% if (visibleItems.length === 0) { %>
                     <div class="empty-state" style="padding: 18px 0;">
-                      <h3>No onboarding steps</h3>
-                      <p>No items are assigned to you on this onboarding.</p>
+                      <h3><%= workspaceMode ? 'No workflow steps' : 'No onboarding steps' %></h3>
+                      <p><%= workspaceMode ? 'No items are assigned to you in this workflow.' : 'No items are assigned to you on this onboarding.' %></p>
                     </div>
                   <% } else { %>
                     <div class="onboarding-flow" data-onboarding-flow data-assignment="<%= assignment._id %>">
@@ -356,7 +380,7 @@
             <% }) %>
             <div class="empty-state assignment-board-empty" data-personal-empty hidden>
               <h3>No assignments in this view</h3>
-              <p>Switch filter to view current or historical onboarding tasks.</p>
+              <p><%= workspaceMode ? 'Try another status or workflow filter.' : 'Switch filter to view current or historical onboarding tasks.' %></p>
             </div>
           <% } %>
         </div>
@@ -370,16 +394,58 @@
     <% const memberSummary = memberOnboardingSummary || {}; %>
     <% const memberRows = memberOnboardingRows || []; %>
     <% const onboardingActivityFeed = onboardingActivities || []; %>
+    <% const workflowLabelMap = workflowLabels || {
+      onboarding: 'Onboarding',
+      agreement: 'Agreement Signing',
+      policy: 'Policy Acknowledgement',
+      general: 'General Document Workflow'
+    }; %>
+    <% const workflowOrder = workflowTypes || ['onboarding', 'agreement', 'policy', 'general']; %>
+    <% const workflowSummaryMap = workflowSummary || {}; %>
     <% const defaultTemplate = templateList.find(template => template.isDefault); %>
     <% const activeAssignmentCount = assignmentList.filter(assignment => assignment.status !== 'completed' && assignment.status !== 'cancelled').length; %>
     <% const completedAssignmentCount = assignmentList.filter(assignment => assignment.status === 'completed').length; %>
 
     <div class="onboarding-center-shell">
-      <div class="center-kpis" aria-label="Onboarding metrics">
+      <% if (workspaceMode) { %>
+        <div class="workflow-lane" aria-label="Document workflow lanes">
+          <% workflowOrder.forEach(workflowType => { %>
+            <% const summary = workflowSummaryMap[workflowType] || {}; %>
+            <button
+              type="button"
+              class="workflow-lane-card"
+              data-workflow-lane
+              data-workflow="<%= workflowType %>"
+            >
+              <div class="workflow-lane-title"><%= workflowLabelMap[workflowType] || workflowType %></div>
+              <div class="workflow-lane-meta">
+                <span><%= summary.active || 0 %> active</span>
+                <span><%= summary.completed || 0 %> completed</span>
+                <span><%= summary.templates || 0 %> templates</span>
+              </div>
+            </button>
+          <% }) %>
+          <button
+            type="button"
+            class="workflow-lane-card"
+            data-workflow-lane
+            data-workflow="all"
+          >
+            <div class="workflow-lane-title">All Workflows</div>
+            <div class="workflow-lane-meta">
+              <span><%= activeAssignmentCount %> active</span>
+              <span><%= completedAssignmentCount %> completed</span>
+              <span><%= templateList.length %> templates</span>
+            </div>
+          </button>
+        </div>
+      <% } %>
+
+      <div class="center-kpis" aria-label="<%= workspaceMode ? 'Document workflow metrics' : 'Onboarding metrics' %>">
         <div class="center-kpi">
           <div class="center-kpi-label">Templates</div>
           <div class="center-kpi-value"><%= templateList.length %></div>
-          <div class="center-kpi-meta">Reusable flows</div>
+          <div class="center-kpi-meta"><%= workspaceMode ? 'Reusable document flows' : 'Reusable flows' %></div>
         </div>
         <div class="center-kpi">
           <div class="center-kpi-label">Default Template</div>
@@ -409,17 +475,17 @@
         <div class="center-kpi">
           <div class="center-kpi-label">Not Started</div>
           <div class="center-kpi-value"><%= memberSummary.notStartedMembers || 0 %></div>
-          <div class="center-kpi-meta">No assignment yet</div>
+          <div class="center-kpi-meta"><%= workspaceMode ? 'No workflow assigned' : 'No assignment yet' %></div>
         </div>
       </div>
 
     <div class="card center-card-assign assign-onboarding-card">
       <div class="center-card-header">
-        <h2>Assign Onboarding</h2>
-        <p>Create assignments, manage templates, and track recent activity.</p>
+        <h2><%= workspaceMode ? 'Assign Document Workflow' : 'Assign Onboarding' %></h2>
+        <p><%= workspaceMode ? 'Create document assignments, manage templates, and track workflow activity.' : 'Create assignments, manage templates, and track recent activity.' %></p>
       </div>
 
-      <div class="assign-onboarding-tabs" role="tablist" aria-label="Assign Onboarding sections">
+      <div class="assign-onboarding-tabs" role="tablist" aria-label="<%= workspaceMode ? 'Document workspace sections' : 'Assign Onboarding sections' %>">
         <button type="button" class="assign-tab-button active" data-assign-tab="assign" role="tab" aria-selected="true">Assign</button>
         <button type="button" class="assign-tab-button" data-assign-tab="templates" role="tab" aria-selected="false">Templates</button>
         <button type="button" class="assign-tab-button" data-assign-tab="recent" role="tab" aria-selected="false">Recent Assignments</button>
@@ -461,11 +527,24 @@
         </div>
 
         <div class="form-group">
+          <label for="assignmentWorkflowType">Workflow Type</label>
+          <select id="assignmentWorkflowType">
+            <% workflowOrder.forEach(workflowType => { %>
+              <option value="<%= workflowType %>" <%= workflowType === 'onboarding' ? 'selected' : '' %>>
+                <%= workflowLabelMap[workflowType] || workflowType %>
+              </option>
+            <% }) %>
+          </select>
+          <div class="form-hint">Choose the workflow lane for this assignment.</div>
+        </div>
+
+        <div class="form-group">
           <label for="assignmentTemplate">Template (optional)</label>
           <select id="assignmentTemplate">
             <option value="">No template</option>
             <% templates.forEach(template => { %>
-              <option value="<%= template._id %>" <%= template.isDefault ? 'selected' : '' %>>
+              <% const templateWorkflowType = template.workflowType || 'onboarding'; %>
+              <option value="<%= template._id %>" data-workflow="<%= templateWorkflowType %>" <%= template.isDefault ? 'selected' : '' %>>
                 <%= template.name %><%= template.isDefault ? ' (Default)' : '' %>
               </option>
             <% }) %>
@@ -674,6 +753,10 @@
               <div class="center-review-value" id="review-template">No template</div>
             </div>
             <div class="center-review-row">
+              <div class="center-review-label">Workflow</div>
+              <div class="center-review-value" id="review-workflow">Onboarding</div>
+            </div>
+            <div class="center-review-row">
               <div class="center-review-label">Due Date</div>
               <div class="center-review-value" id="review-due">Not set</div>
             </div>
@@ -687,7 +770,7 @@
             </div>
           </div>
           <div class="form-actions center-review-actions">
-            <button class="btn btn-primary" type="button" onclick="assignOnboarding()">Assign Onboarding</button>
+            <button class="btn btn-primary" type="button" onclick="assignOnboarding()"><%= workspaceMode ? 'Assign Workflow' : 'Assign Onboarding' %></button>
           </div>
         </section>
 
@@ -708,14 +791,18 @@
           <% if (templates && templates.length > 0) { %>
             <div class="template-library-list">
               <% templates.forEach(template => { %>
+                <% const templateWorkflowType = template.workflowType || 'onboarding'; %>
+                <% const templateWorkflowLabel = workflowLabelMap[templateWorkflowType] || 'Onboarding'; %>
                 <article
                   class="template-library-item"
                   data-template-item
+                  data-template-workflow="<%= templateWorkflowType %>"
                   data-template-search="<%= (template.name + ' ' + (template.description || '')).toLowerCase() %>"
                 >
                   <div class="template-library-item-head">
                     <div class="template-library-item-title">
                       <%= template.name %>
+                      <span class="role-badge workflow-type-badge workflow-type-badge--<%= templateWorkflowType %>"><%= templateWorkflowLabel %></span>
                       <% if (template.isDefault) { %>
                         <span class="role-badge onboarding-badge onboarding-completed">Default</span>
                       <% } %>
@@ -742,7 +829,7 @@
           <% } else { %>
             <div class="empty-state">
               <h3>No templates yet</h3>
-              <p>Create a template for general onboarding.</p>
+              <p><%= workspaceMode ? 'Create a template for onboarding, agreements, policy, or general document workflows.' : 'Create a template for general onboarding.' %></p>
             </div>
           <% } %>
         </div>
@@ -768,11 +855,14 @@
         <div class="assignment-board-list">
           <% assignments.forEach(assignment => { %>
             <% const assignmentName = assignment.member?.profile?.name || assignment.member?.email || 'Member'; %>
-            <% const assignmentSearch = (assignmentName + ' ' + (assignment.member?.email || '') + ' ' + assignment.status).toLowerCase(); %>
+            <% const assignmentWorkflowType = assignment.workflowType || 'onboarding'; %>
+            <% const assignmentWorkflowLabel = workflowLabelMap[assignmentWorkflowType] || 'Onboarding'; %>
+            <% const assignmentSearch = (assignmentName + ' ' + (assignment.member?.email || '') + ' ' + assignment.status + ' ' + assignmentWorkflowLabel).toLowerCase(); %>
             <article
               class="assignment-board-item assignment-board-item--<%= assignment.status %>"
               data-assignment-item
               data-assignment-status="<%= assignment.status %>"
+              data-assignment-workflow="<%= assignmentWorkflowType %>"
               data-assignment-search="<%= assignmentSearch %>"
             >
               <div class="assignment-board-item-main">
@@ -782,10 +872,12 @@
                   <% if (assignment.dueAt) { %>
                     - Due <%= new Date(assignment.dueAt).toLocaleDateString() %>
                   <% } %>
+                  - <%= assignmentWorkflowLabel %>
                 </div>
               </div>
               <div class="assignment-board-item-actions">
                 <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>"><%= assignment.status.replace('_', ' ') %></span>
+                <span class="role-badge workflow-type-badge workflow-type-badge--<%= assignmentWorkflowType %>"><%= assignmentWorkflowLabel %></span>
                 <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= assignment._id %>">View</a>
                 <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
                   <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
@@ -801,7 +893,7 @@
       <% } else { %>
         <div class="empty-state">
           <h3>No assignments yet</h3>
-          <p>Assign onboarding to get started.</p>
+          <p><%= workspaceMode ? 'Assign a document workflow to get started.' : 'Assign onboarding to get started.' %></p>
         </div>
       <% } %>
         </div>
@@ -811,7 +903,7 @@
         <div class="assignment-board">
           <div class="center-card-header">
             <h2>Member Completion Analytics</h2>
-            <p>Track who has completed onboarding and who still needs follow-up.</p>
+            <p><%= workspaceMode ? 'Track who has completed document workflows and who still needs follow-up.' : 'Track who has completed onboarding and who still needs follow-up.' %></p>
           </div>
 
           <div class="center-kpis" aria-label="Member onboarding summary">
@@ -823,12 +915,12 @@
             <div class="center-kpi">
               <div class="center-kpi-label">Completed</div>
               <div class="center-kpi-value"><%= memberSummary.completedMembers || 0 %></div>
-              <div class="center-kpi-meta">Fully onboarded</div>
+              <div class="center-kpi-meta"><%= workspaceMode ? 'Workflow complete' : 'Fully onboarded' %></div>
             </div>
             <div class="center-kpi">
               <div class="center-kpi-label">In Progress</div>
               <div class="center-kpi-value"><%= memberSummary.inProgressMembers || 0 %></div>
-              <div class="center-kpi-meta">Started onboarding</div>
+              <div class="center-kpi-meta"><%= workspaceMode ? 'Started workflow' : 'Started onboarding' %></div>
             </div>
             <div class="center-kpi">
               <div class="center-kpi-label">Pending</div>
@@ -866,7 +958,7 @@
           <% } else { %>
             <div class="empty-state">
               <h3>No members found</h3>
-              <p>Invite members to start tracking onboarding progress.</p>
+              <p><%= workspaceMode ? 'Invite members to start tracking document workflow progress.' : 'Invite members to start tracking onboarding progress.' %></p>
             </div>
           <% } %>
         </div>
@@ -875,7 +967,7 @@
       <div class="assign-onboarding-tab-panel" id="assign-tab-notifications" data-assign-panel="notifications" role="tabpanel" aria-label="Onboarding notifications" hidden>
         <div class="assignment-board">
           <div class="center-card-header">
-            <h2>Onboarding Notifications</h2>
+            <h2><%= workspaceMode ? 'Workflow Notifications' : 'Onboarding Notifications' %></h2>
             <p>Admins can monitor assignment and completion activity in this feed.</p>
           </div>
 
@@ -889,10 +981,10 @@
                   ? 'Completed'
                   : (activity.type === 'assignment_cancelled' ? 'Cancelled' : 'Assigned'); %>
                 <% const eventDescription = activity.type === 'assignment_completed'
-                  ? `${memberName} completed onboarding`
+                  ? `${memberName} completed ${workspaceMode ? 'their workflow' : 'onboarding'}`
                   : (activity.type === 'assignment_cancelled'
-                    ? `${actorName} cancelled onboarding for ${memberName}`
-                    : `${actorName} assigned onboarding to ${memberName}`); %>
+                    ? `${actorName} cancelled ${workspaceMode ? 'a workflow' : 'onboarding'} for ${memberName}`
+                    : `${actorName} assigned ${workspaceMode ? 'a workflow' : 'onboarding'} to ${memberName}`); %>
                 <% const activityStatusClass = activity.type === 'assignment_completed'
                   ? 'completed'
                   : (activity.type === 'assignment_cancelled' ? 'cancelled' : 'pending'); %>
@@ -919,8 +1011,8 @@
             </div>
           <% } else { %>
             <div class="empty-state">
-              <h3>No onboarding notifications yet</h3>
-              <p>Activity will appear here once onboarding is assigned or completed.</p>
+              <h3><%= workspaceMode ? 'No workflow notifications yet' : 'No onboarding notifications yet' %></h3>
+              <p><%= workspaceMode ? 'Activity will appear here once workflows are assigned or completed.' : 'Activity will appear here once onboarding is assigned or completed.' %></p>
             </div>
           <% } %>
         </div>
@@ -936,7 +1028,7 @@
   <div class="modal" id="templateModal">
     <div class="modal-content modal-xl template-modal-shell">
       <div class="modal-header">
-        <h2>Create Template</h2>
+        <h2><%= workspaceMode ? 'Create Workflow Template' : 'Create Template' %></h2>
         <button class="modal-close" onclick="hideTemplateModal()">&times;</button>
       </div>
       <div class="template-modal-step-list" role="tablist" aria-label="Template builder steps">
@@ -957,15 +1049,25 @@
       <section class="template-modal-panel active" data-template-modal-panel="1" role="tabpanel" aria-label="Template basics">
         <div class="template-modal-panel-heading">
           <h3 tabindex="-1">Step A: Basics</h3>
-          <p>Name the template and set default behavior.</p>
+          <p><%= workspaceMode ? 'Name the workflow template, choose a lane, and set default behavior.' : 'Name the template and set default behavior.' %></p>
         </div>
       <div class="form-group">
         <label for="template-name">Template name</label>
         <input type="text" id="template-name" placeholder="General Onboarding" />
       </div>
       <div class="form-group">
+        <label for="template-workflow-type">Workflow Type</label>
+        <select id="template-workflow-type">
+          <% workflowOrder.forEach(workflowType => { %>
+            <option value="<%= workflowType %>" <%= workflowType === 'onboarding' ? 'selected' : '' %>>
+              <%= workflowLabelMap[workflowType] || workflowType %>
+            </option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="form-group">
         <label for="template-description">Description</label>
-        <textarea id="template-description" placeholder="Standard onboarding for new hires"></textarea>
+        <textarea id="template-description" placeholder="<%= workspaceMode ? 'Reusable agreement or onboarding flow template' : 'Standard onboarding for new hires' %>"></textarea>
       </div>
       <div class="form-group">
         <label>
@@ -1168,6 +1270,10 @@
             <div class="center-review-value" id="template-review-description">No description</div>
           </div>
           <div class="center-review-row">
+            <div class="center-review-label">Workflow</div>
+            <div class="center-review-value" id="template-review-workflow">Onboarding</div>
+          </div>
+          <div class="center-review-row">
             <div class="center-review-label">Default</div>
             <div class="center-review-value" id="template-review-default">No</div>
           </div>
@@ -1186,7 +1292,7 @@
         <button class="btn btn-secondary" type="button" onclick="hideTemplateModal()">Cancel</button>
         <button class="btn btn-secondary" type="button" id="template-modal-prev" onclick="prevTemplateModalStep()">Back</button>
         <button class="btn btn-secondary" type="button" id="template-modal-next" onclick="nextTemplateModalStep()">Continue</button>
-        <button class="btn btn-primary" type="button" id="template-modal-create" style="display:none;" onclick="createTemplate()">Create Template</button>
+        <button class="btn btn-primary" type="button" id="template-modal-create" style="display:none;" onclick="createTemplate()"><%= workspaceMode ? 'Create Workflow Template' : 'Create Template' %></button>
       </div>
     </div>
   </div>
@@ -1294,6 +1400,16 @@
     const centerWizardState = { step: 1, total: 3 };
     const templateModalState = { step: 1, total: 3 };
     const assignmentFilterState = { query: '', status: 'all' };
+    const workflowLabels = <%- JSON.stringify(workflowLabelMap || {
+      onboarding: 'Onboarding',
+      agreement: 'Agreement Signing',
+      policy: 'Policy Acknowledgement',
+      general: 'General Document Workflow'
+    }) %>;
+    const workflowOptions = <%- JSON.stringify(workflowOrder || ['onboarding', 'agreement', 'policy', 'general']) %>;
+    const workspaceModeEnabled = <%= workspaceMode ? 'true' : 'false' %>;
+    const defaultWorkflowFilter = '<%= activeWorkflow || (workspaceMode ? "all" : "onboarding") %>';
+    const workflowFilterState = { active: defaultWorkflowFilter };
     const fieldTypeOptions = ['text', 'textarea', 'email', 'tel', 'number', 'date', 'select'];
     const fieldTypeLabelMap = {
       text: 'Short text',
@@ -1315,21 +1431,26 @@
     function renderCenterReview() {
       const memberSelect = document.getElementById('assignmentMember');
       const templateSelect = document.getElementById('assignmentTemplate');
+      const workflowSelect = document.getElementById('assignmentWorkflowType');
       const dueInput = document.getElementById('assignmentDue');
 
       const memberLabel = memberSelect?.selectedOptions?.[0]?.textContent || '';
       const templateLabel = templateSelect?.selectedOptions?.[0]?.textContent || '';
+      const workflowType = workflowSelect?.value || 'onboarding';
+      const workflowLabel = workflowLabels[workflowType] || 'Onboarding';
       const dueLabel = dueInput?.value ? new Date(`${dueInput.value}T00:00:00`).toLocaleDateString() : 'Not set';
       const esignCount = customItems.filter(item => item.type === 'esign').length;
 
       const memberEl = document.getElementById('review-member');
       const templateEl = document.getElementById('review-template');
+      const workflowEl = document.getElementById('review-workflow');
       const dueEl = document.getElementById('review-due');
       const customCountEl = document.getElementById('review-custom-count');
       const esignCountEl = document.getElementById('review-esign-count');
 
       if (memberEl) memberEl.textContent = memberSelect?.value ? memberLabel : 'Not selected';
       if (templateEl) templateEl.textContent = templateSelect?.value ? templateLabel : 'No template';
+      if (workflowEl) workflowEl.textContent = workflowLabel;
       if (dueEl) dueEl.textContent = dueLabel;
       if (customCountEl) customCountEl.textContent = `${customItems.length} item(s)`;
       if (esignCountEl) esignCountEl.textContent = `${esignCount} item(s)`;
@@ -1403,6 +1524,12 @@
       const select = document.getElementById('assignmentTemplate');
       if (!select || !templateId) return;
       select.value = String(templateId);
+      const workflowSelect = document.getElementById('assignmentWorkflowType');
+      const selectedOption = select.selectedOptions?.[0] || null;
+      const templateWorkflow = selectedOption?.dataset?.workflow;
+      if (workflowSelect && templateWorkflow) {
+        workflowSelect.value = templateWorkflow;
+      }
       renderCenterReview();
       if (options.jumpToStep !== false) {
         setCenterStep(1, { focus: false });
@@ -1414,11 +1541,15 @@
       const items = Array.from(document.querySelectorAll('[data-template-item]'));
       const empty = document.querySelector('[data-template-empty]');
       if (!items.length) return;
+      const workflow = workflowFilterState.active || 'all';
 
       let visible = 0;
       items.forEach(item => {
         const haystack = (item.dataset.templateSearch || '').toLowerCase();
-        const matches = !searchTerm || haystack.includes(searchTerm);
+        const templateWorkflow = item.dataset.templateWorkflow || 'onboarding';
+        const workflowMatches = workflow === 'all' || workflow === templateWorkflow;
+        const queryMatches = !searchTerm || haystack.includes(searchTerm);
+        const matches = workflowMatches && queryMatches;
         item.hidden = !matches;
         if (matches) visible += 1;
       });
@@ -1433,6 +1564,7 @@
       if (Object.prototype.hasOwnProperty.call(options, 'status')) {
         assignmentFilterState.status = options.status || 'all';
       }
+      const workflow = workflowFilterState.active || 'all';
 
       const items = Array.from(document.querySelectorAll('[data-assignment-item]'));
       const empty = document.querySelector('[data-assignment-empty]');
@@ -1447,10 +1579,12 @@
       let visible = 0;
       items.forEach(item => {
         const status = item.dataset.assignmentStatus || '';
+        const workflowType = item.dataset.assignmentWorkflow || 'onboarding';
         const search = (item.dataset.assignmentSearch || '').toLowerCase();
         const statusMatch = assignmentFilterState.status === 'all' || status === assignmentFilterState.status;
         const queryMatch = !assignmentFilterState.query || search.includes(assignmentFilterState.query);
-        const matches = statusMatch && queryMatch;
+        const workflowMatch = workflow === 'all' || workflowType === workflow;
+        const matches = statusMatch && queryMatch && workflowMatch;
         item.hidden = !matches;
         if (matches) visible += 1;
       });
@@ -1463,6 +1597,7 @@
       const cards = Array.from(document.querySelectorAll('[data-personal-assignment]'));
       const empty = document.querySelector('[data-personal-empty]');
       if (!cards.length || !chips.length) return;
+      const workflow = workflowFilterState.active || 'all';
 
       chips.forEach(chip => {
         const isActive = chip.dataset.personalStatusFilter === scope;
@@ -1473,11 +1608,14 @@
       let visible = 0;
       cards.forEach(card => {
         const status = String(card.dataset.personalStatus || '').toLowerCase();
+        const workflowType = String(card.dataset.personalWorkflow || 'onboarding').toLowerCase();
         const isCurrent = status === 'pending' || status === 'in_progress';
         const isHistory = status === 'completed' || status === 'cancelled';
-        const show = scope === 'all'
+        const scopeMatches = scope === 'all'
           ? true
           : (scope === 'history' ? isHistory : isCurrent);
+        const workflowMatches = workflow === 'all' || workflowType === workflow;
+        const show = scopeMatches && workflowMatches;
 
         card.hidden = !show;
         if (show) visible += 1;
@@ -1491,17 +1629,21 @@
     function renderTemplateReview() {
       const name = document.getElementById('template-name')?.value.trim() || '';
       const description = document.getElementById('template-description')?.value.trim() || '';
+      const workflowType = document.getElementById('template-workflow-type')?.value || 'onboarding';
+      const workflowLabel = workflowLabels[workflowType] || 'Onboarding';
       const isDefault = !!document.getElementById('template-default')?.checked;
       const esignCount = templateItems.filter(item => item.type === 'esign').length;
 
       const nameEl = document.getElementById('template-review-name');
       const descriptionEl = document.getElementById('template-review-description');
+      const workflowEl = document.getElementById('template-review-workflow');
       const defaultEl = document.getElementById('template-review-default');
       const countEl = document.getElementById('template-review-count');
       const esignEl = document.getElementById('template-review-esign');
 
       if (nameEl) nameEl.textContent = name || 'Not set';
       if (descriptionEl) descriptionEl.textContent = description || 'No description';
+      if (workflowEl) workflowEl.textContent = workflowLabel;
       if (defaultEl) defaultEl.textContent = isDefault ? 'Yes' : 'No';
       if (countEl) countEl.textContent = `${templateItems.length} item(s)`;
       if (esignEl) esignEl.textContent = `${esignCount} item(s)`;
@@ -3164,6 +3306,43 @@
       }
     }
 
+    function setWorkflowFilter(workflowType, options = {}) {
+      const normalized = workflowType === 'all' || workflowOptions.includes(workflowType)
+        ? workflowType
+        : (workspaceModeEnabled ? 'all' : 'onboarding');
+
+      workflowFilterState.active = normalized;
+
+      document.querySelectorAll('[data-workflow-lane]').forEach(button => {
+        const isActive = (button.dataset.workflow || '') === normalized;
+        button.classList.toggle('active', isActive);
+        if (button.matches('.assignment-status-chip')) {
+          button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        }
+      });
+
+      const assignmentWorkflowSelect = document.getElementById('assignmentWorkflowType');
+      if (assignmentWorkflowSelect && normalized !== 'all' && workflowOptions.includes(normalized) && options.syncAssignment !== false) {
+        assignmentWorkflowSelect.value = normalized;
+      }
+
+      const templateWorkflowSelect = document.getElementById('template-workflow-type');
+      if (templateWorkflowSelect && normalized !== 'all' && workflowOptions.includes(normalized) && options.syncTemplate !== false) {
+        templateWorkflowSelect.value = normalized;
+      }
+
+      filterTemplateLibrary(templateFilterInput?.value || '');
+      filterAssignments({ query: assignmentFilterInput?.value || assignmentFilterState.query || '', status: assignmentFilterState.status || 'all' });
+
+      if (document.querySelector('[data-personal-status-filter]')) {
+        const activeScopeChip = document.querySelector('[data-personal-status-filter].active');
+        filterPersonalAssignments(activeScopeChip?.dataset.personalStatusFilter || 'current');
+      }
+
+      renderCenterReview();
+      renderTemplateReview();
+    }
+
     document.querySelectorAll('[data-onboarding-tab]').forEach(button => {
       button.addEventListener('click', () => {
         setActiveOnboardingTab(button.dataset.onboardingTab);
@@ -3254,14 +3433,31 @@
       });
     });
 
-    ['assignmentMember', 'assignmentTemplate', 'assignmentDue'].forEach(id => {
+    document.querySelectorAll('[data-workflow-lane]').forEach(button => {
+      button.addEventListener('click', () => {
+        setWorkflowFilter(button.dataset.workflow || 'all');
+      });
+    });
+
+    ['assignmentMember', 'assignmentTemplate', 'assignmentWorkflowType', 'assignmentDue'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', renderCenterReview);
       el.addEventListener('input', renderCenterReview);
     });
 
-    ['template-name', 'template-description', 'template-default'].forEach(id => {
+    const assignmentTemplateSelect = document.getElementById('assignmentTemplate');
+    assignmentTemplateSelect?.addEventListener('change', () => {
+      const selectedOption = assignmentTemplateSelect.selectedOptions?.[0];
+      const templateWorkflow = selectedOption?.dataset?.workflow;
+      const assignmentWorkflowSelect = document.getElementById('assignmentWorkflowType');
+      if (assignmentWorkflowSelect && templateWorkflow) {
+        assignmentWorkflowSelect.value = templateWorkflow;
+      }
+      renderCenterReview();
+    });
+
+    ['template-name', 'template-workflow-type', 'template-description', 'template-default'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', renderTemplateReview);
@@ -3423,6 +3619,7 @@
     async function createTemplate() {
       const name = document.getElementById('template-name').value.trim();
       const description = document.getElementById('template-description').value.trim();
+      const workflowType = document.getElementById('template-workflow-type').value || 'onboarding';
       const isDefault = document.getElementById('template-default').checked;
 
       if (!name || templateItems.length === 0) {
@@ -3433,7 +3630,7 @@
       const response = await fetch(`/api/organizations/${orgId}/onboarding/templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description, isDefault, items: templateItems })
+        body: JSON.stringify({ name, description, workflowType, isDefault, items: templateItems })
       });
 
       if (response.ok) {
@@ -3473,7 +3670,7 @@
     }
 
     async function cancelAssignment(assignmentId) {
-      if (!confirm('Cancel this onboarding assignment?')) return;
+      if (!confirm(workspaceModeEnabled ? 'Cancel this workflow assignment?' : 'Cancel this onboarding assignment?')) return;
       const response = await fetch(`/api/organizations/${orgId}/onboarding/assignments/${assignmentId}/cancel`, {
         method: 'PATCH'
       });
@@ -3488,6 +3685,7 @@
     async function assignOnboarding() {
       const memberId = document.getElementById('assignmentMember').value;
       const templateId = document.getElementById('assignmentTemplate').value;
+      const workflowType = document.getElementById('assignmentWorkflowType').value || 'onboarding';
       const dueAt = document.getElementById('assignmentDue').value;
 
       if (!memberId) {
@@ -3501,6 +3699,7 @@
         body: JSON.stringify({
           memberId,
           templateId: templateId || null,
+          workflowType,
           customItems,
           dueAt: dueAt || null
         })
@@ -3510,7 +3709,7 @@
         window.location.reload();
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to assign onboarding');
+        alert(data.error || (workspaceModeEnabled ? 'Failed to assign workflow' : 'Failed to assign onboarding'));
       }
     }
 
@@ -4277,10 +4476,13 @@
     renderTemplateReview();
     setCenterStep(1, { focus: false });
     setTemplateModalStep(1, { focus: false });
+    setWorkflowFilter(defaultWorkflowFilter, { syncAssignment: false, syncTemplate: false });
     filterTemplateLibrary(templateFilterInput?.value || '');
     filterAssignments({ query: assignmentFilterInput?.value || '', status: 'all' });
     if (document.querySelector('[data-onboarding-tab]')) {
-      const defaultTab = '<%= (typeof activePage !== "undefined" && activePage === "onboarding") ? "my" : "center" %>';
+      const defaultTab = workspaceModeEnabled
+        ? 'center'
+        : '<%= (typeof activePage !== "undefined" && activePage === "organizations") ? "center" : "my" %>';
       setActiveOnboardingTab(defaultTab);
     }
     if (document.querySelector('[data-personal-status-filter]')) {
