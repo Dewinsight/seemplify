@@ -324,7 +324,7 @@ class AiCandidateService {
 
             let parsedAnalysis;
             try {
-                parsedAnalysis = JSON.parse(analysis.content);
+                parsedAnalysis = this.azureOpenAIService.extractJsonObject(analysis.content);
             } catch (parseError) {
                 console.warn('[AiCandidateService] Failed to parse AI analysis as JSON, using text response');
                 parsedAnalysis = {

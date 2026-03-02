@@ -39,7 +39,7 @@ const AIMatchCacheSchema = new Schema({
   metadata: {
     candidateCount: Number, // For bulk caches
     generationTime: Number, // Time taken to generate (ms)
-    modelUsed: String, // e.g., 'gpt-4', 'text-embedding-ada-002'
+    modelUsed: String, // e.g., 'Llama-3.3-70B-Instruct', 'text-embedding-3-large'
     tokensUsed: Number, // API tokens consumed
     hasInsights: Boolean // For report caches - indicates if GPT insights are included
   },

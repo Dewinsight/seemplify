@@ -1,6 +1,63 @@
 const { OpenAI } = require('openai');
 const crypto = require('crypto');
 
+function parseAzureConfigFromEndpoint(endpointUrl) {
+  if (!endpointUrl || typeof endpointUrl !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(endpointUrl);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
+    const deployment = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
+
+    return {
+      endpoint: `${parsed.protocol}//${parsed.host}`,
+      deployment,
+      apiVersion: parsed.searchParams.get('api-version') || null
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveModelRuntimeConfig() {
+  const endpointInput =
+    process.env.LLAMA_AZURE_ENDPOINT ||
+    process.env.azure_openai_url ||
+    process.env.AZURE_OPENAI_ENDPOINT;
+
+  const parsedEndpoint = parseAzureConfigFromEndpoint(endpointInput);
+
+  const deployment =
+    process.env.LLAMA_AZURE_DEPLOYMENT ||
+    process.env.GPT_MODEL ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+    process.env.azure_openai_model ||
+    parsedEndpoint?.deployment ||
+    'Llama-3.3-70B-Instruct';
+
+  const endpoint = parsedEndpoint?.endpoint || process.env.AZURE_OPENAI_ENDPOINT;
+  const apiVersion =
+    process.env.LLAMA_AZURE_API_VERSION ||
+    process.env.AZURE_OPENAI_API_VERSION ||
+    parsedEndpoint?.apiVersion ||
+    '2024-05-01-preview';
+
+  const apiKey =
+    process.env.LLAMA_AZURE_API_KEY ||
+    process.env.AZURE_OPENAI_API_KEY ||
+    process.env.azure_openai_key;
+
+  return {
+    apiKey,
+    endpoint,
+    deployment,
+    apiVersion
+  };
+}
+
 class GPTAnalysisCache {
   constructor() {
     this.cache = new Map();
@@ -13,7 +70,7 @@ class GPTAnalysisCache {
     };
   }
 
-  // Cache GPT analysis for common patterns
+  // Cache model analysis for common patterns
   getCacheKey(job, candidate) {
     const jobHash = this.hashSkills(job.skills || []);
     const candidateHash = this.hashSkills(candidate.skills || []);
@@ -105,7 +162,7 @@ class GPTAnalysisCache {
       }
     }
     
-    console.log(`🧠 GPT analyzing batch of ${candidates.length} candidates...`);
+    console.log(`🧠 LLM analyzing batch of ${candidates.length} candidates...`);
     this.stats.misses++;
     const analysis = await batchAnalyzer(job, candidates);
     
@@ -152,28 +209,45 @@ class GPTAnalysisCache {
 
 class GPTAnalysisService {
   constructor() {
+    const runtimeConfig = resolveModelRuntimeConfig();
+
+    const {
+      apiKey,
+      endpoint,
+      deployment,
+      apiVersion
+    } = runtimeConfig;
+
+    if (!apiKey || !endpoint || !deployment) {
+      const missing = [];
+      if (!apiKey) missing.push('apiKey');
+      if (!endpoint) missing.push('endpoint');
+      if (!deployment) missing.push('deployment');
+      throw new Error(`Missing LLM runtime configuration: ${missing.join(', ')}`);
+    }
+
     this.openai = new OpenAI({
-      apiKey: process.env.AZURE_OPENAI_API_KEY,
-      baseURL: process.env.AZURE_OPENAI_ENDPOINT ? 
-        `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT_NAME}` : 
-        'https://api.openai.com/v1',
-      defaultQuery: process.env.AZURE_OPENAI_API_VERSION ? { 'api-version': process.env.AZURE_OPENAI_API_VERSION } : {},
-      defaultHeaders: process.env.AZURE_OPENAI_API_KEY ? { 'api-key': process.env.AZURE_OPENAI_API_KEY } : {}
+      apiKey,
+      baseURL: `${endpoint}/openai/deployments/${deployment}`,
+      defaultQuery: { 'api-version': apiVersion },
+      defaultHeaders: { 'api-key': apiKey }
     });
+    this.modelName = deployment;
     
     this.cache = new GPTAnalysisCache();
-    this.isEnabled = process.env.ENABLE_GPT_MATCHING === 'true';
+    const matchingToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING ?? 'false';
+    this.isEnabled = matchingToggle === 'true';
     
     // Setup cleanup interval (run every 6 hours)
     setInterval(() => this.cache.cleanup(), 6 * 60 * 60 * 1000);
     
-    console.log(`🚀 GPTAnalysisService initialized - Enabled: ${this.isEnabled}`);
+    console.log(`🚀 AI analysis service initialized - Enabled: ${this.isEnabled}, Model: ${this.modelName}`);
   }
 
   // Batch analyze candidates for a job with rich contextual insights
   async batchAnalyzeCandidates(job, candidates) {
     if (!this.isEnabled) {
-      console.log('📴 GPT Analysis disabled - falling back to legacy explanations');
+      console.log('📴 AI analysis disabled - falling back to legacy explanations');
       return this.generateLegacyExplanations(job, candidates);
     }
 
@@ -185,7 +259,7 @@ class GPTAnalysisService {
         const prompt = this.buildBatchAnalysisPrompt(job, candidates);
         
         const response = await this.openai.chat.completions.create({
-          model: process.env.GPT_MODEL || "gpt-4.1",
+          model: this.modelName,
           messages: [
             {
               role: "system",
@@ -203,13 +277,13 @@ class GPTAnalysisService {
         const analysis = JSON.parse(response.choices[0].message.content);
         const processingTime = Date.now() - startTime;
         
-        console.log(`⚡ GPT batch analysis completed in ${processingTime}ms for ${candidates.length} candidates`);
+        console.log(`⚡ LLM batch analysis completed in ${processingTime}ms for ${candidates.length} candidates`);
         
         return this.formatBatchAnalysisResponse(analysis, candidates);
       });
       
     } catch (error) {
-      console.error('❌ GPT Analysis failed:', error);
+      console.error('❌ LLM analysis failed:', error);
       console.log('🔄 Falling back to legacy explanations');
       return this.generateLegacyExplanations(job, candidates);
     }

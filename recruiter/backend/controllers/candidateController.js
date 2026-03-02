@@ -1119,7 +1119,7 @@ exports.refreshEmbedding = async (req, res) => {
   }
 };
 
-// Get GPT cache statistics for monitoring
+// Get AI cache statistics for monitoring
 exports.getCacheStats = async (req, res) => {
   try {
     const stats = gptAnalysisService.getCacheStats();
@@ -1139,17 +1139,20 @@ exports.getCacheStats = async (req, res) => {
   }
 };
 
-// Get GPT system status and configuration
+// Get AI matching system status and configuration
 exports.getGPTStatus = async (req, res) => {
   try {
+    const activeModel = process.env.LLAMA_AZURE_DEPLOYMENT || process.env.GPT_MODEL || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct';
+    const activeToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING;
+
     res.json({
-      msg: 'GPT system status retrieved successfully',
+      msg: 'AI matching system status retrieved successfully',
       status: {
         isEnabled: gptAnalysisService.isEnabled,
         cacheSize: gptAnalysisService.cache.cache.size,
         candidatesTracked: gptAnalysisService.cache.candidateTimestamps.size,
-        environmentVariable: process.env.ENABLE_GPT_MATCHING,
-        model: process.env.GPT_MODEL || 'gpt-4.1',
+        environmentVariable: activeToggle,
+        model: activeModel,
         timestamp: new Date().toISOString()
       }
     });
@@ -1159,7 +1162,7 @@ exports.getGPTStatus = async (req, res) => {
   }
 };
 
-// Emergency GPT system toggle (admin only)
+// Emergency AI matching toggle (admin only)
 exports.toggleGPTSystem = async (req, res) => {
   try {
     const { enabled } = req.body;
@@ -1171,15 +1174,15 @@ exports.toggleGPTSystem = async (req, res) => {
     // Update the service configuration
     gptAnalysisService.isEnabled = enabled;
 
-    console.log(`🔄 GPT Analysis system ${enabled ? 'ENABLED' : 'DISABLED'} via admin toggle`);
+    console.log(`🔄 AI matching system ${enabled ? 'ENABLED' : 'DISABLED'} via admin toggle`);
 
     res.json({
-      msg: `GPT Analysis system ${enabled ? 'enabled' : 'disabled'} successfully`,
+      msg: `AI matching system ${enabled ? 'enabled' : 'disabled'} successfully`,
       status: {
         isEnabled: gptAnalysisService.isEnabled,
         previouslyEnabled: !enabled,
         timestamp: new Date().toISOString(),
-        note: 'This is a runtime toggle. To persist, update ENABLE_GPT_MATCHING environment variable.'
+        note: 'This is a runtime toggle. To persist, set ENABLE_LLM_MATCHING (or ENABLE_GPT_MATCHING for backward compatibility).'
       }
     });
   } catch (error) {

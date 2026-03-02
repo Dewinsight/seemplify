@@ -31,6 +31,38 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+type ActivityHistoryEntry = LeaveRequest['auditLog'][number];
+
+function formatActivityTitle(action: string): string {
+  const actionLabels: Record<string, string> = {
+    created: 'Request submitted',
+    updated: 'Request updated',
+    approved: 'Request approved',
+    rejected: 'Request rejected',
+    cancelled: 'Request cancelled',
+  };
+
+  if (actionLabels[action]) {
+    return actionLabels[action];
+  }
+
+  return action
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getActivityFallbackText(entry: ActivityHistoryEntry): string | null {
+  const fallbackText: Record<string, string> = {
+    created: 'Leave request was submitted for approval.',
+    updated: 'Leave request information was updated.',
+    approved: 'Leave request was approved.',
+    rejected: 'Leave request was rejected.',
+    cancelled: 'Leave request was cancelled.',
+  };
+
+  return fallbackText[entry.action] || null;
+}
+
 export default function LeaveRequestDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -304,26 +336,35 @@ export default function LeaveRequestDetailPage() {
             <div className="p-6 border-b border-border dark:border-slate-200/50">
               <div className="flex items-center mb-4">
                 <History className="h-5 w-5 text-slate-500 dark:text-slate-400 mr-2" />
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">Activity History</h3>
+                <div>
+                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">Activity History</h3>
+                  <p className="text-sm text-muted-foreground dark:text-slate-400">
+                    Chronological updates for this request.
+                  </p>
+                </div>
               </div>
               <div className="space-y-3">
-                {request.auditLog.map((entry, index) => (
-                  <div key={index} className="flex items-start text-sm">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/50 dark:bg-slate-500 mt-2 mr-3" />
-                    <div>
-                      <p className="text-foreground dark:text-slate-200">
-                        <span className="font-medium capitalize">{entry.action}</span>
-                        {entry.performedByName && ` by ${entry.performedByName}`}
-                      </p>
-                      <p className="text-muted-foreground dark:text-slate-400">
-                        {formatDate(entry.performedAt, 'MMM dd, yyyy HH:mm')}
-                      </p>
-                      {entry.details && (
-                        <p className="text-foreground/80 dark:text-slate-300 mt-1">{entry.details}</p>
-                      )}
+                {request.auditLog.map((entry, index) => {
+                  const activityText = entry.details || getActivityFallbackText(entry);
+
+                  return (
+                    <div key={index} className="flex items-start text-sm">
+                      <div className="w-2 h-2 rounded-full bg-muted-foreground/50 dark:bg-slate-500 mt-2 mr-3" />
+                      <div>
+                        <p className="text-foreground dark:text-slate-200">
+                          <span className="font-medium">{formatActivityTitle(entry.action)}</span>
+                          {entry.performedByName && ` by ${entry.performedByName}`}
+                        </p>
+                        <p className="text-muted-foreground dark:text-slate-400">
+                          {formatDate(entry.performedAt, 'MMM dd, yyyy HH:mm')}
+                        </p>
+                        {activityText && (
+                          <p className="text-foreground/80 dark:text-slate-300 mt-1">{activityText}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

@@ -16,37 +16,49 @@ const chatSessionService = require('./chatSessionService'); // Import for title 
  * @throws {Error} If essential Azure OpenAI environment variables are missing.
  */
 function getOpenAIModel() {
-  const requiredEnvVars = [
-    'azure_openai_key',
-    'azure_openai_model',
-    'azure_openai_url'
-  ];
+  const endpointInput = process.env.LLAMA_AZURE_ENDPOINT || process.env.azure_openai_url || process.env.AZURE_OPENAI_ENDPOINT;
+  const apiKey = process.env.LLAMA_AZURE_API_KEY || process.env.azure_openai_key || process.env.AZURE_OPENAI_API_KEY;
 
-  for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-      throw new Error(`Missing required Azure OpenAI environment variable: ${envVar}. Please check your .env file.`);
-    }
+  if (!endpointInput || !apiKey) {
+    throw new Error('Missing model configuration. Ensure LLAMA_AZURE_ENDPOINT and LLAMA_AZURE_API_KEY (or azure_openai_* fallback vars) are set.');
   }
 
-  // Extract instance name and API version from the URL
-  const urlMatch = process.env.azure_openai_url.match(/https:\/\/([^.]+)\.cognitiveservices\.azure\.com.*api-version=([^&]+)/);
-  if (!urlMatch) {
-    throw new Error('Could not parse Azure OpenAI instance name and API version from azure_openai_url');
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(endpointInput);
+  } catch (_error) {
+    throw new Error('Could not parse Azure endpoint URL for LangChain model configuration.');
   }
-  
-  const instanceName = urlMatch[1];
-  const apiVersion = urlMatch[2];
+
+  const instanceName = parsedUrl.hostname.split('.')[0];
+  const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+  const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
+  const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
+
+  const deploymentName =
+    process.env.LLAMA_AZURE_DEPLOYMENT ||
+    process.env.azure_openai_model ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+    process.env.GPT_MODEL ||
+    deploymentFromPath ||
+    'Llama-3.3-70B-Instruct';
+
+  const apiVersion =
+    process.env.LLAMA_AZURE_API_VERSION ||
+    process.env.AZURE_OPENAI_API_VERSION ||
+    parsedUrl.searchParams.get('api-version') ||
+    '2024-05-01-preview';
 
   console.log('🔧 Configuring Azure OpenAI for LangChain:');
   console.log('  - Instance:', instanceName);
-  console.log('  - Deployment:', process.env.azure_openai_model);
+  console.log('  - Deployment:', deploymentName);
   console.log('  - API Version:', apiVersion);
-  console.log('  - API Key present:', !!process.env.azure_openai_key);
+  console.log('  - API Key present:', !!apiKey);
 
   const config = {
-    azureOpenAIApiKey: process.env.azure_openai_key,
+    azureOpenAIApiKey: apiKey,
     azureOpenAIApiInstanceName: instanceName,
-    azureOpenAIApiDeploymentName: process.env.azure_openai_model,
+    azureOpenAIApiDeploymentName: deploymentName,
     azureOpenAIApiVersion: apiVersion,
     streaming: true,
     temperature: 0.4, // Increased for faster decision-making and more varied responses

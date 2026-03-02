@@ -1360,7 +1360,7 @@ Based on these AI-powered matches, provide:
     aiMatchCacheService.setCachedReport(jobId, reportData, {
       candidateCount: matches.length,
       generationTime,
-      modelUsed: 'gpt-4',
+      modelUsed: azureOpenAIService.modelName,
       version: 1
     }).catch(err => console.error('Failed to cache report:', err));
 
@@ -1495,12 +1495,14 @@ exports.testConnection = async (req, res) => {
     
     if (result.success) {
       res.json({
-        msg: 'Azure OpenAI connection successful',
+        msg: 'AI model connection successful',
+        model: azureOpenAIService.modelName,
         response: result.response
       });
     } else {
       res.status(500).json({
-        msg: 'Azure OpenAI connection failed',
+        msg: 'AI model connection failed',
+        model: azureOpenAIService.modelName,
         error: result.error
       });
     }

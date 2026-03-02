@@ -612,7 +612,7 @@ ADDITIONAL CONTEXT:
           isAIGenerated: true,
           aiGenerationMetadata: {
             generatedAt: new Date(),
-            model: process.env.azure_openai_model || 'gpt-4.1',
+            model: process.env.LLAMA_AZURE_DEPLOYMENT || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct',
             confidence: 0.9,
             questionType: type
           },

@@ -1,9 +1,66 @@
 const { AzureOpenAI } = require("openai");
 
-// Azure OpenAI Configuration - now centralized via environment variables
-const endpoint = process.env.AZURE_OPENAI_ENDPOINT || "https://ai-joeveesnew701023657830.cognitiveservices.azure.com/";
-const modelName = process.env.azure_openai_model || "gpt-4.1";
-const deployment = process.env.azure_openai_model || "gpt-4.1";
+function parseAzureEndpointUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
+    const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
+    const apiVersion = parsed.searchParams.get('api-version');
+
+    return {
+      endpoint: `${parsed.protocol}//${parsed.host}`,
+      deploymentFromPath,
+      apiVersion
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveAzureModelConfig() {
+  const urlBasedConfig =
+    parseAzureEndpointUrl(process.env.LLAMA_AZURE_ENDPOINT) ||
+    parseAzureEndpointUrl(process.env.azure_openai_url) ||
+    parseAzureEndpointUrl(process.env.AZURE_OPENAI_ENDPOINT);
+
+  const endpoint =
+    process.env.LLAMA_AZURE_BASE_ENDPOINT ||
+    urlBasedConfig?.endpoint ||
+    process.env.AZURE_OPENAI_ENDPOINT;
+
+  const deployment =
+    process.env.LLAMA_AZURE_DEPLOYMENT ||
+    process.env.azure_openai_model ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+    process.env.GPT_MODEL ||
+    urlBasedConfig?.deploymentFromPath ||
+    'Llama-3.3-70B-Instruct';
+
+  const apiKey =
+    process.env.LLAMA_AZURE_API_KEY ||
+    process.env.azure_openai_key ||
+    process.env.AZURE_OPENAI_API_KEY ||
+    process.env.AZURE_GPT4O_API_KEY;
+
+  const apiVersion =
+    process.env.LLAMA_AZURE_API_VERSION ||
+    process.env.AZURE_OPENAI_API_VERSION ||
+    urlBasedConfig?.apiVersion ||
+    '2024-05-01-preview';
+
+  return {
+    endpoint,
+    deployment,
+    modelName: deployment,
+    apiKey,
+    apiVersion
+  };
+}
 
 class AzureOpenAIService {
   constructor() {
@@ -19,8 +76,17 @@ class AzureOpenAIService {
     // - Chat Titles: 0.7 (creative but focused titles)
     // - Bias Analysis: 0.3 (conservative for consistency)
     
-    const apiKey = process.env.azure_openai_key; // Use chat completion key, not embedding key
-    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-04-01-preview"; // Now uses environment variable
+    const config = resolveAzureModelConfig();
+    const { endpoint, apiKey, deployment, apiVersion, modelName } = config;
+
+    if (!endpoint || !apiKey || !deployment) {
+      const missing = [];
+      if (!endpoint) missing.push('endpoint');
+      if (!apiKey) missing.push('apiKey');
+      if (!deployment) missing.push('deployment');
+      throw new Error(`Missing Azure OpenAI configuration: ${missing.join(', ')}.`);
+    }
+
     const options = { endpoint, apiKey, deployment, apiVersion };
     
     console.log('🔧 Initializing Azure OpenAI Service...');
@@ -33,6 +99,8 @@ class AzureOpenAIService {
     this.client = new AzureOpenAI(options);
     this.modelName = modelName;
     this.deployment = deployment;
+    this.endpoint = endpoint;
+    this.apiVersion = apiVersion;
   }
 
   /**
@@ -73,6 +141,106 @@ class AzureOpenAIService {
     return items.map(item => this.sanitizeAIContent(item));
   }
 
+  extractTextContent(rawContent) {
+    if (!rawContent) {
+      return '';
+    }
+
+    if (typeof rawContent === 'string') {
+      return rawContent.trim();
+    }
+
+    if (Array.isArray(rawContent)) {
+      return rawContent
+        .map((part) => {
+          if (typeof part === 'string') {
+            return part;
+          }
+
+          if (part && typeof part === 'object') {
+            return part.text || part.content || '';
+          }
+
+          return '';
+        })
+        .join('')
+        .trim();
+    }
+
+    return String(rawContent).trim();
+  }
+
+  extractJsonObject(responseContent) {
+    const content = this.extractTextContent(responseContent);
+
+    if (!content) {
+      throw new Error('Empty model response.');
+    }
+
+    try {
+      return JSON.parse(content);
+    } catch (_error) {
+      // Handle fenced JSON blocks or stray text around JSON
+      const fencedMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (fencedMatch?.[1]) {
+        return JSON.parse(fencedMatch[1]);
+      }
+
+      const firstBrace = content.indexOf('{');
+      const lastBrace = content.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        return JSON.parse(content.slice(firstBrace, lastBrace + 1));
+      }
+
+      throw new Error('Could not parse JSON object from model response.');
+    }
+  }
+
+  async chatCompletion(messages, options = {}) {
+    const requestBody = {
+      messages,
+      model: options.model || this.modelName,
+      temperature: options.temperature ?? 0.7,
+      top_p: options.top_p ?? 1,
+      frequency_penalty: options.frequency_penalty ?? 0,
+      presence_penalty: options.presence_penalty ?? 0
+    };
+
+    if (options.maxTokens !== undefined) {
+      requestBody.max_tokens = options.maxTokens;
+    } else {
+      requestBody.max_completion_tokens = options.max_completion_tokens ?? 1000;
+    }
+
+    if (options.response_format) {
+      requestBody.response_format = options.response_format;
+    }
+
+    const response = await this.client.chat.completions.create(requestBody);
+    const content = this.extractTextContent(response?.choices?.[0]?.message?.content);
+
+    return {
+      success: true,
+      content,
+      usage: response?.usage,
+      rawResponse: response
+    };
+  }
+
+  async generateCompletion(prompt, options = {}) {
+    const result = await this.chatCompletion(
+      [{ role: 'user', content: prompt }],
+      {
+        temperature: options.temperature ?? 0.5,
+        maxTokens: options.maxTokens,
+        max_completion_tokens: options.max_completion_tokens,
+        response_format: options.response_format
+      }
+    );
+
+    return result.content;
+  }
+
   async testConnection() {
     try {
       console.log("Testing Azure OpenAI connection...");
@@ -94,9 +262,10 @@ class AzureOpenAIService {
         throw response.error;
       }
 
+      const responseText = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("✅ Azure OpenAI connection successful!");
-      console.log("Response:", response.choices[0].message.content);
-      return { success: true, response: response.choices[0].message.content };
+      console.log("Response:", responseText);
+      return { success: true, response: responseText };
 
     } catch (error) {
       console.error("❌ Azure OpenAI connection failed:", error.message);
@@ -328,11 +497,11 @@ ${cvText}`
         throw response.error;
       }
 
-      const analysisContent = response.choices[0].message.content;
+      const analysisContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI CV Analysis Response:", analysisContent);
       
       try {
-        const parsedJson = JSON.parse(analysisContent);
+        const parsedJson = this.extractJsonObject(analysisContent);
         return {
           success: true,
           summary: parsedJson.summary || "N/A",
@@ -425,11 +594,11 @@ ${cvText}`
         throw response.error;
       }
 
-      const generatedContent = response.choices[0].message.content;
+      const generatedContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Job Description Response:", generatedContent);
       
       try {
-        const parsedJson = JSON.parse(generatedContent);
+        const parsedJson = this.extractJsonObject(generatedContent);
         return {
           success: true,
           description: this.sanitizeAIContent(parsedJson.description || ""),
@@ -545,11 +714,11 @@ ${cvText}`
         throw response.error;
       }
 
-      const generatedContent = response.choices[0].message.content;
+      const generatedContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Requirements Response:", generatedContent);
 
       try {
-        const parsedJson = JSON.parse(generatedContent);
+        const parsedJson = this.extractJsonObject(generatedContent);
         
         // Validate structure
         if (!parsedJson.requiredQualifications || !Array.isArray(parsedJson.requiredQualifications)) {
@@ -662,7 +831,7 @@ ${cvText}`
         throw response.error;
       }
 
-      const aiResponse = response.choices[0].message.content;
+      const aiResponse = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Chat Response:", aiResponse.substring(0, 200) + "...");
       
       return {
@@ -724,7 +893,7 @@ ${cvText}`
         throw response.error;
       }
 
-      const insights = response.choices[0].message.content;
+      const insights = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Insights Response:", insights.substring(0, 200) + "...");
       
       return {
@@ -782,7 +951,7 @@ ${cvText}`
         throw response.error;
       }
 
-      const analysis = response.choices[0].message.content;
+      const analysis = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Report Analysis Response:", analysis.substring(0, 200) + "...");
       
       return {
@@ -838,15 +1007,21 @@ User Message: "${firstUserMessage}"`;
         throw response.error;
       }
 
-      const generatedTitle = response.choices[0].message.content.trim();
+      const generatedTitle = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Generated chat title:", generatedTitle);
       
-      return generatedTitle;
+      return {
+        success: true,
+        title: generatedTitle
+      };
 
     } catch (error) {
       console.error("Error generating chat title:", error.message);
-      // Return a fallback title
-      return "HR Chat Session";
+      return {
+        success: false,
+        title: "HR Chat Session",
+        error: error.message
+      };
     }
   }
 
@@ -892,7 +1067,7 @@ Always provide structured, detailed analysis covering sentiment, skills, concern
         throw response.error;
       }
 
-      const analysisContent = response.choices[0].message.content;
+      const analysisContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Interview Analysis completed");
       
       return analysisContent;
@@ -975,11 +1150,11 @@ ENSURE:
         throw response.error;
       }
 
-      const generatedContent = response.choices[0].message.content;
+      const generatedContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Interview Questions Response:", generatedContent.substring(0, 200) + "...");
       
       try {
-        const parsedResponse = JSON.parse(generatedContent);
+        const parsedResponse = this.extractJsonObject(generatedContent);
         
         // Handle different response formats
         if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
@@ -1109,11 +1284,11 @@ Return only valid JSON.`
         throw response.error;
       }
 
-      const summaryContent = response.choices[0].message.content;
+      const summaryContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Interview Summary Generated");
       
       try {
-        const parsedSummary = JSON.parse(summaryContent);
+        const parsedSummary = this.extractJsonObject(summaryContent);
         return {
           success: true,
           summary: parsedSummary
@@ -1298,11 +1473,11 @@ Return only valid JSON.`
         throw response.error;
       }
 
-      const analysisContent = response.choices[0].message.content;
+      const analysisContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Team Comments Analysis Generated. Raw response:", analysisContent);
       
       try {
-        const parsedAnalysis = JSON.parse(analysisContent);
+        const parsedAnalysis = this.extractJsonObject(analysisContent);
         return {
           success: true,
           analysis: parsedAnalysis,
@@ -1333,7 +1508,7 @@ Return only valid JSON.`
 
   async analyzeTextForBias(textToAnalyze, jobContext = null) {
     try {
-      console.log("🧠 Analyzing text for bias with Azure OpenAI (GPT-4.1)...");
+      console.log("🧠 Analyzing text for bias with Azure OpenAI...");
       const systemPrompt = `You are an expert AI assistant specializing in identifying and quantifying bias in text. Your goal is to analyze the provided interview question for various forms of bias, considering the provided job context if available, and provide a structured assessment.
 
 Focus on detecting bias related to:
@@ -1394,7 +1569,7 @@ INTERVIEW_QUESTION_TEXT:
         top_p: 1,
         frequency_penalty: 0,
         presence_penalty: 0,
-        model: this.modelName, // Should be "gpt-4.1"
+        model: this.modelName,
         response_format: { type: "json_object" }
       });
 
@@ -1402,11 +1577,11 @@ INTERVIEW_QUESTION_TEXT:
         throw response.error;
       }
 
-      const analysisContent = response.choices[0].message.content;
+      const analysisContent = this.extractTextContent(response.choices?.[0]?.message?.content);
       console.log("Azure OpenAI Bias Analysis Response:", analysisContent);
       
       try {
-        const parsedJson = JSON.parse(analysisContent);
+        const parsedJson = this.extractJsonObject(analysisContent);
         // Basic validation of the expected structure
         if (typeof parsedJson.overallBiasScore !== 'number' || typeof parsedJson.isBiased !== 'boolean') {
             throw new Error("AI response for bias analysis is missing critical fields.");

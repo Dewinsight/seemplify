@@ -220,13 +220,15 @@ class ChatSessionService {
     try {
       const azureOpenAIService = new AzureOpenAIService();
       const llmTitleResult = await azureOpenAIService.generateChatTitle(firstUserMessage, firstAssistantMessage);
+      const resolvedTitle = typeof llmTitleResult === 'string' ? llmTitleResult : llmTitleResult?.title;
+      const resolvedSuccess = typeof llmTitleResult === 'string' ? true : llmTitleResult?.success;
 
-      if (llmTitleResult.success && llmTitleResult.title && llmTitleResult.title.length >= 3 && llmTitleResult.title.length <= 70) {
-        finalTitle = llmTitleResult.title;
+      if (resolvedSuccess && resolvedTitle && resolvedTitle.length >= 3 && resolvedTitle.length <= 70) {
+        finalTitle = resolvedTitle;
         titleSource = 'llm';
         console.log(`🤖 LLM generated title for ${sessionId}: ${finalTitle}`);
       } else {
-        console.warn(`⚠️ LLM title generation failed or title unsuitable for ${sessionId}. Reason: ${llmTitleResult.error || 'Title too short/long'}. Falling back to simple logic.`);
+        console.warn(`⚠️ LLM title generation failed or title unsuitable for ${sessionId}. Reason: ${llmTitleResult?.error || 'Title too short/long'}. Falling back to simple logic.`);
         // Fallback to simple title generation based on first message
         let simpleTitle = firstUserMessage.substring(0, 50);
         simpleTitle = simpleTitle.replace(/[^\w\s.,!?'"-]/g, '').trim(); // Allow some punctuation

@@ -211,18 +211,28 @@ router.post('/:id/comments', authMiddleware, requireOrganization, candidateContr
 router.delete('/:id/comments/:commentId', authMiddleware, requireOrganization, candidateController.deleteComment);
 
 // @route   GET api/candidates/cache/stats
-// @desc    Get GPT analysis cache statistics for monitoring
+// @desc    Get AI analysis cache statistics for monitoring
 // @access  Private
 router.get('/cache/stats', authMiddleware, candidateController.getCacheStats);
 
 // @route   GET api/candidates/gpt/status
-// @desc    Get GPT system status and configuration
+// @desc    Get AI system status and configuration (legacy path)
 // @access  Private
 router.get('/gpt/status', authMiddleware, candidateController.getGPTStatus);
 
+// @route   GET api/candidates/ai/status
+// @desc    Get AI system status and configuration
+// @access  Private
+router.get('/ai/status', authMiddleware, candidateController.getGPTStatus);
+
 // @route   POST api/candidates/gpt/toggle
-// @desc    Emergency toggle for GPT analysis system (admin only)
+// @desc    Emergency toggle for AI analysis system (legacy path)
 // @access  Private
 router.post('/gpt/toggle', authMiddleware, candidateController.toggleGPTSystem);
+
+// @route   POST api/candidates/ai/toggle
+// @desc    Emergency toggle for AI analysis system
+// @access  Private
+router.post('/ai/toggle', authMiddleware, candidateController.toggleGPTSystem);
 
 module.exports = router;

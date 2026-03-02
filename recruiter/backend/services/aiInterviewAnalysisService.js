@@ -43,7 +43,7 @@ class AIInterviewAnalysisService {
       interview.aiAnalysis = {
         analyzed: true,
         analyzedAt: new Date(),
-        modelVersion: process.env.azure_openai_model || 'gpt-4.1',
+        modelVersion: process.env.LLAMA_AZURE_DEPLOYMENT || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct',
         insights: analysis.insights,
         comparativeAnalysis
       };
@@ -1039,7 +1039,122 @@ Focus on:
       maxTokens: 1500
     });
 
-    return JSON.parse(response);
+    const parsed = this.azureOpenAIService.extractJsonObject(response);
+    return this._normalizeSegmentAnalysis(parsed);
+  }
+
+  _normalizeSegmentAnalysis(rawAnalysis) {
+    const source = rawAnalysis?.analysis && typeof rawAnalysis.analysis === 'object'
+      ? rawAnalysis.analysis
+      : rawAnalysis || {};
+
+    const pickArray = (...values) => {
+      for (const value of values) {
+        if (Array.isArray(value)) {
+          return value
+            .map((item) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object') {
+                return item.strength || item.concern || item.text || item.description || JSON.stringify(item);
+              }
+              return String(item || '').trim();
+            })
+            .filter(Boolean);
+        }
+      }
+      return [];
+    };
+
+    const toScore = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.min(100, value));
+      }
+
+      const text = String(value || '').toLowerCase();
+      if (!text) return null;
+      if (text.includes('excellent') || text.includes('outstanding') || text.includes('expert')) return 90;
+      if (text.includes('strong') || text.includes('very good') || text.includes('advanced')) return 82;
+      if (text.includes('good')) return 75;
+      if (text.includes('intermediate') || text.includes('fair')) return 65;
+      if (text.includes('neutral') || text.includes('average')) return 55;
+      if (text.includes('weak') || text.includes('poor') || text.includes('limited')) return 40;
+      return null;
+    };
+
+    const strengths = pickArray(
+      source.strengths,
+      source.key_strengths,
+      source.keyStrengths,
+      source.identifiedStrengths
+    );
+
+    const concerns = pickArray(
+      source.concerns,
+      source.areas_of_concern,
+      source.areasOfConcern,
+      source.identifiedConcerns
+    );
+
+    const technical = source.technicalCompetency || source.technical_competency || source.technical || {};
+    const communication = source.communicationSkills || source.communication_skills || source.communication || {};
+    const cultural = source.culturalFit || source.cultural_fit || source.culture || {};
+
+    const technicalScore = toScore(technical.score ?? technical.assessment ?? technical.rating);
+    const communicationScore = toScore(communication.score ?? communication.assessment ?? communication.rating);
+    const culturalScore = toScore(cultural.score ?? cultural.assessment ?? cultural.rating);
+
+    const explicitScore = toScore(
+      source.overallScore ??
+      source.overall_score ??
+      source.score ??
+      source.totalScore ??
+      source.finalScore
+    );
+
+    const fallbackScores = [technicalScore, communicationScore, culturalScore].filter((value) => value !== null);
+    const calculatedScore = fallbackScores.length > 0
+      ? Math.round(fallbackScores.reduce((sum, value) => sum + value, 0) / fallbackScores.length)
+      : 60;
+
+    const overallScore = explicitScore ?? calculatedScore;
+
+    const decisionText = String(
+      source.recommendation ||
+      source.overall_recommendation?.decision ||
+      source.overallRecommendation?.decision ||
+      source.finalRecommendation?.decision ||
+      ''
+    ).toLowerCase();
+
+    let recommendation = 'additional_assessment';
+    if (decisionText.includes('strong_yes') || decisionText.includes('yes') || decisionText.includes('advance') || decisionText.includes('proceed')) {
+      recommendation = 'advance';
+    } else if (decisionText.includes('strong_no') || decisionText.includes('no') || decisionText.includes('reject')) {
+      recommendation = 'reject';
+    } else if (decisionText.includes('maybe') || decisionText.includes('caution') || decisionText.includes('additional')) {
+      recommendation = 'additional_assessment';
+    }
+
+    const rationale =
+      source.rationale ||
+      source.reasoning ||
+      source.overall_recommendation?.rationale ||
+      source.overallRecommendation?.reasoning ||
+      '';
+
+    return {
+      strengths,
+      concerns,
+      technicalCompetency: technical,
+      communicationSkills: communication,
+      culturalFit: cultural,
+      overallScore,
+      recommendation,
+      rationale,
+      strongerAreas: strengths.slice(0, 3).map((item) => ({ area: item })),
+      weakerAreas: concerns.slice(0, 3).map((item) => ({ area: item })),
+      raw: rawAnalysis
+    };
   }
 
   /**
@@ -1070,7 +1185,74 @@ Focus on:
       maxTokens: 1000
     });
 
-    return JSON.parse(response);
+    const parsed = this.azureOpenAIService.extractJsonObject(response);
+    return this._normalizeComparativeAnalysis(parsed, candidateAnalyses);
+  }
+
+  _normalizeComparativeAnalysis(rawComparative, candidateAnalyses) {
+    const toArray = (value) => {
+      if (Array.isArray(value)) return value;
+      if (value === null || value === undefined || value === '') return [];
+      return [value];
+    };
+
+    const normalized = {
+      rankings: {},
+      differentiators: toArray(rawComparative?.differentiators || rawComparative?.keyDifferentiators),
+      recommendations: toArray(rawComparative?.recommendations || rawComparative?.hiringRecommendations),
+      raw: rawComparative
+    };
+
+    const sortedByScore = [...candidateAnalyses].sort((a, b) => (b.analysis?.overallScore || 0) - (a.analysis?.overallScore || 0));
+    sortedByScore.forEach((candidate, index) => {
+      const candidateId = String(candidate.candidateId || candidate.interviewId || index);
+      normalized.rankings[candidateId] = {
+        overall: index + 1,
+        score: candidate.analysis?.overallScore || 0,
+        recommendation: candidate.analysis?.recommendation || 'additional_assessment'
+      };
+    });
+
+    const findCandidateId = (value) => {
+      const lowerValue = String(value || '').toLowerCase();
+      if (!lowerValue) return null;
+
+      const direct = candidateAnalyses.find((candidate) => String(candidate.candidateId || '').toLowerCase() === lowerValue);
+      if (direct) return String(direct.candidateId);
+
+      const byName = candidateAnalyses.find((candidate) => String(candidate.candidateName || '').toLowerCase() === lowerValue);
+      if (byName) return String(byName.candidateId);
+
+      return null;
+    };
+
+    const rawRankings = rawComparative?.rankings;
+    if (Array.isArray(rawRankings)) {
+      rawRankings.forEach((item) => {
+        const candidateId = findCandidateId(item?.candidateId || item?.candidate || item?.name);
+        if (!candidateId) return;
+
+        normalized.rankings[candidateId] = {
+          ...normalized.rankings[candidateId],
+          overall: Number(item.rank || item.overall || normalized.rankings[candidateId].overall),
+          score: Number(item.score ?? normalized.rankings[candidateId].score)
+        };
+      });
+    } else if (rawRankings && typeof rawRankings === 'object') {
+      Object.entries(rawRankings).forEach(([key, value]) => {
+        const candidateId = findCandidateId(key) || findCandidateId(value?.candidateId || value?.candidate || value?.name);
+        if (!candidateId) return;
+
+        normalized.rankings[candidateId] = {
+          ...normalized.rankings[candidateId],
+          overall: Number(value?.overall || value?.rank || normalized.rankings[candidateId]?.overall || 1),
+          score: Number(value?.score ?? normalized.rankings[candidateId]?.score ?? 0),
+          recommendation: value?.recommendation || normalized.rankings[candidateId]?.recommendation || 'additional_assessment'
+        };
+      });
+    }
+
+    return normalized;
   }
 
   /**
@@ -1080,7 +1262,7 @@ Focus on:
     const recommendations = [];
     
     // Find top candidates
-    const topCandidates = candidateAnalyses
+    const topCandidates = [...candidateAnalyses]
       .sort((a, b) => (b.analysis.overallScore || 0) - (a.analysis.overallScore || 0))
       .slice(0, 2);
     

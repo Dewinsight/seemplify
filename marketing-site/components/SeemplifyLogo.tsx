@@ -25,7 +25,7 @@ export default function SeemplifyLogo({ size = 'md', animated = true, className 
       style={{ width: dimension, height: dimension }}
     >
       <defs>
-        {/* Main gradient for the logo - Emerald/Teal/Indigo */}
+        {/* Main gradient for the logo */}
         <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#10b981" />
           <stop offset="50%" stopColor="#2dd4bf" />
@@ -34,7 +34,7 @@ export default function SeemplifyLogo({ size = 'md', animated = true, className 
 
         {/* Glow effect */}
         <filter id="glow">
-          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
           <feMerge>
             <feMergeNode in="coloredBlur" />
             <feMergeNode in="SourceGraphic" />
@@ -42,91 +42,95 @@ export default function SeemplifyLogo({ size = 'md', animated = true, className 
         </filter>
       </defs>
 
-      {/* Background circle with subtle glow */}
+      {/* Subtle glowing backdrop */}
       <motion.circle
         cx="50"
         cy="50"
-        r="45"
+        r="40"
         fill="url(#logoGradient)"
-        opacity="0.1"
+        opacity="0.15"
         initial={{ scale: 0.8 }}
-        animate={animated ? { scale: [0.8, 1, 0.8] } : {}}
-        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        animate={animated ? { scale: [0.8, 1.05, 0.8] } : {}}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
       />
 
-      {/* Main "S" shape made of connected nodes */}
       <g filter="url(#glow)">
-        {/* Top arc of S */}
-        <motion.path
-          d="M 65 25 Q 75 25 75 35 Q 75 45 65 45"
-          stroke="url(#logoGradient)"
-          strokeWidth="10"
+        {/* Left Diamond Facet */}
+        <motion.polygon
+          points="50,15 20,40 50,85"
           fill="none"
-          strokeLinecap="round"
-          initial={{ pathLength: 0 }}
-          animate={animated ? { pathLength: 1 } : { pathLength: 1 }}
-          transition={{ duration: 1, ease: "easeInOut" }}
+          stroke="url(#logoGradient)"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          initial={{ opacity: 0, pathLength: 0 }}
+          animate={animated ? { opacity: 1, pathLength: 1 } : { opacity: 1, pathLength: 1 }}
+          transition={{ duration: 1.5, ease: "easeInOut" }}
         />
 
-        {/* Middle curve */}
-        <motion.path
-          d="M 65 45 Q 50 50 35 55"
-          stroke="url(#logoGradient)"
-          strokeWidth="10"
+        {/* Right Diamond Facet */}
+        <motion.polygon
+          points="50,15 80,40 50,85"
           fill="none"
-          strokeLinecap="round"
-          initial={{ pathLength: 0 }}
-          animate={animated ? { pathLength: 1 } : { pathLength: 1 }}
-          transition={{ duration: 1, delay: 0.2, ease: "easeInOut" }}
+          stroke="url(#logoGradient)"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          initial={{ opacity: 0, pathLength: 0 }}
+          animate={animated ? { opacity: 1, pathLength: 1 } : { opacity: 1, pathLength: 1 }}
+          transition={{ duration: 1.5, delay: 0.2, ease: "easeInOut" }}
         />
 
-        {/* Bottom arc of S */}
-        <motion.path
-          d="M 35 55 Q 25 55 25 65 Q 25 75 35 75"
+        {/* Top Diamond Facet */}
+        <motion.polygon
+          points="50,15 20,40 80,40"
+          fill="url(#logoGradient)"
+          fillOpacity="0.2"
           stroke="url(#logoGradient)"
-          strokeWidth="10"
-          fill="none"
-          strokeLinecap="round"
-          initial={{ pathLength: 0 }}
-          animate={animated ? { pathLength: 1 } : { pathLength: 1 }}
-          transition={{ duration: 1, delay: 0.4, ease: "easeInOut" }}
+          strokeWidth="3"
+          strokeLinejoin="round"
+          initial={{ opacity: 0 }}
+          animate={animated ? { opacity: 1 } : { opacity: 1 }}
+          transition={{ duration: 1, delay: 0.8, ease: "easeOut" }}
         />
 
-        {/* Connection nodes - representing network/connections */}
+        {/* Center Vertical Line */}
+        <motion.line
+          x1="50" y1="15" x2="50" y2="85"
+          stroke="url(#logoGradient)"
+          strokeWidth="3"
+          initial={{ pathLength: 0 }}
+          animate={animated ? { pathLength: 1 } : { pathLength: 1 }}
+          transition={{ duration: 1.2, delay: 0.5, ease: "easeInOut" }}
+        />
+
+        {/* Connection points (Facets intersection) */}
         {[
-          { cx: 65, cy: 25, delay: 0.6 },
-          { cx: 75, cy: 35, delay: 0.7 },
-          { cx: 65, cy: 45, delay: 0.8 },
-          { cx: 50, cy: 50, delay: 0.9 },
-          { cx: 35, cy: 55, delay: 1.0 },
-          { cx: 25, cy: 65, delay: 1.1 },
-          { cx: 35, cy: 75, delay: 1.2 },
+          { cx: 50, cy: 15, delay: 1.2 },
+          { cx: 20, cy: 40, delay: 1.3 },
+          { cx: 80, cy: 40, delay: 1.4 },
+          { cx: 50, cy: 85, delay: 1.5 },
+          { cx: 50, cy: 40, delay: 1.6 },
         ].map((node, index) => (
           <motion.circle
             key={index}
             cx={node.cx}
             cy={node.cy}
-            r="6"
+            r="4"
             fill="white"
             initial={{ scale: 0 }}
-            animate={animated ? { scale: [0, 1.2, 1] } : { scale: 1 }}
-            transition={{ duration: 0.5, delay: node.delay, ease: "easeOut" }}
+            animate={animated ? { scale: [0, 1.5, 1] } : { scale: [0, 1, 1] }}
+            transition={{ duration: 0.6, delay: node.delay, ease: "easeOut" }}
           />
         ))}
 
-        {/* AI indicator - small accent lines */}
+        {/* Floating AI energy accents */}
         <motion.g
           initial={{ opacity: 0 }}
-          animate={animated ? { opacity: [0, 1, 0.7] } : { opacity: 0.7 }}
-          transition={{ duration: 1, delay: 1.3 }}
+          animate={animated ? { y: [-2, 2, -2], opacity: [0, 0.8, 0.4] } : { opacity: 0.7 }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 2 }}
         >
-          {/* Top right accent */}
-          <line x1="78" y1="28" x2="83" y2="23" stroke="#10b981" strokeWidth="3" strokeLinecap="round" />
-          <line x1="78" y1="32" x2="85" y2="32" stroke="#2dd4bf" strokeWidth="3" strokeLinecap="round" />
-
-          {/* Bottom left accent */}
-          <line x1="22" y1="68" x2="17" y2="73" stroke="#2dd4bf" strokeWidth="3" strokeLinecap="round" />
-          <line x1="22" y1="72" x2="15" y2="72" stroke="#6366f1" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="28" cy="25" r="2" fill="#2dd4bf" />
+          <circle cx="72" cy="25" r="2.5" fill="#6366f1" />
+          <circle cx="65" cy="70" r="1.5" fill="#10b981" />
         </motion.g>
       </g>
     </svg>
@@ -158,21 +162,35 @@ export function SeemplifyIcon({ size = 'md', className = '' }: Omit<SeemplifyLog
         </linearGradient>
       </defs>
 
-      {/* Simplified S with nodes */}
+      {/* Simplified Diamond Icon */}
       <g>
-        <path
-          d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-          stroke="url(#iconGradient)"
-          strokeWidth="12"
+        {/* Left Side */}
+        <polygon
+          points="50,15 20,40 50,85"
           fill="none"
-          strokeLinecap="round"
+          stroke="url(#iconGradient)"
+          strokeWidth="6"
           strokeLinejoin="round"
         />
 
+        {/* Right Side */}
+        <polygon
+          points="50,15 80,40 50,85"
+          fill="url(#iconGradient)"
+          fillOpacity="0.3"
+          stroke="url(#iconGradient)"
+          strokeWidth="6"
+          strokeLinejoin="round"
+        />
+
+        {/* Center line */}
+        <line x1="50" y1="15" x2="50" y2="85" stroke="url(#iconGradient)" strokeWidth="4" />
+
         {/* Key nodes */}
-        <circle cx="65" cy="25" r="6" fill="white" />
-        <circle cx="50" cy="50" r="6" fill="white" />
-        <circle cx="35" cy="75" r="6" fill="white" />
+        <circle cx="50" cy="15" r="4" fill="white" />
+        <circle cx="20" cy="40" r="4" fill="white" />
+        <circle cx="80" cy="40" r="4" fill="white" />
+        <circle cx="50" cy="85" r="4" fill="white" />
       </g>
     </svg>
   )

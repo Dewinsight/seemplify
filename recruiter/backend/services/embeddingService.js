@@ -1180,7 +1180,7 @@ class EmbeddingService {
       const gptAnalysisService = require('./gptAnalysisService');
       
       if (gptAnalysisService.isEnabled) {
-        console.log('🧠 Using GPT-4.1 enhanced analysis...');
+        console.log(`🧠 Using ${gptAnalysisService.modelName || 'LLM'} enhanced analysis...`);
         
         // Convert matches to candidate objects for GPT analysis
         const candidatesForAnalysis = matches.map(match => {
@@ -1404,7 +1404,7 @@ class EmbeddingService {
       const gptAnalysisService = require('./gptAnalysisService');
       
       if (gptAnalysisService.isEnabled) {
-        console.log('🧠 Using GPT-4.1 enhanced analysis for ranking shortlist...');
+        console.log(`🧠 Using ${gptAnalysisService.modelName || 'LLM'} enhanced analysis for ranking shortlist...`);
         
         const candidatesForAnalysis = candidateRecords.map(record => {
           const candidateSkills = this.parseSkills(record.metadata?.skills);
