@@ -4038,15 +4038,15 @@ const sendReviewedMemberEvaluationNotification = async ({
     day: 'numeric'
   })
 
-  const subject = `New performance evaluation for ${subjectName}`
+  const subject = `New simple evaluation for ${subjectName}`
   const html = `
-    <p>A new <strong>Simple Performance Evaluation</strong> has been submitted for you in <strong>${safeOrganizationName}</strong>.</p>
+    <p>A new <strong>Simple Evaluation</strong> has been submitted for you in <strong>${safeOrganizationName}</strong>.</p>
     <p><strong>Evaluator:</strong> ${safeEvaluatorName}<br><strong>Date:</strong> ${formattedDate}</p>
     <p><a href="${reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;">View your evaluation</a></p>
-    <p style="margin-top:14px;color:#64748b;font-size:13px;">You can also open Simple Performance Evaluation from your dashboard and check your history.</p>
+    <p style="margin-top:14px;color:#64748b;font-size:13px;">You can also open Simple Evaluation from your dashboard and check your history.</p>
   `
   const text = [
-    'A new Simple Performance Evaluation has been submitted for you.',
+    'A new Simple Evaluation has been submitted for you.',
     `Organization: ${organizationName || 'Your organization'}`,
     `Evaluator: ${evaluatorName || 'Your manager'}`,
     `Date: ${formattedDate}`,
@@ -5166,11 +5166,12 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       evaluatorId: req.user._id
     })
     const canEvaluate = evaluableMembers.length > 0
+    const hasOrgWideHistoryAccess = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
     const canManageFields = canManageSimplePerformanceFields({
       memberRole: orgContext.memberRole,
       canEvaluate
     })
-    const canViewAllHistory = canEvaluate || canManageFields
+    const canViewAllHistory = hasOrgWideHistoryAccess || canEvaluate
     const canCreateTeam = ['owner', 'admin'].includes(orgContext.memberRole)
     const teamManagementUrl = `/organizations/${orgContext.organizationId}/teams`
 
@@ -5188,24 +5189,25 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       viewMode = 'settings'
     }
 
-    const evaluableTeamMap = new Map()
-    for (const member of evaluableMembers) {
-      const teamId = String(member.teamId || '').trim()
-      if (!teamId || evaluableTeamMap.has(teamId)) continue
-      evaluableTeamMap.set(teamId, {
-        teamId,
-        teamName: member.teamName || 'Team',
-        teamHierarchyPath: Array.isArray(member.teamHierarchyPath) ? member.teamHierarchyPath : []
-      })
-    }
-
-    let evaluableTeams = Array.from(evaluableTeamMap.values())
-    if (evaluableTeams.length === 0 && canManageFields) {
+    let evaluableTeams = []
+    if (hasOrgWideHistoryAccess) {
       evaluableTeams = organizationTeams.map(team => ({
         teamId: String(team._id),
         teamName: team.name || 'Team',
         teamHierarchyPath: [team.name || 'Team']
       }))
+    } else {
+      const evaluableTeamMap = new Map()
+      for (const member of evaluableMembers) {
+        const teamId = String(member.teamId || '').trim()
+        if (!teamId || evaluableTeamMap.has(teamId)) continue
+        evaluableTeamMap.set(teamId, {
+          teamId,
+          teamName: member.teamName || 'Team',
+          teamHierarchyPath: Array.isArray(member.teamHierarchyPath) ? member.teamHierarchyPath : []
+        })
+      }
+      evaluableTeams = Array.from(evaluableTeamMap.values())
     }
     evaluableTeams.sort((a, b) => {
       const aLabel = (a.teamHierarchyPath?.join(' > ') || a.teamName || '').toLowerCase()
@@ -5345,7 +5347,7 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       user: req.user,
       activePage: 'performance-evaluations',
       organizationName: orgContext.organizationName,
-      pageTitle: 'Simple Performance Evaluation',
+      pageTitle: 'Simple Evaluation',
       aiPoweredAppLaunchUrl: '/launch/performance-management',
       viewMode,
       evaluableMembers,
