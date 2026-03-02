@@ -397,6 +397,30 @@
       </div>
     <% } %>
 
+    <% if (receivedEvaluationCount && receivedEvaluationCount > 0) { %>
+      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
+        <div>
+          <div style="font-weight: 700; font-size: 16px;">New performance feedback available</div>
+          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+            You have <%= receivedEvaluationCount %> performance evaluation<%= receivedEvaluationCount === 1 ? '' : 's' %> available for review.
+          </div>
+          <% if (latestReceivedEvaluations && latestReceivedEvaluations.length > 0) { %>
+            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+              <% latestReceivedEvaluations.forEach(entry => { %>
+                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px; margin-bottom: 6px;">
+                  <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#16a34a;"></span>
+                  <strong style="color: var(--text);"><%= entry.evaluatorName || entry.evaluatorEmail || 'Manager' %></strong>
+                  <span><%= new Date(entry.evaluationDate || entry.createdAt).toLocaleDateString() %></span>
+                  <span>Avg <%= Number(entry.averageRating || 0).toFixed(2) %>/5</span>
+                </span>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+        <a href="/performance-evaluations?view=overview&reviewed=me" class="btn btn-primary">View My Evaluations</a>
+      </div>
+    <% } %>
+
     <section class="apps">
       <div class="section-title">Manage identity & access</div>
 

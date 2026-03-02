@@ -223,9 +223,13 @@
 
     .spe-history-filter-grid {
       display: grid;
-      grid-template-columns: 1.6fr 1fr 1fr;
+      grid-template-columns: 1.5fr 1.5fr 1fr 1fr;
       gap: 10px;
       align-items: end;
+    }
+
+    .spe-history-filter-grid.spe-history-filter-grid--compact {
+      grid-template-columns: 1fr 1fr;
     }
 
     .spe-history-filter-note {
@@ -577,16 +581,20 @@
   <%- include('partials/nav', { activePage: 'performance-evaluations' }) %>
 
   <%
-    const selectedQuery = selectedMemberId ? `member=${encodeURIComponent(selectedMemberId)}` : ''
-    const overviewHref = '/performance-evaluations'
-    const newHref = `/performance-evaluations?view=new${selectedQuery ? `&${selectedQuery}` : ''}`
-    const settingsHref = `/performance-evaluations?view=settings${selectedQuery ? `&${selectedQuery}` : ''}`
+    const selectedTeamQuery = selectedTeamId ? `team=${encodeURIComponent(selectedTeamId)}` : ''
+    const selectedMemberQuery = selectedMemberId ? `member=${encodeURIComponent(selectedMemberId)}` : ''
+    const overviewQueryParts = [selectedTeamQuery].filter(Boolean)
+    const newQueryParts = [selectedTeamQuery, selectedMemberQuery].filter(Boolean)
+    const settingsQueryParts = [selectedTeamQuery].filter(Boolean)
+    const overviewHref = `/performance-evaluations${overviewQueryParts.length ? `?${overviewQueryParts.join('&')}` : ''}`
+    const newHref = `/performance-evaluations?view=new${newQueryParts.length ? `&${newQueryParts.join('&')}` : ''}`
+    const settingsHref = `/performance-evaluations?view=settings${settingsQueryParts.length ? `&${settingsQueryParts.join('&')}` : ''}`
     const historyTimeFilterSummary = []
     if (historyFilters?.date) historyTimeFilterSummary.push(`date ${historyFilters.date}`)
     if (historyFilters?.month) historyTimeFilterSummary.push(`month ${historyFilters.month}`)
   %>
 
-  <div class="container spe-shell">
+  <div class="container spe-shell" data-spe-root>
     <section class="spe-hero">
       <div class="spe-hero-grid">
         <div class="spe-hero-main">
@@ -614,7 +622,9 @@
 
       <nav class="spe-nav" aria-label="Simple Performance Workspace Navigation">
         <a href="<%= overviewHref %>" class="spe-tab <%= viewMode === 'overview' ? 'active' : '' %>">Overview</a>
-        <a href="<%= newHref %>" class="spe-tab <%= viewMode === 'new' ? 'active' : '' %>">Evaluate New</a>
+        <% if (canEvaluate) { %>
+          <a href="<%= newHref %>" class="spe-tab <%= viewMode === 'new' ? 'active' : '' %>">Evaluate New</a>
+        <% } %>
         <% if (canManageFields) { %>
           <a href="<%= settingsHref %>" class="spe-tab <%= viewMode === 'settings' ? 'active' : '' %>">Settings & Configuration</a>
         <% } %>
@@ -626,6 +636,24 @@
     <% } %>
     <% if (success) { %>
       <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (canViewAllHistory && organizationTeamCount === 0) { %>
+      <section class="spe-surface">
+        <div class="spe-empty" style="text-align: left;">
+          <h3 style="margin: 0 0 8px; color: var(--text); font-size: 16px;">No teams found</h3>
+          <p style="margin: 0; color: var(--muted); font-size: 14px;">
+            Simple Performance Evaluation is team-based. Create your first team to start managing evaluations.
+          </p>
+          <div class="form-actions" style="margin-top: 12px;">
+            <% if (canCreateTeam) { %>
+              <a href="<%= teamManagementUrl %>" class="btn btn-primary">Create Team</a>
+            <% } else { %>
+              <a href="<%= teamManagementUrl %>" class="btn btn-secondary">View Teams</a>
+            <% } %>
+          </div>
+        </div>
+      </section>
     <% } %>
 
     <% if (viewMode === 'settings') { %>
@@ -700,14 +728,30 @@
         <% } else { %>
           <form method="GET" action="/performance-evaluations">
             <input type="hidden" name="view" value="new">
+            <% if (evaluableTeams && evaluableTeams.length > 0) { %>
+              <div class="form-group">
+                <label for="team">Team</label>
+                <select id="team" name="team" required>
+                  <% evaluableTeams.forEach(team => { %>
+                    <option value="<%= team.teamId %>" <%= selectedTeamId === team.teamId ? 'selected' : '' %>>
+                      <%= (team.teamHierarchyPath && team.teamHierarchyPath.length ? team.teamHierarchyPath.join(' > ') : team.teamName) %>
+                    </option>
+                  <% }) %>
+                </select>
+              </div>
+            <% } %>
             <div class="form-group">
               <label for="member">Employee</label>
               <select id="member" name="member" required>
-                <% evaluableMembers.forEach(member => { %>
-                  <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
-                    <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
-                  </option>
-                <% }) %>
+                <% if (!teamScopedEvaluableMembers || teamScopedEvaluableMembers.length === 0) { %>
+                  <option value="" selected disabled>No team members available</option>
+                <% } else { %>
+                  <% teamScopedEvaluableMembers.forEach(member => { %>
+                    <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
+                      <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
+                    </option>
+                  <% }) %>
+                <% } %>
               </select>
             </div>
             <div class="form-actions" style="margin-top: 8px;">
@@ -728,6 +772,9 @@
           <section class="spe-surface spe-eval-layout">
             <form method="POST" action="/performance-evaluations">
               <input type="hidden" name="evaluatedMemberId" value="<%= selectedMember.accountId %>">
+              <% if (selectedTeamId) { %>
+                <input type="hidden" name="team" value="<%= selectedTeamId %>">
+              <% } %>
 
               <div class="form-group">
                 <label for="evaluationDate">Evaluation Date</label>
@@ -854,9 +901,17 @@
 
         <div class="spe-flow">
           <ol>
-            <li><strong>Use history filter</strong> to focus on one employee.</li>
+            <% if (canEvaluate) { %>
+              <li><strong>Use history filter</strong> to focus on one employee.</li>
+            <% } else { %>
+              <li><strong>Review your timeline</strong> to see your latest submitted feedback.</li>
+            <% } %>
             <li><strong>Review previous ratings</strong> and notes for context.</li>
-            <li>Open the <strong>Evaluate New</strong> tab when ready to submit the next review.</li>
+            <% if (canEvaluate) { %>
+              <li>Open the <strong>Evaluate New</strong> tab when ready to submit the next review.</li>
+            <% } else { %>
+              <li>Open each entry to review ratings, comments, and follow-up recommendations.</li>
+            <% } %>
           </ol>
         </div>
       </section>
@@ -866,7 +921,7 @@
           <div>
             <h2 class="spe-section-title">Evaluation History</h2>
             <p class="spe-section-subtitle">
-              <%= selectedMember ? `Showing history for ${selectedMember.name}.` : 'Showing all evaluations in your accessible hierarchy.' %>
+              <%= historyScopeSubtitle || (selectedMember ? `Showing history for ${selectedMember.name}.` : 'Showing all evaluations in your accessible hierarchy.') %>
               <% if (historyTimeFilterSummary.length > 0) { %>
                 Filtered by <%= historyTimeFilterSummary.join(' and ') %>.
               <% } %>
@@ -874,20 +929,32 @@
           </div>
         </div>
 
-        <% if (canEvaluate && evaluableMembers && evaluableMembers.length > 0) { %>
-          <form method="GET" action="/performance-evaluations">
-            <div class="spe-history-filter-grid">
-              <div class="form-group" style="margin-bottom: 0;">
-                <label for="member">Filter by employee</label>
-                <select id="member" name="member">
-                  <option value="" <%= !selectedMemberId ? 'selected' : '' %>>All employees</option>
-                  <% evaluableMembers.forEach(member => { %>
-                    <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
-                      <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
-                    </option>
-                  <% }) %>
-                </select>
-              </div>
+        <% if ((canViewAllHistory && evaluableTeams && evaluableTeams.length > 0) || !canViewAllHistory) { %>
+          <form method="GET" action="/performance-evaluations" data-history-filter-form>
+            <div class="spe-history-filter-grid <%= canViewAllHistory ? '' : 'spe-history-filter-grid--compact' %>">
+              <% if (canViewAllHistory && evaluableTeams && evaluableTeams.length > 0) { %>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="team">Team</label>
+                  <select id="team" name="team" required>
+                    <% evaluableTeams.forEach(team => { %>
+                      <option value="<%= team.teamId %>" <%= selectedTeamId === team.teamId ? 'selected' : '' %>>
+                        <%= (team.teamHierarchyPath && team.teamHierarchyPath.length ? team.teamHierarchyPath.join(' > ') : team.teamName) %>
+                      </option>
+                    <% }) %>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="member">Filter by employee</label>
+                  <select id="member" name="member">
+                    <option value="" <%= !selectedMemberId ? 'selected' : '' %>>All team members</option>
+                    <% (teamScopedEvaluableMembers || []).forEach(member => { %>
+                      <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
+                        <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
+                      </option>
+                    <% }) %>
+                  </select>
+                </div>
+              <% } %>
               <div class="form-group" style="margin-bottom: 0;">
                 <label for="date">Specific date</label>
                 <input id="date" name="date" type="date" value="<%= historyFilters?.date || '' %>">
@@ -898,11 +965,24 @@
               </div>
             </div>
             <input type="hidden" name="view" value="overview">
+            <% if (!canViewAllHistory) { %>
+              <input type="hidden" name="reviewed" value="me">
+            <% } %>
             <div class="form-actions" style="margin-top: 8px;">
-              <button class="btn btn-secondary" type="submit">Apply Filter</button>
-              <a href="/performance-evaluations" class="btn btn-secondary">Clear All</a>
+              <button class="btn btn-secondary" type="submit" data-history-filter-apply>Apply Filter</button>
+              <a
+                href="/performance-evaluations?<%= [`view=overview`, selectedTeamId ? `team=${encodeURIComponent(selectedTeamId)}` : '', historyFilters?.reviewed ? `reviewed=${encodeURIComponent(historyFilters.reviewed)}` : ''].filter(Boolean).join('&') %>"
+                class="btn btn-secondary"
+                data-history-filter-clear
+                data-clear-team="<%= selectedTeamId %>"
+                data-clear-reviewed="<%= historyFilters?.reviewed || '' %>"
+              >
+                Clear All
+              </a>
             </div>
-            <p class="spe-history-filter-note">You can filter by employee, specific date, month, or a combination.</p>
+            <p class="spe-history-filter-note">
+              <%= canViewAllHistory ? 'You can filter by employee, specific date, month, or a combination.' : 'You can filter your evaluations by specific date, month, or both.' %>
+            </p>
           </form>
         <% } %>
 
@@ -934,6 +1014,9 @@
                     <% if (entry.canDelete) { %>
                       <form method="POST" action="/performance-evaluations/<%= encodeURIComponent(entry._id) %>/delete" class="spe-history-delete-form" onsubmit="return confirm('Remove this evaluation? This cannot be undone.');">
                         <input type="hidden" name="view" value="overview">
+                        <% if (selectedTeamId) { %>
+                          <input type="hidden" name="team" value="<%= selectedTeamId %>">
+                        <% } %>
                         <% if (selectedMemberId) { %>
                           <input type="hidden" name="member" value="<%= selectedMemberId %>">
                         <% } %>
@@ -942,6 +1025,9 @@
                         <% } %>
                         <% if (historyFilters?.month) { %>
                           <input type="hidden" name="month" value="<%= historyFilters.month %>">
+                        <% } %>
+                        <% if (historyFilters?.reviewed) { %>
+                          <input type="hidden" name="reviewed" value="<%= historyFilters.reviewed %>">
                         <% } %>
                         <button class="btn btn-danger btn-sm" type="submit">Remove</button>
                       </form>
@@ -972,6 +1058,96 @@
       </section>
     <% } %>
   </div>
+  <script>
+    (() => {
+      const initHistoryFilter = () => {
+        const filterForm = document.querySelector('[data-history-filter-form]')
+        if (!filterForm || !window.fetch || !window.DOMParser) return
+
+        const applyButton = filterForm.querySelector('[data-history-filter-apply]')
+        const clearLink = filterForm.querySelector('[data-history-filter-clear]')
+        let isLoading = false
+
+        const setLoadingState = (loading) => {
+          if (!applyButton) return
+          if (loading) {
+            applyButton.dataset.originalText = applyButton.textContent
+            applyButton.textContent = 'Applying...'
+            applyButton.disabled = true
+          } else {
+            applyButton.textContent = applyButton.dataset.originalText || 'Apply Filter'
+            applyButton.disabled = false
+          }
+        }
+
+        const loadFilteredView = async (params) => {
+          if (isLoading) return
+          isLoading = true
+          setLoadingState(true)
+
+          const queryString = params.toString()
+          const targetUrl = queryString
+            ? `/performance-evaluations?${queryString}`
+            : '/performance-evaluations'
+
+          try {
+            const response = await fetch(targetUrl, {
+              method: 'GET',
+              headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            })
+
+            if (!response.ok) {
+              throw new Error('Request failed')
+            }
+
+            const html = await response.text()
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(html, 'text/html')
+            const nextRoot = doc.querySelector('[data-spe-root]')
+            const currentRoot = document.querySelector('[data-spe-root]')
+
+            if (!nextRoot || !currentRoot) {
+              throw new Error('Unable to locate updated view')
+            }
+
+            currentRoot.replaceWith(nextRoot)
+            window.history.replaceState({}, '', targetUrl)
+            initHistoryFilter()
+          } catch (error) {
+            window.location.href = targetUrl
+          } finally {
+            isLoading = false
+            setLoadingState(false)
+          }
+        }
+
+        filterForm.addEventListener('submit', (event) => {
+          event.preventDefault()
+          const params = new URLSearchParams(new FormData(filterForm))
+          loadFilteredView(params)
+        })
+
+        if (clearLink) {
+          clearLink.addEventListener('click', (event) => {
+            event.preventDefault()
+            const params = new URLSearchParams()
+            params.set('view', 'overview')
+            if (clearLink.dataset.clearTeam) {
+              params.set('team', clearLink.dataset.clearTeam)
+            }
+            if (clearLink.dataset.clearReviewed) {
+              params.set('reviewed', clearLink.dataset.clearReviewed)
+            }
+            loadFilteredView(params)
+          })
+        }
+      }
+
+      initHistoryFilter()
+    })()
+  </script>
 </body>
 
 </html>

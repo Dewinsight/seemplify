@@ -3163,6 +3163,29 @@ app.get('/', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean()
 
+    const latestReceivedEvaluations = currentOrgId
+      ? await PerformanceEvaluation.find({
+        organization: currentOrgId,
+        evaluatedMember: account._id
+      })
+        .select('evaluationDate createdAt evaluatorName evaluatorEmail ratings')
+        .sort({ evaluationDate: -1, createdAt: -1 })
+        .limit(3)
+        .lean()
+      : []
+
+    const receivedEvaluationCount = currentOrgId
+      ? await PerformanceEvaluation.countDocuments({
+        organization: currentOrgId,
+        evaluatedMember: account._id
+      })
+      : 0
+
+    const latestReceivedEvaluationsWithMetrics = latestReceivedEvaluations.map(entry => ({
+      ...entry,
+      averageRating: calculateAverageRating(entry.ratings)
+    }))
+
     // Render the hub homepage using EJS template
     res.render('home', {
       user: account,
@@ -3174,6 +3197,8 @@ app.get('/', async (req, res) => {
         : null,
       pendingOnboardingCount: pendingOnboardingAssignments.length,
       pendingOnboardingAssignments,
+      receivedEvaluationCount,
+      latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       activePage: 'home'
     })
   } catch (err) {
@@ -3853,6 +3878,65 @@ const parseIsoMonthFilterValue = (value) => {
     start,
     end
   }
+}
+
+const escapeEmailHtml = (value) => (
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+)
+
+const getIdentityBaseUrl = () => (
+  String(process.env.ISSUER_URL || 'http://localhost:4000')
+    .trim()
+    .replace(/\/+$/, '')
+)
+
+const sendReviewedMemberEvaluationNotification = async ({
+  reviewedMemberEmail,
+  reviewedMemberName,
+  evaluatorName,
+  organizationName,
+  evaluationDate
+}) => {
+  if (!reviewedMemberEmail) return
+
+  const reviewUrl = `${getIdentityBaseUrl()}/performance-evaluations?view=overview&reviewed=me`
+  const safeEvaluatorName = escapeEmailHtml(evaluatorName || 'Your manager')
+  const safeOrganizationName = escapeEmailHtml(organizationName || 'your organization')
+  const subjectName = String(reviewedMemberName || reviewedMemberEmail || 'you').trim()
+  const formattedDate = new Date(evaluationDate || new Date()).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+
+  const subject = `New performance evaluation for ${subjectName}`
+  const html = `
+    <p>A new <strong>Simple Performance Evaluation</strong> has been submitted for you in <strong>${safeOrganizationName}</strong>.</p>
+    <p><strong>Evaluator:</strong> ${safeEvaluatorName}<br><strong>Date:</strong> ${formattedDate}</p>
+    <p><a href="${reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;">View your evaluation</a></p>
+    <p style="margin-top:14px;color:#64748b;font-size:13px;">You can also open Simple Performance Evaluation from your dashboard and check your history.</p>
+  `
+  const text = [
+    'A new Simple Performance Evaluation has been submitted for you.',
+    `Organization: ${organizationName || 'Your organization'}`,
+    `Evaluator: ${evaluatorName || 'Your manager'}`,
+    `Date: ${formattedDate}`,
+    '',
+    `View your evaluation: ${reviewUrl}`
+  ].join('\n')
+
+  await emailService.sendNotificationEmail({
+    to: reviewedMemberEmail,
+    toName: reviewedMemberName,
+    subject,
+    html,
+    text
+  })
 }
 
 const redirectToPerformanceEvaluations = (res, query = {}) => {
@@ -4943,7 +5027,7 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
     const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
     const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
 
-    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
       evaluatorId: req.user._id
     })
@@ -4952,6 +5036,15 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       memberRole: orgContext.memberRole,
       canEvaluate
     })
+    const canViewAllHistory = canEvaluate || canManageFields
+    const canCreateTeam = ['owner', 'admin'].includes(orgContext.memberRole)
+    const teamManagementUrl = `/organizations/${orgContext.organizationId}/teams`
+
+    const organizationTeams = await Team.find({ organization: orgContext.organizationId })
+      .select('_id name')
+      .sort({ name: 1 })
+      .lean()
+    const organizationTeamCount = organizationTeams.length
 
     const requestedView = getQueryStringValue(req.query.view).trim().toLowerCase()
     let viewMode = 'overview'
@@ -4961,13 +5054,54 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       viewMode = 'settings'
     }
 
+    const evaluableTeamMap = new Map()
+    for (const member of evaluableMembers) {
+      const teamId = String(member.teamId || '').trim()
+      if (!teamId || evaluableTeamMap.has(teamId)) continue
+      evaluableTeamMap.set(teamId, {
+        teamId,
+        teamName: member.teamName || 'Team',
+        teamHierarchyPath: Array.isArray(member.teamHierarchyPath) ? member.teamHierarchyPath : []
+      })
+    }
+
+    let evaluableTeams = Array.from(evaluableTeamMap.values())
+    if (evaluableTeams.length === 0 && canManageFields) {
+      evaluableTeams = organizationTeams.map(team => ({
+        teamId: String(team._id),
+        teamName: team.name || 'Team',
+        teamHierarchyPath: [team.name || 'Team']
+      }))
+    }
+    evaluableTeams.sort((a, b) => {
+      const aLabel = (a.teamHierarchyPath?.join(' > ') || a.teamName || '').toLowerCase()
+      const bLabel = (b.teamHierarchyPath?.join(' > ') || b.teamName || '').toLowerCase()
+      return aLabel.localeCompare(bLabel)
+    })
+
+    const evaluableTeamById = new Map(evaluableTeams.map(team => [team.teamId, team]))
+
+    const requestedTeamId = getQueryStringValue(req.query.team).trim()
+    let selectedTeam = requestedTeamId ? evaluableTeamById.get(requestedTeamId) : null
+    if (canViewAllHistory && !selectedTeam && evaluableTeams.length > 0) {
+      selectedTeam = evaluableTeams[0]
+    }
+    const selectedTeamId = selectedTeam?.teamId || ''
+
+    const teamScopedEvaluableMembers = selectedTeamId
+      ? evaluableMembers.filter(member => String(member.teamId || '') === selectedTeamId)
+      : (canViewAllHistory ? [] : evaluableMembers)
+    const teamScopedMemberMap = new Map(teamScopedEvaluableMembers.map(member => [member.accountId, member]))
+
     const requestedMemberId = getQueryStringValue(req.query.member).trim()
-    const requestedMember = requestedMemberId ? memberMap.get(requestedMemberId) : null
-    let selectedMember = requestedMember || null
+    const requestedReviewedScope = getQueryStringValue(req.query.reviewed).trim().toLowerCase()
+    const requestedMember = requestedMemberId ? teamScopedMemberMap.get(requestedMemberId) : null
+    const showOwnHistoryOnly = requestedReviewedScope === 'me' || !canViewAllHistory
+    let selectedMember = showOwnHistoryOnly ? null : (requestedMember || null)
 
     // In "Evaluate New" mode, auto-select first evaluable member for convenience.
     if (viewMode === 'new' && !selectedMember && canEvaluate) {
-      selectedMember = evaluableMembers[0]
+      selectedMember = teamScopedEvaluableMembers[0] || null
     }
 
     const selectedMemberId = selectedMember?.accountId || ''
@@ -4977,9 +5111,17 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
     const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
     const parsedHistoryMonth = parseIsoMonthFilterValue(requestedHistoryMonth)
 
-    // History defaults to all evaluations. Only filter when a member is explicitly chosen.
-    if (requestedMember?.accountId) {
-      historyQuery.evaluatedMember = requestedMember.accountId
+    // History is team-scoped for manager views.
+    // Non-managers always see evaluations about themselves.
+    if (showOwnHistoryOnly) {
+      historyQuery.evaluatedMember = req.user._id
+    } else {
+      if (selectedTeamId) {
+        historyQuery.evaluatedTeam = selectedTeamId
+      }
+      if (requestedMember?.accountId) {
+        historyQuery.evaluatedMember = requestedMember.accountId
+      }
     }
 
     const historyDateRange = {}
@@ -4999,10 +5141,13 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       historyQuery.evaluationDate = historyDateRange
     }
 
-    const history = await PerformanceEvaluation.find(historyQuery)
-      .sort({ evaluationDate: -1, createdAt: -1 })
-      .limit(80)
-      .lean()
+    const shouldSuppressHistoryForMissingTeam = canViewAllHistory && !showOwnHistoryOnly && !selectedTeamId
+    const history = shouldSuppressHistoryForMissingTeam
+      ? []
+      : await PerformanceEvaluation.find(historyQuery)
+        .sort({ evaluationDate: -1, createdAt: -1 })
+        .limit(80)
+        .lean()
 
     const currentUserId = req.user._id?.toString() || ''
     const evaluableMemberIdSet = new Set(evaluableMembers.map(member => member.accountId))
@@ -5029,9 +5174,21 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       oneOnOneCount: historyWithMetrics.filter(entry => entry.needsOneOnOne).length,
       averageScore: calculateAverageRating(historyWithMetrics.flatMap(entry => entry.ratings || []))
     }
+    const historyScopeSubtitle = showOwnHistoryOnly
+      ? 'Showing evaluations submitted about you.'
+      : (selectedTeam
+          ? (selectedMember
+              ? `Showing history for ${selectedMember.name} in ${selectedTeam.teamName}.`
+              : `Showing history for ${selectedTeam.teamName}.`)
+          : (organizationTeamCount === 0
+              ? 'No teams found yet. Create a team to start evaluations.'
+              : 'Select a team to review history.'))
 
     let errorMessage = getQueryStringValue(req.query.error)
-    if (requestedMemberId && !requestedMember && !errorMessage) {
+    if (canViewAllHistory && requestedTeamId && !selectedTeam && !errorMessage) {
+      errorMessage = 'Select a valid team.'
+    }
+    if (canViewAllHistory && requestedMemberId && !requestedMember && !errorMessage) {
       errorMessage = 'Select a valid team member to evaluate.'
     }
     if (requestedHistoryDate && !parsedHistoryDate && !errorMessage) {
@@ -5058,6 +5215,10 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       aiPoweredAppLaunchUrl: '/launch/performance-management',
       viewMode,
       evaluableMembers,
+      teamScopedEvaluableMembers,
+      evaluableTeams,
+      selectedTeam,
+      selectedTeamId,
       selectedMember,
       selectedMemberId,
       evaluationFields,
@@ -5067,9 +5228,16 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       roleLabels: TEAM_ROLE_LABELS,
       canEvaluate,
       canManageFields,
+      canViewAllHistory,
+      canCreateTeam,
+      organizationTeamCount,
+      teamManagementUrl,
+      historyScopeSubtitle,
       historyFilters: {
         date: parsedHistoryDate?.normalized || '',
-        month: parsedHistoryMonth?.normalized || ''
+        month: parsedHistoryMonth?.normalized || '',
+        reviewed: requestedReviewedScope === 'me' ? 'me' : '',
+        team: selectedTeamId
       },
       error: errorMessage,
       success: getQueryStringValue(req.query.success)
@@ -5108,13 +5276,29 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
       })
     }
 
+    const requestedTeamId = String(req.body.team || '').trim()
     const evaluatedMemberId = String(req.body.evaluatedMemberId || '').trim()
     const selectedMember = memberMap.get(evaluatedMemberId)
+
+    if (!requestedTeamId) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        error: 'Select a team before submitting an evaluation.'
+      })
+    }
 
     if (!selectedMember) {
       return redirectToPerformanceEvaluations(res, {
         view: 'new',
+        team: requestedTeamId,
         error: 'Select a valid member to evaluate.'
+      })
+    }
+    if (requestedTeamId && String(selectedMember.teamId || '') !== requestedTeamId) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        team: requestedTeamId,
+        error: 'Selected member is not in the selected team.'
       })
     }
 
@@ -5124,6 +5308,7 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
       if (!parsedValue) {
         return redirectToPerformanceEvaluations(res, {
           view: 'new',
+          team: requestedTeamId || selectedMember.teamId,
           member: evaluatedMemberId,
           error: `${field.label} rating is required.`
         })
@@ -5142,6 +5327,7 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
       if (Number.isNaN(parsedDate.getTime())) {
         return redirectToPerformanceEvaluations(res, {
           view: 'new',
+          team: requestedTeamId || selectedMember.teamId,
           member: evaluatedMemberId,
           error: 'Enter a valid evaluation date.'
         })
@@ -5153,6 +5339,7 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
     if (!['yes', 'no'].includes(needsOneOnOneValue)) {
       return redirectToPerformanceEvaluations(res, {
         view: 'new',
+        team: requestedTeamId || selectedMember.teamId,
         member: evaluatedMemberId,
         error: 'Select whether a 1:1 meeting is needed.'
       })
@@ -5160,7 +5347,7 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
 
     const evaluatorName = req.user.profile?.name || req.user.email || 'Evaluator'
 
-    await PerformanceEvaluation.create({
+    const createdEvaluation = await PerformanceEvaluation.create({
       organization: orgContext.organizationId,
       evaluator: req.user._id,
       evaluatorName,
@@ -5180,14 +5367,28 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
       needsOneOnOne: needsOneOnOneValue === 'yes'
     })
 
+    try {
+      await sendReviewedMemberEvaluationNotification({
+        reviewedMemberEmail: selectedMember.email,
+        reviewedMemberName: selectedMember.name,
+        evaluatorName,
+        organizationName: orgContext.organizationName,
+        evaluationDate: createdEvaluation.evaluationDate
+      })
+    } catch (emailError) {
+      console.error('Performance evaluation notification email failed:', emailError.message || emailError)
+    }
+
     return redirectToPerformanceEvaluations(res, {
       view: 'overview',
+      team: selectedMember.teamId,
       success: 'Performance evaluation submitted.'
     })
   } catch (error) {
     console.error('Submit performance evaluation error:', error)
     return redirectToPerformanceEvaluations(res, {
       view: 'new',
+      team: String(req.body.team || '').trim(),
       member: String(req.body.evaluatedMemberId || '').trim(),
       error: 'Failed to submit evaluation.'
     })
@@ -5201,7 +5402,9 @@ app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async 
       return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
     }
 
+    const requestedTeamId = getQueryStringValue(req.body.team).trim()
     const requestedMemberId = getQueryStringValue(req.body.member).trim()
+    const requestedReviewedScope = getQueryStringValue(req.body.reviewed).trim().toLowerCase()
     const requestedHistoryDate = getQueryStringValue(req.body.date).trim()
     const requestedHistoryMonth = getQueryStringValue(req.body.month).trim()
     const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
@@ -5209,6 +5412,12 @@ app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async 
 
     const redirectQuery = {
       view: 'overview'
+    }
+    if (requestedTeamId) {
+      redirectQuery.team = requestedTeamId
+    }
+    if (requestedReviewedScope === 'me') {
+      redirectQuery.reviewed = 'me'
     }
     if (parsedHistoryDate) {
       redirectQuery.date = parsedHistoryDate.normalized
