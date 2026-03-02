@@ -200,6 +200,20 @@ const AccountSchema = new mongoose.Schema({
     default: 'local'
   },
 
+  // Dashboard notification view checkpoints (per organization)
+  notificationViews: {
+    documentsByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
+    },
+    simplePerformanceByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
+    }
+  },
+
   // =====================================================
   // EMPLOYEE PROFILE - HR Information
   // =====================================================

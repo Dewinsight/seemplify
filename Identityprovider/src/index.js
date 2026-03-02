@@ -3163,11 +3163,49 @@ app.get('/', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean()
 
+    const unreadPendingOnboardingAssignments = pendingOnboardingAssignments.filter(assignment => {
+      const assignmentOrganizationId =
+        assignment?.organization?._id?.toString() ||
+        assignment?.organization?.toString() ||
+        ''
+      if (!assignmentOrganizationId) {
+        return true
+      }
+
+      const lastViewedAt = getDashboardNotificationViewedAt(
+        account,
+        'documents',
+        assignmentOrganizationId
+      )
+      if (!lastViewedAt) {
+        return true
+      }
+
+      const assignmentTimestamp = assignment?.updatedAt || assignment?.createdAt
+      if (!assignmentTimestamp) {
+        return true
+      }
+
+      return new Date(assignmentTimestamp).getTime() > lastViewedAt.getTime()
+    })
+
+    const performanceNotificationQuery = currentOrgId
+      ? {
+          organization: currentOrgId,
+          evaluatedMember: account._id
+        }
+      : null
+    const performanceNotificationViewedAt = getDashboardNotificationViewedAt(
+      account,
+      'simplePerformance',
+      currentOrgId
+    )
+    if (performanceNotificationQuery && performanceNotificationViewedAt) {
+      performanceNotificationQuery.createdAt = { $gt: performanceNotificationViewedAt }
+    }
+
     const latestReceivedEvaluations = currentOrgId
-      ? await PerformanceEvaluation.find({
-        organization: currentOrgId,
-        evaluatedMember: account._id
-      })
+      ? await PerformanceEvaluation.find(performanceNotificationQuery)
         .select('evaluationDate createdAt evaluatorName evaluatorEmail ratings')
         .sort({ evaluationDate: -1, createdAt: -1 })
         .limit(3)
@@ -3175,10 +3213,7 @@ app.get('/', async (req, res) => {
       : []
 
     const receivedEvaluationCount = currentOrgId
-      ? await PerformanceEvaluation.countDocuments({
-        organization: currentOrgId,
-        evaluatedMember: account._id
-      })
+      ? await PerformanceEvaluation.countDocuments(performanceNotificationQuery)
       : 0
 
     const latestReceivedEvaluationsWithMetrics = latestReceivedEvaluations.map(entry => ({
@@ -3195,8 +3230,8 @@ app.get('/', async (req, res) => {
       accessError: req.query?.error === 'app_not_assigned'
         ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
         : null,
-      pendingOnboardingCount: pendingOnboardingAssignments.length,
-      pendingOnboardingAssignments,
+      pendingOnboardingCount: unreadPendingOnboardingAssignments.length,
+      pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       activePage: 'home'
@@ -3811,6 +3846,95 @@ const getCurrentOrganizationContext = async (user) => {
     organizationName: organization.name,
     memberRole: memberRecord.role
   }
+}
+
+const DASHBOARD_NOTIFICATION_VIEW_PATHS = Object.freeze({
+  documents: 'notificationViews.documentsByOrganization',
+  simplePerformance: 'notificationViews.simplePerformanceByOrganization'
+})
+
+const getOrganizationIdsFromAccount = (account) => {
+  if (!account || !Array.isArray(account.organizations)) {
+    return []
+  }
+
+  const organizationIds = new Set()
+  for (const membership of account.organizations) {
+    if (membership?.isActive === false) continue
+    const organizationId =
+      membership?.organization?._id?.toString() ||
+      membership?.organization?.toString() ||
+      ''
+    if (organizationId) {
+      organizationIds.add(organizationId)
+    }
+  }
+
+  return Array.from(organizationIds)
+}
+
+const readNotificationViewDate = (mapLike, organizationId) => {
+  const key = String(organizationId || '').trim()
+  if (!key || !mapLike) {
+    return null
+  }
+
+  let rawValue = null
+  if (typeof mapLike.get === 'function') {
+    rawValue = mapLike.get(key)
+  } else if (typeof mapLike === 'object') {
+    rawValue = mapLike[key]
+  }
+
+  if (!rawValue) {
+    return null
+  }
+
+  const parsedDate = new Date(rawValue)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+const getDashboardNotificationViewedAt = (account, type, organizationId) => {
+  const orgId = String(organizationId || '').trim()
+  if (!orgId) {
+    return null
+  }
+
+  if (type === 'documents') {
+    return readNotificationViewDate(account?.notificationViews?.documentsByOrganization, orgId)
+  }
+  if (type === 'simplePerformance') {
+    return readNotificationViewDate(account?.notificationViews?.simplePerformanceByOrganization, orgId)
+  }
+  return null
+}
+
+const markDashboardNotificationViewed = async ({ accountId, type, organizationIds }) => {
+  const basePath = DASHBOARD_NOTIFICATION_VIEW_PATHS[type]
+  if (!basePath || !accountId) {
+    return
+  }
+
+  const normalizedOrgIds = Array.from(new Set(
+    (Array.isArray(organizationIds) ? organizationIds : [])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ))
+
+  if (normalizedOrgIds.length === 0) {
+    return
+  }
+
+  const now = new Date()
+  const updateSet = {}
+  for (const orgId of normalizedOrgIds) {
+    updateSet[`${basePath}.${orgId}`] = now
+  }
+
+  await Account.updateOne(
+    { _id: accountId },
+    { $set: updateSet }
+  )
 }
 
 const getQueryStringValue = (value) => {
@@ -5024,6 +5148,16 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
     }
 
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'simplePerformance',
+        organizationIds: [orgContext.organizationId]
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark simple performance notification as viewed:', notificationViewError)
+    }
+
     const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
     const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
 
@@ -5755,6 +5889,20 @@ app.get('/documents', getSessionUser, async (req, res) => {
       fallback: 'all'
     })
     const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
+    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+      documentNotificationOrgIds.push(currentOrgId)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'documents',
+        organizationIds: documentNotificationOrgIds
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark documents notification as viewed:', notificationViewError)
+    }
 
     if (currentOrgId) {
       try {
@@ -5801,6 +5949,20 @@ app.get('/documents', getSessionUser, async (req, res) => {
 app.get('/onboarding', getSessionUser, async (req, res) => {
   try {
     const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
+    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+      documentNotificationOrgIds.push(currentOrgId)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'documents',
+        organizationIds: documentNotificationOrgIds
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark onboarding notification as viewed:', notificationViewError)
+    }
 
     if (currentOrgId) {
       try {

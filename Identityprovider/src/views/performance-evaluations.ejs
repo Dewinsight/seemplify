@@ -475,6 +475,12 @@
       min-width: 210px;
     }
 
+    .spe-matrix thead th[data-rating-value="5"] { color: #34d399; }
+    .spe-matrix thead th[data-rating-value="4"] { color: #2dd4bf; }
+    .spe-matrix thead th[data-rating-value="3"] { color: #fbbf24; }
+    .spe-matrix thead th[data-rating-value="2"] { color: #fb923c; }
+    .spe-matrix thead th[data-rating-value="1"] { color: #f87171; }
+
     .spe-matrix tbody th {
       color: var(--text);
       text-align: left;
@@ -488,6 +494,8 @@
     }
 
     .spe-dot-option {
+      --rating-color: #22c55e;
+      --rating-color-soft: rgba(34, 197, 94, 0.16);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -498,8 +506,33 @@
       transition: background 0.2s ease;
     }
 
+    .spe-dot-option[data-rating-value="5"] {
+      --rating-color: #22c55e;
+      --rating-color-soft: rgba(34, 197, 94, 0.2);
+    }
+
+    .spe-dot-option[data-rating-value="4"] {
+      --rating-color: #14b8a6;
+      --rating-color-soft: rgba(20, 184, 166, 0.2);
+    }
+
+    .spe-dot-option[data-rating-value="3"] {
+      --rating-color: #f59e0b;
+      --rating-color-soft: rgba(245, 158, 11, 0.2);
+    }
+
+    .spe-dot-option[data-rating-value="2"] {
+      --rating-color: #f97316;
+      --rating-color-soft: rgba(249, 115, 22, 0.2);
+    }
+
+    .spe-dot-option[data-rating-value="1"] {
+      --rating-color: #ef4444;
+      --rating-color-soft: rgba(239, 68, 68, 0.2);
+    }
+
     .spe-dot-option:hover {
-      background: rgba(129, 140, 248, 0.1);
+      background: var(--rating-color-soft);
     }
 
     .spe-dot-option input {
@@ -512,14 +545,18 @@
       width: 18px;
       height: 18px;
       border-radius: 999px;
-      border: 2px solid rgba(34, 197, 94, 0.8);
+      border: 2px solid var(--rating-color);
       background: transparent;
       transition: all 0.2s ease;
     }
 
+    .spe-dot-option input:focus-visible + .spe-dot {
+      box-shadow: 0 0 0 3px var(--rating-color-soft);
+    }
+
     .spe-dot-option input:checked + .spe-dot {
-      background: rgba(34, 197, 94, 0.75);
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+      background: var(--rating-color);
+      box-shadow: 0 0 0 3px var(--rating-color-soft);
     }
 
     .spe-inline-radio {
@@ -789,7 +826,7 @@
                       <tr>
                         <th>Field</th>
                         <% ratingScale.forEach(option => { %>
-                          <th><%= option.label %></th>
+                          <th data-rating-value="<%= option.value %>"><%= option.label %></th>
                         <% }) %>
                       </tr>
                     </thead>
@@ -799,7 +836,7 @@
                           <th><%= field.label %></th>
                           <% ratingScale.forEach(option => { %>
                             <td>
-                              <label class="spe-dot-option" aria-label="<%= field.label %> - <%= option.label %>">
+                              <label class="spe-dot-option" data-rating-value="<%= option.value %>" aria-label="<%= field.label %> - <%= option.label %>">
                                 <input type="radio" name="rating_<%= field.key %>" value="<%= option.value %>" required>
                                 <span class="spe-dot"></span>
                               </label>
