@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title><%= pageTitle || 'Simple Performance Evaluation' %> - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .spe-shell {
+      display: grid;
+      gap: 14px;
+    }
+
+    .spe-hero {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(160deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.08) 38%, rgba(2, 6, 23, 0.08));
+      box-shadow: var(--card-shadow);
+      padding: 18px;
+    }
+
+    .spe-hero-grid {
+      display: grid;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .spe-hero-main {
+      display: grid;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .spe-header-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .spe-title {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.12;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .spe-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 74ch;
+    }
+
+    .spe-org-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 11px;
+      background: rgba(15, 23, 42, 0.3);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .spe-side-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .spe-side-note a {
+      color: var(--text);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.48);
+      font-weight: 700;
+      transition: border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .spe-side-note a:hover {
+      color: #e2e8f0;
+      border-color: rgba(226, 232, 240, 0.8);
+    }
+
+    .spe-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .spe-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      transition: all 0.2s ease;
+    }
+
+    .spe-tab:hover {
+      border-color: rgba(129, 140, 248, 0.5);
+      background: rgba(129, 140, 248, 0.12);
+    }
+
+    .spe-tab.active {
+      border-color: rgba(129, 140, 248, 0.74);
+      background: linear-gradient(135deg, rgba(129, 140, 248, 0.24), rgba(45, 212, 191, 0.14));
+      color: #f8fafc;
+      box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.12);
+    }
+
+    .spe-surface {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+    }
+
+    .spe-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .spe-section-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .spe-section-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .spe-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 6px;
+      margin-bottom: 14px;
+    }
+
+    .spe-stat {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.22);
+      padding: 12px;
+    }
+
+    .spe-stat-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .spe-stat-value {
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .spe-stat-note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .spe-flow {
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--field-bg);
+      padding: 12px 14px;
+    }
+
+    .spe-flow ol {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text);
+      font-size: 13px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .spe-flow strong {
+      color: var(--text);
+    }
+
+    .spe-history-filter-grid {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .spe-history-filter-note {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .spe-history-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .spe-history-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--field-bg);
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .spe-history-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .spe-history-head-right {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .spe-history-delete-form {
+      margin: 0;
+    }
+
+    .spe-history-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .spe-history-meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .spe-avg-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: rgba(34, 197, 94, 0.14);
+      color: #bbf7d0;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .spe-rating-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 8px;
+    }
+
+    .spe-rating-chip {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 9px;
+      background: rgba(255, 255, 255, 0.02);
+      display: grid;
+      gap: 3px;
+    }
+
+    .spe-rating-chip-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-weight: 700;
+    }
+
+    .spe-rating-chip-value {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .spe-note-block {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.18);
+      padding: 9px 10px;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .spe-empty {
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: var(--hover-bg);
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .spe-settings-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .spe-settings-row {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .spe-settings-field {
+      display: grid;
+      gap: 3px;
+    }
+
+    .spe-settings-field-name {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .spe-settings-field-key {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .spe-eval-layout {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .spe-side-panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--field-bg);
+      padding: 12px;
+      position: sticky;
+      top: 112px;
+    }
+
+    .spe-side-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .spe-side-list {
+      margin: 8px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .spe-side-item {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      display: grid;
+      gap: 3px;
+    }
+
+    .spe-side-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .spe-side-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .spe-side-value {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .spe-matrix-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-top: 8px;
+    }
+
+    .spe-matrix {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+
+    .spe-matrix th,
+    .spe-matrix td {
+      border-bottom: 1px solid var(--border);
+      padding: 9px 10px;
+      text-align: center;
+    }
+
+    .spe-matrix thead th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .spe-matrix thead th:first-child {
+      text-align: left;
+      min-width: 210px;
+    }
+
+    .spe-matrix tbody th {
+      color: var(--text);
+      text-align: left;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .spe-matrix tbody tr:nth-child(2n) {
+      background: rgba(148, 163, 184, 0.04);
+    }
+
+    .spe-dot-option {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .spe-dot-option:hover {
+      background: rgba(129, 140, 248, 0.1);
+    }
+
+    .spe-dot-option input {
+      opacity: 0;
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .spe-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 2px solid rgba(34, 197, 94, 0.8);
+      background: transparent;
+      transition: all 0.2s ease;
+    }
+
+    .spe-dot-option input:checked + .spe-dot {
+      background: rgba(34, 197, 94, 0.75);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+    }
+
+    .spe-inline-radio {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .spe-inline-radio label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media (max-width: 1080px) {
+      .spe-eval-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .spe-side-panel {
+        position: static;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .spe-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .spe-history-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .spe-stat-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .spe-title {
+        font-size: 23px;
+      }
+
+      .spe-history-filter-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'performance-evaluations' }) %>
+
+  <%
+    const selectedQuery = selectedMemberId ? `member=${encodeURIComponent(selectedMemberId)}` : ''
+    const overviewHref = '/performance-evaluations'
+    const newHref = `/performance-evaluations?view=new${selectedQuery ? `&${selectedQuery}` : ''}`
+    const settingsHref = `/performance-evaluations?view=settings${selectedQuery ? `&${selectedQuery}` : ''}`
+    const historyTimeFilterSummary = []
+    if (historyFilters?.date) historyTimeFilterSummary.push(`date ${historyFilters.date}`)
+    if (historyFilters?.month) historyTimeFilterSummary.push(`month ${historyFilters.month}`)
+  %>
+
+  <div class="container spe-shell">
+    <section class="spe-hero">
+      <div class="spe-hero-grid">
+        <div class="spe-hero-main">
+          <div class="spe-header-row">
+            <h1 class="spe-title"><%= pageTitle || 'Simple Performance Evaluation' %></h1>
+            <span class="spe-org-chip">
+              Current Org
+              <strong><%= organizationName %></strong>
+            </span>
+          </div>
+          <p class="spe-subtitle">
+            Quick, hierarchy-aware performance reviews for team leads and line managers in <%= organizationName %>.
+          </p>
+          <p class="spe-side-note">
+            Need advanced AI-powered evaluation?
+            <a href="<%= aiPoweredAppLaunchUrl %>">Use the full Performance Management app</a>.
+          </p>
+          <% if (!canEvaluate) { %>
+            <div class="spe-side-note">
+              You currently have read-only access to history in this workspace.
+            </div>
+          <% } %>
+        </div>
+      </div>
+
+      <nav class="spe-nav" aria-label="Simple Performance Workspace Navigation">
+        <a href="<%= overviewHref %>" class="spe-tab <%= viewMode === 'overview' ? 'active' : '' %>">Overview</a>
+        <a href="<%= newHref %>" class="spe-tab <%= viewMode === 'new' ? 'active' : '' %>">Evaluate New</a>
+        <% if (canManageFields) { %>
+          <a href="<%= settingsHref %>" class="spe-tab <%= viewMode === 'settings' ? 'active' : '' %>">Settings & Configuration</a>
+        <% } %>
+      </nav>
+    </section>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (viewMode === 'settings') { %>
+      <section class="spe-surface">
+        <div class="spe-section-head">
+          <div>
+            <h2 class="spe-section-title">Settings & Configuration</h2>
+            <p class="spe-section-subtitle">
+              Manage evaluation fields used in future submissions. Existing history remains unchanged.
+            </p>
+          </div>
+        </div>
+
+        <% if (!canManageFields) { %>
+          <div class="spe-empty">
+            You do not have permission to manage settings in this organization.
+          </div>
+        <% } else { %>
+          <div class="spe-flow">
+            <ol>
+              <li><strong>Create fields</strong> for the competencies you want managers to score.</li>
+              <li><strong>Delete fields</strong> you no longer need (minimum one field is required).</li>
+              <li>Changes apply to <strong>new evaluations only</strong>; past entries remain intact.</li>
+            </ol>
+          </div>
+
+          <% if (!evaluationFields || evaluationFields.length === 0) { %>
+            <div class="spe-empty" style="margin-top: 12px;">
+              No fields configured yet.
+            </div>
+          <% } else { %>
+            <div class="spe-settings-list">
+              <% evaluationFields.forEach(field => { %>
+                <div class="spe-settings-row">
+                  <div class="spe-settings-field">
+                    <span class="spe-settings-field-name"><%= field.label %></span>
+                    <span class="spe-settings-field-key"><%= field.key %></span>
+                  </div>
+                  <form method="POST" action="/performance-evaluations/fields/<%= encodeURIComponent(field.key) %>/delete" style="margin: 0;">
+                    <button type="submit" class="btn btn-danger btn-sm" <%= evaluationFields.length <= 1 ? 'disabled' : '' %>>Delete</button>
+                  </form>
+                </div>
+              <% }) %>
+            </div>
+          <% } %>
+
+          <form method="POST" action="/performance-evaluations/fields" style="margin-top: 14px;">
+            <div class="form-group">
+              <label for="fieldLabel">Add new field</label>
+              <input id="fieldLabel" name="fieldLabel" type="text" maxlength="120" placeholder="Example: Problem solving" required>
+            </div>
+            <div class="form-actions" style="margin-top: 10px;">
+              <button type="submit" class="btn btn-primary">Create Field</button>
+            </div>
+          </form>
+        <% } %>
+      </section>
+
+    <% } else if (viewMode === 'new') { %>
+      <section class="spe-surface">
+        <div class="spe-section-head">
+          <div>
+            <h2 class="spe-section-title">Evaluate New</h2>
+            <p class="spe-section-subtitle">Select an employee and submit a structured review.</p>
+          </div>
+        </div>
+
+        <% if (!canEvaluate) { %>
+          <div class="spe-empty">
+            You need active <strong>line_manager</strong> or <strong>team_lead</strong> scope to submit evaluations.
+          </div>
+        <% } else { %>
+          <form method="GET" action="/performance-evaluations">
+            <input type="hidden" name="view" value="new">
+            <div class="form-group">
+              <label for="member">Employee</label>
+              <select id="member" name="member" required>
+                <% evaluableMembers.forEach(member => { %>
+                  <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
+                    <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
+                  </option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="form-actions" style="margin-top: 8px;">
+              <button class="btn btn-secondary" type="submit">Load Employee</button>
+            </div>
+          </form>
+        <% } %>
+      </section>
+
+      <% if (canEvaluate && selectedMember) { %>
+        <% if (!evaluationFields || evaluationFields.length === 0) { %>
+          <section class="spe-surface">
+            <div class="spe-empty">
+              No evaluation fields are configured. Ask an admin/HR manager to set fields in Settings & Configuration.
+            </div>
+          </section>
+        <% } else { %>
+          <section class="spe-surface spe-eval-layout">
+            <form method="POST" action="/performance-evaluations">
+              <input type="hidden" name="evaluatedMemberId" value="<%= selectedMember.accountId %>">
+
+              <div class="form-group">
+                <label for="evaluationDate">Evaluation Date</label>
+                <input id="evaluationDate" type="date" name="evaluationDate" value="<%= new Date().toISOString().slice(0, 10) %>" required>
+              </div>
+
+              <div class="form-group">
+                <label>Rate the following fields</label>
+                <div class="spe-matrix-wrap">
+                  <table class="spe-matrix">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <% ratingScale.forEach(option => { %>
+                          <th><%= option.label %></th>
+                        <% }) %>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% evaluationFields.forEach(field => { %>
+                        <tr>
+                          <th><%= field.label %></th>
+                          <% ratingScale.forEach(option => { %>
+                            <td>
+                              <label class="spe-dot-option" aria-label="<%= field.label %> - <%= option.label %>">
+                                <input type="radio" name="rating_<%= field.key %>" value="<%= option.value %>" required>
+                                <span class="spe-dot"></span>
+                              </label>
+                            </td>
+                          <% }) %>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="improvements">Improvements</label>
+                <textarea id="improvements" name="improvements" rows="4" placeholder="What should improve next?"></textarea>
+              </div>
+
+              <div class="form-group">
+                <label for="additionalNotes">Additional Notes</label>
+                <textarea id="additionalNotes" name="additionalNotes" rows="3" placeholder="Optional details for context."></textarea>
+              </div>
+
+              <div class="form-group">
+                <label>Need a 1:1 with employee?</label>
+                <div class="spe-inline-radio">
+                  <label><input type="radio" name="needsOneOnOne" value="yes" required> Yes</label>
+                  <label><input type="radio" name="needsOneOnOne" value="no" required> No</label>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Submit Evaluation</button>
+                <a href="<%= overviewHref %>" class="btn btn-secondary">Cancel</a>
+              </div>
+            </form>
+
+            <aside class="spe-side-panel">
+              <h3 class="spe-side-title">Evaluation Context</h3>
+              <ul class="spe-side-list">
+                <li class="spe-side-item">
+                  <span class="spe-side-label">Employee</span>
+                  <span class="spe-side-value"><%= selectedMember.name %></span>
+                </li>
+                <li class="spe-side-item">
+                  <span class="spe-side-label">Email</span>
+                  <span class="spe-side-value"><%= selectedMember.email %></span>
+                </li>
+                <li class="spe-side-item">
+                  <span class="spe-side-label">Role</span>
+                  <span class="spe-side-value"><%= roleLabels[selectedMember.memberRole] || selectedMember.memberRoleLabel %></span>
+                </li>
+                <li class="spe-side-item">
+                  <span class="spe-side-label">Team Path</span>
+                  <span class="spe-side-value"><%= (selectedMember.teamHierarchyPath || []).join(' > ') || 'N/A' %></span>
+                </li>
+                <li class="spe-side-item">
+                  <span class="spe-side-label">Your Scope</span>
+                  <span class="spe-side-value"><%= selectedMember.scopeRoleLabel || selectedMember.scopeRole || 'Manager scope' %></span>
+                </li>
+              </ul>
+            </aside>
+          </section>
+        <% } %>
+      <% } %>
+
+    <% } else { %>
+      <section class="spe-surface">
+        <div class="spe-section-head">
+          <div>
+            <h2 class="spe-section-title">Overview</h2>
+            <p class="spe-section-subtitle">
+              Start from here: review activity, understand progress, then launch a new evaluation.
+            </p>
+          </div>
+        </div>
+
+        <div class="spe-stat-grid">
+          <article class="spe-stat">
+            <div class="spe-stat-label">Total Evaluations</div>
+            <div class="spe-stat-value"><%= historySummary?.totalEvaluations || 0 %></div>
+            <div class="spe-stat-note">Within current filter scope.</div>
+          </article>
+          <article class="spe-stat">
+            <div class="spe-stat-label">Employees Reviewed</div>
+            <div class="spe-stat-value"><%= historySummary?.evaluatedMembersCount || 0 %></div>
+            <div class="spe-stat-note">Unique members in history.</div>
+          </article>
+          <article class="spe-stat">
+            <div class="spe-stat-label">1:1 Requested</div>
+            <div class="spe-stat-value"><%= historySummary?.oneOnOneCount || 0 %></div>
+            <div class="spe-stat-note">Follow-up meetings flagged.</div>
+          </article>
+          <article class="spe-stat">
+            <div class="spe-stat-label">Average Score</div>
+            <div class="spe-stat-value"><%= Number(historySummary?.averageScore || 0).toFixed(2) %></div>
+            <div class="spe-stat-note">Across all displayed ratings.</div>
+          </article>
+        </div>
+
+        <div class="spe-flow">
+          <ol>
+            <li><strong>Use history filter</strong> to focus on one employee.</li>
+            <li><strong>Review previous ratings</strong> and notes for context.</li>
+            <li>Open the <strong>Evaluate New</strong> tab when ready to submit the next review.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="spe-surface">
+        <div class="spe-section-head">
+          <div>
+            <h2 class="spe-section-title">Evaluation History</h2>
+            <p class="spe-section-subtitle">
+              <%= selectedMember ? `Showing history for ${selectedMember.name}.` : 'Showing all evaluations in your accessible hierarchy.' %>
+              <% if (historyTimeFilterSummary.length > 0) { %>
+                Filtered by <%= historyTimeFilterSummary.join(' and ') %>.
+              <% } %>
+            </p>
+          </div>
+        </div>
+
+        <% if (canEvaluate && evaluableMembers && evaluableMembers.length > 0) { %>
+          <form method="GET" action="/performance-evaluations">
+            <div class="spe-history-filter-grid">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="member">Filter by employee</label>
+                <select id="member" name="member">
+                  <option value="" <%= !selectedMemberId ? 'selected' : '' %>>All employees</option>
+                  <% evaluableMembers.forEach(member => { %>
+                    <option value="<%= member.accountId %>" <%= selectedMemberId === member.accountId ? 'selected' : '' %>>
+                      <%= member.name %> (<%= member.email %>) - <%= member.teamHierarchyPath.join(' > ') %>
+                    </option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="date">Specific date</label>
+                <input id="date" name="date" type="date" value="<%= historyFilters?.date || '' %>">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="month">Month</label>
+                <input id="month" name="month" type="month" value="<%= historyFilters?.month || '' %>">
+              </div>
+            </div>
+            <input type="hidden" name="view" value="overview">
+            <div class="form-actions" style="margin-top: 8px;">
+              <button class="btn btn-secondary" type="submit">Apply Filter</button>
+              <a href="/performance-evaluations" class="btn btn-secondary">Clear All</a>
+            </div>
+            <p class="spe-history-filter-note">You can filter by employee, specific date, month, or a combination.</p>
+          </form>
+        <% } %>
+
+        <% if (!history || history.length === 0) { %>
+          <div class="spe-empty" style="margin-top: 12px;">
+            No evaluations yet. Completed evaluations will appear here.
+          </div>
+        <% } else { %>
+          <% const ratingLabelByValue = {}; %>
+          <% ratingScale.forEach(item => { ratingLabelByValue[item.value] = item.label; }); %>
+          <div class="spe-history-grid">
+            <% history.forEach(entry => { %>
+              <article class="spe-history-item">
+                <div class="spe-history-head">
+                  <div>
+                    <p class="spe-history-title">
+                      <%= entry.evaluatedMemberName || 'Team member' %>
+                      <% if (entry.evaluatedTeamName) { %>
+                        <span style="font-size:12px;color:var(--muted);font-weight:600;">- <%= entry.evaluatedTeamName %></span>
+                      <% } %>
+                    </p>
+                    <div class="spe-history-meta">
+                      Evaluated by <strong><%= entry.evaluatorName || entry.evaluatorEmail || 'Manager' %></strong>
+                      on <%= new Date(entry.evaluationDate || entry.createdAt).toLocaleDateString() %>
+                    </div>
+                  </div>
+                  <div class="spe-history-head-right">
+                    <span class="spe-avg-chip">Avg <%= Number(entry.averageRating || 0).toFixed(2) %>/5</span>
+                    <% if (entry.canDelete) { %>
+                      <form method="POST" action="/performance-evaluations/<%= encodeURIComponent(entry._id) %>/delete" class="spe-history-delete-form" onsubmit="return confirm('Remove this evaluation? This cannot be undone.');">
+                        <input type="hidden" name="view" value="overview">
+                        <% if (selectedMemberId) { %>
+                          <input type="hidden" name="member" value="<%= selectedMemberId %>">
+                        <% } %>
+                        <% if (historyFilters?.date) { %>
+                          <input type="hidden" name="date" value="<%= historyFilters.date %>">
+                        <% } %>
+                        <% if (historyFilters?.month) { %>
+                          <input type="hidden" name="month" value="<%= historyFilters.month %>">
+                        <% } %>
+                        <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                      </form>
+                    <% } %>
+                  </div>
+                </div>
+
+                <div class="spe-rating-grid">
+                  <% (entry.ratings || []).forEach(item => { %>
+                    <div class="spe-rating-chip">
+                      <span class="spe-rating-chip-label"><%= item.fieldLabel %></span>
+                      <span class="spe-rating-chip-value"><%= item.value %> - <%= ratingLabelByValue[item.value] || 'Rated' %></span>
+                    </div>
+                  <% }) %>
+                </div>
+
+                <div class="spe-note-block"><strong>Need 1:1:</strong> <%= entry.needsOneOnOne ? 'Yes' : 'No' %></div>
+                <% if (entry.improvements) { %>
+                  <div class="spe-note-block"><strong>Improvements:</strong> <%= entry.improvements %></div>
+                <% } %>
+                <% if (entry.additionalNotes) { %>
+                  <div class="spe-note-block"><strong>Additional notes:</strong> <%= entry.additionalNotes %></div>
+                <% } %>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+  </div>
+</body>
+
+</html>

@@ -13,6 +13,8 @@ import { Notification } from './models/Notification.js'
 import { OnboardingTemplate } from './models/OnboardingTemplate.js'
 import { OnboardingAssignment } from './models/OnboardingAssignment.js'
 import { OnboardingActivity } from './models/OnboardingActivity.js'
+import PerformanceEvaluation from './models/PerformanceEvaluation.js'
+import SimplePerformanceEvaluationConfig from './models/SimplePerformanceEvaluationConfig.js'
 import AppLaunchActivity from './models/AppLaunchActivity.js'
 import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
 import bcrypt from 'bcrypt'
@@ -25,6 +27,15 @@ import { emailService } from './services/emailService.js'
 import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
+import {
+  SIMPLE_PERFORMANCE_DEFAULT_FIELDS,
+  PERFORMANCE_RATING_SCALE,
+  TEAM_ROLE_LABELS,
+  buildSimplePerformanceFieldKey,
+  normalizeSimplePerformanceFieldLabel,
+  calculateAverageRating,
+  getEvaluableMembersForEvaluator
+} from './utils/performanceEvaluation.js'
 import {
   APP_ACCESS_MODE_SELECTED,
   buildValidAppIdSet,
@@ -3741,6 +3752,238 @@ const getSessionUser = async (req, res, next) => {
   next()
 }
 
+const getCurrentOrganizationContext = async (user) => {
+  const organizationId =
+    user?.currentOrganization?._id?.toString() ||
+    user?.currentOrganization?.toString() ||
+    null
+
+  if (!organizationId) {
+    return { error: 'Select an organization first.' }
+  }
+
+  const organization = await Organization.findById(organizationId)
+    .select('name members')
+    .lean()
+
+  if (!organization) {
+    return { error: 'Organization not found.' }
+  }
+
+  const memberRecord = organization.members?.find(
+    member => (
+      member.status === 'active' &&
+      member.account?.toString() === user._id.toString()
+    )
+  )
+
+  if (!memberRecord) {
+    return { error: 'You are not an active member of the current organization.' }
+  }
+
+  return {
+    organizationId,
+    organizationName: organization.name,
+    memberRole: memberRecord.role
+  }
+}
+
+const getQueryStringValue = (value) => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    return String(value[0])
+  }
+  return ''
+}
+
+const parseIsoDateFilterValue = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return null
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return null
+  }
+
+  const [year, month, day] = normalized.split('-').map(part => Number.parseInt(part, 10))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, day))
+  if (
+    start.getUTCFullYear() !== year ||
+    start.getUTCMonth() !== month - 1 ||
+    start.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+
+  return {
+    normalized,
+    start,
+    end
+  }
+}
+
+const parseIsoMonthFilterValue = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return null
+  }
+  if (!/^\d{4}-\d{2}$/.test(normalized)) {
+    return null
+  }
+
+  const [year, month] = normalized.split('-').map(part => Number.parseInt(part, 10))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return null
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, 1))
+  const end = new Date(Date.UTC(year, month, 1))
+
+  return {
+    normalized,
+    start,
+    end
+  }
+}
+
+const redirectToPerformanceEvaluations = (res, query = {}) => {
+  const params = new URLSearchParams()
+
+  Object.entries(query).forEach(([key, rawValue]) => {
+    if (rawValue === undefined || rawValue === null) return
+    const normalized = String(rawValue).trim()
+    if (!normalized) return
+    params.set(key, normalized)
+  })
+
+  const queryString = params.toString()
+  const location = queryString
+    ? `/performance-evaluations?${queryString}`
+    : '/performance-evaluations'
+
+  return res.redirect(location)
+}
+
+const SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+
+const buildDefaultSimplePerformanceFields = () => (
+  SIMPLE_PERFORMANCE_DEFAULT_FIELDS.map(field => ({
+    key: field.key,
+    label: field.label
+  }))
+)
+
+const normalizeSimplePerformanceFields = (fields = []) => {
+  const normalized = []
+  const existingKeys = new Set()
+
+  for (const field of fields) {
+    const label = normalizeSimplePerformanceFieldLabel(field?.label || field)
+    if (!label) continue
+
+    let key = String(field?.key || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48)
+
+    if (!key || existingKeys.has(key)) {
+      key = buildSimplePerformanceFieldKey(label, existingKeys)
+    }
+
+    existingKeys.add(key)
+    normalized.push({
+      key,
+      label
+    })
+  }
+
+  return normalized
+}
+
+const getComparableSimplePerformanceFields = (fields = []) => (
+  fields.map(field => ({
+    key: String(field?.key || ''),
+    label: String(field?.label || '')
+  }))
+)
+
+const ensureSimplePerformanceFieldConfig = async (organizationId, user = null) => {
+  let config = await SimplePerformanceEvaluationConfig.findOne({ organization: organizationId })
+
+  if (!config) {
+    config = await SimplePerformanceEvaluationConfig.create({
+      organization: organizationId,
+      fields: buildDefaultSimplePerformanceFields(),
+      updatedBy: user?._id || undefined,
+      updatedByName: user?.profile?.name || user?.email || undefined
+    })
+    return config
+  }
+
+  const normalizedFields = normalizeSimplePerformanceFields(config.fields)
+  const fallbackFields = normalizedFields.length > 0
+    ? normalizedFields
+    : buildDefaultSimplePerformanceFields()
+
+  const beforeFields = JSON.stringify(getComparableSimplePerformanceFields(config.fields))
+  const afterFields = JSON.stringify(getComparableSimplePerformanceFields(fallbackFields))
+  if (beforeFields !== afterFields) {
+    config.fields = fallbackFields
+    config.updatedBy = user?._id || config.updatedBy
+    config.updatedByName = user?.profile?.name || user?.email || config.updatedByName
+    await config.save()
+  }
+
+  return config
+}
+
+const canManageSimplePerformanceFields = ({ memberRole, canEvaluate }) => (
+  Boolean(canEvaluate) || SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(memberRole)
+)
+
+const normalizeEvaluationRatingsForHistory = (ratings = []) => {
+  if (Array.isArray(ratings)) {
+    return ratings
+      .filter(entry => entry && entry.fieldKey && entry.fieldLabel)
+      .map(entry => ({
+        fieldKey: String(entry.fieldKey),
+        fieldLabel: String(entry.fieldLabel),
+        value: Number(entry.value)
+      }))
+  }
+
+  if (ratings && typeof ratings === 'object') {
+    return Object.entries(ratings)
+      .filter(([, value]) => Number.isFinite(Number(value)))
+      .map(([fieldKey, value]) => ({
+        fieldKey: String(fieldKey),
+        fieldLabel: String(fieldKey),
+        value: Number(value)
+      }))
+  }
+
+  return []
+}
+
+const parsePerformanceRating = (value) => {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) {
+    return null
+  }
+  return parsed
+}
+
 const updateOnboardingAssignmentStatus = (assignment) => {
   if (assignment.status === 'cancelled') return
   const requiredItems = assignment.items.filter(item => item.required !== false)
@@ -4689,6 +4932,512 @@ const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
     : '/documents'
   return safeBackUrl || defaultBackUrl
 }
+
+app.get('/performance-evaluations', getSessionUser, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
+
+    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id
+    })
+    const canEvaluate = evaluableMembers.length > 0
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate
+    })
+
+    const requestedView = getQueryStringValue(req.query.view).trim().toLowerCase()
+    let viewMode = 'overview'
+    if (requestedView === 'new') {
+      viewMode = 'new'
+    } else if (requestedView === 'settings') {
+      viewMode = 'settings'
+    }
+
+    const requestedMemberId = getQueryStringValue(req.query.member).trim()
+    const requestedMember = requestedMemberId ? memberMap.get(requestedMemberId) : null
+    let selectedMember = requestedMember || null
+
+    // In "Evaluate New" mode, auto-select first evaluable member for convenience.
+    if (viewMode === 'new' && !selectedMember && canEvaluate) {
+      selectedMember = evaluableMembers[0]
+    }
+
+    const selectedMemberId = selectedMember?.accountId || ''
+    const historyQuery = { organization: orgContext.organizationId }
+    const requestedHistoryDate = getQueryStringValue(req.query.date).trim()
+    const requestedHistoryMonth = getQueryStringValue(req.query.month).trim()
+    const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
+    const parsedHistoryMonth = parseIsoMonthFilterValue(requestedHistoryMonth)
+
+    // History defaults to all evaluations. Only filter when a member is explicitly chosen.
+    if (requestedMember?.accountId) {
+      historyQuery.evaluatedMember = requestedMember.accountId
+    }
+
+    const historyDateRange = {}
+    if (parsedHistoryMonth) {
+      historyDateRange.$gte = parsedHistoryMonth.start
+      historyDateRange.$lt = parsedHistoryMonth.end
+    }
+    if (parsedHistoryDate) {
+      historyDateRange.$gte = historyDateRange.$gte
+        ? new Date(Math.max(historyDateRange.$gte.getTime(), parsedHistoryDate.start.getTime()))
+        : parsedHistoryDate.start
+      historyDateRange.$lt = historyDateRange.$lt
+        ? new Date(Math.min(historyDateRange.$lt.getTime(), parsedHistoryDate.end.getTime()))
+        : parsedHistoryDate.end
+    }
+    if (Object.keys(historyDateRange).length > 0) {
+      historyQuery.evaluationDate = historyDateRange
+    }
+
+    const history = await PerformanceEvaluation.find(historyQuery)
+      .sort({ evaluationDate: -1, createdAt: -1 })
+      .limit(80)
+      .lean()
+
+    const currentUserId = req.user._id?.toString() || ''
+    const evaluableMemberIdSet = new Set(evaluableMembers.map(member => member.accountId))
+    const canDeleteAnyEvaluation = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
+
+    const historyWithMetrics = history.map(entry => ({
+      ...entry,
+      ratings: normalizeEvaluationRatingsForHistory(entry.ratings),
+      averageRating: calculateAverageRating(entry.ratings),
+      canDelete: Boolean(
+        canDeleteAnyEvaluation ||
+        (currentUserId && String(entry.evaluator || '') === currentUserId) ||
+        evaluableMemberIdSet.has(String(entry.evaluatedMember || ''))
+      )
+    }))
+
+    const historySummary = {
+      totalEvaluations: historyWithMetrics.length,
+      evaluatedMembersCount: new Set(
+        historyWithMetrics
+          .map(entry => String(entry.evaluatedMember || ''))
+          .filter(Boolean)
+      ).size,
+      oneOnOneCount: historyWithMetrics.filter(entry => entry.needsOneOnOne).length,
+      averageScore: calculateAverageRating(historyWithMetrics.flatMap(entry => entry.ratings || []))
+    }
+
+    let errorMessage = getQueryStringValue(req.query.error)
+    if (requestedMemberId && !requestedMember && !errorMessage) {
+      errorMessage = 'Select a valid team member to evaluate.'
+    }
+    if (requestedHistoryDate && !parsedHistoryDate && !errorMessage) {
+      errorMessage = 'Use a valid date filter in YYYY-MM-DD format.'
+    }
+    if (requestedHistoryMonth && !parsedHistoryMonth && !errorMessage) {
+      errorMessage = 'Use a valid month filter in YYYY-MM format.'
+    }
+    if (viewMode === 'new' && !canEvaluate && !errorMessage) {
+      errorMessage = 'You do not have permission to submit evaluations in this organization.'
+    }
+    if (viewMode === 'settings' && !canManageFields) {
+      viewMode = 'overview'
+      if (!errorMessage) {
+        errorMessage = 'You do not have permission to manage evaluation settings.'
+      }
+    }
+
+    res.render('performance-evaluations', {
+      user: req.user,
+      activePage: 'performance-evaluations',
+      organizationName: orgContext.organizationName,
+      pageTitle: 'Simple Performance Evaluation',
+      aiPoweredAppLaunchUrl: '/launch/performance-management',
+      viewMode,
+      evaluableMembers,
+      selectedMember,
+      selectedMemberId,
+      evaluationFields,
+      history: historyWithMetrics,
+      historySummary,
+      ratingScale: PERFORMANCE_RATING_SCALE,
+      roleLabels: TEAM_ROLE_LABELS,
+      canEvaluate,
+      canManageFields,
+      historyFilters: {
+        date: parsedHistoryDate?.normalized || '',
+        month: parsedHistoryMonth?.normalized || ''
+      },
+      error: errorMessage,
+      success: getQueryStringValue(req.query.success)
+    })
+  } catch (error) {
+    console.error('Performance evaluations page error:', error)
+    res.redirect('/?error=Failed to load performance evaluations')
+  }
+})
+
+app.post('/performance-evaluations', getSessionUser, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
+    if (evaluationFields.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        error: 'Add at least one evaluation field before submitting evaluations.'
+      })
+    }
+
+    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id
+    })
+
+    if (evaluableMembers.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'overview',
+        error: 'You do not have permission to evaluate any member in this organization.'
+      })
+    }
+
+    const evaluatedMemberId = String(req.body.evaluatedMemberId || '').trim()
+    const selectedMember = memberMap.get(evaluatedMemberId)
+
+    if (!selectedMember) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        error: 'Select a valid member to evaluate.'
+      })
+    }
+
+    const ratings = []
+    for (const field of evaluationFields) {
+      const parsedValue = parsePerformanceRating(req.body[`rating_${field.key}`])
+      if (!parsedValue) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          member: evaluatedMemberId,
+          error: `${field.label} rating is required.`
+        })
+      }
+      ratings.push({
+        fieldKey: field.key,
+        fieldLabel: field.label,
+        value: parsedValue
+      })
+    }
+
+    const evaluationDateRaw = String(req.body.evaluationDate || '').trim()
+    let evaluationDate = new Date()
+    if (evaluationDateRaw) {
+      const parsedDate = new Date(evaluationDateRaw)
+      if (Number.isNaN(parsedDate.getTime())) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          member: evaluatedMemberId,
+          error: 'Enter a valid evaluation date.'
+        })
+      }
+      evaluationDate = parsedDate
+    }
+
+    const needsOneOnOneValue = String(req.body.needsOneOnOne || '').trim().toLowerCase()
+    if (!['yes', 'no'].includes(needsOneOnOneValue)) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        member: evaluatedMemberId,
+        error: 'Select whether a 1:1 meeting is needed.'
+      })
+    }
+
+    const evaluatorName = req.user.profile?.name || req.user.email || 'Evaluator'
+
+    await PerformanceEvaluation.create({
+      organization: orgContext.organizationId,
+      evaluator: req.user._id,
+      evaluatorName,
+      evaluatorEmail: req.user.email,
+      evaluatorScopeRole: selectedMember.scopeRole,
+      evaluatedMember: selectedMember.accountId,
+      evaluatedMemberName: selectedMember.name,
+      evaluatedMemberEmail: selectedMember.email,
+      evaluatedMemberRole: selectedMember.memberRole,
+      evaluatedTeam: selectedMember.teamId || null,
+      evaluatedTeamName: selectedMember.teamName || '',
+      evaluatedTeamPath: selectedMember.teamHierarchyPath || [],
+      evaluationDate,
+      ratings,
+      improvements: String(req.body.improvements || '').trim(),
+      additionalNotes: String(req.body.additionalNotes || '').trim(),
+      needsOneOnOne: needsOneOnOneValue === 'yes'
+    })
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'overview',
+      success: 'Performance evaluation submitted.'
+    })
+  } catch (error) {
+    console.error('Submit performance evaluation error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'new',
+      member: String(req.body.evaluatedMemberId || '').trim(),
+      error: 'Failed to submit evaluation.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const requestedMemberId = getQueryStringValue(req.body.member).trim()
+    const requestedHistoryDate = getQueryStringValue(req.body.date).trim()
+    const requestedHistoryMonth = getQueryStringValue(req.body.month).trim()
+    const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
+    const parsedHistoryMonth = parseIsoMonthFilterValue(requestedHistoryMonth)
+
+    const redirectQuery = {
+      view: 'overview'
+    }
+    if (parsedHistoryDate) {
+      redirectQuery.date = parsedHistoryDate.normalized
+    }
+    if (parsedHistoryMonth) {
+      redirectQuery.month = parsedHistoryMonth.normalized
+    }
+
+    const evaluationId = String(req.params.evaluationId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(evaluationId)) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'Invalid evaluation record.'
+      })
+    }
+
+    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id
+    })
+
+    if (requestedMemberId && memberMap.has(requestedMemberId)) {
+      redirectQuery.member = requestedMemberId
+    }
+
+    const evaluation = await PerformanceEvaluation.findOne({
+      _id: evaluationId,
+      organization: orgContext.organizationId
+    })
+      .select('_id evaluator evaluatedMember')
+      .lean()
+
+    if (!evaluation) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'Evaluation record not found.'
+      })
+    }
+
+    const currentUserId = req.user._id?.toString() || ''
+    const evaluatedMemberId = String(evaluation.evaluatedMember || '')
+    const evaluatorId = String(evaluation.evaluator || '')
+    const evaluableMemberIdSet = new Set(evaluableMembers.map(member => member.accountId))
+    const canDeleteAnyEvaluation = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
+    const canDeleteEvaluation = Boolean(
+      canDeleteAnyEvaluation ||
+      (currentUserId && evaluatorId === currentUserId) ||
+      evaluableMemberIdSet.has(evaluatedMemberId)
+    )
+
+    if (!canDeleteEvaluation) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'You do not have permission to remove this evaluation.'
+      })
+    }
+
+    await PerformanceEvaluation.deleteOne({
+      _id: evaluationId,
+      organization: orgContext.organizationId
+    })
+
+    return redirectToPerformanceEvaluations(res, {
+      ...redirectQuery,
+      success: 'Evaluation removed.'
+    })
+  } catch (error) {
+    console.error('Delete performance evaluation error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'overview',
+      error: 'Failed to remove evaluation.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/fields', getSessionUser, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id
+    })
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate: evaluableMembers.length > 0
+    })
+
+    if (!canManageFields) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'You do not have permission to manage evaluation fields.'
+      })
+    }
+
+    const fieldLabel = normalizeSimplePerformanceFieldLabel(req.body.fieldLabel)
+    if (!fieldLabel) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Field name is required.'
+      })
+    }
+
+    const config = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const fields = normalizeSimplePerformanceFields(config.fields)
+
+    const hasDuplicate = fields.some(field => field.label.toLowerCase() === fieldLabel.toLowerCase())
+    if (hasDuplicate) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'A field with this name already exists.'
+      })
+    }
+
+    const existingKeys = new Set(fields.map(field => field.key))
+    const newFieldKey = buildSimplePerformanceFieldKey(fieldLabel, existingKeys)
+
+    config.fields = [
+      ...fields,
+      {
+        key: newFieldKey,
+        label: fieldLabel,
+        createdBy: req.user._id,
+        createdByName: req.user.profile?.name || req.user.email || 'User'
+      }
+    ]
+    config.updatedBy = req.user._id
+    config.updatedByName = req.user.profile?.name || req.user.email || 'User'
+    await config.save()
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      success: 'Evaluation field created.'
+    })
+  } catch (error) {
+    console.error('Create evaluation field error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      error: 'Failed to create evaluation field.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id
+    })
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate: evaluableMembers.length > 0
+    })
+
+    if (!canManageFields) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'You do not have permission to manage evaluation fields.'
+      })
+    }
+
+    const fieldKey = String(req.params.fieldKey || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48)
+
+    if (!fieldKey) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Invalid field key.'
+      })
+    }
+
+    const config = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const fields = normalizeSimplePerformanceFields(config.fields)
+    if (fields.length <= 1) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'At least one evaluation field is required.'
+      })
+    }
+
+    const remainingFields = fields.filter(field => field.key !== fieldKey)
+    if (remainingFields.length === fields.length) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Field not found.'
+      })
+    }
+
+    if (remainingFields.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'At least one evaluation field is required.'
+      })
+    }
+
+    config.fields = remainingFields
+    config.updatedBy = req.user._id
+    config.updatedByName = req.user.profile?.name || req.user.email || 'User'
+    await config.save()
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      success: 'Evaluation field deleted.'
+    })
+  } catch (error) {
+    console.error('Delete evaluation field error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      error: 'Failed to delete evaluation field.'
+    })
+  }
+})
+
+app.get('/simple-performance-evaluation', getSessionUser, async (req, res) => {
+  const query = new URLSearchParams(req.query).toString()
+  return res.redirect(`/performance-evaluations${query ? `?${query}` : ''}`)
+})
 
 // View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
 app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {

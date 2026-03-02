@@ -16,6 +16,8 @@
   --text: #ffffff;
   --text-secondary: #a1a1aa;
   --muted: #a1a1aa;
+  --disabled-text: #71717a;
+  --placeholder-text: rgba(161, 161, 170, 0.58);
   --brand: #818cf8;
   --brand-2: #a855f7;
   --accent: #818cf8;
@@ -26,6 +28,11 @@
   --halo-opacity: 0.12;
   --noise-opacity: 0.05;
   --input-bg: rgba(255, 255, 255, 0.05);
+  --field-bg: rgba(10, 13, 20, 0.76);
+  --field-border: rgba(255, 255, 255, 0.12);
+  --field-focus-bg: rgba(11, 15, 24, 0.9);
+  --field-focus-border: rgba(129, 140, 248, 0.45);
+  --field-focus-ring: rgba(129, 140, 248, 0.12);
   --hover-bg: rgba(255, 255, 255, 0.04);
   --card-bg: linear-gradient(175deg, rgba(24, 24, 27, 0.6), rgba(24, 24, 27, 0.3));
 
@@ -60,6 +67,8 @@
   --text: #09090b;
   --text-secondary: #52525b;
   --muted: #71717a;
+  --disabled-text: #a1a1aa;
+  --placeholder-text: rgba(113, 113, 122, 0.62);
   --brand: #6366f1;
   --brand-2: #a855f7;
   --accent: #6366f1;
@@ -70,6 +79,11 @@
   --halo-opacity: 0.04;
   --noise-opacity: 0.02;
   --input-bg: rgba(255, 255, 255, 0.8);
+  --field-bg: rgba(255, 255, 255, 0.94);
+  --field-border: rgba(15, 23, 42, 0.14);
+  --field-focus-bg: #ffffff;
+  --field-focus-border: rgba(99, 102, 241, 0.4);
+  --field-focus-ring: rgba(99, 102, 241, 0.1);
   --hover-bg: rgba(0, 0, 0, 0.04);
   --card-bg: #ffffff;
 
@@ -2745,15 +2759,21 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
+input[type="date"],
+input[type="month"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
 select,
 textarea {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--input-bg);
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
   color: var(--text);
   font-size: 15px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition: all 0.2s ease;
 }
 
@@ -2761,12 +2781,24 @@ textarea {
 :root:not([data-theme="light"]) select,
 html:not([data-theme="light"]) select,
 [data-theme="dark"] select,
-.dark select {
+.dark select,
+:root:not([data-theme="light"]) input[type="date"],
+html:not([data-theme="light"]) input[type="date"],
+[data-theme="dark"] input[type="date"],
+.dark input[type="date"],
+:root:not([data-theme="light"]) input[type="month"],
+html:not([data-theme="light"]) input[type="month"],
+[data-theme="dark"] input[type="month"],
+.dark input[type="month"] {
   color-scheme: dark;
 }
 
 [data-theme="light"] select,
-.light select {
+.light select,
+[data-theme="light"] input[type="date"],
+.light input[type="date"],
+[data-theme="light"] input[type="month"],
+.light input[type="month"] {
   color-scheme: light;
 }
 
@@ -2778,15 +2810,17 @@ select optgroup {
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--disabled-text);
+  color: var(--placeholder-text);
+  opacity: 1;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(129, 140, 248, 0.6);
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+  border-color: var(--field-focus-border);
+  background: var(--field-focus-bg);
+  box-shadow: 0 0 0 2px var(--field-focus-ring);
 }
 
 textarea {
