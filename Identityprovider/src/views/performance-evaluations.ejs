@@ -305,12 +305,44 @@
     }
 
     .spe-rating-chip {
+      --rating-color: var(--text);
+      --rating-color-soft: rgba(148, 163, 184, 0.08);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 7px 9px;
-      background: rgba(255, 255, 255, 0.02);
+      background: linear-gradient(135deg, var(--rating-color-soft), rgba(255, 255, 255, 0.02) 62%);
       display: grid;
       gap: 3px;
+    }
+
+    .spe-rating-chip[data-rating-value="5"] {
+      --rating-color: #22c55e;
+      --rating-color-soft: rgba(34, 197, 94, 0.16);
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .spe-rating-chip[data-rating-value="4"] {
+      --rating-color: #14b8a6;
+      --rating-color-soft: rgba(20, 184, 166, 0.16);
+      border-color: rgba(20, 184, 166, 0.3);
+    }
+
+    .spe-rating-chip[data-rating-value="3"] {
+      --rating-color: #f59e0b;
+      --rating-color-soft: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .spe-rating-chip[data-rating-value="2"] {
+      --rating-color: #f97316;
+      --rating-color-soft: rgba(249, 115, 22, 0.16);
+      border-color: rgba(249, 115, 22, 0.3);
+    }
+
+    .spe-rating-chip[data-rating-value="1"] {
+      --rating-color: #ef4444;
+      --rating-color-soft: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.3);
     }
 
     .spe-rating-chip-label {
@@ -322,7 +354,7 @@
     }
 
     .spe-rating-chip-value {
-      color: var(--text);
+      color: var(--rating-color);
       font-size: 13px;
       font-weight: 700;
     }
@@ -1074,7 +1106,7 @@
 
                 <div class="spe-rating-grid">
                   <% (entry.ratings || []).forEach(item => { %>
-                    <div class="spe-rating-chip">
+                    <div class="spe-rating-chip" data-rating-value="<%= Number(item.value) %>">
                       <span class="spe-rating-chip-label"><%= item.fieldLabel %></span>
                       <span class="spe-rating-chip-value"><%= item.value %> - <%= ratingLabelByValue[item.value] || 'Rated' %></span>
                     </div>
