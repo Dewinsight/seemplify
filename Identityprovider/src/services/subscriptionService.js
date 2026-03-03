@@ -576,6 +576,7 @@ class SubscriptionService {
         leaveManagement: false,
         payrollManagement: false,
         performanceManagement: false,
+        timeAttendance: false,
         outlineDocs: false,
         aiChat: false,
         lms: false
@@ -594,7 +595,8 @@ class SubscriptionService {
       return {
         maxMembers: 0,
         maxTeams: 0,
-        maxStorage: 0
+        maxStorage: 0,
+        maxSystemCourses: null
       }
     }
 

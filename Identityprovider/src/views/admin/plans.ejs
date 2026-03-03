@@ -85,6 +85,7 @@
                       <% const limits = plan.limits.toObject ? plan.limits.toObject() : plan.limits; %>
                       <div>Members: <%= limits.maxMembers === null ? 'Unlimited' : limits.maxMembers %></div>
                       <div>Teams: <%= limits.maxTeams === null ? 'Unlimited' : limits.maxTeams %></div>
+                      <div>System Courses: <%= limits.maxSystemCourses === null || limits.maxSystemCourses === undefined ? 'Unlimited' : limits.maxSystemCourses %></div>
                     </div>
                   </td>
                   <td>
@@ -180,6 +181,14 @@
             <div class="admin-form-group">
               <label class="admin-form-label">Max Teams</label>
               <input type="number" id="maxTeams" name="maxTeams" class="admin-form-input" placeholder="Leave empty for unlimited">
+            </div>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max System Courses</label>
+              <input type="number" id="maxSystemCourses" name="maxSystemCourses" class="admin-form-input" placeholder="Leave empty for unlimited">
+              <small style="color: var(--muted);">How many approved system courses this plan can access (null = unlimited)</small>
             </div>
           </div>
 
@@ -360,8 +369,9 @@
           document.getElementById('planDescription').value = plan.description || '';
           document.getElementById('pricingMonthly').value = plan.pricing?.monthly || 0;
           document.getElementById('pricingYearly').value = plan.pricing?.yearly || 0;
-          document.getElementById('maxMembers').value = plan.limits?.maxMembers || '';
-          document.getElementById('maxTeams').value = plan.limits?.maxTeams || '';
+          document.getElementById('maxMembers').value = plan.limits?.maxMembers ?? '';
+          document.getElementById('maxTeams').value = plan.limits?.maxTeams ?? '';
+          document.getElementById('maxSystemCourses').value = plan.limits?.maxSystemCourses ?? '';
           document.getElementById('displayOrder').value = plan.displayOrder || 0;
           document.getElementById('planColor').value = plan.color || '#6366f1';
           document.getElementById('badgeText').value = plan.badgeText || '';
@@ -428,7 +438,8 @@
         },
         limits: {
           maxMembers: document.getElementById('maxMembers').value ? parseInt(document.getElementById('maxMembers').value) : null,
-          maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null
+          maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null,
+          maxSystemCourses: document.getElementById('maxSystemCourses').value ? parseInt(document.getElementById('maxSystemCourses').value) : null
         },
         features: {
           recruiter: document.getElementById('featureRecruiter').checked,

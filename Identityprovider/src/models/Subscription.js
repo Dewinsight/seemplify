@@ -88,7 +88,8 @@ const SubscriptionSchema = new mongoose.Schema({
   customLimits: {
     maxMembers: { type: Number },
     maxTeams: { type: Number },
-    maxStorage: { type: Number }
+    maxStorage: { type: Number },
+    maxSystemCourses: { type: Number }
   },
 
   // Features Override (admin can grant additional features)
@@ -227,17 +228,22 @@ SubscriptionSchema.methods.getEffectiveLimits = async function() {
     return {
       maxMembers: 0,
       maxTeams: 0,
-      maxStorage: 0
+      maxStorage: 0,
+      maxSystemCourses: null
     }
   }
 
   const planLimits = this.plan.limits.toObject()
   const customLimits = this.customLimits?.toObject() || {}
+  const limitKeys = ['maxMembers', 'maxTeams', 'maxStorage', 'maxSystemCourses']
 
-  return Object.keys(planLimits).reduce((acc, key) => {
+  return limitKeys.reduce((acc, key) => {
+    const planValue = Object.prototype.hasOwnProperty.call(planLimits, key)
+      ? planLimits[key]
+      : null
     acc[key] = customLimits[key] !== undefined && customLimits[key] !== null
       ? customLimits[key]
-      : planLimits[key]
+      : planValue
     return acc
   }, {})
 }

@@ -32,7 +32,8 @@ const PlanSchema = new mongoose.Schema({
   limits: {
     maxMembers: { type: Number, default: null }, // null = unlimited
     maxTeams: { type: Number, default: null },   // null = unlimited
-    maxStorage: { type: Number, default: null }  // In GB, null = unlimited
+    maxStorage: { type: Number, default: null }, // In GB, null = unlimited
+    maxSystemCourses: { type: Number, default: null } // null = unlimited
   },
 
   // Hub card visibility: appIds to hide from the hub for this plan (card not shown at all)

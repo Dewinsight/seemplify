@@ -1,0 +1,2237 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Simple LMS - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .lms-shell { display: grid; gap: 14px; }
+    .lms-hero {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(150deg, rgba(56, 189, 248, 0.15), rgba(30, 64, 175, 0.1) 38%, rgba(15, 23, 42, 0.14));
+      box-shadow: var(--card-shadow);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+    .lms-title {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .lms-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 72ch;
+      line-height: 1.5;
+    }
+    .lms-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .lms-chip {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.35);
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .lms-chip--warn {
+      border-color: rgba(251, 191, 36, 0.5);
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+    }
+    .lms-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .lms-tab {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 9px 13px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      transition: all .2s ease;
+    }
+    .lms-tab:hover {
+      border-color: rgba(56, 189, 248, .55);
+      background: rgba(56, 189, 248, .15);
+    }
+    .lms-tab.active {
+      border-color: rgba(56, 189, 248, .75);
+      background: linear-gradient(135deg, rgba(56, 189, 248, .24), rgba(59, 130, 246, .15));
+      color: #f8fafc;
+    }
+    .lms-surface {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 15px;
+      display: grid;
+      gap: 10px;
+    }
+    .lms-section-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+    .lms-section-subtitle {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .lms-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
+    .lms-stat {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: rgba(15, 23, 42, 0.3);
+      padding: 11px;
+      display: grid;
+      gap: 4px;
+    }
+    .lms-stat-label {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .lms-stat-value {
+      font-size: 24px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      font-weight: 800;
+      line-height: 1;
+    }
+    .lms-panel {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--field-bg);
+      padding: 12px;
+      display: grid;
+      gap: 7px;
+    }
+    .lms-panel h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 16px;
+    }
+    .lms-panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .lms-course-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--field-bg);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .lms-course-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .lms-course-meta {
+      color: var(--muted);
+      font-size: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .lms-course-summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      min-height: 38px;
+    }
+    .lms-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.16);
+      overflow: hidden;
+    }
+    .lms-progress > span {
+      display: block;
+      height: 100%;
+      width: var(--progress, 0%);
+      background: linear-gradient(90deg, #14b8a6, #22d3ee);
+    }
+    .lms-empty {
+      border: 1px dashed var(--border);
+      border-radius: 11px;
+      background: var(--hover-bg);
+      color: var(--muted);
+      text-align: center;
+      padding: 20px;
+      font-size: 14px;
+    }
+    .lms-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .lms-pill {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      display: inline-flex;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.4);
+      color: var(--text);
+    }
+    .lms-pill.pending { color: #fbbf24; border-color: rgba(251, 191, 36, .4); }
+    .lms-pill.approved { color: #4ade80; border-color: rgba(74, 222, 128, .35); }
+    .lms-pill.rejected { color: #f87171; border-color: rgba(248, 113, 113, .35); }
+    .lms-surface .input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 9px 11px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .lms-surface .input:focus {
+      border-color: rgba(56, 189, 248, .65);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, .17);
+    }
+    .lms-surface input::placeholder,
+    .lms-surface textarea::placeholder {
+      color: rgba(148, 163, 184, 0.7);
+    }
+    .lms-builder-shell {
+      gap: 14px;
+    }
+    .lms-builder-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .lms-builder-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .lms-builder-stat {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.35);
+      padding: 7px 10px;
+      font-size: 12px;
+      color: var(--text);
+      display: inline-flex;
+      gap: 6px;
+      align-items: baseline;
+    }
+    .lms-builder-stat strong {
+      font-size: 15px;
+      color: #e2f3ff;
+    }
+    .lms-builder-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .lms-builder-main,
+    .lms-builder-side {
+      display: grid;
+      gap: 12px;
+    }
+    .lms-builder-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background:
+        radial-gradient(120% 140% at 10% 0%, rgba(56, 189, 248, 0.12), rgba(56, 189, 248, 0) 42%),
+        rgba(15, 23, 42, 0.3);
+      padding: 13px;
+      display: grid;
+      gap: 10px;
+    }
+    .lms-builder-card h3 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .lms-builder-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .lms-builder-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .lms-builder-field {
+      display: grid;
+      gap: 5px;
+    }
+    .lms-builder-field label {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .lms-builder-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .lms-builder-divider {
+      border: 0;
+      border-top: 1px dashed var(--border);
+      margin: 2px 0;
+    }
+    .lms-builder-help {
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.25);
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .lms-builder-help strong {
+      color: var(--text);
+    }
+    .lms-builder-step {
+      display: grid;
+      gap: 4px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.25);
+      padding: 9px 10px;
+    }
+    .lms-builder-step-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .lms-builder-step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .lms-owned-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
+    .lms-banner-preview {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(2, 6, 23, 0.55);
+      max-width: 320px;
+      margin-top: 4px;
+    }
+    .lms-banner-preview.active {
+      display: block;
+    }
+    .lms-banner-preview img {
+      display: block;
+      width: 100%;
+      max-height: 160px;
+      object-fit: cover;
+    }
+    .lms-curriculum-builder {
+      display: grid;
+      gap: 10px;
+    }
+    .lms-curriculum-chapter {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.34);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .lms-curriculum-chapter-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .lms-curriculum-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .lms-curriculum-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .lms-mini-btn {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.55);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+    .lms-mini-btn:hover {
+      border-color: rgba(56, 189, 248, .55);
+      background: rgba(56, 189, 248, .16);
+    }
+    .lms-curriculum-lessons {
+      display: grid;
+      gap: 8px;
+    }
+    .lms-curriculum-lesson {
+      border: 1px solid rgba(148, 163, 184, .25);
+      border-radius: 9px;
+      background: rgba(15, 23, 42, 0.28);
+      padding: 9px;
+      display: grid;
+      gap: 7px;
+    }
+    .lms-curriculum-view {
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.22);
+      padding: 8px 10px;
+    }
+    .lms-curriculum-view summary {
+      cursor: pointer;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .lms-curriculum-view ol {
+      margin: 7px 0 0 18px;
+      padding: 0;
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .lms-curriculum-view ul {
+      margin: 3px 0 0 14px;
+      padding: 0;
+      display: grid;
+      gap: 3px;
+      list-style: disc;
+    }
+    .lms-pathway-builder {
+      display: grid;
+      gap: 8px;
+    }
+    .lms-pathway-step {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.34);
+      padding: 10px;
+      display: grid;
+      gap: 7px;
+    }
+    .lms-pathway-step-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: -0.01em;
+    }
+    .lms-pathway-step-index {
+      width: 21px;
+      height: 21px;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, .45);
+      background: rgba(56, 189, 248, .16);
+      color: #bae6fd;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .lms-pathway-step-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .lms-pathway-required {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .lms-pathway-required input {
+      accent-color: #22d3ee;
+    }
+    @media (max-width: 1120px) {
+      .lms-builder-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'home' }) %>
+  <%
+    const href = (nextView) => `/simple-lms?view=${encodeURIComponent(nextView)}`
+  %>
+  <div class="container lms-shell">
+    <section class="lms-hero">
+      <div>
+        <h1 class="lms-title">Simple LMS</h1>
+        <p class="lms-subtitle">
+          Team-aware learning inside IDP: create courses, build programs, assign by hierarchy, track completion, and manage course requests.
+        </p>
+      </div>
+      <div class="lms-chip-row">
+        <span class="lms-chip">Organization: <%= organizationName %></span>
+        <span class="lms-chip">Plan: <%= planAccess?.planName || 'No active plan' %></span>
+        <span class="lms-chip">Approved System Courses: <%= approvedSystemCourseRequests || 0 %><%= planAccess?.maxSystemCourses === null ? '' : ` / ${planAccess?.maxSystemCourses ?? 0}` %></span>
+        <% if (!planAccess?.hasLmsFeature) { %>
+          <span class="lms-chip lms-chip--warn">LMS not enabled on this plan</span>
+        <% } %>
+      </div>
+      <nav class="lms-nav" aria-label="Simple LMS Navigation">
+        <a class="lms-tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= href('overview') %>">Overview</a>
+        <a class="lms-tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= href('my-learning') %>">My Learning</a>
+        <a class="lms-tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= href('catalog') %>">Course Catalog</a>
+        <% if (canAssignCourses) { %>
+          <a class="lms-tab <%= viewMode === 'manage' ? 'active' : '' %>" href="<%= href('manage') %>">Assignments & Progress</a>
+        <% } %>
+        <% if (canCreateCourses) { %>
+          <a class="lms-tab <%= viewMode === 'course-studio' || viewMode === 'builder' ? 'active' : '' %>" href="<%= href('course-studio') %>">Course Studio</a>
+          <a class="lms-tab <%= viewMode === 'program-studio' ? 'active' : '' %>" href="<%= href('program-studio') %>">Program Studio</a>
+        <% } %>
+        <a class="lms-tab <%= viewMode === 'requests' ? 'active' : '' %>" href="<%= href('requests') %>">Requests</a>
+      </nav>
+    </section>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (!planAccess?.hasLmsFeature) { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">LMS Not Enabled</h2>
+        <p class="lms-section-subtitle">Your current plan does not include LMS access. Ask your owner/admin to update the subscription plan.</p>
+        <div class="lms-actions">
+          <a href="/subscription" class="btn btn-primary">Open Subscription</a>
+          <a href="/plans" class="btn btn-secondary">View Plans</a>
+        </div>
+      </section>
+    <% } else if (viewMode === 'overview') { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">Overview</h2>
+        <p class="lms-section-subtitle">Start here: understand your LMS scope, recent learning activity, and pending review actions.</p>
+        <div class="lms-grid">
+          <article class="lms-stat"><span class="lms-stat-label">My Enrollments</span><span class="lms-stat-value"><%= (myEnrollments || []).length %></span></article>
+          <article class="lms-stat"><span class="lms-stat-label">Courses I Own</span><span class="lms-stat-value"><%= (ownedCourses || []).length %></span></article>
+          <article class="lms-stat"><span class="lms-stat-label">Managed Members</span><span class="lms-stat-value"><%= scopeSummary?.manageableMembers || 0 %></span></article>
+          <article class="lms-stat"><span class="lms-stat-label">Pending Requests</span><span class="lms-stat-value"><%= (myRequests || []).filter(r => r.status === 'pending').length %></span></article>
+        </div>
+        <div class="lms-grid">
+          <article class="lms-panel"><h3>How it works</h3><p>1. Create or edit courses in Course Studio.</p><p>2. Build or edit pathways in Program Studio.</p><p>3. Assign learning by team/member/organization.</p><p>4. Track completion and request publish rights.</p></article>
+          <article class="lms-panel"><h3>Hierarchy rules</h3><p>Owner/Admin/HR Manager can manage all teams and members.</p><p>Line Managers and Team Leads can act within their hierarchy scope.</p><p>Members see only their own learning history and assignments.</p></article>
+          <article class="lms-panel"><h3>System courses</h3><p>Marketplace courses marked as <strong>System</strong> require request + review.</p><p>Payment status is tracked on each request where pricing is enabled.</p></article>
+        </div>
+      </section>
+    <% } else if (viewMode === 'my-learning') { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">My Learning</h2>
+        <p class="lms-section-subtitle">Your assigned courses, progress, and quick completion actions.</p>
+        <% if (!myEnrollments || myEnrollments.length === 0) { %>
+          <div class="lms-empty">No learning assignments yet.</div>
+        <% } else { %>
+          <div class="lms-grid">
+            <% myEnrollments.forEach(enrollment => { %>
+              <article class="lms-course-card">
+                <h3 class="lms-course-title"><%= enrollment.course?.title || 'Course' %></h3>
+                <div class="lms-course-meta">
+                  <span>Status: <strong><%= enrollment.status %></strong></span>
+                  <span>Progress: <strong><%= enrollment.progressPercent || 0 %>%</strong></span>
+                  <% if (enrollment.course?.lessonCount) { %><span>Lessons: <%= enrollment.course.lessonCount %></span><% } %>
+                </div>
+                <div class="lms-progress"><span style="--progress: <%= enrollment.progressPercent || 0 %>%"></span></div>
+                <p class="lms-course-summary"><%= enrollment.course?.summary || 'No summary provided.' %></p>
+                <% 
+                  const myCurriculumChapters = enrollment.course?.chapters || []
+                  const myCurriculumLessonCount = myCurriculumChapters.reduce((sum, chapter) => sum + ((chapter?.lessons || []).length), 0)
+                %>
+                <% if (myCurriculumChapters.length > 0) { %>
+                  <details class="lms-curriculum-view">
+                    <summary>View Curriculum (<%= myCurriculumChapters.length %> chapters, <%= myCurriculumLessonCount %> lessons)</summary>
+                    <ol>
+                      <% myCurriculumChapters.forEach((chapter) => { %>
+                        <li>
+                          <strong><%= chapter?.title || 'Chapter' %></strong>
+                          <% if ((chapter?.lessons || []).length > 0) { %>
+                            <ul>
+                              <% chapter.lessons.forEach((lesson) => { %>
+                                <li><%= lesson?.title || 'Lesson' %></li>
+                              <% }) %>
+                            </ul>
+                          <% } %>
+                        </li>
+                      <% }) %>
+                    </ol>
+                  </details>
+                <% } %>
+                <div class="lms-actions">
+                  <form data-json-form data-endpoint="/api/simple-lms/enrollments/<%= enrollment._id %>/viewed" data-success="Course marked as viewed">
+                    <button class="btn btn-secondary btn-sm" type="submit">Mark Viewed</button>
+                  </form>
+                  <% const firstChapter = enrollment.course?.chapters?.[0]; const firstLesson = firstChapter?.lessons?.[0]; %>
+                  <% if (firstLesson?.key) { %>
+                    <form data-json-form data-endpoint="/api/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(firstLesson.key) %>/complete" data-success="Lesson completed">
+                      <button class="btn btn-primary btn-sm" type="submit">Complete Next Lesson</button>
+                    </form>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } else if (viewMode === 'catalog') { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">Course Catalog</h2>
+        <p class="lms-section-subtitle">Browse system and publicly shared courses. Request access where needed.</p>
+        <% if (!marketplaceCourses || marketplaceCourses.length === 0) { %>
+          <div class="lms-empty">No catalog courses available yet.</div>
+        <% } else { %>
+          <div class="lms-grid">
+            <% marketplaceCourses.forEach(course => { %>
+              <article class="lms-course-card">
+                <h3 class="lms-course-title"><%= course.title %></h3>
+                <div class="lms-course-meta"><span><%= course.isSystemCourse ? 'System' : 'Public' %></span><span>Lessons: <%= course.lessonCount || 0 %></span><span>Status: <%= course.status %></span></div>
+                <p class="lms-course-summary"><%= course.summary || 'No summary available.' %></p>
+                <% if (course?.banner?.url) { %>
+                  <div class="lms-banner-preview active" style="max-width: 100%;">
+                    <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+                  </div>
+                <% } %>
+                <% 
+                  const catalogChapters = course?.chapters || []
+                  const catalogLessonCount = catalogChapters.reduce((sum, chapter) => sum + ((chapter?.lessons || []).length), 0)
+                %>
+                <% if (catalogChapters.length > 0) { %>
+                  <details class="lms-curriculum-view">
+                    <summary>Curriculum (<%= catalogChapters.length %> chapters, <%= catalogLessonCount %> lessons)</summary>
+                    <ol>
+                      <% catalogChapters.forEach((chapter) => { %>
+                        <li>
+                          <strong><%= chapter?.title || 'Chapter' %></strong>
+                          <% if ((chapter?.lessons || []).length > 0) { %>
+                            <ul>
+                              <% chapter.lessons.forEach((lesson) => { %>
+                                <li><%= lesson?.title || 'Lesson' %></li>
+                              <% }) %>
+                            </ul>
+                          <% } %>
+                        </li>
+                      <% }) %>
+                    </ol>
+                  </details>
+                <% } %>
+                <div class="lms-actions">
+                  <% if (course.isSystemCourse) { %>
+                    <form data-json-form data-endpoint="/api/simple-lms/system-courses/<%= course._id %>/request-access" data-success="Request submitted">
+                      <input type="hidden" name="targetType" value="self">
+                      <button class="btn btn-primary btn-sm" type="submit">Request System Course</button>
+                    </form>
+                  <% } else { %>
+                    <span class="lms-pill approved">Public Course</span>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } else if (viewMode === 'manage') { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">Assignments & Progress</h2>
+        <p class="lms-section-subtitle">Assign courses/programs by hierarchy scope and track completion.</p>
+        <% if (!canAssignCourses) { %>
+          <div class="lms-empty">You do not have permission to assign courses in this organization.</div>
+        <% } else { %>
+          <div class="lms-grid">
+            <form class="lms-panel js-target-form" data-json-form data-endpoint="/api/simple-lms/assignments/course" data-success="Course assignment completed" data-reload="true">
+              <h3>Assign Course</h3>
+              <div>
+                <label class="lms-stat-label">Course</label>
+                <select name="courseId" class="input" required>
+                  <option value="">Select course</option>
+                  <% (organizationCourses || []).forEach(course => { %>
+                    <option value="<%= course._id %>"><%= course.title %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="lms-actions">
+                <select name="targetType" class="input js-target-type" style="min-width: 140px;">
+                  <option value="member">Member</option>
+                  <% if (teamOptions && teamOptions.length > 0) { %><option value="team">Team</option><% } %>
+                  <option value="self">Self</option>
+                  <% if (canManageOrg) { %><option value="organization">Organization</option><% } %>
+                </select>
+                <select name="targetMemberId" class="input js-target-member" style="min-width: 220px;">
+                  <option value="">Select member</option>
+                  <% (assignableMembers || []).forEach(member => { %>
+                    <option value="<%= member.accountId %>"><%= member.name %> (<%= member.email %>)</option>
+                  <% }) %>
+                </select>
+                <select name="targetTeamId" class="input js-target-team" style="display:none; min-width: 180px;">
+                  <option value="">Select team</option>
+                  <% (teamOptions || []).forEach(team => { %>
+                    <option value="<%= team.id %>"><%= team.name %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div>
+                <label class="lms-stat-label">Due date (optional)</label>
+                <input type="date" name="dueAt" class="input">
+              </div>
+              <button class="btn btn-primary btn-sm" type="submit">Assign Course</button>
+            </form>
+
+            <form class="lms-panel js-target-form" data-json-form data-endpoint="/api/simple-lms/assignments/program" data-success="Program assignment completed" data-reload="true">
+              <h3>Assign Program</h3>
+              <div>
+                <label class="lms-stat-label">Program</label>
+                <select name="programId" class="input" required>
+                  <option value="">Select program</option>
+                  <% (programs || []).forEach(program => { %>
+                    <option value="<%= program._id %>"><%= program.name %> (<%= (program.steps || []).length %> courses)</option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="lms-actions">
+                <select name="targetType" class="input js-target-type" style="min-width: 140px;">
+                  <option value="member">Member</option>
+                  <% if (teamOptions && teamOptions.length > 0) { %><option value="team">Team</option><% } %>
+                  <option value="self">Self</option>
+                  <% if (canManageOrg) { %><option value="organization">Organization</option><% } %>
+                </select>
+                <select name="targetMemberId" class="input js-target-member" style="min-width: 220px;">
+                  <option value="">Select member</option>
+                  <% (assignableMembers || []).forEach(member => { %>
+                    <option value="<%= member.accountId %>"><%= member.name %> (<%= member.email %>)</option>
+                  <% }) %>
+                </select>
+                <select name="targetTeamId" class="input js-target-team" style="display:none; min-width: 180px;">
+                  <option value="">Select team</option>
+                  <% (teamOptions || []).forEach(team => { %>
+                    <option value="<%= team.id %>"><%= team.name %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div>
+                <label class="lms-stat-label">Due date (optional)</label>
+                <input type="date" name="dueAt" class="input">
+              </div>
+              <button class="btn btn-primary btn-sm" type="submit">Assign Program</button>
+            </form>
+          </div>
+
+          <h3 class="lms-section-title" style="font-size:18px;">Managed Enrollment History</h3>
+          <% if (!managedEnrollments || managedEnrollments.length === 0) { %>
+            <div class="lms-empty">No managed enrollments in your current scope.</div>
+          <% } else { %>
+            <div class="lms-grid">
+              <% managedEnrollments.forEach(entry => { %>
+                <article class="lms-course-card">
+                  <h3 class="lms-course-title"><%= entry.memberName || 'Member' %></h3>
+                  <div class="lms-course-meta">
+                    <span><%= entry.course?.title || 'Course' %></span>
+                    <span>Status: <strong><%= entry.status %></strong></span>
+                    <span>Progress: <strong><%= Number(entry.progressPercent || 0) %>%</strong></span>
+                  </div>
+                  <div class="lms-progress"><span style="--progress: <%= Number(entry.progressPercent || 0) %>%"></span></div>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        <% } %>
+      </section>
+    <% } else if (viewMode === 'course-studio' || viewMode === 'program-studio' || viewMode === 'builder') { %>
+      <%
+        const isProgramStudio = viewMode === 'program-studio'
+        const isCourseStudio = !isProgramStudio
+      %>
+      <section class="lms-surface lms-builder-shell">
+        <div class="lms-builder-head">
+          <div>
+            <h2 class="lms-section-title"><%= isCourseStudio ? 'Course Studio' : 'Program Studio' %></h2>
+            <p class="lms-section-subtitle"><%= isCourseStudio ? 'Create/edit courses, manage curriculum, and publishing controls.' : 'Create/edit programs, configure pathway sequence, and manage program visibility.' %></p>
+          </div>
+          <div class="lms-builder-stats">
+            <span class="lms-builder-stat"><strong><%= (ownedCourses || []).length %></strong> Courses</span>
+            <span class="lms-builder-stat"><strong><%= (programs || []).length %></strong> Programs</span>
+            <span class="lms-builder-stat"><strong><%= isCourseStudio ? (publishPermissions || []).length : (programs || []).filter((program) => (program?.status || '') === 'published').length %></strong> <%= isCourseStudio ? 'Publishers' : 'Published' %></span>
+          </div>
+        </div>
+        <% if (!canCreateCourses) { %>
+          <div class="lms-empty">You do not have permission to access this studio.</div>
+        <% } else { %>
+          <div class="lms-builder-layout">
+            <div class="lms-builder-main">
+              <% if (isCourseStudio) { %>
+              <form id="createCourseForm" class="lms-builder-card" data-json-form data-endpoint="/api/simple-lms/courses" data-json-fields="chapters,banner" data-success="Course created" data-reload="true">
+                <h3>Course Studio</h3>
+                <p class="lms-builder-note">Create a complete course with sections, lessons, videos, resources, and quizzes.</p>
+                <div class="lms-builder-row">
+                  <div class="lms-builder-field">
+                    <label>Title</label>
+                    <input class="input" type="text" name="title" required placeholder="Project Management Essentials">
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Category</label>
+                    <input class="input" type="text" name="category" placeholder="Leadership">
+                  </div>
+                </div>
+                <div class="lms-builder-field">
+                  <label>Summary</label>
+                  <textarea class="input" name="summary" rows="2" placeholder="What this course helps members achieve"></textarea>
+                </div>
+                <div class="lms-builder-row">
+                  <div class="lms-builder-field">
+                    <label>Visibility</label>
+                    <select class="input" name="visibility">
+                      <option value="organization_private">Organization Private</option>
+                      <option value="organization_public">Request Organization Public</option>
+                    </select>
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Status</label>
+                    <select class="input" name="status">
+                      <option value="draft">Draft</option>
+                      <option value="published">Published</option>
+                    </select>
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Level</label>
+                    <select class="input" name="level">
+                      <option value="mixed">Mixed</option>
+                      <option value="beginner">Beginner</option>
+                      <option value="intermediate">Intermediate</option>
+                      <option value="advanced">Advanced</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="lms-builder-field">
+                  <label>Tags</label>
+                  <input class="input" type="text" name="tags" placeholder="project management, agile, communication">
+                </div>
+                <div class="lms-builder-row">
+                  <div class="lms-builder-field">
+                    <label>Payment Mode</label>
+                    <select class="input" name="paymentMode">
+                      <option value="free">Free</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Amount</label>
+                    <input class="input" type="number" name="pricingAmount" min="0" placeholder="0">
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Currency</label>
+                    <input class="input" type="text" name="pricingCurrency" maxlength="3" value="NGN">
+                  </div>
+                </div>
+                <hr class="lms-builder-divider">
+                <div class="lms-builder-field">
+                  <label>Banner Image</label>
+                  <div class="lms-builder-toolbar">
+                    <input type="file" id="courseBannerFile" accept="image/*" class="input" style="min-width: 240px;">
+                    <button type="button" id="uploadBannerBtn" class="btn btn-secondary btn-sm">Upload Banner</button>
+                  </div>
+                  <div id="courseBannerState" class="lms-small">No banner uploaded.</div>
+                  <div id="courseBannerPreview" class="lms-banner-preview">
+                    <img id="courseBannerPreviewImage" alt="Course banner preview">
+                  </div>
+                  <input type="hidden" name="banner" id="courseBannerPayload" value="{}">
+                </div>
+                <div class="lms-builder-field">
+                  <div class="lms-builder-toolbar">
+                    <label style="margin-right:auto;">Curriculum Builder</label>
+                    <button type="button" id="addChapterBtn" class="btn btn-secondary btn-sm">Add Chapter</button>
+                    <button type="button" id="loadCurriculumTemplateBtn" class="btn btn-secondary btn-sm">Load Template</button>
+                  </div>
+                  <div id="curriculumBuilder" class="lms-curriculum-builder"></div>
+                  <input type="hidden" name="chapters" id="chaptersPayload" value="[]">
+                </div>
+                <details class="lms-builder-help">
+                  <summary><strong>Advanced JSON editor</strong></summary>
+                  <span>Optional: tweak the generated curriculum as JSON.</span>
+                  <textarea id="chaptersJsonMirror" class="input" rows="9"></textarea>
+                  <div class="lms-builder-toolbar">
+                    <button type="button" id="applyCurriculumJsonBtn" class="btn btn-secondary btn-sm">Apply JSON to Builder</button>
+                    <button type="button" id="formatCurriculumJsonBtn" class="btn btn-secondary btn-sm">Format JSON</button>
+                  </div>
+                </details>
+                <button class="btn btn-primary btn-sm" type="submit">Create Course</button>
+              </form>
+              <% } %>
+
+              <% if (isProgramStudio) { %>
+              <form id="createProgramForm" class="lms-builder-card" data-json-form data-endpoint="/api/simple-lms/programs" data-json-fields="steps,banner" data-success="Program created" data-reload="true">
+                <h3>Program Studio</h3>
+                <p class="lms-builder-note">Build learning pathways by ordering multiple courses into one track.</p>
+                <div class="lms-builder-row">
+                  <div class="lms-builder-field">
+                    <label>Program Name</label>
+                    <input class="input" type="text" name="name" required placeholder="Project Management Pathway">
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Tags</label>
+                    <input class="input" type="text" name="tags" placeholder="pathway, role-based">
+                  </div>
+                </div>
+                <div class="lms-builder-field">
+                  <label>Description</label>
+                  <textarea class="input" name="description" rows="2" placeholder="What this pathway covers"></textarea>
+                </div>
+                <div class="lms-builder-field">
+                  <label>Objective</label>
+                  <textarea class="input" name="objective" rows="2" placeholder="Expected outcomes"></textarea>
+                </div>
+                <div class="lms-builder-field">
+                  <label>Program Banner</label>
+                  <div class="lms-builder-toolbar">
+                    <input type="file" id="programBannerFile" accept="image/*" class="input" style="min-width: 240px;">
+                    <button type="button" id="uploadProgramBannerBtn" class="btn btn-secondary btn-sm">Upload Banner</button>
+                  </div>
+                  <div id="programBannerState" class="lms-small">No banner uploaded.</div>
+                  <div id="programBannerPreview" class="lms-banner-preview">
+                    <img id="programBannerPreviewImage" alt="Program banner preview">
+                  </div>
+                  <input type="hidden" name="banner" id="programBannerPayload" value="{}">
+                </div>
+                <div class="lms-builder-row">
+                  <div class="lms-builder-field">
+                    <label>Visibility</label>
+                    <select class="input" name="visibility">
+                      <option value="organization_private">Organization Private</option>
+                      <option value="organization_public">Organization Public</option>
+                    </select>
+                  </div>
+                  <div class="lms-builder-field">
+                    <label>Status</label>
+                    <select class="input" name="status">
+                      <option value="draft">Draft</option>
+                      <option value="published">Published</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="lms-builder-field">
+                  <div class="lms-builder-toolbar">
+                    <label style="margin-right:auto;">Pathway Builder</label>
+                    <button type="button" id="loadProgramPathwayTemplateBtn" class="btn btn-secondary btn-sm">Load Template</button>
+                    <button type="button" id="clearProgramPathwayBtn" class="btn btn-secondary btn-sm">Clear</button>
+                  </div>
+                  <div class="lms-builder-toolbar">
+                    <select id="programCoursePicker" class="input" style="min-width: 240px;">
+                      <option value="">Select course to add</option>
+                      <% (organizationCourses || []).forEach(course => { %>
+                        <option
+                          value="<%= course._id %>"
+                          data-title="<%= course.title %>"
+                          data-summary="<%= course.summary || '' %>"
+                          data-duration="<%= course.estimatedDurationMinutes || 0 %>"
+                          data-status="<%= course.status || 'draft' %>"
+                        >
+                          <%= course.title %> (<%= course.estimatedDurationMinutes || 0 %> mins)
+                        </option>
+                      <% }) %>
+                    </select>
+                    <button type="button" id="addProgramStepBtn" class="btn btn-secondary btn-sm">Add Course</button>
+                  </div>
+                  <div id="programPathwayBuilder" class="lms-pathway-builder"></div>
+                  <div id="programPathwaySummary" class="lms-small">No pathway steps added yet.</div>
+                </div>
+                <input type="hidden" name="steps" id="programStepsPayload" value="[]">
+                <details class="lms-builder-help">
+                  <summary><strong>Advanced pathway JSON</strong></summary>
+                  <span>Optional: edit pathway steps in JSON form and apply to the builder.</span>
+                  <textarea id="programStepsJsonMirror" class="input" rows="7"></textarea>
+                  <div class="lms-builder-toolbar">
+                    <button type="button" id="applyProgramStepsJsonBtn" class="btn btn-secondary btn-sm">Apply JSON to Pathway</button>
+                    <button type="button" id="formatProgramStepsJsonBtn" class="btn btn-secondary btn-sm">Format JSON</button>
+                  </div>
+                </details>
+                <button class="btn btn-primary btn-sm" type="submit">Create Program</button>
+              </form>
+              <% } %>
+
+              <% if (isCourseStudio) { %>
+              <div class="lms-builder-card">
+                <h3>Owned Courses</h3>
+                <p class="lms-builder-note">Manage your existing courses: publish requests and archive actions.</p>
+                <% if (!ownedCourses || ownedCourses.length === 0) { %>
+                  <div class="lms-empty">No courses created by you yet.</div>
+                <% } else { %>
+                  <div class="lms-owned-grid">
+                    <% ownedCourses.forEach(course => { %>
+                      <article class="lms-course-card">
+                        <h3 class="lms-course-title"><%= course.title %></h3>
+                        <div class="lms-course-meta">
+                          <span>Status: <strong><%= course.status %></strong></span>
+                          <span>Visibility: <%= course.visibility %></span>
+                          <span>Lessons: <%= course.lessonCount || 0 %></span>
+                        </div>
+                        <p class="lms-course-summary"><%= course.summary || 'No summary provided.' %></p>
+                        <% if (course?.banner?.url) { %>
+                          <div class="lms-banner-preview active" style="max-width: 100%;">
+                            <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+                          </div>
+                        <% } %>
+                        <% 
+                          const ownedChapters = course?.chapters || []
+                          const ownedLessonCount = ownedChapters.reduce((sum, chapter) => sum + ((chapter?.lessons || []).length), 0)
+                        %>
+                        <% if (ownedChapters.length > 0) { %>
+                          <details class="lms-curriculum-view">
+                            <summary>Curriculum (<%= ownedChapters.length %> chapters, <%= ownedLessonCount %> lessons)</summary>
+                            <ol>
+                              <% ownedChapters.forEach((chapter) => { %>
+                                <li>
+                                  <strong><%= chapter?.title || 'Chapter' %></strong>
+                                  <% if ((chapter?.lessons || []).length > 0) { %>
+                                    <ul>
+                                      <% chapter.lessons.forEach((lesson) => { %>
+                                        <li><%= lesson?.title || 'Lesson' %></li>
+                                      <% }) %>
+                                    </ul>
+                                  <% } %>
+                                </li>
+                              <% }) %>
+                            </ol>
+                          </details>
+                        <% } %>
+                        <details class="lms-builder-help">
+                          <summary><strong>Edit Course</strong></summary>
+                          <form data-json-form data-endpoint="/api/simple-lms/courses/<%= course._id %>" data-method="PUT" data-success="Course updated" data-reload="true">
+                            <div class="lms-builder-field">
+                              <label>Title</label>
+                              <input class="input" type="text" name="title" value="<%= course.title %>" required>
+                            </div>
+                            <div class="lms-builder-field">
+                              <label>Summary</label>
+                              <textarea class="input" name="summary" rows="2"><%= course.summary || '' %></textarea>
+                            </div>
+                            <div class="lms-builder-row">
+                              <div class="lms-builder-field">
+                                <label>Status</label>
+                                <select class="input" name="status">
+                                  <option value="draft" <%= course.status === 'draft' ? 'selected' : '' %>>Draft</option>
+                                  <option value="published" <%= course.status === 'published' ? 'selected' : '' %>>Published</option>
+                                  <option value="archived" <%= course.status === 'archived' ? 'selected' : '' %>>Archived</option>
+                                </select>
+                              </div>
+                              <div class="lms-builder-field">
+                                <label>Visibility</label>
+                                <select class="input" name="visibility">
+                                  <option value="organization_private" <%= course.visibility === 'organization_private' ? 'selected' : '' %>>Organization Private</option>
+                                  <option value="organization_public" <%= course.visibility === 'organization_public' ? 'selected' : '' %>>Organization Public</option>
+                                </select>
+                              </div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" type="submit">Save Course</button>
+                          </form>
+                        </details>
+                        <div class="lms-actions">
+                          <% if (course.status !== 'published' || course.visibility !== 'organization_public') { %>
+                            <form data-json-form data-endpoint="/api/simple-lms/courses/<%= course._id %>/request-publication" data-success="Publication request submitted" data-reload="true">
+                              <button class="btn btn-secondary btn-sm" type="submit">Request Public Publish</button>
+                            </form>
+                          <% } %>
+                          <% if (course.isActive) { %>
+                            <form data-json-form data-endpoint="/api/simple-lms/courses/<%= course._id %>/archive" data-success="Course archived" data-reload="true" data-confirm="Archive this course?">
+                              <button class="btn btn-secondary btn-sm" type="submit">Archive</button>
+                            </form>
+                          <% } %>
+                        </div>
+                      </article>
+                    <% }) %>
+                  </div>
+                <% } %>
+              </div>
+              <% } else { %>
+              <div class="lms-builder-card">
+                <h3>Program Library</h3>
+                <p class="lms-builder-note">Edit existing programs separately from course editing.</p>
+                <%
+                  const editablePrograms = (programs || []).filter(program => (
+                    canManageOrg || String(program?.createdBy || '') === String(user?._id || '')
+                  ))
+                %>
+                <% if (!editablePrograms || editablePrograms.length === 0) { %>
+                  <div class="lms-empty">No programs created yet.</div>
+                <% } else { %>
+                  <div class="lms-owned-grid">
+                    <% editablePrograms.forEach(program => { %>
+                      <article class="lms-course-card">
+                        <h3 class="lms-course-title"><%= program.name %></h3>
+                        <div class="lms-course-meta">
+                          <span>Status: <strong><%= program.status %></strong></span>
+                          <span>Visibility: <%= program.visibility %></span>
+                          <span>Steps: <%= (program.steps || []).length %></span>
+                        </div>
+                        <p class="lms-course-summary"><%= program.description || 'No description provided.' %></p>
+                        <% if (program?.banner?.url) { %>
+                          <div class="lms-banner-preview active" style="max-width: 100%;">
+                            <img src="<%= program.banner.url %>" alt="<%= program.name %> banner">
+                          </div>
+                        <% } %>
+                        <% if ((program.steps || []).length > 0) { %>
+                          <details class="lms-curriculum-view">
+                            <summary>Pathway (<%= (program.steps || []).length %> courses)</summary>
+                            <ol>
+                              <% (program.steps || []).sort((a, b) => (a.order || 0) - (b.order || 0)).forEach((step) => { %>
+                                <li>
+                                  <strong><%= step?.titleSnapshot || step?.course?.title || 'Course' %></strong>
+                                  <% if (step?.required === false) { %><span> (Optional)</span><% } %>
+                                </li>
+                              <% }) %>
+                            </ol>
+                          </details>
+                        <% } %>
+                        <details class="lms-builder-help">
+                          <summary><strong>Edit Program</strong></summary>
+                          <form data-json-form data-endpoint="/api/simple-lms/programs/<%= program._id %>" data-method="PUT" data-success="Program updated" data-reload="true">
+                            <div class="lms-builder-field">
+                              <label>Name</label>
+                              <input class="input" type="text" name="name" value="<%= program.name %>" required>
+                            </div>
+                            <div class="lms-builder-row">
+                              <div class="lms-builder-field">
+                                <label>Status</label>
+                                <select class="input" name="status">
+                                  <option value="draft" <%= program.status === 'draft' ? 'selected' : '' %>>Draft</option>
+                                  <option value="published" <%= program.status === 'published' ? 'selected' : '' %>>Published</option>
+                                  <option value="archived" <%= program.status === 'archived' ? 'selected' : '' %>>Archived</option>
+                                </select>
+                              </div>
+                              <div class="lms-builder-field">
+                                <label>Visibility</label>
+                                <select class="input" name="visibility">
+                                  <option value="organization_private" <%= program.visibility === 'organization_private' ? 'selected' : '' %>>Organization Private</option>
+                                  <option value="organization_public" <%= program.visibility === 'organization_public' ? 'selected' : '' %>>Organization Public</option>
+                                </select>
+                              </div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" type="submit">Save Program</button>
+                          </form>
+                        </details>
+                      </article>
+                    <% }) %>
+                  </div>
+                <% } %>
+              </div>
+              <% } %>
+            </div>
+
+            <aside class="lms-builder-side">
+              <div class="lms-builder-card">
+                <h3>Configuration Guide</h3>
+                <div class="lms-builder-step">
+                  <p class="lms-builder-step-title"><%= isCourseStudio ? '1. Create course content' : '1. Create program details' %></p>
+                  <p><%= isCourseStudio ? 'Define title, metadata, pricing, and curriculum using the chapter and lesson builder.' : 'Define pathway name, objective, visibility, and publication state.' %></p>
+                </div>
+                <div class="lms-builder-step">
+                  <p class="lms-builder-step-title"><%= isCourseStudio ? '2. Review/edit owned courses' : '2. Build pathway order' %></p>
+                  <p><%= isCourseStudio ? 'Update course metadata in the course cards and manage publishing from this workspace.' : 'Add courses to the pathway, reorder steps, and decide which steps are required.' %></p>
+                </div>
+                <div class="lms-builder-step">
+                  <p class="lms-builder-step-title"><%= isCourseStudio ? '3. Configure publishing' : '3. Edit existing programs' %></p>
+                  <p><%= isCourseStudio ? 'Request public publishing or grant trusted publishing permissions.' : 'Manage status and visibility of existing programs from the Program Library.' %></p>
+                </div>
+                <div class="lms-builder-help">
+                  <strong>AI note</strong>
+                  <span>Need deep AI scoring and advanced talent insights? Use the full Performance Management app.</span>
+                </div>
+              </div>
+
+              <% if (isCourseStudio) { %>
+              <div class="lms-builder-card">
+                <h3>Publishing Rights</h3>
+                <% if (!canPublishWithoutReview) { %>
+                  <form data-json-form data-endpoint="/api/simple-lms/permissions/publish-without-review/request" data-success="Permission request submitted" data-reload="true">
+                    <div class="lms-builder-field">
+                      <label>Request publish without review</label>
+                      <textarea class="input" name="message" rows="3" placeholder="Why this permission should be granted"></textarea>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" type="submit">Submit Request</button>
+                  </form>
+                <% } else { %>
+                  <div class="lms-builder-help">
+                    <strong>Publish enabled</strong>
+                    <span>You can publish organization public courses without review in this organization.</span>
+                  </div>
+                <% } %>
+
+                <% if (canReviewOrgRequests) { %>
+                  <hr class="lms-builder-divider">
+                  <% if ((orgMembers || []).length > 0) { %>
+                    <form id="grantPublishForm" data-json-form data-endpoint="/api/simple-lms/permissions/publish-without-review/<%= (orgMembers?.[0]?.accountId || '') %>/grant" data-success="Permission granted" data-reload="true">
+                      <div class="lms-builder-field">
+                        <label>Grant permission to member</label>
+                        <select id="grantPublishMemberSelect" class="input" required>
+                          <option value="">Select member</option>
+                          <% (orgMembers || []).forEach(member => { %>
+                            <option value="<%= member.accountId %>"><%= member.name %> (<%= member.email %>)</option>
+                          <% }) %>
+                        </select>
+                      </div>
+                      <button class="btn btn-secondary btn-sm" type="submit">Grant Permission</button>
+                    </form>
+                  <% } else { %>
+                    <div class="lms-builder-help">
+                      <strong>No members available</strong>
+                      <span>No active organization members found to grant permission.</span>
+                    </div>
+                  <% } %>
+                <% } %>
+              </div>
+
+              <% if (canReviewOrgRequests) { %>
+                <div class="lms-builder-card">
+                  <h3>Active Publish Permissions</h3>
+                  <% if (!publishPermissions || publishPermissions.length === 0) { %>
+                    <div class="lms-empty">No active publish-without-review permissions.</div>
+                  <% } else { %>
+                    <div class="lms-grid" style="grid-template-columns: 1fr;">
+                      <% publishPermissions.forEach(permission => { %>
+                        <article class="lms-course-card">
+                          <h3 class="lms-course-title"><%= permission.account?.profile?.name || permission.account?.email || 'Member' %></h3>
+                          <div class="lms-course-meta">
+                            <span><%= permission.account?.email || '' %></span>
+                            <span>Granted: <%= new Date(permission.grantedAt || permission.updatedAt).toLocaleDateString() %></span>
+                          </div>
+                          <form data-json-form data-endpoint="/api/simple-lms/permissions/publish-without-review/<%= permission.account?._id %>/revoke" data-success="Permission revoked" data-reload="true" data-confirm="Revoke this permission?">
+                            <button class="btn btn-secondary btn-sm" type="submit">Revoke</button>
+                          </form>
+                        </article>
+                      <% }) %>
+                    </div>
+                  <% } %>
+                </div>
+              <% } %>
+              <% } else { %>
+                <div class="lms-builder-card">
+                  <h3>Program Editing Scope</h3>
+                  <div class="lms-builder-help">
+                    <strong>Who can edit</strong>
+                    <span>Owner/Admin/HR can edit all org programs. Line managers and team leads can edit programs they created.</span>
+                  </div>
+                  <div class="lms-builder-help">
+                    <strong>Tip</strong>
+                    <span>Use Program Studio only for program creation/editing. Use Course Studio for course content changes.</span>
+                  </div>
+                </div>
+              <% } %>
+            </aside>
+          </div>
+        <% } %>
+      </section>
+    <% } else if (viewMode === 'requests') { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">Requests</h2>
+        <p class="lms-section-subtitle">Track your LMS requests and review queues based on your role.</p>
+
+        <h3 class="lms-section-title" style="font-size:18px;">My Requests</h3>
+        <% if (!myRequests || myRequests.length === 0) { %>
+          <div class="lms-empty">You have no requests yet.</div>
+        <% } else { %>
+          <div class="lms-grid">
+            <% myRequests.forEach(request => { %>
+              <article class="lms-course-card">
+                <h3 class="lms-course-title"><%= request.title || request.requestType %></h3>
+                <div class="lms-course-meta">
+                  <span class="lms-pill <%= (request.status || '').toLowerCase() %>"><%= request.status %></span>
+                  <span>Type: <%= request.requestType %></span>
+                  <span><%= new Date(request.createdAt).toLocaleDateString() %></span>
+                </div>
+                <p class="lms-course-summary"><%= request.message || 'No message provided.' %></p>
+                <% if (request.status === 'pending') { %>
+                  <form data-json-form data-endpoint="/api/simple-lms/requests/<%= request._id %>/cancel" data-success="Request cancelled" data-reload="true" data-confirm="Cancel this request?">
+                    <button class="btn btn-secondary btn-sm" type="submit">Cancel Request</button>
+                  </form>
+                <% } %>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+
+        <% if (canReviewOrgRequests) { %>
+          <h3 class="lms-section-title" style="font-size:18px;">Organization Queue</h3>
+          <% if (!orgRequestQueue || orgRequestQueue.length === 0) { %>
+            <div class="lms-empty">No pending organization requests.</div>
+          <% } else { %>
+            <div class="lms-grid">
+              <% orgRequestQueue.forEach(request => { %>
+                <article class="lms-course-card">
+                  <h3 class="lms-course-title"><%= request.title || request.requestType %></h3>
+                  <div class="lms-course-meta">
+                    <span class="lms-pill pending">Pending</span>
+                    <span>Requested by: <%= request.requestedBy?.profile?.name || request.requestedBy?.email || 'Member' %></span>
+                  </div>
+                  <p class="lms-course-summary"><%= request.message || 'No message provided.' %></p>
+                  <div class="lms-actions">
+                    <form data-json-form data-endpoint="/api/simple-lms/requests/<%= request._id %>/review" data-success="Request reviewed" data-reload="true">
+                      <input type="hidden" name="action" value="approve">
+                      <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+                    </form>
+                    <form data-json-form data-endpoint="/api/simple-lms/requests/<%= request._id %>/review" data-success="Request reviewed" data-reload="true">
+                      <input type="hidden" name="action" value="reject">
+                      <button class="btn btn-secondary btn-sm" type="submit">Reject</button>
+                    </form>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        <% } %>
+
+        <% if (canReviewPlatformRequests) { %>
+          <h3 class="lms-section-title" style="font-size:18px;">Platform Queue</h3>
+          <% if (!platformRequestQueue || platformRequestQueue.length === 0) { %>
+            <div class="lms-empty">No pending platform requests.</div>
+          <% } else { %>
+            <div class="lms-grid">
+              <% platformRequestQueue.forEach(request => { %>
+                <article class="lms-course-card">
+                  <h3 class="lms-course-title"><%= request.title || request.requestType %></h3>
+                  <div class="lms-course-meta">
+                    <span class="lms-pill pending">Pending</span>
+                    <span>Type: <%= request.requestType %></span>
+                    <span>Org: <%= request.organization?.name || 'Organization' %></span>
+                  </div>
+                  <p class="lms-course-summary"><%= request.message || 'No message provided.' %></p>
+                  <div class="lms-actions">
+                    <form data-json-form data-endpoint="/api/simple-lms/requests/<%= request._id %>/review" data-success="Request reviewed" data-reload="true">
+                      <input type="hidden" name="action" value="approve">
+                      <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+                    </form>
+                    <form data-json-form data-endpoint="/api/simple-lms/requests/<%= request._id %>/review" data-success="Request reviewed" data-reload="true">
+                      <input type="hidden" name="action" value="reject">
+                      <button class="btn btn-secondary btn-sm" type="submit">Reject</button>
+                    </form>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        <% } %>
+      </section>
+    <% } else { %>
+      <section class="lms-surface">
+        <h2 class="lms-section-title">Overview</h2>
+        <p class="lms-section-subtitle">Unknown view selected. Open the overview workspace.</p>
+        <a class="btn btn-primary" href="<%= href('overview') %>">Go to Overview</a>
+      </section>
+    <% } %>
+  </div>
+
+  <script>
+    (() => {
+      const flashContainer = document.getElementById('lmsFlash')
+      const showFlash = (message, type = 'success') => {
+        if (!flashContainer) {
+          alert(message)
+          return
+        }
+        flashContainer.className = type === 'error' ? 'alert alert-error' : 'alert alert-success'
+        flashContainer.textContent = message
+        flashContainer.style.display = 'block'
+      }
+
+      const parseJsonFields = (payload, form) => {
+        const jsonFields = String(form.dataset.jsonFields || '')
+          .split(',')
+          .map((field) => field.trim())
+          .filter(Boolean)
+
+        jsonFields.forEach((field) => {
+          const value = payload[field]
+          if (value === undefined || value === null || value === '') return
+          if (typeof value === 'object') return
+          try {
+            payload[field] = JSON.parse(value)
+          } catch (error) {
+            throw new Error(`Invalid JSON for ${field}`)
+          }
+        })
+      }
+
+      const buildPayload = (form, submitter) => {
+        const formData = new FormData(form, submitter || undefined)
+        const payload = {}
+        for (const [keyRaw, value] of formData.entries()) {
+          const key = keyRaw.endsWith('[]') ? keyRaw.slice(0, -2) : keyRaw
+          if (payload[key] === undefined) {
+            payload[key] = value
+          } else if (Array.isArray(payload[key])) {
+            payload[key].push(value)
+          } else {
+            payload[key] = [payload[key], value]
+          }
+        }
+        parseJsonFields(payload, form)
+        return payload
+      }
+
+      const submitJsonForm = async (form, submitter) => {
+        const endpoint = form.dataset.endpoint || form.getAttribute('action')
+        if (!endpoint) throw new Error('Missing data-endpoint')
+        const method = String(form.dataset.method || form.method || 'POST').toUpperCase()
+
+        if (form.id === 'createCourseForm') {
+          const curriculumMirror = document.getElementById('chaptersJsonMirror')
+          const curriculumPayload = document.getElementById('chaptersPayload')
+          if (curriculumMirror && curriculumPayload) {
+            const rawCurriculum = String(curriculumMirror.value || '').trim()
+            if (!rawCurriculum) {
+              curriculumPayload.value = '[]'
+            } else {
+              try {
+                const parsedCurriculum = JSON.parse(rawCurriculum)
+                curriculumPayload.value = JSON.stringify(Array.isArray(parsedCurriculum) ? parsedCurriculum : [])
+              } catch (error) {
+                throw new Error('Invalid curriculum JSON. Fix it or click Format JSON.')
+              }
+            }
+          }
+        }
+
+        if (form.id === 'createProgramForm') {
+          const hidden = document.getElementById('programStepsPayload')
+          const raw = String(hidden?.value || '').trim()
+          let parsed = []
+          if (raw) {
+            try {
+              parsed = JSON.parse(raw)
+            } catch (error) {
+              throw new Error('Invalid program pathway JSON.')
+            }
+          }
+          if (!Array.isArray(parsed) || parsed.length === 0) {
+            throw new Error('Add at least one course to the pathway.')
+          }
+        }
+
+        const payload = buildPayload(form, submitter)
+        const response = await fetch(endpoint, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(result.error || 'Request failed')
+        }
+        return result
+      }
+
+      document.querySelectorAll('[data-json-form]').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault()
+          if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) return
+
+          const submitButton = event.submitter || form.querySelector('button[type=\"submit\"]')
+          if (submitButton) submitButton.disabled = true
+
+          try {
+            const result = await submitJsonForm(form, event.submitter)
+            showFlash(form.dataset.success || result.message || 'Saved successfully', 'success')
+            if (String(form.dataset.reload || 'true') !== 'false') {
+              window.location.reload()
+            }
+          } catch (error) {
+            showFlash(error.message || 'Failed to submit request', 'error')
+          } finally {
+            if (submitButton) submitButton.disabled = false
+          }
+        })
+      })
+
+      document.querySelectorAll('.js-target-form').forEach((form) => {
+        const typeField = form.querySelector('.js-target-type')
+        const memberField = form.querySelector('.js-target-member')
+        const teamField = form.querySelector('.js-target-team')
+        if (!typeField) return
+
+        const updateTargets = () => {
+          const targetType = String(typeField.value || 'member')
+          if (memberField) {
+            memberField.style.display = targetType === 'member' ? '' : 'none'
+            memberField.required = targetType === 'member'
+          }
+          if (teamField) {
+            teamField.style.display = targetType === 'team' ? '' : 'none'
+            teamField.required = targetType === 'team'
+          }
+        }
+
+        typeField.addEventListener('change', updateTargets)
+        updateTargets()
+      })
+
+      const grantForm = document.getElementById('grantPublishForm')
+      const grantSelect = document.getElementById('grantPublishMemberSelect')
+      if (grantForm && grantSelect) {
+        grantForm.addEventListener('submit', () => {
+          const selected = String(grantSelect.value || '').trim()
+          if (selected) {
+            grantForm.dataset.endpoint = `/api/simple-lms/permissions/publish-without-review/${encodeURIComponent(selected)}/grant`
+          }
+        })
+      }
+
+      const chapterTemplate = [
+        {
+          title: 'Introduction',
+          description: 'Course overview and expected outcomes.',
+          lessons: [
+            {
+              title: 'Welcome and context',
+              description: 'Set expectations and explain why this course matters.',
+              videoUrl: 'https://www.youtube.com/watch?v=example',
+              durationMinutes: 8,
+              content: 'Add markdown/plain lesson notes here.',
+              resources: [],
+              quizQuestions: []
+            }
+          ]
+        }
+      ]
+
+      const curriculumBuilder = document.getElementById('curriculumBuilder')
+      const addChapterBtn = document.getElementById('addChapterBtn')
+      const loadCurriculumTemplateBtn = document.getElementById('loadCurriculumTemplateBtn')
+      const chaptersPayload = document.getElementById('chaptersPayload')
+      const chaptersJsonMirror = document.getElementById('chaptersJsonMirror')
+      const applyCurriculumJsonBtn = document.getElementById('applyCurriculumJsonBtn')
+      const formatCurriculumJsonBtn = document.getElementById('formatCurriculumJsonBtn')
+      let curriculumState = []
+
+      const htmlEscape = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+      const buildEmptyLesson = () => ({
+        title: '',
+        description: '',
+        videoUrl: '',
+        durationMinutes: 0,
+        content: '',
+        resources: [],
+        quizQuestions: []
+      })
+
+      const buildEmptyChapter = () => ({
+        title: '',
+        description: '',
+        lessons: [buildEmptyLesson()]
+      })
+
+      const normalizeCurriculum = (input) => {
+        if (!Array.isArray(input)) return []
+        return input.map((chapter) => {
+          const lessons = Array.isArray(chapter?.lessons) ? chapter.lessons : []
+          return {
+            title: String(chapter?.title || ''),
+            description: String(chapter?.description || ''),
+            lessons: lessons.map((lesson) => ({
+              title: String(lesson?.title || ''),
+              description: String(lesson?.description || ''),
+              videoUrl: String(lesson?.videoUrl || ''),
+              durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0,
+              content: String(lesson?.content || ''),
+              resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+              quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+            }))
+          }
+        })
+      }
+
+      const syncCurriculumOutputs = () => {
+        if (chaptersPayload) {
+          chaptersPayload.value = JSON.stringify(curriculumState)
+        }
+        if (chaptersJsonMirror) {
+          chaptersJsonMirror.value = JSON.stringify(curriculumState, null, 2)
+        }
+      }
+
+      const renderCurriculumBuilder = () => {
+        if (!curriculumBuilder) return
+        curriculumBuilder.innerHTML = ''
+
+        curriculumState.forEach((chapter, chapterIndex) => {
+          const chapterEl = document.createElement('section')
+          chapterEl.className = 'lms-curriculum-chapter'
+          chapterEl.dataset.chapterIndex = String(chapterIndex)
+
+          const lessonMarkup = (chapter.lessons || []).map((lesson, lessonIndex) => `
+            <article class="lms-curriculum-lesson" data-lesson-index="${lessonIndex}">
+              <div class="lms-curriculum-chapter-head">
+                <p class="lms-curriculum-title">Lesson ${lessonIndex + 1}</p>
+                <div class="lms-curriculum-actions">
+                  <button type="button" class="lms-mini-btn" data-cmd="lesson-up">Up</button>
+                  <button type="button" class="lms-mini-btn" data-cmd="lesson-down">Down</button>
+                  <button type="button" class="lms-mini-btn" data-cmd="lesson-remove">Remove</button>
+                </div>
+              </div>
+              <div class="lms-builder-row">
+                <div class="lms-builder-field">
+                  <label>Lesson title</label>
+                  <input class="input js-lesson-title" value="${htmlEscape(lesson.title)}" placeholder="Lesson title">
+                </div>
+                <div class="lms-builder-field">
+                  <label>Video URL</label>
+                  <input class="input js-lesson-video" value="${htmlEscape(lesson.videoUrl)}" placeholder="https://youtube.com/...">
+                </div>
+                <div class="lms-builder-field">
+                  <label>Duration (mins)</label>
+                  <input class="input js-lesson-duration" type="number" min="0" value="${Number(lesson.durationMinutes || 0)}">
+                </div>
+              </div>
+              <div class="lms-builder-field">
+                <label>Description</label>
+                <textarea class="input js-lesson-description" rows="2" placeholder="Short lesson description">${htmlEscape(lesson.description)}</textarea>
+              </div>
+              <div class="lms-builder-field">
+                <label>Content notes</label>
+                <textarea class="input js-lesson-content" rows="2" placeholder="Lesson notes or guide text">${htmlEscape(lesson.content)}</textarea>
+              </div>
+            </article>
+          `).join('')
+
+          chapterEl.innerHTML = `
+            <div class="lms-curriculum-chapter-head">
+              <p class="lms-curriculum-title">Chapter ${chapterIndex + 1}</p>
+              <div class="lms-curriculum-actions">
+                <button type="button" class="lms-mini-btn" data-cmd="chapter-up">Up</button>
+                <button type="button" class="lms-mini-btn" data-cmd="chapter-down">Down</button>
+                <button type="button" class="lms-mini-btn" data-cmd="chapter-remove">Remove</button>
+              </div>
+            </div>
+            <div class="lms-builder-row">
+              <div class="lms-builder-field">
+                <label>Chapter title</label>
+                <input class="input js-chapter-title" value="${htmlEscape(chapter.title)}" placeholder="Chapter title">
+              </div>
+              <div class="lms-builder-field">
+                <label>Chapter description</label>
+                <input class="input js-chapter-description" value="${htmlEscape(chapter.description)}" placeholder="Short chapter description">
+              </div>
+            </div>
+            <div class="lms-curriculum-lessons">
+              ${lessonMarkup || '<div class="lms-builder-help">No lessons yet for this chapter.</div>'}
+            </div>
+            <button type="button" class="lms-mini-btn" data-cmd="lesson-add">Add Lesson</button>
+          `
+
+          curriculumBuilder.appendChild(chapterEl)
+        })
+      }
+
+      const collectCurriculumFromDom = () => {
+        if (!curriculumBuilder) return []
+        return Array.from(curriculumBuilder.querySelectorAll('.lms-curriculum-chapter')).map((chapterEl) => {
+          const title = chapterEl.querySelector('.js-chapter-title')?.value || ''
+          const description = chapterEl.querySelector('.js-chapter-description')?.value || ''
+          const lessons = Array.from(chapterEl.querySelectorAll('.lms-curriculum-lesson')).map((lessonEl) => ({
+            title: lessonEl.querySelector('.js-lesson-title')?.value || '',
+            description: lessonEl.querySelector('.js-lesson-description')?.value || '',
+            videoUrl: lessonEl.querySelector('.js-lesson-video')?.value || '',
+            durationMinutes: Number(lessonEl.querySelector('.js-lesson-duration')?.value || 0),
+            content: lessonEl.querySelector('.js-lesson-content')?.value || '',
+            resources: [],
+            quizQuestions: []
+          }))
+          return { title, description, lessons }
+        })
+      }
+
+      const setCurriculumState = (chapters) => {
+        curriculumState = normalizeCurriculum(chapters)
+        renderCurriculumBuilder()
+        syncCurriculumOutputs()
+      }
+
+      if (curriculumBuilder) {
+        const initialPayload = (() => {
+          try {
+            return JSON.parse(chaptersPayload?.value || '[]')
+          } catch {
+            return []
+          }
+        })()
+        if (Array.isArray(initialPayload) && initialPayload.length > 0) {
+          setCurriculumState(initialPayload)
+        } else {
+          setCurriculumState([buildEmptyChapter()])
+        }
+
+        curriculumBuilder.addEventListener('input', () => {
+          curriculumState = collectCurriculumFromDom()
+          syncCurriculumOutputs()
+        })
+
+        curriculumBuilder.addEventListener('click', (event) => {
+          const actionButton = event.target.closest('button[data-cmd]')
+          if (!actionButton) return
+
+          curriculumState = collectCurriculumFromDom()
+
+          const command = actionButton.dataset.cmd
+          const chapterEl = actionButton.closest('.lms-curriculum-chapter')
+          const lessonEl = actionButton.closest('.lms-curriculum-lesson')
+          const chapterIndex = chapterEl ? Number(chapterEl.dataset.chapterIndex) : -1
+          const lessonIndex = lessonEl ? Number(lessonEl.dataset.lessonIndex) : -1
+
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= curriculumState.length) return
+          const chapter = curriculumState[chapterIndex]
+
+          if (command === 'chapter-remove') {
+            curriculumState.splice(chapterIndex, 1)
+            if (curriculumState.length === 0) curriculumState.push(buildEmptyChapter())
+          } else if (command === 'chapter-up' && chapterIndex > 0) {
+            const [item] = curriculumState.splice(chapterIndex, 1)
+            curriculumState.splice(chapterIndex - 1, 0, item)
+          } else if (command === 'chapter-down' && chapterIndex < curriculumState.length - 1) {
+            const [item] = curriculumState.splice(chapterIndex, 1)
+            curriculumState.splice(chapterIndex + 1, 0, item)
+          } else if (command === 'lesson-add') {
+            chapter.lessons = Array.isArray(chapter.lessons) ? chapter.lessons : []
+            chapter.lessons.push(buildEmptyLesson())
+          } else if (command === 'lesson-remove') {
+            if (!Array.isArray(chapter.lessons)) chapter.lessons = []
+            if (lessonIndex >= 0 && lessonIndex < chapter.lessons.length) {
+              chapter.lessons.splice(lessonIndex, 1)
+            }
+            if (chapter.lessons.length === 0) chapter.lessons.push(buildEmptyLesson())
+          } else if (command === 'lesson-up') {
+            if (Array.isArray(chapter.lessons) && lessonIndex > 0) {
+              const [item] = chapter.lessons.splice(lessonIndex, 1)
+              chapter.lessons.splice(lessonIndex - 1, 0, item)
+            }
+          } else if (command === 'lesson-down') {
+            if (Array.isArray(chapter.lessons) && lessonIndex >= 0 && lessonIndex < chapter.lessons.length - 1) {
+              const [item] = chapter.lessons.splice(lessonIndex, 1)
+              chapter.lessons.splice(lessonIndex + 1, 0, item)
+            }
+          }
+
+          renderCurriculumBuilder()
+          syncCurriculumOutputs()
+        })
+      }
+
+      if (addChapterBtn) {
+        addChapterBtn.addEventListener('click', () => {
+          curriculumState = collectCurriculumFromDom()
+          curriculumState.push(buildEmptyChapter())
+          renderCurriculumBuilder()
+          syncCurriculumOutputs()
+        })
+      }
+
+      if (loadCurriculumTemplateBtn) {
+        loadCurriculumTemplateBtn.addEventListener('click', () => {
+          const hasContent = Array.isArray(curriculumState) && curriculumState.some((chapter) => String(chapter?.title || '').trim() || (chapter?.lessons || []).some((lesson) => String(lesson?.title || '').trim()))
+          if (hasContent && !window.confirm('Replace current curriculum with template?')) {
+            return
+          }
+          setCurriculumState(JSON.parse(JSON.stringify(chapterTemplate)))
+          showFlash('Template loaded into curriculum builder.', 'success')
+        })
+      }
+
+      if (applyCurriculumJsonBtn && chaptersJsonMirror) {
+        applyCurriculumJsonBtn.addEventListener('click', () => {
+          const raw = String(chaptersJsonMirror.value || '').trim()
+          if (!raw) {
+            setCurriculumState([buildEmptyChapter()])
+            return
+          }
+          try {
+            const parsed = JSON.parse(raw)
+            if (!Array.isArray(parsed)) throw new Error('Curriculum JSON must be an array of chapters.')
+            setCurriculumState(parsed)
+            showFlash('JSON applied to curriculum builder.', 'success')
+          } catch (error) {
+            showFlash(error.message || 'Invalid curriculum JSON.', 'error')
+          }
+        })
+      }
+
+      if (formatCurriculumJsonBtn && chaptersJsonMirror) {
+        formatCurriculumJsonBtn.addEventListener('click', () => {
+          const raw = String(chaptersJsonMirror.value || '').trim()
+          if (!raw) {
+            showFlash('No JSON to format.', 'error')
+            return
+          }
+          try {
+            const parsed = JSON.parse(raw)
+            chaptersJsonMirror.value = JSON.stringify(parsed, null, 2)
+            showFlash('JSON formatted.', 'success')
+          } catch (error) {
+            showFlash('Invalid JSON. Please fix syntax first.', 'error')
+          }
+        })
+      }
+
+      const programCoursePicker = document.getElementById('programCoursePicker')
+      const addProgramStepBtn = document.getElementById('addProgramStepBtn')
+      const clearProgramPathwayBtn = document.getElementById('clearProgramPathwayBtn')
+      const loadProgramPathwayTemplateBtn = document.getElementById('loadProgramPathwayTemplateBtn')
+      const programPathwayBuilder = document.getElementById('programPathwayBuilder')
+      const programPathwaySummary = document.getElementById('programPathwaySummary')
+      const programStepsPayload = document.getElementById('programStepsPayload')
+      const programStepsJsonMirror = document.getElementById('programStepsJsonMirror')
+      const applyProgramStepsJsonBtn = document.getElementById('applyProgramStepsJsonBtn')
+      const formatProgramStepsJsonBtn = document.getElementById('formatProgramStepsJsonBtn')
+      let programCourseLookup = new Map()
+      let programStepsState = []
+
+      const readProgramCourseLookup = () => {
+        const lookup = new Map()
+        if (!programCoursePicker) return lookup
+
+        Array.from(programCoursePicker.options || []).forEach((option) => {
+          const id = String(option.value || '').trim()
+          if (!id) return
+          lookup.set(id, {
+            id,
+            title: String(option.dataset.title || option.textContent || 'Course').trim(),
+            summary: String(option.dataset.summary || '').trim(),
+            durationMinutes: Number.isFinite(Number(option.dataset.duration))
+              ? Math.max(0, Number(option.dataset.duration))
+              : 0,
+            status: String(option.dataset.status || 'draft').trim()
+          })
+        })
+
+        return lookup
+      }
+
+      const normalizeProgramSteps = (input, courseLookup) => {
+        if (!Array.isArray(input)) return []
+        return input
+          .map((step, index) => ({
+            courseId: String(step?.courseId || step?.course || '').trim(),
+            required: step?.required !== false,
+            order: Number.isFinite(Number(step?.order)) ? Number(step.order) : index + 1
+          }))
+          .filter((step) => step.courseId && courseLookup.has(step.courseId))
+          .sort((a, b) => a.order - b.order)
+      }
+
+      const syncProgramPathwayOutputs = () => {
+        const normalized = programStepsState.map((step, index) => ({
+          courseId: String(step?.courseId || '').trim(),
+          required: step?.required !== false,
+          order: index + 1
+        }))
+
+        if (programStepsPayload) {
+          programStepsPayload.value = JSON.stringify(normalized)
+        }
+        if (programStepsJsonMirror) {
+          programStepsJsonMirror.value = JSON.stringify(normalized, null, 2)
+        }
+
+        if (programPathwaySummary) {
+          const totalMinutes = normalized.reduce((sum, step) => (
+            sum + (programCourseLookup.get(step.courseId)?.durationMinutes || 0)
+          ), 0)
+          const requiredCount = normalized.filter((step) => step.required !== false).length
+          if (normalized.length === 0) {
+            programPathwaySummary.textContent = 'No pathway steps added yet.'
+          } else {
+            programPathwaySummary.textContent = `${normalized.length} course step${normalized.length === 1 ? '' : 's'} | ${requiredCount} required | ${Math.round(totalMinutes)} mins total`
+          }
+        }
+      }
+
+      const renderProgramPathwayBuilder = () => {
+        if (!programPathwayBuilder) return
+        programPathwayBuilder.innerHTML = ''
+
+        if (!Array.isArray(programStepsState) || programStepsState.length === 0) {
+          programPathwayBuilder.innerHTML = '<div class="lms-builder-help"><strong>No pathway steps yet</strong><span>Choose a course above and click Add Course to build the pathway.</span></div>'
+          return
+        }
+
+        programStepsState.forEach((step, index) => {
+          const course = programCourseLookup.get(step.courseId)
+          if (!course) return
+
+          const stepEl = document.createElement('article')
+          stepEl.className = 'lms-pathway-step'
+          stepEl.dataset.stepIndex = String(index)
+          stepEl.innerHTML = `
+            <div class="lms-curriculum-chapter-head">
+              <p class="lms-pathway-step-title">
+                <span class="lms-pathway-step-index">${index + 1}</span>
+                <span>${htmlEscape(course.title)}</span>
+              </p>
+              <div class="lms-curriculum-actions">
+                <button type="button" class="lms-mini-btn" data-program-cmd="step-up">Up</button>
+                <button type="button" class="lms-mini-btn" data-program-cmd="step-down">Down</button>
+                <button type="button" class="lms-mini-btn" data-program-cmd="step-remove">Remove</button>
+              </div>
+            </div>
+            <div class="lms-pathway-step-meta">
+              <span>Status: ${htmlEscape(course.status || 'draft')}</span>
+              <span>Duration: ${Math.round(course.durationMinutes || 0)} mins</span>
+            </div>
+            ${course.summary ? `<p class="lms-builder-note">${htmlEscape(course.summary)}</p>` : ''}
+            <label class="lms-pathway-required">
+              <input type="checkbox" class="js-program-step-required" ${step.required !== false ? 'checked' : ''}>
+              Required step
+            </label>
+          `
+
+          programPathwayBuilder.appendChild(stepEl)
+        })
+      }
+
+      const collectProgramStepsFromDom = () => {
+        if (!programPathwayBuilder) return []
+        return Array.from(programPathwayBuilder.querySelectorAll('.lms-pathway-step'))
+          .map((stepEl) => {
+            const stepIndex = Number(stepEl.dataset.stepIndex)
+            const existingStep = Number.isInteger(stepIndex) && stepIndex >= 0
+              ? programStepsState[stepIndex]
+              : null
+            if (!existingStep?.courseId) return null
+            return {
+              courseId: String(existingStep.courseId),
+              required: Boolean(stepEl.querySelector('.js-program-step-required')?.checked)
+            }
+          })
+          .filter(Boolean)
+      }
+
+      const setProgramStepsState = (steps) => {
+        programStepsState = normalizeProgramSteps(steps, programCourseLookup).map((step) => ({
+          courseId: step.courseId,
+          required: step.required !== false
+        }))
+        renderProgramPathwayBuilder()
+        syncProgramPathwayOutputs()
+      }
+
+      if (programPathwayBuilder) {
+        programCourseLookup = readProgramCourseLookup()
+
+        const initialPathway = (() => {
+          try {
+            return JSON.parse(programStepsPayload?.value || '[]')
+          } catch {
+            return []
+          }
+        })()
+        setProgramStepsState(initialPathway)
+
+        const noCoursesAvailable = programCourseLookup.size === 0
+        if (addProgramStepBtn) addProgramStepBtn.disabled = noCoursesAvailable
+        if (loadProgramPathwayTemplateBtn) loadProgramPathwayTemplateBtn.disabled = noCoursesAvailable
+        if (noCoursesAvailable && programPathwaySummary) {
+          programPathwaySummary.textContent = 'Create at least one course first to build a program pathway.'
+        }
+
+        programPathwayBuilder.addEventListener('change', () => {
+          programStepsState = collectProgramStepsFromDom()
+          syncProgramPathwayOutputs()
+        })
+
+        programPathwayBuilder.addEventListener('click', (event) => {
+          const actionButton = event.target.closest('button[data-program-cmd]')
+          if (!actionButton) return
+
+          programStepsState = collectProgramStepsFromDom()
+          const stepEl = actionButton.closest('.lms-pathway-step')
+          const stepIndex = stepEl ? Number(stepEl.dataset.stepIndex) : -1
+          if (!Number.isInteger(stepIndex) || stepIndex < 0 || stepIndex >= programStepsState.length) return
+
+          const command = String(actionButton.dataset.programCmd || '')
+          if (command === 'step-remove') {
+            programStepsState.splice(stepIndex, 1)
+          } else if (command === 'step-up' && stepIndex > 0) {
+            const [item] = programStepsState.splice(stepIndex, 1)
+            programStepsState.splice(stepIndex - 1, 0, item)
+          } else if (command === 'step-down' && stepIndex < programStepsState.length - 1) {
+            const [item] = programStepsState.splice(stepIndex, 1)
+            programStepsState.splice(stepIndex + 1, 0, item)
+          }
+
+          renderProgramPathwayBuilder()
+          syncProgramPathwayOutputs()
+        })
+      }
+
+      if (addProgramStepBtn && programCoursePicker) {
+        addProgramStepBtn.addEventListener('click', () => {
+          const courseId = String(programCoursePicker.value || '').trim()
+          if (!courseId) {
+            showFlash('Select a course to add to the pathway.', 'error')
+            return
+          }
+          if (!programCourseLookup.has(courseId)) {
+            showFlash('Selected course is not available.', 'error')
+            return
+          }
+
+          programStepsState = collectProgramStepsFromDom()
+          const exists = programStepsState.some((step) => step.courseId === courseId)
+          if (exists) {
+            showFlash('That course is already in the pathway.', 'error')
+            return
+          }
+
+          programStepsState.push({
+            courseId,
+            required: true
+          })
+          renderProgramPathwayBuilder()
+          syncProgramPathwayOutputs()
+          programCoursePicker.value = ''
+        })
+      }
+
+      if (clearProgramPathwayBtn) {
+        clearProgramPathwayBtn.addEventListener('click', () => {
+          if (programStepsState.length === 0) return
+          if (!window.confirm('Clear all pathway steps?')) return
+          setProgramStepsState([])
+          showFlash('Pathway cleared.', 'success')
+        })
+      }
+
+      if (loadProgramPathwayTemplateBtn) {
+        loadProgramPathwayTemplateBtn.addEventListener('click', () => {
+          const templateCourseIds = Array.from(programCourseLookup.keys()).slice(0, 3)
+          if (templateCourseIds.length === 0) {
+            showFlash('No courses available for template.', 'error')
+            return
+          }
+          if (programStepsState.length > 0 && !window.confirm('Replace current pathway with template steps?')) {
+            return
+          }
+
+          setProgramStepsState(templateCourseIds.map((courseId) => ({
+            courseId,
+            required: true
+          })))
+          showFlash('Pathway template loaded.', 'success')
+        })
+      }
+
+      if (applyProgramStepsJsonBtn && programStepsJsonMirror) {
+        applyProgramStepsJsonBtn.addEventListener('click', () => {
+          const raw = String(programStepsJsonMirror.value || '').trim()
+          if (!raw) {
+            setProgramStepsState([])
+            return
+          }
+          try {
+            const parsed = JSON.parse(raw)
+            if (!Array.isArray(parsed)) throw new Error('Pathway JSON must be an array of steps.')
+            setProgramStepsState(parsed)
+            showFlash('Pathway JSON applied.', 'success')
+          } catch (error) {
+            showFlash(error.message || 'Invalid pathway JSON.', 'error')
+          }
+        })
+      }
+
+      if (formatProgramStepsJsonBtn && programStepsJsonMirror) {
+        formatProgramStepsJsonBtn.addEventListener('click', () => {
+          const raw = String(programStepsJsonMirror.value || '').trim()
+          if (!raw) {
+            showFlash('No pathway JSON to format.', 'error')
+            return
+          }
+          try {
+            const parsed = JSON.parse(raw)
+            programStepsJsonMirror.value = JSON.stringify(parsed, null, 2)
+            showFlash('Pathway JSON formatted.', 'success')
+          } catch (error) {
+            showFlash('Invalid pathway JSON. Please fix syntax first.', 'error')
+          }
+        })
+      }
+
+      const setBannerPreview = ({ previewWrap, previewImage, imageUrl }) => {
+        if (!previewWrap || !previewImage) return
+        if (!imageUrl) {
+          previewImage.removeAttribute('src')
+          previewWrap.classList.remove('active')
+          return
+        }
+        previewImage.src = imageUrl
+        previewWrap.classList.add('active')
+      }
+
+      const bindBannerUpload = ({
+        inputElementId,
+        buttonElementId,
+        payloadElementId,
+        stateElementId,
+        previewWrapId,
+        previewImageId,
+        assetLabel
+      }) => {
+        const input = document.getElementById(inputElementId)
+        const button = document.getElementById(buttonElementId)
+        const payload = document.getElementById(payloadElementId)
+        const state = document.getElementById(stateElementId)
+        const previewWrap = document.getElementById(previewWrapId)
+        const previewImage = document.getElementById(previewImageId)
+
+        if (!input || !button || !payload) return
+
+        button.addEventListener('click', async () => {
+          const file = input.files?.[0]
+          if (!file) {
+            showFlash(`Select a ${assetLabel.toLowerCase()} first.`, 'error')
+            return
+          }
+
+          const formData = new FormData()
+          formData.append('banner', file)
+          button.disabled = true
+          if (state) state.textContent = `Uploading ${assetLabel.toLowerCase()}...`
+
+          try {
+            const response = await fetch('/api/simple-lms/upload/banner', {
+              method: 'POST',
+              body: formData
+            })
+            const result = await response.json().catch(() => ({}))
+            if (!response.ok) {
+              throw new Error(result.error || `Failed to upload ${assetLabel.toLowerCase()}`)
+            }
+
+            payload.value = JSON.stringify({
+              url: result.url,
+              publicId: result.publicId,
+              width: result.width,
+              height: result.height
+            })
+
+            setBannerPreview({
+              previewWrap,
+              previewImage,
+              imageUrl: result.url
+            })
+
+            if (state) state.textContent = `${assetLabel} uploaded successfully.`
+            showFlash(`${assetLabel} uploaded.`, 'success')
+          } catch (error) {
+            if (state) state.textContent = `${assetLabel} upload failed.`
+            showFlash(error.message || `Failed to upload ${assetLabel.toLowerCase()}`, 'error')
+          } finally {
+            button.disabled = false
+          }
+        })
+      }
+
+      bindBannerUpload({
+        inputElementId: 'courseBannerFile',
+        buttonElementId: 'uploadBannerBtn',
+        payloadElementId: 'courseBannerPayload',
+        stateElementId: 'courseBannerState',
+        previewWrapId: 'courseBannerPreview',
+        previewImageId: 'courseBannerPreviewImage',
+        assetLabel: 'Course banner'
+      })
+
+      bindBannerUpload({
+        inputElementId: 'programBannerFile',
+        buttonElementId: 'uploadProgramBannerBtn',
+        payloadElementId: 'programBannerPayload',
+        stateElementId: 'programBannerState',
+        previewWrapId: 'programBannerPreview',
+        previewImageId: 'programBannerPreviewImage',
+        assetLabel: 'Program banner'
+      })
+    })()
+  </script>
+</body>
+
+</html>

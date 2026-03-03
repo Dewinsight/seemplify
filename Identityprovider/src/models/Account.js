@@ -211,6 +211,11 @@ const AccountSchema = new mongoose.Schema({
       type: Map,
       of: Date,
       default: {}
+    },
+    simpleLmsByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
     }
   },
 

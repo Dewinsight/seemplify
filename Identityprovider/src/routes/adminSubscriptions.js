@@ -3,6 +3,58 @@ import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminA
 import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
+const SUBSCRIPTION_FEATURE_KEYS = [
+  'recruiter',
+  'leaveManagement',
+  'payrollManagement',
+  'performanceManagement',
+  'timeAttendance',
+  'outlineDocs',
+  'aiChat',
+  'lms'
+]
+
+const parseOptionalLimitOverride = (value, fieldName) => {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldName} must be a non-negative number or null`)
+  }
+  return Math.floor(parsed)
+}
+
+const sanitizeCustomLimits = (customLimitsInput = {}) => {
+  if (!customLimitsInput || typeof customLimitsInput !== 'object') return undefined
+
+  const sanitized = {}
+  const maxMembers = parseOptionalLimitOverride(customLimitsInput.maxMembers, 'customLimits.maxMembers')
+  const maxTeams = parseOptionalLimitOverride(customLimitsInput.maxTeams, 'customLimits.maxTeams')
+  const maxStorage = parseOptionalLimitOverride(customLimitsInput.maxStorage, 'customLimits.maxStorage')
+  const maxSystemCourses = parseOptionalLimitOverride(customLimitsInput.maxSystemCourses, 'customLimits.maxSystemCourses')
+
+  if (maxMembers !== undefined) sanitized.maxMembers = maxMembers
+  if (maxTeams !== undefined) sanitized.maxTeams = maxTeams
+  if (maxStorage !== undefined) sanitized.maxStorage = maxStorage
+  if (maxSystemCourses !== undefined) sanitized.maxSystemCourses = maxSystemCourses
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined
+}
+
+const sanitizeCustomFeatures = (customFeaturesInput = {}) => {
+  if (!customFeaturesInput || typeof customFeaturesInput !== 'object') return undefined
+
+  const sanitized = {}
+  SUBSCRIPTION_FEATURE_KEYS.forEach((key) => {
+    const value = customFeaturesInput[key]
+    if (value === true || value === false || value === null) {
+      sanitized[key] = value
+    }
+  })
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined
+}
 
 /**
  * Admin Subscriptions API Routes
@@ -93,6 +145,9 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
       return res.status(400).json({ error: 'Valid billing cycle (monthly/yearly) is required' })
     }
 
+    const sanitizedCustomLimits = sanitizeCustomLimits(customLimits)
+    const sanitizedCustomFeatures = sanitizeCustomFeatures(customFeatures)
+
     const subscription = await subscriptionService.createSubscriptionDirectly(
       {
         organizationId,
@@ -100,8 +155,8 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
         billingCycle,
         startDate,
         endDate,
-        customLimits,
-        customFeatures,
+        customLimits: sanitizedCustomLimits,
+        customFeatures: sanitizedCustomFeatures,
         notes
       },
       req.user._id
@@ -115,6 +170,9 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
     console.error('Error creating subscription:', error)
     if (error.message === 'Organization not found' || error.message === 'Plan not found') {
       return res.status(404).json({ error: error.message })
+    }
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
     }
     res.status(500).json({ error: 'Failed to create subscription' })
   }
@@ -235,11 +293,13 @@ router.post('/:subscriptionId/reactivate', auditLog('reactivate_subscription'), 
 router.put('/:subscriptionId/customizations', auditLog('update_subscription_customizations'), async (req, res) => {
   try {
     const { customLimits, customFeatures, notes } = req.body
+    const sanitizedCustomLimits = sanitizeCustomLimits(customLimits)
+    const sanitizedCustomFeatures = sanitizeCustomFeatures(customFeatures)
 
     const subscription = await subscriptionService.updateSubscriptionCustomizations(
       req.params.subscriptionId,
-      customLimits,
-      customFeatures,
+      sanitizedCustomLimits,
+      sanitizedCustomFeatures,
       notes
     )
 
@@ -251,6 +311,9 @@ router.put('/:subscriptionId/customizations', auditLog('update_subscription_cust
     console.error('Error updating subscription customizations:', error)
     if (error.message === 'Subscription not found') {
       return res.status(404).json({ error: 'Subscription not found' })
+    }
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
     }
     res.status(500).json({ error: 'Failed to update subscription customizations' })
   }

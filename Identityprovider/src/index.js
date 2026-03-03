@@ -14,6 +14,7 @@ import { OnboardingTemplate } from './models/OnboardingTemplate.js'
 import { OnboardingAssignment } from './models/OnboardingAssignment.js'
 import { OnboardingActivity } from './models/OnboardingActivity.js'
 import PerformanceEvaluation from './models/PerformanceEvaluation.js'
+import SimpleLmsEnrollment from './models/SimpleLmsEnrollment.js'
 import SimplePerformanceEvaluationConfig from './models/SimplePerformanceEvaluationConfig.js'
 import AppLaunchActivity from './models/AppLaunchActivity.js'
 import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
@@ -158,7 +159,8 @@ async function buildSubscriptionClaims(acc) {
       },
       limits: {
         maxMembers: 0,
-        maxTeams: 0
+        maxTeams: 0,
+        maxSystemCourses: null
       },
       expiresAt: null,
       isInGracePeriod: false
@@ -187,7 +189,8 @@ async function buildSubscriptionClaims(acc) {
         },
         limits: {
           maxMembers: 0,
-          maxTeams: 0
+          maxTeams: 0,
+          maxSystemCourses: null
         },
         expiresAt: null,
         isInGracePeriod: false
@@ -221,7 +224,10 @@ async function buildSubscriptionClaims(acc) {
       },
       limits: {
         maxMembers: limits.maxMembers,
-        maxTeams: limits.maxTeams
+        maxTeams: limits.maxTeams,
+        maxSystemCourses: Object.prototype.hasOwnProperty.call(limits || {}, 'maxSystemCourses')
+          ? limits.maxSystemCourses
+          : null
       },
       expiresAt: subscription.endDate?.toISOString() || null,
       isInGracePeriod: subscription.isInGracePeriod || false
@@ -244,7 +250,8 @@ async function buildSubscriptionClaims(acc) {
       },
       limits: {
         maxMembers: 0,
-        maxTeams: 0
+        maxTeams: 0,
+        maxSystemCourses: null
       },
       expiresAt: null,
       isInGracePeriod: false
@@ -318,6 +325,7 @@ import publicPlansRouter from './routes/publicPlans.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
 import profileRouter from './routes/profile.js'
+import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 
 dotenv.config()
 
@@ -3221,6 +3229,34 @@ app.get('/', async (req, res) => {
       averageRating: calculateAverageRating(entry.ratings)
     }))
 
+    const simpleLmsNotificationQuery = currentOrgId
+      ? {
+          organization: currentOrgId,
+          enrolledMember: account._id
+        }
+      : null
+    const simpleLmsNotificationViewedAt = getDashboardNotificationViewedAt(
+      account,
+      'simpleLms',
+      currentOrgId
+    )
+    if (simpleLmsNotificationQuery && simpleLmsNotificationViewedAt) {
+      simpleLmsNotificationQuery.updatedAt = { $gt: simpleLmsNotificationViewedAt }
+    }
+
+    const latestSimpleLmsEnrollments = currentOrgId
+      ? await SimpleLmsEnrollment.find(simpleLmsNotificationQuery)
+        .select('updatedAt createdAt progressPercent status')
+        .populate('course', 'title')
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .limit(3)
+        .lean()
+      : []
+
+    const simpleLmsNotificationCount = currentOrgId
+      ? await SimpleLmsEnrollment.countDocuments(simpleLmsNotificationQuery)
+      : 0
+
     // Render the hub homepage using EJS template
     res.render('home', {
       user: account,
@@ -3234,6 +3270,8 @@ app.get('/', async (req, res) => {
       pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
+      simpleLmsNotificationCount,
+      latestSimpleLmsEnrollments,
       activePage: 'home'
     })
   } catch (err) {
@@ -3850,7 +3888,8 @@ const getCurrentOrganizationContext = async (user) => {
 
 const DASHBOARD_NOTIFICATION_VIEW_PATHS = Object.freeze({
   documents: 'notificationViews.documentsByOrganization',
-  simplePerformance: 'notificationViews.simplePerformanceByOrganization'
+  simplePerformance: 'notificationViews.simplePerformanceByOrganization',
+  simpleLms: 'notificationViews.simpleLmsByOrganization'
 })
 
 const getOrganizationIdsFromAccount = (account) => {
@@ -3905,6 +3944,9 @@ const getDashboardNotificationViewedAt = (account, type, organizationId) => {
   }
   if (type === 'simplePerformance') {
     return readNotificationViewDate(account?.notificationViews?.simplePerformanceByOrganization, orgId)
+  }
+  if (type === 'simpleLms') {
+    return readNotificationViewDate(account?.notificationViews?.simpleLmsByOrganization, orgId)
   }
   return null
 }
@@ -4455,6 +4497,8 @@ app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:in
 app.use('/api/organizations', membersRouter)
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
 app.use('/api', onboardingRouter)
+app.use('/api/simple-lms', simpleLmsApiRouter)
+app.use('/simple-lms', simpleLmsRouter)
 
 // Subscription Management API Routes
 app.use('/api/admin/plans', adminPlansRouter)
