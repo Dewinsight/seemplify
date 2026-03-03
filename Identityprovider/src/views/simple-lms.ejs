@@ -523,9 +523,244 @@
     .lms-pathway-required input {
       accent-color: #22d3ee;
     }
+    .container.lms-shell {
+      max-width: 1380px;
+      margin: 14px auto 30px;
+      padding-inline: 18px;
+    }
+    .lms-shell {
+      gap: 16px;
+    }
+    .lms-hero {
+      padding: 22px;
+      border-radius: 20px;
+      background:
+        radial-gradient(140% 170% at 0% 0%, rgba(56, 189, 248, 0.21), rgba(56, 189, 248, 0) 45%),
+        radial-gradient(120% 140% at 100% 0%, rgba(30, 64, 175, 0.22), rgba(30, 64, 175, 0) 44%),
+        linear-gradient(165deg, rgba(2, 6, 23, 0.86), rgba(2, 6, 23, 0.66));
+      border-color: rgba(59, 130, 246, 0.28);
+    }
+    .lms-hero-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+    }
+    .lms-title {
+      font-size: clamp(28px, 3.4vw, 44px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+    }
+    .lms-subtitle {
+      font-size: 15px;
+      max-width: 76ch;
+    }
+    .lms-hero-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: flex-start;
+    }
+    .lms-hero-actions .btn {
+      white-space: nowrap;
+    }
+    .lms-chip {
+      background: rgba(15, 23, 42, 0.62);
+      border-color: rgba(148, 163, 184, 0.32);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 800;
+      padding: 7px 10px;
+    }
+    .lms-nav {
+      border-top: 1px solid rgba(148, 163, 184, 0.22);
+      padding-top: 10px;
+      gap: 9px;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      scrollbar-width: thin;
+    }
+    .lms-tab {
+      white-space: nowrap;
+      padding: 10px 14px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .lms-surface {
+      border-radius: 16px;
+      padding: 18px;
+      background:
+        radial-gradient(120% 180% at 0% 0%, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0) 42%),
+        var(--card-bg);
+    }
+    .lms-section-title {
+      font-size: clamp(22px, 2.2vw, 28px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .lms-section-subtitle {
+      font-size: 14px;
+      max-width: 78ch;
+    }
+    .lms-overview-showcase {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .lms-overview-tile {
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: linear-gradient(170deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.22));
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .lms-overview-kicker {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+      margin: 0;
+    }
+    .lms-overview-headline {
+      margin: 0;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lms-overview-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .lms-grid {
+      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+    .lms-grid--dense {
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    }
+    .lms-stat {
+      border-radius: 13px;
+      padding: 13px;
+      background: linear-gradient(170deg, rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.18));
+    }
+    .lms-stat-value {
+      font-size: 30px;
+    }
+    .lms-panel {
+      border-radius: 13px;
+      padding: 14px;
+    }
+    .lms-course-card {
+      border-radius: 14px;
+      padding: 12px;
+      gap: 10px;
+      box-shadow: 0 6px 18px rgba(2, 6, 23, 0.2);
+    }
+    .lms-course-media {
+      width: 100%;
+      min-height: 158px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: linear-gradient(140deg, rgba(15, 23, 42, 0.68), rgba(30, 41, 59, 0.38));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .lms-course-media img {
+      width: 100%;
+      height: 158px;
+      object-fit: cover;
+      display: block;
+    }
+    .lms-course-media span {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .lms-course-title {
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+    .lms-course-meta {
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .lms-course-summary {
+      font-size: 13px;
+      min-height: 44px;
+    }
+    .lms-curriculum-view {
+      border-style: solid;
+      border-color: rgba(148, 163, 184, 0.28);
+      background: rgba(15, 23, 42, 0.3);
+    }
+    .lms-curriculum-view summary {
+      letter-spacing: 0.02em;
+    }
+    .lms-actions {
+      gap: 9px;
+    }
+    .lms-builder-layout {
+      gap: 14px;
+    }
+    .lms-builder-card {
+      border-radius: 13px;
+      padding: 14px;
+    }
+    .lms-builder-side {
+      position: sticky;
+      top: 78px;
+      align-self: start;
+    }
     @media (max-width: 1120px) {
       .lms-builder-layout {
         grid-template-columns: 1fr;
+      }
+      .lms-builder-side {
+        position: static;
+      }
+      .lms-overview-showcase {
+        grid-template-columns: 1fr;
+      }
+      .lms-hero-top {
+        grid-template-columns: 1fr;
+      }
+      .lms-hero-actions {
+        justify-content: flex-start;
+      }
+    }
+    @media (max-width: 720px) {
+      .container.lms-shell {
+        padding-inline: 12px;
+      }
+      .lms-surface {
+        padding: 14px;
+      }
+      .lms-tab {
+        font-size: 11px;
+        padding: 9px 12px;
+      }
+      .lms-course-media {
+        min-height: 130px;
+      }
+      .lms-course-media img {
+        height: 130px;
       }
     }
   </style>
@@ -538,11 +773,20 @@
   %>
   <div class="container lms-shell">
     <section class="lms-hero">
-      <div>
-        <h1 class="lms-title">Simple LMS</h1>
-        <p class="lms-subtitle">
-          Team-aware learning inside IDP: create courses, build programs, assign by hierarchy, track completion, and manage course requests.
-        </p>
+      <div class="lms-hero-top">
+        <div>
+          <h1 class="lms-title">Simple LMS</h1>
+          <p class="lms-subtitle">
+            Team-aware learning inside IDP: create courses, build programs, assign by hierarchy, track completion, and manage course requests.
+          </p>
+        </div>
+        <div class="lms-hero-actions">
+          <a class="btn btn-primary btn-sm" href="<%= href('my-learning') %>">Continue Learning</a>
+          <a class="btn btn-secondary btn-sm" href="<%= href('catalog') %>">Explore Catalog</a>
+          <% if (canCreateCourses) { %>
+            <a class="btn btn-secondary btn-sm" href="<%= href('course-studio') %>">Create Course</a>
+          <% } %>
+        </div>
       </div>
       <div class="lms-chip-row">
         <span class="lms-chip">Organization: <%= organizationName %></span>
@@ -587,7 +831,35 @@
       <section class="lms-surface">
         <h2 class="lms-section-title">Overview</h2>
         <p class="lms-section-subtitle">Start here: understand your LMS scope, recent learning activity, and pending review actions.</p>
-        <div class="lms-grid">
+        <% 
+          const activeEnrollment = (myEnrollments || []).find(enrollment => Number(enrollment?.progressPercent || 0) < 100) || (myEnrollments || [])[0]
+          const featuredCatalogCourse = (marketplaceCourses || [])[0]
+        %>
+        <div class="lms-overview-showcase">
+          <article class="lms-overview-tile">
+            <p class="lms-overview-kicker">Continue Learning</p>
+            <h3 class="lms-overview-headline"><%= activeEnrollment?.course?.title || 'No active learning assignment yet' %></h3>
+            <p class="lms-overview-copy">
+              <% if (activeEnrollment) { %>
+                Progress: <strong><%= activeEnrollment.progressPercent || 0 %>%</strong> • Status: <strong><%= activeEnrollment.status %></strong>
+              <% } else { %>
+                Open the catalog to request courses or wait for your manager to assign a new pathway.
+              <% } %>
+            </p>
+            <div class="lms-actions">
+              <a href="<%= href('my-learning') %>" class="btn btn-primary btn-sm">Open My Learning</a>
+            </div>
+          </article>
+          <article class="lms-overview-tile">
+            <p class="lms-overview-kicker">Featured Catalog Course</p>
+            <h3 class="lms-overview-headline"><%= featuredCatalogCourse?.title || 'No catalog course published yet' %></h3>
+            <p class="lms-overview-copy"><%= featuredCatalogCourse?.summary || 'System and public courses appear here once available.' %></p>
+            <div class="lms-actions">
+              <a href="<%= href('catalog') %>" class="btn btn-secondary btn-sm">Browse Catalog</a>
+            </div>
+          </article>
+        </div>
+        <div class="lms-grid lms-grid--dense">
           <article class="lms-stat"><span class="lms-stat-label">My Enrollments</span><span class="lms-stat-value"><%= (myEnrollments || []).length %></span></article>
           <article class="lms-stat"><span class="lms-stat-label">Courses I Own</span><span class="lms-stat-value"><%= (ownedCourses || []).length %></span></article>
           <article class="lms-stat"><span class="lms-stat-label">Managed Members</span><span class="lms-stat-value"><%= scopeSummary?.manageableMembers || 0 %></span></article>
@@ -609,6 +881,13 @@
           <div class="lms-grid">
             <% myEnrollments.forEach(enrollment => { %>
               <article class="lms-course-card">
+                <div class="lms-course-media">
+                  <% if (enrollment?.course?.banner?.url) { %>
+                    <img src="<%= enrollment.course.banner.url %>" alt="<%= enrollment.course?.title || 'Course' %> banner">
+                  <% } else { %>
+                    <span>Learning Card</span>
+                  <% } %>
+                </div>
                 <h3 class="lms-course-title"><%= enrollment.course?.title || 'Course' %></h3>
                 <div class="lms-course-meta">
                   <span>Status: <strong><%= enrollment.status %></strong></span>
@@ -666,14 +945,16 @@
           <div class="lms-grid">
             <% marketplaceCourses.forEach(course => { %>
               <article class="lms-course-card">
+                <div class="lms-course-media">
+                  <% if (course?.banner?.url) { %>
+                    <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+                  <% } else { %>
+                    <span><%= course.isSystemCourse ? 'System Course' : 'Public Course' %></span>
+                  <% } %>
+                </div>
                 <h3 class="lms-course-title"><%= course.title %></h3>
                 <div class="lms-course-meta"><span><%= course.isSystemCourse ? 'System' : 'Public' %></span><span>Lessons: <%= course.lessonCount || 0 %></span><span>Status: <%= course.status %></span></div>
                 <p class="lms-course-summary"><%= course.summary || 'No summary available.' %></p>
-                <% if (course?.banner?.url) { %>
-                  <div class="lms-banner-preview active" style="max-width: 100%;">
-                    <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
-                  </div>
-                <% } %>
                 <% 
                   const catalogChapters = course?.chapters || []
                   const catalogLessonCount = catalogChapters.reduce((sum, chapter) => sum + ((chapter?.lessons || []).length), 0)
@@ -1038,6 +1319,13 @@
                   <div class="lms-owned-grid">
                     <% ownedCourses.forEach(course => { %>
                       <article class="lms-course-card">
+                        <div class="lms-course-media">
+                          <% if (course?.banner?.url) { %>
+                            <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+                          <% } else { %>
+                            <span>Course Studio</span>
+                          <% } %>
+                        </div>
                         <h3 class="lms-course-title"><%= course.title %></h3>
                         <div class="lms-course-meta">
                           <span>Status: <strong><%= course.status %></strong></span>
@@ -1045,11 +1333,6 @@
                           <span>Lessons: <%= course.lessonCount || 0 %></span>
                         </div>
                         <p class="lms-course-summary"><%= course.summary || 'No summary provided.' %></p>
-                        <% if (course?.banner?.url) { %>
-                          <div class="lms-banner-preview active" style="max-width: 100%;">
-                            <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
-                          </div>
-                        <% } %>
                         <% 
                           const ownedChapters = course?.chapters || []
                           const ownedLessonCount = ownedChapters.reduce((sum, chapter) => sum + ((chapter?.lessons || []).length), 0)
@@ -1136,6 +1419,13 @@
                   <div class="lms-owned-grid">
                     <% editablePrograms.forEach(program => { %>
                       <article class="lms-course-card">
+                        <div class="lms-course-media">
+                          <% if (program?.banner?.url) { %>
+                            <img src="<%= program.banner.url %>" alt="<%= program.name %> banner">
+                          <% } else { %>
+                            <span>Program Pathway</span>
+                          <% } %>
+                        </div>
                         <h3 class="lms-course-title"><%= program.name %></h3>
                         <div class="lms-course-meta">
                           <span>Status: <strong><%= program.status %></strong></span>
@@ -1143,11 +1433,6 @@
                           <span>Steps: <%= (program.steps || []).length %></span>
                         </div>
                         <p class="lms-course-summary"><%= program.description || 'No description provided.' %></p>
-                        <% if (program?.banner?.url) { %>
-                          <div class="lms-banner-preview active" style="max-width: 100%;">
-                            <img src="<%= program.banner.url %>" alt="<%= program.name %> banner">
-                          </div>
-                        <% } %>
                         <% if ((program.steps || []).length > 0) { %>
                           <details class="lms-curriculum-view">
                             <summary>Pathway (<%= (program.steps || []).length %> courses)</summary>
