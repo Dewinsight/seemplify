@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <%- include('./partials/nav', { user, activePage }) %>
+
+  <% const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
+
+  <main class="public-shell">
+    <section class="public-hero">
+      <p class="public-kicker">Seemplify Learning</p>
+      <h1 class="public-title">Learn from real-world courses before you sign in.</h1>
+      <p class="public-subtitle">
+        Browse published courses, inspect outlines, and decide what to study first.
+        You only need an account when you are ready to start learning.
+      </p>
+
+      <div class="public-actions">
+        <a href="/courses" class="btn btn-primary">Explore Courses</a>
+        <% if (user) { %>
+          <a href="/simple-lms" class="btn btn-secondary">Open Learning Workspace</a>
+        <% } else { %>
+          <a href="/register" class="btn btn-secondary">Create Account</a>
+        <% } %>
+      </div>
+
+      <div class="public-stats">
+        <article class="public-stat">
+          <p class="public-stat-label">Published Courses</p>
+          <p class="public-stat-value"><%= totalCourses %></p>
+        </article>
+        <article class="public-stat">
+          <p class="public-stat-label">Total Lessons</p>
+          <p class="public-stat-value"><%= totalLessons %></p>
+        </article>
+        <article class="public-stat">
+          <p class="public-stat-label">Learning Hours</p>
+          <p class="public-stat-value"><%= totalDurationHours %></p>
+        </article>
+      </div>
+    </section>
+
+    <% if (topCategories && topCategories.length > 0) { %>
+      <section class="public-surface">
+        <div class="public-surface-head">
+          <div>
+            <h2 class="public-surface-title">Top Categories</h2>
+            <p class="public-surface-subtitle">Popular learning tracks teams are publishing right now.</p>
+          </div>
+        </div>
+        <div class="public-chip-row">
+          <% topCategories.forEach((category) => { %>
+            <a href="/courses?category=<%= encodeURIComponent(category.name) %>" class="public-chip">
+              <%= category.name %> (<%= category.count %>)
+            </a>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+
+    <section class="public-surface">
+      <div class="public-surface-head">
+        <div>
+          <h2 class="public-surface-title">Featured Courses</h2>
+          <p class="public-surface-subtitle">Preview course quality and structure before you enroll.</p>
+        </div>
+        <a href="/courses" class="btn btn-secondary btn-sm">View Full Catalog</a>
+      </div>
+
+      <% if (!featuredCourses || featuredCourses.length === 0) { %>
+        <div class="empty-state">
+          No public courses are available yet.
+        </div>
+      <% } else { %>
+        <div class="course-grid">
+          <% featuredCourses.forEach((course) => { %>
+            <article class="course-card">
+              <a class="course-card-media" href="<%= courseHref(course) %>">
+                <% if (course.banner?.url) { %>
+                  <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+                <% } else { %>
+                  <span>Course Preview</span>
+                <% } %>
+              </a>
+              <div class="course-card-body">
+                <div class="course-card-meta">
+                  <span class="course-pill"><%= course.levelLabel %></span>
+                  <% if (course.category) { %>
+                    <span class="course-pill"><%= course.category %></span>
+                  <% } %>
+                </div>
+                <h3><a href="<%= courseHref(course) %>"><%= course.title %></a></h3>
+                <p><%= course.previewSummary %></p>
+                <div class="course-card-footer">
+                  <span class="course-price"><%= course.displayPrice %></span>
+                  <a href="<%= courseHref(course) %>" class="btn btn-secondary btn-sm">View Course</a>
+                </div>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+      <% } %>
+    </section>
+  </main>
+</body>
+</html>

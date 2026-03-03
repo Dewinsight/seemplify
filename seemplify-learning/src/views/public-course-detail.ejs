@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <%- include('./partials/nav', { user, activePage }) %>
+
+  <% const takePath = `/simple-lms/take/${course._id}` %>
+  <% const takeHref = user ? takePath : `/login?return_to=${encodeURIComponent(takePath)}` %>
+  <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
+
+  <main class="public-shell">
+    <section class="public-surface">
+      <a href="/courses" class="btn btn-secondary btn-sm" style="width: fit-content;">Back to Catalog</a>
+    </section>
+
+    <section class="detail-layout">
+      <div class="detail-main">
+        <article class="detail-card">
+          <p class="public-kicker">Course Detail</p>
+          <h1 class="detail-title"><%= course.title %></h1>
+          <div class="detail-meta">
+            <span class="course-pill"><%= course.levelLabel %></span>
+            <% if (course.category) { %>
+              <span class="course-pill"><%= course.category %></span>
+            <% } %>
+            <span class="course-pill"><%= course.lessonCount %> lessons</span>
+            <span class="course-pill"><%= Math.round(course.estimatedDurationMinutes) %> mins</span>
+          </div>
+          <p class="detail-description"><%= course.previewSummary %></p>
+          <% if (course.description) { %>
+            <p class="detail-description"><%= course.description %></p>
+          <% } %>
+        </article>
+
+        <article class="detail-banner">
+          <% if (course.banner?.url) { %>
+            <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
+          <% } else { %>
+            <span>No banner uploaded</span>
+          <% } %>
+        </article>
+
+        <article class="detail-outline">
+          <h3>Course Outline</h3>
+          <% if (!chapters || chapters.length === 0) { %>
+            <p class="detail-note">Curriculum details will appear here when chapters are published.</p>
+          <% } else { %>
+            <div class="outline-list">
+              <% chapters.forEach((chapter, index) => { %>
+                <section class="outline-item">
+                  <h4><%= index + 1 %>. <%= chapter.title %></h4>
+                  <% if (chapter.description) { %>
+                    <p><%= chapter.description %></p>
+                  <% } %>
+                  <% if (chapter.lessons && chapter.lessons.length > 0) { %>
+                    <ol class="outline-lessons">
+                      <% chapter.lessons.forEach((lesson) => { %>
+                        <li>
+                          <%= lesson.title %>
+                          <% if (lesson.durationMinutes > 0) { %>
+                            (<%= lesson.durationMinutes %> min)
+                          <% } %>
+                        </li>
+                      <% }) %>
+                    </ol>
+                  <% } %>
+                </section>
+              <% }) %>
+            </div>
+          <% } %>
+        </article>
+
+        <% if (relatedCourses && relatedCourses.length > 0) { %>
+          <section class="public-surface">
+            <div class="public-surface-head">
+              <div>
+                <h2 class="public-surface-title">Related Courses</h2>
+                <p class="public-surface-subtitle">Continue with similar topics after this course.</p>
+              </div>
+            </div>
+            <div class="course-grid">
+              <% relatedCourses.forEach((entry) => { %>
+                <article class="course-card">
+                  <a class="course-card-media" href="<%= courseHref(entry) %>">
+                    <% if (entry.banner?.url) { %>
+                      <img src="<%= entry.banner.url %>" alt="<%= entry.title %> banner">
+                    <% } else { %>
+                      <span><%= entry.category || 'Course' %></span>
+                    <% } %>
+                  </a>
+                  <div class="course-card-body">
+                    <div class="course-card-meta">
+                      <span class="course-pill"><%= entry.levelLabel %></span>
+                      <% if (entry.category) { %>
+                        <span class="course-pill"><%= entry.category %></span>
+                      <% } %>
+                    </div>
+                    <h3><a href="<%= courseHref(entry) %>"><%= entry.title %></a></h3>
+                    <p><%= entry.previewSummary %></p>
+                    <div class="course-card-footer">
+                      <span class="course-price"><%= entry.displayPrice %></span>
+                      <a href="<%= courseHref(entry) %>" class="btn btn-secondary btn-sm">View</a>
+                    </div>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          </section>
+        <% } %>
+      </div>
+
+      <aside class="detail-side">
+        <article class="detail-card">
+          <p class="detail-cta-price"><%= course.displayPrice %></p>
+          <p class="detail-note">
+            <strong>Instructor:</strong> <%= course.authorName %><br>
+            <strong>Duration:</strong> <%= Math.round(course.estimatedDurationMinutes) %> minutes
+          </p>
+          <a href="<%= takeHref %>" class="btn btn-primary">
+            <%= user ? 'Start Learning' : 'Login to Start Learning' %>
+          </a>
+          <p class="detail-note">
+            You can explore content without an account. Login is required only when you want to start this course.
+          </p>
+        </article>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

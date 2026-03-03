@@ -4,7 +4,8 @@ const SimpleLmsPermissionSchema = new mongoose.Schema({
   organization: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AiinOrganization',
-    required: true,
+    required: false,
+    default: null,
     index: true
   },
   account: {

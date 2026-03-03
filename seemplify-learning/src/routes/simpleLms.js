@@ -1,166 +1,378 @@
+﻿
 import express from 'express'
 import mongoose from 'mongoose'
 import multer from 'multer'
 import { Account } from '../models/Account.js'
-import { Organization } from '../models/Organization.js'
-import { Team } from '../models/Team.js'
-import { Notification } from '../models/Notification.js'
-import { emailService } from '../services/emailService.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
-import { subscriptionService } from '../services/subscriptionService.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
-import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
-import { SimpleLmsRequest } from '../models/SimpleLmsRequest.js'
-import { SimpleLmsPermission } from '../models/SimpleLmsPermission.js'
-import {
-  SIMPLE_LMS_ORG_MANAGER_ROLES,
-  getSimpleLmsAccessScope,
-  getOrganizationMembersWithTeamContext,
-  toIdString,
-  slugifyValue,
-  calculateProgress,
-  extractLessonKeys
-} from '../utils/simpleLms.js'
+import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
+import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
+import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
 
 const pageRouter = express.Router()
 const apiRouter = express.Router()
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 12 * 1024 * 1024
-  }
+  limits: { fileSize: 12 * 1024 * 1024 }
 })
 
-const VALID_VIEW_MODES = new Set(['overview', 'catalog', 'my-learning', 'manage', 'course-studio', 'program-studio', 'requests'])
-const SUPPORTED_SIMPLE_LMS_CURRENCIES = Object.freeze([
-  { code: 'NGN', name: 'Nigerian Naira' },
-  { code: 'USD', name: 'US Dollar' },
-  { code: 'EUR', name: 'Euro' },
-  { code: 'GBP', name: 'British Pound' },
-  { code: 'KES', name: 'Kenyan Shilling' },
-  { code: 'GHS', name: 'Ghanaian Cedi' },
-  { code: 'ZAR', name: 'South African Rand' }
-])
-const SUPPORTED_SIMPLE_LMS_CURRENCY_CODES = new Set(
-  SUPPORTED_SIMPLE_LMS_CURRENCIES.map(currency => currency.code)
-)
+const ROLES = ['super_admin', 'admin', 'creator', 'learner']
+const VIEW_MODES = ['overview', 'catalog', 'my-learning', 'course-studio', 'program-studio', 'admin']
+const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
+const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
+const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
+const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
+const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 
-const htmlEscape = (value) => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;')
+const LEVEL_LABELS = Object.freeze({
+  beginner: 'Beginner',
+  intermediate: 'Intermediate',
+  advanced: 'Advanced',
+  mixed: 'Mixed'
+})
+
+const toIdString = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && value._id) return String(value._id)
+  return String(value)
+}
+
+const resolveRole = (account) => {
+  if (!account) return 'learner'
+  if (account.isSuperAdmin) return 'super_admin'
+  if (account.isSystemAdmin) return 'admin'
+  const normalized = String(account.learningRole || '').trim().toLowerCase()
+  return ROLES.includes(normalized) ? normalized : 'learner'
+}
+
+const canManagePlatform = (role) => ['super_admin', 'admin'].includes(role)
+const canCreateCourses = (role) => canManagePlatform(role) || role === 'creator'
 
 const parseJsonInput = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback
   if (typeof value === 'object') return value
   try {
-    return JSON.parse(value)
+    return JSON.parse(String(value))
   } catch {
     return fallback
   }
 }
 
+const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const slugifyValue = (value, fallback = 'item') => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return normalized || fallback
+}
+
 const normalizeCurrencyCode = (value, fallback = 'NGN') => {
   const normalized = String(value || '').trim().toUpperCase().slice(0, 3)
-  if (SUPPORTED_SIMPLE_LMS_CURRENCY_CODES.has(normalized)) {
-    return normalized
-  }
-  if (fallback === undefined || fallback === null || fallback === '') {
-    return ''
-  }
-  const fallbackCurrency = String(fallback || '').trim().toUpperCase().slice(0, 3)
-  if (SUPPORTED_SIMPLE_LMS_CURRENCY_CODES.has(fallbackCurrency)) {
-    return fallbackCurrency
-  }
+  if (CURRENCY_CODES.includes(normalized)) return normalized
+  const fallbackCurrency = String(fallback || 'NGN').trim().toUpperCase().slice(0, 3)
+  if (CURRENCY_CODES.includes(fallbackCurrency)) return fallbackCurrency
   return 'NGN'
 }
 
-const normalizeCurrencyList = (currenciesInput = []) => {
-  const source = Array.isArray(currenciesInput) ? currenciesInput : [currenciesInput]
-  const normalized = []
-  source.forEach((value) => {
-    const code = normalizeCurrencyCode(value, '')
-    if (!code) return
-    if (!normalized.includes(code)) {
-      normalized.push(code)
-    }
-  })
-  return normalized
-}
-
-const getSimpleLmsCurrencySettings = (organization) => {
-  const simpleLmsSettings = organization?.settings?.simpleLms || {}
-  const defaultCurrency = normalizeCurrencyCode(simpleLmsSettings.defaultCurrency, 'NGN')
-  const allowedCurrencies = normalizeCurrencyList(simpleLmsSettings.allowedCurrencies || [])
-  if (!allowedCurrencies.includes(defaultCurrency)) {
-    allowedCurrencies.unshift(defaultCurrency)
-  }
-
-  return {
-    defaultCurrency,
-    allowedCurrencies: allowedCurrencies.length > 0 ? allowedCurrencies : [defaultCurrency]
-  }
-}
-
-const formatCurrencyAmount = (amountMinor, currency) => {
-  const normalizedCurrency = normalizeCurrencyCode(currency, 'NGN')
-  const amount = Number.isFinite(Number(amountMinor)) ? Number(amountMinor) : 0
-  const majorAmount = amount / 100
+const formatCurrencyAmount = (amountMinor, currencyCode) => {
+  const amount = Number.isFinite(Number(amountMinor))
+    ? Math.max(0, Math.round(Number(amountMinor)))
+    : 0
+  const major = amount / 100
+  const currency = normalizeCurrencyCode(currencyCode)
 
   try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: normalizedCurrency
-    }).format(majorAmount)
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(major)
   } catch {
-    return `${normalizedCurrency} ${majorAmount.toFixed(2)}`
+    return `${currency} ${major.toFixed(2)}`
   }
 }
 
-const decorateCoursePricing = (course, currencySettings) => {
-  if (!course) return course
+const generateTxRef = () => {
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `sl_${Date.now()}_${randomPart}`
+}
 
+const isCoursePaidContent = (course) => {
+  const paymentMode = String(course?.pricing?.paymentMode || '').trim().toLowerCase()
+  const amount = Number.isFinite(Number(course?.pricing?.amount)) ? Number(course.pricing.amount) : 0
+  return paymentMode === 'paid' && amount > 0
+}
+
+const buildAppBaseUrl = (req) => {
+  const configured = String(process.env.APP_BASE_URL || '').trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  return `${req.protocol}://${req.get('host')}`
+}
+
+const parseTags = (value) => String(value || '')
+  .split(',')
+  .map(tag => tag.trim())
+  .filter(Boolean)
+
+const normalizeVisibility = (value, role) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'marketplace') {
+    return canManagePlatform(role) ? 'system_public' : 'organization_public'
+  }
+  if (normalized === 'public') return 'organization_public'
+  return 'organization_private'
+}
+
+const visibilityToDisplay = (value) => {
+  if (value === 'system_public') return 'Marketplace'
+  if (value === 'organization_public') return 'Public'
+  return 'Private'
+}
+
+const normalizeSort = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return SORT_OPTIONS.includes(normalized) ? normalized : 'newest'
+}
+
+const mapSortToMongo = (sortKey) => {
+  switch (sortKey) {
+    case 'popular':
+      return { enrollmentCount: -1, updatedAt: -1 }
+    case 'title_asc':
+      return { title: 1, updatedAt: -1 }
+    case 'duration_desc':
+      return { estimatedDurationMinutes: -1, updatedAt: -1 }
+    default:
+      return { updatedAt: -1 }
+  }
+}
+
+const requirePageAuth = async (req, res, next) => {
+  const sub = String(req.session?.accountId || '').trim()
+  if (!sub) {
+    return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
+  }
+  const account = await Account.findOne({ sub })
+  if (!account) {
+    return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
+  }
+  req.user = account
+  return next()
+}
+
+const requireApiAuth = async (req, res, next) => {
+  const sub = String(req.session?.accountId || '').trim()
+  if (!sub) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  const account = await Account.findOne({ sub })
+  if (!account) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  req.user = account
+  return next()
+}
+
+const canManageCourse = ({ role, accountId, course }) => {
+  if (!course) return false
+  if (canManagePlatform(role)) return true
+  return role === 'creator' && toIdString(course.createdBy) === toIdString(accountId)
+}
+
+const canManageProgram = ({ role, accountId, program }) => {
+  if (!program) return false
+  if (canManagePlatform(role)) return true
+  return role === 'creator' && toIdString(program.createdBy) === toIdString(accountId)
+}
+
+const parseViewMode = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'studio' || normalized === 'course-studio' || normalized === 'manage') return 'course-studio'
+  if (normalized === 'program-studio' || normalized === 'pathways') return 'program-studio'
+  return VIEW_MODES.includes(normalized) ? normalized : 'overview'
+}
+
+const parseCourseStatus = (value, fallback = 'draft') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['draft', 'published', 'archived'].includes(normalized) ? normalized : fallback
+}
+
+const parseProgramStatus = (value, fallback = 'draft') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['draft', 'published', 'archived'].includes(normalized) ? normalized : fallback
+}
+
+const normalizeProgramVisibility = (value, fallback = 'organization_private') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'public' || normalized === 'organization_public') return 'organization_public'
+  if (normalized === 'private' || normalized === 'organization_private') return 'organization_private'
+  return fallback
+}
+
+const flattenCourseLessons = (course) => {
+  const entries = []
+  for (const chapter of course?.chapters || []) {
+    const chapterKey = String(chapter?.key || '')
+    const chapterTitle = String(chapter?.title || 'Chapter')
+    for (const lesson of chapter?.lessons || []) {
+      const lessonKey = String(lesson?.key || '').trim()
+      if (!lessonKey) continue
+      entries.push({
+        chapterKey,
+        chapterTitle,
+        lessonKey,
+        title: String(lesson?.title || 'Lesson'),
+        description: String(lesson?.description || ''),
+        content: String(lesson?.content || ''),
+        videoUrl: String(lesson?.videoUrl || ''),
+        durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0,
+        resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+        quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+      })
+    }
+  }
+  return entries
+}
+
+const calculateProgress = ({ lessons, completedLessonKeys = [] }) => {
+  const lessonKeys = lessons.map(lesson => lesson.lessonKey)
+  const completedSet = new Set((completedLessonKeys || []).map(key => String(key)))
+  const completedCount = lessonKeys.filter(key => completedSet.has(key)).length
+  const lessonCount = lessonKeys.length
+  const progressPercent = lessonCount > 0 ? Math.round((completedCount / lessonCount) * 100) : 0
+  const nextLesson = lessons.find(entry => !completedSet.has(entry.lessonKey)) || lessons[0] || null
+  return {
+    completedSet,
+    completedCount,
+    lessonCount,
+    progressPercent,
+    nextLessonKey: nextLesson ? nextLesson.lessonKey : null,
+    isCompleted: lessonCount > 0 && completedCount >= lessonCount
+  }
+}
+
+const resolveVideoEmbedUrl = (rawUrl) => {
+  const value = String(rawUrl || '').trim()
+  if (!value) return ''
+  try {
+    const parsed = new URL(value)
+    const hostname = parsed.hostname.toLowerCase()
+    if (hostname.includes('youtube.com')) {
+      const videoId = parsed.searchParams.get('v')
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`
+    }
+    if (hostname.includes('youtu.be')) {
+      const videoId = parsed.pathname.split('/').filter(Boolean)[0]
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`
+    }
+    if (hostname.includes('drive.google.com')) {
+      const parts = parsed.pathname.split('/')
+      const dIndex = parts.findIndex(part => part === 'd')
+      if (dIndex >= 0 && parts[dIndex + 1]) {
+        return `https://drive.google.com/file/d/${parts[dIndex + 1]}/preview`
+      }
+    }
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+const decorateCourse = (course) => {
   const paymentMode = course?.pricing?.paymentMode === 'paid' ? 'paid' : 'free'
-  const amount = Number.isFinite(Number(course?.pricing?.amount))
-    ? Math.max(0, Math.round(Number(course.pricing.amount)))
-    : 0
-  const currency = normalizeCurrencyCode(
-    course?.pricing?.currency,
-    currencySettings?.defaultCurrency || 'NGN'
-  )
-  const displayPrice = paymentMode === 'paid' && amount > 0
-    ? formatCurrencyAmount(amount, currency)
-    : 'Free'
+  const amount = Number.isFinite(Number(course?.pricing?.amount)) ? Math.max(0, Number(course.pricing.amount)) : 0
+  const currency = normalizeCurrencyCode(course?.pricing?.currency)
+  const displayPrice = paymentMode === 'paid' && amount > 0 ? formatCurrencyAmount(amount, currency) : 'Free'
 
   return {
     ...course,
-    pricing: {
-      ...(course.pricing || {}),
-      paymentMode,
-      amount,
-      currency
-    },
-    displayPrice
+    levelLabel: LEVEL_LABELS[course?.level] || 'Mixed',
+    summaryText: String(course?.summary || '').trim() || String(course?.description || '').trim() || 'No summary yet.',
+    displayPrice,
+    visibilityDisplay: visibilityToDisplay(course?.visibility),
+    lessonCount: Number.isFinite(Number(course?.lessonCount)) ? Number(course.lessonCount) : 0,
+    estimatedDurationMinutes: Number.isFinite(Number(course?.estimatedDurationMinutes)) ? Number(course.estimatedDurationMinutes) : 0,
+    courseUrl: `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`,
+    authorName: String(course?.createdByName || '').trim() || 'Seemplify Learning'
   }
 }
 
-const normalizeStringList = (value) => {
-  if (Array.isArray(value)) {
-    return value
-      .map(item => String(item || '').trim())
-      .filter(Boolean)
-  }
-
-  return String(value || '')
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean)
+const refreshCourseMetrics = async (courseId) => {
+  const [enrollmentCount, completionCount] = await Promise.all([
+    SimpleLmsEnrollment.countDocuments({ course: courseId }),
+    SimpleLmsEnrollment.countDocuments({ course: courseId, status: 'completed' })
+  ])
+  await SimpleLmsCourse.updateOne({ _id: courseId }, { $set: { enrollmentCount, completionCount } })
 }
 
+const createOrUpdateEnrollment = async ({
+  courseId,
+  learnerId,
+  actorId,
+  assignmentType = 'self',
+  source = 'self_enroll',
+  programId = null
+}) => {
+  const filter = {
+    course: courseId,
+    enrolledMember: learnerId
+  }
+
+  const existing = await SimpleLmsEnrollment.findOne(filter)
+  if (existing) {
+    let hasChange = false
+    if (programId && !existing.program) {
+      existing.program = programId
+      hasChange = true
+    }
+    if (assignmentType && existing.assignmentType !== assignmentType) {
+      existing.assignmentType = assignmentType
+      hasChange = true
+    }
+    if (source && existing.source !== source) {
+      existing.source = source
+      hasChange = true
+    }
+    if (hasChange) {
+      existing.lastActivityAt = new Date()
+      await existing.save()
+    }
+    return {
+      enrollment: existing,
+      created: false
+    }
+  }
+
+  const enrollment = await SimpleLmsEnrollment.create({
+    organization: null,
+    course: courseId,
+    program: programId || null,
+    enrolledMember: learnerId,
+    enrolledBy: actorId || learnerId,
+    assignmentType,
+    source,
+    status: 'assigned',
+    completedLessonKeys: []
+  })
+
+  await refreshCourseMetrics(courseId)
+  return {
+    enrollment,
+    created: true
+  }
+}
+
+const redirectWithMessage = ({ res, path = '/simple-lms', success = '', error = '', info = '' }) => {
+  const params = new URLSearchParams()
+  if (success) params.set('success', success)
+  if (error) params.set('error', error)
+  if (info) params.set('info', info)
+  const query = params.toString()
+  return res.redirect(query ? `${path}${path.includes('?') ? '&' : '?'}${query}` : path)
+}
 const sanitizeQuizChoices = (choicesInput = [], correctIndexInput = -1) => {
   const choices = Array.isArray(choicesInput)
     ? choicesInput
@@ -184,11 +396,9 @@ const sanitizeQuizChoices = (choicesInput = [], correctIndexInput = -1) => {
   if (!hasExplicitCorrectChoice && Number.isInteger(parsedCorrectIndex) && parsedCorrectIndex >= 0 && parsedCorrectIndex < choices.length) {
     choices[parsedCorrectIndex].isCorrect = true
   }
-
   if (choices.length > 0 && !choices.some(choice => choice.isCorrect)) {
     choices[0].isCorrect = true
   }
-
   return choices.slice(0, 6)
 }
 
@@ -208,10 +418,7 @@ const sanitizeChaptersInput = (input) => {
       const lessonTitle = String(rawLesson?.title || '').trim()
       if (!lessonTitle) return
 
-      const lessonKey = String(
-        rawLesson?.key ||
-        `${chapterKey}-lesson-${lessonIndex + 1}`
-      )
+      const lessonKey = String(rawLesson?.key || `${chapterKey}-lesson-${lessonIndex + 1}`)
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9-_]+/g, '-')
@@ -228,17 +435,13 @@ const sanitizeChaptersInput = (input) => {
           .filter(resource => resource.label && resource.url)
         : []
 
-      const rawQuestions = Array.isArray(rawLesson?.quizQuestions)
-        ? rawLesson.quizQuestions
-        : []
+      const rawQuestions = Array.isArray(rawLesson?.quizQuestions) ? rawLesson.quizQuestions : []
       const quizQuestions = rawQuestions
         .map(question => {
           const prompt = String(question?.prompt || '').trim().slice(0, 1000)
           if (!prompt) return null
-
           const choices = sanitizeQuizChoices(question?.choices, question?.correctIndex)
           if (choices.length < 2) return null
-
           return {
             prompt,
             choices,
@@ -253,9 +456,7 @@ const sanitizeChaptersInput = (input) => {
         description: String(rawLesson?.description || '').trim().slice(0, 3000),
         videoUrl: String(rawLesson?.videoUrl || '').trim().slice(0, 2000),
         content: String(rawLesson?.content || '').trim().slice(0, 40000),
-        durationMinutes: Number.isFinite(Number(rawLesson?.durationMinutes))
-          ? Math.max(0, Math.round(Number(rawLesson.durationMinutes)))
-          : 0,
+        durationMinutes: Number.isFinite(Number(rawLesson?.durationMinutes)) ? Math.max(0, Math.round(Number(rawLesson.durationMinutes))) : 0,
         resources,
         quizQuestions,
         order: lessonIndex + 1
@@ -274,1540 +475,574 @@ const sanitizeChaptersInput = (input) => {
   return chapters
 }
 
-const getMetadataValue = (metadata, key, fallback = null) => {
-  if (!metadata) return fallback
-  if (typeof metadata.get === 'function') {
-    const mapValue = metadata.get(key)
-    return mapValue === undefined ? fallback : mapValue
+const parseCoursePayload = ({ body, role, existingCourse = null }) => {
+  const title = String(body.title || '').trim()
+  if (!title) {
+    throw new Error('Course title is required.')
   }
-  if (Object.prototype.hasOwnProperty.call(metadata, key)) {
-    return metadata[key]
-  }
-  return fallback
-}
 
-const isPlatformAdmin = (account) => Boolean(account?.isSystemAdmin || account?.isSuperAdmin)
+  const level = LEVELS.includes(String(body.level || '').trim()) ? String(body.level).trim() : 'mixed'
+  const status = parseCourseStatus(body.status || existingCourse?.status || 'draft', 'draft')
+  const visibility = normalizeVisibility(body.visibility || existingCourse?.visibility, role)
+  const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []))
+  const bannerPayload = parseJsonInput(body.bannerPayload, {})
+  const paymentMode = String(body.paymentMode || '').trim() === 'paid' ? 'paid' : 'free'
+  const amount = paymentMode === 'paid' ? Math.max(0, Math.round(Number(body.amount || 0))) : 0
+  const currency = normalizeCurrencyCode(body.currency, existingCourse?.pricing?.currency || 'NGN')
 
-const canManageOrganizationData = (memberRole) => SIMPLE_LMS_ORG_MANAGER_ROLES.includes(memberRole)
-
-async function resolveAuthenticatedAccount(req) {
-  if (req.session?.accountId) {
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (account) {
-      return account
+  const payload = {
+    title: title.slice(0, 200),
+    summary: String(body.summary || '').trim().slice(0, 600),
+    description: String(body.description || '').trim().slice(0, 16000),
+    category: String(body.category || '').trim().slice(0, 120),
+    level,
+    tags: parseTags(body.tags),
+    status,
+    visibility,
+    chapters,
+    pricing: {
+      paymentMode,
+      amount,
+      currency
     }
   }
 
-  return null
+  if (bannerPayload && typeof bannerPayload === 'object' && String(bannerPayload.url || '').trim()) {
+    payload.banner = {
+      url: String(bannerPayload.url || '').trim().slice(0, 2000),
+      publicId: String(bannerPayload.publicId || '').trim().slice(0, 400),
+      width: Number.isFinite(Number(bannerPayload.width)) ? Number(bannerPayload.width) : undefined,
+      height: Number.isFinite(Number(bannerPayload.height)) ? Number(bannerPayload.height) : undefined
+    }
+  } else if (existingCourse?.banner?.url) {
+    payload.banner = existingCourse.banner
+  }
+
+  if (status === 'published') {
+    payload.publishedAt = existingCourse?.publishedAt || new Date()
+    payload.archivedAt = null
+    payload.isActive = true
+  }
+  if (status === 'archived') {
+    payload.archivedAt = new Date()
+    payload.isActive = false
+  }
+  if (status === 'draft') {
+    payload.archivedAt = null
+    payload.isActive = true
+  }
+
+  if (canManagePlatform(role)) {
+    payload.isSystemCourse = body.isSystemCourse === true || body.isSystemCourse === 'on'
+  } else if (existingCourse) {
+    payload.isSystemCourse = Boolean(existingCourse.isSystemCourse)
+  } else {
+    payload.isSystemCourse = false
+  }
+
+  return payload
 }
 
-const requirePageAuth = async (req, res, next) => {
-  const account = await resolveAuthenticatedAccount(req)
-  if (!account) {
-    return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
-  }
-  req.user = account
-  next()
-}
+const sanitizeProgramStepsInput = (input) => {
+  const stepsInput = Array.isArray(input) ? input : []
+  const steps = []
+  const seenCourseIds = new Set()
 
-const requireApiAuth = async (req, res, next) => {
-  const account = await resolveAuthenticatedAccount(req)
-  if (!account) {
-    return res.status(401).json({ error: 'Authentication required' })
-  }
-  req.user = account
-  next()
-}
-
-const resolveCurrentOrganizationContext = async (account) => {
-  const organizationId = toIdString(account?.currentOrganization)
-  if (!organizationId) {
-    return { error: 'Select an organization before using Simple LMS.' }
-  }
-
-  const organization = await Organization.findById(organizationId)
-    .select('name members settings')
-    .lean()
-  if (!organization) {
-    return { error: 'Organization not found for current session.' }
-  }
-
-  const memberRecord = (organization.members || []).find(member => (
-    member.status === 'active' &&
-    toIdString(member.account) === toIdString(account._id)
-  ))
-  if (!memberRecord) {
-    return { error: 'You are not an active member of the current organization.' }
-  }
-
-  return {
-    organizationId,
-    organizationName: organization.name || 'Organization',
-    memberRole: memberRecord.role,
-    organization
-  }
-}
-
-const getLmsPlanAccess = async (organizationId) => {
-  const [subscription, features, limits] = await Promise.all([
-    subscriptionService.getSubscriptionForOrg(organizationId),
-    subscriptionService.getEffectiveFeatures(organizationId),
-    subscriptionService.getEffectiveLimits(organizationId)
-  ])
-
-  const maxSystemCourses = Object.prototype.hasOwnProperty.call(limits || {}, 'maxSystemCourses')
-    ? limits.maxSystemCourses
-    : null
-
-  return {
-    hasLmsFeature: Boolean(features?.lms),
-    planName: subscription?.plan?.name || null,
-    maxSystemCourses
-  }
-}
-
-const buildAssignableMembers = ({ orgMembers, scope, accountId }) => {
-  if (scope.canManageOrganization) {
-    return orgMembers
-      .filter(member => member.accountId !== toIdString(accountId))
-      .map(member => ({
-        ...member,
-        canAssign: true
-      }))
-  }
-
-  const manageableSet = scope.manageableMemberIdSet
-  return orgMembers
-    .filter(member => manageableSet.has(member.accountId))
-    .map(member => ({
-      ...member,
-      canAssign: true
-    }))
-}
-
-const canManageCourse = ({ course, accountId, memberRole, scope, platformAdmin }) => {
-  if (!course) return false
-  if (platformAdmin && course.isSystemCourse) return true
-
-  if (course.organization && toIdString(course.organization) !== toIdString(scope.organizationId)) {
-    return false
-  }
-
-  if (canManageOrganizationData(memberRole)) {
-    return true
-  }
-
-  return toIdString(course.createdBy) === toIdString(accountId)
-}
-
-const createNotification = async ({
-  organizationId,
-  senderId,
-  recipient,
-  subject,
-  html,
-  text
-}) => {
-  if (!recipient?._id || !recipient?.email || !organizationId || !senderId) {
-    return
-  }
-
-  try {
-    await Notification.create({
-      organization: organizationId,
-      sentBy: senderId,
-      targetType: 'member',
-      targetId: recipient._id,
-      subject,
-      htmlContent: html,
-      textContent: text,
-      status: 'completed',
-      recipientCount: 1,
-      sentCount: 1,
-      failedCount: 0,
-      recipients: [{
-        accountId: recipient._id,
-        email: recipient.email,
-        status: 'sent',
-        sentAt: new Date()
-      }],
-      completedAt: new Date()
+  stepsInput.forEach((rawStep, stepIndex) => {
+    const courseId = String(rawStep?.courseId || rawStep?.course || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) return
+    if (seenCourseIds.has(courseId)) return
+    seenCourseIds.add(courseId)
+    steps.push({
+      course: new mongoose.Types.ObjectId(courseId),
+      order: stepIndex + 1,
+      required: rawStep?.required !== false && rawStep?.required !== 'false'
     })
-  } catch (error) {
-    console.error('Simple LMS notification record failed:', error.message)
-  }
-
-  try {
-    await emailService.sendNotificationEmail({
-      to: recipient.email,
-      toName: recipient.profile?.name || recipient.email,
-      subject,
-      html,
-      text
-    })
-  } catch (error) {
-    console.error('Simple LMS notification email failed:', error.message)
-  }
-}
-
-const markSimpleLmsDashboardViewed = async ({ accountId, organizationId }) => {
-  const accountIdStr = toIdString(accountId)
-  const organizationIdStr = toIdString(organizationId)
-  if (!accountIdStr || !organizationIdStr) return
-
-  try {
-    await Account.updateOne(
-      { _id: accountIdStr },
-      {
-        $set: {
-          [`notificationViews.simpleLmsByOrganization.${organizationIdStr}`]: new Date()
-        }
-      }
-    )
-  } catch (error) {
-    console.error('Failed to mark Simple LMS notification as viewed:', error.message)
-  }
-}
-
-const buildAssignableMemberIds = ({
-  targetType,
-  targetMemberId,
-  targetTeamId,
-  accountId,
-  memberRole,
-  scope,
-  orgMembers,
-  teams
-}) => {
-  const accountIdStr = toIdString(accountId)
-  const memberIdSet = new Set()
-
-  if (targetType === 'self') {
-    memberIdSet.add(accountIdStr)
-    return Array.from(memberIdSet)
-  }
-
-  if (targetType === 'member') {
-    const normalizedMemberId = toIdString(targetMemberId)
-    if (!normalizedMemberId) {
-      throw new Error('Select a member to assign.')
-    }
-    if (!canManageOrganizationData(memberRole) && !scope.manageableMemberIdSet.has(normalizedMemberId)) {
-      throw new Error('You do not have permission to assign this member.')
-    }
-    memberIdSet.add(normalizedMemberId)
-    return Array.from(memberIdSet)
-  }
-
-  if (targetType === 'team') {
-    const normalizedTeamId = toIdString(targetTeamId)
-    if (!normalizedTeamId) {
-      throw new Error('Select a team to assign.')
-    }
-    if (!canManageOrganizationData(memberRole) && !scope.manageableTeamIds.has(normalizedTeamId)) {
-      throw new Error('You do not have permission to assign this team.')
-    }
-
-    const teamAccountIds = new Set()
-    for (const team of teams) {
-      if (toIdString(team._id) !== normalizedTeamId) continue
-      for (const member of team.members || []) {
-        if (member.status !== 'active') continue
-        const memberId = toIdString(member.account)
-        if (!memberId) continue
-        teamAccountIds.add(memberId)
-      }
-    }
-
-    for (const memberId of teamAccountIds) {
-      if (!canManageOrganizationData(memberRole) && !scope.manageableMemberIdSet.has(memberId)) {
-        continue
-      }
-      memberIdSet.add(memberId)
-    }
-
-    if (memberIdSet.size === 0) {
-      throw new Error('No assignable members found in this team.')
-    }
-
-    return Array.from(memberIdSet)
-  }
-
-  if (targetType === 'organization') {
-    if (!canManageOrganizationData(memberRole)) {
-      throw new Error('Only owner, admin, or HR manager can assign to the whole organization.')
-    }
-    orgMembers.forEach(member => memberIdSet.add(member.accountId))
-    return Array.from(memberIdSet)
-  }
-
-  throw new Error('Unsupported assignment target type.')
-}
-
-const assignCourseToMembers = async ({
-  organizationId,
-  course,
-  memberIds,
-  assignedBy,
-  assignmentType,
-  assignedTeam,
-  dueAt,
-  source,
-  programId = null
-}) => {
-  const normalizedMemberIds = Array.from(new Set((memberIds || []).map(id => toIdString(id)).filter(Boolean)))
-  if (normalizedMemberIds.length === 0) {
-    return { assignedCount: 0, updatedCount: 0 }
-  }
-
-  let assignedCount = 0
-  let updatedCount = 0
-
-  for (const memberId of normalizedMemberIds) {
-    const existing = await SimpleLmsEnrollment.findOne({
-      organization: organizationId,
-      course: course._id,
-      enrolledMember: memberId
-    })
-
-    if (!existing) {
-      await SimpleLmsEnrollment.create({
-        organization: organizationId,
-        course: course._id,
-        program: programId,
-        enrolledMember: memberId,
-        enrolledBy: assignedBy,
-        assignmentType,
-        assignedTeam: assignedTeam || null,
-        source,
-        dueAt: dueAt || null,
-        assignedAt: new Date(),
-        status: 'assigned',
-        progressPercent: 0,
-        completedLessonKeys: []
-      })
-      assignedCount += 1
-      continue
-    }
-
-    existing.enrolledBy = assignedBy
-    existing.assignmentType = assignmentType
-    existing.assignedTeam = assignedTeam || null
-    existing.source = source
-    if (dueAt) {
-      existing.dueAt = dueAt
-    }
-    if (!existing.program && programId) {
-      existing.program = programId
-    }
-    await existing.save()
-    updatedCount += 1
-  }
-
-  return { assignedCount, updatedCount }
-}
-
-const notifySystemAdminsForRequest = async ({
-  organizationId,
-  senderId,
-  subject,
-  html,
-  text
-}) => {
-  const admins = await Account.findSystemAdmins()
-    .select('email profile.name')
-    .lean()
-
-  await Promise.all(
-    admins.map((admin) => createNotification({
-      organizationId,
-      senderId,
-      recipient: admin,
-      subject,
-      html,
-      text
-    }))
-  )
-}
-
-const sendRequestDecisionNotification = async ({
-  request,
-  recipient,
-  decidedBy,
-  approved
-}) => {
-  if (!recipient) return
-
-  const statusLabel = approved ? 'approved' : 'rejected'
-  const reviewer = decidedBy?.profile?.name || decidedBy?.email || 'Reviewer'
-  const subject = `Simple LMS request ${statusLabel}`
-  const html = `
-    <p>Your Simple LMS request has been <strong>${htmlEscape(statusLabel)}</strong>.</p>
-    <p><strong>Request:</strong> ${htmlEscape(request.title || request.requestType)}<br>
-    <strong>Reviewed by:</strong> ${htmlEscape(reviewer)}</p>
-    <p><a href="/simple-lms?view=requests">Open Simple LMS requests</a></p>
-  `
-  const text = [
-    `Your Simple LMS request has been ${statusLabel}.`,
-    `Request: ${request.title || request.requestType}`,
-    `Reviewed by: ${reviewer}`,
-    '',
-    'Open Simple LMS: /simple-lms?view=requests'
-  ].join('\n')
-
-  await createNotification({
-    organizationId: request.organization,
-    senderId: decidedBy?._id,
-    recipient,
-    subject,
-    html,
-    text
   })
+
+  return steps
 }
 
-const parseViewMode = (value) => {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'builder') return 'course-studio'
-  return VALID_VIEW_MODES.has(normalized) ? normalized : 'overview'
+const parseProgramPayload = ({ body, existingProgram = null }) => {
+  const name = String(body.name || '').trim()
+  if (!name) {
+    throw new Error('Program name is required.')
+  }
+
+  const status = parseProgramStatus(body.status || existingProgram?.status || 'draft', 'draft')
+  const visibility = normalizeProgramVisibility(body.visibility, existingProgram?.visibility || 'organization_private')
+  const steps = sanitizeProgramStepsInput(parseJsonInput(body.stepsJson, []))
+  if (steps.length === 0) {
+    throw new Error('Program pathway must include at least one course.')
+  }
+
+  const bannerPayload = parseJsonInput(body.bannerPayload, {})
+  const payload = {
+    name: name.slice(0, 200),
+    description: String(body.description || '').trim().slice(0, 8000),
+    objective: String(body.objective || '').trim().slice(0, 2000),
+    tags: parseTags(body.tags),
+    status,
+    visibility,
+    steps
+  }
+
+  if (bannerPayload && typeof bannerPayload === 'object' && String(bannerPayload.url || '').trim()) {
+    payload.banner = {
+      url: String(bannerPayload.url || '').trim().slice(0, 2000),
+      publicId: String(bannerPayload.publicId || '').trim().slice(0, 400)
+    }
+  } else if (existingProgram?.banner?.url) {
+    payload.banner = existingProgram.banner
+  }
+
+  return payload
 }
 
-const parseDueDate = (value) => {
-  if (!value) return null
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed
+const decorateProgram = (program, courseLookupMap = new Map()) => {
+  const steps = Array.isArray(program?.steps)
+    ? program.steps
+      .map((step, index) => {
+        const courseId = toIdString(step?.course?._id || step?.course)
+        const course = step?.course && typeof step.course === 'object'
+          ? decorateCourse(step.course)
+          : (courseLookupMap.get(courseId) || null)
+        const titleSnapshot = String(step?.titleSnapshot || '').trim()
+        return {
+          ...step,
+          order: Number(step?.order || index + 1),
+          required: step?.required !== false,
+          courseId,
+          course,
+          courseTitle: course?.title || titleSnapshot || 'Untitled Course'
+        }
+      })
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+    : []
+
+  const visibilityDisplay = program?.visibility === 'organization_public' ? 'Public' : 'Private'
+  return {
+    ...program,
+    steps,
+    totalSteps: steps.length,
+    requiredSteps: steps.filter(step => step.required).length,
+    visibilityDisplay
+  }
 }
 
-pageRouter.get('/', requirePageAuth, async (req, res) => {
+pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
   try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.redirect(`/setup?error=${encodeURIComponent(orgContext.error)}`)
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.redirect('/courses')
     }
 
-    await markSimpleLmsDashboardViewed({
-      accountId: req.user._id,
-      organizationId: orgContext.organizationId
-    })
+    const course = await SimpleLmsCourse.findOne({
+      _id: courseId,
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    }).lean()
 
-    const [scope, planAccess, publishWithoutReviewAllowed] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      getLmsPlanAccess(orgContext.organizationId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
-    ])
+    if (!course) return res.redirect('/courses')
 
-    const canManageOrg = canManageOrganizationData(orgContext.memberRole)
-    const hasHierarchyScope = scope.manageableMembers.length > 0
-    const canCreateCourses = canManageOrg || hasHierarchyScope || isPlatformAdmin(req.user)
-    const canAssignCourses = canManageOrg || hasHierarchyScope
-    const canReviewOrgRequests = canManageOrg
-    const canReviewPlatformRequests = isPlatformAdmin(req.user)
-    const canPublishWithoutReview = publishWithoutReviewAllowed || canReviewPlatformRequests
-    const currencySettings = getSimpleLmsCurrencySettings(orgContext.organization)
-
-    const [orgMembersResult, myEnrollments, marketplaceCourses, ownedCourses, organizationCourses, programs, myRequests, orgRequestQueue, platformRequestQueue, publishPermissions, approvedSystemCourseRequests] = await Promise.all([
-      getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId }),
-      SimpleLmsEnrollment.find({
-        organization: orgContext.organizationId,
-        enrolledMember: req.user._id
+    if (isCoursePaidContent(course)) {
+      const hasSuccessfulPayment = await SimpleLmsPayment.exists({
+        account: req.user._id,
+        course: course._id,
+        status: 'successful'
       })
-        .populate('course', 'title summary banner status visibility lessonCount estimatedDurationMinutes isSystemCourse chapters pricing')
-        .sort({ updatedAt: -1 })
-        .lean(),
-      SimpleLmsCourse.find({
-        status: 'published',
-        visibility: { $in: ['organization_public', 'system_public'] },
-        isActive: true
-      })
-        .sort({ updatedAt: -1 })
-        .limit(120)
-        .lean(),
-      SimpleLmsCourse.find({
-        organization: orgContext.organizationId,
-        createdBy: req.user._id,
-        isActive: true
-      })
-        .sort({ updatedAt: -1 })
-        .lean(),
-      SimpleLmsCourse.find({
-        organization: orgContext.organizationId,
-        isActive: true,
-        ...(canManageOrg ? {} : {
-          $or: [
-            { status: 'published' },
-            { createdBy: req.user._id }
-          ]
+      if (!hasSuccessfulPayment) {
+        return redirectWithMessage({
+          res,
+          path: '/simple-lms?view=catalog',
+          error: `Payment required before starting "${course.title}".`
         })
-      })
-        .sort({ updatedAt: -1 })
-        .lean(),
-      SimpleLmsProgram.find({ organization: orgContext.organizationId })
-        .populate('steps.course', 'title status visibility')
-        .sort({ updatedAt: -1 })
-        .lean(),
-      SimpleLmsRequest.find({
-        organization: orgContext.organizationId,
-        requestedBy: req.user._id
-      })
-        .populate('course', 'title visibility status')
-        .sort({ createdAt: -1 })
-        .lean(),
-      canReviewOrgRequests
-        ? SimpleLmsRequest.find({
-          organization: orgContext.organizationId,
-          requestType: 'publish_without_review',
-          status: 'pending'
-        })
-          .populate('requestedBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .lean()
-        : Promise.resolve([]),
-      canReviewPlatformRequests
-        ? SimpleLmsRequest.find({
-          requestType: { $in: ['system_course_access', 'public_course_publish'] },
-          status: 'pending'
-        })
-          .populate('requestedBy', 'email profile.name')
-          .populate('organization', 'name')
-          .populate('course', 'title visibility status isSystemCourse')
-          .sort({ createdAt: -1 })
-          .lean()
-        : Promise.resolve([]),
-      canReviewOrgRequests
-        ? SimpleLmsPermission.find({
-          organization: orgContext.organizationId,
-          canPublishWithoutReview: true,
-          isActive: true
-        })
-          .populate('account', 'email profile.name')
-          .populate('grantedBy', 'email profile.name')
-          .sort({ updatedAt: -1 })
-          .lean()
-        : Promise.resolve([]),
-      SimpleLmsRequest.countDocuments({
-        organization: orgContext.organizationId,
-        requestType: 'system_course_access',
-        status: 'approved'
-      })
-    ])
-
-    let managedEnrollments = []
-    if (canAssignCourses && scope.manageableMemberIdSet.size > 0) {
-      managedEnrollments = await SimpleLmsEnrollment.find({
-        organization: orgContext.organizationId,
-        enrolledMember: { $in: Array.from(scope.manageableMemberIdSet) }
-      })
-        .populate('course', 'title summary banner status visibility lessonCount pricing')
-        .populate('enrolledMember', 'email profile.name')
-        .sort({ updatedAt: -1 })
-        .limit(300)
-        .lean()
+      }
     }
 
-    const orgMembers = orgMembersResult.members || []
-    const assignableMembers = buildAssignableMembers({
-      orgMembers,
-      scope: {
-        ...scope,
-        organizationId: orgContext.organizationId
-      },
-      accountId: req.user._id
+    const enrollmentResult = await createOrUpdateEnrollment({
+      courseId: course._id,
+      learnerId: req.user._id,
+      actorId: req.user._id,
+      assignmentType: 'self',
+      source: 'self_enroll'
     })
-    const teamOptions = (scope.teams || [])
-      .filter((team) => (
-        canManageOrg ||
-        scope.manageableTeamIds.has(toIdString(team._id))
-      ))
-      .map(team => ({
-        id: toIdString(team._id),
-        name: team.name || 'Team'
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const enrollment = enrollmentResult.enrollment
 
-    const myEnrollmentCards = myEnrollments.map((enrollment) => ({
-      ...enrollment,
-      course: decorateCoursePricing(enrollment.course, currencySettings),
-      progressPercent: Number.isFinite(Number(enrollment.progressPercent))
-        ? Number(enrollment.progressPercent)
-        : 0,
-      lastActivityAt: enrollment.lastActivityAt || enrollment.updatedAt
+    const lessons = flattenCourseLessons(course)
+    const firstLessonKey = lessons[0]?.lessonKey || ''
+    if (!firstLessonKey) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        success: `Course ready: ${course.title}`
+      })
+    }
+
+    return res.redirect(`/simple-lms/learn/${enrollment._id}/${encodeURIComponent(firstLessonKey)}?success=${encodeURIComponent(`Course ready: ${course.title}`)}`)
+  } catch (error) {
+    console.error('Take course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/courses',
+      error: 'Failed to start this course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/pay', requirePageAuth, async (req, res) => {
+  try {
+    if (!isFlutterwaveConfigured()) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Flutterwave is not configured yet. Contact an admin.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Invalid course selected for payment.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findOne({
+      _id: courseId,
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    }).lean()
+
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Course not found or unavailable.'
+      })
+    }
+
+    if (!isCoursePaidContent(course)) {
+      return res.redirect(`/simple-lms/take/${course._id}`)
+    }
+
+    const existingSuccessfulPayment = await SimpleLmsPayment.findOne({
+      account: req.user._id,
+      course: course._id,
+      status: 'successful'
+    })
+      .select('_id')
+      .lean()
+
+    if (existingSuccessfulPayment) {
+      return redirectWithMessage({
+        res,
+        path: `/simple-lms/take/${course._id}`,
+        success: 'Payment already completed for this course.'
+      })
+    }
+
+    const txRef = generateTxRef()
+    const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
+    const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
+    const payment = await SimpleLmsPayment.create({
+      account: req.user._id,
+      course: course._id,
+      txRef,
+      amountMinor,
+      currency,
+      provider: 'flutterwave',
+      status: 'initiated',
+      customerEmail: req.user.email || '',
+      customerName: req.user.profile?.name || req.user.email || 'Learner'
+    })
+
+    try {
+      const redirectUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/flutterwave/callback`
+      const checkout = await createFlutterwavePaymentLink({
+        txRef,
+        amountMinor,
+        currency,
+        redirectUrl,
+        customerEmail: req.user.email || '',
+        customerName: req.user.profile?.name || req.user.email || 'Learner',
+        title: `Course Payment - ${course.title}`,
+        description: `Payment for ${course.title}`
+      })
+
+      payment.checkoutUrl = checkout.link
+      payment.status = 'pending'
+      payment.flutterwaveStatus = 'pending'
+      payment.metadata = {
+        initResponse: checkout.raw
+      }
+      await payment.save()
+
+      return res.redirect(checkout.link)
+    } catch (error) {
+      payment.status = 'failed'
+      payment.flutterwaveStatus = 'init_error'
+      payment.metadata = {
+        initError: String(error?.message || 'Failed to initialize payment')
+      }
+      await payment.save()
+
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: error.message || 'Failed to initialize payment checkout.'
+      })
+    }
+  } catch (error) {
+    console.error('Create payment error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog',
+      error: 'Could not start payment for this course.'
+    })
+  }
+})
+
+pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, res) => {
+  try {
+    const txRef = String(req.query.tx_ref || '').trim()
+    const status = String(req.query.status || '').trim().toLowerCase()
+    const transactionId = String(req.query.transaction_id || '').trim()
+
+    if (!txRef) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment callback is missing transaction reference.'
+      })
+    }
+
+    const payment = await SimpleLmsPayment.findOne({
+      txRef,
+      account: req.user._id
+    })
+      .populate('course')
+
+    if (!payment || !payment.course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment record not found.'
+      })
+    }
+
+    if (payment.status === 'successful') {
+      return redirectWithMessage({
+        res,
+        path: `/simple-lms/take/${payment.course._id}`,
+        success: 'Payment already verified.'
+      })
+    }
+
+    if (!transactionId || (status && !['successful', 'completed'].includes(status))) {
+      payment.status = status === 'cancelled' ? 'cancelled' : 'failed'
+      payment.flutterwaveStatus = status || 'failed'
+      payment.verifiedAt = new Date()
+      await payment.save()
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment was not completed.'
+      })
+    }
+
+    const verification = await verifyFlutterwaveTransaction(transactionId)
+    const verifiedData = verification?.data || {}
+    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
+    const verifiedTxRef = String(verifiedData?.tx_ref || '').trim()
+    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
+    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
+    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
+    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
+    const txRefMatches = verifiedTxRef === payment.txRef
+    const statusMatches = verifiedStatus === 'successful'
+
+    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
+    payment.flutterwaveStatus = verifiedStatus || status || 'unknown'
+    payment.verificationPayload = verification
+    payment.verifiedAt = new Date()
+
+    if (!statusMatches || !txRefMatches || !amountMatches || verifiedCurrency !== payment.currency) {
+      payment.status = 'failed'
+      await payment.save()
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment verification failed.'
+      })
+    }
+
+    payment.status = 'successful'
+    payment.paidAt = new Date()
+    await payment.save()
+
+    await createOrUpdateEnrollment({
+      courseId: payment.course._id,
+      learnerId: req.user._id,
+      actorId: req.user._id,
+      assignmentType: 'self',
+      source: 'self_enroll'
+    })
+
+    return redirectWithMessage({
+      res,
+      path: `/simple-lms/take/${payment.course._id}`,
+      success: 'Payment verified. Course unlocked.'
+    })
+  } catch (error) {
+    console.error('Flutterwave callback error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog',
+      error: 'Failed to verify payment.'
+    })
+  }
+})
+pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, res) => {
+  try {
+    const enrollmentId = String(req.params.enrollmentId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Invalid learning record.'
+      })
+    }
+
+    const enrollment = await SimpleLmsEnrollment.findById(enrollmentId)
+      .populate('course')
+      .lean()
+    if (!enrollment || !enrollment.course || !enrollment.course.isActive) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Learning record not found.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const ownsEnrollment = toIdString(enrollment.enrolledMember) === toIdString(req.user._id)
+    if (!ownsEnrollment && !canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'You cannot open this learning record.'
+      })
+    }
+
+    const lessons = flattenCourseLessons(enrollment.course)
+    if (lessons.length === 0) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'This course has no lessons yet.'
+      })
+    }
+
+    const progress = calculateProgress({
+      lessons,
+      completedLessonKeys: enrollment.completedLessonKeys || []
+    })
+
+    const requestedLessonKey = String(req.params.lessonKey || '').trim()
+    const currentLesson = lessons.find(entry => entry.lessonKey === requestedLessonKey)
+      || lessons.find(entry => entry.lessonKey === progress.nextLessonKey)
+      || lessons[0]
+
+    const currentIndex = lessons.findIndex(entry => entry.lessonKey === currentLesson.lessonKey)
+    const previousLesson = currentIndex > 0 ? lessons[currentIndex - 1] : null
+    const nextLesson = currentIndex >= 0 && currentIndex < lessons.length - 1 ? lessons[currentIndex + 1] : null
+    const latestAttempt = (enrollment.quizAttempts || [])
+      .filter(attempt => String(attempt.lessonKey) === currentLesson.lessonKey)
+      .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] || null
+
+    const embedUrl = resolveVideoEmbedUrl(currentLesson.videoUrl)
+    const chapterSections = (enrollment.course.chapters || []).map((chapter) => ({
+      key: String(chapter?.key || ''),
+      title: String(chapter?.title || 'Chapter'),
+      lessons: (chapter?.lessons || [])
+        .map((lesson) => ({
+          key: String(lesson?.key || '').trim(),
+          title: String(lesson?.title || 'Lesson'),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0
+        }))
+        .filter((lesson) => lesson.key)
     }))
 
-    const managedEnrollmentCards = managedEnrollments.map((enrollment) => ({
-      ...enrollment,
-      course: decorateCoursePricing(enrollment.course, currencySettings),
-      progressPercent: Number.isFinite(Number(enrollment.progressPercent))
-        ? Number(enrollment.progressPercent)
-        : 0,
-      memberName: enrollment.enrolledMember?.profile?.name || enrollment.enrolledMember?.email || 'Member'
-    }))
-    const marketplaceCourseCards = (marketplaceCourses || [])
-      .map((course) => decorateCoursePricing(course, currencySettings))
-    const ownedCourseCards = (ownedCourses || [])
-      .map((course) => decorateCoursePricing(course, currencySettings))
-    const organizationCourseCards = (organizationCourses || [])
-      .map((course) => decorateCoursePricing(course, currencySettings))
-
-    const requestedViewMode = parseViewMode(req.query.view)
-
-    res.render('simple-lms', {
+    return res.render('simple-lms-player', {
+      title: `${enrollment.course.title} - Learning Player`,
       user: req.user,
       activePage: 'simple-lms',
-      organizationName: orgContext.organizationName,
-      viewMode: requestedViewMode,
-      canManageOrg,
-      canCreateCourses,
-      canAssignCourses,
-      canReviewOrgRequests,
-      canReviewPlatformRequests,
-      canPublishWithoutReview,
-      hasHierarchyScope,
-      planAccess,
-      currencySettings,
-      supportedCurrencies: SUPPORTED_SIMPLE_LMS_CURRENCIES,
-      approvedSystemCourseRequests,
-      orgMembers,
-      assignableMembers,
-      teamOptions,
-      myEnrollments: myEnrollmentCards,
-      managedEnrollments: managedEnrollmentCards,
-      marketplaceCourses: marketplaceCourseCards,
-      ownedCourses: ownedCourseCards,
-      organizationCourses: organizationCourseCards,
-      programs,
-      myRequests,
-      orgRequestQueue,
-      platformRequestQueue,
-      publishPermissions,
-      scopeSummary: {
-        manageableMembers: scope.manageableMembers.length,
-        manageableTeams: scope.manageableTeamIds.size
-      },
+      role,
+      enrollment,
+      course: decorateCourse(enrollment.course),
+      lessons,
+      currentLesson,
+      embedUrl,
+      chapterSections,
+      completedSet: progress.completedSet,
+      progress,
+      previousLesson,
+      nextLesson,
+      latestAttempt,
       success: String(req.query.success || ''),
       error: String(req.query.error || '')
     })
   } catch (error) {
-    console.error('Simple LMS workspace load error:', error)
-    res.redirect('/simple-lms?error=Failed to load Simple LMS workspace')
+    console.error('Load learning player error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=my-learning',
+      error: 'Failed to load lesson player.'
+    })
   }
 })
 
-apiRouter.use(requireApiAuth)
-
-apiRouter.get('/workspace', async (req, res) => {
-  return res.redirect('/simple-lms')
-})
-
-apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
+pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', requirePageAuth, async (req, res) => {
   try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const scope = await getSimpleLmsAccessScope({
-      organizationId: orgContext.organizationId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole
-    })
-    const canCreateCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0 || isPlatformAdmin(req.user)
-    if (!canCreateCourses) {
-      return res.status(403).json({ error: 'You do not have permission to upload LMS course banners.' })
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: 'Banner image file is required.' })
-    }
-    if (!req.file.mimetype.startsWith('image/')) {
-      return res.status(400).json({ error: 'Only image files are allowed.' })
-    }
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured.' })
-    }
-
-    const uploadResult = await uploadBufferToCloudinary({
-      buffer: req.file.buffer,
-      filename: req.file.originalname,
-      folder: `seemplify/simple-lms/${orgContext.organizationId}/banners`,
-      resourceType: 'image'
-    })
-
-    res.json({
-      url: uploadResult.secure_url,
-      publicId: uploadResult.public_id,
-      width: uploadResult.width,
-      height: uploadResult.height
-    })
-  } catch (error) {
-    console.error('Simple LMS banner upload failed:', error)
-    res.status(500).json({ error: 'Failed to upload banner image.' })
-  }
-})
-
-apiRouter.put('/settings/currency', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    if (!canManageOrganizationData(orgContext.memberRole)) {
-      return res.status(403).json({ error: 'Only owner, admin, or HR manager can update currency settings.' })
-    }
-
-    const defaultCurrency = normalizeCurrencyCode(req.body.defaultCurrency, '')
-    if (!defaultCurrency) {
-      return res.status(400).json({ error: 'Select a valid default currency.' })
-    }
-
-    const allowedCurrenciesInput = req.body.allowedCurrencies ?? req.body['allowedCurrencies[]']
-    const allowedCurrenciesRaw = Array.isArray(allowedCurrenciesInput)
-      ? allowedCurrenciesInput
-      : (allowedCurrenciesInput !== undefined ? [allowedCurrenciesInput] : [])
-    const allowedCurrencies = normalizeCurrencyList(allowedCurrenciesRaw)
-    if (!allowedCurrencies.includes(defaultCurrency)) {
-      allowedCurrencies.unshift(defaultCurrency)
-    }
-
-    await Organization.updateOne(
-      { _id: orgContext.organizationId },
-      {
-        $set: {
-          'settings.simpleLms.defaultCurrency': defaultCurrency,
-          'settings.simpleLms.allowedCurrencies': allowedCurrencies
-        }
-      }
-    )
-
-    res.json({
-      message: 'Simple LMS currency settings updated.',
-      currencySettings: {
-        defaultCurrency,
-        allowedCurrencies
-      }
-    })
-  } catch (error) {
-    console.error('Simple LMS currency settings update error:', error)
-    res.status(500).json({ error: 'Failed to update currency settings.' })
-  }
-})
-
-apiRouter.post('/courses', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const [scope, planAccess, hasPublishWithoutReview] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      getLmsPlanAccess(orgContext.organizationId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
-    ])
-
-    if (!planAccess.hasLmsFeature) {
-      return res.status(403).json({ error: 'Simple LMS is not available on your current subscription plan.' })
-    }
-
-    const creatorCanCreate = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0 || isPlatformAdmin(req.user)
-    if (!creatorCanCreate) {
-      return res.status(403).json({ error: 'You do not have permission to create LMS courses.' })
-    }
-
-    const title = String(req.body.title || '').trim()
-    if (!title) {
-      return res.status(400).json({ error: 'Course title is required.' })
-    }
-
-    const chapters = sanitizeChaptersInput(parseJsonInput(req.body.chapters, []))
-    const banner = parseJsonInput(req.body.banner, {})
-    const requestedVisibility = String(req.body.visibility || 'organization_private').trim()
-    const requestedStatus = String(req.body.status || 'draft').trim()
-    const tags = normalizeStringList(req.body.tags).slice(0, 20)
-    const currencySettings = getSimpleLmsCurrencySettings(orgContext.organization)
-
-    const platformAdmin = isPlatformAdmin(req.user)
-    const wantsSystemCourse = requestedVisibility === 'system_public' || req.body.isSystemCourse === true || req.body.isSystemCourse === 'true'
-    let visibility = 'organization_private'
-    let status = ['published', 'draft'].includes(requestedStatus) ? requestedStatus : 'draft'
-    let isSystemCourse = false
-    let requiresPublicReview = true
-    let pendingPublicReview = false
-
-    if (wantsSystemCourse) {
-      if (!platformAdmin) {
-        return res.status(403).json({ error: 'Only platform admins can publish system-wide courses.' })
-      }
-      isSystemCourse = true
-      visibility = 'system_public'
-      status = 'published'
-      requiresPublicReview = false
-    } else if (requestedVisibility === 'organization_public') {
-      if (hasPublishWithoutReview || platformAdmin) {
-        visibility = 'organization_public'
-        status = 'published'
-        requiresPublicReview = false
-      } else {
-        visibility = 'organization_private'
-        status = 'pending_public_review'
-        requiresPublicReview = true
-        pendingPublicReview = true
-      }
-    }
-
-    const course = await SimpleLmsCourse.create({
-      organization: isSystemCourse ? null : orgContext.organizationId,
-      createdBy: req.user._id,
-      createdByName: req.user.profile?.name || req.user.email,
-      createdByEmail: req.user.email,
-      title,
-      slug: slugifyValue(req.body.slug || title, 'course'),
-      summary: String(req.body.summary || '').trim().slice(0, 600),
-      description: String(req.body.description || '').trim().slice(0, 16000),
-      category: String(req.body.category || '').trim().slice(0, 120),
-      level: ['beginner', 'intermediate', 'advanced', 'mixed'].includes(req.body.level) ? req.body.level : 'mixed',
-      tags,
-      banner: {
-        url: String(banner.url || req.body.bannerUrl || '').trim().slice(0, 2000),
-        publicId: String(banner.publicId || req.body.bannerPublicId || '').trim().slice(0, 400),
-        width: banner.width,
-        height: banner.height
-      },
-      pricing: {
-        amount: Number.isFinite(Number(req.body.pricingAmount))
-          ? Math.max(0, Math.round(Number(req.body.pricingAmount)))
-          : 0,
-        currency: normalizeCurrencyCode(req.body.pricingCurrency, currencySettings.defaultCurrency),
-        paymentMode: req.body.paymentMode === 'paid' ? 'paid' : 'free'
-      },
-      visibility,
-      status,
-      isSystemCourse,
-      requiresPublicReview,
-      publishedWithoutReview: visibility === 'organization_public' && !requiresPublicReview,
-      chapters
-    })
-
-    if (pendingPublicReview) {
-      const request = await SimpleLmsRequest.create({
-        organization: orgContext.organizationId,
-        requestedBy: req.user._id,
-        requestType: 'public_course_publish',
-        status: 'pending',
-        title: `Publish course publicly: ${title}`,
-        message: String(req.body.publicationRequestMessage || '').trim(),
-        course: course._id,
-        targetVisibility: 'organization_public'
-      })
-
-      await notifySystemAdminsForRequest({
-        organizationId: orgContext.organizationId,
-        senderId: req.user._id,
-        subject: 'Simple LMS public publish request',
-        html: `
-          <p>A new Simple LMS course publication request is pending review.</p>
-          <p><strong>Course:</strong> ${htmlEscape(course.title)}<br><strong>Organization:</strong> ${htmlEscape(orgContext.organizationName)}</p>
-          <p><a href="/simple-lms?view=requests">Open Simple LMS Requests</a></p>
-        `,
-        text: `Simple LMS publish request\nCourse: ${course.title}\nOrganization: ${orgContext.organizationName}\nOpen /simple-lms?view=requests`
-      })
-
-      return res.status(201).json({
-        message: 'Course created and queued for public publishing review.',
-        course,
-        requestId: request._id
-      })
-    }
-
-    res.status(201).json({
-      message: 'Course created successfully.',
-      course
-    })
-  } catch (error) {
-    console.error('Simple LMS create course error:', error)
-    res.status(500).json({ error: 'Failed to create course.' })
-  }
-})
-
-apiRouter.put('/courses/:courseId', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const courseId = String(req.params.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id.' })
-    }
-
-    const [scope, course, hasPublishWithoutReview] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      SimpleLmsCourse.findById(courseId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
-    ])
-
-    if (!course || !course.isActive) {
-      return res.status(404).json({ error: 'Course not found.' })
-    }
-
-    const platformAdmin = isPlatformAdmin(req.user)
-    const canEdit = canManageCourse({
-      course,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole,
-      scope: {
-        ...scope,
-        organizationId: orgContext.organizationId
-      },
-      platformAdmin
-    })
-    if (!canEdit) {
-      return res.status(403).json({ error: 'You do not have permission to update this course.' })
-    }
-
-    const title = String(req.body.title || course.title || '').trim()
-    if (!title) {
-      return res.status(400).json({ error: 'Course title is required.' })
-    }
-
-    const chapters = req.body.chapters !== undefined
-      ? sanitizeChaptersInput(parseJsonInput(req.body.chapters, []))
-      : course.chapters
-    const currencySettings = getSimpleLmsCurrencySettings(orgContext.organization)
-
-    course.title = title
-    course.slug = slugifyValue(req.body.slug || title, 'course')
-    course.summary = String(req.body.summary ?? course.summary ?? '').trim().slice(0, 600)
-    course.description = String(req.body.description ?? course.description ?? '').trim().slice(0, 16000)
-    course.category = String(req.body.category ?? course.category ?? '').trim().slice(0, 120)
-    course.level = ['beginner', 'intermediate', 'advanced', 'mixed'].includes(req.body.level)
-      ? req.body.level
-      : (course.level || 'mixed')
-    course.tags = normalizeStringList(req.body.tags ?? course.tags).slice(0, 20)
-
-    const banner = parseJsonInput(req.body.banner, null)
-    if (banner) {
-      course.banner = {
-        url: String(banner.url || '').trim().slice(0, 2000),
-        publicId: String(banner.publicId || '').trim().slice(0, 400),
-        width: banner.width,
-        height: banner.height
-      }
-    }
-
-    if (req.body.pricingAmount !== undefined || req.body.paymentMode !== undefined || req.body.pricingCurrency !== undefined) {
-      course.pricing.amount = Number.isFinite(Number(req.body.pricingAmount))
-        ? Math.max(0, Math.round(Number(req.body.pricingAmount)))
-        : course.pricing.amount
-      course.pricing.currency = normalizeCurrencyCode(
-        req.body.pricingCurrency,
-        course.pricing.currency || currencySettings.defaultCurrency
-      )
-      course.pricing.paymentMode = req.body.paymentMode === 'paid'
-        ? 'paid'
-        : 'free'
-    }
-
-    course.chapters = chapters
-
-    if (req.body.status && ['draft', 'published', 'archived'].includes(req.body.status)) {
-      course.status = req.body.status
-    }
-
-    if (req.body.visibility) {
-      const visibility = String(req.body.visibility).trim()
-      if (visibility === 'system_public' && platformAdmin) {
-        course.visibility = 'system_public'
-        course.isSystemCourse = true
-        course.status = 'published'
-      } else if (visibility === 'organization_public') {
-        if (platformAdmin || hasPublishWithoutReview) {
-          course.visibility = 'organization_public'
-          course.status = 'published'
-          course.publishedWithoutReview = true
-          course.requiresPublicReview = false
-        } else {
-          course.visibility = 'organization_private'
-          course.status = 'pending_public_review'
-          course.requiresPublicReview = true
-        }
-      } else if (visibility === 'organization_private') {
-        course.visibility = 'organization_private'
-      }
-    }
-
-    await course.save()
-    res.json({
-      message: 'Course updated successfully.',
-      course
-    })
-  } catch (error) {
-    console.error('Simple LMS update course error:', error)
-    res.status(500).json({ error: 'Failed to update course.' })
-  }
-})
-
-apiRouter.post('/courses/:courseId/archive', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const courseId = String(req.params.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id.' })
-    }
-
-    const [scope, course] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      SimpleLmsCourse.findById(courseId)
-    ])
-
-    if (!course || !course.isActive) {
-      return res.status(404).json({ error: 'Course not found.' })
-    }
-
-    const platformAdmin = isPlatformAdmin(req.user)
-    const canEdit = canManageCourse({
-      course,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole,
-      scope: {
-        ...scope,
-        organizationId: orgContext.organizationId
-      },
-      platformAdmin
-    })
-    if (!canEdit) {
-      return res.status(403).json({ error: 'You do not have permission to archive this course.' })
-    }
-
-    course.status = 'archived'
-    course.isActive = false
-    course.archivedAt = new Date()
-    await course.save()
-
-    res.json({ message: 'Course archived.' })
-  } catch (error) {
-    console.error('Simple LMS archive course error:', error)
-    res.status(500).json({ error: 'Failed to archive course.' })
-  }
-})
-
-apiRouter.post('/courses/:courseId/request-publication', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const courseId = String(req.params.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id.' })
-    }
-
-    const [course, hasPublishWithoutReview] = await Promise.all([
-      SimpleLmsCourse.findOne({
-        _id: courseId,
-        organization: orgContext.organizationId
-      }),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
-    ])
-
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found in your organization.' })
-    }
-
-    const canRequest = canManageOrganizationData(orgContext.memberRole) || toIdString(course.createdBy) === toIdString(req.user._id)
-    if (!canRequest) {
-      return res.status(403).json({ error: 'Only the course owner or org managers can request publication.' })
-    }
-
-    if (hasPublishWithoutReview || isPlatformAdmin(req.user)) {
-      course.status = 'published'
-      course.visibility = 'organization_public'
-      course.requiresPublicReview = false
-      course.publishedWithoutReview = true
-      course.approvedPublicBy = req.user._id
-      course.approvedPublicAt = new Date()
-      await course.save()
-
-      return res.json({
-        message: 'Course published publicly without review.',
-        course
-      })
-    }
-
-    const existingPending = await SimpleLmsRequest.findOne({
-      organization: orgContext.organizationId,
-      course: course._id,
-      requestType: 'public_course_publish',
-      status: 'pending'
-    })
-    if (existingPending) {
-      return res.status(400).json({ error: 'This course already has a pending publication request.' })
-    }
-
-    course.status = 'pending_public_review'
-    course.visibility = 'organization_private'
-    await course.save()
-
-    const request = await SimpleLmsRequest.create({
-      organization: orgContext.organizationId,
-      requestedBy: req.user._id,
-      requestType: 'public_course_publish',
-      status: 'pending',
-      title: `Publish course publicly: ${course.title}`,
-      message: String(req.body.message || '').trim(),
-      course: course._id,
-      targetVisibility: 'organization_public'
-    })
-
-    await notifySystemAdminsForRequest({
-      organizationId: orgContext.organizationId,
-      senderId: req.user._id,
-      subject: 'Simple LMS public publish request',
-      html: `
-        <p>A new Simple LMS publication request is waiting for review.</p>
-        <p><strong>Course:</strong> ${htmlEscape(course.title)}<br>
-        <strong>Organization:</strong> ${htmlEscape(orgContext.organizationName)}</p>
-        <p><a href="/simple-lms?view=requests">Review requests</a></p>
-      `,
-      text: `Simple LMS publication request\nCourse: ${course.title}\nOrganization: ${orgContext.organizationName}`
-    })
-
-    res.json({
-      message: 'Publication request submitted for review.',
-      request
-    })
-  } catch (error) {
-    console.error('Simple LMS publication request error:', error)
-    res.status(500).json({ error: 'Failed to submit publication request.' })
-  }
-})
-
-apiRouter.post('/programs', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const scope = await getSimpleLmsAccessScope({
-      organizationId: orgContext.organizationId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole
-    })
-    const canCreatePrograms = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
-    if (!canCreatePrograms) {
-      return res.status(403).json({ error: 'You do not have permission to create programs.' })
-    }
-
-    const name = String(req.body.name || '').trim()
-    if (!name) {
-      return res.status(400).json({ error: 'Program name is required.' })
-    }
-    const banner = parseJsonInput(req.body.banner, {})
-
-    const rawSteps = parseJsonInput(req.body.steps, [])
-    const steps = Array.isArray(rawSteps)
-      ? rawSteps
-        .map((step, index) => ({
-          course: toIdString(step?.course || step?.courseId),
-          order: Number.isFinite(Number(step?.order)) ? Number(step.order) : index + 1,
-          required: step?.required !== false
-        }))
-        .filter(step => mongoose.Types.ObjectId.isValid(step.course))
-      : []
-
-    if (steps.length === 0) {
-      return res.status(400).json({ error: 'Add at least one course step to the program.' })
-    }
-
-    const courseIds = steps.map(step => step.course)
-    const courses = await SimpleLmsCourse.find({
-      _id: { $in: courseIds },
-      organization: orgContext.organizationId,
-      isActive: true
-    })
-      .select('_id title estimatedDurationMinutes')
-      .lean()
-
-    if (courses.length !== courseIds.length) {
-      return res.status(400).json({ error: 'One or more selected courses are invalid for your organization.' })
-    }
-
-    const titleById = new Map(courses.map(course => [toIdString(course._id), course.title]))
-    const totalMinutes = courses.reduce((sum, course) => sum + (Number(course.estimatedDurationMinutes) || 0), 0)
-    const normalizedSteps = steps.map((step, index) => ({
-      course: step.course,
-      titleSnapshot: titleById.get(step.course) || `Course ${index + 1}`,
-      order: index + 1,
-      required: step.required !== false
-    }))
-
-    const program = await SimpleLmsProgram.create({
-      organization: orgContext.organizationId,
-      createdBy: req.user._id,
-      createdByName: req.user.profile?.name || req.user.email,
-      name,
-      description: String(req.body.description || '').trim().slice(0, 8000),
-      objective: String(req.body.objective || '').trim().slice(0, 2000),
-      banner: {
-        url: String(banner?.url || '').trim().slice(0, 2000),
-        publicId: String(banner?.publicId || '').trim().slice(0, 400)
-      },
-      visibility: req.body.visibility === 'organization_public' ? 'organization_public' : 'organization_private',
-      status: req.body.status === 'published' ? 'published' : 'draft',
-      tags: normalizeStringList(req.body.tags).slice(0, 20),
-      steps: normalizedSteps,
-      estimatedDurationMinutes: Math.max(0, Math.round(totalMinutes))
-    })
-
-    res.status(201).json({
-      message: 'Program created successfully.',
-      program
-    })
-  } catch (error) {
-    console.error('Simple LMS create program error:', error)
-    res.status(500).json({ error: 'Failed to create program.' })
-  }
-})
-
-apiRouter.put('/programs/:programId', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const programId = String(req.params.programId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(programId)) {
-      return res.status(400).json({ error: 'Invalid program id.' })
-    }
-
-    const scope = await getSimpleLmsAccessScope({
-      organizationId: orgContext.organizationId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole
-    })
-    const canEditPrograms = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
-    if (!canEditPrograms) {
-      return res.status(403).json({ error: 'You do not have permission to update programs.' })
-    }
-
-    const program = await SimpleLmsProgram.findOne({
-      _id: programId,
-      organization: orgContext.organizationId
-    })
-    if (!program) {
-      return res.status(404).json({ error: 'Program not found.' })
-    }
-
-    if (!canManageOrganizationData(orgContext.memberRole) && toIdString(program.createdBy) !== toIdString(req.user._id)) {
-      return res.status(403).json({ error: 'Only the program owner or org managers can edit this program.' })
-    }
-
-    if (req.body.name !== undefined) {
-      const name = String(req.body.name || '').trim()
-      if (!name) {
-        return res.status(400).json({ error: 'Program name cannot be empty.' })
-      }
-      program.name = name
-    }
-    if (req.body.description !== undefined) {
-      program.description = String(req.body.description || '').trim().slice(0, 8000)
-    }
-    if (req.body.objective !== undefined) {
-      program.objective = String(req.body.objective || '').trim().slice(0, 2000)
-    }
-    if (req.body.banner !== undefined) {
-      const banner = parseJsonInput(req.body.banner, {})
-      program.banner = {
-        url: String(banner?.url || '').trim().slice(0, 2000),
-        publicId: String(banner?.publicId || '').trim().slice(0, 400)
-      }
-    }
-    if (req.body.visibility !== undefined) {
-      program.visibility = req.body.visibility === 'organization_public' ? 'organization_public' : 'organization_private'
-    }
-    if (req.body.status !== undefined && ['draft', 'published', 'archived'].includes(req.body.status)) {
-      program.status = req.body.status
-    }
-    if (req.body.tags !== undefined) {
-      program.tags = normalizeStringList(req.body.tags).slice(0, 20)
-    }
-
-    if (req.body.steps !== undefined) {
-      const rawSteps = parseJsonInput(req.body.steps, [])
-      const steps = Array.isArray(rawSteps)
-        ? rawSteps
-          .map((step, index) => ({
-            course: toIdString(step?.course || step?.courseId),
-            order: Number.isFinite(Number(step?.order)) ? Number(step.order) : index + 1,
-            required: step?.required !== false
-          }))
-          .filter(step => mongoose.Types.ObjectId.isValid(step.course))
-        : []
-
-      if (steps.length === 0) {
-        return res.status(400).json({ error: 'Program must include at least one course step.' })
-      }
-
-      const courses = await SimpleLmsCourse.find({
-        _id: { $in: steps.map(step => step.course) },
-        organization: orgContext.organizationId,
-        isActive: true
-      })
-        .select('_id title estimatedDurationMinutes')
-        .lean()
-      if (courses.length !== steps.length) {
-        return res.status(400).json({ error: 'Program contains invalid courses.' })
-      }
-
-      const titleById = new Map(courses.map(course => [toIdString(course._id), course.title]))
-      program.steps = steps.map((step, index) => ({
-        course: step.course,
-        titleSnapshot: titleById.get(step.course) || `Course ${index + 1}`,
-        order: index + 1,
-        required: step.required !== false
-      }))
-      program.estimatedDurationMinutes = courses.reduce((sum, course) => sum + (Number(course.estimatedDurationMinutes) || 0), 0)
-    }
-
-    await program.save()
-    res.json({
-      message: 'Program updated successfully.',
-      program
-    })
-  } catch (error) {
-    console.error('Simple LMS update program error:', error)
-    res.status(500).json({ error: 'Failed to update program.' })
-  }
-})
-
-apiRouter.post('/assignments/course', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const [scope, orgMembersResult] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
-    ])
-    const canAssignCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
-    if (!canAssignCourses) {
-      return res.status(403).json({ error: 'You do not have permission to assign courses.' })
-    }
-
-    const courseId = String(req.body.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ error: 'Valid course is required.' })
-    }
-
-    const course = await SimpleLmsCourse.findById(courseId)
-    if (!course || !course.isActive) {
-      return res.status(404).json({ error: 'Course not found.' })
-    }
-
-    const isPublicCourse = ['organization_public', 'system_public'].includes(course.visibility) && course.status === 'published'
-    if (!isPublicCourse && toIdString(course.organization) !== orgContext.organizationId) {
-      return res.status(403).json({ error: 'This course cannot be assigned in your organization.' })
-    }
-
-    const targetType = String(req.body.targetType || '').trim() || 'member'
-    const targetMemberId = String(req.body.targetMemberId || '').trim()
-    const targetTeamId = String(req.body.targetTeamId || '').trim()
-    const dueAt = parseDueDate(req.body.dueAt)
-
-    const memberIds = buildAssignableMemberIds({
-      targetType,
-      targetMemberId,
-      targetTeamId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole,
-      scope,
-      orgMembers: orgMembersResult.members || [],
-      teams: scope.teams || []
-    })
-
-    const assignmentType = targetType === 'organization'
-      ? 'organization'
-      : (targetType === 'team' ? 'team' : (targetType === 'self' ? 'self' : 'member'))
-
-    const result = await assignCourseToMembers({
-      organizationId: orgContext.organizationId,
-      course,
-      memberIds,
-      assignedBy: req.user._id,
-      assignmentType,
-      assignedTeam: assignmentType === 'team' ? targetTeamId : null,
-      dueAt,
-      source: 'manual'
-    })
-
-    res.json({
-      message: 'Course assignment completed.',
-      ...result
-    })
-  } catch (error) {
-    console.error('Simple LMS assign course error:', error)
-    res.status(500).json({ error: error.message || 'Failed to assign course.' })
-  }
-})
-
-apiRouter.post('/assignments/program', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const [scope, orgMembersResult] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
-    ])
-    const canAssignCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
-    if (!canAssignCourses) {
-      return res.status(403).json({ error: 'You do not have permission to assign programs.' })
-    }
-
-    const programId = String(req.body.programId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(programId)) {
-      return res.status(400).json({ error: 'Valid program is required.' })
-    }
-
-    const program = await SimpleLmsProgram.findOne({
-      _id: programId,
-      organization: orgContext.organizationId
-    })
-      .populate('steps.course')
-
-    if (!program) {
-      return res.status(404).json({ error: 'Program not found.' })
-    }
-
-    const targetType = String(req.body.targetType || '').trim() || 'member'
-    const targetMemberId = String(req.body.targetMemberId || '').trim()
-    const targetTeamId = String(req.body.targetTeamId || '').trim()
-    const dueAt = parseDueDate(req.body.dueAt)
-
-    const memberIds = buildAssignableMemberIds({
-      targetType,
-      targetMemberId,
-      targetTeamId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole,
-      scope,
-      orgMembers: orgMembersResult.members || [],
-      teams: scope.teams || []
-    })
-
-    const assignmentType = targetType === 'organization'
-      ? 'organization'
-      : (targetType === 'team' ? 'team' : (targetType === 'self' ? 'self' : 'program'))
-
-    let assignedCount = 0
-    let updatedCount = 0
-    for (const step of program.steps || []) {
-      if (!step?.course?._id) continue
-      const result = await assignCourseToMembers({
-        organizationId: orgContext.organizationId,
-        course: step.course,
-        memberIds,
-        assignedBy: req.user._id,
-        assignmentType,
-        assignedTeam: assignmentType === 'team' ? targetTeamId : null,
-        dueAt,
-        source: 'program_assignment',
-        programId: program._id
-      })
-      assignedCount += result.assignedCount
-      updatedCount += result.updatedCount
-    }
-
-    res.json({
-      message: 'Program assignment completed.',
-      assignedCount,
-      updatedCount
-    })
-  } catch (error) {
-    console.error('Simple LMS assign program error:', error)
-    res.status(500).json({ error: error.message || 'Failed to assign program.' })
-  }
-})
-
-apiRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
     const enrollmentId = String(req.params.enrollmentId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
-      return res.status(400).json({ error: 'Invalid enrollment id.' })
-    }
-
-    const enrollment = await SimpleLmsEnrollment.findOne({
-      _id: enrollmentId,
-      organization: orgContext.organizationId
-    })
-      .populate('course')
-
-    if (!enrollment) {
-      return res.status(404).json({ error: 'Enrollment not found.' })
-    }
-
-    const ownerId = toIdString(enrollment.enrolledMember)
-    if (ownerId !== toIdString(req.user._id)) {
-      return res.status(403).json({ error: 'You can only update your own learning progress.' })
-    }
-
     const lessonKey = String(req.params.lessonKey || '').trim()
-    const lessonKeys = extractLessonKeys(enrollment.course)
-    if (!lessonKeys.includes(lessonKey)) {
-      return res.status(400).json({ error: 'Lesson not found in this course.' })
+    if (!mongoose.Types.ObjectId.isValid(enrollmentId) || !lessonKey) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Invalid lesson completion request.'
+      })
+    }
+
+    const enrollment = await SimpleLmsEnrollment.findById(enrollmentId)
+      .populate('course')
+    if (!enrollment || !enrollment.course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Learning record not found.'
+      })
+    }
+
+    if (toIdString(enrollment.enrolledMember) !== toIdString(req.user._id)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'You can only update your own progress.'
+      })
+    }
+
+    const lessons = flattenCourseLessons(enrollment.course)
+    if (!lessons.find(entry => entry.lessonKey === lessonKey)) {
+      return redirectWithMessage({
+        res,
+        path: `/simple-lms/learn/${enrollment._id}`,
+        error: 'Lesson not found.'
+      })
     }
 
     const completedSet = new Set((enrollment.completedLessonKeys || []).map(key => String(key)))
@@ -1815,133 +1050,1385 @@ apiRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', async (
     enrollment.completedLessonKeys = Array.from(completedSet)
 
     const progress = calculateProgress({
-      course: enrollment.course,
+      lessons,
       completedLessonKeys: enrollment.completedLessonKeys
     })
 
     enrollment.progressPercent = progress.progressPercent
-    enrollment.lastActivityAt = new Date()
     enrollment.status = progress.isCompleted ? 'completed' : 'in_progress'
+    enrollment.lastActivityAt = new Date()
     if (progress.isCompleted) {
       enrollment.completedAt = new Date()
+    } else {
+      enrollment.completedAt = null
     }
     await enrollment.save()
+    await refreshCourseMetrics(enrollment.course._id)
 
-    res.json({
-      message: progress.isCompleted
-        ? 'Course completed. Great work!'
-        : 'Lesson marked as completed.',
-      enrollment: {
-        id: enrollment._id,
-        status: enrollment.status,
-        progressPercent: enrollment.progressPercent,
-        completedLessonKeys: enrollment.completedLessonKeys
-      }
+    const targetLesson = req.body.next === '1' && progress.nextLessonKey
+      ? progress.nextLessonKey
+      : lessonKey
+
+    return redirectWithMessage({
+      res,
+      path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(targetLesson)}`,
+      success: progress.isCompleted
+        ? 'Course completed. Excellent work.'
+        : 'Lesson marked as complete.'
     })
   } catch (error) {
-    console.error('Simple LMS lesson completion error:', error)
-    res.status(500).json({ error: 'Failed to update lesson progress.' })
+    console.error('Complete lesson error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=my-learning',
+      error: 'Failed to update lesson progress.'
+    })
   }
 })
 
-apiRouter.post('/enrollments/:enrollmentId/quizzes/:lessonKey/submit', async (req, res) => {
+pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePageAuth, async (req, res) => {
   try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
     const enrollmentId = String(req.params.enrollmentId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
-      return res.status(400).json({ error: 'Invalid enrollment id.' })
-    }
-
-    const enrollment = await SimpleLmsEnrollment.findOne({
-      _id: enrollmentId,
-      organization: orgContext.organizationId
-    })
-      .populate('course')
-
-    if (!enrollment) {
-      return res.status(404).json({ error: 'Enrollment not found.' })
-    }
-
-    const ownerId = toIdString(enrollment.enrolledMember)
-    if (ownerId !== toIdString(req.user._id)) {
-      return res.status(403).json({ error: 'You can only submit quizzes for your own enrollment.' })
-    }
-
     const lessonKey = String(req.params.lessonKey || '').trim()
-    const lesson = (() => {
-      for (const chapter of enrollment.course?.chapters || []) {
-        for (const entry of chapter.lessons || []) {
-          if (String(entry.key) === lessonKey) {
-            return entry
-          }
-        }
-      }
-      return null
-    })()
+    if (!mongoose.Types.ObjectId.isValid(enrollmentId) || !lessonKey) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Invalid quiz submission request.'
+      })
+    }
 
+    const enrollment = await SimpleLmsEnrollment.findById(enrollmentId)
+      .populate('course')
+    if (!enrollment || !enrollment.course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'Learning record not found.'
+      })
+    }
+    if (toIdString(enrollment.enrolledMember) !== toIdString(req.user._id)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=my-learning',
+        error: 'You can only submit quizzes for your own lessons.'
+      })
+    }
+
+    const lessons = flattenCourseLessons(enrollment.course)
+    const lesson = lessons.find(entry => entry.lessonKey === lessonKey)
     if (!lesson) {
-      return res.status(404).json({ error: 'Lesson not found.' })
+      return redirectWithMessage({
+        res,
+        path: `/simple-lms/learn/${enrollment._id}`,
+        error: 'Lesson not found.'
+      })
     }
 
-    const quizQuestions = Array.isArray(lesson.quizQuestions) ? lesson.quizQuestions : []
-    if (quizQuestions.length === 0) {
-      return res.status(400).json({ error: 'This lesson does not include a quiz.' })
+    const questions = lesson.quizQuestions || []
+    if (questions.length === 0) {
+      return redirectWithMessage({
+        res,
+        path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(lessonKey)}`,
+        error: 'No quiz is available for this lesson.'
+      })
     }
 
-    const answers = Array.isArray(req.body.answers)
-      ? req.body.answers.map(answer => Number.parseInt(answer, 10))
-      : []
+    const answers = questions.map((_, index) => {
+      const raw = req.body[`answer_${index}`]
+      const parsed = Number.parseInt(String(raw ?? '-1'), 10)
+      return Number.isInteger(parsed) ? parsed : -1
+    })
 
     let score = 0
-    quizQuestions.forEach((question, index) => {
-      const choices = Array.isArray(question.choices) ? question.choices : []
-      const correctIndex = choices.findIndex(choice => choice.isCorrect)
-      if (correctIndex >= 0 && answers[index] === correctIndex) {
+    questions.forEach((question, questionIndex) => {
+      const choices = Array.isArray(question?.choices) ? question.choices : []
+      const correctIndex = choices.findIndex(choice => Boolean(choice?.isCorrect))
+      if (correctIndex >= 0 && answers[questionIndex] === correctIndex) {
         score += 1
       }
     })
 
-    const maxScore = quizQuestions.length
-    enrollment.quizAttempts.push({
+    const maxScore = questions.length
+    const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0
+
+    const currentAttempts = Array.isArray(enrollment.quizAttempts) ? enrollment.quizAttempts : []
+    const filteredAttempts = currentAttempts.filter(attempt => String(attempt.lessonKey) !== lessonKey)
+    filteredAttempts.push({
       lessonKey,
       score,
       maxScore,
       answers,
       attemptedAt: new Date()
     })
-    enrollment.latestQuizScore = maxScore > 0
-      ? Number(((score / maxScore) * 100).toFixed(2))
-      : 0
+
+    enrollment.quizAttempts = filteredAttempts.slice(-60)
+    enrollment.latestQuizScore = percentage
     enrollment.lastActivityAt = new Date()
     if (enrollment.status === 'assigned') {
       enrollment.status = 'in_progress'
-      enrollment.startedAt = enrollment.startedAt || new Date()
     }
     await enrollment.save()
 
-    res.json({
-      message: 'Quiz submitted successfully.',
-      score,
-      maxScore,
-      percentage: maxScore > 0 ? Number(((score / maxScore) * 100).toFixed(2)) : 0
+    return redirectWithMessage({
+      res,
+      path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(lessonKey)}`,
+      success: `Quiz submitted. Score: ${score}/${maxScore} (${percentage}%).`
     })
   } catch (error) {
-    console.error('Simple LMS quiz submit error:', error)
-    res.status(500).json({ error: 'Failed to submit quiz.' })
+    console.error('Submit quiz error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=my-learning',
+      error: 'Failed to submit quiz.'
+    })
+  }
+})
+pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Only admins and course creators can create courses.'
+      })
+    }
+
+    const payload = parseCoursePayload({ body: req.body, role })
+    await SimpleLmsCourse.create({
+      ...payload,
+      organization: null,
+      createdBy: req.user._id,
+      createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
+      createdByEmail: req.user.email || ''
+    })
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Course created successfully.'
+    })
+  } catch (error) {
+    console.error('Create course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: error.message || 'Failed to create course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Course not found.'
+      })
+    }
+
+    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'You do not have permission to update this course.'
+      })
+    }
+
+    const payload = parseCoursePayload({
+      body: req.body,
+      role,
+      existingCourse: course
+    })
+
+    Object.assign(course, payload)
+    await course.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Course updated successfully.'
+    })
+  } catch (error) {
+    console.error('Update course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: error.message || 'Failed to update course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Course not found.'
+      })
+    }
+
+    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'You do not have permission to archive this course.'
+      })
+    }
+
+    course.status = 'archived'
+    course.isActive = false
+    course.archivedAt = new Date()
+    await course.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Course archived.'
+    })
+  } catch (error) {
+    console.error('Archive course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: 'Failed to archive course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Course not found.'
+      })
+    }
+
+    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'You do not have permission to restore this course.'
+      })
+    }
+
+    course.status = 'draft'
+    course.isActive = true
+    course.archivedAt = null
+    await course.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Course restored to draft.'
+    })
+  } catch (error) {
+    console.error('Restore course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: 'Failed to restore course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Only creators and admins can assign courses.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId).lean()
+    if (!course || !canManageCourse({ role, accountId: req.user._id, course })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'You cannot assign this course.'
+      })
+    }
+
+    const targetAccountId = String(req.body.targetAccountId || '').trim()
+    const targetEmail = String(req.body.targetEmail || '').trim().toLowerCase()
+    let targetAccount = null
+
+    if (mongoose.Types.ObjectId.isValid(targetAccountId)) {
+      targetAccount = await Account.findById(targetAccountId).select('_id email profile.name').lean()
+    } else if (targetEmail) {
+      targetAccount = await Account.findOne({ email: targetEmail }).select('_id email profile.name').lean()
+    }
+
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'Target learner not found. Select an account or use a valid email.'
+      })
+    }
+
+    await createOrUpdateEnrollment({
+      courseId: course._id,
+      learnerId: targetAccount._id,
+      actorId: req.user._id,
+      assignmentType: 'member',
+      source: 'manual'
+    })
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: `Course assigned to ${targetAccount.profile?.name || targetAccount.email}.`
+    })
+  } catch (error) {
+    console.error('Assign course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: 'Failed to assign course.'
+    })
+  }
+})
+
+pageRouter.post('/programs/create', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Only admins and course creators can create programs.'
+      })
+    }
+
+    const payload = parseProgramPayload({ body: req.body })
+    const stepCourseIds = payload.steps.map(step => step.course)
+    const courses = await SimpleLmsCourse.find({ _id: { $in: stepCourseIds } })
+      .select('_id title')
+      .lean()
+    if (courses.length !== payload.steps.length) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'One or more pathway courses are invalid.'
+      })
+    }
+
+    const titleById = new Map(courses.map(course => [toIdString(course._id), course.title]))
+    payload.steps = payload.steps.map((step, index) => ({
+      ...step,
+      order: index + 1,
+      titleSnapshot: titleById.get(toIdString(step.course)) || 'Course'
+    }))
+
+    await SimpleLmsProgram.create({
+      ...payload,
+      organization: null,
+      createdBy: req.user._id,
+      createdByName: req.user.profile?.name || req.user.email || 'Program Creator'
+    })
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      success: 'Program created successfully.'
+    })
+  } catch (error) {
+    console.error('Create program error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      error: error.message || 'Failed to create program.'
+    })
+  }
+})
+
+pageRouter.post('/programs/:programId/update', requirePageAuth, async (req, res) => {
+  try {
+    const programId = String(req.params.programId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Invalid program selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const program = await SimpleLmsProgram.findById(programId)
+    if (!program) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Program not found.'
+      })
+    }
+
+    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'You do not have permission to update this program.'
+      })
+    }
+
+    const payload = parseProgramPayload({ body: req.body, existingProgram: program })
+    const stepCourseIds = payload.steps.map(step => step.course)
+    const courses = await SimpleLmsCourse.find({ _id: { $in: stepCourseIds } })
+      .select('_id title')
+      .lean()
+    if (courses.length !== payload.steps.length) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'One or more pathway courses are invalid.'
+      })
+    }
+
+    const titleById = new Map(courses.map(course => [toIdString(course._id), course.title]))
+    payload.steps = payload.steps.map((step, index) => ({
+      ...step,
+      order: index + 1,
+      titleSnapshot: titleById.get(toIdString(step.course)) || 'Course'
+    }))
+
+    Object.assign(program, payload)
+    await program.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      success: 'Program updated successfully.'
+    })
+  } catch (error) {
+    console.error('Update program error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      error: error.message || 'Failed to update program.'
+    })
+  }
+})
+
+pageRouter.post('/programs/:programId/archive', requirePageAuth, async (req, res) => {
+  try {
+    const programId = String(req.params.programId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Invalid program selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const program = await SimpleLmsProgram.findById(programId)
+    if (!program) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Program not found.'
+      })
+    }
+
+    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'You do not have permission to archive this program.'
+      })
+    }
+
+    program.status = 'archived'
+    await program.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      success: 'Program archived.'
+    })
+  } catch (error) {
+    console.error('Archive program error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      error: 'Failed to archive program.'
+    })
+  }
+})
+
+pageRouter.post('/programs/:programId/restore', requirePageAuth, async (req, res) => {
+  try {
+    const programId = String(req.params.programId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Invalid program selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const program = await SimpleLmsProgram.findById(programId)
+    if (!program) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Program not found.'
+      })
+    }
+
+    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'You do not have permission to restore this program.'
+      })
+    }
+
+    program.status = 'draft'
+    await program.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      success: 'Program restored to draft.'
+    })
+  } catch (error) {
+    console.error('Restore program error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      error: 'Failed to restore program.'
+    })
+  }
+})
+
+pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res) => {
+  try {
+    const programId = String(req.params.programId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Invalid program selected.'
+      })
+    }
+
+    const program = await SimpleLmsProgram.findOne({
+      _id: programId,
+      status: 'published',
+      visibility: { $in: PROGRAM_VISIBILITY_VALUES }
+    })
+      .lean()
+    if (!program) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Program not found or unavailable.'
+      })
+    }
+
+    const orderedSteps = (program.steps || [])
+      .map((step) => ({
+        courseId: toIdString(step.course),
+        required: step.required !== false,
+        order: Number(step.order || 0)
+      }))
+      .filter((step) => mongoose.Types.ObjectId.isValid(step.courseId))
+      .sort((a, b) => a.order - b.order)
+
+    if (orderedSteps.length === 0) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'This program has no valid courses yet.'
+      })
+    }
+
+    const courses = await SimpleLmsCourse.find({
+      _id: { $in: orderedSteps.map(step => step.courseId) },
+      isActive: true
+    })
+      .select('_id status visibility')
+      .lean()
+
+    const availableCourseIds = new Set(
+      courses
+        .filter((course) => course.status === 'published' && PUBLIC_VISIBILITY_VALUES.includes(course.visibility))
+        .map((course) => toIdString(course._id))
+    )
+
+    let createdCount = 0
+    for (const step of orderedSteps) {
+      if (!availableCourseIds.has(step.courseId)) continue
+      const result = await createOrUpdateEnrollment({
+        courseId: step.courseId,
+        learnerId: req.user._id,
+        actorId: req.user._id,
+        assignmentType: 'program',
+        source: 'program_assignment',
+        programId: program._id
+      })
+      if (result.created) createdCount += 1
+    }
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=my-learning',
+      success: createdCount > 0
+        ? `Program added to your learning path: ${program.name}.`
+        : `Program already in your learning path: ${program.name}.`
+    })
+  } catch (error) {
+    console.error('Program enroll error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog',
+      error: 'Failed to enroll in program.'
+    })
+  }
+})
+
+pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res) => {
+  try {
+    const programId = String(req.params.programId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Invalid program selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Only creators and admins can assign programs.'
+      })
+    }
+
+    const program = await SimpleLmsProgram.findById(programId).lean()
+    if (!program || !canManageProgram({ role, accountId: req.user._id, program })) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'You cannot assign this program.'
+      })
+    }
+
+    const targetAccountId = String(req.body.targetAccountId || '').trim()
+    const targetEmail = String(req.body.targetEmail || '').trim().toLowerCase()
+    let targetAccount = null
+
+    if (mongoose.Types.ObjectId.isValid(targetAccountId)) {
+      targetAccount = await Account.findById(targetAccountId).select('_id email profile.name').lean()
+    } else if (targetEmail) {
+      targetAccount = await Account.findOne({ email: targetEmail }).select('_id email profile.name').lean()
+    }
+
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=program-studio',
+        error: 'Target learner not found. Select an account or use a valid email.'
+      })
+    }
+
+    const orderedSteps = (program.steps || [])
+      .map((step) => ({
+        courseId: toIdString(step.course),
+        order: Number(step.order || 0)
+      }))
+      .filter((step) => mongoose.Types.ObjectId.isValid(step.courseId))
+      .sort((a, b) => a.order - b.order)
+
+    let assignedCount = 0
+    for (const step of orderedSteps) {
+      const result = await createOrUpdateEnrollment({
+        courseId: step.courseId,
+        learnerId: targetAccount._id,
+        actorId: req.user._id,
+        assignmentType: 'program',
+        source: 'program_assignment',
+        programId: program._id
+      })
+      if (result.created) assignedCount += 1
+    }
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      success: assignedCount > 0
+        ? `Program assigned to ${targetAccount.profile?.name || targetAccount.email}.`
+        : `Program already assigned to ${targetAccount.profile?.name || targetAccount.email}.`
+    })
+  } catch (error) {
+    console.error('Assign program error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=program-studio',
+      error: 'Failed to assign program.'
+    })
+  }
+})
+
+pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) => {
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update roles.'
+      })
+    }
+
+    const accountId = String(req.params.accountId || '').trim()
+    const nextRole = String(req.body.role || '').trim().toLowerCase()
+    if (!mongoose.Types.ObjectId.isValid(accountId) || !ROLES.includes(nextRole)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Invalid role update request.'
+      })
+    }
+
+    const target = await Account.findById(accountId)
+    if (!target) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Account not found.'
+      })
+    }
+
+    if (nextRole === 'super_admin' && actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only super admins can assign super admin role.'
+      })
+    }
+
+    const currentTargetRole = resolveRole(target)
+    if (currentTargetRole === 'super_admin' && nextRole !== 'super_admin') {
+      const superAdminCount = await Account.countDocuments({
+        $or: [{ isSuperAdmin: true }, { learningRole: 'super_admin' }]
+      })
+      if (superAdminCount <= 1) {
+        return redirectWithMessage({
+          res,
+          path: '/simple-lms?view=admin',
+          error: 'At least one super admin must remain in the system.'
+        })
+      }
+    }
+
+    target.learningRole = nextRole
+    target.isSuperAdmin = nextRole === 'super_admin'
+    target.isSystemAdmin = ['super_admin', 'admin'].includes(nextRole)
+    await target.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: 'Role updated successfully.'
+    })
+  } catch (error) {
+    console.error('Role update error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to update role.'
+    })
+  }
+})
+pageRouter.get('/', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    const viewMode = parseViewMode(req.query.view)
+    const query = String(req.query.q || '').trim()
+    const categoryFilter = String(req.query.category || '').trim()
+    const levelFilter = String(req.query.level || '').trim().toLowerCase()
+    const sortFilter = normalizeSort(req.query.sort)
+    const editCourseId = String(req.query.editCourse || req.query.edit || '').trim()
+    const editProgramId = String(req.query.editProgram || '').trim()
+
+    const catalogFilter = {
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    }
+    if (query) {
+      const safeQuery = escapeRegExp(query)
+      catalogFilter.$or = [
+        { title: { $regex: safeQuery, $options: 'i' } },
+        { summary: { $regex: safeQuery, $options: 'i' } },
+        { description: { $regex: safeQuery, $options: 'i' } },
+        { category: { $regex: safeQuery, $options: 'i' } }
+      ]
+    }
+    if (categoryFilter) catalogFilter.category = categoryFilter
+    if (LEVELS.includes(levelFilter)) catalogFilter.level = levelFilter
+
+    const programCatalogFilter = {
+      status: 'published',
+      visibility: { $in: PROGRAM_VISIBILITY_VALUES }
+    }
+    if (query) {
+      const safeQuery = escapeRegExp(query)
+      programCatalogFilter.$or = [
+        { name: { $regex: safeQuery, $options: 'i' } },
+        { description: { $regex: safeQuery, $options: 'i' } },
+        { objective: { $regex: safeQuery, $options: 'i' } }
+      ]
+    }
+
+    const managedFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
+    const managedProgramFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
+
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw] = await Promise.all([
+      SimpleLmsCourse.find(catalogFilter)
+        .sort(mapSortToMongo(sortFilter))
+        .limit(240)
+        .lean(),
+      canCreateCourses(role)
+        ? SimpleLmsCourse.find({ ...managedFilter })
+          .sort({ updatedAt: -1 })
+          .limit(240)
+          .lean()
+        : Promise.resolve([]),
+      SimpleLmsEnrollment.find({ enrolledMember: req.user._id })
+        .populate('course')
+        .populate('program')
+        .sort({ updatedAt: -1 })
+        .lean(),
+      SimpleLmsCourse.distinct('category', {
+        isActive: true,
+        status: 'published',
+        visibility: { $in: PUBLIC_VISIBILITY_VALUES },
+        category: { $exists: true, $nin: ['', null] }
+      }),
+      Account.countDocuments({}),
+      Account.countDocuments({
+        $or: [
+          { learningRole: 'creator' },
+          { learningRole: 'admin' },
+          { learningRole: 'super_admin' },
+          { isSystemAdmin: true },
+          { isSuperAdmin: true }
+        ]
+      }),
+      SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
+      canManagePlatform(role)
+        ? Account.find({})
+          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt')
+          .sort({ createdAt: -1 })
+          .limit(500)
+          .lean()
+        : Promise.resolve([]),
+      SimpleLmsCourse.countDocuments({
+        isActive: true,
+        status: 'published',
+        visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+      }),
+      SimpleLmsProgram.find(programCatalogFilter)
+        .sort({ updatedAt: -1 })
+        .limit(180)
+        .lean(),
+      canCreateCourses(role)
+        ? SimpleLmsProgram.find(managedProgramFilter)
+          .sort({ updatedAt: -1 })
+          .limit(180)
+          .lean()
+        : Promise.resolve([]),
+      SimpleLmsProgram.countDocuments({
+        status: 'published',
+        visibility: { $in: PROGRAM_VISIBILITY_VALUES }
+      }),
+      canCreateCourses(role)
+        ? Account.find({})
+          .select('email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(300)
+          .lean()
+        : Promise.resolve([]),
+      SimpleLmsPayment.find({
+        account: req.user._id,
+        status: 'successful'
+      })
+        .select('course amountMinor currency paidAt txRef flutterwaveTxId')
+        .sort({ paidAt: -1, createdAt: -1 })
+        .lean(),
+      canManagePlatform(role)
+        ? SimpleLmsPayment.find({})
+          .populate('account', 'email profile.name')
+          .populate('course', 'title')
+          .sort({ createdAt: -1 })
+          .limit(200)
+          .lean()
+        : Promise.resolve([])
+    ])
+
+    const myEnrollments = myEnrollmentsRaw
+      .filter(entry => entry.course && entry.course.isActive)
+      .map((entry) => {
+        const lessons = flattenCourseLessons(entry.course)
+        const progress = calculateProgress({ lessons, completedLessonKeys: entry.completedLessonKeys || [] })
+        return {
+          ...entry,
+          course: decorateCourse(entry.course),
+          lessonCount: progress.lessonCount,
+          completedCount: progress.completedCount,
+          progressPercent: Number.isFinite(Number(entry.progressPercent)) ? Number(entry.progressPercent) : progress.progressPercent,
+          nextLessonKey: progress.nextLessonKey,
+          isCompleted: progress.isCompleted
+        }
+      })
+
+    const programStepCourseIds = new Set()
+    const allProgramSources = [...catalogProgramsRaw, ...managedProgramsRaw]
+    allProgramSources.forEach((program) => {
+      ;(program.steps || []).forEach((step) => {
+        const courseId = toIdString(step?.course)
+        if (mongoose.Types.ObjectId.isValid(courseId)) {
+          programStepCourseIds.add(courseId)
+        }
+      })
+    })
+
+    const programCoursesRaw = programStepCourseIds.size > 0
+      ? await SimpleLmsCourse.find({
+        _id: { $in: Array.from(programStepCourseIds) },
+        isActive: true
+      }).lean()
+      : []
+
+    const programCourseMap = new Map(
+      programCoursesRaw.map(course => [toIdString(course._id), decorateCourse(course)])
+    )
+
+    const enrolledCourseIds = new Set(myEnrollments.map(item => toIdString(item.course?._id)))
+    const paidCourseIds = new Set((myPaymentsRaw || []).map((payment) => toIdString(payment.course)))
+    const catalogCourses = catalogRaw.map((course) => {
+      const decoratedCourse = decorateCourse(course)
+      const courseId = toIdString(course._id)
+      const requiresPayment = isCoursePaidContent(course)
+      const isPaid = paidCourseIds.has(courseId)
+      const isEnrolled = enrolledCourseIds.has(courseId)
+      return {
+        ...decoratedCourse,
+        requiresPayment,
+        isPaid,
+        isEnrolled,
+        canStart: !requiresPayment || isPaid || isEnrolled
+      }
+    })
+    const recommendedCourses = catalogCourses.filter(course => !course.isEnrolled).slice(0, 8)
+    const managedCourses = managedRaw.map(course => decorateCourse(course))
+    const catalogProgramsDecorated = catalogProgramsRaw.map(program => decorateProgram(program, programCourseMap))
+    const managedPrograms = managedProgramsRaw.map(program => decorateProgram(program, programCourseMap))
+
+    let editingCourse = null
+    if (editCourseId && mongoose.Types.ObjectId.isValid(editCourseId) && canCreateCourses(role)) {
+      const candidate = managedRaw.find(course => toIdString(course._id) === editCourseId)
+      if (candidate) {
+        editingCourse = decorateCourse(candidate)
+      }
+    }
+
+    let editingProgram = null
+    if (editProgramId && mongoose.Types.ObjectId.isValid(editProgramId) && canCreateCourses(role)) {
+      const candidate = managedProgramsRaw.find(program => toIdString(program._id) === editProgramId)
+      if (candidate) {
+        editingProgram = decorateProgram(candidate, programCourseMap)
+      }
+    }
+
+    const myProgramsMap = new Map()
+    myEnrollments.forEach((entry) => {
+      const programId = toIdString(entry.program?._id || entry.program)
+      if (!programId || !mongoose.Types.ObjectId.isValid(programId)) return
+
+      const rawProgram = entry.program && typeof entry.program === 'object'
+        ? entry.program
+        : managedProgramsRaw.find(item => toIdString(item._id) === programId)
+          || catalogProgramsRaw.find(item => toIdString(item._id) === programId)
+
+      if (!rawProgram) return
+
+      const existing = myProgramsMap.get(programId) || {
+        program: decorateProgram(rawProgram, programCourseMap),
+        totalCourses: 0,
+        completedCourses: 0,
+        nextEnrollmentId: '',
+        nextLessonKey: '',
+        lastActivityAt: null
+      }
+
+      existing.totalCourses += 1
+      if (entry.isCompleted) {
+        existing.completedCourses += 1
+      } else if (!existing.nextEnrollmentId) {
+        existing.nextEnrollmentId = toIdString(entry._id)
+        existing.nextLessonKey = String(entry.nextLessonKey || '')
+      }
+
+      const activityTs = new Date(entry.lastActivityAt || entry.updatedAt || Date.now()).getTime()
+      if (!existing.lastActivityAt || activityTs > existing.lastActivityAt) {
+        existing.lastActivityAt = activityTs
+      }
+
+      myProgramsMap.set(programId, existing)
+    })
+
+    const myPrograms = Array.from(myProgramsMap.values())
+      .map((item) => ({
+        ...item,
+        progressPercent: item.totalCourses > 0
+          ? Math.round((item.completedCourses / item.totalCourses) * 100)
+          : 0,
+        nextEnrollmentId: item.nextEnrollmentId || '',
+        nextLessonKey: item.nextLessonKey || ''
+      }))
+      .sort((a, b) => Number(b.lastActivityAt || 0) - Number(a.lastActivityAt || 0))
+
+    const enrolledProgramIds = new Set(myPrograms.map(item => toIdString(item.program?._id)))
+    const catalogPrograms = catalogProgramsDecorated.map((program) => ({
+      ...program,
+      isEnrolled: enrolledProgramIds.has(toIdString(program._id))
+    }))
+    const recommendedPrograms = catalogPrograms.filter(program => !program.isEnrolled).slice(0, 6)
+
+    const adminAccounts = adminAccountsRaw.map((account) => ({
+      ...account,
+      resolvedRole: resolveRole(account),
+      displayName: account.profile?.name || account.email || 'User'
+    }))
+
+    const roleBreakdown = {
+      super_admin: adminAccounts.filter(account => account.resolvedRole === 'super_admin').length,
+      admin: adminAccounts.filter(account => account.resolvedRole === 'admin').length,
+      creator: adminAccounts.filter(account => account.resolvedRole === 'creator').length,
+      learner: adminAccounts.filter(account => account.resolvedRole === 'learner').length
+    }
+
+    const studioCourseMap = new Map()
+    for (const course of [...managedCourses, ...catalogCourses]) {
+      studioCourseMap.set(toIdString(course._id), course)
+    }
+    const studioCourses = Array.from(studioCourseMap.values())
+      .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+
+    const assignableAccounts = assignableAccountsRaw.map((account) => ({
+      ...account,
+      displayName: account.profile?.name || account.email || 'Learner'
+    }))
+
+    const myPayments = (myPaymentsRaw || []).map((payment) => ({
+      ...payment,
+      amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency)
+    }))
+
+    const adminPayments = (adminPaymentsRaw || []).map((payment) => ({
+      ...payment,
+      learnerName: payment.account?.profile?.name || payment.account?.email || 'Learner',
+      learnerEmail: payment.account?.email || '',
+      courseTitle: payment.course?.title || 'Course',
+      amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency),
+      statusLabel: String(payment.status || '').replace(/_/g, ' ')
+    }))
+
+    const paymentStats = {
+      totalCount: adminPayments.length,
+      successfulCount: adminPayments.filter(payment => payment.status === 'successful').length,
+      pendingCount: adminPayments.filter(payment => payment.status === 'pending' || payment.status === 'initiated').length,
+      failedCount: adminPayments.filter(payment => ['failed', 'cancelled'].includes(payment.status)).length,
+      revenueMinor: adminPayments
+        .filter(payment => payment.status === 'successful')
+        .reduce((sum, payment) => sum + Math.max(0, Number(payment.amountMinor || 0)), 0)
+    }
+
+    return res.render('simple-lms', {
+      title: 'Seemplify Learning - Workspace',
+      user: req.user,
+      activePage: 'simple-lms',
+      role,
+      viewMode,
+      canCreateCourses: canCreateCourses(role),
+      canManagePlatform: canManagePlatform(role),
+      filters: {
+        query,
+        category: categoryFilter,
+        level: LEVELS.includes(levelFilter) ? levelFilter : '',
+        sort: sortFilter
+      },
+      levels: LEVELS,
+      sortOptions: SORT_OPTIONS,
+      categories: (categoriesRaw || []).map(item => String(item || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+      catalogCourses,
+      recommendedCourses,
+      catalogPrograms,
+      recommendedPrograms,
+      managedCourses,
+      managedPrograms,
+      myEnrollments,
+      myPrograms,
+      editingCourse,
+      editingProgram,
+      studioCourses,
+      assignableAccounts,
+      adminAccounts,
+      myPayments,
+      adminPayments,
+      paymentStats: {
+        ...paymentStats,
+        revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN')
+      },
+      flutterwave: {
+        enabled: isFlutterwaveConfigured(),
+        publicKey: getFlutterwavePublicKey()
+      },
+      roleBreakdown,
+      stats: {
+        publishedCourseCount: totalPublishedCourses,
+        publishedProgramCount: totalPublishedPrograms,
+        learnerCount: totalAccounts,
+        creatorCount: totalCreators,
+        completionCount: completedEnrollments,
+        myEnrollmentCount: myEnrollments.length,
+        myPaidCourseCount: myPayments.length
+      },
+      success: String(req.query.success || ''),
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
+    })
+  } catch (error) {
+    console.error('Simple LMS load error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms',
+      error: 'Failed to load workspace.'
+    })
+  }
+})
+
+apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
+  try {
+    const configuredHash = String(process.env.FLUTTERWAVE_WEBHOOK_HASH || '').trim()
+    if (configuredHash) {
+      const receivedHash = String(req.headers['verif-hash'] || '').trim()
+      if (!receivedHash || receivedHash !== configuredHash) {
+        return res.status(401).json({ error: 'Invalid webhook signature.' })
+      }
+    }
+
+    const event = String(req.body?.event || '').trim()
+    const payload = req.body?.data || {}
+    if (event !== 'charge.completed' || !payload) {
+      return res.json({ ok: true })
+    }
+
+    const txRef = String(payload.tx_ref || '').trim()
+    const transactionId = String(payload.id || '').trim()
+    if (!txRef || !transactionId) {
+      return res.json({ ok: true })
+    }
+
+    const payment = await SimpleLmsPayment.findOne({ txRef })
+    if (!payment || payment.status === 'successful') {
+      return res.json({ ok: true })
+    }
+
+    const verification = await verifyFlutterwaveTransaction(transactionId)
+    const verifiedData = verification?.data || {}
+    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
+    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
+    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
+    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
+    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
+    const txRefMatches = String(verifiedData?.tx_ref || '').trim() === payment.txRef
+    const statusMatches = verifiedStatus === 'successful'
+
+    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
+    payment.flutterwaveStatus = verifiedStatus || 'unknown'
+    payment.verificationPayload = verification
+    payment.verifiedAt = new Date()
+
+    if (statusMatches && amountMatches && txRefMatches && verifiedCurrency === payment.currency) {
+      payment.status = 'successful'
+      payment.paidAt = new Date()
+      await payment.save()
+
+      await createOrUpdateEnrollment({
+        courseId: payment.course,
+        learnerId: payment.account,
+        actorId: payment.account,
+        assignmentType: 'self',
+        source: 'self_enroll'
+      })
+    } else {
+      payment.status = 'failed'
+      await payment.save()
+    }
+
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('Flutterwave webhook error:', error)
+    return res.status(500).json({ error: 'Webhook processing failed.' })
+  }
+})
+
+apiRouter.use(requireApiAuth)
+
+apiRouter.get('/workspace', async (_req, res) => res.redirect('/simple-lms'))
+
+apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return res.status(403).json({ error: 'Only admins and creators can upload banners.' })
+    }
+
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: 'No banner file uploaded.' })
+    }
+
+    if (!isCloudinaryConfigured()) {
+      return res.status(500).json({ error: 'Cloudinary is not configured for banner uploads.' })
+    }
+
+    const uploadResult = await uploadBufferToCloudinary({
+      buffer: req.file.buffer,
+      filename: `${Date.now()}-${slugifyValue(req.file.originalname || 'banner', 'banner')}`,
+      folder: 'seemplify-learning/course-banners',
+      resourceType: 'image'
+    })
+
+    return res.json({
+      message: 'Banner uploaded successfully.',
+      url: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
+      width: uploadResult.width,
+      height: uploadResult.height
+    })
+  } catch (error) {
+    console.error('Banner upload error:', error)
+    return res.status(500).json({ error: 'Failed to upload banner.' })
+  }
+})
+
+apiRouter.post('/courses/:courseId/enroll', async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id.' })
+    }
+
+    const course = await SimpleLmsCourse.findOne({
+      _id: courseId,
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    }).lean()
+
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found or unavailable.' })
+    }
+
+    if (isCoursePaidContent(course)) {
+      const hasSuccessfulPayment = await SimpleLmsPayment.exists({
+        account: req.user._id,
+        course: course._id,
+        status: 'successful'
+      })
+      if (!hasSuccessfulPayment) {
+        return res.status(402).json({
+          error: 'Payment required before enrollment.',
+          requiresPayment: true
+        })
+      }
+    }
+
+    const enrollmentResult = await createOrUpdateEnrollment({
+      courseId: course._id,
+      learnerId: req.user._id,
+      actorId: req.user._id,
+      assignmentType: 'self',
+      source: 'self_enroll'
+    })
+    const enrollment = enrollmentResult.enrollment
+
+    const lessons = flattenCourseLessons(course)
+    const firstLessonKey = lessons[0]?.lessonKey || ''
+    return res.json({
+      message: 'Enrollment successful.',
+      alreadyEnrolled: !enrollmentResult.created,
+      redirectUrl: firstLessonKey
+        ? `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(firstLessonKey)}`
+        : '/simple-lms?view=my-learning'
+    })
+  } catch (error) {
+    console.error('Enroll API error:', error)
+    return res.status(500).json({ error: 'Failed to enroll in course.' })
   }
 })
 
 apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
   try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
     const enrollmentId = String(req.params.enrollmentId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
       return res.status(400).json({ error: 'Invalid enrollment id.' })
@@ -1949,7 +2436,6 @@ apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
 
     const enrollment = await SimpleLmsEnrollment.findOne({
       _id: enrollmentId,
-      organization: orgContext.organizationId,
       enrolledMember: req.user._id
     })
 
@@ -1961,539 +2447,13 @@ apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
     enrollment.lastActivityAt = enrollment.lastActivityAt || new Date()
     await enrollment.save()
 
-    res.json({ message: 'Enrollment marked as viewed.' })
+    return res.json({ message: 'Enrollment marked as viewed.' })
   } catch (error) {
-    console.error('Simple LMS mark viewed error:', error)
-    res.status(500).json({ error: 'Failed to mark enrollment viewed.' })
-  }
-})
-
-apiRouter.post('/system-courses/:courseId/request-access', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const [scope, planAccess, orgMembersResult] = await Promise.all([
-      getSimpleLmsAccessScope({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id,
-        memberRole: orgContext.memberRole
-      }),
-      getLmsPlanAccess(orgContext.organizationId),
-      getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
-    ])
-
-    if (!planAccess.hasLmsFeature) {
-      return res.status(403).json({ error: 'Simple LMS is not enabled for your organization.' })
-    }
-
-    const courseId = String(req.params.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ error: 'Invalid system course id.' })
-    }
-
-    const course = await SimpleLmsCourse.findOne({
-      _id: courseId,
-      isSystemCourse: true,
-      status: 'published',
-      visibility: 'system_public',
-      isActive: true
-    })
-    if (!course) {
-      return res.status(404).json({ error: 'System course not found or not available.' })
-    }
-
-    const approvedCount = await SimpleLmsRequest.countDocuments({
-      organization: orgContext.organizationId,
-      requestType: 'system_course_access',
-      status: 'approved'
-    })
-    const maxSystemCourses = planAccess.maxSystemCourses
-    if (maxSystemCourses !== null && Number.isFinite(Number(maxSystemCourses)) && approvedCount >= Number(maxSystemCourses)) {
-      return res.status(403).json({
-        error: 'Your plan has reached the maximum number of approved system courses.',
-        maxSystemCourses: Number(maxSystemCourses),
-        approvedCount
-      })
-    }
-
-    const existingPendingRequest = await SimpleLmsRequest.findOne({
-      organization: orgContext.organizationId,
-      requestType: 'system_course_access',
-      course: course._id,
-      status: 'pending'
-    })
-    if (existingPendingRequest) {
-      return res.status(400).json({ error: 'A request for this course is already pending.' })
-    }
-
-    const targetType = String(req.body.targetType || 'self').trim()
-    const targetMemberId = String(req.body.targetMemberId || '').trim()
-    const targetTeamId = String(req.body.targetTeamId || '').trim()
-
-    buildAssignableMemberIds({
-      targetType,
-      targetMemberId,
-      targetTeamId,
-      accountId: req.user._id,
-      memberRole: orgContext.memberRole,
-      scope,
-      orgMembers: orgMembersResult.members || [],
-      teams: scope.teams || []
-    })
-
-    const requestMessage = String(req.body.message || '').trim().slice(0, 5000)
-    const paymentStatus = course.pricing?.paymentMode === 'paid' ? 'pending' : 'not_required'
-    const paymentAmount = course.pricing?.paymentMode === 'paid'
-      ? Number(course.pricing?.amount || 0)
-      : 0
-    const paymentCurrency = normalizeCurrencyCode(
-      course.pricing?.currency,
-      getSimpleLmsCurrencySettings(orgContext.organization).defaultCurrency
-    )
-
-    const request = await SimpleLmsRequest.create({
-      organization: orgContext.organizationId,
-      requestedBy: req.user._id,
-      requestType: 'system_course_access',
-      status: 'pending',
-      title: `System course access: ${course.title}`,
-      message: requestMessage,
-      course: course._id,
-      notificationRecipient: course.createdBy || null,
-      payment: {
-        status: paymentStatus,
-        amount: paymentAmount,
-        currency: paymentCurrency
-      },
-      metadata: {
-        targetType,
-        targetMemberId,
-        targetTeamId,
-        dueAt: String(req.body.dueAt || '').trim()
-      }
-    })
-
-    const recipientIds = new Set()
-    if (course.createdBy) {
-      recipientIds.add(toIdString(course.createdBy))
-    }
-    if (recipientIds.size === 0) {
-      const admins = await Account.findSystemAdmins().select('_id').lean()
-      admins.forEach(admin => recipientIds.add(toIdString(admin._id)))
-    }
-
-    const recipients = await Account.find({
-      _id: { $in: Array.from(recipientIds) }
-    })
-      .select('email profile.name')
-      .lean()
-
-    await Promise.all(recipients.map((recipient) => createNotification({
-      organizationId: orgContext.organizationId,
-      senderId: req.user._id,
-      recipient,
-      subject: 'Simple LMS system course request',
-      html: `
-        <p>A new system course access request needs review.</p>
-        <p><strong>Course:</strong> ${htmlEscape(course.title)}<br>
-        <strong>Organization:</strong> ${htmlEscape(orgContext.organizationName)}</p>
-        <p><a href="/simple-lms?view=requests">Open requests queue</a></p>
-      `,
-      text: `Simple LMS request\nCourse: ${course.title}\nOrganization: ${orgContext.organizationName}`
-    })))
-
-    res.status(201).json({
-      message: 'System course access request submitted.',
-      request
-    })
-  } catch (error) {
-    console.error('Simple LMS system course request error:', error)
-    res.status(500).json({ error: error.message || 'Failed to submit system course request.' })
-  }
-})
-
-apiRouter.post('/permissions/publish-without-review/request', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const existingPending = await SimpleLmsRequest.findOne({
-      organization: orgContext.organizationId,
-      requestedBy: req.user._id,
-      requestType: 'publish_without_review',
-      status: 'pending'
-    })
-    if (existingPending) {
-      return res.status(400).json({ error: 'You already have a pending publish-without-review request.' })
-    }
-
-    const request = await SimpleLmsRequest.create({
-      organization: orgContext.organizationId,
-      requestedBy: req.user._id,
-      requestType: 'publish_without_review',
-      status: 'pending',
-      title: 'Request publish without review permission',
-      message: String(req.body.message || '').trim().slice(0, 5000),
-      targetAccount: req.user._id
-    })
-
-    const managers = await Account.find({
-      _id: {
-        $in: orgContext.organization.members
-          .filter(member => member.status === 'active' && SIMPLE_LMS_ORG_MANAGER_ROLES.includes(member.role))
-          .map(member => member.account)
-      }
-    })
-      .select('email profile.name')
-      .lean()
-
-    await Promise.all(managers.map((manager) => createNotification({
-      organizationId: orgContext.organizationId,
-      senderId: req.user._id,
-      recipient: manager,
-      subject: 'Simple LMS publish permission request',
-      html: `
-        <p>A member requested <strong>publish without review</strong> permission in Simple LMS.</p>
-        <p><a href="/simple-lms?view=requests">Review request</a></p>
-      `,
-      text: 'Simple LMS publish-without-review request pending review.'
-    })))
-
-    res.status(201).json({
-      message: 'Permission request submitted.',
-      request
-    })
-  } catch (error) {
-    console.error('Simple LMS publish permission request error:', error)
-    res.status(500).json({ error: 'Failed to submit permission request.' })
-  }
-})
-
-apiRouter.post('/permissions/publish-without-review/:accountId/grant', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-    if (!canManageOrganizationData(orgContext.memberRole)) {
-      return res.status(403).json({ error: 'Only owner, admin, or HR manager can grant this permission.' })
-    }
-
-    const targetAccountId = String(req.params.accountId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(targetAccountId)) {
-      return res.status(400).json({ error: 'Invalid account id.' })
-    }
-
-    const permission = await SimpleLmsPermission.findOneAndUpdate(
-      {
-        organization: orgContext.organizationId,
-        account: targetAccountId
-      },
-      {
-        $set: {
-          canPublishWithoutReview: true,
-          isActive: true,
-          grantedBy: req.user._id,
-          grantedAt: new Date(),
-          revokedBy: null,
-          revokedAt: null
-        }
-      },
-      {
-        upsert: true,
-        new: true
-      }
-    )
-
-    const targetAccount = await Account.findById(targetAccountId)
-      .select('email profile.name')
-      .lean()
-    await createNotification({
-      organizationId: orgContext.organizationId,
-      senderId: req.user._id,
-      recipient: targetAccount,
-      subject: 'Simple LMS publish permission granted',
-      html: `
-        <p>You can now publish public Simple LMS courses without review in <strong>${htmlEscape(orgContext.organizationName)}</strong>.</p>
-        <p><a href="/simple-lms?view=course-studio">Open Simple LMS Course Studio</a></p>
-      `,
-      text: `Simple LMS publish permission granted in ${orgContext.organizationName}.`
-    })
-
-    res.json({
-      message: 'Permission granted successfully.',
-      permission
-    })
-  } catch (error) {
-    console.error('Simple LMS grant publish permission error:', error)
-    res.status(500).json({ error: 'Failed to grant permission.' })
-  }
-})
-
-apiRouter.post('/permissions/publish-without-review/:accountId/revoke', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-    if (!canManageOrganizationData(orgContext.memberRole)) {
-      return res.status(403).json({ error: 'Only owner, admin, or HR manager can revoke this permission.' })
-    }
-
-    const targetAccountId = String(req.params.accountId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(targetAccountId)) {
-      return res.status(400).json({ error: 'Invalid account id.' })
-    }
-
-    const permission = await SimpleLmsPermission.findOneAndUpdate(
-      {
-        organization: orgContext.organizationId,
-        account: targetAccountId
-      },
-      {
-        $set: {
-          canPublishWithoutReview: false,
-          isActive: false,
-          revokedBy: req.user._id,
-          revokedAt: new Date()
-        }
-      },
-      {
-        new: true
-      }
-    )
-
-    res.json({
-      message: 'Permission revoked successfully.',
-      permission
-    })
-  } catch (error) {
-    console.error('Simple LMS revoke publish permission error:', error)
-    res.status(500).json({ error: 'Failed to revoke permission.' })
-  }
-})
-
-apiRouter.post('/requests/:requestId/review', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const requestId = String(req.params.requestId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({ error: 'Invalid request id.' })
-    }
-
-    const request = await SimpleLmsRequest.findById(requestId)
-    if (!request) {
-      return res.status(404).json({ error: 'Request not found.' })
-    }
-    if (request.status !== 'pending') {
-      return res.status(400).json({ error: 'Request has already been processed.' })
-    }
-
-    const action = String(req.body.action || '').trim().toLowerCase()
-    if (!['approve', 'reject'].includes(action)) {
-      return res.status(400).json({ error: 'Action must be approve or reject.' })
-    }
-
-    const platformAdmin = isPlatformAdmin(req.user)
-    const sameOrganization = toIdString(request.organization) === orgContext.organizationId
-    const canReviewOrgRequest = sameOrganization && canManageOrganizationData(orgContext.memberRole)
-    const canReviewPlatformRequest =
-      platformAdmin ||
-      (request.notificationRecipient && toIdString(request.notificationRecipient) === toIdString(req.user._id))
-
-    if (request.requestType === 'publish_without_review' && !canReviewOrgRequest) {
-      return res.status(403).json({ error: 'You do not have permission to review this request.' })
-    }
-    if (['system_course_access', 'public_course_publish'].includes(request.requestType) && !canReviewPlatformRequest) {
-      return res.status(403).json({ error: 'You do not have permission to review this request.' })
-    }
-
-    const reviewNotes = String(req.body.notes || '').trim().slice(0, 3000)
-    const requesterAccount = await Account.findById(request.requestedBy)
-      .select('email profile.name')
-      .lean()
-
-    if (action === 'reject') {
-      await request.reject({ reviewerId: req.user._id, notes: reviewNotes })
-      await sendRequestDecisionNotification({
-        request,
-        recipient: requesterAccount,
-        decidedBy: req.user,
-        approved: false
-      })
-      return res.json({
-        message: 'Request rejected.',
-        request
-      })
-    }
-
-    if (request.requestType === 'publish_without_review') {
-      const accountToGrant = request.targetAccount || request.requestedBy
-      await SimpleLmsPermission.findOneAndUpdate(
-        {
-          organization: request.organization,
-          account: accountToGrant
-        },
-        {
-          $set: {
-            canPublishWithoutReview: true,
-            isActive: true,
-            grantedBy: req.user._id,
-            grantedAt: new Date(),
-            notes: reviewNotes
-          }
-        },
-        {
-          upsert: true,
-          new: true
-        }
-      )
-    }
-
-    if (request.requestType === 'public_course_publish') {
-      const course = await SimpleLmsCourse.findById(request.course)
-      if (!course) {
-        return res.status(404).json({ error: 'Course for this request was not found.' })
-      }
-
-      course.status = 'published'
-      course.visibility = 'organization_public'
-      course.approvedPublicBy = req.user._id
-      course.approvedPublicAt = new Date()
-      await course.save()
-    }
-
-    if (request.requestType === 'system_course_access') {
-      const course = await SimpleLmsCourse.findById(request.course)
-      if (!course || !course.isActive) {
-        return res.status(404).json({ error: 'Requested system course was not found.' })
-      }
-
-      const organization = await Organization.findById(request.organization)
-        .select('members')
-        .lean()
-      if (!organization) {
-        return res.status(404).json({ error: 'Request organization not found.' })
-      }
-
-      const requesterRole = organization.members.find(entry => toIdString(entry.account) === toIdString(request.requestedBy) && entry.status === 'active')?.role || 'staff'
-      const [scope, orgMembersResult, teams] = await Promise.all([
-        getSimpleLmsAccessScope({
-          organizationId: toIdString(request.organization),
-          accountId: request.requestedBy,
-          memberRole: requesterRole
-        }),
-        getOrganizationMembersWithTeamContext({ organizationId: toIdString(request.organization) }),
-        Team.find({ organization: request.organization })
-          .select('_id name members.account members.status')
-          .lean()
-      ])
-
-      const targetType = String(getMetadataValue(request.metadata, 'targetType', 'self') || 'self')
-      const targetMemberId = String(getMetadataValue(request.metadata, 'targetMemberId', '') || '')
-      const targetTeamId = String(getMetadataValue(request.metadata, 'targetTeamId', '') || '')
-      const dueAtRaw = String(getMetadataValue(request.metadata, 'dueAt', '') || '')
-      const dueAt = parseDueDate(dueAtRaw)
-
-      const memberIds = buildAssignableMemberIds({
-        targetType,
-        targetMemberId,
-        targetTeamId,
-        accountId: request.requestedBy,
-        memberRole: requesterRole,
-        scope,
-        orgMembers: orgMembersResult.members || [],
-        teams
-      })
-
-      const assignmentType = targetType === 'organization'
-        ? 'organization'
-        : (targetType === 'team' ? 'team' : (targetType === 'self' ? 'self' : 'member'))
-
-      await assignCourseToMembers({
-        organizationId: request.organization,
-        course,
-        memberIds,
-        assignedBy: req.user._id,
-        assignmentType,
-        assignedTeam: assignmentType === 'team' ? targetTeamId : null,
-        dueAt,
-        source: 'system_course_request'
-      })
-    }
-
-    const markPaid = req.body.markPaid === true || req.body.markPaid === 'true'
-    await request.approve({
-      reviewerId: req.user._id,
-      notes: reviewNotes,
-      markPaid
-    })
-
-    await sendRequestDecisionNotification({
-      request,
-      recipient: requesterAccount,
-      decidedBy: req.user,
-      approved: true
-    })
-
-    res.json({
-      message: 'Request approved successfully.',
-      request
-    })
-  } catch (error) {
-    console.error('Simple LMS review request error:', error)
-    res.status(500).json({ error: error.message || 'Failed to review request.' })
-  }
-})
-
-apiRouter.post('/requests/:requestId/cancel', async (req, res) => {
-  try {
-    const orgContext = await resolveCurrentOrganizationContext(req.user)
-    if (orgContext.error) {
-      return res.status(400).json({ error: orgContext.error })
-    }
-
-    const requestId = String(req.params.requestId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({ error: 'Invalid request id.' })
-    }
-
-    const request = await SimpleLmsRequest.findOne({
-      _id: requestId,
-      organization: orgContext.organizationId,
-      requestedBy: req.user._id
-    })
-    if (!request) {
-      return res.status(404).json({ error: 'Request not found.' })
-    }
-    if (request.status !== 'pending') {
-      return res.status(400).json({ error: 'Only pending requests can be cancelled.' })
-    }
-
-    request.status = 'cancelled'
-    request.reviewedBy = req.user._id
-    request.reviewedAt = new Date()
-    request.reviewNotes = 'Cancelled by requester'
-    await request.save()
-
-    res.json({
-      message: 'Request cancelled.',
-      request
-    })
-  } catch (error) {
-    console.error('Simple LMS cancel request error:', error)
-    res.status(500).json({ error: 'Failed to cancel request.' })
+    console.error('Viewed API error:', error)
+    return res.status(500).json({ error: 'Failed to mark enrollment viewed.' })
   }
 })
 
 export { pageRouter as simpleLmsRouter, apiRouter as simpleLmsApiRouter }
 export default pageRouter
+

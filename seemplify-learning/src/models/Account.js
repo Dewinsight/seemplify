@@ -64,6 +64,12 @@ const AccountSchema = new mongoose.Schema({
     name: { type: String, trim: true },
     preferred_username: { type: String, trim: true }
   },
+  learningRole: {
+    type: String,
+    enum: ['super_admin', 'admin', 'creator', 'learner'],
+    default: 'learner',
+    index: true
+  },
   organizations: {
     type: [organizationMembershipSchema],
     default: []
@@ -122,6 +128,17 @@ AccountSchema.statics.findSystemAdmins = function () {
 
 AccountSchema.statics.findSuperAdmins = function () {
   return this.find({ isSuperAdmin: true })
+}
+
+AccountSchema.methods.getLearningRole = function () {
+  if (this.isSuperAdmin) return 'super_admin'
+  if (this.isSystemAdmin) return 'admin'
+
+  const normalized = String(this.learningRole || '').trim().toLowerCase()
+  if (['super_admin', 'admin', 'creator', 'learner'].includes(normalized)) {
+    return normalized
+  }
+  return 'learner'
 }
 
 export const Account =

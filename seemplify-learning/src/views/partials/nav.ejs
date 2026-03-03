@@ -1,5 +1,5 @@
 <nav class="top-nav">
-  <a href="/simple-lms" class="top-nav-brand">
+  <a href="/" class="top-nav-brand">
     <svg viewBox="0 0 100 100" aria-hidden="true">
       <defs>
         <linearGradient id="seemplifyLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -19,8 +19,10 @@
   </a>
 
   <div class="top-nav-links">
-    <a href="/simple-lms" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'home' ? ' active' : '' %>">LMS</a>
-    <a href="/setup" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'setup' ? ' active' : '' %>">Workspace Setup</a>
+    <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(activePage) ? ' active' : '' %>">Explore Courses</a>
+    <% if (user) { %>
+      <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
+    <% } %>
   </div>
 
   <% if (user) { %>
@@ -30,6 +32,11 @@
         <div class="top-nav-user-email"><%= user.email %></div>
       </div>
       <a href="/logout" class="btn btn-secondary btn-sm">Sign out</a>
+    </div>
+  <% } else { %>
+    <div class="top-nav-user">
+      <a href="/login" class="btn btn-secondary btn-sm">Sign in</a>
+      <a href="/register" class="btn btn-primary btn-sm">Create account</a>
     </div>
   <% } %>
 </nav>

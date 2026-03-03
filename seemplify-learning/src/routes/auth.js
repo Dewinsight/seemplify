@@ -2,7 +2,6 @@ import express from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import { Account } from '../models/Account.js'
-import { Organization } from '../models/Organization.js'
 import { optionalAuth } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -49,14 +48,6 @@ router.post('/login', async (req, res) => {
       return res.redirect(`/login?error=${encodeURIComponent('Invalid credentials')}&return_to=${encodeURIComponent(returnTo)}`)
     }
 
-    if (!account.currentOrganization && Array.isArray(account.organizations) && account.organizations.length > 0) {
-      const activeMembership = account.organizations.find((membership) => membership.isActive)
-      if (activeMembership?.organization) {
-        account.currentOrganization = activeMembership.organization
-        await account.save()
-      }
-    }
-
     req.session.accountId = account.sub
     res.redirect(returnTo || '/simple-lms')
   } catch (error) {
@@ -81,7 +72,6 @@ router.post('/register', async (req, res) => {
     const name = String(req.body.name || '').trim()
     const email = String(req.body.email || '').trim().toLowerCase()
     const password = String(req.body.password || '')
-    const organizationName = String(req.body.organizationName || '').trim()
 
     if (!name || !email || !password) {
       return res.redirect(`/register?error=${encodeURIComponent('Name, email, and password are required')}`)
@@ -97,6 +87,14 @@ router.post('/register', async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12)
+    const hasExistingSuperAdmin = await Account.exists({
+      $or: [
+        { isSuperAdmin: true },
+        { learningRole: 'super_admin' }
+      ]
+    })
+    const bootstrapAsSuperAdmin = !hasExistingSuperAdmin
+
     const account = await Account.create({
       sub: createSub(),
       email,
@@ -106,47 +104,19 @@ router.post('/register', async (req, res) => {
         name,
         preferred_username: name
       },
+      learningRole: bootstrapAsSuperAdmin ? 'super_admin' : 'learner',
+      isSystemAdmin: bootstrapAsSuperAdmin,
+      isSuperAdmin: bootstrapAsSuperAdmin,
       organizations: [],
       teams: []
     })
 
-    const normalizedOrganizationName = organizationName || `${name.split(' ')[0] || 'My'} Organization`
-    const organization = await Organization.create({
-      name: normalizedOrganizationName,
-      owner: account._id,
-      members: [{
-        account: account._id,
-        role: 'owner',
-        status: 'active',
-        appAccess: {
-          mode: 'all',
-          appIds: []
-        }
-      }],
-      settings: {
-        simpleLms: {
-          defaultCurrency: 'NGN',
-          allowedCurrencies: ['NGN']
-        }
-      }
-    })
-
-    account.organizations.push({
-      organization: organization._id,
-      role: 'owner',
-      appAccess: {
-        mode: 'all',
-        appIds: []
-      },
-      joinedAt: new Date(),
-      isActive: true
-    })
-    account.currentOrganization = organization._id
-    await account.save()
-
     req.session.accountId = account.sub
 
-    res.redirect('/setup?success=Welcome to Seemplify Learning. Your workspace is ready.')
+    const successMessage = bootstrapAsSuperAdmin
+      ? 'Welcome to Seemplify Learning. Your account was bootstrapped as Super Admin.'
+      : 'Welcome to Seemplify Learning. Your account is ready.'
+    res.redirect(`/simple-lms?success=${encodeURIComponent(successMessage)}`)
   } catch (error) {
     console.error('Registration error:', error)
     res.redirect(`/register?error=${encodeURIComponent('Failed to register account')}`)
