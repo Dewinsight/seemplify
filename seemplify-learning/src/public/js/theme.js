@@ -124,7 +124,7 @@
     };
 
     function updateToggleUI(currentTheme) {
-        const activeItems = document.querySelectorAll('.theme-option');
+        const activeItems = document.querySelectorAll('.theme-option, .mobile-theme-option');
         activeItems.forEach(item => {
             if (item.dataset.value === currentTheme) {
                 item.classList.add('active');

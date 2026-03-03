@@ -8,34 +8,52 @@
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
   <style>
+    :root {
+      --lms-surface: rgba(15, 23, 42, 0.45);
+      --lms-surface-soft: rgba(15, 23, 42, 0.3);
+      --lms-media-start: rgba(14, 165, 233, 0.2);
+      --lms-media-end: rgba(2, 6, 23, 0.84);
+      --lms-tab-active: rgba(14, 165, 233, 0.18);
+      --lms-tab-active-border: rgba(14, 165, 233, 0.7);
+      --lms-price: #fbbf24;
+    }
+    [data-theme="light"] {
+      --lms-surface: rgba(255, 255, 255, 0.74);
+      --lms-surface-soft: rgba(255, 255, 255, 0.62);
+      --lms-media-start: rgba(56, 189, 248, 0.2);
+      --lms-media-end: rgba(226, 232, 240, 0.88);
+      --lms-tab-active: rgba(99, 102, 241, 0.14);
+      --lms-tab-active-border: rgba(99, 102, 241, 0.55);
+      --lms-price: #b45309;
+    }
     .shell { max-width: 1380px; margin: 0 auto 26px; display: grid; gap: 12px; }
     .hero, .panel { border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); box-shadow: var(--card-shadow); padding: 16px; }
     .hero { background: radial-gradient(120% 160% at 0 0, rgba(14,165,233,.18), transparent 46%), var(--card-bg); }
     .title { margin: 0; font-size: clamp(30px, 4vw, 54px); letter-spacing: -.04em; line-height: 1.02; }
     .subtitle { margin: 6px 0 0; color: var(--muted); }
     .chips, .tabs, .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .chip, .tab { border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; background: rgba(15,23,42,.45); }
+    .chip, .tab { border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; background: var(--lms-surface); }
     .tab { text-decoration: none; color: var(--text); padding: 8px 12px; }
-    .tab.active { border-color: rgba(14,165,233,.7); background: rgba(14,165,233,.18); }
+    .tab.active { border-color: var(--lms-tab-active-border); background: var(--lms-tab-active); }
     .head { display: flex; justify-content: space-between; align-items: end; gap: 8px; flex-wrap: wrap; }
     .head h2 { margin: 0; letter-spacing: -.02em; }
     .head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; }
-    .kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: rgba(15,23,42,.45); }
+    .kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--lms-surface); }
     .kpi small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
     .kpi strong { font-size: 30px; line-height: 1; letter-spacing: -.03em; }
     .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
-    .card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: rgba(15,23,42,.45); display: grid; align-content: start; }
-    .media { height: 140px; border-bottom: 1px solid var(--border); background: linear-gradient(140deg, rgba(14,165,233,.2), rgba(2,6,23,.84)); display: flex; align-items: center; justify-content: center; }
+    .card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--lms-surface); display: grid; align-content: start; }
+    .media { height: 140px; border-bottom: 1px solid var(--border); background: linear-gradient(140deg, var(--lms-media-start), var(--lms-media-end)); display: flex; align-items: center; justify-content: center; }
     .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .body { padding: 10px; display: grid; gap: 8px; }
     .body h3 { margin: 0; font-size: 18px; letter-spacing: -.02em; line-height: 1.2; }
     .body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; background: rgba(15,23,42,.45); }
-    .price { color: #fbbf24; font-weight: 800; }
+    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; background: var(--lms-surface); }
+    .price { color: var(--lms-price); font-weight: 800; }
     .progress { height: 8px; border-radius: 999px; overflow: hidden; background: rgba(148,163,184,.25); }
     .progress span { display: block; height: 100%; width: var(--progress,0%); background: linear-gradient(90deg,#22d3ee,#14b8a6); }
-    .empty { border: 1px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: rgba(15,23,42,.3); }
+    .empty { border: 1px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: var(--lms-surface-soft); }
     .form-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
     .studio { display: grid; gap: 10px; grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); align-items: start; }
     .stack { display: grid; gap: 8px; }
@@ -45,6 +63,24 @@
     th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
     th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) {
+      .shell { gap: 10px; margin-bottom: 18px; }
+      .hero, .panel { padding: 12px; border-radius: 14px; }
+      .title { font-size: clamp(24px, 8vw, 34px); }
+      .subtitle { font-size: 13px; }
+      .tabs, .chips {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .tab, .chip { white-space: nowrap; }
+      .grid { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      .actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
+      .body h3 { font-size: 17px; }
+      table { min-width: 620px; }
+    }
   </style>
 </head>
 <body>

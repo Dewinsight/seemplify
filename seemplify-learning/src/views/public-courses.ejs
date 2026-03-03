@@ -22,12 +22,21 @@
         Filter by topic, level, or keyword. Open any course to inspect curriculum and details.
         Login is only needed when you are ready to start a course.
       </p>
+      <label for="catalog-filter-toggle" class="btn btn-secondary btn-sm catalog-filter-toggle">Open Filters</label>
     </section>
+
+    <input type="checkbox" id="catalog-filter-toggle" class="catalog-filter-checkbox">
+    <label for="catalog-filter-toggle" class="catalog-filter-overlay" aria-label="Close filters"></label>
 
     <section class="catalog-layout">
       <aside class="catalog-filter">
+        <label for="catalog-filter-toggle" class="catalog-filter-close" aria-label="Close filters">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </label>
         <h2>Filter Courses</h2>
-        <form method="get" action="/courses" style="display:grid; gap:10px;">
+        <form method="get" action="/courses" style="display:grid; gap:10px;" onsubmit="document.getElementById('catalog-filter-toggle').checked = false;">
           <div>
             <label>Search</label>
             <input class="input" type="search" name="q" value="<%= filters.query || '' %>" placeholder="Course title, category, or keyword">
