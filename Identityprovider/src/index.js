@@ -324,6 +324,7 @@ import adminViewsRouter from './routes/adminViews.js'
 import publicPlansRouter from './routes/publicPlans.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
+import adminSimpleLmsRouter from './routes/adminSimpleLms.js'
 import profileRouter from './routes/profile.js'
 import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 
@@ -4505,6 +4506,7 @@ app.use('/api/admin/plans', adminPlansRouter)
 app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
 app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
 app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/admin/simple-lms', adminSimpleLmsRouter)
 app.use('/api/plans', publicPlansRouter)
 app.use('/api/organizations', organizationSubscriptionRouter)
 

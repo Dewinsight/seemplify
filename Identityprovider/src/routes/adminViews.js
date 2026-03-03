@@ -8,6 +8,7 @@ import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import AppLaunchActivity from '../models/AppLaunchActivity.js'
+import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 
 const router = express.Router()
 
@@ -53,14 +54,24 @@ router.get('/', async (req, res) => {
 router.get('/plans', async (req, res) => {
   try {
     const { getHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
-    const plans = await subscriptionService.getAllPlans()
     const hubApps = getHubApps()
     const comingSoonCards = getAllComingSoonCards()
+    const [plans, totalSystemCourses, publishedSystemCourses, draftSystemCourses] = await Promise.all([
+      subscriptionService.getAllPlans(),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true }),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'published' }),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'draft' })
+    ])
 
     res.render('admin/plans', {
       plans,
       hubApps,
       comingSoonCards,
+      simpleLmsStats: {
+        total: totalSystemCourses,
+        published: publishedSystemCourses,
+        draft: draftSystemCourses
+      },
       user: req.user
     })
   } catch (error) {
@@ -152,6 +163,66 @@ router.get('/subscriptions', async (req, res) => {
     res.status(500).render('error', {
       title: 'Error',
       message: 'Failed to load subscriptions'
+    })
+  }
+})
+
+/**
+ * GET /admin/simple-lms
+ * Simple LMS (IDP) system course management view
+ */
+router.get('/simple-lms', async (req, res) => {
+  try {
+    const statusFilter = String(req.query.status || 'all').trim()
+    const queryFilter = String(req.query.q || '').trim()
+
+    const filter = { isSystemCourse: true }
+    if (statusFilter !== 'all' && ['draft', 'published', 'archived', 'pending_public_review'].includes(statusFilter)) {
+      filter.status = statusFilter
+    }
+    if (queryFilter) {
+      const escaped = queryFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(escaped, 'i')
+      filter.$or = [
+        { title: regex },
+        { summary: regex },
+        { description: regex },
+        { category: regex },
+        { tags: regex }
+      ]
+    }
+
+    const [systemCourses, totalCount, publishedCount, draftCount, archivedCount] = await Promise.all([
+      SimpleLmsCourse.find(filter)
+        .sort({ updatedAt: -1 })
+        .limit(200)
+        .populate('createdBy', 'email profile.name')
+        .lean(),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true }),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'published' }),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'draft' }),
+      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'archived' })
+    ])
+
+    res.render('admin/simple-lms', {
+      systemCourses,
+      filters: {
+        status: statusFilter,
+        query: queryFilter
+      },
+      stats: {
+        total: totalCount,
+        published: publishedCount,
+        draft: draftCount,
+        archived: archivedCount
+      },
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading admin simple LMS view:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to load Simple LMS admin workspace'
     })
   }
 })
