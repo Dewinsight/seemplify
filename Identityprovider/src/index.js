@@ -14,7 +14,6 @@ import { OnboardingTemplate } from './models/OnboardingTemplate.js'
 import { OnboardingAssignment } from './models/OnboardingAssignment.js'
 import { OnboardingActivity } from './models/OnboardingActivity.js'
 import PerformanceEvaluation from './models/PerformanceEvaluation.js'
-import SimpleLmsEnrollment from './models/SimpleLmsEnrollment.js'
 import SimplePerformanceEvaluationConfig from './models/SimplePerformanceEvaluationConfig.js'
 import AppLaunchActivity from './models/AppLaunchActivity.js'
 import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
@@ -324,9 +323,7 @@ import adminViewsRouter from './routes/adminViews.js'
 import publicPlansRouter from './routes/publicPlans.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
-import adminSimpleLmsRouter from './routes/adminSimpleLms.js'
 import profileRouter from './routes/profile.js'
-import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 
 dotenv.config()
 
@@ -399,6 +396,16 @@ if (!ISSUER_URL) {
 }
 
 const PORT = process.env.PORT || 4000
+const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
+  process.env.SEEMPLIFY_LEARNING_URL ||
+  process.env.SIMPLE_LMS_EXTERNAL_URL ||
+  (isProduction ? 'https://learning.seemplifyai.com' : 'http://localhost:5012')
+)
+  .trim()
+  .replace(/\/+$/, '')
+const SIMPLE_LMS_EXTERNAL_WORKSPACE_URL = SIMPLE_LMS_EXTERNAL_BASE_URL.endsWith('/simple-lms')
+  ? SIMPLE_LMS_EXTERNAL_BASE_URL
+  : `${SIMPLE_LMS_EXTERNAL_BASE_URL}/simple-lms`
 
 // Connect to MongoDB with error handling
 try {
@@ -3230,34 +3237,6 @@ app.get('/', async (req, res) => {
       averageRating: calculateAverageRating(entry.ratings)
     }))
 
-    const simpleLmsNotificationQuery = currentOrgId
-      ? {
-          organization: currentOrgId,
-          enrolledMember: account._id
-        }
-      : null
-    const simpleLmsNotificationViewedAt = getDashboardNotificationViewedAt(
-      account,
-      'simpleLms',
-      currentOrgId
-    )
-    if (simpleLmsNotificationQuery && simpleLmsNotificationViewedAt) {
-      simpleLmsNotificationQuery.updatedAt = { $gt: simpleLmsNotificationViewedAt }
-    }
-
-    const latestSimpleLmsEnrollments = currentOrgId
-      ? await SimpleLmsEnrollment.find(simpleLmsNotificationQuery)
-        .select('updatedAt createdAt progressPercent status')
-        .populate('course', 'title')
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .limit(3)
-        .lean()
-      : []
-
-    const simpleLmsNotificationCount = currentOrgId
-      ? await SimpleLmsEnrollment.countDocuments(simpleLmsNotificationQuery)
-      : 0
-
     // Render the hub homepage using EJS template
     res.render('home', {
       user: account,
@@ -3271,8 +3250,7 @@ app.get('/', async (req, res) => {
       pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
-      simpleLmsNotificationCount,
-      latestSimpleLmsEnrollments,
+      simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
       activePage: 'home'
     })
   } catch (err) {
@@ -3464,6 +3442,14 @@ app.get('/logout', async (req, res) => {
     console.error('Hub logout error:', err)
     res.redirect('/login')
   }
+})
+
+app.get('/simple-lms', (req, res) => {
+  const params = new URLSearchParams(req.query || {})
+  const targetUrl = params.toString()
+    ? `${SIMPLE_LMS_EXTERNAL_WORKSPACE_URL}?${params.toString()}`
+    : SIMPLE_LMS_EXTERNAL_WORKSPACE_URL
+  return res.redirect(targetUrl)
 })
 
 
@@ -4498,15 +4484,12 @@ app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:in
 app.use('/api/organizations', membersRouter)
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
 app.use('/api', onboardingRouter)
-app.use('/api/simple-lms', simpleLmsApiRouter)
-app.use('/simple-lms', simpleLmsRouter)
 
 // Subscription Management API Routes
 app.use('/api/admin/plans', adminPlansRouter)
 app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
 app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
 app.use('/api/admin/users', adminUsersRouter)
-app.use('/api/admin/simple-lms', adminSimpleLmsRouter)
 app.use('/api/plans', publicPlansRouter)
 app.use('/api/organizations', organizationSubscriptionRouter)
 

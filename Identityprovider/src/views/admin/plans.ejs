@@ -40,20 +40,15 @@
       <div class="admin-card" style="margin-bottom: 16px;">
         <div class="admin-card-header">
           <div>
-            <div class="admin-card-title">Simple LMS (IDP) - Main Admin Controls</div>
+            <div class="admin-card-title">Seemplify Learning - External App</div>
             <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">
-              Configure Simple LMS access per plan and manage platform system courses from main admin.
+              Simple LMS has moved out of IDP. Open the external Seemplify Learning workspace.
             </div>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <a href="/admin/simple-lms" class="btn btn-secondary btn-sm">Manage System Courses</a>
-            <a href="/admin/simple-lms" class="btn btn-primary btn-sm">Create System Course</a>
+            <a href="<%= simpleLmsExternalWorkspaceUrl %>" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Open Workspace</a>
+            <a href="<%= simpleLmsExternalWorkspaceUrl %>?view=course-studio" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Create Course</a>
           </div>
-        </div>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <span class="status-badge status-badge--active">Total: <%= simpleLmsStats?.total || 0 %></span>
-          <span class="status-badge status-badge--approved">Published: <%= simpleLmsStats?.published || 0 %></span>
-          <span class="status-badge status-badge--pending">Draft: <%= simpleLmsStats?.draft || 0 %></span>
         </div>
       </div>
 
@@ -105,7 +100,7 @@
                       <% const limits = plan.limits.toObject ? plan.limits.toObject() : plan.limits; %>
                       <div>Members: <%= limits.maxMembers === null ? 'Unlimited' : limits.maxMembers %></div>
                       <div>Teams: <%= limits.maxTeams === null ? 'Unlimited' : limits.maxTeams %></div>
-                      <div>Simple LMS System Courses: <%= limits.maxSystemCourses === null || limits.maxSystemCourses === undefined ? 'Unlimited' : limits.maxSystemCourses %></div>
+                      <div>Seemplify Learning System Courses: <%= limits.maxSystemCourses === null || limits.maxSystemCourses === undefined ? 'Unlimited' : limits.maxSystemCourses %></div>
                     </div>
                   </td>
                   <td>
@@ -206,9 +201,9 @@
 
           <div class="admin-form-row">
             <div class="admin-form-group">
-              <label class="admin-form-label">Max Simple LMS System Courses</label>
+              <label class="admin-form-label">Max Seemplify Learning System Courses</label>
               <input type="number" id="maxSystemCourses" name="maxSystemCourses" class="admin-form-input" placeholder="Leave empty for unlimited">
-              <small style="color: var(--muted);">How many approved Simple LMS system courses this plan can access (null = unlimited)</small>
+              <small style="color: var(--muted);">How many approved Seemplify Learning system courses this plan can access (null = unlimited)</small>
             </div>
           </div>
 
@@ -245,10 +240,10 @@
               </label>
               <label class="feature-toggle">
                 <input type="checkbox" id="featureLms" name="features.lms">
-                <span class="feature-toggle-label">Simple LMS (IDP)</span>
+                <span class="feature-toggle-label">Seemplify Learning</span>
               </label>
             </div>
-            <small style="color: var(--muted); display:block; margin-top:8px;">This toggle is for the IDP-native Simple LMS workspace (separate from the external Seemplify LMS app).</small>
+            <small style="color: var(--muted); display:block; margin-top:8px;">This toggle controls access to the external Seemplify Learning app.</small>
           </div>
 
           <div class="admin-form-group">

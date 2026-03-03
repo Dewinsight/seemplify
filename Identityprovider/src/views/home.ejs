@@ -421,30 +421,6 @@
       </div>
     <% } %>
 
-    <% if (simpleLmsNotificationCount && simpleLmsNotificationCount > 0) { %>
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
-        <div>
-          <div style="font-weight: 700; font-size: 16px;">New learning assignments available</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
-            You have <%= simpleLmsNotificationCount %> Simple LMS update<%= simpleLmsNotificationCount === 1 ? '' : 's' %> to review.
-          </div>
-          <% if (latestSimpleLmsEnrollments && latestSimpleLmsEnrollments.length > 0) { %>
-            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
-              <% latestSimpleLmsEnrollments.forEach(entry => { %>
-                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px; margin-bottom: 6px;">
-                  <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#06b6d4;"></span>
-                  <strong style="color: var(--text);"><%= entry.course?.title || 'Course' %></strong>
-                  <span><%= Number(entry.progressPercent || 0) %>%</span>
-                  <span style="text-transform: capitalize;"><%= String(entry.status || 'assigned').replace(/_/g, ' ') %></span>
-                </span>
-              <% }) %>
-            </div>
-          <% } %>
-        </div>
-        <a href="/simple-lms?view=my-learning" class="btn btn-primary">Open Simple LMS</a>
-      </div>
-    <% } %>
-
     <section class="apps">
       <div class="section-title">Manage identity & access</div>
 
@@ -578,7 +554,7 @@
               </svg>
             </div>
           </a>
-          <a href="/simple-lms" class="card app-card" style="--app-color: #06b6d4;">
+          <a href="<%= simpleLmsExternalWorkspaceUrl %>" target="_blank" rel="noopener noreferrer" class="card app-card" style="--app-color: #06b6d4;">
             <div class="app-card__icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-8-4-8 4z"></path>
@@ -591,9 +567,9 @@
                 Simple LMS
                 <span class="app-card__badge" style="background: linear-gradient(135deg, #06b6d4, #3b82f6);">Core</span>
               </div>
-              <div class="app-card__desc">Course creation, assignment, programs, and team-aware learning progress inside IDP.</div>
+              <div class="app-card__desc">Course creation, assignment, programs, and team-aware learning progress in the external Seemplify Learning app.</div>
               <div class="app-card__meta">
-                <span class="pill pill--soft">Inside IDP</span>
+                <span class="pill pill--soft">External app</span>
               </div>
             </div>
             <div class="app-card__arrow">

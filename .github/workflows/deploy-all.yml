@@ -38,6 +38,8 @@ jobs:
             app_id_secret: PAYROLL_BACKEND_APP_ID
           - name: identity-provider
             app_id_secret: IDENTITY_PROVIDER_APP_ID
+          - name: seemplify-learning
+            app_id_secret: SEEMPLIFY_LEARNING_APP_ID
     
     steps:
       - name: Deploy ${{ matrix.name }}
@@ -106,6 +108,7 @@ jobs:
           echo "  ✅ performance-backend"
           echo "  ✅ payroll-backend"
           echo "  ✅ identity-provider"
+          echo "  ✅ seemplify-learning"
           echo ""
           echo "Frontends:"
           echo "  ✅ recruiter-frontend"

@@ -8,9 +8,18 @@ import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import AppLaunchActivity from '../models/AppLaunchActivity.js'
-import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 
 const router = express.Router()
+const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
+  process.env.SEEMPLIFY_LEARNING_URL ||
+  process.env.SIMPLE_LMS_EXTERNAL_URL ||
+  (process.env.NODE_ENV === 'production' ? 'https://learning.seemplifyai.com' : 'http://localhost:5012')
+)
+  .trim()
+  .replace(/\/+$/, '')
+const SIMPLE_LMS_EXTERNAL_WORKSPACE_URL = SIMPLE_LMS_EXTERNAL_BASE_URL.endsWith('/simple-lms')
+  ? SIMPLE_LMS_EXTERNAL_BASE_URL
+  : `${SIMPLE_LMS_EXTERNAL_BASE_URL}/simple-lms`
 
 /**
  * Admin View Routes
@@ -56,22 +65,13 @@ router.get('/plans', async (req, res) => {
     const { getHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
     const hubApps = getHubApps()
     const comingSoonCards = getAllComingSoonCards()
-    const [plans, totalSystemCourses, publishedSystemCourses, draftSystemCourses] = await Promise.all([
-      subscriptionService.getAllPlans(),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true }),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'published' }),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'draft' })
-    ])
+    const plans = await subscriptionService.getAllPlans()
 
     res.render('admin/plans', {
       plans,
       hubApps,
       comingSoonCards,
-      simpleLmsStats: {
-        total: totalSystemCourses,
-        published: publishedSystemCourses,
-        draft: draftSystemCourses
-      },
+      simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
       user: req.user
     })
   } catch (error) {
@@ -169,60 +169,16 @@ router.get('/subscriptions', async (req, res) => {
 
 /**
  * GET /admin/simple-lms
- * Simple LMS (IDP) system course management view
+ * Legacy IDP Simple LMS route. Redirect to external Seemplify Learning app.
  */
 router.get('/simple-lms', async (req, res) => {
   try {
-    const statusFilter = String(req.query.status || 'all').trim()
-    const queryFilter = String(req.query.q || '').trim()
-
-    const filter = { isSystemCourse: true }
-    if (statusFilter !== 'all' && ['draft', 'published', 'archived', 'pending_public_review'].includes(statusFilter)) {
-      filter.status = statusFilter
-    }
-    if (queryFilter) {
-      const escaped = queryFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const regex = new RegExp(escaped, 'i')
-      filter.$or = [
-        { title: regex },
-        { summary: regex },
-        { description: regex },
-        { category: regex },
-        { tags: regex }
-      ]
-    }
-
-    const [systemCourses, totalCount, publishedCount, draftCount, archivedCount] = await Promise.all([
-      SimpleLmsCourse.find(filter)
-        .sort({ updatedAt: -1 })
-        .limit(200)
-        .populate('createdBy', 'email profile.name')
-        .lean(),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true }),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'published' }),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'draft' }),
-      SimpleLmsCourse.countDocuments({ isSystemCourse: true, status: 'archived' })
-    ])
-
-    res.render('admin/simple-lms', {
-      systemCourses,
-      filters: {
-        status: statusFilter,
-        query: queryFilter
-      },
-      stats: {
-        total: totalCount,
-        published: publishedCount,
-        draft: draftCount,
-        archived: archivedCount
-      },
-      user: req.user
-    })
+    res.redirect(SIMPLE_LMS_EXTERNAL_WORKSPACE_URL)
   } catch (error) {
-    console.error('Error loading admin simple LMS view:', error)
+    console.error('Error redirecting to external Simple LMS workspace:', error)
     res.status(500).render('error', {
       title: 'Error',
-      message: 'Failed to load Simple LMS admin workspace'
+      message: 'Failed to open Seemplify Learning workspace'
     })
   }
 })

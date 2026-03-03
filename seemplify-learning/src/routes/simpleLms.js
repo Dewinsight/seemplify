@@ -1,7 +1,6 @@
 import express from 'express'
 import mongoose from 'mongoose'
 import multer from 'multer'
-import { MongoAdapter } from '../adapter/mongoAdapter.js'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { Team } from '../models/Team.js'
@@ -291,35 +290,12 @@ const isPlatformAdmin = (account) => Boolean(account?.isSystemAdmin || account?.
 
 const canManageOrganizationData = (memberRole) => SIMPLE_LMS_ORG_MANAGER_ROLES.includes(memberRole)
 
-async function getSessionFromCookies(req) {
-  try {
-    const sessionCookie = req.cookies?._session
-    if (!sessionCookie) return null
-
-    const adapter = new MongoAdapter('Session')
-    const sessionData = await adapter.find(sessionCookie)
-    if (!sessionData?.accountId) return null
-
-    return Account.findOne({ sub: sessionData.accountId })
-  } catch (error) {
-    console.error('Simple LMS session cookie lookup failed:', error.message)
-    return null
-  }
-}
-
 async function resolveAuthenticatedAccount(req) {
   if (req.session?.accountId) {
     const account = await Account.findOne({ sub: req.session.accountId })
     if (account) {
       return account
     }
-  }
-
-  const cookieAccount = await getSessionFromCookies(req)
-  if (cookieAccount) {
-    req.session = req.session || {}
-    req.session.accountId = cookieAccount.sub
-    return cookieAccount
   }
 
   return null
@@ -706,7 +682,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const orgContext = await resolveCurrentOrganizationContext(req.user)
     if (orgContext.error) {
-      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+      return res.redirect(`/setup?error=${encodeURIComponent(orgContext.error)}`)
     }
 
     await markSimpleLmsDashboardViewed({
@@ -919,7 +895,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     })
   } catch (error) {
     console.error('Simple LMS workspace load error:', error)
-    res.redirect('/?error=Failed to load Simple LMS workspace')
+    res.redirect('/simple-lms?error=Failed to load Simple LMS workspace')
   }
 })
 

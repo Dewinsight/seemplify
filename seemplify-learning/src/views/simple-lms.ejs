@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Simple LMS - Seemplify</title>
+  <title>Seemplify Learning</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
@@ -914,9 +914,9 @@
     <section class="lms-hero">
       <div class="lms-hero-top">
         <div>
-          <h1 class="lms-title">Simple LMS</h1>
+          <h1 class="lms-title">Seemplify Learning</h1>
           <p class="lms-subtitle">
-            Team-aware learning inside IDP: create courses, build programs, assign by hierarchy, track completion, and manage course requests.
+            Team-aware learning workspace: create courses, build programs, assign by hierarchy, track completion, and manage course requests.
           </p>
         </div>
         <div class="lms-hero-actions">
@@ -936,7 +936,7 @@
           <span class="lms-chip lms-chip--warn">LMS not enabled on this plan</span>
         <% } %>
       </div>
-      <nav class="lms-nav" aria-label="Simple LMS Navigation">
+      <nav class="lms-nav" aria-label="Seemplify Learning Navigation">
         <a class="lms-tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= href('overview') %>">Overview</a>
         <a class="lms-tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= href('my-learning') %>">My Learning</a>
         <a class="lms-tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= href('catalog') %>">Course Catalog</a>
