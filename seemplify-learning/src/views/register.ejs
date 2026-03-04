@@ -128,7 +128,7 @@
   </div>
   <div class="auth-wrap">
     <div class="auth-card">
-      <h1 class="auth-title"><%= isTeachIntent ? 'Create Instructor Account' : 'Create Seemplify Learning Account' %></h1>
+      <h1 class="auth-title"><%= isTeachIntent ? 'Create Instructor Account' : `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
       <p class="auth-subtitle">
         <%= isTeachIntent
           ? 'Register once, then we guide you through your first course setup.'

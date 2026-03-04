@@ -10,6 +10,7 @@ import setupRouter from './routes/setup.js'
 import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
+import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
 
 dotenv.config()
 
@@ -44,8 +45,13 @@ app.use('/images', express.static(join(__dirname, 'public/images')))
 app.use(optionalAuth)
 app.use((req, res, next) => {
   const hostname = String(req.hostname || req.get('host') || '').trim().toLowerCase()
-  res.locals.teachBrand = resolveTeachBrand(hostname)
-  res.locals.teachLabel = resolveTeachLabel(hostname)
+  const branding = resolveBranding(hostname)
+  res.locals.branding = branding
+  res.locals.brandKey = branding.brandKey
+  res.locals.brandName = branding.brandName
+  res.locals.brandLearningName = branding.learningName
+  res.locals.teachBrand = branding.brandName
+  res.locals.teachLabel = branding.teachLabel
   next()
 })
 
@@ -63,16 +69,6 @@ const COURSE_LEVEL_LABELS = Object.freeze({
   advanced: 'Advanced',
   mixed: 'Mixed'
 })
-
-const resolveTeachBrand = (hostname) => {
-  const normalizedHost = String(hostname || '').trim().toLowerCase()
-  if (normalizedHost.includes('aiinnigeria.com')) {
-    return 'AI Nigeria'
-  }
-  return 'Seemplify'
-}
-
-const resolveTeachLabel = (hostname) => `Teach on ${resolveTeachBrand(hostname)}`
 
 const resolveLearningRole = (account) => {
   if (!account) return 'learner'
@@ -208,7 +204,7 @@ const decoratePublicCourse = (course) => {
     levelLabel: COURSE_LEVEL_LABELS[course?.level] || 'Mixed',
     displayPrice,
     previewSummary: summary || fallbackSummary || 'No course summary yet.',
-    authorName: String(course?.createdByName || '').trim() || 'Seemplify Learning',
+    authorName: String(course?.createdByName || '').trim() || 'Learning Team',
     lessonCount: Number.isFinite(Number(course?.lessonCount))
       ? Math.max(0, Number(course.lessonCount))
       : 0,
@@ -222,6 +218,7 @@ const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/
 
 app.get('/', async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const [featuredRaw, totalCourses, statsAggregate, categoryBreakdown] = await Promise.all([
       SimpleLmsCourse.find(PUBLIC_COURSE_FILTER)
         .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail updatedAt enrollmentCount')
@@ -276,7 +273,7 @@ app.get('/', async (req, res) => {
     })
 
     res.render('public-home', {
-      title: 'Seemplify Learning',
+      title: branding.learningName,
       user: req.user || null,
       activePage: 'home',
       teachBrand,
@@ -290,12 +287,13 @@ app.get('/', async (req, res) => {
     })
   } catch (error) {
     console.error('Failed to load public home:', error)
-    res.status(500).send('Failed to load Seemplify Learning homepage.')
+    res.status(500).send('Failed to load learning homepage.')
   }
 })
 
 app.get('/courses', async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const query = String(req.query.q || '').trim()
     const selectedCategory = String(req.query.category || '').trim()
     const selectedLevel = String(req.query.level || '').trim().toLowerCase()
@@ -344,7 +342,7 @@ app.get('/courses', async (req, res) => {
         })
 
     res.render('public-courses', {
-      title: 'Explore Courses - Seemplify Learning',
+      title: `Explore Courses - ${branding.learningName}`,
       user: req.user || null,
       activePage: 'courses',
       teachBrand,
@@ -369,6 +367,7 @@ app.get('/courses', async (req, res) => {
 
 app.get('/courses/:courseId/:slug?', async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const courseId = String(req.params.courseId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return res.status(404).send('Course not found.')
@@ -424,7 +423,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       : []
 
     res.render('public-course-detail', {
-      title: `${course.title} - Seemplify Learning`,
+      title: `${course.title} - ${branding.learningName}`,
       user: req.user || null,
       activePage: 'courses',
       course,
@@ -439,6 +438,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
 
 app.get('/teach', async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
     const teachLabel = `Teach on ${teachBrand}`
 
@@ -454,7 +454,7 @@ app.get('/teach', async (req, res) => {
     const alreadyCreator = ['creator', 'admin', 'super_admin'].includes(currentRole)
 
     res.render('teach-landing', {
-      title: `${teachLabel} - Seemplify Learning`,
+      title: `${teachLabel} - ${branding.learningName}`,
       user: req.user || null,
       activePage: 'teach',
       teachBrand,
@@ -484,6 +484,7 @@ app.get('/teach', async (req, res) => {
 
 app.get('/teach/get-started', requireAuth, async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
     let role = resolveLearningRole(req.user)
     let roleWasUpgraded = false
@@ -510,7 +511,7 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
     ])
 
     res.render('teach-onboarding', {
-      title: 'Teach Setup - Seemplify Learning',
+      title: `Teach Setup - ${branding.learningName}`,
       user: req.user,
       activePage: 'teach',
       teachBrand,
@@ -616,8 +617,9 @@ app.get('/health', (_req, res) => {
 })
 
 app.get('/plans', requireAuth, (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
   res.render('placeholder', {
-    title: 'Plans - Seemplify Learning',
+    title: `Plans - ${branding.learningName}`,
     user: req.user,
     heading: 'Plan Management',
     message: 'Plan administration remains controlled from your central admin stack. LMS access here is enabled by default unless restricted by subscription data.'
@@ -625,11 +627,12 @@ app.get('/plans', requireAuth, (req, res) => {
 })
 
 app.get('/subscription', requireAuth, (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
   res.render('placeholder', {
-    title: 'Subscription - Seemplify Learning',
+    title: `Subscription - ${branding.learningName}`,
     user: req.user,
     heading: 'Subscription',
-    message: 'Subscription actions for Seemplify Learning are managed from your organization admin.'
+    message: `Subscription actions for ${branding.learningName} are managed from your organization admin.`
   })
 })
 

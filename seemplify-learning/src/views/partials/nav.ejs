@@ -1,4 +1,14 @@
-<% const teachNavLabel = typeof teachLabel === 'string' && teachLabel.trim() ? teachLabel.trim() : 'Teach on Seemplify' %>
+<%
+  const currentBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
+  const brandDisplayName = typeof brandLearningName === 'string' && brandLearningName.trim()
+    ? brandLearningName.trim()
+    : 'Seemplify Learning'
+  const isAiinBrand = currentBrandKey === 'aiin'
+  const defaultTeachBrand = isAiinBrand ? 'AIIN Nigeria' : 'Seemplify'
+  const teachNavLabel = typeof teachLabel === 'string' && teachLabel.trim()
+    ? teachLabel.trim()
+    : `Teach on ${defaultTeachBrand}`
+%>
 
 <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
 <label for="mobile-nav-toggle" class="mobile-nav-overlay" aria-label="Close menu"></label>
@@ -39,22 +49,39 @@
 
 <nav class="top-nav">
   <a href="/" class="top-nav-brand">
-    <svg viewBox="0 0 100 100" aria-hidden="true">
-      <defs>
-        <linearGradient id="seemplifyLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#10b981" />
-          <stop offset="50%" stop-color="#2dd4bf" />
-          <stop offset="100%" stop-color="#6366f1" />
-        </linearGradient>
-      </defs>
-      <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-        stroke="url(#seemplifyLearningGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-        stroke-linejoin="round" />
-      <circle cx="65" cy="25" r="6" class="logo-dot" />
-      <circle cx="50" cy="50" r="6" class="logo-dot" />
-      <circle cx="35" cy="75" r="6" class="logo-dot" />
-    </svg>
-    <span>Seemplify Learning</span>
+    <% if (isAiinBrand) { %>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="aiinLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0ea5e9" />
+            <stop offset="52%" stop-color="#14b8a6" />
+            <stop offset="100%" stop-color="#6366f1" />
+          </linearGradient>
+        </defs>
+        <rect x="14" y="14" width="72" height="72" rx="18" fill="rgba(15,23,42,.15)" stroke="url(#aiinLearningGradient)" stroke-width="6" />
+        <path d="M31 70L45 31L59 70" stroke="url(#aiinLearningGradient)" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M36 56H54" stroke="url(#aiinLearningGradient)" stroke-width="6" fill="none" stroke-linecap="round" />
+        <path d="M69 34V70" stroke="url(#aiinLearningGradient)" stroke-width="7" fill="none" stroke-linecap="round" />
+        <circle cx="69" cy="24" r="4.5" fill="url(#aiinLearningGradient)" />
+      </svg>
+    <% } else { %>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="seemplifyLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#10b981" />
+            <stop offset="50%" stop-color="#2dd4bf" />
+            <stop offset="100%" stop-color="#6366f1" />
+          </linearGradient>
+        </defs>
+        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
+          stroke="url(#seemplifyLearningGradient)" stroke-width="8" fill="none" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <circle cx="65" cy="25" r="6" class="logo-dot" />
+        <circle cx="50" cy="50" r="6" class="logo-dot" />
+        <circle cx="35" cy="75" r="6" class="logo-dot" />
+      </svg>
+    <% } %>
+    <span><%= brandDisplayName %></span>
   </a>
 
   <div class="top-nav-links">

@@ -296,7 +296,7 @@ const decorateCourse = (course) => {
     lessonCount: Number.isFinite(Number(course?.lessonCount)) ? Number(course.lessonCount) : 0,
     estimatedDurationMinutes: Number.isFinite(Number(course?.estimatedDurationMinutes)) ? Number(course.estimatedDurationMinutes) : 0,
     courseUrl: `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`,
-    authorName: String(course?.createdByName || '').trim() || 'Seemplify Learning'
+    authorName: String(course?.createdByName || '').trim() || 'Learning Team'
   }
 }
 
@@ -2219,8 +2219,10 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         .reduce((sum, payment) => sum + Math.max(0, Number(payment.amountMinor || 0)), 0)
     }
 
+    const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
+
     return res.render('simple-lms', {
-      title: 'Seemplify Learning - Workspace',
+      title: `${learningName} - Workspace`,
       user: req.user,
       activePage: 'simple-lms',
       role,

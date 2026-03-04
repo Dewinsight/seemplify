@@ -86,13 +86,14 @@
 <body>
   <%- include('./partials/nav', { user, activePage }) %>
   <% const tab = (mode) => `/simple-lms?view=${mode}` %>
+  <% const learningName = brandLearningName || 'Seemplify Learning' %>
   <% const roleLabel = String(role || 'learner').replace(/_/g, ' ') %>
   <% const nice = (value) => String(value || '').replace(/_/g, ' ') %>
   <% const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } } %>
 
   <main class="shell">
     <section class="hero">
-      <h1 class="title">Seemplify Learning</h1>
+      <h1 class="title"><%= learningName %></h1>
       <p class="subtitle">Course delivery, pathways, and payment-enabled enrollments in one workspace.</p>
       <div class="chips">
         <span class="chip">Role: <%= roleLabel %></span>

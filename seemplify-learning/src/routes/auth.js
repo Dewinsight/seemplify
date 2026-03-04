@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { optionalAuth } from '../middleware/auth.js'
+import { resolveBranding } from '../utils/branding.js'
 
 const router = express.Router()
 
@@ -46,6 +47,7 @@ const appendQuery = (path, entries = {}) => {
 const createSub = () => `sl_${crypto.randomUUID().replace(/-/g, '')}`
 
 router.get('/login', optionalAuth, async (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
   const returnTo = sanitizeReturnTo(req.query.return_to)
   if (req.user) {
     return res.redirect(returnTo || '/simple-lms')
@@ -61,7 +63,7 @@ router.get('/login', optionalAuth, async (req, res) => {
   )
 
   res.render('login', {
-    title: 'Seemplify Learning - Sign in',
+    title: `${branding.learningName} - Sign in`,
     returnTo,
     registerUrl: appendQuery('/register', {
       return_to: returnTo,
@@ -102,6 +104,7 @@ router.post('/login', async (req, res) => {
 })
 
 router.get('/register', optionalAuth, async (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
   const pendingIntent = req.session?.pendingRegistrationIntent || null
 
   const intent = sanitizeIntent(req.query.intent || pendingIntent?.intent || 'learn', 'learn')
@@ -122,7 +125,7 @@ router.get('/register', optionalAuth, async (req, res) => {
   }
 
   res.render('register', {
-    title: 'Seemplify Learning - Register',
+    title: `${branding.learningName} - Register`,
     error: String(req.query.error || ''),
     intent,
     source,
@@ -137,6 +140,7 @@ router.get('/register', optionalAuth, async (req, res) => {
 
 router.post('/register', async (req, res) => {
   try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
     const intent = sanitizeIntent(req.body.intent || 'learn', 'learn')
     const source = sanitizeIntentSource(
       req.body.source || (intent === 'teach' ? 'teach_landing' : 'direct'),
@@ -207,10 +211,10 @@ router.post('/register', async (req, res) => {
     }
 
     const successMessage = bootstrapAsSuperAdmin
-      ? 'Welcome to Seemplify Learning. Your account was bootstrapped as Super Admin.'
+      ? `Welcome to ${branding.learningName}. Your account was bootstrapped as Super Admin.`
       : (intent === 'teach'
-          ? 'Welcome to Seemplify Learning. Let us set up your creator workspace.'
-          : 'Welcome to Seemplify Learning. Your account is ready.')
+          ? `Welcome to ${branding.learningName}. Let us set up your creator workspace.`
+          : `Welcome to ${branding.learningName}. Your account is ready.`)
 
     const destination = bootstrapAsSuperAdmin
       ? '/simple-lms'
