@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-1">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-3">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site public-home-page">
@@ -55,12 +55,12 @@
         <p class="lmsv-kicker"><%= `${brandLearningName || 'Seemplify Learning'} Home` %></p>
         <h1 class="lmsv-display">Learn with clarity.<br>Build with confidence.</h1>
         <p class="lmsv-copy">
-          Start with curated highlights, structured learning lanes, and high-signal previews.
-          Move into the full catalog or workspace in one click.
+          Start with curated highlights, learning lanes, and high-signal previews.
+          When you're ready to enroll or teach, move into the catalog and workspace in one click.
         </p>
 
         <div class="lmsv-actions">
-          <a href="/courses" class="btn btn-primary">Explore Course Catalog</a>
+          <a href="/courses" class="btn btn-primary">Explore Course Catalog &rarr;</a>
           <% if (user) { %>
             <a href="/simple-lms" class="btn btn-secondary">Open Workspace</a>
           <% } else { %>
@@ -115,7 +115,10 @@
         </article>
 
         <article class="lmsv-surface-card lmsv-highlight-card">
-          <p class="lmsv-kicker">Start Here</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <p class="lmsv-kicker">Start Here</p>
+            <% if (leadCourse) { %><span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:0.04em;">Most Popular</span><% } %>
+          </div>
           <% if (leadCourse) { %>
             <h2><%= leadCourse.title %></h2>
             <p><%= leadCourse.previewSummary %></p>
@@ -124,7 +127,7 @@
               <span><%= `${leadCourse.lessonCount} lessons` %></span>
               <span><%= formatDuration(leadCourse.estimatedDurationMinutes) %></span>
             </div>
-            <a href="<%= courseHref(leadCourse) %>" class="btn btn-secondary">View Highlighted Course</a>
+            <a href="<%= courseHref(leadCourse) %>" class="btn btn-secondary">View Highlighted Course &rarr;</a>
           <% } else { %>
             <h2>New public courses are publishing soon.</h2>
             <p>Create an account when you are ready to enroll or publish your own course.</p>
@@ -182,7 +185,7 @@
           <h2>Available Courses</h2>
           <p>Explore our curated selection of high-impact learning paths.</p>
         </div>
-        <span class="lmsv-count-pill"><%= `${highlightCourses.length} courses shown` %></span>
+        <span class="lmsv-count-pill"><%= `${highlightCourses.length} courses found` %></span>
       </header>
 
       <% if (!highlightCourses || highlightCourses.length === 0) { %>
@@ -205,7 +208,7 @@
                 <p><%= course.previewSummary %></p>
                 <div class="lmsv-course-foot">
                   <span class="lmsv-price-tag"><%= course.displayPrice %></span>
-                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details</a>
+                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details &rarr;</a>
                 </div>
               </div>
             </article>

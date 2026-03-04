@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-1">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-3">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site public-courses-page">
@@ -69,15 +69,14 @@
   <main class="lmsv-shell">
     <section class="lmsv-catalog-hero">
       <div class="lmsv-catalog-hero-inner">
-        <p class="lmsv-kicker">Course Discovery</p>
         <h1>Explore Courses</h1>
-        <p>Find the right course for your learning journey and start building practical skills today.</p>
+        <p>Find the perfect course for your learning journey and start building new skills today.</p>
 
         <form method="get" action="/courses" class="lmsv-hero-search-form">
           <input type="hidden" name="category" value="<%= state.category %>">
           <input type="hidden" name="level" value="<%= state.level %>">
+          <svg class="lmsv-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input type="search" name="q" value="<%= state.q %>" placeholder="Search for courses, skills, or topics...">
-          <button type="submit" class="btn btn-primary">Search</button>
         </form>
       </div>
     </section>
@@ -104,17 +103,7 @@
           </div>
         </article>
 
-        <article class="lmsv-filter-block lmsv-filter-actions">
-          <h3>Quick Actions</h3>
-          <div class="lmsv-actions">
-            <a href="/courses" class="btn btn-secondary btn-sm">Reset Filters</a>
-            <% if (user) { %>
-              <a href="/simple-lms" class="btn btn-secondary btn-sm">Open Workspace</a>
-            <% } else { %>
-              <a href="<%= teachCtaHref %>" class="btn btn-secondary btn-sm"><%= `Teach on ${teachBrand}` %></a>
-            <% } %>
-          </div>
-        </article>
+
       </div>
     </section>
 
@@ -147,7 +136,7 @@
                 <p><%= course.previewSummary %></p>
                 <div class="lmsv-course-foot">
                   <span class="lmsv-price-tag"><%= course.displayPrice %></span>
-                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details</a>
+                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details &rarr;</a>
                 </div>
               </div>
             </article>
