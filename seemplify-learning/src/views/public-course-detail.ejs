@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-3">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-6">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site">
@@ -168,6 +168,7 @@
             <% } else { %>
               <form method="post" action="/simple-lms/courses/<%= course._id %>/pay">
                 <input type="hidden" name="next" value="<%= takePath %>">
+                <input type="hidden" name="fallback" value="<%= detailPath %>">
                 <button type="submit" class="btn btn-primary" style="width:100%;">Purchase Now</button>
               </form>
               <% if (inCart) { %>

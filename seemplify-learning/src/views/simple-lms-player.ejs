@@ -6,39 +6,55 @@
   <title><%= title %></title>
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-6">
   <script src="/js/theme.js?v=2"></script>
   <style>
     :root {
-      --player-hero-start: rgba(56, 189, 248, 0.18);
-      --player-hero-end: rgba(2, 6, 23, 0.65);
-      --player-surface: rgba(15, 23, 42, 0.42);
-      --player-surface-strong: rgba(2, 6, 23, 0.45);
-      --player-pill-bg: rgba(15, 23, 42, 0.5);
-      --player-link: #67e8f9;
+      --player-hero-start: rgba(56, 189, 248, 0.16);
+      --player-hero-end: rgba(255, 255, 255, 0.92);
+      --player-surface: #ffffff;
+      --player-surface-strong: #f8fafc;
+      --player-pill-bg: #f8fafc;
+      --player-link: #0c4a6e;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
     }
-    [data-theme="light"] {
-      --player-hero-start: rgba(56, 189, 248, 0.18);
-      --player-hero-end: rgba(241, 245, 249, 0.78);
-      --player-surface: rgba(255, 255, 255, 0.76);
-      --player-surface-strong: rgba(255, 255, 255, 0.62);
-      --player-pill-bg: rgba(255, 255, 255, 0.74);
-      --player-link: #1d4ed8;
+    [data-theme="dark"] {
+      --player-hero-start: rgba(56, 189, 248, 0.16);
+      --player-hero-end: rgba(255, 255, 255, 0.92);
+      --player-surface: #ffffff;
+      --player-surface-strong: #f8fafc;
+      --player-pill-bg: #f8fafc;
+      --player-link: #0c4a6e;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
+    }
+    body.public-site.lmsv-player-page {
+      background: #ffffff;
     }
     .player-shell {
-      width: min(1440px, 100%);
-      margin: 0 auto 32px;
-      padding: 0 12px;
+      width: min(1320px, 100%);
+      margin: 0 auto;
+      padding: 0 24px 56px;
       display: grid;
-      gap: 14px;
+      gap: 0;
     }
     .player-head {
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px;
-      background:
-        radial-gradient(130% 150% at 0% 0%, var(--player-hero-start), rgba(56, 189, 248, 0) 42%),
-        linear-gradient(160deg, var(--player-hero-end), var(--card-bg));
-      box-shadow: var(--card-shadow);
+      border: none;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      padding: clamp(28px, 3.4vw, 40px) 0 24px;
+      background: transparent;
+      box-shadow: none;
     }
     .player-title {
       margin: 0;
@@ -58,6 +74,7 @@
       grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr);
       gap: 12px;
       align-items: start;
+      padding-top: 24px;
     }
     .player-main,
     .player-side {
@@ -84,10 +101,10 @@
     }
     .player-card {
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 14px;
       background: var(--card-bg);
-      box-shadow: var(--card-shadow);
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
       display: grid;
       gap: 10px;
     }
@@ -112,7 +129,7 @@
       height: 430px;
       border: 0;
       display: block;
-      background: #000;
+      background: #0f172a;
     }
     .player-media-audio {
       width: min(760px, 100%);
@@ -212,9 +229,9 @@
       text-decoration: none;
     }
     .curriculum-lesson.active {
-      border-color: rgba(56, 189, 248, 0.7);
-      background: rgba(56, 189, 248, 0.16);
-      color: var(--text);
+      border-color: rgba(8, 145, 178, 0.5);
+      background: rgba(8, 145, 178, 0.12);
+      color: #0c4a6e;
     }
     .curriculum-status {
       color: #22c55e;
@@ -309,7 +326,8 @@
     }
     @media (max-width: 760px) {
       .player-shell { margin-bottom: 20px; }
-      .player-head { padding: 14px; }
+      .player-shell { padding: 0 14px 28px; }
+      .player-head { padding: 22px 0 16px; }
       .player-card { padding: 11px; }
       .player-media { min-height: 220px; }
       .player-media iframe,
@@ -317,7 +335,7 @@
     }
   </style>
 </head>
-<body>
+<body class="public-site lmsv-player-page">
   <%- include('./partials/nav', { user, activePage }) %>
 
   <main class="player-shell">
@@ -445,5 +463,7 @@
       </aside>
     </section>
   </main>
+
+  <%- include('./partials/public-footer') %>
 </body>
 </html>

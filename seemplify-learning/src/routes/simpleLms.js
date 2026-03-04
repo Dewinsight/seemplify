@@ -1081,6 +1081,7 @@ const initiateCoursePaymentCheckout = async ({
   }
 
   if (!isCoursePaidContent(course)) {
+    removeSessionCartCourseId(req, course._id)
     return res.redirect(`/simple-lms/take/${course._id}`)
   }
 
@@ -1093,6 +1094,7 @@ const initiateCoursePaymentCheckout = async ({
     .lean()
 
   if (existingSuccessfulPayment) {
+    removeSessionCartCourseId(req, course._id)
     return redirectWithMessage({
       res,
       path: `/simple-lms/take/${course._id}`,
@@ -1229,7 +1231,11 @@ const handleCoursePayRequest = async (req, res) => {
     const publicFallback = course
       ? `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
       : '/courses'
-    const fallbackPath = req.method === 'GET' ? publicFallback : defaultFallback
+    const requestedFallback = req.body?.fallback || req.body?.returnTo || req.query?.fallback || req.query?.returnTo
+    const fallbackPath = sanitizeInternalPath(
+      requestedFallback,
+      req.method === 'GET' ? publicFallback : defaultFallback
+    )
     const nextPathInput = req.body?.next || req.query?.next || `/simple-lms/take/${courseId}`
     const nextPath = sanitizeInternalPath(nextPathInput, `/simple-lms/take/${courseId}`)
 
@@ -1252,6 +1258,81 @@ const handleCoursePayRequest = async (req, res) => {
 
 pageRouter.get('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
 pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
+
+pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
+  try {
+    const returnTo = sanitizeInternalPath(
+      req.body?.returnTo || req.body?.fallback || '/simple-lms?view=catalog#cart-panel',
+      '/simple-lms?view=catalog#cart-panel'
+    )
+    const cartCourseIds = getSessionCartCourseIds(req)
+    if (cartCourseIds.length === 0) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Your cart is empty.'
+      })
+    }
+
+    const cartCourses = await SimpleLmsCourse.find({
+      _id: { $in: cartCourseIds },
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    })
+      .select('_id pricing')
+      .lean()
+
+    const successfulPayments = await SimpleLmsPayment.find({
+      account: req.user._id,
+      course: { $in: cartCourseIds },
+      status: 'successful'
+    })
+      .select('course')
+      .lean()
+
+    const purchasedCourseIds = new Set(successfulPayments.map((entry) => toIdString(entry.course)))
+    const courseMap = new Map(cartCourses.map((course) => [toIdString(course._id), course]))
+    const validPendingCartIds = cartCourseIds.filter((courseId) => {
+      const course = courseMap.get(courseId)
+      return Boolean(course) && isCoursePaidContent(course) && !purchasedCourseIds.has(courseId)
+    })
+    if (validPendingCartIds.length !== cartCourseIds.length) {
+      setSessionCartCourseIds(req, validPendingCartIds)
+    }
+
+    const firstPayableCourse = cartCourseIds
+      .map((courseId) => courseMap.get(courseId))
+      .find((course) => {
+        if (!course || !isCoursePaidContent(course)) return false
+        return !purchasedCourseIds.has(toIdString(course._id))
+      })
+
+    if (!firstPayableCourse) {
+      clearSessionCart(req)
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'No payable courses remain in your cart.'
+      })
+    }
+
+    return initiateCoursePaymentCheckout({
+      req,
+      res,
+      course: firstPayableCourse,
+      fallbackPath: returnTo,
+      nextPath: `/simple-lms/take/${firstPayableCourse._id}`
+    })
+  } catch (error) {
+    console.error('Cart checkout error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog#cart-panel',
+      error: 'Could not start cart checkout.'
+    })
+  }
+})
 
 pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
   try {
