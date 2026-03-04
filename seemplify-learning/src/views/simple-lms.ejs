@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-6">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-8">
   <script src="/js/theme.js?v=2"></script>
   <style>
     :root {
@@ -41,45 +41,250 @@
       --input-bg: #ffffff;
     }
     body.public-site.lmsv-workspace-page {
-      background: #ffffff;
+      background:
+        radial-gradient(1200px 500px at 18% -6%, rgba(14, 165, 233, 0.08), transparent 68%),
+        radial-gradient(760px 400px at 92% 4%, rgba(14, 165, 233, 0.05), transparent 74%),
+        #f8fafc;
     }
-    .shell { max-width: 1320px; margin: 0 auto; padding: 0 24px 56px; display: grid; gap: 0; }
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 24px 56px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      flex: 1 0 auto;
+    }
     .hero,
     .panel {
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      box-shadow: none;
-      padding: clamp(24px, 3vw, 34px) 0;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0 10px 28px -18px rgba(15, 23, 42, 0.45);
+      padding: clamp(20px, 2.7vw, 30px);
       display: grid;
-      gap: 12px;
+      gap: 14px;
     }
     .hero {
-      padding-top: clamp(28px, 3.4vw, 40px);
+      margin-top: clamp(18px, 2.7vw, 26px);
+      gap: 18px;
+    }
+    .hero-layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      align-items: start;
+    }
+    .hero-main {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .hero-kicker {
+      margin: 0;
+      border: 1px solid rgba(8, 145, 178, 0.25);
+      background: rgba(8, 145, 178, 0.08);
+      color: #0e7490;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      width: fit-content;
+    }
+    .hero-pulse {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(165deg, #ffffff, #f8fafc);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .hero-pulse h2 {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--muted);
+    }
+    .hero-pulse-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+    .hero-pulse-list li {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 11px;
+      background: var(--lms-surface-soft);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .hero-pulse-list span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .hero-pulse-list strong {
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .hero-pulse-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .title {
+      margin: 0;
+      font-size: clamp(34px, 4.2vw, 56px);
+      letter-spacing: -.04em;
+      line-height: 0.98;
+      color: var(--text);
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 62ch;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+    .hero-actions .btn {
+      border-radius: 999px;
+      padding: 10px 16px;
+    }
+    .chips {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+    .tabs, .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chip,
+    .tab {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+      background: #ffffff;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #334155;
+      min-height: 36px;
+    }
+    .tab {
+      text-decoration: none;
+      color: #334155;
+      padding: 10px 15px;
+      transition: all 0.2s ease;
+    }
+    .tab:hover {
+      border-color: rgba(8, 145, 178, 0.35);
+      background: rgba(8, 145, 178, 0.08);
+      color: #0e7490;
+    }
+    .tab.active {
+      border-color: var(--lms-tab-active-border);
+      background: var(--lms-tab-active);
+      color: #0369a1;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .head h2 {
+      margin: 0;
+      letter-spacing: -.02em;
+      font-size: clamp(24px, 2.6vw, 34px);
+      line-height: 1.05;
+    }
+    .head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+      gap: 10px;
+    }
+    .kpi {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #ffffff;
+      box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.35);
+    }
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 6px;
+      font-weight: 800;
+    }
+    .kpi strong {
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: -.03em;
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #ffffff;
+      display: grid;
+      align-content: start;
+      box-shadow: 0 12px 30px -20px rgba(15, 23, 42, 0.45);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 20px 36px -24px rgba(15, 23, 42, 0.55);
+    }
+    .media {
+      height: 150px;
       border-bottom: 1px solid var(--border);
-      gap: 16px;
+      background: linear-gradient(140deg, var(--lms-media-start), var(--lms-media-end));
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .panel {
-      border-top: 1px solid var(--border);
-    }
-    .title { margin: 0; font-size: clamp(30px, 4vw, 54px); letter-spacing: -.04em; line-height: 1.02; }
-    .subtitle { margin: 6px 0 0; color: var(--muted); }
-    .chips, .tabs, .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .chip, .tab { border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; background: var(--lms-surface); }
-    .tab { text-decoration: none; color: var(--text); padding: 9px 14px; }
-    .tab.active { border-color: var(--lms-tab-active-border); background: var(--lms-tab-active); color: #0369a1; }
-    .head { display: flex; justify-content: space-between; align-items: end; gap: 8px; flex-wrap: wrap; }
-    .head h2 { margin: 0; letter-spacing: -.02em; font-size: clamp(24px, 2.6vw, 34px); }
-    .head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-    .kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; }
-    .kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--lms-surface); }
-    .kpi small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-    .kpi strong { font-size: 30px; line-height: 1; letter-spacing: -.03em; }
-    .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; background: #ffffff; display: grid; align-content: start; }
-    .media { height: 140px; border-bottom: 1px solid var(--border); background: linear-gradient(140deg, var(--lms-media-start), var(--lms-media-end)); display: flex; align-items: center; justify-content: center; }
     .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .body { padding: 10px; display: grid; gap: 8px; }
+    .body { padding: 12px; display: grid; gap: 8px; }
     .body h3 { margin: 0; font-size: 18px; letter-spacing: -.02em; line-height: 1.2; }
     .body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; background: var(--lms-surface); }
@@ -87,11 +292,17 @@
     .progress { height: 8px; border-radius: 999px; overflow: hidden; background: rgba(148,163,184,.25); }
     .progress span { display: block; height: 100%; width: var(--progress,0%); background: linear-gradient(90deg,#22d3ee,#14b8a6); }
     .empty { border: 1px dashed #d1d5db; border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: #f8fafc; }
-    .form-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
-    .studio { display: grid; gap: 10px; grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); align-items: start; }
+    .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
+    .studio { display: grid; gap: 12px; grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); align-items: start; }
     .stack { display: grid; gap: 8px; }
     .mini { font-size: 12px; color: var(--muted); margin: 0; }
-    .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    }
     table { width: 100%; border-collapse: collapse; min-width: 740px; }
     th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
     th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
@@ -231,19 +442,35 @@
       color: var(--muted);
       font-size: 12px;
     }
+    @media (max-width: 1080px) {
+      .hero-layout { grid-template-columns: 1fr; }
+    }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
-      .shell { gap: 0; margin-bottom: 18px; padding: 0 14px 26px; }
-      .hero, .panel { padding: 18px 0; border-radius: 0; }
-      .title { font-size: clamp(24px, 8vw, 34px); }
+      .shell {
+        gap: 10px;
+        margin-bottom: 0;
+        padding: 0 14px 24px;
+      }
+      .hero, .panel {
+        border-radius: 16px;
+        padding: 14px;
+      }
+      .title { font-size: clamp(26px, 8vw, 36px); }
       .subtitle { font-size: 13px; }
-      .tabs, .chips {
+      .tabs {
         flex-wrap: nowrap;
         overflow-x: auto;
         padding-bottom: 4px;
         -webkit-overflow-scrolling: touch;
       }
-      .tab, .chip { white-space: nowrap; }
+      .tab { white-space: nowrap; }
+      .chips {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .hero-pulse-list li strong {
+        font-size: 20px;
+      }
       .grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
       .actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
@@ -264,16 +491,38 @@
 
   <main class="shell">
     <section class="hero">
-      <h1 class="title"><%= learningName %></h1>
-      <p class="subtitle">Course delivery, pathways, and payment-enabled enrollments in one workspace.</p>
-      <div class="chips">
-        <span class="chip">Role: <%= roleLabel %></span>
-        <span class="chip">Courses: <%= stats.publishedCourseCount %></span>
-        <span class="chip">Programs: <%= stats.publishedProgramCount %></span>
-        <span class="chip">Course Authors: <%= stats.creatorCount %></span>
-        <span class="chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
-        <span class="chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
-        <span class="chip">Cart: <%= stats.cartItemCount %></span>
+      <div class="hero-layout">
+        <div class="hero-main">
+          <p class="hero-kicker">Learning Workspace</p>
+          <h1 class="title"><%= learningName %></h1>
+          <p class="subtitle">Course delivery, pathways, assignments, and payment-enabled enrollments in one focused workspace.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-sm" href="<%= tab('catalog') %>">Explore Catalog</a>
+            <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
+            <% if (canCreateCourses) { %>
+              <a class="btn btn-secondary btn-sm" href="<%= tab('course-studio') %>">Open Course Studio</a>
+            <% } %>
+          </div>
+          <div class="chips">
+            <span class="chip">Role: <%= roleLabel %></span>
+            <span class="chip">Courses: <%= stats.publishedCourseCount %></span>
+            <span class="chip">Programs: <%= stats.publishedProgramCount %></span>
+            <span class="chip">Course Authors: <%= stats.creatorCount %></span>
+            <span class="chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
+            <span class="chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
+            <span class="chip">Cart: <%= stats.cartItemCount %></span>
+          </div>
+        </div>
+        <aside class="hero-pulse">
+          <h2>Workspace Pulse</h2>
+          <ul class="hero-pulse-list">
+            <li><span>Published Courses</span><strong><%= stats.publishedCourseCount %></strong></li>
+            <li><span>Programs</span><strong><%= stats.publishedProgramCount %></strong></li>
+            <li><span>Total Learners</span><strong><%= stats.learnerCount %></strong></li>
+            <li><span>Completed Enrollments</span><strong><%= stats.completionCount %></strong></li>
+          </ul>
+          <p class="hero-pulse-note">Live workspace metrics update as new enrollments, programs, and completions happen.</p>
+        </aside>
       </div>
       <div class="tabs">
         <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
@@ -1350,3 +1599,4 @@
   </script>
 </body>
 </html>
+

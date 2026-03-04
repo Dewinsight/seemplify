@@ -76,6 +76,9 @@ body.public-site {
   background: var(--lmsv-page-bg);
   color: var(--lmsv-text);
   padding: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 body.public-site::before,
@@ -86,6 +89,12 @@ body.public-site::after {
 [data-theme="light"] body.public-site::before,
 [data-theme="light"] body.public-site::after {
   display: none;
+}
+
+body.public-site .lmsv-shell,
+body.public-site.lmsv-workspace-page .shell,
+body.public-site.lmsv-player-page .player-shell {
+  flex: 1 0 auto;
 }
 
 
@@ -1732,14 +1741,15 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 }
 
 .lmsv-footer-social a {
-  width: 32px;
-  height: 32px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.42);
   transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
@@ -1756,24 +1766,36 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 
 .lmsv-footer {
   position: relative;
-  margin-top: 0;
+  margin-top: auto;
   background: var(--lmsv-footer-bg);
   color: #e2e8f0;
   border-top: none;
   z-index: 1;
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .lmsv-footer-wave {
-  height: 28px;
-  background: linear-gradient(90deg, #06b6d4, #3b82f6, #f97316);
-  mask: radial-gradient(22px at 22px 0, transparent 98%, #000) -22px 0/44px 100%;
-  -webkit-mask: radial-gradient(22px at 22px 0, transparent 98%, #000) -22px 0/44px 100%;
+  height: 34px;
+  background: var(--lmsv-page-bg);
+  border-bottom-left-radius: 56% 100%;
+  border-bottom-right-radius: 56% 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.lmsv-footer-wave::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, #22d3ee, #3b82f6, #f97316);
 }
 
 .lmsv-footer-inner {
   width: min(1320px, 100%);
   margin: 0 auto;
-  padding: 36px 24px 20px;
+  padding: 38px 24px 22px;
   display: grid;
   gap: 28px;
   grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr);
@@ -1808,9 +1830,9 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 
 .lmsv-footer-brand p {
   margin: 6px 0 0;
-  color: #94a3b8;
+  color: #a8b6cc;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .lmsv-footer-note {
@@ -1829,13 +1851,13 @@ body.public-site.lmsv-auth-page .lmsv-shell {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #f8fafc;
+  color: #e2e8f0;
   font-weight: 700;
 }
 
 .lmsv-footer-links a {
   display: block;
-  color: #94a3b8;
+  color: #a8b6cc;
   font-size: 14px;
   padding: 4px 0;
   transition: color 0.15s ease;
@@ -1848,7 +1870,7 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 .lmsv-footer-bottom {
   width: min(1320px, 100%);
   margin: 0 auto;
-  padding: 16px 24px 22px;
+  padding: 16px 24px 26px;
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   display: flex;
   align-items: center;
