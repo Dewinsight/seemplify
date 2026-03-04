@@ -28,6 +28,7 @@ const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
 const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
+const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -334,6 +335,42 @@ const canManageCourse = ({ role, accountId, course }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
   return toIdString(course.createdBy) === toIdString(accountId)
+}
+
+const parseDateBoundary = (value, boundary = 'start') => {
+  const candidate = String(value || '').trim()
+  if (!candidate) return null
+  const parsed = new Date(candidate)
+  if (Number.isNaN(parsed.getTime())) return null
+  if (boundary === 'end') {
+    parsed.setHours(23, 59, 59, 999)
+  } else {
+    parsed.setHours(0, 0, 0, 0)
+  }
+  return parsed
+}
+
+const normalizePaymentStatusFilter = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized || normalized === 'all') return 'all'
+  return PAYMENT_STATUSES.includes(normalized) ? normalized : 'all'
+}
+
+const buildAdminPaymentsReturnTo = ({
+  status = 'all',
+  currency = 'all',
+  dateFrom = '',
+  dateTo = '',
+  search = ''
+} = {}) => {
+  const params = new URLSearchParams()
+  if (status && status !== 'all') params.set('paymentStatus', status)
+  if (currency && currency !== 'all') params.set('paymentCurrency', currency)
+  if (dateFrom) params.set('paymentFrom', dateFrom)
+  if (dateTo) params.set('paymentTo', dateTo)
+  if (search) params.set('paymentSearch', search)
+  const queryString = params.toString()
+  return queryString ? `/simple-lms?view=admin&${queryString}` : '/simple-lms?view=admin'
 }
 
 const canManageProgram = ({ role, accountId, program }) => {
@@ -1058,12 +1095,53 @@ const findPublicCourseForLearning = async (courseId) => {
   }).lean()
 }
 
+const getRemainingPayableCartCount = async ({ req, accountId }) => {
+  const cartCourseIds = getSessionCartCourseIds(req)
+  if (!Array.isArray(cartCourseIds) || cartCourseIds.length === 0) return 0
+  const validCourseIds = cartCourseIds.filter((courseId) => mongoose.Types.ObjectId.isValid(courseId))
+  if (validCourseIds.length === 0) {
+    clearSessionCart(req)
+    return 0
+  }
+
+  const [cartCourses, successfulPayments] = await Promise.all([
+    SimpleLmsCourse.find({
+      _id: { $in: validCourseIds },
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    })
+      .select('_id pricing')
+      .lean(),
+    SimpleLmsPayment.find({
+      account: accountId,
+      course: { $in: validCourseIds },
+      status: 'successful'
+    })
+      .select('course')
+      .lean()
+  ])
+
+  const paidCourseIds = new Set((successfulPayments || []).map((entry) => toIdString(entry.course)))
+  const courseMap = new Map((cartCourses || []).map((course) => [toIdString(course._id), course]))
+  const remainingPayableCourseIds = validCourseIds.filter((courseId) => {
+    const course = courseMap.get(courseId)
+    if (!course) return false
+    if (!isCoursePaidContent(course)) return false
+    return !paidCourseIds.has(courseId)
+  })
+
+  setSessionCartCourseIds(req, remainingPayableCourseIds)
+  return remainingPayableCourseIds.length
+}
+
 const initiateCoursePaymentCheckout = async ({
   req,
   res,
   course,
   fallbackPath = '/simple-lms?view=catalog',
-  nextPath = null
+  nextPath = null,
+  checkoutContext = 'direct'
 }) => {
   if (!course || !course._id) {
     return redirectWithMessage({
@@ -1103,11 +1181,42 @@ const initiateCoursePaymentCheckout = async ({
     })
   }
 
+  const normalizedCheckoutContext = String(checkoutContext || '').trim().toLowerCase() === 'cart'
+    ? 'cart'
+    : 'direct'
+  const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
+  const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
+
+  const recentPendingPayment = await SimpleLmsPayment.findOne({
+    account: req.user._id,
+    course: course._id,
+    status: { $in: ['initiated', 'pending'] },
+    checkoutUrl: { $exists: true, $nin: ['', null] },
+    createdAt: { $gte: new Date(Date.now() - (30 * 60 * 1000)) }
+  })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  if (recentPendingPayment?.checkoutUrl) {
+    await SimpleLmsPayment.updateOne(
+      { _id: recentPendingPayment._id },
+      {
+        $set: {
+          metadata: {
+            ...(recentPendingPayment.metadata || {}),
+            nextPath: finalNextPath,
+            fallbackPath: finalFallbackPath,
+            checkoutContext: normalizedCheckoutContext
+          }
+        }
+      }
+    )
+    return res.redirect(recentPendingPayment.checkoutUrl)
+  }
+
   const txRef = generateTxRef()
   const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
   const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
-  const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
-  const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
 
   const payment = await SimpleLmsPayment.create({
     account: req.user._id,
@@ -1122,7 +1231,8 @@ const initiateCoursePaymentCheckout = async ({
     customerName: req.user.profile?.name || req.user.email || 'Learner',
     metadata: {
       nextPath: finalNextPath,
-      fallbackPath: finalFallbackPath
+      fallbackPath: finalFallbackPath,
+      checkoutContext: normalizedCheckoutContext
     }
   })
 
@@ -1146,6 +1256,7 @@ const initiateCoursePaymentCheckout = async ({
       ...(payment.metadata || {}),
       nextPath: finalNextPath,
       fallbackPath: finalFallbackPath,
+      checkoutContext: normalizedCheckoutContext,
       initResponse: checkout.raw
     }
     await payment.save()
@@ -1158,13 +1269,14 @@ const initiateCoursePaymentCheckout = async ({
       ...(payment.metadata || {}),
       nextPath: finalNextPath,
       fallbackPath: finalFallbackPath,
+      checkoutContext: normalizedCheckoutContext,
       initError: String(error?.message || 'Failed to initialize payment')
     }
     await payment.save()
 
     return redirectWithMessage({
       res,
-      path: fallbackPath,
+      path: finalFallbackPath,
       error: error.message || 'Failed to initialize payment checkout.'
     })
   }
@@ -1239,13 +1351,17 @@ const handleCoursePayRequest = async (req, res) => {
     )
     const nextPathInput = req.body?.next || req.query?.next || `/simple-lms/take/${courseId}`
     const nextPath = sanitizeInternalPath(nextPathInput, `/simple-lms/take/${courseId}`)
+    const checkoutContext = String(req.body?.checkoutContext || req.query?.checkoutContext || '').trim().toLowerCase() === 'cart'
+      ? 'cart'
+      : 'direct'
 
     return initiateCoursePaymentCheckout({
       req,
       res,
       course,
       fallbackPath,
-      nextPath
+      nextPath,
+      checkoutContext
     })
   } catch (error) {
     console.error('Create payment error:', error)
@@ -1323,7 +1439,8 @@ pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
       res,
       course: firstPayableCourse,
       fallbackPath: returnTo,
-      nextPath: `/simple-lms/take/${firstPayableCourse._id}`
+      nextPath: returnTo,
+      checkoutContext: 'cart'
     })
   } catch (error) {
     console.error('Cart checkout error:', error)
@@ -1452,13 +1569,41 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
     }
     const nextPath = sanitizeInternalPath(payment.metadata?.nextPath, `/simple-lms/take/${payment.course._id}`)
     const fallbackPath = sanitizeInternalPath(payment.metadata?.fallbackPath, '/simple-lms?view=catalog')
-
-    if (payment.status === 'successful') {
+    const checkoutContext = String(payment.metadata?.checkoutContext || '').trim().toLowerCase() === 'cart'
+      ? 'cart'
+      : 'direct'
+    const cartSuccessRedirect = async ({ defaultMessage }) => {
+      if (checkoutContext !== 'cart') {
+        return redirectWithMessage({
+          res,
+          path: nextPath,
+          success: defaultMessage
+        })
+      }
+      const remainingPayableCount = await getRemainingPayableCartCount({ req, accountId: req.user._id })
+      if (remainingPayableCount > 0) {
+        return redirectWithMessage({
+          res,
+          path: '/simple-lms?view=cart',
+          success: `${defaultMessage} ${remainingPayableCount} item(s) remaining in your cart.`
+        })
+      }
       return redirectWithMessage({
         res,
-        path: nextPath,
-        success: 'Payment already verified.'
+        path: '/simple-lms?view=my-learning',
+        success: `${defaultMessage} Your cart is clear.`
       })
+    }
+
+    if (payment.status === 'successful') {
+      await createOrUpdateEnrollment({
+        courseId: payment.course._id,
+        learnerId: req.user._id,
+        actorId: req.user._id,
+        assignmentType: 'self',
+        source: 'self_enroll'
+      })
+      return cartSuccessRedirect({ defaultMessage: 'Payment already verified.' })
     }
 
     if (!transactionId || (status && !['successful', 'completed'].includes(status))) {
@@ -1527,11 +1672,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       source: 'self_enroll'
     })
 
-    return redirectWithMessage({
-      res,
-      path: nextPath,
-      success: 'Payment verified. Course unlocked.'
-    })
+    return cartSuccessRedirect({ defaultMessage: 'Payment verified. Course unlocked.' })
   } catch (error) {
     console.error('Flutterwave callback error:', error)
     return redirectWithMessage({
@@ -2972,6 +3113,115 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
   }
 })
 
+pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/simple-lms?view=admin', '/simple-lms?view=admin')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can re-verify payments.'
+      })
+    }
+
+    const paymentId = String(req.params.paymentId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid payment record.'
+      })
+    }
+
+    const payment = await SimpleLmsPayment.findById(paymentId)
+      .populate('course')
+    if (!payment || !payment.course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Payment record not found.'
+      })
+    }
+
+    const transactionId = String(req.body?.transactionId || payment.flutterwaveTxId || '').trim()
+    if (!transactionId) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Provider transaction ID is required for re-verification.'
+      })
+    }
+
+    const verification = await verifyFlutterwaveTransaction(transactionId)
+    const verifiedData = verification?.data || {}
+    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
+    const verifiedTxRef = String(verifiedData?.tx_ref || '').trim()
+    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
+    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
+    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
+    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
+    const txRefMatches = verifiedTxRef === payment.txRef
+    const statusMatches = verifiedStatus === 'successful'
+
+    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
+    payment.flutterwaveStatus = verifiedStatus || payment.flutterwaveStatus || 'unknown'
+    payment.verificationPayload = verification
+    payment.verifiedAt = new Date()
+
+    if (!statusMatches || !txRefMatches || !amountMatches || verifiedCurrency !== payment.currency) {
+      payment.status = 'failed'
+      await payment.save()
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Payment verification mismatch. Record kept as failed.'
+      })
+    }
+
+    const commissionSettings = await getCommissionSettings()
+    const creatorId = payment.course?.createdBy || payment.creatorAccount
+    const commissionRate = resolveCommissionRate({
+      settings: commissionSettings,
+      creatorId,
+      courseId: payment.course?._id || payment.course
+    })
+    const split = splitCommission({
+      amountMinor: payment.amountMinor,
+      ratePercent: commissionRate
+    })
+
+    payment.status = 'successful'
+    payment.paidAt = payment.paidAt || new Date()
+    payment.creatorAccount = creatorId || payment.creatorAccount || null
+    payment.creatorCommissionRate = commissionRate
+    payment.creatorCommissionMinor = split.creatorCommissionMinor
+    payment.platformShareMinor = split.platformShareMinor
+    await payment.save()
+
+    await createOrUpdateEnrollment({
+      courseId: payment.course._id,
+      learnerId: payment.account,
+      actorId: payment.account,
+      assignmentType: 'self',
+      source: 'self_enroll'
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Payment verified and enrollment unlocked.'
+    })
+  } catch (error) {
+    console.error('Admin payment re-verification error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to re-verify payment.'
+    })
+  }
+})
+
 pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
@@ -2983,6 +3233,34 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     const editCourseId = String(req.query.editCourse || req.query.edit || '').trim()
     const editProgramId = String(req.query.editProgram || '').trim()
     const sessionCartCourseIds = getSessionCartCourseIds(req)
+    const paymentStatusFilter = normalizePaymentStatusFilter(req.query.paymentStatus)
+    const paymentCurrencyFilter = (() => {
+      const normalized = String(req.query.paymentCurrency || '').trim().toUpperCase()
+      if (!normalized || normalized === 'ALL') return 'all'
+      return CURRENCY_CODES.includes(normalized) ? normalized : 'all'
+    })()
+    const paymentFromFilter = String(req.query.paymentFrom || '').trim().slice(0, 32)
+    const paymentToFilter = String(req.query.paymentTo || '').trim().slice(0, 32)
+    const paymentSearchFilter = String(req.query.paymentSearch || '').trim().slice(0, 200)
+    const parsedPaymentFrom = parseDateBoundary(paymentFromFilter, 'start')
+    const parsedPaymentTo = parseDateBoundary(paymentToFilter, 'end')
+    const adminPaymentFilter = {}
+    if (canManagePlatform(role)) {
+      if (paymentStatusFilter !== 'all') adminPaymentFilter.status = paymentStatusFilter
+      if (paymentCurrencyFilter !== 'all') adminPaymentFilter.currency = paymentCurrencyFilter
+      if (parsedPaymentFrom || parsedPaymentTo) {
+        adminPaymentFilter.createdAt = {}
+        if (parsedPaymentFrom) adminPaymentFilter.createdAt.$gte = parsedPaymentFrom
+        if (parsedPaymentTo) adminPaymentFilter.createdAt.$lte = parsedPaymentTo
+      }
+    }
+    const adminPaymentsReturnTo = buildAdminPaymentsReturnTo({
+      status: paymentStatusFilter,
+      currency: paymentCurrencyFilter,
+      dateFrom: paymentFromFilter,
+      dateTo: paymentToFilter,
+      search: paymentSearchFilter
+    })
 
     const catalogFilter = {
       isActive: true,
@@ -3085,11 +3363,11 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         .sort({ paidAt: -1, createdAt: -1 })
         .lean(),
       canManagePlatform(role)
-        ? SimpleLmsPayment.find({})
+        ? SimpleLmsPayment.find(adminPaymentFilter)
           .populate('account', 'email profile.name')
           .populate('course', 'title')
           .sort({ createdAt: -1 })
-          .limit(200)
+          .limit(500)
           .lean()
         : Promise.resolve([]),
       canManagePlatform(role)
@@ -3405,7 +3683,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     creatorStats.commissionDisplay = formatCurrencyAmount(creatorStats.commissionMinor, 'NGN')
     creatorStats.platformShareDisplay = formatCurrencyAmount(creatorStats.platformShareMinor, 'NGN')
 
-    const adminPayments = (adminPaymentsRaw || []).map((payment) => ({
+    let adminPayments = (adminPaymentsRaw || []).map((payment) => ({
       ...payment,
       learnerName: payment.account?.profile?.name || payment.account?.email || 'Learner',
       learnerEmail: payment.account?.email || '',
@@ -3415,6 +3693,23 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       platformShareDisplay: formatCurrencyAmount(payment.platformShareMinor || 0, payment.currency),
       statusLabel: String(payment.status || '').replace(/_/g, ' ')
     }))
+
+    if (paymentSearchFilter) {
+      const needle = paymentSearchFilter.toLowerCase()
+      adminPayments = adminPayments.filter((payment) => {
+        const haystack = [
+          payment.txRef,
+          payment.flutterwaveTxId,
+          payment.learnerName,
+          payment.learnerEmail,
+          payment.courseTitle,
+          payment.statusLabel
+        ]
+          .map((entry) => String(entry || '').toLowerCase())
+          .join(' ')
+        return haystack.includes(needle)
+      })
+    }
 
     const paymentStats = {
       totalCount: adminPayments.length,
@@ -3627,6 +3922,16 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       creatorSettings,
       payoutProfile: req.user.payoutProfile || {},
       adminPayments,
+      adminPaymentFilters: {
+        status: paymentStatusFilter,
+        currency: paymentCurrencyFilter,
+        dateFrom: paymentFromFilter,
+        dateTo: paymentToFilter,
+        search: paymentSearchFilter,
+        returnTo: adminPaymentsReturnTo
+      },
+      paymentStatuses: PAYMENT_STATUSES,
+      paymentCurrencies: CURRENCY_CODES,
       paymentStats: {
         ...paymentStats,
         revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN'),

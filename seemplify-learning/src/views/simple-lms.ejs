@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-9">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-10">
   <script src="/js/theme.js?v=2"></script>
   <style>
     :root {
@@ -767,8 +767,9 @@
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
                   <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
-                    <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
+                    <input type="hidden" name="next" value="/simple-lms?view=cart">
                     <input type="hidden" name="fallback" value="/simple-lms?view=cart">
+                    <input type="hidden" name="checkoutContext" value="cart">
                     <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
                   </form>
                   <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
@@ -1260,12 +1261,40 @@
           <article class="kpi"><small>Failed/Cancelled</small><strong><%= paymentStats.failedCount %></strong></article>
           <article class="kpi"><small>Flutterwave</small><strong><%= flutterwave.enabled ? 'Configured' : 'Not Set' %></strong></article>
         </div>
+        <form method="get" action="/simple-lms" class="form-grid" style="margin-top:10px;">
+          <input type="hidden" name="view" value="admin">
+          <div>
+            <label>Status</label>
+            <select class="input" name="paymentStatus">
+              <option value="all" <%= adminPaymentFilters.status === 'all' ? 'selected' : '' %>>all</option>
+              <% paymentStatuses.forEach((statusOption) => { %>
+                <option value="<%= statusOption %>" <%= adminPaymentFilters.status === statusOption ? 'selected' : '' %>><%= statusOption.replace(/_/g, ' ') %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div>
+            <label>Currency</label>
+            <select class="input" name="paymentCurrency">
+              <option value="all" <%= adminPaymentFilters.currency === 'all' ? 'selected' : '' %>>all</option>
+              <% paymentCurrencies.forEach((currencyOption) => { %>
+                <option value="<%= currencyOption %>" <%= adminPaymentFilters.currency === currencyOption ? 'selected' : '' %>><%= currencyOption %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div><label>From</label><input class="input" type="date" name="paymentFrom" value="<%= adminPaymentFilters.dateFrom || '' %>"></div>
+          <div><label>To</label><input class="input" type="date" name="paymentTo" value="<%= adminPaymentFilters.dateTo || '' %>"></div>
+          <div><label>Search</label><input class="input" type="text" name="paymentSearch" value="<%= adminPaymentFilters.search || '' %>" placeholder="tx ref, learner, course"></div>
+          <div style="align-self:end;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=admin">Reset</a>
+          </div>
+        </form>
         <% if (!adminPayments || adminPayments.length === 0) { %>
           <div class="empty">No payment records yet.</div>
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Tx Ref</th><th>Provider Tx</th></tr></thead>
+              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Tx Ref</th><th>Provider Tx</th><th>Actions</th></tr></thead>
               <tbody>
                 <% adminPayments.forEach((payment) => { %>
                   <tr>
@@ -1278,6 +1307,17 @@
                     <td><span class="pill"><%= payment.statusLabel %></span></td>
                     <td><%= payment.txRef %></td>
                     <td><%= payment.flutterwaveTxId || '-' %></td>
+                    <td>
+                      <% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %>
+                        <form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" style="display:grid;gap:6px;min-width:180px;">
+                          <input class="input" type="text" name="transactionId" value="<%= payment.flutterwaveTxId || '' %>" placeholder="Provider tx id">
+                          <input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/simple-lms?view=admin' %>">
+                          <button class="btn btn-secondary btn-sm" type="submit">Re-verify</button>
+                        </form>
+                      <% } else { %>
+                        <span class="mini">No action</span>
+                      <% } %>
+                    </td>
                   </tr>
                 <% }) %>
               </tbody>
