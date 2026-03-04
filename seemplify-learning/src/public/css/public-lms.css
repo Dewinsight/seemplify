@@ -550,12 +550,17 @@
 }
 
 .reveal-item {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-ready .reveal-item {
   opacity: 0;
   transform: translateY(14px);
   transition: opacity 0.45s ease, transform 0.45s ease;
 }
 
-.reveal-item.is-visible {
+.reveal-ready .reveal-item.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -1793,11 +1798,11 @@
   .home-hero-slide,
   .home-hero-tab,
   .home-lane-chip,
-  .reveal-item {
+  .reveal-ready .reveal-item {
     transition: none;
   }
 
-  .reveal-item {
+  .reveal-ready .reveal-item {
     opacity: 1;
     transform: none;
   }
