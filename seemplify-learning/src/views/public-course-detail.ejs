@@ -11,7 +11,7 @@
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site">
-  <%- include('./partials/nav', { user, activePage }) %>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <% const takePath = `/simple-lms/take/${course._id}` %>
   <% const detailPath = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
@@ -183,7 +183,7 @@
                   <button type="submit" class="btn btn-secondary" style="width:100%;">Add To Cart</button>
                 </form>
               <% } %>
-              <a href="/simple-lms?view=cart" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">
+              <a href="/simple-lms/cart" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">
                 View Cart (<%= Number(cartCount || 0) %>)
               </a>
               <p class="lmsv-detail-note">This is a paid course. Purchase now or save it to your cart first.</p>

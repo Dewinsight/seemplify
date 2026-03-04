@@ -1145,6 +1145,95 @@ const getRemainingPayableCartCount = async ({ req, accountId }) => {
   return remainingPayableCourseIds.length
 }
 
+const resolveCartWorkspaceState = async ({ req, accountId }) => {
+  const cartCourseIds = getSessionCartCourseIds(req)
+  if (!Array.isArray(cartCourseIds) || cartCourseIds.length === 0) {
+    return {
+      cartCourses: [],
+      cartSummary: {
+        itemCount: 0,
+        totalsByCurrency: [],
+        hasItems: false
+      }
+    }
+  }
+
+  const validCourseIds = cartCourseIds.filter((courseId) => mongoose.Types.ObjectId.isValid(courseId))
+  if (validCourseIds.length !== cartCourseIds.length) {
+    setSessionCartCourseIds(req, validCourseIds)
+  }
+  if (validCourseIds.length === 0) {
+    return {
+      cartCourses: [],
+      cartSummary: {
+        itemCount: 0,
+        totalsByCurrency: [],
+        hasItems: false
+      }
+    }
+  }
+
+  const [cartCoursesRaw, successfulPayments] = await Promise.all([
+    SimpleLmsCourse.find({
+      _id: { $in: validCourseIds },
+      isActive: true,
+      status: 'published',
+      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    }).lean(),
+    SimpleLmsPayment.find({
+      account: accountId,
+      course: { $in: validCourseIds },
+      status: 'successful'
+    })
+      .select('course')
+      .lean()
+  ])
+
+  const paidCourseIds = new Set((successfulPayments || []).map((entry) => toIdString(entry.course)))
+  const cartRawMap = new Map((cartCoursesRaw || []).map((course) => [toIdString(course._id), course]))
+  const cartCourses = validCourseIds
+    .map((courseId) => cartRawMap.get(courseId))
+    .filter(Boolean)
+    .map((course) => {
+      const decoratedCourse = decorateCourse(course)
+      const courseId = toIdString(course._id)
+      const requiresPayment = isCoursePaidContent(course)
+      const isPaid = paidCourseIds.has(courseId)
+      return {
+        ...decoratedCourse,
+        requiresPayment,
+        isPaid,
+        canStart: !requiresPayment || isPaid
+      }
+    })
+    .filter((course) => course.requiresPayment && !course.isPaid)
+
+  const cleanedCartCourseIds = cartCourses.map((course) => toIdString(course._id))
+  setSessionCartCourseIds(req, cleanedCartCourseIds)
+
+  const cartTotalsByCurrencyMap = new Map()
+  for (const course of cartCourses) {
+    const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
+    const existing = cartTotalsByCurrencyMap.get(currency) || 0
+    const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
+    cartTotalsByCurrencyMap.set(currency, existing + amountMinor)
+  }
+  const cartTotalsByCurrency = Array.from(cartTotalsByCurrencyMap.entries()).map(([currency, amountMinor]) => ({
+    currency,
+    amountMinor,
+    amountDisplay: formatCurrencyAmount(amountMinor, currency)
+  }))
+
+  return {
+    cartCourses,
+    cartSummary: {
+      itemCount: cartCourses.length,
+      totalsByCurrency: cartTotalsByCurrency,
+      hasItems: cartCourses.length > 0
+    }
+  }
+}
+
 const initiateCoursePaymentCheckout = async ({
   req,
   res,
@@ -1389,8 +1478,8 @@ pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayReques
 pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
   try {
     const returnTo = sanitizeInternalPath(
-      req.body?.returnTo || req.body?.fallback || '/simple-lms?view=cart',
-      '/simple-lms?view=cart'
+      req.body?.returnTo || req.body?.fallback || '/simple-lms/cart',
+      '/simple-lms/cart'
     )
     const cartCourseIds = getSessionCartCourseIds(req)
     if (cartCourseIds.length === 0) {
@@ -1456,7 +1545,7 @@ pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
     console.error('Cart checkout error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=cart',
+      path: '/simple-lms/cart',
       error: 'Could not start cart checkout.'
     })
   }
@@ -1531,7 +1620,7 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
 
 pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
   const courseId = String(req.params.courseId || '').trim()
-  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=cart', '/simple-lms?view=cart')
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms/cart', '/simple-lms/cart')
   removeSessionCartCourseId(req, courseId)
   return redirectWithMessage({
     res,
@@ -1541,7 +1630,7 @@ pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
 })
 
 pageRouter.post('/cart/clear', requirePageAuth, async (req, res) => {
-  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=cart', '/simple-lms?view=cart')
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms/cart', '/simple-lms/cart')
   clearSessionCart(req)
   return redirectWithMessage({
     res,
@@ -1594,7 +1683,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       if (remainingPayableCount > 0) {
         return redirectWithMessage({
           res,
-          path: '/simple-lms?view=cart',
+          path: '/simple-lms/cart',
           success: `${defaultMessage} ${remainingPayableCount} item(s) remaining in your cart.`
         })
       }
@@ -1910,11 +1999,27 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', requir
 
 pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePageAuth, async (req, res) => {
   try {
+    const expectsJson = String(req.query.format || '').trim().toLowerCase() === 'json'
+      || String(req.get('accept') || '').toLowerCase().includes('application/json')
+      || String(req.get('x-requested-with') || '').toLowerCase() === 'xmlhttprequest'
+    const quizError = ({ path, error, status = 400 }) => {
+      if (expectsJson) {
+        return res.status(status).json({
+          ok: false,
+          error
+        })
+      }
+      return redirectWithMessage({
+        res,
+        path,
+        error
+      })
+    }
+
     const enrollmentId = String(req.params.enrollmentId || '').trim()
     const lessonKey = String(req.params.lessonKey || '').trim()
     if (!mongoose.Types.ObjectId.isValid(enrollmentId) || !lessonKey) {
-      return redirectWithMessage({
-        res,
+      return quizError({
         path: '/simple-lms?view=my-learning',
         error: 'Invalid quiz submission request.'
       })
@@ -1923,36 +2028,36 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
     const enrollment = await SimpleLmsEnrollment.findById(enrollmentId)
       .populate('course')
     if (!enrollment || !enrollment.course) {
-      return redirectWithMessage({
-        res,
+      return quizError({
         path: '/simple-lms?view=my-learning',
-        error: 'Learning record not found.'
+        error: 'Learning record not found.',
+        status: 404
       })
     }
     if (toIdString(enrollment.enrolledMember) !== toIdString(req.user._id)) {
-      return redirectWithMessage({
-        res,
+      return quizError({
         path: '/simple-lms?view=my-learning',
-        error: 'You can only submit quizzes for your own lessons.'
+        error: 'You can only submit quizzes for your own lessons.',
+        status: 403
       })
     }
 
     const lessons = flattenCourseLessons(enrollment.course)
     const lesson = lessons.find(entry => entry.lessonKey === lessonKey)
     if (!lesson) {
-      return redirectWithMessage({
-        res,
+      return quizError({
         path: `/simple-lms/learn/${enrollment._id}`,
-        error: 'Lesson not found.'
+        error: 'Lesson not found.',
+        status: 404
       })
     }
 
     const questions = lesson.quizQuestions || []
     if (questions.length === 0) {
-      return redirectWithMessage({
-        res,
+      return quizError({
         path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(lessonKey)}`,
-        error: 'No quiz is available for this lesson.'
+        error: 'No quiz is available for this lesson.',
+        status: 404
       })
     }
 
@@ -1963,11 +2068,19 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
     })
 
     let score = 0
-    questions.forEach((question, questionIndex) => {
+    const questionResults = questions.map((question, questionIndex) => {
       const choices = Array.isArray(question?.choices) ? question.choices : []
       const correctIndex = choices.findIndex(choice => Boolean(choice?.isCorrect))
-      if (correctIndex >= 0 && answers[questionIndex] === correctIndex) {
+      const selectedIndex = answers[questionIndex]
+      const isCorrect = correctIndex >= 0 && selectedIndex === correctIndex
+      if (isCorrect) {
         score += 1
+      }
+      return {
+        questionIndex,
+        selectedIndex,
+        correctIndex,
+        isCorrect
       }
     })
 
@@ -1992,6 +2105,18 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
     }
     await enrollment.save()
 
+    if (expectsJson) {
+      return res.json({
+        ok: true,
+        lessonKey,
+        score,
+        maxScore,
+        percentage,
+        passed: percentage >= 70,
+        questionResults
+      })
+    }
+
     return redirectWithMessage({
       res,
       path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(lessonKey)}`,
@@ -1999,6 +2124,15 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
     })
   } catch (error) {
     console.error('Submit quiz error:', error)
+    const expectsJson = String(req.query.format || '').trim().toLowerCase() === 'json'
+      || String(req.get('accept') || '').toLowerCase().includes('application/json')
+      || String(req.get('x-requested-with') || '').toLowerCase() === 'xmlhttprequest'
+    if (expectsJson) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to submit quiz.'
+      })
+    }
     return redirectWithMessage({
       res,
       path: '/simple-lms?view=my-learning',
@@ -3321,10 +3455,46 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
   }
 })
 
+pageRouter.get('/cart', requirePageAuth, async (req, res) => {
+  try {
+    const { cartCourses, cartSummary } = await resolveCartWorkspaceState({
+      req,
+      accountId: req.user._id
+    })
+    res.locals.simpleLmsCartCount = cartSummary.itemCount
+    const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
+
+    return res.render('simple-lms-cart', {
+      title: `${learningName} - Cart`,
+      user: req.user,
+      activePage: 'simple-lms',
+      activeLmsView: 'workspace',
+      cartCourses,
+      cartSummary,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
+    })
+  } catch (error) {
+    console.error('Simple LMS cart load error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms',
+      error: 'Failed to load cart.'
+    })
+  }
+})
+
 pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
     const viewMode = parseViewMode(req.query.view)
+    if (viewMode === 'cart') {
+      const params = new URLSearchParams(req.query || {})
+      params.delete('view')
+      const queryString = params.toString()
+      return res.redirect(queryString ? `/simple-lms/cart?${queryString}` : '/simple-lms/cart')
+    }
     const settingsTab = parseSettingsTab(req.query.settingsTab || req.query.tab)
     const query = String(req.query.q || '').trim()
     const categoryFilter = String(req.query.category || '').trim()

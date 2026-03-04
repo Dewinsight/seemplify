@@ -540,7 +540,7 @@
           <div class="hero-actions">
             <a class="btn btn-primary btn-sm" href="<%= tab('catalog') %>">Explore Catalog</a>
             <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
-            <a class="btn btn-secondary btn-sm" href="<%= tab('cart') %>">Open Cart (<%= stats.cartItemCount %>)</a>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms/cart">Open Cart (<%= stats.cartItemCount %>)</a>
             <% if (canCreateCourses) { %>
               <a class="btn btn-secondary btn-sm" href="<%= tab('course-studio') %>">Open Course Studio</a>
             <% } %>
@@ -569,7 +569,7 @@
       <div class="tabs">
         <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
         <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">Catalog</a>
-        <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="<%= tab('cart') %>">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
+        <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
         <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
         <% if (canCreateCourses) { %>
           <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="<%= tab('course-studio') %>">Course Studio</a>
@@ -611,7 +611,7 @@
                 <span class="cart-total-chip"><%= entry.amountDisplay %></span>
               <% }) %>
             <% } %>
-            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=cart">View Cart (<%= stats.cartItemCount %>)</a>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms/cart">View Cart (<%= stats.cartItemCount %>)</a>
           </div>
         </div>
         <form method="get" action="/simple-lms">
@@ -740,11 +740,11 @@
           <div class="actions">
             <% if (cartSummary && cartSummary.hasItems) { %>
               <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
-                <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                <input type="hidden" name="returnTo" value="/simple-lms/cart">
                 <button class="btn btn-primary btn-sm" type="submit">Checkout Now</button>
               </form>
               <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
-                <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                <input type="hidden" name="returnTo" value="/simple-lms/cart">
                 <button class="btn btn-danger btn-sm" type="submit">Clear Cart</button>
               </form>
             <% } %>
@@ -767,13 +767,13 @@
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
                   <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
-                    <input type="hidden" name="next" value="/simple-lms?view=cart">
-                    <input type="hidden" name="fallback" value="/simple-lms?view=cart">
+                    <input type="hidden" name="next" value="/simple-lms/cart">
+                    <input type="hidden" name="fallback" value="/simple-lms/cart">
                     <input type="hidden" name="checkoutContext" value="cart">
                     <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
                   </form>
                   <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
-                    <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                    <input type="hidden" name="returnTo" value="/simple-lms/cart">
                     <button class="btn btn-danger btn-sm" type="submit">Remove</button>
                   </form>
                 </div>

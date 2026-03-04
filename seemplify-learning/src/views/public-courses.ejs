@@ -11,7 +11,7 @@
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site public-courses-page">
-  <%- include('./partials/nav', { user, activePage }) %>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <%
     const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
