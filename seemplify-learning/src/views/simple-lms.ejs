@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-10">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
   <script src="/js/theme.js?v=2"></script>
   <style>
     :root {
@@ -521,7 +521,7 @@
   </style>
 </head>
 <body class="public-site lmsv-workspace-page">
-  <%- include('./partials/nav', { user, activePage }) %>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: viewMode === 'settings' ? 'settings' : 'workspace' }) %>
   <% const tab = (mode) => `/simple-lms?view=${mode}` %>
   <% const learningName = brandLearningName || 'Seemplify Learning' %>
   <% const roleLabel = String(role || 'learner').replace(/_/g, ' ') %>
@@ -1723,4 +1723,5 @@
   </script>
 </body>
 </html>
+
 

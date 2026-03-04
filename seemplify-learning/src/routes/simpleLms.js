@@ -22,13 +22,14 @@ const upload = multer({
 })
 
 const ROLES = ['super_admin', 'admin', 'creator', 'learner']
-const VIEW_MODES = ['overview', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
+const VIEW_MODES = ['overview', 'settings', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
 const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
+const SETTINGS_TABS = ['profile', 'creator', 'payments']
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -385,6 +386,11 @@ const parseViewMode = (value) => {
   if (normalized === 'program-studio' || normalized === 'pathways') return 'program-studio'
   if (normalized === 'checkout') return 'cart'
   return VIEW_MODES.includes(normalized) ? normalized : 'overview'
+}
+
+const parseSettingsTab = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return SETTINGS_TABS.includes(normalized) ? normalized : 'profile'
 }
 
 const parseCourseStatus = (value, fallback = 'draft') => {
@@ -3022,13 +3028,67 @@ pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) =
   }
 })
 
+pageRouter.post('/settings/profile', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=profile',
+    '/simple-lms?view=settings&settingsTab=profile'
+  )
+  try {
+    const displayName = String(req.body.displayName || req.user.profile?.name || '').trim().slice(0, 120)
+    const requestedEmail = String(req.body.email || req.user.email || '').trim().toLowerCase().slice(0, 320)
+    if (!requestedEmail) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Email address is required.'
+      })
+    }
+
+    if (requestedEmail !== String(req.user.email || '').trim().toLowerCase()) {
+      const existingEmailUser = await Account.exists({
+        _id: { $ne: req.user._id },
+        email: requestedEmail
+      })
+      if (existingEmailUser) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'That email address is already in use.'
+        })
+      }
+      req.user.email = requestedEmail
+    }
+
+    req.user.profile = req.user.profile || {}
+    req.user.profile.name = displayName
+    await req.user.save()
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Profile updated successfully.'
+    })
+  } catch (error) {
+    console.error('Update profile settings error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to update profile settings.'
+    })
+  }
+})
+
 pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=creator',
+    '/simple-lms?view=settings&settingsTab=creator'
+  )
   try {
     const role = resolveRole(req.user)
     if (!canCreateCourses(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to update creator settings.'
       })
     }
@@ -3053,14 +3113,14 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: 'Creator studio settings saved.'
     })
   } catch (error) {
     console.error('Update creator settings error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: 'Failed to update creator settings.'
     })
   }
@@ -3226,6 +3286,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
     const viewMode = parseViewMode(req.query.view)
+    const settingsTab = parseSettingsTab(req.query.settingsTab || req.query.tab)
     const query = String(req.query.q || '').trim()
     const categoryFilter = String(req.query.category || '').trim()
     const levelFilter = String(req.query.level || '').trim().toLowerCase()
@@ -3389,14 +3450,23 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       .map((entry) => {
         const lessons = flattenCourseLessons(entry.course)
         const progress = calculateProgress({ lessons, completedLessonKeys: entry.completedLessonKeys || [] })
+        const completedDurationMinutes = lessons
+          .filter((lesson) => progress.completedSet.has(lesson.lessonKey))
+          .reduce((sum, lesson) => sum + Math.max(0, Number(lesson.durationMinutes || 0)), 0)
+        const totalDurationMinutes = lessons
+          .reduce((sum, lesson) => sum + Math.max(0, Number(lesson.durationMinutes || 0)), 0)
+        const fallbackEstimatedDuration = Math.max(0, Number(entry.course?.estimatedDurationMinutes || 0))
         return {
           ...entry,
           course: decorateCourse(entry.course),
           lessonCount: progress.lessonCount,
           completedCount: progress.completedCount,
+          completedDurationMinutes,
+          totalDurationMinutes: totalDurationMinutes > 0 ? totalDurationMinutes : fallbackEstimatedDuration,
           progressPercent: Number.isFinite(Number(entry.progressPercent)) ? Number(entry.progressPercent) : progress.progressPercent,
           nextLessonKey: progress.nextLessonKey,
-          isCompleted: progress.isCompleted
+          isCompleted: progress.isCompleted,
+          lastActivityAt: entry.lastActivityAt || entry.updatedAt || entry.createdAt || new Date()
         }
       })
 
@@ -3491,6 +3561,75 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       }
     })
     const recommendedCourses = catalogCourses.filter(course => !course.isEnrolled).slice(0, 8)
+    const inProgressEnrollments = myEnrollments
+      .filter((entry) => !entry.isCompleted)
+      .sort((a, b) => {
+        const bTime = new Date(b.lastActivityAt || b.updatedAt || b.createdAt || Date.now()).getTime()
+        const aTime = new Date(a.lastActivityAt || a.updatedAt || a.createdAt || Date.now()).getTime()
+        return bTime - aTime
+      })
+    const continueLearningCards = inProgressEnrollments
+      .map((entry) => {
+        const estimatedDuration = Math.max(0, Number(entry.totalDurationMinutes || entry.course?.estimatedDurationMinutes || 0))
+        const completedDuration = Math.max(0, Number(entry.completedDurationMinutes || 0))
+        const remainingMinutes = estimatedDuration > 0
+          ? Math.max(0, Math.round(estimatedDuration - completedDuration))
+          : 0
+        const resumePath = entry.nextLessonKey
+          ? `/simple-lms/learn/${entry._id}/${encodeURIComponent(entry.nextLessonKey)}`
+          : '/simple-lms?view=my-learning'
+        return {
+          ...entry,
+          resumePath,
+          remainingMinutes,
+          activityAt: entry.lastActivityAt || entry.updatedAt || entry.createdAt || new Date()
+        }
+      })
+      .slice(0, 2)
+
+    const inProgressCourseIdSet = new Set(inProgressEnrollments.map((entry) => toIdString(entry.course?._id)))
+    let recommendedLearningCards = catalogCourses
+      .filter((course) => !inProgressCourseIdSet.has(toIdString(course._id)))
+      .slice(0, 3)
+    if (recommendedLearningCards.length === 0) {
+      recommendedLearningCards = catalogCourses.slice(0, 3)
+    }
+
+    const lessonsCompletedTotal = myEnrollments.reduce((sum, enrollment) => sum + Math.max(0, Number(enrollment.completedCount || 0)), 0)
+    const hoursLearnedMinutes = myEnrollments.reduce((sum, enrollment) => sum + Math.max(0, Number(enrollment.completedDurationMinutes || 0)), 0)
+    const hoursLearned = Math.round((hoursLearnedMinutes / 60) * 10) / 10
+    const activityDaySet = new Set(
+      myEnrollments
+        .map((enrollment) => {
+          const value = enrollment.lastActivityAt || enrollment.updatedAt || enrollment.createdAt
+          if (!value) return ''
+          const date = new Date(value)
+          if (Number.isNaN(date.getTime())) return ''
+          return date.toISOString().slice(0, 10)
+        })
+        .filter(Boolean)
+    )
+    const today = new Date()
+    let currentStreakDays = 0
+    for (let i = 0; i < 60; i += 1) {
+      const probeDate = new Date(today)
+      probeDate.setHours(0, 0, 0, 0)
+      probeDate.setDate(probeDate.getDate() - i)
+      const probeKey = probeDate.toISOString().slice(0, 10)
+      if (!activityDaySet.has(probeKey)) break
+      currentStreakDays += 1
+    }
+    if (currentStreakDays <= 0 && inProgressEnrollments.length > 0) {
+      currentStreakDays = 1
+    }
+    const workspaceStats = {
+      coursesEnrolled: myEnrollments.length,
+      coursesInProgress: inProgressEnrollments.length,
+      lessonsCompleted: lessonsCompletedTotal,
+      hoursLearned,
+      currentStreakDays
+    }
+
     const managedCourses = managedRaw.map(course => decorateCourse(course))
     const catalogProgramsDecorated = catalogProgramsRaw.map(program => decorateProgram(program, programCourseMap))
     const managedPrograms = managedProgramsRaw.map(program => decorateProgram(program, programCourseMap))
@@ -3882,13 +4021,17 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     }))
 
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
+    const templateName = viewMode === 'settings'
+      ? 'simple-lms-settings'
+      : (viewMode === 'overview' ? 'simple-lms-workspace' : 'simple-lms')
 
-    return res.render('simple-lms', {
-      title: `${learningName} - Workspace`,
+    return res.render(templateName, {
+      title: `${learningName} - ${viewMode === 'settings' ? 'Settings' : 'Workspace'}`,
       user: req.user,
       activePage: 'simple-lms',
       role,
       viewMode,
+      settingsTab,
       canCreateCourses: canCreateCourses(role),
       canManagePlatform: canManagePlatform(role),
       filters: {
@@ -3949,6 +4092,9 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         accountOverrides: commissionAccountOverrides,
         courseOverrides: commissionCourseOverrides
       },
+      continueLearningCards,
+      recommendedLearningCards,
+      workspaceStats,
       roleBreakdown,
       stats: {
         publishedCourseCount: totalPublishedCourses,
@@ -4059,6 +4205,10 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
 })
 
 pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=payments',
+    '/simple-lms?view=settings&settingsTab=payments'
+  )
   try {
     req.user.payoutProfile = req.user.payoutProfile || {}
     req.user.payoutProfile.accountName = String(req.body.accountName || '').trim().slice(0, 200)
@@ -4075,14 +4225,14 @@ pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: 'Payout details saved.'
     })
   } catch (error) {
     console.error('Update payout profile error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: 'Failed to save payout details.'
     })
   }

@@ -24,7 +24,8 @@
     <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(activePage) ? ' active' : '' %>">Explore Courses</a>
     <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
     <% if (user) { %>
-      <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
+      <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' && activeLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
+      <a href="/simple-lms?view=settings" class="top-nav-link<%= activeLmsView === 'settings' ? ' active' : '' %>">Settings</a>
     <% } %>
   </div>
 
@@ -90,7 +91,7 @@
         <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(activePage) ? ' active' : '' %>">Explore Courses</a>
         <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
         <% if (user) { %>
-          <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
+          <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' && activeLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
         <% } %>
       </div>
     </div>
@@ -130,6 +131,15 @@
           </button>
         </div>
       </div>
+
+      <% if (user) { %>
+        <a href="/simple-lms?view=settings" class="top-nav-icon-link<%= activeLmsView === 'settings' ? ' active' : '' %>" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </a>
+      <% } %>
 
       <% if (user) { %>
         <div class="top-nav-user">

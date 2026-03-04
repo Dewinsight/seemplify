@@ -269,6 +269,37 @@ body.public-site .theme-option:hover {
   background: var(--lmsv-nav-pill-bg);
 }
 
+body.public-site .top-nav-icon-link {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--lmsv-text-muted);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: all 0.18s ease;
+}
+
+body.public-site .top-nav-icon-link svg {
+  width: 18px;
+  height: 18px;
+}
+
+body.public-site .top-nav-icon-link:hover {
+  color: var(--lmsv-text);
+  border-color: transparent;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+body.public-site .top-nav-icon-link.active {
+  color: #0284c7;
+  border-color: var(--lmsv-nav-pill-active-border);
+  background: var(--lmsv-nav-pill-active-bg);
+}
+
 body.public-site .mobile-drawer {
   background: var(--lmsv-surface);
   border-right: 1px solid var(--lmsv-border);
