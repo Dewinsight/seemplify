@@ -412,16 +412,20 @@ const normalizeProgramVisibility = (value, fallback = 'organization_private') =>
 
 const flattenCourseLessons = (course) => {
   const entries = []
-  for (const chapter of course?.chapters || []) {
+  ;(course?.chapters || []).forEach((chapter, chapterIndex) => {
     const chapterKey = String(chapter?.key || '')
-    const chapterTitle = String(chapter?.title || 'Chapter')
-    for (const lesson of chapter?.lessons || []) {
+    const chapterOrder = Number.isFinite(Number(chapter?.order)) ? Number(chapter.order) : chapterIndex + 1
+    const chapterTitle = String(chapter?.title || '').trim() || `Chapter ${chapterOrder}`
+    ;(chapter?.lessons || []).forEach((lesson, lessonIndex) => {
       const lessonKey = String(lesson?.key || '').trim()
-      if (!lessonKey) continue
+      if (!lessonKey) return
+      const lessonOrder = Number.isFinite(Number(lesson?.order)) ? Number(lesson.order) : lessonIndex + 1
       entries.push({
         chapterKey,
+        chapterOrder,
         chapterTitle,
         lessonKey,
+        lessonOrder,
         title: String(lesson?.title || 'Lesson'),
         description: String(lesson?.description || ''),
         content: String(lesson?.content || ''),
@@ -430,8 +434,8 @@ const flattenCourseLessons = (course) => {
         resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
         quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
       })
-    }
-  }
+    })
+  })
   return entries
 }
 
@@ -1747,17 +1751,52 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] || null
 
     const lessonMedia = resolveLessonMedia(currentLesson.videoUrl)
-    const chapterSections = (enrollment.course.chapters || []).map((chapter) => ({
-      key: String(chapter?.key || ''),
-      title: String(chapter?.title || 'Chapter'),
-      lessons: (chapter?.lessons || [])
-        .map((lesson) => ({
-          key: String(lesson?.key || '').trim(),
-          title: String(lesson?.title || 'Lesson'),
-          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0
-        }))
+    const chapterSections = (enrollment.course.chapters || []).map((chapter, chapterIndex) => {
+      const chapterNumber = Number.isFinite(Number(chapter?.order)) ? Number(chapter.order) : chapterIndex + 1
+      const chapterTitle = String(chapter?.title || '').trim() || `Chapter ${chapterNumber}`
+      const lessonsInChapter = (chapter?.lessons || [])
+        .map((lesson, lessonIndex) => {
+          const lessonKey = String(lesson?.key || '').trim()
+          const lessonNumber = Number.isFinite(Number(lesson?.order)) ? Number(lesson.order) : lessonIndex + 1
+          const lessonQuizQuestions = Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+          return {
+            key: lessonKey,
+            title: String(lesson?.title || `Lesson ${lessonNumber}`),
+            durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0,
+            lessonNumber,
+            quizQuestions: lessonQuizQuestions
+              .map((question) => ({
+                prompt: String(question?.prompt || '').trim(),
+                choices: Array.isArray(question?.choices)
+                  ? question.choices
+                    .map((choice) => ({
+                      text: String(choice?.text || '').trim()
+                    }))
+                    .filter((choice) => choice.text)
+                  : []
+              }))
+              .filter((question) => question.prompt && question.choices.length > 1)
+          }
+        })
         .filter((lesson) => lesson.key)
-    }))
+
+      const quizLessons = lessonsInChapter
+        .filter((lesson) => Array.isArray(lesson.quizQuestions) && lesson.quizQuestions.length > 0)
+        .map((lesson) => ({
+          key: lesson.key,
+          title: lesson.title,
+          lessonNumber: lesson.lessonNumber,
+          quizQuestions: lesson.quizQuestions
+        }))
+
+      return {
+        key: String(chapter?.key || `chapter-${chapterNumber}`),
+        chapterNumber,
+        title: chapterTitle,
+        lessons: lessonsInChapter,
+        quizLessons
+      }
+    })
 
     return res.render('simple-lms-player', {
       title: `${enrollment.course.title} - Learning Player`,

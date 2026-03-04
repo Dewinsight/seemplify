@@ -215,6 +215,19 @@
       letter-spacing: -0.01em;
       color: var(--text);
     }
+    .curriculum-chapter-title {
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .curriculum-chapter-number {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
     .curriculum-lesson {
       border: 1px solid rgba(148, 163, 184, 0.28);
       border-radius: 8px;
@@ -233,12 +246,96 @@
       background: rgba(8, 145, 178, 0.12);
       color: #0c4a6e;
     }
+    .curriculum-lesson-label {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+    .curriculum-lesson-label span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .curriculum-lesson-number {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
     .curriculum-status {
       color: #22c55e;
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       font-weight: 700;
+    }
+    .curriculum-quiz-trigger {
+      width: 100%;
+      justify-content: center;
+    }
+    .quiz-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1600;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .quiz-modal.open {
+      display: flex;
+    }
+    .quiz-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.62);
+    }
+    .quiz-modal-dialog {
+      position: relative;
+      width: min(860px, 100%);
+      max-height: calc(100dvh - 36px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--player-surface);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 18px 44px rgba(2, 6, 23, 0.28);
+    }
+    .quiz-modal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .quiz-modal-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .quiz-modal-meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .quiz-section-head {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .quiz-modal-status {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
     }
     .resource-list {
       margin: 0;
@@ -336,7 +433,7 @@
   </style>
 </head>
 <body class="public-site lmsv-player-page">
-  <%- include('./partials/nav', { user, activePage }) %>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <main class="player-shell">
     <section class="player-head">
@@ -360,9 +457,11 @@
     <section class="player-layout">
       <div class="player-main">
         <article class="player-card">
-          <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;"><%= currentLesson.title %></h2>
+          <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">
+            <%= `Lesson ${currentLesson.chapterOrder}.${currentLesson.lessonOrder}: ${currentLesson.title}` %>
+          </h2>
           <div class="player-pill-row">
-            <span class="player-pill"><%= currentLesson.chapterTitle %></span>
+            <span class="player-pill"><%= `Chapter ${currentLesson.chapterOrder}: ${currentLesson.chapterTitle}` %></span>
             <span class="player-pill"><%= currentLesson.durationMinutes %> mins</span>
             <% if (completedSet.has(currentLesson.lessonKey)) { %><span class="player-pill">Completed</span><% } %>
           </div>
@@ -413,23 +512,6 @@
           </div>
         </article>
 
-        <% if (currentLesson.quizQuestions && currentLesson.quizQuestions.length > 0) { %>
-          <article class="player-card">
-            <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">Lesson Quiz</h2>
-            <% if (latestAttempt) { %><p class="soft-note">Latest attempt: <strong><%= latestAttempt.score %>/<%= latestAttempt.maxScore %></strong> (<%= latestAttempt.maxScore > 0 ? Math.round((latestAttempt.score / latestAttempt.maxScore) * 100) : 0 %>%).</p><% } %>
-            <form method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/quiz" class="quiz-wrap">
-              <% currentLesson.quizQuestions.forEach((question, questionIndex) => { %>
-                <section class="quiz-q">
-                  <p><%= questionIndex + 1 %>. <%= question.prompt %></p>
-                  <% (question.choices || []).forEach((choice, choiceIndex) => { %>
-                    <label class="quiz-option"><input type="radio" name="answer_<%= questionIndex %>" value="<%= choiceIndex %>"> <span><%= choice.text %></span></label>
-                  <% }) %>
-                </section>
-              <% }) %>
-              <div class="player-actions"><button class="btn btn-primary" type="submit">Submit Quiz</button></div>
-            </form>
-          </article>
-        <% } %>
       </div>
 
       <aside class="player-side">
@@ -446,16 +528,31 @@
           <div class="curriculum">
             <% chapterSections.forEach((chapter) => { %>
               <section class="curriculum-chapter">
-                <h3><%= chapter.title %></h3>
+                <div class="curriculum-chapter-title">
+                  <span class="curriculum-chapter-number"><%= `Chapter ${chapter.chapterNumber}` %></span>
+                  <h3><%= chapter.title %></h3>
+                </div>
                 <% chapter.lessons.forEach((lesson) => { %>
                   <a class="curriculum-lesson <%= currentLesson.lessonKey === lesson.key ? 'active' : '' %>" href="/simple-lms/learn/<%= enrollment._id %>/<%= encodeURIComponent(lesson.key) %>">
-                    <span><%= lesson.title %></span>
+                    <span class="curriculum-lesson-label">
+                      <span class="curriculum-lesson-number"><%= `${chapter.chapterNumber}.${lesson.lessonNumber}` %></span>
+                      <span><%= lesson.title %></span>
+                    </span>
                     <span style="display:flex;align-items:center;gap:6px;">
                       <% if (completedSet.has(lesson.key)) { %><span class="curriculum-status">Done</span><% } %>
                       <span><%= lesson.durationMinutes %>m</span>
                     </span>
                   </a>
                 <% }) %>
+                <% if (chapter.quizLessons && chapter.quizLessons.length > 0) { %>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm curriculum-quiz-trigger"
+                    data-action="open-chapter-quiz"
+                    data-chapter-key="<%= chapter.key %>">
+                    Take Chapter Quiz
+                  </button>
+                <% } %>
               </section>
             <% }) %>
           </div>
@@ -464,7 +561,150 @@
     </section>
   </main>
 
+  <div class="quiz-modal" id="chapterQuizModal" aria-hidden="true">
+    <div class="quiz-modal-backdrop" data-action="close-chapter-quiz"></div>
+    <div class="quiz-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="chapterQuizTitle">
+      <div class="quiz-modal-top">
+        <h2 id="chapterQuizTitle" style="margin:0;font-size:20px;letter-spacing:-0.02em;">Chapter Quiz</h2>
+        <button type="button" class="quiz-modal-close" data-action="close-chapter-quiz" aria-label="Close chapter quiz">&times;</button>
+      </div>
+      <p id="chapterQuizMeta" class="quiz-modal-meta"></p>
+      <form id="chapterQuizForm" class="quiz-wrap"></form>
+      <p id="chapterQuizStatus" class="quiz-modal-status"></p>
+      <div class="player-actions">
+        <button type="submit" class="btn btn-primary" id="chapterQuizSubmit" form="chapterQuizForm">Submit Quiz</button>
+      </div>
+    </div>
+  </div>
+
   <%- include('./partials/public-footer') %>
+  <script>
+    (() => {
+      const chapterQuizData = <%- JSON.stringify((chapterSections || []).map((chapter) => ({
+        key: chapter.key,
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title,
+        quizLessons: (chapter.quizLessons || []).map((lesson) => ({
+          key: lesson.key,
+          lessonNumber: lesson.lessonNumber,
+          title: lesson.title,
+          quizQuestions: (lesson.quizQuestions || []).map((question) => ({
+            prompt: question.prompt,
+            choices: (question.choices || []).map((choice) => ({ text: choice.text }))
+          }))
+        }))
+      }))) %>
+
+      const enrollmentId = <%- JSON.stringify(String((enrollment && enrollment._id) || '')) %>
+      const modal = document.getElementById('chapterQuizModal')
+      const form = document.getElementById('chapterQuizForm')
+      const titleNode = document.getElementById('chapterQuizTitle')
+      const metaNode = document.getElementById('chapterQuizMeta')
+      const statusNode = document.getElementById('chapterQuizStatus')
+      let activeChapter = null
+      let submitting = false
+
+      const escapeHtml = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+      const setModalOpen = (isOpen) => {
+        if (!modal) return
+        modal.classList.toggle('open', Boolean(isOpen))
+        modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
+        document.body.style.overflow = isOpen ? 'hidden' : ''
+      }
+
+      const closeModal = () => {
+        if (submitting) return
+        activeChapter = null
+        if (form) form.innerHTML = ''
+        if (statusNode) statusNode.textContent = ''
+        setModalOpen(false)
+      }
+
+      const openChapterQuiz = (chapterKey) => {
+        const chapter = chapterQuizData.find((entry) => String(entry.key) === String(chapterKey))
+        if (!chapter || !Array.isArray(chapter.quizLessons) || chapter.quizLessons.length === 0) return
+        activeChapter = chapter
+        titleNode.textContent = `Chapter ${chapter.chapterNumber} Quiz`
+        const questionTotal = chapter.quizLessons.reduce((count, lesson) => count + ((lesson.quizQuestions || []).length), 0)
+        metaNode.textContent = `${chapter.title} • ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
+        statusNode.textContent = ''
+        form.innerHTML = chapter.quizLessons.map((lesson) => `
+          <section>
+            <h3 class="quiz-section-head">Lesson ${chapter.chapterNumber}.${lesson.lessonNumber}: ${escapeHtml(lesson.title)}</h3>
+            ${(lesson.quizQuestions || []).map((question, questionIndex) => `
+              <section class="quiz-q">
+                <p>${questionIndex + 1}. ${escapeHtml(question.prompt)}</p>
+                ${(question.choices || []).map((choice, choiceIndex) => `
+                  <label class="quiz-option">
+                    <input type="radio" name="${escapeHtml(lesson.key)}_answer_${questionIndex}" value="${choiceIndex}">
+                    <span>${escapeHtml(choice.text)}</span>
+                  </label>
+                `).join('')}
+              </section>
+            `).join('')}
+          </section>
+        `).join('')
+        setModalOpen(true)
+      }
+
+      const submitChapterQuiz = async (event) => {
+        event.preventDefault()
+        if (!activeChapter || submitting || !enrollmentId) return
+        submitting = true
+        statusNode.textContent = 'Submitting quiz...'
+        const submitButton = document.getElementById('chapterQuizSubmit')
+        if (submitButton) submitButton.disabled = true
+
+        try {
+          for (const lesson of activeChapter.quizLessons || []) {
+            const body = new URLSearchParams()
+            ;(lesson.quizQuestions || []).forEach((_, questionIndex) => {
+              const input = form.querySelector(`input[name="${lesson.key}_answer_${questionIndex}"]:checked`)
+              if (input) body.append(`answer_${questionIndex}`, input.value)
+            })
+            await fetch(`/simple-lms/enrollments/${encodeURIComponent(enrollmentId)}/lessons/${encodeURIComponent(lesson.key)}/quiz`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+              body: body.toString(),
+              credentials: 'same-origin'
+            })
+          }
+          window.location.reload()
+        } catch (error) {
+          statusNode.textContent = 'Quiz submission failed. Please try again.'
+          submitting = false
+          if (submitButton) submitButton.disabled = false
+        }
+      }
+
+      document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-action="open-chapter-quiz"]')
+        if (trigger) {
+          openChapterQuiz(trigger.getAttribute('data-chapter-key'))
+          return
+        }
+
+        const close = event.target.closest('[data-action="close-chapter-quiz"]')
+        if (close) {
+          closeModal()
+        }
+      })
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeModal()
+      })
+
+      if (form) {
+        form.addEventListener('submit', submitChapterQuiz)
+      }
+    })()
+  </script>
 </body>
 </html>
 
