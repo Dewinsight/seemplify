@@ -203,6 +203,7 @@ const decoratePublicCourse = (course) => {
     ...course,
     levelLabel: COURSE_LEVEL_LABELS[course?.level] || 'Mixed',
     displayPrice,
+    requiresPayment: paymentMode === 'paid' && amount > 0,
     previewSummary: summary || fallbackSummary || 'No course summary yet.',
     authorName: String(course?.createdByName || '').trim() || 'Learning Team',
     lessonCount: Number.isFinite(Number(course?.lessonCount))
@@ -428,7 +429,9 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       activePage: 'courses',
       course,
       chapters,
-      relatedCourses
+      relatedCourses,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || '')
     })
   } catch (error) {
     console.error('Failed to load public course detail:', error)

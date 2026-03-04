@@ -6,54 +6,30 @@
   <title><%= title %></title>
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
-  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-1">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-1">
   <script src="/js/theme.js?v=2"></script>
 </head>
-<body>
+<body class="public-site public-home-page">
   <%- include('./partials/nav', { user, activePage }) %>
 
   <%
     const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
-    const heroSlides = [
-      {
-        tag: 'Launch',
-        title: 'Learn practical skills with cinematic, real-world context.',
-        copy: 'Preview rich, high-trust course pages before creating an account.',
-        image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1800&q=80',
-        alt: 'Team collaborating in a modern learning environment'
-      },
-      {
-        tag: 'Career',
-        title: 'Move from curiosity to capability with clear learning paths.',
-        copy: 'Structured courses, concise lessons, and measurable outcomes in one place.',
-        image: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1800&q=80',
-        alt: 'Colleagues reviewing a digital upskilling plan'
-      },
-      {
-        tag: 'Creator',
-        title: 'Teach at scale with your own branded course presence.',
-        copy: 'Create chapters, publish visuals, and guide learners like a premium platform.',
-        image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1800&q=80',
-        alt: 'Course creator leading an online training session'
-      }
-    ]
-    const editorialVisuals = {
-      overview: 'https://images.unsplash.com/photo-1501504905252-473c47e087f8?auto=format&fit=crop&w=1400&q=80',
-      learnerPath: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?auto=format&fit=crop&w=1400&q=80',
-      creatorPath: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1400&q=80'
-    }
+    const highlightCourses = Array.isArray(featuredCourses) ? featuredCourses.slice(0, 6) : []
+    const leadCourse = highlightCourses[0] || null
+    const learnerImage = 'https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=1300&q=80'
+    const creatorImage = 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1300&q=80'
     const fallbackCourseVisuals = [
-      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?auto=format&fit=crop&w=900&q=80'
+      'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80'
     ]
     const categoryVisualHints = [
-      { match: ['design', 'ux', 'ui', 'creative', 'brand'], image: 'https://images.unsplash.com/photo-1452802447250-470a88ac82bc?auto=format&fit=crop&w=900&q=80' },
-      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80' },
-      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=900&q=80' },
-      { match: ['marketing', 'sales', 'growth'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=900&q=80' },
-      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80' }
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['communication', 'professional', 'soft'], image: 'https://images.unsplash.com/photo-1573497019236-61f323342eb1?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80' }
     ]
     const courseImageFor = (course, index) => {
       if (course?.banner?.url) return course.banner.url
@@ -61,13 +37,6 @@
       const match = categoryVisualHints.find((entry) => entry.match.some((term) => normalizedCategory.includes(term)))
       if (match?.image) return match.image
       return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
-    }
-    const highlightCourses = Array.isArray(featuredCourses) ? featuredCourses.slice(0, 4) : []
-    const formatEnrollments = (value) => {
-      const count = Number.isFinite(Number(value)) ? Number(value) : 0
-      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
-      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`
-      return String(Math.max(0, Math.round(count)))
     }
     const formatDuration = (minutes) => {
       const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
@@ -78,311 +47,174 @@
       }
       return `${Math.max(0, Math.round(total))}m`
     }
-    const valueProps = [
-      {
-        title: 'Preview before sign-up',
-        copy: 'Learners can inspect curriculum and outcomes before creating an account.'
-      },
-      {
-        title: 'Creator-first publishing',
-        copy: 'Course authors publish chapters, lessons, and banners with a premium feel.'
-      },
-      {
-        title: 'Skill velocity',
-        copy: 'Clear pathways help teams and individuals move from theory to execution quickly.'
-      }
-    ]
   %>
 
-  <main class="public-shell home-shell">
-    <section class="home-hero reveal-item" data-reveal>
-      <div class="home-hero-media" aria-hidden="true">
-        <% heroSlides.forEach((slide, index) => { %>
-          <figure class="home-hero-slide <%= index === 0 ? 'is-active' : '' %>" data-slide-index="<%= index %>">
-            <img src="<%= slide.image %>" alt="<%= slide.alt %>">
-            <div class="home-hero-overlay"></div>
-          </figure>
-        <% }) %>
-      </div>
+  <main class="lmsv-shell">
+    <section class="lmsv-home-hero">
+      <article class="lmsv-surface-card lmsv-home-hero-main">
+        <p class="lmsv-kicker"><%= `${brandLearningName || 'Seemplify Learning'} Home` %></p>
+        <h1 class="lmsv-display">Learn with clarity.<br>Build with confidence.</h1>
+        <p class="lmsv-copy">
+          Start with curated highlights, structured learning lanes, and high-signal previews.
+          Move into the full catalog or workspace in one click.
+        </p>
 
-      <div class="home-hero-layout">
-        <article class="home-hero-content">
-          <p class="public-kicker"><%= `${brandLearningName || 'Seemplify Learning'} Home` %></p>
-          <h1 class="home-hero-title">A real learning homepage, built for momentum and discovery.</h1>
-          <p class="public-subtitle">
-            Start with curated highlights, learning lanes, and high-signal previews.
-            When you are ready to enroll or teach, move into the catalog and workspace in one click.
-          </p>
-          <div class="public-actions">
-            <a href="/courses" class="btn btn-primary">Explore Course Catalog</a>
-            <% if (user) { %>
-              <a href="/simple-lms" class="btn btn-secondary">Open Learning Workspace</a>
-            <% } else { %>
-              <a href="<%= learnRegisterHref %>" class="btn btn-secondary">Create Account</a>
-            <% } %>
-            <a href="<%= teachCtaHref %>" class="btn btn-secondary"><%= `Teach on ${teachBrand}` %></a>
-          </div>
-          <div class="home-hero-tabs" role="tablist" aria-label="Homepage spotlight rotations">
-            <% heroSlides.forEach((slide, index) => { %>
-              <button
-                type="button"
-                class="home-hero-tab <%= index === 0 ? 'is-active' : '' %>"
-                data-target-slide="<%= index %>"
-                role="tab"
-                aria-selected="<%= index === 0 ? 'true' : 'false' %>">
-                <span><%= slide.tag %></span>
-                <strong><%= slide.title %></strong>
-              </button>
+        <div class="lmsv-actions">
+          <a href="/courses" class="btn btn-primary">Explore Course Catalog</a>
+          <% if (user) { %>
+            <a href="/simple-lms" class="btn btn-secondary">Open Workspace</a>
+          <% } else { %>
+            <a href="<%= learnRegisterHref %>" class="btn btn-secondary">Create Account</a>
+          <% } %>
+        </div>
+
+        <div class="lmsv-mini-grid">
+          <article class="lmsv-mini-card">
+            <p class="lmsv-mini-kicker">Launch</p>
+            <p>Learn practical skills with real-world context and outcomes.</p>
+          </article>
+          <article class="lmsv-mini-card">
+            <p class="lmsv-mini-kicker">Career</p>
+            <p>Move from curiosity to capability with clear learning paths.</p>
+          </article>
+          <article class="lmsv-mini-card">
+            <p class="lmsv-mini-kicker">Creator</p>
+            <p>Teach at scale and build your brand with premium course presence.</p>
+          </article>
+        </div>
+
+        <% if (topCategories && topCategories.length > 0) { %>
+          <div class="lmsv-chip-row" aria-label="Popular learning lanes">
+            <% topCategories.slice(0, 8).forEach((category) => { %>
+              <a href="/courses?category=<%= encodeURIComponent(category.name) %>" class="lmsv-chip">
+                <span><%= category.name %></span>
+                <strong><%= category.count %></strong>
+              </a>
             <% }) %>
           </div>
-        </article>
+        <% } %>
+      </article>
 
-        <aside class="home-hero-aside">
-          <article class="home-card-glass">
-            <p class="public-kicker">Platform Pulse</p>
-            <div class="home-stat-grid">
-              <div class="home-stat-item">
-                <p class="home-stat-label">Published Courses</p>
-                <p class="home-stat-value"><%= totalCourses %></p>
-              </div>
-              <div class="home-stat-item">
-                <p class="home-stat-label">Total Lessons</p>
-                <p class="home-stat-value"><%= totalLessons %></p>
-              </div>
-              <div class="home-stat-item">
-                <p class="home-stat-label">Learning Hours</p>
-                <p class="home-stat-value"><%= totalDurationHours %></p>
-              </div>
+      <aside class="lmsv-home-hero-side">
+        <article class="lmsv-surface-card lmsv-pulse-card">
+          <p class="lmsv-kicker">Platform Pulse</p>
+          <div class="lmsv-pulse-list">
+            <div class="lmsv-pulse-row">
+              <span>Published Courses</span>
+              <strong><%= totalCourses %></strong>
             </div>
-          </article>
-
-          <article class="home-card-glass home-next-card">
-            <% if (highlightCourses.length > 0) { %>
-              <% const leadCourse = highlightCourses[0] %>
-              <p class="public-kicker">Start Here</p>
-              <h2><%= leadCourse.title %></h2>
-              <p><%= leadCourse.previewSummary %></p>
-              <div class="home-next-meta">
-                <span><%= leadCourse.levelLabel %></span>
-                <span><%= `${leadCourse.lessonCount} lessons` %></span>
-                <span><%= formatDuration(leadCourse.estimatedDurationMinutes) %></span>
-              </div>
-              <a href="<%= courseHref(leadCourse) %>" class="btn btn-secondary btn-sm">View Highlighted Course</a>
-            <% } else { %>
-              <p class="public-kicker">Start Here</p>
-              <h2>New courses are publishing soon.</h2>
-              <p>Catalog previews stay public. Create an account only when you are ready to enroll.</p>
-              <a href="/courses" class="btn btn-secondary btn-sm">Browse Catalog</a>
-            <% } %>
-          </article>
-        </aside>
-      </div>
-    </section>
-
-    <section class="home-personas reveal-item" data-reveal>
-      <article class="home-persona-card">
-        <div class="home-persona-media">
-          <img src="<%= editorialVisuals.learnerPath %>" alt="Learner studying with notes and laptop">
-        </div>
-        <div class="home-persona-body">
-          <p class="public-kicker">For Learners</p>
-          <h3>Find a course path and start at your own pace.</h3>
-          <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
-          <div class="public-actions">
-            <a href="/courses" class="btn btn-primary btn-sm">Browse Courses</a>
-            <% if (!user) { %>
-              <a href="<%= learnRegisterHref %>" class="btn btn-secondary btn-sm">Create Learner Account</a>
-            <% } else { %>
-              <a href="/simple-lms?view=my-learning" class="btn btn-secondary btn-sm">Go to My Learning</a>
-            <% } %>
+            <div class="lmsv-pulse-row">
+              <span>Total Lessons</span>
+              <strong><%= totalLessons %></strong>
+            </div>
+            <div class="lmsv-pulse-row">
+              <span>Learning Hours</span>
+              <strong><%= totalDurationHours %></strong>
+            </div>
           </div>
-        </div>
-      </article>
-
-      <article class="home-persona-card">
-        <div class="home-persona-media">
-          <img src="<%= editorialVisuals.creatorPath %>" alt="Instructor planning course modules on screen">
-        </div>
-        <div class="home-persona-body">
-          <p class="public-kicker">For Creators</p>
-          <h3>Publish polished courses and grow your audience.</h3>
-          <p>Build chapters, lessons, and quizzes with a guided onboarding flow from day one.</p>
-          <div class="public-actions">
-            <a href="<%= teachCtaHref %>" class="btn btn-primary btn-sm"><%= `Teach on ${teachBrand}` %></a>
-            <a href="/teach" class="btn btn-secondary btn-sm">View Creator Guide</a>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <section class="home-value-strip reveal-item" data-reveal>
-      <% valueProps.forEach((item) => { %>
-        <article class="home-value-card">
-          <h3><%= item.title %></h3>
-          <p><%= item.copy %></p>
         </article>
-      <% }) %>
+
+        <article class="lmsv-surface-card lmsv-highlight-card">
+          <p class="lmsv-kicker">Start Here</p>
+          <% if (leadCourse) { %>
+            <h2><%= leadCourse.title %></h2>
+            <p><%= leadCourse.previewSummary %></p>
+            <div class="lmsv-pill-row">
+              <span><%= leadCourse.levelLabel %></span>
+              <span><%= `${leadCourse.lessonCount} lessons` %></span>
+              <span><%= formatDuration(leadCourse.estimatedDurationMinutes) %></span>
+            </div>
+            <a href="<%= courseHref(leadCourse) %>" class="btn btn-secondary">View Highlighted Course</a>
+          <% } else { %>
+            <h2>New public courses are publishing soon.</h2>
+            <p>Create an account when you are ready to enroll or publish your own course.</p>
+            <a href="/courses" class="btn btn-secondary">Browse Catalog</a>
+          <% } %>
+        </article>
+      </aside>
     </section>
 
-    <section class="home-story reveal-item" data-reveal>
-      <article class="home-story-copy">
-        <p class="public-kicker">How It Works</p>
-        <h2 class="public-surface-title">Discover a course, preview the content, then enroll when ready.</h2>
-        <p class="public-subtitle">
-          Browse public courses, compare outcomes, and start learning only when you decide.
-          If you want to publish, the same account gives you access to course setup and submission.
-        </p>
-        <ul class="home-story-list">
-          <li>Explore <%= totalCourses %> published courses with transparent pricing</li>
-          <li>Preview lessons and course structure before creating an account</li>
-          <li>Use one account to learn courses and publish your own courses</li>
-        </ul>
-      </article>
-      <article class="home-story-media">
-        <img src="<%= editorialVisuals.overview %>" alt="Learning workspace with analytics and training notes">
-      </article>
-    </section>
+    <section class="lmsv-section">
+      <header class="lmsv-section-head lmsv-section-head-center">
+        <h2>Built for every learning journey</h2>
+      </header>
 
-    <% if (topCategories && topCategories.length > 0) { %>
-      <section class="home-lanes reveal-item" data-reveal>
-        <div class="public-surface-head">
-          <div>
-            <h2 class="public-surface-title">Learning Lanes</h2>
-            <p class="public-surface-subtitle">Popular categories shaping current skill demand.</p>
+      <div class="lmsv-persona-grid">
+        <article class="lmsv-persona-card">
+          <div class="lmsv-persona-media">
+            <img src="<%= learnerImage %>" alt="Learner collaborating on a laptop">
           </div>
-          <a href="/courses" class="btn btn-secondary btn-sm">Open Full Catalog</a>
-        </div>
-        <div class="home-lane-chips">
-          <% topCategories.forEach((category) => { %>
-            <a href="/courses?category=<%= encodeURIComponent(category.name) %>" class="home-lane-chip">
-              <span><%= category.name %></span>
-              <strong><%= category.count %></strong>
-            </a>
-          <% }) %>
-        </div>
-      </section>
-    <% } %>
+          <div class="lmsv-persona-body">
+            <p class="lmsv-kicker">For Learners</p>
+            <h3>Find a course path and start at your own pace.</h3>
+            <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
+            <div class="lmsv-actions">
+              <a href="/courses" class="btn btn-primary btn-sm">Browse Courses</a>
+              <% if (!user) { %>
+                <a href="<%= learnRegisterHref %>" class="btn btn-secondary btn-sm">Create Account</a>
+              <% } else { %>
+                <a href="/simple-lms?view=my-learning" class="btn btn-secondary btn-sm">My Learning</a>
+              <% } %>
+            </div>
+          </div>
+        </article>
 
-    <section class="home-featured reveal-item" data-reveal>
-      <div class="public-surface-head">
-        <div>
-          <h2 class="public-surface-title">Featured Right Now</h2>
-          <p class="public-surface-subtitle">High-signal highlights from the catalog, curated for quick decisions.</p>
-        </div>
-        <a href="/courses" class="btn btn-secondary btn-sm">See Every Course</a>
+        <article class="lmsv-persona-card">
+          <div class="lmsv-persona-media">
+            <img src="<%= creatorImage %>" alt="Course creators planning content together">
+          </div>
+          <div class="lmsv-persona-body">
+            <p class="lmsv-kicker">For Creators</p>
+            <h3>Publish polished courses and grow your audience.</h3>
+            <p>Build chapters, lessons, and quizzes with guided onboarding from day one.</p>
+            <div class="lmsv-actions">
+              <a href="<%= teachCtaHref %>" class="btn btn-primary btn-sm"><%= `Teach on ${teachBrand}` %></a>
+              <a href="/teach" class="btn btn-secondary btn-sm">Creator Guide</a>
+            </div>
+          </div>
+        </article>
       </div>
+    </section>
+
+    <section class="lmsv-section lmsv-catalog-strip">
+      <header class="lmsv-section-head">
+        <div>
+          <h2>Available Courses</h2>
+          <p>Explore our curated selection of high-impact learning paths.</p>
+        </div>
+        <span class="lmsv-count-pill"><%= `${highlightCourses.length} courses shown` %></span>
+      </header>
 
       <% if (!highlightCourses || highlightCourses.length === 0) { %>
-        <div class="empty-state">
-          No public courses are available yet.
-        </div>
+        <div class="empty-state">No public courses are available yet.</div>
       <% } else { %>
-        <div class="home-featured-grid">
+        <div class="lmsv-course-grid">
           <% highlightCourses.forEach((course, index) => { %>
-            <article class="home-course-card">
-              <a class="home-course-media" href="<%= courseHref(course) %>">
+            <article class="lmsv-course-card">
+              <a href="<%= courseHref(course) %>" class="lmsv-course-media">
                 <img src="<%= courseImageFor(course, index) %>" alt="<%= course.title %> banner">
-                <span class="home-course-badge"><%= course.levelLabel %></span>
-                <span class="home-course-price"><%= course.displayPrice %></span>
+                <span class="lmsv-level-pill"><%= course.levelLabel %></span>
               </a>
-              <div class="home-course-body">
-                <div class="home-course-meta">
-                  <% if (course.category) { %>
-                    <span><%= course.category %></span>
-                  <% } %>
+              <div class="lmsv-course-body">
+                <div class="lmsv-pill-row lmsv-pill-row-muted">
+                  <% if (course.category) { %><span><%= course.category %></span><% } %>
                   <span><%= `${course.lessonCount} lessons` %></span>
                   <span><%= formatDuration(course.estimatedDurationMinutes) %></span>
                 </div>
                 <h3><a href="<%= courseHref(course) %>"><%= course.title %></a></h3>
                 <p><%= course.previewSummary %></p>
-                <div class="home-course-footer">
-                  <span><%= course.authorName %></span>
-                  <span><%= `${formatEnrollments(course.enrollmentCount)} learners` %></span>
+                <div class="lmsv-course-foot">
+                  <span class="lmsv-price-tag"><%= course.displayPrice %></span>
+                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details</a>
                 </div>
-                <a href="<%= courseHref(course) %>" class="btn btn-secondary btn-sm">Open Course Page</a>
               </div>
             </article>
           <% }) %>
         </div>
       <% } %>
     </section>
-
   </main>
 
-  <script>
-    (() => {
-      const revealNodes = Array.from(document.querySelectorAll('[data-reveal]'))
-      if (revealNodes.length && 'IntersectionObserver' in window) {
-        document.documentElement.classList.add('reveal-ready')
-        const revealObserver = new IntersectionObserver((entries, observer) => {
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) return
-            entry.target.classList.add('is-visible')
-            observer.unobserve(entry.target)
-          })
-        }, {
-          threshold: 0.14,
-          rootMargin: '0px 0px -8% 0px'
-        })
-        revealNodes.forEach((node) => revealObserver.observe(node))
-      }
-
-      const hero = document.querySelector('.home-hero')
-      const slides = Array.from(document.querySelectorAll('.home-hero-slide'))
-      const tabs = Array.from(document.querySelectorAll('.home-hero-tab'))
-      if (!hero || !slides.length || !tabs.length) return
-
-      let activeIndex = 0
-      let timerId = null
-
-      const setActive = (index) => {
-        activeIndex = (index + slides.length) % slides.length
-        slides.forEach((slide, slideIndex) => {
-          slide.classList.toggle('is-active', slideIndex === activeIndex)
-        })
-        tabs.forEach((tab, tabIndex) => {
-          const active = tabIndex === activeIndex
-          tab.classList.toggle('is-active', active)
-          tab.setAttribute('aria-selected', active ? 'true' : 'false')
-        })
-      }
-
-      const stopRotation = () => {
-        if (timerId) {
-          window.clearInterval(timerId)
-          timerId = null
-        }
-      }
-
-      const startRotation = () => {
-        stopRotation()
-        timerId = window.setInterval(() => {
-          setActive(activeIndex + 1)
-        }, 6200)
-      }
-
-      tabs.forEach((tab) => {
-        tab.addEventListener('click', () => {
-          const index = Number(tab.dataset.targetSlide)
-          if (!Number.isFinite(index)) return
-          setActive(index)
-          startRotation()
-        })
-        tab.addEventListener('focus', () => {
-          const index = Number(tab.dataset.targetSlide)
-          if (!Number.isFinite(index)) return
-          setActive(index)
-        })
-      })
-
-      hero.addEventListener('mouseenter', stopRotation)
-      hero.addEventListener('mouseleave', startRotation)
-      hero.addEventListener('focusin', stopRotation)
-      hero.addEventListener('focusout', startRotation)
-
-      setActive(0)
-      startRotation()
-    })()
-  </script>
+  <%- include('./partials/public-footer') %>
 </body>
 </html>

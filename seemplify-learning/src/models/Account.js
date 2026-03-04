@@ -153,6 +153,51 @@ const AccountSchema = new mongoose.Schema({
     },
     updatedAt: Date
   },
+  creatorSettings: {
+    defaultCategory: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: ''
+    },
+    defaultLevel: {
+      type: String,
+      enum: ['beginner', 'intermediate', 'advanced', 'mixed'],
+      default: 'mixed'
+    },
+    defaultVisibility: {
+      type: String,
+      enum: ['private', 'public'],
+      default: 'private'
+    },
+    defaultPaymentMode: {
+      type: String,
+      enum: ['free', 'paid'],
+      default: 'free'
+    },
+    defaultCurrency: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 3,
+      default: 'NGN'
+    },
+    preferredLessonDurationMinutes: {
+      type: Number,
+      min: 1,
+      max: 600,
+      default: 12
+    },
+    autoLoadSampleCurriculum: {
+      type: Boolean,
+      default: false
+    },
+    showCreatorTips: {
+      type: Boolean,
+      default: true
+    },
+    updatedAt: Date
+  },
   organizations: {
     type: [organizationMembershipSchema],
     default: []

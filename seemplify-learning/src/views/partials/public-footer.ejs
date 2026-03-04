@@ -1,0 +1,49 @@
+<%
+  const footerBrandName = typeof brandName === 'string' && brandName.trim()
+    ? brandName.trim()
+    : 'Seemplify'
+  const footerLearningName = typeof brandLearningName === 'string' && brandLearningName.trim()
+    ? brandLearningName.trim()
+    : `${footerBrandName} Learning`
+  const footerTeachBrand = typeof teachBrand === 'string' && teachBrand.trim()
+    ? teachBrand.trim()
+    : footerBrandName
+%>
+<footer class="lmsv-footer">
+  <div class="lmsv-footer-wave" aria-hidden="true"></div>
+  <div class="lmsv-footer-inner">
+    <div class="lmsv-footer-brand">
+      <div class="lmsv-footer-mark">A</div>
+      <div>
+        <h2><%= footerBrandName %></h2>
+        <p>Learn with clarity. Build with confidence.</p>
+        <p class="lmsv-footer-note">The premier platform for practical skill development.</p>
+      </div>
+    </div>
+
+    <div class="lmsv-footer-links">
+      <div>
+        <h3>Platform</h3>
+        <a href="/courses">Explore Courses</a>
+        <a href="/teach"><%= `Teach on ${footerTeachBrand}` %></a>
+        <a href="/simple-lms">Learning Workspace</a>
+      </div>
+      <div>
+        <h3>Resources</h3>
+        <a href="/teach">Creator Guide</a>
+        <a href="/courses">Course Catalog</a>
+        <a href="/register">Create Account</a>
+      </div>
+      <div>
+        <h3>Legal</h3>
+        <a href="/">Terms</a>
+        <a href="/">Privacy</a>
+        <a href="/login">Help Center</a>
+      </div>
+    </div>
+  </div>
+  <div class="lmsv-footer-bottom">
+    <span><%= `© ${new Date().getFullYear()} ${footerLearningName}. All rights reserved.` %></span>
+    <span>Designed for learners and creators everywhere.</span>
+  </div>
+</footer>

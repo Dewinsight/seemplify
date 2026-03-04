@@ -8,6 +8,7 @@ import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
 import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting.js'
+import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
 
@@ -32,6 +33,34 @@ const LEVEL_LABELS = Object.freeze({
   intermediate: 'Intermediate',
   advanced: 'Advanced',
   mixed: 'Mixed'
+})
+
+const PLATFORM_SETTING_DEFAULTS = Object.freeze({
+  defaultCurrency: 'NGN',
+  defaultPaymentMode: 'free',
+  defaultCourseVisibility: 'private',
+  defaultCourseStatus: 'draft',
+  requirePublicReviewForCreators: true,
+  allowExternalMediaEmbeds: true,
+  allowAudioLessons: true,
+  minCoursePriceMinor: 0,
+  maxCoursePriceMinor: 50000000,
+  analyticsLookbackDays: 30,
+  homepageFeaturedCourseLimit: 8,
+  maintenanceMode: false,
+  maintenanceMessage: '',
+  creatorSubmissionGuidelines: ''
+})
+
+const CREATOR_SETTING_DEFAULTS = Object.freeze({
+  defaultCategory: '',
+  defaultLevel: 'mixed',
+  defaultVisibility: 'private',
+  defaultPaymentMode: 'free',
+  defaultCurrency: 'NGN',
+  preferredLessonDurationMinutes: 12,
+  autoLoadSampleCurriculum: false,
+  showCreatorTips: true
 })
 
 const toIdString = (value) => {
@@ -80,6 +109,68 @@ const normalizeCurrencyCode = (value, fallback = 'NGN') => {
   const fallbackCurrency = String(fallback || 'NGN').trim().toUpperCase().slice(0, 3)
   if (CURRENCY_CODES.includes(fallbackCurrency)) return fallbackCurrency
   return 'NGN'
+}
+
+const normalizeCreatorSettings = (raw = {}) => {
+  const defaultLevel = LEVELS.includes(String(raw?.defaultLevel || '').trim().toLowerCase())
+    ? String(raw.defaultLevel).trim().toLowerCase()
+    : CREATOR_SETTING_DEFAULTS.defaultLevel
+
+  const defaultVisibility = ['private', 'public'].includes(String(raw?.defaultVisibility || '').trim().toLowerCase())
+    ? String(raw.defaultVisibility).trim().toLowerCase()
+    : CREATOR_SETTING_DEFAULTS.defaultVisibility
+
+  const defaultPaymentMode = ['free', 'paid'].includes(String(raw?.defaultPaymentMode || '').trim().toLowerCase())
+    ? String(raw.defaultPaymentMode).trim().toLowerCase()
+    : CREATOR_SETTING_DEFAULTS.defaultPaymentMode
+
+  return {
+    defaultCategory: String(raw?.defaultCategory || '').trim().slice(0, 120),
+    defaultLevel,
+    defaultVisibility,
+    defaultPaymentMode,
+    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, CREATOR_SETTING_DEFAULTS.defaultCurrency),
+    preferredLessonDurationMinutes: Math.min(600, Math.max(1, Math.round(Number(raw?.preferredLessonDurationMinutes || CREATOR_SETTING_DEFAULTS.preferredLessonDurationMinutes)))),
+    autoLoadSampleCurriculum: Boolean(raw?.autoLoadSampleCurriculum),
+    showCreatorTips: raw?.showCreatorTips !== false
+  }
+}
+
+const normalizePlatformSettings = (raw = {}) => {
+  const defaultPaymentMode = ['free', 'paid'].includes(String(raw?.defaultPaymentMode || '').trim().toLowerCase())
+    ? String(raw.defaultPaymentMode).trim().toLowerCase()
+    : PLATFORM_SETTING_DEFAULTS.defaultPaymentMode
+
+  const defaultCourseVisibility = ['private', 'public', 'marketplace'].includes(String(raw?.defaultCourseVisibility || '').trim().toLowerCase())
+    ? String(raw.defaultCourseVisibility).trim().toLowerCase()
+    : PLATFORM_SETTING_DEFAULTS.defaultCourseVisibility
+
+  const defaultCourseStatus = ['draft', 'published'].includes(String(raw?.defaultCourseStatus || '').trim().toLowerCase())
+    ? String(raw.defaultCourseStatus).trim().toLowerCase()
+    : PLATFORM_SETTING_DEFAULTS.defaultCourseStatus
+
+  const minCoursePriceMinor = Math.max(0, Math.round(Number(raw?.minCoursePriceMinor ?? PLATFORM_SETTING_DEFAULTS.minCoursePriceMinor)))
+  let maxCoursePriceMinor = Math.max(minCoursePriceMinor, Math.round(Number(raw?.maxCoursePriceMinor ?? PLATFORM_SETTING_DEFAULTS.maxCoursePriceMinor)))
+  if (!Number.isFinite(maxCoursePriceMinor) || maxCoursePriceMinor <= 0) {
+    maxCoursePriceMinor = PLATFORM_SETTING_DEFAULTS.maxCoursePriceMinor
+  }
+
+  return {
+    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, PLATFORM_SETTING_DEFAULTS.defaultCurrency),
+    defaultPaymentMode,
+    defaultCourseVisibility,
+    defaultCourseStatus,
+    requirePublicReviewForCreators: raw?.requirePublicReviewForCreators !== false,
+    allowExternalMediaEmbeds: raw?.allowExternalMediaEmbeds !== false,
+    allowAudioLessons: raw?.allowAudioLessons !== false,
+    minCoursePriceMinor,
+    maxCoursePriceMinor,
+    analyticsLookbackDays: Math.min(365, Math.max(7, Math.round(Number(raw?.analyticsLookbackDays ?? PLATFORM_SETTING_DEFAULTS.analyticsLookbackDays)))),
+    homepageFeaturedCourseLimit: Math.min(24, Math.max(1, Math.round(Number(raw?.homepageFeaturedCourseLimit ?? PLATFORM_SETTING_DEFAULTS.homepageFeaturedCourseLimit)))),
+    maintenanceMode: Boolean(raw?.maintenanceMode),
+    maintenanceMessage: String(raw?.maintenanceMessage || '').trim().slice(0, 500),
+    creatorSubmissionGuidelines: String(raw?.creatorSubmissionGuidelines || '').trim().slice(0, 3000)
+  }
 }
 
 const formatCurrencyAmount = (amountMinor, currencyCode) => {
@@ -134,6 +225,12 @@ const getCommissionSettings = async () => {
   }
 }
 
+const getPlatformSettings = async () => {
+  const raw = await SimpleLmsPlatformSetting.findOne({}).lean()
+  if (!raw) return normalizePlatformSettings(PLATFORM_SETTING_DEFAULTS)
+  return normalizePlatformSettings(raw)
+}
+
 const resolveCommissionRate = ({ settings, creatorId, courseId }) => {
   const globalRate = normalizeCommissionRate(settings?.globalRatePercent, 70)
   const normalizedCreatorId = toIdString(creatorId)
@@ -161,9 +258,11 @@ const isCoursePaidContent = (course) => {
 }
 
 const buildAppBaseUrl = (req) => {
+  const requestBaseUrl = `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '')
+  const forceConfiguredBase = String(process.env.APP_BASE_URL_FORCE || '').trim().toLowerCase() === 'true'
   const configured = String(process.env.APP_BASE_URL || '').trim()
-  if (configured) return configured.replace(/\/+$/, '')
-  return `${req.protocol}://${req.get('host')}`
+  if (forceConfiguredBase && configured) return configured.replace(/\/+$/, '')
+  return requestBaseUrl
 }
 
 const parseTags = (value) => String(value || '')
@@ -529,30 +628,58 @@ const sanitizeChaptersInput = (input) => {
   return chapters
 }
 
-const parseCoursePayload = ({ body, role, existingCourse = null }) => {
+const parseCoursePayload = ({
+  body,
+  role,
+  existingCourse = null,
+  creatorSettings = CREATOR_SETTING_DEFAULTS,
+  platformSettings = PLATFORM_SETTING_DEFAULTS
+}) => {
   const title = String(body.title || '').trim()
   if (!title) {
     throw new Error('Course title is required.')
   }
 
-  const level = LEVELS.includes(String(body.level || '').trim()) ? String(body.level).trim() : 'mixed'
-  const requestedStatus = parseCourseStatus(body.status || existingCourse?.status || 'draft', 'draft')
-  const requiresApproval = !canManagePlatform(role)
+  const normalizedCreatorSettings = normalizeCreatorSettings(creatorSettings)
+  const normalizedPlatformSettings = normalizePlatformSettings(platformSettings)
+  const level = LEVELS.includes(String(body.level || '').trim())
+    ? String(body.level).trim()
+    : (existingCourse?.level || normalizedCreatorSettings.defaultLevel || 'mixed')
+  const requestedStatus = parseCourseStatus(
+    body.status || existingCourse?.status || normalizedPlatformSettings.defaultCourseStatus || 'draft',
+    'draft'
+  )
+  const requiresApproval = !canManagePlatform(role) && normalizedPlatformSettings.requirePublicReviewForCreators
   const status = (requestedStatus === 'published' && requiresApproval)
     ? 'pending_public_review'
     : requestedStatus
-  const visibility = normalizeVisibility(body.visibility || existingCourse?.visibility, role)
+  const visibilityInput = body.visibility
+    || existingCourse?.visibility
+    || normalizedCreatorSettings.defaultVisibility
+    || normalizedPlatformSettings.defaultCourseVisibility
+  const visibility = normalizeVisibility(visibilityInput, role)
   const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []))
   const bannerPayload = parseJsonInput(body.bannerPayload, {})
-  const paymentMode = String(body.paymentMode || '').trim() === 'paid' ? 'paid' : 'free'
-  const amount = paymentMode === 'paid' ? Math.max(0, Math.round(Number(body.amount || 0))) : 0
-  const currency = normalizeCurrencyCode(body.currency, existingCourse?.pricing?.currency || 'NGN')
+  const paymentModeInput = String(
+    body.paymentMode
+    || existingCourse?.pricing?.paymentMode
+    || normalizedCreatorSettings.defaultPaymentMode
+    || normalizedPlatformSettings.defaultPaymentMode
+  ).trim().toLowerCase()
+  const paymentMode = paymentModeInput === 'paid' ? 'paid' : 'free'
+  let amount = paymentMode === 'paid' ? Math.max(0, Math.round(Number(body.amount || existingCourse?.pricing?.amount || 0))) : 0
+  amount = Math.max(normalizedPlatformSettings.minCoursePriceMinor, Math.min(amount, normalizedPlatformSettings.maxCoursePriceMinor))
+  const currency = normalizeCurrencyCode(
+    body.currency,
+    existingCourse?.pricing?.currency || normalizedCreatorSettings.defaultCurrency || normalizedPlatformSettings.defaultCurrency || 'NGN'
+  )
+  const category = String(body.category || '').trim().slice(0, 120)
 
   const payload = {
     title: title.slice(0, 200),
     summary: String(body.summary || '').trim().slice(0, 600),
     description: String(body.description || '').trim().slice(0, 16000),
-    category: String(body.category || '').trim().slice(0, 120),
+    category: category || (existingCourse ? existingCourse.category : normalizedCreatorSettings.defaultCategory || ''),
     level,
     tags: parseTags(body.tags),
     status,
@@ -702,6 +829,134 @@ const decorateProgram = (program, courseLookupMap = new Map()) => {
   }
 }
 
+const sanitizeInternalPath = (value, fallback = '/simple-lms?view=catalog') => {
+  const candidate = String(value || '').trim()
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//')) {
+    return fallback
+  }
+  return candidate
+}
+
+const findPublicCourseForLearning = async (courseId) => {
+  if (!mongoose.Types.ObjectId.isValid(courseId)) return null
+  return SimpleLmsCourse.findOne({
+    _id: courseId,
+    isActive: true,
+    status: 'published',
+    visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+  }).lean()
+}
+
+const initiateCoursePaymentCheckout = async ({
+  req,
+  res,
+  course,
+  fallbackPath = '/simple-lms?view=catalog',
+  nextPath = null
+}) => {
+  if (!course || !course._id) {
+    return redirectWithMessage({
+      res,
+      path: fallbackPath,
+      error: 'Course not found or unavailable.'
+    })
+  }
+
+  if (!isFlutterwaveConfigured()) {
+    return redirectWithMessage({
+      res,
+      path: fallbackPath,
+      error: 'Flutterwave is not configured yet. Contact an admin.'
+    })
+  }
+
+  if (!isCoursePaidContent(course)) {
+    return res.redirect(`/simple-lms/take/${course._id}`)
+  }
+
+  const existingSuccessfulPayment = await SimpleLmsPayment.findOne({
+    account: req.user._id,
+    course: course._id,
+    status: 'successful'
+  })
+    .select('_id')
+    .lean()
+
+  if (existingSuccessfulPayment) {
+    return redirectWithMessage({
+      res,
+      path: `/simple-lms/take/${course._id}`,
+      success: 'Payment already completed for this course.'
+    })
+  }
+
+  const txRef = generateTxRef()
+  const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
+  const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
+  const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
+  const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
+
+  const payment = await SimpleLmsPayment.create({
+    account: req.user._id,
+    course: course._id,
+    creatorAccount: course.createdBy || null,
+    txRef,
+    amountMinor,
+    currency,
+    provider: 'flutterwave',
+    status: 'initiated',
+    customerEmail: req.user.email || '',
+    customerName: req.user.profile?.name || req.user.email || 'Learner',
+    metadata: {
+      nextPath: finalNextPath,
+      fallbackPath: finalFallbackPath
+    }
+  })
+
+  try {
+    const redirectUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/flutterwave/callback`
+    const checkout = await createFlutterwavePaymentLink({
+      txRef,
+      amountMinor,
+      currency,
+      redirectUrl,
+      customerEmail: req.user.email || '',
+      customerName: req.user.profile?.name || req.user.email || 'Learner',
+      title: `Course Payment - ${course.title}`,
+      description: `Payment for ${course.title}`
+    })
+
+    payment.checkoutUrl = checkout.link
+    payment.status = 'pending'
+    payment.flutterwaveStatus = 'pending'
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      nextPath: finalNextPath,
+      fallbackPath: finalFallbackPath,
+      initResponse: checkout.raw
+    }
+    await payment.save()
+
+    return res.redirect(checkout.link)
+  } catch (error) {
+    payment.status = 'failed'
+    payment.flutterwaveStatus = 'init_error'
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      nextPath: finalNextPath,
+      fallbackPath: finalFallbackPath,
+      initError: String(error?.message || 'Failed to initialize payment')
+    }
+    await payment.save()
+
+    return redirectWithMessage({
+      res,
+      path: fallbackPath,
+      error: error.message || 'Failed to initialize payment checkout.'
+    })
+  }
+}
+
 pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
   try {
     const courseId = String(req.params.courseId || '').trim()
@@ -709,12 +964,7 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
       return res.redirect('/courses')
     }
 
-    const course = await SimpleLmsCourse.findOne({
-      _id: courseId,
-      isActive: true,
-      status: 'published',
-      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
-    }).lean()
+    const course = await findPublicCourseForLearning(courseId)
 
     if (!course) return res.redirect('/courses')
 
@@ -725,11 +975,9 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
         status: 'successful'
       })
       if (!hasSuccessfulPayment) {
-        return redirectWithMessage({
-          res,
-          path: '/simple-lms?view=catalog',
-          error: `Payment required before starting "${course.title}".`
-        })
+        return res.redirect(
+          `/simple-lms/courses/${course._id}/pay?next=${encodeURIComponent(`/simple-lms/take/${course._id}`)}`
+        )
       }
     }
 
@@ -763,112 +1011,25 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
   }
 })
 
-pageRouter.post('/courses/:courseId/pay', requirePageAuth, async (req, res) => {
+const handleCoursePayRequest = async (req, res) => {
   try {
-    if (!isFlutterwaveConfigured()) {
-      return redirectWithMessage({
-        res,
-        path: '/simple-lms?view=catalog',
-        error: 'Flutterwave is not configured yet. Contact an admin.'
-      })
-    }
-
     const courseId = String(req.params.courseId || '').trim()
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return redirectWithMessage({
-        res,
-        path: '/simple-lms?view=catalog',
-        error: 'Invalid course selected for payment.'
-      })
-    }
+    const course = await findPublicCourseForLearning(courseId)
+    const defaultFallback = '/simple-lms?view=catalog'
+    const publicFallback = course
+      ? `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+      : '/courses'
+    const fallbackPath = req.method === 'GET' ? publicFallback : defaultFallback
+    const nextPathInput = req.body?.next || req.query?.next || `/simple-lms/take/${courseId}`
+    const nextPath = sanitizeInternalPath(nextPathInput, `/simple-lms/take/${courseId}`)
 
-    const course = await SimpleLmsCourse.findOne({
-      _id: courseId,
-      isActive: true,
-      status: 'published',
-      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
-    }).lean()
-
-    if (!course) {
-      return redirectWithMessage({
-        res,
-        path: '/simple-lms?view=catalog',
-        error: 'Course not found or unavailable.'
-      })
-    }
-
-    if (!isCoursePaidContent(course)) {
-      return res.redirect(`/simple-lms/take/${course._id}`)
-    }
-
-    const existingSuccessfulPayment = await SimpleLmsPayment.findOne({
-      account: req.user._id,
-      course: course._id,
-      status: 'successful'
+    return initiateCoursePaymentCheckout({
+      req,
+      res,
+      course,
+      fallbackPath,
+      nextPath
     })
-      .select('_id')
-      .lean()
-
-    if (existingSuccessfulPayment) {
-      return redirectWithMessage({
-        res,
-        path: `/simple-lms/take/${course._id}`,
-        success: 'Payment already completed for this course.'
-      })
-    }
-
-    const txRef = generateTxRef()
-    const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
-    const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
-    const payment = await SimpleLmsPayment.create({
-      account: req.user._id,
-      course: course._id,
-      creatorAccount: course.createdBy || null,
-      txRef,
-      amountMinor,
-      currency,
-      provider: 'flutterwave',
-      status: 'initiated',
-      customerEmail: req.user.email || '',
-      customerName: req.user.profile?.name || req.user.email || 'Learner'
-    })
-
-    try {
-      const redirectUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/flutterwave/callback`
-      const checkout = await createFlutterwavePaymentLink({
-        txRef,
-        amountMinor,
-        currency,
-        redirectUrl,
-        customerEmail: req.user.email || '',
-        customerName: req.user.profile?.name || req.user.email || 'Learner',
-        title: `Course Payment - ${course.title}`,
-        description: `Payment for ${course.title}`
-      })
-
-      payment.checkoutUrl = checkout.link
-      payment.status = 'pending'
-      payment.flutterwaveStatus = 'pending'
-      payment.metadata = {
-        initResponse: checkout.raw
-      }
-      await payment.save()
-
-      return res.redirect(checkout.link)
-    } catch (error) {
-      payment.status = 'failed'
-      payment.flutterwaveStatus = 'init_error'
-      payment.metadata = {
-        initError: String(error?.message || 'Failed to initialize payment')
-      }
-      await payment.save()
-
-      return redirectWithMessage({
-        res,
-        path: '/simple-lms?view=catalog',
-        error: error.message || 'Failed to initialize payment checkout.'
-      })
-    }
   } catch (error) {
     console.error('Create payment error:', error)
     return redirectWithMessage({
@@ -877,7 +1038,10 @@ pageRouter.post('/courses/:courseId/pay', requirePageAuth, async (req, res) => {
       error: 'Could not start payment for this course.'
     })
   }
-})
+}
+
+pageRouter.get('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
+pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
 
 pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, res) => {
   try {
@@ -906,11 +1070,13 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
         error: 'Payment record not found.'
       })
     }
+    const nextPath = sanitizeInternalPath(payment.metadata?.nextPath, `/simple-lms/take/${payment.course._id}`)
+    const fallbackPath = sanitizeInternalPath(payment.metadata?.fallbackPath, '/simple-lms?view=catalog')
 
     if (payment.status === 'successful') {
       return redirectWithMessage({
         res,
-        path: `/simple-lms/take/${payment.course._id}`,
+        path: nextPath,
         success: 'Payment already verified.'
       })
     }
@@ -922,7 +1088,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       await payment.save()
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=catalog',
+        path: fallbackPath,
         error: 'Payment was not completed.'
       })
     }
@@ -948,7 +1114,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       await payment.save()
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=catalog',
+        path: fallbackPath,
         error: 'Payment verification failed.'
       })
     }
@@ -982,14 +1148,14 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
 
     return redirectWithMessage({
       res,
-      path: `/simple-lms/take/${payment.course._id}`,
+      path: nextPath,
       success: 'Payment verified. Course unlocked.'
     })
   } catch (error) {
     console.error('Flutterwave callback error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=catalog',
+      path: '/courses',
       error: 'Failed to verify payment.'
     })
   }
@@ -1283,7 +1449,13 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       })
     }
 
-    const payload = parseCoursePayload({ body: req.body, role })
+    const platformSettings = await getPlatformSettings()
+    const payload = parseCoursePayload({
+      body: req.body,
+      role,
+      creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
+      platformSettings
+    })
     const createdCourse = await SimpleLmsCourse.create({
       ...payload,
       organization: null,
@@ -1352,10 +1524,13 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       })
     }
 
+    const platformSettings = await getPlatformSettings()
     const payload = parseCoursePayload({
       body: req.body,
       role,
-      existingCourse: course
+      existingCourse: course,
+      creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
+      platformSettings
     })
 
     Object.assign(course, payload)
@@ -2324,6 +2499,97 @@ pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) =
   }
 })
 
+pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=course-studio',
+        error: 'You do not have permission to update creator settings.'
+      })
+    }
+
+    const payload = normalizeCreatorSettings({
+      defaultCategory: req.body.defaultCategory,
+      defaultLevel: req.body.defaultLevel,
+      defaultVisibility: req.body.defaultVisibility,
+      defaultPaymentMode: req.body.defaultPaymentMode,
+      defaultCurrency: req.body.defaultCurrency,
+      preferredLessonDurationMinutes: req.body.preferredLessonDurationMinutes,
+      autoLoadSampleCurriculum: req.body.autoLoadSampleCurriculum === 'on',
+      showCreatorTips: req.body.showCreatorTips === 'on'
+    })
+
+    req.user.creatorSettings = {
+      ...(req.user.creatorSettings || {}),
+      ...payload,
+      updatedAt: new Date()
+    }
+    await req.user.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Creator studio settings saved.'
+    })
+  } catch (error) {
+    console.error('Update creator settings error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: 'Failed to update creator settings.'
+    })
+  }
+})
+
+pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update platform settings.'
+      })
+    }
+
+    const normalized = normalizePlatformSettings({
+      defaultCurrency: req.body.defaultCurrency,
+      defaultPaymentMode: req.body.defaultPaymentMode,
+      defaultCourseVisibility: req.body.defaultCourseVisibility,
+      defaultCourseStatus: req.body.defaultCourseStatus,
+      requirePublicReviewForCreators: req.body.requirePublicReviewForCreators === 'on',
+      allowExternalMediaEmbeds: req.body.allowExternalMediaEmbeds === 'on',
+      allowAudioLessons: req.body.allowAudioLessons === 'on',
+      minCoursePriceMinor: req.body.minCoursePriceMinor,
+      maxCoursePriceMinor: req.body.maxCoursePriceMinor,
+      analyticsLookbackDays: req.body.analyticsLookbackDays,
+      homepageFeaturedCourseLimit: req.body.homepageFeaturedCourseLimit,
+      maintenanceMode: req.body.maintenanceMode === 'on',
+      maintenanceMessage: req.body.maintenanceMessage,
+      creatorSubmissionGuidelines: req.body.creatorSubmissionGuidelines
+    })
+
+    const settings = await SimpleLmsPlatformSetting.findOne({}) || new SimpleLmsPlatformSetting({})
+    Object.assign(settings, normalized, { updatedBy: req.user._id })
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: 'Platform settings updated.'
+    })
+  } catch (error) {
+    console.error('Update platform settings error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to update platform settings.'
+    })
+  }
+})
+
 pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
@@ -2368,7 +2634,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     const managedFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
     const managedProgramFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -2453,7 +2719,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
           .limit(200)
           .lean()
         : Promise.resolve([]),
-      getCommissionSettings()
+      getCommissionSettings(),
+      getPlatformSettings()
     ])
 
     const myEnrollments = myEnrollmentsRaw
@@ -2635,6 +2902,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       accountOverrides: Array.isArray(commissionSettingsRaw?.accountOverrides) ? commissionSettingsRaw.accountOverrides : [],
       courseOverrides: Array.isArray(commissionSettingsRaw?.courseOverrides) ? commissionSettingsRaw.courseOverrides : []
     }
+    const platformSettings = normalizePlatformSettings(platformSettingsRaw || PLATFORM_SETTING_DEFAULTS)
+    const creatorSettings = normalizeCreatorSettings(req.user.creatorSettings || CREATOR_SETTING_DEFAULTS)
 
     const creatorSales = creatorSalesRaw.map((payment) => {
       const creatorId = toIdString(payment.creatorAccount || payment.course?.createdBy || '')
@@ -2725,10 +2994,137 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         .reduce((sum, payment) => sum + Math.max(0, Number(payment.creatorCommissionMinor || 0)), 0)
     }
 
+    const analyticsLookbackDays = Math.min(365, Math.max(7, Number(platformSettings.analyticsLookbackDays || 30)))
+    const now = new Date()
+    const periodStart = new Date(now.getTime() - (analyticsLookbackDays * 24 * 60 * 60 * 1000))
+    const previousPeriodStart = new Date(periodStart.getTime() - (analyticsLookbackDays * 24 * 60 * 60 * 1000))
+    const growthPercent = (currentValue, previousValue) => {
+      const current = Math.max(0, Number(currentValue || 0))
+      const previous = Math.max(0, Number(previousValue || 0))
+      if (previous <= 0) return current > 0 ? 100 : 0
+      return Math.round(((current - previous) / previous) * 100)
+    }
+
+    const [currentEnrollmentCount, previousEnrollmentCount, currentCompletionCount, previousCompletionCount, currentPaymentsRaw, previousPaymentsRaw, topCoursesByEnrollmentsRaw, topCoursesByRevenueRaw, topCreatorsByRevenueRaw] = await Promise.all([
+      SimpleLmsEnrollment.countDocuments({ createdAt: { $gte: periodStart } }),
+      SimpleLmsEnrollment.countDocuments({ createdAt: { $gte: previousPeriodStart, $lt: periodStart } }),
+      SimpleLmsEnrollment.countDocuments({ status: 'completed', completedAt: { $gte: periodStart } }),
+      SimpleLmsEnrollment.countDocuments({ status: 'completed', completedAt: { $gte: previousPeriodStart, $lt: periodStart } }),
+      SimpleLmsPayment.aggregate([
+        { $match: { status: 'successful', paidAt: { $gte: periodStart } } },
+        { $group: { _id: null, grossMinor: { $sum: '$amountMinor' }, creatorMinor: { $sum: '$creatorCommissionMinor' }, platformMinor: { $sum: '$platformShareMinor' }, count: { $sum: 1 } } }
+      ]),
+      SimpleLmsPayment.aggregate([
+        { $match: { status: 'successful', paidAt: { $gte: previousPeriodStart, $lt: periodStart } } },
+        { $group: { _id: null, grossMinor: { $sum: '$amountMinor' }, creatorMinor: { $sum: '$creatorCommissionMinor' }, platformMinor: { $sum: '$platformShareMinor' }, count: { $sum: 1 } } }
+      ]),
+      SimpleLmsEnrollment.aggregate([
+        { $match: { createdAt: { $gte: periodStart } } },
+        { $group: { _id: '$course', enrollmentCount: { $sum: 1 }, completionCount: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } } } },
+        { $sort: { enrollmentCount: -1 } },
+        { $limit: 8 }
+      ]),
+      SimpleLmsPayment.aggregate([
+        { $match: { status: 'successful', paidAt: { $gte: periodStart } } },
+        { $group: { _id: '$course', revenueMinor: { $sum: '$amountMinor' }, saleCount: { $sum: 1 } } },
+        { $sort: { revenueMinor: -1 } },
+        { $limit: 8 }
+      ]),
+      SimpleLmsPayment.aggregate([
+        { $match: { status: 'successful', paidAt: { $gte: periodStart } } },
+        { $group: { _id: '$creatorAccount', revenueMinor: { $sum: '$amountMinor' }, creatorCommissionMinor: { $sum: '$creatorCommissionMinor' }, saleCount: { $sum: 1 } } },
+        { $sort: { revenueMinor: -1 } },
+        { $limit: 8 }
+      ])
+    ])
+
+    const currentPayments = currentPaymentsRaw[0] || { grossMinor: 0, creatorMinor: 0, platformMinor: 0, count: 0 }
+    const previousPayments = previousPaymentsRaw[0] || { grossMinor: 0, creatorMinor: 0, platformMinor: 0, count: 0 }
+
     const accountNameById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.displayName]))
     const accountEmailById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.email || '']))
     const courseNameById = new Map([...managedCourses, ...catalogCourses, ...(pendingReviewCoursesRaw || []).map(decorateCourse)]
       .map((course) => [toIdString(course._id), course.title || 'Course']))
+
+    const creatorSalesByCourse = new Map()
+    myCreatorSales.forEach((sale) => {
+      const courseId = toIdString(sale.course?._id || sale.course)
+      if (!courseId) return
+      const existing = creatorSalesByCourse.get(courseId) || {
+        saleCount: 0,
+        grossMinor: 0,
+        commissionMinor: 0
+      }
+      existing.saleCount += 1
+      existing.grossMinor += Math.max(0, Number(sale.amountMinor || 0))
+      existing.commissionMinor += Math.max(0, Number(sale.creatorCommissionMinor || 0))
+      creatorSalesByCourse.set(courseId, existing)
+    })
+
+    const creatorCourseInsights = managedCourses
+      .filter((course) => effectiveManagedCourseIds.has(toIdString(course._id)))
+      .map((course) => {
+        const courseId = toIdString(course._id)
+        const saleStats = creatorSalesByCourse.get(courseId) || { saleCount: 0, grossMinor: 0, commissionMinor: 0 }
+        const completionRate = course.enrollmentCount > 0
+          ? Math.round((Math.max(0, Number(course.completionCount || 0)) / Math.max(1, Number(course.enrollmentCount || 0))) * 100)
+          : 0
+        return {
+          courseId,
+          title: course.title,
+          enrollmentCount: Math.max(0, Number(course.enrollmentCount || 0)),
+          completionCount: Math.max(0, Number(course.completionCount || 0)),
+          completionRate,
+          saleCount: saleStats.saleCount,
+          grossDisplay: formatCurrencyAmount(saleStats.grossMinor, course.pricing?.currency || 'NGN'),
+          commissionDisplay: formatCurrencyAmount(saleStats.commissionMinor, course.pricing?.currency || 'NGN')
+        }
+      })
+      .sort((a, b) => b.enrollmentCount - a.enrollmentCount)
+      .slice(0, 12)
+
+    const analytics = {
+      lookbackDays: analyticsLookbackDays,
+      enrollmentTrend: {
+        current: currentEnrollmentCount,
+        previous: previousEnrollmentCount,
+        growthPercent: growthPercent(currentEnrollmentCount, previousEnrollmentCount)
+      },
+      completionTrend: {
+        current: currentCompletionCount,
+        previous: previousCompletionCount,
+        growthPercent: growthPercent(currentCompletionCount, previousCompletionCount)
+      },
+      paymentTrend: {
+        currentCount: Math.max(0, Number(currentPayments.count || 0)),
+        previousCount: Math.max(0, Number(previousPayments.count || 0)),
+        grossDisplay: formatCurrencyAmount(currentPayments.grossMinor, 'NGN'),
+        previousGrossDisplay: formatCurrencyAmount(previousPayments.grossMinor, 'NGN'),
+        growthPercent: growthPercent(currentPayments.grossMinor, previousPayments.grossMinor)
+      },
+      topCoursesByEnrollments: (topCoursesByEnrollmentsRaw || []).map((entry) => ({
+        courseId: toIdString(entry._id),
+        title: courseNameById.get(toIdString(entry._id)) || 'Course',
+        enrollmentCount: Math.max(0, Number(entry.enrollmentCount || 0)),
+        completionCount: Math.max(0, Number(entry.completionCount || 0))
+      })),
+      topCoursesByRevenue: (topCoursesByRevenueRaw || []).map((entry) => ({
+        courseId: toIdString(entry._id),
+        title: courseNameById.get(toIdString(entry._id)) || 'Course',
+        saleCount: Math.max(0, Number(entry.saleCount || 0)),
+        revenueDisplay: formatCurrencyAmount(entry.revenueMinor, 'NGN')
+      })),
+      topCreatorsByRevenue: (topCreatorsByRevenueRaw || []).map((entry) => {
+        const accountId = toIdString(entry._id)
+        return {
+          accountId,
+          creatorName: accountNameById.get(accountId) || accountEmailById.get(accountId) || 'Unassigned',
+          saleCount: Math.max(0, Number(entry.saleCount || 0)),
+          revenueDisplay: formatCurrencyAmount(entry.revenueMinor, 'NGN'),
+          commissionDisplay: formatCurrencyAmount(entry.creatorCommissionMinor, 'NGN')
+        }
+      })
+    }
 
     const commissionAccountOverrides = (commissionSettings.accountOverrides || []).map((entry) => {
       const accountId = toIdString(entry.account)
@@ -2790,6 +3186,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       myPayments,
       myCreatorSales,
       creatorStats,
+      creatorCourseInsights,
+      creatorSettings,
       payoutProfile: req.user.payoutProfile || {},
       adminPayments,
       paymentStats: {
@@ -2797,6 +3195,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN'),
         creatorPayoutDisplay: formatCurrencyAmount(paymentStats.creatorPayoutMinor, 'NGN')
       },
+      analytics,
+      platformSettings,
       flutterwave: {
         enabled: isFlutterwaveConfigured(),
         publicKey: getFlutterwavePublicKey()

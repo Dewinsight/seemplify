@@ -64,6 +64,46 @@
     th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
     .inline-form { display: inline-flex; gap: 6px; align-items: center; }
     .inline-form .input { min-width: 90px; }
+    .trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: var(--lms-surface-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .trend.up { color: #22c55e; }
+    .trend.down { color: #ef4444; }
+    .trend.flat { color: var(--muted); }
+    .stack-tight { display: grid; gap: 6px; }
+    .analytic-list {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .analytic-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: var(--lms-surface);
+      display: grid;
+      gap: 6px;
+    }
+    .analytic-item h4 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: -.01em;
+    }
+    .analytic-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
       .shell { gap: 10px; margin-bottom: 18px; }
@@ -92,6 +132,8 @@
   <% const roleLabel = String(role || 'learner').replace(/_/g, ' ') %>
   <% const nice = (value) => String(value || '').replace(/_/g, ' ') %>
   <% const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } } %>
+  <% const creatorDefaults = creatorSettings || {} %>
+  <% const platformDefaults = platformSettings || {} %>
 
   <main class="shell">
     <section class="hero">
@@ -122,6 +164,9 @@
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
     <% if (info) { %><div class="alert"><%= info %></div><% } %>
+    <% if (platformDefaults.maintenanceMode) { %>
+      <div class="alert alert-error">Maintenance mode is active. <%= platformDefaults.maintenanceMessage || 'Learners may face limited actions while updates are in progress.' %></div>
+    <% } %>
 
     <% if (viewMode === 'overview') { %>
       <section class="panel">
@@ -261,18 +306,21 @@
     <% if (viewMode === 'course-studio' && canCreateCourses) { %>
       <section class="panel studio">
         <div class="stack">
-          <div class="head"><div><h2>Create Course</h2><p class="mini">Use JSON curriculum for now. Public publishing by non-admins is submitted for admin approval.</p></div></div>
+          <div class="head"><div><h2>Create Course</h2><p class="mini">Create with your saved defaults. Public publishing follows current admin review policy.</p></div></div>
+          <% if (platformDefaults.creatorSubmissionGuidelines) { %>
+            <div class="alert"><%= platformDefaults.creatorSubmissionGuidelines %></div>
+          <% } %>
           <form method="post" action="/simple-lms/courses/create" class="stack">
             <div class="form-grid">
               <div><label>Title</label><input class="input" name="title" required></div>
-              <div><label>Category</label><input class="input" name="category"></div>
-              <div><label>Level</label><select class="input" name="level"><% levels.forEach((l) => { %><option value="<%= l %>"><%= nice(l) %></option><% }) %></select></div>
-              <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">publish</option></select></div>
-              <div><label>Visibility</label><select class="input" name="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+              <div><label>Category</label><input class="input" name="category" value="<%= creatorDefaults.defaultCategory || '' %>"></div>
+              <div><label>Level</label><select class="input" name="level"><% levels.forEach((l) => { %><option value="<%= l %>" <%= (creatorDefaults.defaultLevel || 'mixed') === l ? 'selected' : '' %>><%= nice(l) %></option><% }) %></select></div>
+              <div><label>Status</label><select class="input" name="status"><option value="draft" <%= (platformDefaults.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option><option value="published" <%= platformDefaults.defaultCourseStatus === 'published' ? 'selected' : '' %>>publish</option></select></div>
+              <div><label>Visibility</label><select class="input" name="visibility"><option value="private" <%= (creatorDefaults.defaultVisibility || platformDefaults.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= (creatorDefaults.defaultVisibility || platformDefaults.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option><% if (canManagePlatform) { %><option value="marketplace" <%= platformDefaults.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %></select></div>
               <div><label>Tags</label><input class="input" name="tags" placeholder="tag1, tag2"></div>
-              <div><label>Payment Mode</label><select class="input" name="paymentMode"><option value="free">free</option><option value="paid">paid</option></select></div>
-              <div><label>Amount (minor)</label><input class="input" type="number" name="amount" min="0" value="0"></div>
-              <div><label>Currency</label><input class="input" name="currency" maxlength="3" value="NGN"></div>
+              <div><label>Payment Mode</label><select class="input" name="paymentMode"><option value="free" <%= (creatorDefaults.defaultPaymentMode || platformDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= (creatorDefaults.defaultPaymentMode || platformDefaults.defaultPaymentMode) === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+              <div><label>Amount (minor)</label><input class="input" type="number" name="amount" min="<%= platformDefaults.minCoursePriceMinor || 0 %>" max="<%= platformDefaults.maxCoursePriceMinor || 50000000 %>" value="<%= platformDefaults.minCoursePriceMinor || 0 %>"></div>
+              <div><label>Currency</label><input class="input" name="currency" maxlength="3" value="<%= creatorDefaults.defaultCurrency || platformDefaults.defaultCurrency || 'NGN' %>"></div>
               <% if (canManagePlatform) { %>
                 <div><label>System Course</label><input type="checkbox" name="isSystemCourse" value="on"></div>
               <% } %>
@@ -300,6 +348,23 @@
             <% }) %>
           <% } %>
         </aside>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Creator Studio Settings</h2><p class="mini">Personal defaults and workflow behavior for faster publishing.</p></div></div>
+        <form method="post" action="/simple-lms/settings/creator" class="stack">
+          <div class="form-grid">
+            <div><label>Default Category</label><input class="input" name="defaultCategory" value="<%= creatorDefaults.defaultCategory || '' %>" placeholder="e.g. Data Analysis"></div>
+            <div><label>Default Level</label><select class="input" name="defaultLevel"><% levels.forEach((l) => { %><option value="<%= l %>" <%= (creatorDefaults.defaultLevel || 'mixed') === l ? 'selected' : '' %>><%= nice(l) %></option><% }) %></select></div>
+            <div><label>Default Visibility</label><select class="input" name="defaultVisibility"><option value="private" <%= (creatorDefaults.defaultVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= creatorDefaults.defaultVisibility === 'public' ? 'selected' : '' %>>public</option></select></div>
+            <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (creatorDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= creatorDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+            <div><label>Default Currency</label><input class="input" name="defaultCurrency" maxlength="3" value="<%= creatorDefaults.defaultCurrency || 'NGN' %>"></div>
+            <div><label>Preferred Lesson Duration (mins)</label><input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorDefaults.preferredLessonDurationMinutes || 12 %>"></div>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorDefaults.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum on new course form</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="showCreatorTips" <%= creatorDefaults.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips and submission hints</label>
+          </div>
+          <div class="actions"><button class="btn btn-primary" type="submit">Save Creator Settings</button></div>
+        </form>
       </section>
 
       <section class="panel">
@@ -354,6 +419,32 @@
           </aside>
         </div>
       </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Creator Course Insights</h2><p class="mini">Per-course performance across enrollment, completion, and paid conversion.</p></div></div>
+        <% if (!creatorCourseInsights || creatorCourseInsights.length === 0) { %>
+          <div class="empty">No course analytics yet. Publish and enroll learners to populate this section.</div>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Course</th><th>Enrollments</th><th>Completions</th><th>Completion Rate</th><th>Paid Sales</th><th>Gross</th><th>Your Commission</th></tr></thead>
+              <tbody>
+                <% creatorCourseInsights.forEach((item) => { %>
+                  <tr>
+                    <td><%= item.title %></td>
+                    <td><%= item.enrollmentCount %></td>
+                    <td><%= item.completionCount %></td>
+                    <td><%= item.completionRate %>%</td>
+                    <td><%= item.saleCount %></td>
+                    <td><%= item.grossDisplay %></td>
+                    <td><%= item.commissionDisplay %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
     <% } %>
 
     <% if (viewMode === 'program-studio' && canCreateCourses) { %>
@@ -399,6 +490,93 @@
           <article class="kpi"><small>Successful Payments</small><strong><%= paymentStats.successfulCount %></strong></article>
           <article class="kpi"><small>Revenue (Tracked)</small><strong><%= paymentStats.revenueDisplay %></strong></article>
           <article class="kpi"><small>Creator Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Platform Settings & Controls</h2><p>Central controls for creator defaults, moderation policy, and analytics windows.</p></div></div>
+        <form method="post" action="/simple-lms/settings/platform" class="stack">
+          <div class="form-grid">
+            <div><label>Default Currency</label><input class="input" name="defaultCurrency" maxlength="3" value="<%= platformDefaults.defaultCurrency || 'NGN' %>"></div>
+            <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (platformDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= platformDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+            <div><label>Default Course Visibility</label><select class="input" name="defaultCourseVisibility"><option value="private" <%= (platformDefaults.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= platformDefaults.defaultCourseVisibility === 'public' ? 'selected' : '' %>>public</option><option value="marketplace" <%= platformDefaults.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option></select></div>
+            <div><label>Default Course Status</label><select class="input" name="defaultCourseStatus"><option value="draft" <%= (platformDefaults.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option><option value="published" <%= platformDefaults.defaultCourseStatus === 'published' ? 'selected' : '' %>>published</option></select></div>
+            <div><label>Minimum Course Price (minor)</label><input class="input" type="number" name="minCoursePriceMinor" min="0" value="<%= platformDefaults.minCoursePriceMinor || 0 %>"></div>
+            <div><label>Maximum Course Price (minor)</label><input class="input" type="number" name="maxCoursePriceMinor" min="0" value="<%= platformDefaults.maxCoursePriceMinor || 50000000 %>"></div>
+            <div><label>Analytics Lookback (days)</label><input class="input" type="number" name="analyticsLookbackDays" min="7" max="365" value="<%= platformDefaults.analyticsLookbackDays || 30 %>"></div>
+            <div><label>Homepage Featured Limit</label><input class="input" type="number" name="homepageFeaturedCourseLimit" min="1" max="24" value="<%= platformDefaults.homepageFeaturedCourseLimit || 8 %>"></div>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformDefaults.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require admin review before creator public publish</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowExternalMediaEmbeds" <%= platformDefaults.allowExternalMediaEmbeds !== false ? 'checked' : '' %>> Allow external media embeds in lessons</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowAudioLessons" <%= platformDefaults.allowAudioLessons !== false ? 'checked' : '' %>> Allow audio lesson links</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformDefaults.maintenanceMode ? 'checked' : '' %>> Enable maintenance mode banner</label>
+          </div>
+          <div><label>Maintenance Message</label><textarea class="input" name="maintenanceMessage" rows="2"><%= platformDefaults.maintenanceMessage || '' %></textarea></div>
+          <div><label>Creator Submission Guidelines</label><textarea class="input" name="creatorSubmissionGuidelines" rows="4"><%= platformDefaults.creatorSubmissionGuidelines || '' %></textarea></div>
+          <div class="actions"><button class="btn btn-primary" type="submit">Save Platform Settings</button></div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Advanced Analytics</h2><p>Trend intelligence for the last <%= analytics.lookbackDays %> days versus the previous period.</p></div></div>
+        <div class="kpis">
+          <article class="kpi">
+            <small>New Enrollments</small>
+            <strong><%= analytics.enrollmentTrend.current %></strong>
+            <span class="trend <%= analytics.enrollmentTrend.growthPercent > 0 ? 'up' : analytics.enrollmentTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.enrollmentTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.enrollmentTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Completions</small>
+            <strong><%= analytics.completionTrend.current %></strong>
+            <span class="trend <%= analytics.completionTrend.growthPercent > 0 ? 'up' : analytics.completionTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.completionTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.completionTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Payment Volume</small>
+            <strong><%= analytics.paymentTrend.currentCount %></strong>
+            <span class="trend <%= analytics.paymentTrend.growthPercent > 0 ? 'up' : analytics.paymentTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.paymentTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.paymentTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Revenue This Period</small>
+            <strong><%= analytics.paymentTrend.grossDisplay %></strong>
+            <small style="margin-top:6px;">Prev: <%= analytics.paymentTrend.previousGrossDisplay %></small>
+          </article>
+        </div>
+        <div class="analytic-list" style="margin-top:10px;">
+          <article class="analytic-item">
+            <h4>Top Courses by Enrollments</h4>
+            <% if (!analytics.topCoursesByEnrollments || analytics.topCoursesByEnrollments.length === 0) { %>
+              <p class="mini">No enrollment data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCoursesByEnrollments.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.enrollmentCount %> enrollments</span><span class="pill"><%= entry.completionCount %> completions</span><strong><%= entry.title %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Top Courses by Revenue</h4>
+            <% if (!analytics.topCoursesByRevenue || analytics.topCoursesByRevenue.length === 0) { %>
+              <p class="mini">No payment data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCoursesByRevenue.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.saleCount %> sales</span><span class="pill"><%= entry.revenueDisplay %></span><strong><%= entry.title %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Top Creators by Revenue</h4>
+            <% if (!analytics.topCreatorsByRevenue || analytics.topCreatorsByRevenue.length === 0) { %>
+              <p class="mini">No creator revenue data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCreatorsByRevenue.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.saleCount %> sales</span><span class="pill"><%= entry.revenueDisplay %></span><strong><%= entry.creatorName %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
         </div>
       </section>
 
@@ -569,18 +747,25 @@
     (() => {
       const fillCourseTemplate = document.getElementById('fillCourseTemplate')
       const createChaptersJson = document.getElementById('createChaptersJson')
+      const preferredLessonDuration = Number(<%- JSON.stringify(Number(creatorDefaults.preferredLessonDurationMinutes || 12)) %>) || 12
+      const createTemplatePayload = () => JSON.stringify([
+        {
+          title: 'Introduction',
+          description: 'Course orientation',
+          lessons: [
+            { title: 'Welcome', description: 'Overview', durationMinutes: preferredLessonDuration, videoUrl: '', content: 'Welcome to this course.' }
+          ]
+        }
+      ], null, 2)
       if (fillCourseTemplate && createChaptersJson) {
         fillCourseTemplate.addEventListener('click', () => {
-          createChaptersJson.value = JSON.stringify([
-            {
-              title: 'Introduction',
-              description: 'Course orientation',
-              lessons: [
-                { title: 'Welcome', description: 'Overview', durationMinutes: 8, videoUrl: '', content: 'Welcome to this course.' }
-              ]
-            }
-          ], null, 2)
+          createChaptersJson.value = createTemplatePayload()
         })
+        const autoLoadSample = <%- JSON.stringify(Boolean(creatorDefaults.autoLoadSampleCurriculum)) %>
+        const currentChaptersValue = String(createChaptersJson.value || '').trim()
+        if (autoLoadSample && (!currentChaptersValue || currentChaptersValue === '[]')) {
+          createChaptersJson.value = createTemplatePayload()
+        }
       }
 
       const fillProgramTemplate = document.getElementById('fillProgramTemplate')

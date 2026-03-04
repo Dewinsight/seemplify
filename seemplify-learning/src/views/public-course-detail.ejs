@@ -20,6 +20,8 @@
     <section class="public-surface">
       <a href="/courses" class="btn btn-secondary btn-sm" style="width: fit-content;">Back to Catalog</a>
     </section>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
     <section class="detail-layout">
       <div class="detail-main">
@@ -124,9 +126,16 @@
             <strong>Instructor:</strong> <%= course.authorName %><br>
             <strong>Duration:</strong> <%= Math.round(course.estimatedDurationMinutes) %> minutes
           </p>
-          <a href="<%= takeHref %>" class="btn btn-primary">
-            <%= user ? 'Start Learning' : 'Login to Start Learning' %>
-          </a>
+          <% if (user && course.requiresPayment) { %>
+            <form method="get" action="/simple-lms/courses/<%= course._id %>/pay">
+              <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
+              <button type="submit" class="btn btn-primary" style="width:100%;">Pay & Unlock</button>
+            </form>
+          <% } else { %>
+            <a href="<%= takeHref %>" class="btn btn-primary">
+              <%= user ? 'Start Learning' : 'Login to Start Learning' %>
+            </a>
+          <% } %>
           <p class="detail-note">
             You can explore content without an account. Login is required only when you want to start this course.
           </p>
