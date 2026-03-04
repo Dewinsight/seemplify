@@ -3955,6 +3955,7 @@ const buildNotificationCenterData = async (account, options = {}) => {
   const maxTasks = Number.isFinite(Number(options.maxTasks))
     ? Math.max(1, Math.min(200, Number(options.maxTasks)))
     : 50
+  const includeAllTasks = options.includeAllTasks === true
   const performanceQueryLimit = Math.max(80, maxTasks * 4)
 
   const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || ''
@@ -3986,25 +3987,9 @@ const buildNotificationCenterData = async (account, options = {}) => {
     .sort({ updatedAt: -1, createdAt: -1 })
     .lean()
 
-  const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
-    const assignmentOrganizationId =
-      assignment?.organization?._id?.toString() ||
-      assignment?.organization?.toString() ||
-      ''
-    if (!assignmentOrganizationId) return true
-
-    const lastViewedAt = getDashboardNotificationViewedAt(
-      account,
-      NOTIFICATION_CATEGORY.documents,
-      assignmentOrganizationId
-    )
-    if (!lastViewedAt) return true
-
-    const assignmentTimestamp = assignment?.updatedAt || assignment?.createdAt
-    if (!assignmentTimestamp) return true
-
-    return new Date(assignmentTimestamp).getTime() > lastViewedAt.getTime()
-  })
+  // Documents notifications represent pending work, not just unseen updates.
+  // Keep these visible until the assignment itself is completed/cancelled.
+  const unreadDocumentAssignments = pendingOnboardingAssignments
 
   const unreadPerformanceEvaluations = organizationIds.length === 0
       ? []
@@ -4095,9 +4080,11 @@ const buildNotificationCenterData = async (account, options = {}) => {
     }
   })
 
-  const tasks = [...documentTasks, ...performanceTasks]
+  const sortedTasks = [...documentTasks, ...performanceTasks]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, maxTasks)
+  const tasks = includeAllTasks
+    ? sortedTasks
+    : sortedTasks.slice(0, maxTasks)
 
   return {
     totalUnread: documentTasks.length + performanceTasks.length,
@@ -4822,7 +4809,7 @@ app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
 
 app.get('/notifications', getSessionUser, async (req, res) => {
   try {
-    const summary = await buildNotificationCenterData(req.user, { maxTasks: 120 })
+    const summary = await buildNotificationCenterData(req.user, { maxTasks: 120, includeAllTasks: true })
     const selectedCategory = getNotificationCategory(req.query.category, NOTIFICATION_CATEGORY.all)
     const tasks = selectedCategory === NOTIFICATION_CATEGORY.all
       ? summary.tasks
@@ -5436,7 +5423,8 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
 
     const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
-      evaluatorId: req.user._id
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
     })
     const canEvaluate = evaluableMembers.length > 0
     const hasOrgWideHistoryAccess = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
@@ -5675,7 +5663,8 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
 
     const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
-      evaluatorId: req.user._id
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
     })
 
     if (evaluableMembers.length === 0) {
@@ -5845,7 +5834,8 @@ app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async 
 
     const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
-      evaluatorId: req.user._id
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
     })
 
     if (requestedMemberId && memberMap.has(requestedMemberId)) {
@@ -5911,7 +5901,8 @@ app.post('/performance-evaluations/fields', getSessionUser, async (req, res) => 
 
     const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
-      evaluatorId: req.user._id
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
     })
     const canManageFields = canManageSimplePerformanceFields({
       memberRole: orgContext.memberRole,
@@ -5982,7 +5973,8 @@ app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, asy
 
     const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
       organizationId: orgContext.organizationId,
-      evaluatorId: req.user._id
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
     })
     const canManageFields = canManageSimplePerformanceFields({
       memberRole: orgContext.memberRole,

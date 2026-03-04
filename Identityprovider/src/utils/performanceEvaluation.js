@@ -2,6 +2,7 @@ import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
 
 const EVALUATOR_ROLES = new Set(['line_manager', 'team_lead'])
+const ORG_WIDE_EVALUATOR_ROLES = new Set(['owner', 'admin', 'hr_manager'])
 const ROLE_PRIVILEGE = {
   line_manager: 2,
   team_lead: 1
@@ -61,6 +62,13 @@ function toIdString(value) {
   if (typeof value === 'string') return value
   if (typeof value === 'object' && value._id) return String(value._id)
   return String(value)
+}
+
+function isActiveTeamMember(member) {
+  if (!member) return false
+  const normalizedStatus = String(member.status || '').trim().toLowerCase()
+  // Backward compatibility: legacy records may not have `status` set.
+  return !normalizedStatus || normalizedStatus === 'active'
 }
 
 function buildPathResolver(teamMap) {
@@ -124,7 +132,11 @@ function canScopeRoleEvaluateMember(scopeRole, memberRole) {
   return false
 }
 
-export async function getEvaluableMembersForEvaluator({ organizationId, evaluatorId }) {
+export async function getEvaluableMembersForEvaluator({
+  organizationId,
+  evaluatorId,
+  evaluatorOrganizationRole
+}) {
   if (!organizationId || !evaluatorId) {
     return { members: [], memberMap: new Map() }
   }
@@ -155,22 +167,48 @@ export async function getEvaluableMembersForEvaluator({ organizationId, evaluato
     childrenByParent.get(parentTeamId).push(teamId)
   }
 
-  const evaluatorScopes = []
-  for (const team of teams) {
-    const membership = (team.members || []).find(member => (
-      member.status === 'active' &&
-      toIdString(member.account) === evaluatorIdStr &&
-      EVALUATOR_ROLES.has(member.role)
-    ))
+  const normalizedOrgRole = String(evaluatorOrganizationRole || '').trim().toLowerCase()
+  const hasOrgWideEvaluatorAccess = ORG_WIDE_EVALUATOR_ROLES.has(normalizedOrgRole)
 
-    if (!membership) continue
+  const evaluatorScopeByTeamId = new Map()
+  if (hasOrgWideEvaluatorAccess) {
+    // Org-level admins can evaluate across teams in this organization.
+    for (const team of teams) {
+      const teamId = toIdString(team._id)
+      if (!teamId) continue
+      evaluatorScopeByTeamId.set(teamId, { teamId, scopeRole: 'line_manager' })
+    }
+  } else {
+    for (const team of teams) {
+      const teamId = toIdString(team._id)
+      if (!teamId) continue
 
-    evaluatorScopes.push({
-      teamId: toIdString(team._id),
-      scopeRole: membership.role
-    })
+      const membership = (team.members || []).find(member => (
+        isActiveTeamMember(member) &&
+        toIdString(member.account) === evaluatorIdStr
+      ))
+
+      let scopeRole = null
+      if (membership && EVALUATOR_ROLES.has(membership.role)) {
+        scopeRole = membership.role
+      } else if (toIdString(team.manager) === evaluatorIdStr) {
+        // Data resilience: allow explicit team manager records to evaluate the team
+        // even if role metadata is missing/misaligned on a legacy membership row.
+        scopeRole = 'line_manager'
+      }
+
+      if (!scopeRole) continue
+
+      const existing = evaluatorScopeByTeamId.get(teamId)
+      const existingPrivilege = ROLE_PRIVILEGE[existing?.scopeRole] || 0
+      const incomingPrivilege = ROLE_PRIVILEGE[scopeRole] || 0
+      if (!existing || incomingPrivilege > existingPrivilege) {
+        evaluatorScopeByTeamId.set(teamId, { teamId, scopeRole })
+      }
+    }
   }
 
+  const evaluatorScopes = Array.from(evaluatorScopeByTeamId.values())
   if (evaluatorScopes.length === 0) {
     return { members: [], memberMap: new Map() }
   }
@@ -187,7 +225,7 @@ export async function getEvaluableMembersForEvaluator({ organizationId, evaluato
       if (!team) continue
 
       for (const member of team.members || []) {
-        if (member.status !== 'active') continue
+        if (!isActiveTeamMember(member)) continue
 
         const memberAccountId = toIdString(member.account)
         if (!memberAccountId || memberAccountId === evaluatorIdStr) continue
