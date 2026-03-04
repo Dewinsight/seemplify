@@ -25,6 +25,7 @@
     <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
     <% if (user) { %>
       <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
+      <a href="/simple-lms?view=catalog#cart-panel" class="top-nav-link">Cart (<%= Number(simpleLmsCartCount || 0) %>)</a>
     <% } %>
   </div>
 
@@ -89,6 +90,7 @@
     <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
     <% if (user) { %>
       <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
+      <a href="/simple-lms?view=catalog#cart-panel" class="top-nav-link">Cart (<%= Number(simpleLmsCartCount || 0) %>)</a>
     <% } %>
   </div>
 

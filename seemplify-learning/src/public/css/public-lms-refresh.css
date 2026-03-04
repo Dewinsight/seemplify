@@ -796,6 +796,673 @@ body.public-site .btn-sm {
   padding: 26px;
 }
 
+/* ───────────────────────────────────────────────
+   COURSE DETAIL PAGE
+   ─────────────────────────────────────────────── */
+
+.lmsv-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lmsv-detail-main {
+  display: grid;
+  gap: 14px;
+}
+
+.lmsv-detail-side {
+  display: grid;
+  gap: 14px;
+  position: sticky;
+  top: 90px;
+}
+
+.lmsv-detail-hero {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 140% at 10% 10%, rgba(6, 182, 212, 0.3), transparent 45%),
+    radial-gradient(120% 120% at 90% 0%, rgba(59, 130, 246, 0.26), transparent 42%),
+    linear-gradient(140deg, #0f172a, #1e3a8a);
+  box-shadow: var(--lmsv-card-shadow);
+  padding: clamp(24px, 3vw, 40px);
+  display: grid;
+  gap: 14px;
+}
+
+[data-theme="light"] .lmsv-detail-hero {
+  background:
+    radial-gradient(130% 140% at 10% 10%, rgba(6, 182, 212, 0.16), transparent 45%),
+    radial-gradient(120% 120% at 90% 0%, rgba(59, 130, 246, 0.14), transparent 42%),
+    linear-gradient(160deg, #0f172a, #1e3a8a);
+}
+
+.lmsv-detail-hero .lmsv-kicker {
+  color: #67e8f9;
+}
+
+.lmsv-detail-hero h1 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(32px, 4.5vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.lmsv-detail-hero p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 62ch;
+}
+
+.lmsv-detail-banner {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(6, 182, 212, 0.22), rgba(59, 130, 246, 0.2));
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lmsv-detail-banner img {
+  width: 100%;
+  max-height: 440px;
+  object-fit: cover;
+  display: block;
+}
+
+.lmsv-detail-banner span {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lmsv-text-muted);
+  font-weight: 700;
+}
+
+.lmsv-detail-card {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 20px;
+  background: var(--lmsv-surface);
+  box-shadow: var(--lmsv-card-shadow);
+  padding: clamp(16px, 2vw, 22px);
+  display: grid;
+  gap: 12px;
+}
+
+.lmsv-detail-card h3 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.lmsv-detail-cta-price {
+  margin: 0;
+  color: #f97316;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.lmsv-detail-note {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lmsv-detail-note strong {
+  color: var(--lmsv-text-soft);
+}
+
+.lmsv-outline-list {
+  display: grid;
+  gap: 10px;
+}
+
+.lmsv-outline-item {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 16px;
+  background: var(--lmsv-surface-soft);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.lmsv-outline-item h4 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.lmsv-outline-item p {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lmsv-outline-lessons {
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: grid;
+  gap: 4px;
+  color: var(--lmsv-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.lmsv-outline-lessons li::marker {
+  color: #06b6d4;
+}
+
+/* ───────────────────────────────────────────────
+   TEACH LANDING PAGE
+   ─────────────────────────────────────────────── */
+
+.lmsv-teach-hero {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 140% at 10% 10%, rgba(6, 182, 212, 0.3), transparent 45%),
+    radial-gradient(120% 120% at 90% 0%, rgba(59, 130, 246, 0.26), transparent 42%),
+    linear-gradient(140deg, #0f172a, #1e3a8a);
+  box-shadow: var(--lmsv-card-shadow);
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  padding: clamp(24px, 3vw, 40px);
+  align-items: center;
+}
+
+[data-theme="light"] .lmsv-teach-hero {
+  background:
+    radial-gradient(130% 140% at 10% 10%, rgba(6, 182, 212, 0.16), transparent 45%),
+    radial-gradient(120% 120% at 90% 0%, rgba(59, 130, 246, 0.14), transparent 42%),
+    linear-gradient(160deg, #0f172a, #1e3a8a);
+}
+
+.lmsv-teach-hero-content {
+  display: grid;
+  gap: 16px;
+}
+
+.lmsv-teach-hero-content .lmsv-kicker {
+  color: #67e8f9;
+}
+
+.lmsv-teach-hero-content h1 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(32px, 4.5vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  max-width: 16ch;
+}
+
+.lmsv-teach-hero-content p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 44ch;
+}
+
+.lmsv-teach-hero-media {
+  border: 1px solid rgba(226, 232, 240, 0.18);
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.lmsv-teach-hero-media img {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  object-fit: cover;
+  display: block;
+}
+
+.lmsv-teach-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lmsv-teach-feature-card {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--lmsv-surface-soft);
+  display: grid;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lmsv-teach-feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px -20px rgba(2, 8, 23, 0.4);
+}
+
+.lmsv-teach-feature-card img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  display: block;
+  border-bottom: 1px solid var(--lmsv-border);
+}
+
+.lmsv-teach-feature-body {
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.lmsv-teach-feature-body h3 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.lmsv-teach-feature-body p {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lmsv-teach-step-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lmsv-teach-step-card {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 18px;
+  background: var(--lmsv-surface-soft);
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+  transition: transform 0.2s ease;
+}
+
+.lmsv-teach-step-card:hover {
+  transform: translateY(-2px);
+}
+
+.lmsv-teach-step-number {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: #022c22;
+  background: linear-gradient(135deg, #22d3ee, #34d399);
+}
+
+.lmsv-teach-step-card h3 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+.lmsv-teach-step-card p {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ───────────────────────────────────────────────
+   TEACH ONBOARDING / WIZARD
+   ─────────────────────────────────────────────── */
+
+.lmsv-onboard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lmsv-wizard-progress {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
+}
+
+.lmsv-wizard-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 2px solid var(--lmsv-border);
+  background: var(--lmsv-surface-soft);
+  color: var(--lmsv-text-muted);
+  font-weight: 800;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+}
+
+.lmsv-wizard-dot.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #06b6d4, #0284c7);
+  color: #f8fafc;
+}
+
+.lmsv-wizard-line {
+  flex: 1;
+  height: 2px;
+  background: var(--lmsv-border);
+  margin: 0 4px;
+}
+
+.lmsv-wizard-form {
+  display: grid;
+  gap: 14px;
+}
+
+.lmsv-wizard-step {
+  display: none;
+}
+
+.lmsv-wizard-step.active {
+  display: grid;
+  gap: 14px;
+  animation: lmsv-fade-in 0.3s ease;
+}
+
+@keyframes lmsv-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lmsv-wizard-step h2 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.lmsv-wizard-step>p {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lmsv-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.lmsv-form-grid label,
+.lmsv-wizard-step>label {
+  color: var(--lmsv-text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lmsv-input {
+  width: 100%;
+  border: 1px solid var(--lmsv-border);
+  border-radius: 12px;
+  background: var(--lmsv-surface-soft);
+  color: var(--lmsv-text);
+  padding: 11px 14px;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lmsv-input:focus {
+  outline: none;
+  border-color: rgba(6, 182, 212, 0.6);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.lmsv-hint-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lmsv-hint-card {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 14px;
+  background: var(--lmsv-surface-soft);
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.lmsv-hint-card h3 {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.lmsv-hint-card p {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lmsv-wizard-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.lmsv-onboard-side {
+  position: sticky;
+  top: 90px;
+}
+
+.lmsv-onboard-checklist {
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lmsv-onboard-checklist li::marker {
+  color: #06b6d4;
+}
+
+.lmsv-onboard-latest {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 14px;
+  background: var(--lmsv-surface-soft);
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+/* ───────────────────────────────────────────────
+   AUTH PAGES (LOGIN / REGISTER)
+   ─────────────────────────────────────────────── */
+
+body.public-site.lmsv-auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+body.public-site.lmsv-auth-page .lmsv-shell {
+  padding: 0;
+}
+
+.lmsv-auth-wrap {
+  width: min(480px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.lmsv-auth-card {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 24px;
+  background: var(--lmsv-surface);
+  box-shadow: var(--lmsv-card-shadow);
+  backdrop-filter: blur(16px);
+  padding: clamp(20px, 3vw, 28px);
+  display: grid;
+  gap: 14px;
+}
+
+.lmsv-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.lmsv-auth-brand svg {
+  width: 34px;
+  height: 34px;
+}
+
+.lmsv-auth-brand span {
+  color: var(--lmsv-text);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.lmsv-auth-title {
+  margin: 0;
+  color: var(--lmsv-text);
+  font-size: 28px;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.lmsv-auth-subtitle {
+  margin: 0;
+  color: var(--lmsv-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lmsv-auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.lmsv-auth-form label {
+  color: var(--lmsv-text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lmsv-auth-footer {
+  margin-top: 4px;
+  color: var(--lmsv-text-muted);
+  font-size: 13px;
+}
+
+.lmsv-auth-footer a {
+  color: #06b6d4;
+  font-weight: 600;
+}
+
+.lmsv-auth-footer a:hover {
+  color: #22d3ee;
+}
+
+.lmsv-intent-banner {
+  border: 1px solid var(--lmsv-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--lmsv-surface-soft);
+  display: grid;
+  gap: 4px;
+}
+
+.lmsv-intent-kicker {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lmsv-kicker);
+  font-weight: 800;
+}
+
+.lmsv-intent-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--lmsv-text-soft);
+  line-height: 1.5;
+}
+
+/* ───────────────────────────────────────────────
+   FOOTER SOCIAL ICONS
+   ─────────────────────────────────────────────── */
+
+.lmsv-footer-social {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.lmsv-footer-social a {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.lmsv-footer-social a:hover {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.4);
+  transform: translateY(-2px);
+}
+
+.lmsv-footer-social svg {
+  width: 16px;
+  height: 16px;
+}
+
 .lmsv-footer {
   position: relative;
   margin-top: 10px;
@@ -914,6 +1581,25 @@ body.public-site .btn-sm {
     grid-template-columns: 1fr;
   }
 
+  .lmsv-detail-layout,
+  .lmsv-onboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lmsv-detail-side,
+  .lmsv-onboard-side {
+    position: static;
+  }
+
+  .lmsv-teach-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .lmsv-teach-feature-grid,
+  .lmsv-teach-step-grid {
+    grid-template-columns: 1fr;
+  }
+
   .lmsv-footer-links {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -986,6 +1672,22 @@ body.public-site .btn-sm {
     grid-template-columns: 1fr;
   }
 
+  .lmsv-detail-hero h1 {
+    font-size: clamp(28px, 10vw, 42px);
+  }
+
+  .lmsv-teach-hero-content h1 {
+    font-size: clamp(28px, 10vw, 42px);
+  }
+
+  .lmsv-hint-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lmsv-auth-wrap {
+    padding: 16px 10px;
+  }
+
   .lmsv-footer-links {
     grid-template-columns: 1fr;
   }
@@ -997,6 +1699,7 @@ body.public-site .btn-sm {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   body.public-site .btn,
   body.public-site .top-nav-link,
   .lmsv-filter-chip,

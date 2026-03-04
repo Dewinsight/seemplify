@@ -107,6 +107,36 @@
       border: 0;
       display: block;
     }
+    .player-media video {
+      width: 100%;
+      height: 430px;
+      border: 0;
+      display: block;
+      background: #000;
+    }
+    .player-media-audio {
+      width: min(760px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      background: var(--player-surface-strong);
+      display: grid;
+      gap: 10px;
+    }
+    .player-media-audio h4 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .player-media-audio audio {
+      width: 100%;
+    }
+    .player-media-source {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
     .player-fallback {
       text-align: center;
       color: var(--muted);
@@ -274,14 +304,16 @@
         height: 18px;
       }
       .curriculum { max-height: unset; }
-      .player-media iframe { height: 320px; }
+      .player-media iframe,
+      .player-media video { height: 320px; }
     }
     @media (max-width: 760px) {
       .player-shell { margin-bottom: 20px; }
       .player-head { padding: 14px; }
       .player-card { padding: 11px; }
       .player-media { min-height: 220px; }
-      .player-media iframe { height: 240px; }
+      .player-media iframe,
+      .player-media video { height: 240px; }
     }
   </style>
 </head>
@@ -317,14 +349,25 @@
             <% if (completedSet.has(currentLesson.lessonKey)) { %><span class="player-pill">Completed</span><% } %>
           </div>
           <div class="player-media">
-            <% if (embedUrl) { %>
-              <iframe src="<%= embedUrl %>" allowfullscreen></iframe>
-            <% } else if (currentLesson.videoUrl) { %>
-              <div class="player-fallback">Video link is available but not embeddable directly.<br><a href="<%= currentLesson.videoUrl %>" target="_blank" rel="noreferrer" class="btn btn-secondary btn-sm" style="margin-top:10px;">Open Video Link</a></div>
+            <% if (lessonMedia && lessonMedia.kind === 'embed' && lessonMedia.embedUrl) { %>
+              <iframe src="<%= lessonMedia.embedUrl %>" allowfullscreen></iframe>
+            <% } else if (lessonMedia && lessonMedia.kind === 'video' && lessonMedia.directUrl) { %>
+              <video controls preload="metadata" src="<%= lessonMedia.directUrl %>"></video>
+            <% } else if (lessonMedia && lessonMedia.kind === 'audio' && lessonMedia.directUrl) { %>
+              <div class="player-media-audio">
+                <h4>Audio Lesson</h4>
+                <audio controls preload="metadata" src="<%= lessonMedia.directUrl %>"></audio>
+                <p class="player-media-source">Source: <%= lessonMedia.sourceLabel || 'Audio stream' %></p>
+              </div>
+            <% } else if (lessonMedia && lessonMedia.directUrl) { %>
+              <div class="player-fallback">Media link is available but cannot be embedded directly.<br><a href="<%= lessonMedia.directUrl %>" target="_blank" rel="noreferrer" class="btn btn-secondary btn-sm" style="margin-top:10px;">Open Media Link</a></div>
             <% } else { %>
               <div class="player-fallback">No video for this lesson yet. Continue with notes and resources below.</div>
             <% } %>
           </div>
+          <% if (lessonMedia && lessonMedia.rawUrl) { %>
+            <p class="player-media-source">Media source: <a href="<%= lessonMedia.rawUrl %>" target="_blank" rel="noreferrer"><%= lessonMedia.sourceLabel || 'External Link' %></a></p>
+          <% } %>
           <% if (currentLesson.description) { %><p class="soft-note"><%= currentLesson.description %></p><% } %>
           <% if (currentLesson.content) { %><div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-wrap;"><%= currentLesson.content %></div><% } %>
           <% if (currentLesson.resources && currentLesson.resources.length > 0) { %>

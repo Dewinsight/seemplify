@@ -11,6 +11,7 @@ import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting
 import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
+import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 
 const pageRouter = express.Router()
 const apiRouter = express.Router()
@@ -380,7 +381,7 @@ const flattenCourseLessons = (course) => {
         title: String(lesson?.title || 'Lesson'),
         description: String(lesson?.description || ''),
         content: String(lesson?.content || ''),
-        videoUrl: String(lesson?.videoUrl || ''),
+        videoUrl: String(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl || ''),
         durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0,
         resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
         quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
@@ -407,32 +408,239 @@ const calculateProgress = ({ lessons, completedLessonKeys = [] }) => {
   }
 }
 
-const resolveVideoEmbedUrl = (rawUrl) => {
+const MEDIA_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.oga', '.flac', '.weba'])
+const MEDIA_VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv', '.m3u8'])
+
+const getPathExtension = (pathname = '') => {
+  const value = String(pathname || '').toLowerCase().split('?')[0].split('#')[0]
+  const lastDot = value.lastIndexOf('.')
+  if (lastDot < 0) return ''
+  return value.slice(lastDot)
+}
+
+const toDropboxRawUrl = (parsedUrl) => {
+  try {
+    const copy = new URL(parsedUrl.toString())
+    copy.searchParams.delete('dl')
+    copy.searchParams.set('raw', '1')
+    return copy.toString()
+  } catch {
+    return parsedUrl.toString()
+  }
+}
+
+const extractGoogleDriveFileId = (parsedUrl) => {
+  const idParam = parsedUrl.searchParams.get('id')
+  if (idParam) return idParam
+
+  const parts = parsedUrl.pathname.split('/').filter(Boolean)
+  const dIndex = parts.findIndex(part => part === 'd')
+  if (dIndex >= 0 && parts[dIndex + 1]) {
+    return parts[dIndex + 1]
+  }
+
+  if (parts[0] === 'file' && parts[1] === 'd' && parts[2]) {
+    return parts[2]
+  }
+
+  return ''
+}
+
+const resolveLessonMedia = (rawUrl) => {
   const value = String(rawUrl || '').trim()
-  if (!value) return ''
+  if (!value) {
+    return {
+      kind: 'none',
+      rawUrl: '',
+      directUrl: '',
+      embedUrl: '',
+      sourceLabel: ''
+    }
+  }
+
   try {
     const parsed = new URL(value)
     const hostname = parsed.hostname.toLowerCase()
+    const extension = getPathExtension(parsed.pathname)
+
     if (hostname.includes('youtube.com')) {
       const videoId = parsed.searchParams.get('v')
-      if (videoId) return `https://www.youtube.com/embed/${videoId}`
+      if (videoId) {
+        return {
+          kind: 'embed',
+          rawUrl: value,
+          directUrl: value,
+          embedUrl: `https://www.youtube.com/embed/${videoId}`,
+          sourceLabel: 'YouTube'
+        }
+      }
     }
+
+    if (hostname.includes('youtube.com') && parsed.pathname.includes('/embed/')) {
+      return {
+        kind: 'embed',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: value,
+        sourceLabel: 'YouTube'
+      }
+    }
+
     if (hostname.includes('youtu.be')) {
       const videoId = parsed.pathname.split('/').filter(Boolean)[0]
-      if (videoId) return `https://www.youtube.com/embed/${videoId}`
+      if (videoId) {
+        return {
+          kind: 'embed',
+          rawUrl: value,
+          directUrl: value,
+          embedUrl: `https://www.youtube.com/embed/${videoId}`,
+          sourceLabel: 'YouTube'
+        }
+      }
     }
+
+    if (hostname.includes('vimeo.com')) {
+      const vimeoId = parsed.pathname.split('/').filter(Boolean).find(part => /^\d+$/.test(part))
+      if (vimeoId) {
+        return {
+          kind: 'embed',
+          rawUrl: value,
+          directUrl: value,
+          embedUrl: `https://player.vimeo.com/video/${vimeoId}`,
+          sourceLabel: 'Vimeo'
+        }
+      }
+    }
+
+    if (hostname.includes('player.vimeo.com')) {
+      return {
+        kind: 'embed',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: value,
+        sourceLabel: 'Vimeo'
+      }
+    }
+
     if (hostname.includes('drive.google.com')) {
-      const parts = parsed.pathname.split('/')
-      const dIndex = parts.findIndex(part => part === 'd')
-      if (dIndex >= 0 && parts[dIndex + 1]) {
-        return `https://drive.google.com/file/d/${parts[dIndex + 1]}/preview`
+      const fileId = extractGoogleDriveFileId(parsed)
+      if (fileId) {
+        return {
+          kind: 'embed',
+          rawUrl: value,
+          directUrl: value,
+          embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+          sourceLabel: 'Google Drive'
+        }
+      }
+    }
+
+    if (hostname.includes('docs.google.com')) {
+      return {
+        kind: 'embed',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: value,
+        sourceLabel: 'Google'
+      }
+    }
+
+    if (hostname.includes('loom.com')) {
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const shareIndex = parts.findIndex((part) => part === 'share')
+      const embedIndex = parts.findIndex((part) => part === 'embed')
+      const loomId = (shareIndex >= 0 && parts[shareIndex + 1])
+        ? parts[shareIndex + 1]
+        : ((embedIndex >= 0 && parts[embedIndex + 1]) ? parts[embedIndex + 1] : '')
+      if (loomId) {
+        return {
+          kind: 'embed',
+          rawUrl: value,
+          directUrl: value,
+          embedUrl: `https://www.loom.com/embed/${loomId}`,
+          sourceLabel: 'Loom'
+        }
+      }
+    }
+
+    if (hostname.includes('dropbox.com')) {
+      const directDropboxUrl = toDropboxRawUrl(parsed)
+      if (MEDIA_AUDIO_EXTENSIONS.has(extension)) {
+        return {
+          kind: 'audio',
+          rawUrl: value,
+          directUrl: directDropboxUrl,
+          embedUrl: '',
+          sourceLabel: 'Dropbox Audio'
+        }
+      }
+      if (MEDIA_VIDEO_EXTENSIONS.has(extension)) {
+        return {
+          kind: 'video',
+          rawUrl: value,
+          directUrl: directDropboxUrl,
+          embedUrl: '',
+          sourceLabel: 'Dropbox Video'
+        }
+      }
+      return {
+        kind: 'link',
+        rawUrl: value,
+        directUrl: directDropboxUrl,
+        embedUrl: '',
+        sourceLabel: 'Dropbox'
+      }
+    }
+
+    if (MEDIA_AUDIO_EXTENSIONS.has(extension)) {
+      return {
+        kind: 'audio',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: '',
+        sourceLabel: 'Audio'
+      }
+    }
+
+    if (MEDIA_VIDEO_EXTENSIONS.has(extension)) {
+      return {
+        kind: 'video',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: '',
+        sourceLabel: 'Video'
+      }
+    }
+
+    if (parsed.pathname.includes('/embed/')) {
+      return {
+        kind: 'embed',
+        rawUrl: value,
+        directUrl: value,
+        embedUrl: value,
+        sourceLabel: parsed.hostname
       }
     }
   } catch {
-    return ''
+    return {
+      kind: 'link',
+      rawUrl: value,
+      directUrl: value,
+      embedUrl: '',
+      sourceLabel: 'External Link'
+    }
   }
-  return ''
+
+  return {
+    kind: 'link',
+    rawUrl: value,
+    directUrl: value,
+    embedUrl: '',
+    sourceLabel: 'External Link'
+  }
 }
+
+const resolveVideoEmbedUrl = (rawUrl) => resolveLessonMedia(rawUrl).embedUrl
 
 const decorateCourse = (course) => {
   const paymentMode = course?.pricing?.paymentMode === 'paid' ? 'paid' : 'free'
@@ -603,11 +811,13 @@ const sanitizeChaptersInput = (input) => {
         })
         .filter(Boolean)
 
+      const mediaUrl = String(rawLesson?.mediaUrl || rawLesson?.videoUrl || rawLesson?.audioUrl || '').trim().slice(0, 2000)
+
       lessons.push({
         key: lessonKey || `${chapterKey}-lesson-${lessonIndex + 1}`,
         title: lessonTitle.slice(0, 200),
         description: String(rawLesson?.description || '').trim().slice(0, 3000),
-        videoUrl: String(rawLesson?.videoUrl || '').trim().slice(0, 2000),
+        videoUrl: mediaUrl,
         content: String(rawLesson?.content || '').trim().slice(0, 40000),
         durationMinutes: Number.isFinite(Number(rawLesson?.durationMinutes)) ? Math.max(0, Math.round(Number(rawLesson.durationMinutes))) : 0,
         resources,
@@ -1043,6 +1253,94 @@ const handleCoursePayRequest = async (req, res) => {
 pageRouter.get('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
 pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
 
+pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.body?.courseId || req.body?.course || '').trim()
+    const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected for cart.'
+      })
+    }
+
+    const course = await findPublicCourseForLearning(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not available.'
+      })
+    }
+
+    if (!isCoursePaidContent(course)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'This course is free. Start learning directly.'
+      })
+    }
+
+    const isAlreadyPaid = await SimpleLmsPayment.exists({
+      account: req.user._id,
+      course: course._id,
+      status: 'successful'
+    })
+    if (isAlreadyPaid) {
+      removeSessionCartCourseId(req, course._id)
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Course already purchased.'
+      })
+    }
+
+    if (hasSessionCartCourse(req, course._id)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Course already in your cart.'
+      })
+    }
+
+    addSessionCartCourseId(req, course._id)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Course added to cart.'
+    })
+  } catch (error) {
+    console.error('Add to cart error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog',
+      error: 'Failed to add course to cart.'
+    })
+  }
+})
+
+pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
+  const courseId = String(req.params.courseId || '').trim()
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+  removeSessionCartCourseId(req, courseId)
+  return redirectWithMessage({
+    res,
+    path: returnTo,
+    success: 'Course removed from cart.'
+  })
+})
+
+pageRouter.post('/cart/clear', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+  clearSessionCart(req)
+  return redirectWithMessage({
+    res,
+    path: returnTo,
+    success: 'Cart cleared.'
+  })
+})
+
 pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, res) => {
   try {
     const txRef = String(req.query.tx_ref || '').trim()
@@ -1137,6 +1435,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
     payment.creatorCommissionMinor = split.creatorCommissionMinor
     payment.platformShareMinor = split.platformShareMinor
     await payment.save()
+    removeSessionCartCourseId(req, payment.course._id)
 
     await createOrUpdateEnrollment({
       courseId: payment.course._id,
@@ -1218,7 +1517,7 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       .filter(attempt => String(attempt.lessonKey) === currentLesson.lessonKey)
       .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] || null
 
-    const embedUrl = resolveVideoEmbedUrl(currentLesson.videoUrl)
+    const lessonMedia = resolveLessonMedia(currentLesson.videoUrl)
     const chapterSections = (enrollment.course.chapters || []).map((chapter) => ({
       key: String(chapter?.key || ''),
       title: String(chapter?.title || 'Chapter'),
@@ -1240,7 +1539,8 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       course: decorateCourse(enrollment.course),
       lessons,
       currentLesson,
-      embedUrl,
+      embedUrl: lessonMedia.embedUrl,
+      lessonMedia,
       chapterSections,
       completedSet: progress.completedSet,
       progress,
@@ -2600,6 +2900,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     const sortFilter = normalizeSort(req.query.sort)
     const editCourseId = String(req.query.editCourse || req.query.edit || '').trim()
     const editProgramId = String(req.query.editProgram || '').trim()
+    const sessionCartCourseIds = getSessionCartCourseIds(req)
 
     const catalogFilter = {
       isActive: true,
@@ -2763,6 +3064,57 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
 
     const enrolledCourseIds = new Set(myEnrollments.map(item => toIdString(item.course?._id)))
     const paidCourseIds = new Set((myPaymentsRaw || []).map((payment) => toIdString(payment.course)))
+    const cartCoursesRaw = sessionCartCourseIds.length > 0
+      ? await SimpleLmsCourse.find({
+        _id: { $in: sessionCartCourseIds.filter((courseId) => mongoose.Types.ObjectId.isValid(courseId)) },
+        isActive: true,
+        status: 'published',
+        visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+      }).lean()
+      : []
+
+    const cartRawMap = new Map(cartCoursesRaw.map((course) => [toIdString(course._id), course]))
+    const cartCoursesBase = sessionCartCourseIds
+      .map((courseId) => cartRawMap.get(courseId))
+      .filter(Boolean)
+      .map((course) => {
+        const decoratedCourse = decorateCourse(course)
+        const courseId = toIdString(course._id)
+        const requiresPayment = isCoursePaidContent(course)
+        const isPaid = paidCourseIds.has(courseId)
+        const isEnrolled = enrolledCourseIds.has(courseId)
+        return {
+          ...decoratedCourse,
+          requiresPayment,
+          isPaid,
+          isEnrolled,
+          canStart: !requiresPayment || isPaid || isEnrolled
+        }
+      })
+      .filter((course) => course.requiresPayment && !course.isPaid)
+
+    const cleanedCartCourseIds = cartCoursesBase.map((course) => toIdString(course._id))
+    setSessionCartCourseIds(req, cleanedCartCourseIds)
+    const cartCourseIdSet = new Set(cleanedCartCourseIds)
+
+    const cartTotalsByCurrencyMap = new Map()
+    for (const course of cartCoursesBase) {
+      const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
+      const existing = cartTotalsByCurrencyMap.get(currency) || 0
+      const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
+      cartTotalsByCurrencyMap.set(currency, existing + amountMinor)
+    }
+    const cartTotalsByCurrency = Array.from(cartTotalsByCurrencyMap.entries()).map(([currency, amountMinor]) => ({
+      currency,
+      amountMinor,
+      amountDisplay: formatCurrencyAmount(amountMinor, currency)
+    }))
+    const cartSummary = {
+      itemCount: cartCoursesBase.length,
+      totalsByCurrency: cartTotalsByCurrency,
+      hasItems: cartCoursesBase.length > 0
+    }
+
     const catalogCourses = catalogRaw.map((course) => {
       const decoratedCourse = decorateCourse(course)
       const courseId = toIdString(course._id)
@@ -2774,6 +3126,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         requiresPayment,
         isPaid,
         isEnrolled,
+        isInCart: cartCourseIdSet.has(courseId),
         canStart: !requiresPayment || isPaid || isEnrolled
       }
     })
@@ -3171,6 +3524,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       sortOptions: SORT_OPTIONS,
       categories: (categoriesRaw || []).map(item => String(item || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b)),
       catalogCourses,
+      cartCourses: cartCoursesBase,
+      cartSummary,
       recommendedCourses,
       catalogPrograms,
       recommendedPrograms,
@@ -3215,7 +3570,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         creatorCount: totalCreators,
         completionCount: completedEnrollments,
         myEnrollmentCount: myEnrollments.length,
-        myPaidCourseCount: myPayments.length
+        myPaidCourseCount: myPayments.length,
+        cartItemCount: cartSummary.itemCount
       },
       success: String(req.query.success || ''),
       error: String(req.query.error || ''),

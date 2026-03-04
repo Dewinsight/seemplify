@@ -33,6 +33,13 @@
       line-height: 1;
     }
 
+    .notifications-summary-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .notifications-filters {
       display: flex;
       flex-wrap: wrap;
@@ -136,6 +143,13 @@
       flex-wrap: wrap;
     }
 
+    .notification-task-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     @media (max-width: 720px) {
       .notifications-summary-count {
         font-size: 24px;
@@ -167,11 +181,14 @@
     <div class="card notifications-summary">
       <div>
         <div class="notifications-summary-count"><%= notificationSummary?.totalUnread || 0 %></div>
-        <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">Pending notification task<%= (notificationSummary?.totalUnread || 0) === 1 ? '' : 's' %></div>
+        <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">Unread notification task<%= (notificationSummary?.totalUnread || 0) === 1 ? '' : 's' %></div>
       </div>
-      <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+      <div class="notifications-summary-actions">
         <span class="pill pill--soft">Documents: <%= notificationSummary?.counts?.documents || 0 %></span>
         <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary?.counts?.simplePerformance || 0 %></span>
+        <button class="btn btn-secondary btn-sm" type="button" data-mark-all-read>
+          Mark <%= selectedCategory === 'all' ? 'All' : 'Shown' %> as Read
+        </button>
       </div>
     </div>
 
@@ -183,7 +200,7 @@
 
     <% if (!tasks || tasks.length === 0) { %>
       <div class="empty-state">
-        <h3>No pending notifications in this view</h3>
+        <h3>No unread notifications in this view</h3>
         <p>Everything is up to date for this category.</p>
       </div>
     <% } else { %>
@@ -204,7 +221,19 @@
                 <span>•</span>
                 <span><%= taskDate.toLocaleString() %></span>
               </div>
-              <a class="btn btn-primary btn-sm" href="<%= task.actionUrl %>"><%= task.actionLabel || 'Open' %></a>
+              <div class="notification-task-actions">
+                <button
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                  data-mark-read
+                  data-task-id="<%= task.id %>"
+                  data-category="<%= task.category %>"
+                  data-org-id="<%= task.organizationId || '' %>"
+                >
+                  Mark as Read
+                </button>
+                <a class="btn btn-primary btn-sm" href="<%= task.actionUrl %>"><%= task.actionLabel || 'Open' %></a>
+              </div>
             </div>
           </article>
         <% }) %>
@@ -212,7 +241,84 @@
     <% } %>
   </div>
 
+  <script>
+    const selectedNotificationCategory = '<%= selectedCategory || "all" %>';
+
+    async function postNotificationAction(url, payload) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+
+      if (!response.ok) {
+        let message = 'Request failed';
+        try {
+          const data = await response.json();
+          if (data?.error) message = data.error;
+        } catch (error) {}
+        throw new Error(message);
+      }
+
+      return response.json().catch(() => ({}));
+    }
+
+    function refreshWithMessage(message, isError = false) {
+      const url = new URL(window.location.href);
+      if (message) {
+        url.searchParams.set(isError ? 'error' : 'success', message);
+      }
+      if (!isError) {
+        url.searchParams.delete('error');
+      } else {
+        url.searchParams.delete('success');
+      }
+      window.location.assign(url.toString());
+    }
+
+    document.querySelectorAll('[data-mark-read]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const taskId = button.dataset.taskId || '';
+        const category = button.dataset.category || '';
+        const organizationId = button.dataset.orgId || '';
+        if (!taskId || !category) return;
+
+        button.disabled = true;
+        try {
+          await postNotificationAction('/api/notifications/read', {
+            taskId,
+            category,
+            organizationId
+          });
+          refreshWithMessage('Notification marked as read.');
+        } catch (error) {
+          button.disabled = false;
+          refreshWithMessage(error.message || 'Failed to mark notification as read.', true);
+        }
+      });
+    });
+
+    const markAllButton = document.querySelector('[data-mark-all-read]');
+    markAllButton?.addEventListener('click', async () => {
+      markAllButton.disabled = true;
+      try {
+        const result = await postNotificationAction('/api/notifications/read-all', {
+          category: selectedNotificationCategory
+        });
+        const count = Number(result?.markedCount || 0);
+        const successLabel = count === 1
+          ? '1 notification marked as read.'
+          : `${count} notifications marked as read.`;
+        refreshWithMessage(successLabel);
+      } catch (error) {
+        markAllButton.disabled = false;
+        refreshWithMessage(error.message || 'Failed to mark notifications as read.', true);
+      }
+    });
+  </script>
+
   <script src="/js/invitation-gatekeeper.js"></script>
 </body>
 
 </html>
+

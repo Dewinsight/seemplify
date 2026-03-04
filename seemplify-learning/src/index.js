@@ -10,7 +10,10 @@ import setupRouter from './routes/setup.js'
 import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
+import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
+import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
 import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
+import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
 
 dotenv.config()
 
@@ -52,6 +55,8 @@ app.use((req, res, next) => {
   res.locals.brandLearningName = branding.learningName
   res.locals.teachBrand = branding.brandName
   res.locals.teachLabel = branding.teachLabel
+  const cartCourseIds = getSessionCartCourseIds(req)
+  res.locals.simpleLmsCartCount = cartCourseIds.length
   next()
 })
 
@@ -404,6 +409,30 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       .lean()
 
     const course = decoratePublicCourse(courseRaw)
+    const cartCourseIds = getSessionCartCourseIds(req)
+    const courseIdString = String(courseRaw._id)
+    const inCart = cartCourseIds.includes(courseIdString)
+
+    let isEnrolled = false
+    let hasSuccessfulPayment = false
+    if (req.user?._id) {
+      const enrollmentPromise = SimpleLmsEnrollment.exists({
+        course: courseRaw._id,
+        enrolledMember: req.user._id
+      })
+      const paymentPromise = course.requiresPayment
+        ? SimpleLmsPayment.exists({
+            account: req.user._id,
+            course: courseRaw._id,
+            status: 'successful'
+          })
+        : Promise.resolve(null)
+      const [enrollmentExists, paymentExists] = await Promise.all([enrollmentPromise, paymentPromise])
+      isEnrolled = Boolean(enrollmentExists)
+      hasSuccessfulPayment = Boolean(paymentExists)
+    }
+
+    const canStartNow = !course.requiresPayment || hasSuccessfulPayment || isEnrolled
     const relatedCourses = relatedRaw.map(decoratePublicCourse)
 
     const chapters = Array.isArray(courseRaw.chapters)
@@ -430,8 +459,14 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       course,
       chapters,
       relatedCourses,
+      inCart,
+      cartCount: cartCourseIds.length,
+      canStartNow,
+      isEnrolled,
+      hasSuccessfulPayment,
       success: String(req.query.success || ''),
-      error: String(req.query.error || '')
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
     })
   } catch (error) {
     console.error('Failed to load public course detail:', error)

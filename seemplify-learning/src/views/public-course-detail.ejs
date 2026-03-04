@@ -6,64 +6,98 @@
   <title><%= title %></title>
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
-  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-1">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-2">
   <script src="/js/theme.js?v=2"></script>
 </head>
-<body>
+<body class="public-site">
   <%- include('./partials/nav', { user, activePage }) %>
 
   <% const takePath = `/simple-lms/take/${course._id}` %>
-  <% const takeHref = user ? takePath : `/login?return_to=${encodeURIComponent(takePath)}` %>
+  <% const detailPath = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
   <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
+  <% const learnLoginHref = `/login?return_to=${encodeURIComponent(takePath)}` %>
+  <% const registerToLearnHref = `/register?return_to=${encodeURIComponent(takePath)}&intent=learn&source=course_detail` %>
+  <%
+    const formatDuration = (minutes) => {
+      const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
+      if (total >= 60) {
+        const hours = Math.floor(total / 60)
+        const remain = total % 60
+        return remain > 0 ? `${hours}h ${remain}m` : `${hours}h`
+      }
+      return `${Math.max(0, Math.round(total))}m`
+    }
+    const fallbackCourseVisuals = [
+      'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80'
+    ]
+    const categoryVisualHints = [
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['communication', 'professional', 'soft'], image: 'https://images.unsplash.com/photo-1573497019236-61f323342eb1?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80' }
+    ]
+    const courseImageFor = (entry, index) => {
+      if (entry?.banner?.url) return entry.banner.url
+      const normalizedCategory = String(entry?.category || '').toLowerCase()
+      const match = categoryVisualHints.find((e) => e.match.some((term) => normalizedCategory.includes(term)))
+      if (match?.image) return match.image
+      return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
+    }
+  %>
 
-  <main class="public-shell">
-    <section class="public-surface">
-      <a href="/courses" class="btn btn-secondary btn-sm" style="width: fit-content;">Back to Catalog</a>
+  <main class="lmsv-shell">
+    <section class="lmsv-surface-card" style="padding:10px 16px;">
+      <a href="/courses" class="btn btn-secondary btn-sm" style="width:fit-content;">Back to Catalog</a>
     </section>
+
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
 
-    <section class="detail-layout">
-      <div class="detail-main">
-        <article class="detail-card">
-          <p class="public-kicker">Course Detail</p>
-          <h1 class="detail-title"><%= course.title %></h1>
-          <div class="detail-meta">
-            <span class="course-pill"><%= course.levelLabel %></span>
-            <% if (course.category) { %>
-              <span class="course-pill"><%= course.category %></span>
-            <% } %>
-            <span class="course-pill"><%= course.lessonCount %> lessons</span>
-            <span class="course-pill"><%= Math.round(course.estimatedDurationMinutes) %> mins</span>
-          </div>
-          <p class="detail-description"><%= course.previewSummary %></p>
-          <% if (course.description) { %>
-            <p class="detail-description"><%= course.description %></p>
-          <% } %>
-        </article>
+    <section class="lmsv-detail-hero">
+      <p class="lmsv-kicker">Course Detail</p>
+      <h1><%= course.title %></h1>
+      <div class="lmsv-pill-row">
+        <span><%= course.levelLabel %></span>
+        <% if (course.category) { %><span><%= course.category %></span><% } %>
+        <span><%= course.lessonCount %> lessons</span>
+        <span><%= formatDuration(course.estimatedDurationMinutes) %></span>
+      </div>
+      <p><%= course.previewSummary %></p>
+    </section>
 
-        <article class="detail-banner">
-          <% if (course.banner?.url) { %>
+    <section class="lmsv-detail-layout">
+      <div class="lmsv-detail-main">
+        <% if (course.banner?.url) { %>
+          <article class="lmsv-detail-banner">
             <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
-          <% } else { %>
-            <span>No banner uploaded</span>
-          <% } %>
-        </article>
+          </article>
+        <% } %>
 
-        <article class="detail-outline">
+        <% if (course.description) { %>
+          <article class="lmsv-detail-card">
+            <h3>About This Course</h3>
+            <p class="lmsv-detail-note"><%= course.description %></p>
+          </article>
+        <% } %>
+
+        <article class="lmsv-detail-card">
           <h3>Course Outline</h3>
           <% if (!chapters || chapters.length === 0) { %>
-            <p class="detail-note">Curriculum details will appear here when chapters are published.</p>
+            <p class="lmsv-detail-note">Curriculum details will appear here when chapters are published.</p>
           <% } else { %>
-            <div class="outline-list">
+            <div class="lmsv-outline-list">
               <% chapters.forEach((chapter, index) => { %>
-                <section class="outline-item">
+                <section class="lmsv-outline-item">
                   <h4><%= index + 1 %>. <%= chapter.title %></h4>
                   <% if (chapter.description) { %>
                     <p><%= chapter.description %></p>
                   <% } %>
                   <% if (chapter.lessons && chapter.lessons.length > 0) { %>
-                    <ol class="outline-lessons">
+                    <ol class="lmsv-outline-lessons">
                       <% chapter.lessons.forEach((lesson) => { %>
                         <li>
                           <%= lesson.title %>
@@ -81,35 +115,31 @@
         </article>
 
         <% if (relatedCourses && relatedCourses.length > 0) { %>
-          <section class="public-surface">
-            <div class="public-surface-head">
+          <section class="lmsv-section">
+            <header class="lmsv-section-head">
               <div>
-                <h2 class="public-surface-title">Related Courses</h2>
-                <p class="public-surface-subtitle">Continue with similar topics after this course.</p>
+                <h2>Related Courses</h2>
+                <p>Continue with similar topics after this course.</p>
               </div>
-            </div>
-            <div class="course-grid">
-              <% relatedCourses.forEach((entry) => { %>
-                <article class="course-card">
-                  <a class="course-card-media" href="<%= courseHref(entry) %>">
-                    <% if (entry.banner?.url) { %>
-                      <img src="<%= entry.banner.url %>" alt="<%= entry.title %> banner">
-                    <% } else { %>
-                      <span><%= entry.category || 'Course' %></span>
-                    <% } %>
+              <span class="lmsv-count-pill"><%= relatedCourses.length %> related</span>
+            </header>
+            <div class="lmsv-course-grid">
+              <% relatedCourses.forEach((entry, idx) => { %>
+                <article class="lmsv-course-card">
+                  <a href="<%= courseHref(entry) %>" class="lmsv-course-media">
+                    <img src="<%= courseImageFor(entry, idx) %>" alt="<%= entry.title %> banner">
+                    <span class="lmsv-level-pill"><%= entry.levelLabel %></span>
                   </a>
-                  <div class="course-card-body">
-                    <div class="course-card-meta">
-                      <span class="course-pill"><%= entry.levelLabel %></span>
-                      <% if (entry.category) { %>
-                        <span class="course-pill"><%= entry.category %></span>
-                      <% } %>
+                  <div class="lmsv-course-body">
+                    <div class="lmsv-pill-row lmsv-pill-row-muted">
+                      <% if (entry.category) { %><span><%= entry.category %></span><% } %>
+                      <span><%= entry.lessonCount %> lessons</span>
                     </div>
                     <h3><a href="<%= courseHref(entry) %>"><%= entry.title %></a></h3>
                     <p><%= entry.previewSummary %></p>
-                    <div class="course-card-footer">
-                      <span class="course-price"><%= entry.displayPrice %></span>
-                      <a href="<%= courseHref(entry) %>" class="btn btn-secondary btn-sm">View</a>
+                    <div class="lmsv-course-foot">
+                      <span class="lmsv-price-tag"><%= entry.displayPrice %></span>
+                      <a href="<%= courseHref(entry) %>" class="lmsv-inline-link">View Details -></a>
                     </div>
                   </div>
                 </article>
@@ -119,29 +149,56 @@
         <% } %>
       </div>
 
-      <aside class="detail-side">
-        <article class="detail-card">
-          <p class="detail-cta-price"><%= course.displayPrice %></p>
-          <p class="detail-note">
+      <aside class="lmsv-detail-side">
+        <article class="lmsv-detail-card">
+          <p class="lmsv-detail-cta-price"><%= course.displayPrice %></p>
+          <p class="lmsv-detail-note">
             <strong>Instructor:</strong> <%= course.authorName %><br>
-            <strong>Duration:</strong> <%= Math.round(course.estimatedDurationMinutes) %> minutes
+            <strong>Duration:</strong> <%= formatDuration(course.estimatedDurationMinutes) %>
           </p>
-          <% if (user && course.requiresPayment) { %>
-            <form method="get" action="/simple-lms/courses/<%= course._id %>/pay">
-              <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
-              <button type="submit" class="btn btn-primary" style="width:100%;">Pay & Unlock</button>
-            </form>
+
+          <% if (user) { %>
+            <% if (canStartNow) { %>
+              <a href="<%= takePath %>" class="btn btn-primary" style="width:100%;text-align:center;">
+                <%= isEnrolled ? 'Continue Learning' : 'Start Learning' %>
+              </a>
+              <% if (course.requiresPayment && hasSuccessfulPayment) { %>
+                <p class="lmsv-detail-note">Payment confirmed. This paid course is unlocked for your account.</p>
+              <% } %>
+            <% } else { %>
+              <form method="post" action="/simple-lms/courses/<%= course._id %>/pay">
+                <input type="hidden" name="next" value="<%= takePath %>">
+                <button type="submit" class="btn btn-primary" style="width:100%;">Purchase Now</button>
+              </form>
+              <% if (inCart) { %>
+                <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="margin-top:8px;">
+                  <input type="hidden" name="returnTo" value="<%= detailPath %>">
+                  <button type="submit" class="btn btn-danger" style="width:100%;">Remove From Cart</button>
+                </form>
+              <% } else { %>
+                <form method="post" action="/simple-lms/cart/add" style="margin-top:8px;">
+                  <input type="hidden" name="courseId" value="<%= course._id %>">
+                  <input type="hidden" name="returnTo" value="<%= detailPath %>">
+                  <button type="submit" class="btn btn-secondary" style="width:100%;">Add To Cart</button>
+                </form>
+              <% } %>
+              <a href="/simple-lms?view=catalog#cart-panel" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">
+                View Cart (<%= Number(cartCount || 0) %>)
+              </a>
+              <p class="lmsv-detail-note">This is a paid course. Purchase now or save it to your cart first.</p>
+            <% } %>
           <% } else { %>
-            <a href="<%= takeHref %>" class="btn btn-primary">
-              <%= user ? 'Start Learning' : 'Login to Start Learning' %>
-            </a>
+            <a href="<%= learnLoginHref %>" class="btn btn-primary" style="width:100%;text-align:center;">Login to Start Learning</a>
+            <a href="<%= registerToLearnHref %>" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">Create Account</a>
+            <p class="lmsv-detail-note">
+              You can browse freely. Login is required when you want to start this course.
+            </p>
           <% } %>
-          <p class="detail-note">
-            You can explore content without an account. Login is required only when you want to start this course.
-          </p>
         </article>
       </aside>
     </section>
   </main>
+
+  <%- include('./partials/public-footer') %>
 </body>
 </html>

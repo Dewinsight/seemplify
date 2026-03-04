@@ -219,6 +219,20 @@ const AccountSchema = new mongoose.Schema({
     }
   },
 
+  // Per-item notification read checkpoints
+  notificationReads: {
+    documentsAssignments: {
+      type: Map,
+      of: Date,
+      default: {}
+    },
+    simplePerformanceEvaluations: {
+      type: Map,
+      of: Date,
+      default: {}
+    }
+  },
+
   // =====================================================
   // EMPLOYEE PROFILE - HR Information
   // =====================================================

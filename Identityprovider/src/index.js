@@ -3817,6 +3817,11 @@ const DASHBOARD_NOTIFICATION_VIEW_PATHS = Object.freeze({
   simpleLms: 'notificationViews.simpleLmsByOrganization'
 })
 
+const NOTIFICATION_READ_PATHS = Object.freeze({
+  documents: 'notificationReads.documentsAssignments',
+  simplePerformance: 'notificationReads.simplePerformanceEvaluations'
+})
+
 const getOrganizationIdsFromAccount = (account) => {
   if (!account || !Array.isArray(account.organizations)) {
     return []
@@ -3858,6 +3863,27 @@ const readNotificationViewDate = (mapLike, organizationId) => {
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
 }
 
+const readNotificationEntityDate = (mapLike, entityId) => {
+  const key = String(entityId || '').trim()
+  if (!key || !mapLike) {
+    return null
+  }
+
+  let rawValue = null
+  if (typeof mapLike.get === 'function') {
+    rawValue = mapLike.get(key)
+  } else if (typeof mapLike === 'object') {
+    rawValue = mapLike[key]
+  }
+
+  if (!rawValue) {
+    return null
+  }
+
+  const parsedDate = new Date(rawValue)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
 const getDashboardNotificationViewedAt = (account, type, organizationId) => {
   const orgId = String(organizationId || '').trim()
   if (!orgId) {
@@ -3874,6 +3900,72 @@ const getDashboardNotificationViewedAt = (account, type, organizationId) => {
     return readNotificationViewDate(account?.notificationViews?.simpleLmsByOrganization, orgId)
   }
   return null
+}
+
+const getNotificationEntityReadAt = (account, type, entityId) => {
+  const id = String(entityId || '').trim()
+  if (!id) {
+    return null
+  }
+
+  if (type === NOTIFICATION_CATEGORY.documents) {
+    return readNotificationEntityDate(account?.notificationReads?.documentsAssignments, id)
+  }
+  if (type === NOTIFICATION_CATEGORY.simplePerformance) {
+    return readNotificationEntityDate(account?.notificationReads?.simplePerformanceEvaluations, id)
+  }
+  return null
+}
+
+const getNotificationReferenceFromTask = (task = {}) => {
+  const idValue = String(task.id || '').trim()
+  const [category, rawEntityId] = idValue.split(':')
+  const entityId = String(rawEntityId || '').trim()
+  const normalizedCategory = getNotificationCategory(category, '')
+  if (!normalizedCategory || !entityId) {
+    return null
+  }
+  return {
+    category: normalizedCategory,
+    entityId,
+    organizationId: task.organizationId ? String(task.organizationId) : ''
+  }
+}
+
+const markNotificationReferencesAsRead = async ({ accountId, references = [] }) => {
+  if (!accountId) {
+    return
+  }
+
+  const now = new Date()
+  const updateSet = {}
+
+  for (const reference of references) {
+    if (!reference) continue
+    const category = getNotificationCategory(reference.category, '')
+    const entityId = String(reference.entityId || '').trim()
+    const organizationId = String(reference.organizationId || '').trim()
+    if (!category || !entityId) continue
+
+    const readPath = NOTIFICATION_READ_PATHS[category]
+    if (readPath) {
+      updateSet[`${readPath}.${entityId}`] = now
+    }
+
+    const viewPath = DASHBOARD_NOTIFICATION_VIEW_PATHS[category]
+    if (viewPath && organizationId) {
+      updateSet[`${viewPath}.${organizationId}`] = now
+    }
+  }
+
+  if (Object.keys(updateSet).length === 0) {
+    return
+  }
+
+  await Account.updateOne(
+    { _id: accountId },
+    { $set: updateSet }
+  )
 }
 
 const markDashboardNotificationViewed = async ({ accountId, type, organizationIds }) => {
@@ -3987,9 +4079,41 @@ const buildNotificationCenterData = async (account, options = {}) => {
     .sort({ updatedAt: -1, createdAt: -1 })
     .lean()
 
-  // Documents notifications represent pending work, not just unseen updates.
-  // Keep these visible until the assignment itself is completed/cancelled.
-  const unreadDocumentAssignments = pendingOnboardingAssignments
+  // Documents notifications represent pending work until explicitly read.
+  // A pending assignment reappears if it is updated after it was marked as read.
+  const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
+    const assignmentId = assignment?._id?.toString()
+    if (!assignmentId) return true
+
+    const assignmentOrganizationId =
+      assignment?.organization?._id?.toString() ||
+      assignment?.organization?.toString() ||
+      ''
+    const referenceTimestamp = assignment?.updatedAt || assignment?.createdAt
+      ? new Date(assignment.updatedAt || assignment.createdAt).getTime()
+      : 0
+
+    const entityReadAt = getNotificationEntityReadAt(
+      account,
+      NOTIFICATION_CATEGORY.documents,
+      assignmentId
+    )
+    if (entityReadAt && (!referenceTimestamp || entityReadAt.getTime() >= referenceTimestamp)) {
+      return false
+    }
+
+    // Backward compatibility: respect older category-level viewed checkpoints.
+    const categoryViewedAt = getDashboardNotificationViewedAt(
+      account,
+      NOTIFICATION_CATEGORY.documents,
+      assignmentOrganizationId
+    )
+    if (categoryViewedAt && referenceTimestamp && categoryViewedAt.getTime() >= referenceTimestamp) {
+      return false
+    }
+
+    return true
+  })
 
   const unreadPerformanceEvaluations = organizationIds.length === 0
       ? []
@@ -4002,6 +4126,20 @@ const buildNotificationCenterData = async (account, options = {}) => {
         .limit(performanceQueryLimit)
         .lean())
       .filter(evaluation => {
+        const evaluationId = evaluation?._id?.toString()
+        const evaluationTimestamp = evaluation?.createdAt || evaluation?.evaluationDate
+        const evaluationTime = evaluationTimestamp ? new Date(evaluationTimestamp).getTime() : 0
+        if (evaluationId) {
+          const entityReadAt = getNotificationEntityReadAt(
+            account,
+            NOTIFICATION_CATEGORY.simplePerformance,
+            evaluationId
+          )
+          if (entityReadAt && (!evaluationTime || entityReadAt.getTime() >= evaluationTime)) {
+            return false
+          }
+        }
+
         const evaluationOrganizationId =
           evaluation?.organization?._id?.toString() ||
           evaluation?.organization?.toString() ||
@@ -4015,7 +4153,6 @@ const buildNotificationCenterData = async (account, options = {}) => {
         )
         if (!lastViewedAt) return true
 
-        const evaluationTimestamp = evaluation?.createdAt || evaluation?.evaluationDate
         if (!evaluationTimestamp) return true
 
         return new Date(evaluationTimestamp).getTime() > lastViewedAt.getTime()
@@ -4351,6 +4488,68 @@ const parsePerformanceRating = (value) => {
     return null
   }
   return parsed
+}
+
+const buildTeamHierarchyMaps = (teams = []) => {
+  const teamById = new Map()
+  const childrenByParent = new Map()
+
+  for (const team of teams) {
+    const teamId = String(team?._id || '').trim()
+    if (!teamId) continue
+    teamById.set(teamId, team)
+  }
+
+  for (const team of teams) {
+    const teamId = String(team?._id || '').trim()
+    if (!teamId) continue
+    const parentId = String(team?.parentTeam || '').trim()
+    if (!parentId) continue
+    if (!childrenByParent.has(parentId)) {
+      childrenByParent.set(parentId, [])
+    }
+    childrenByParent.get(parentId).push(teamId)
+  }
+
+  return { teamById, childrenByParent }
+}
+
+const collectTeamAndDescendantIds = (rootTeamId, childrenByParent) => {
+  const rootId = String(rootTeamId || '').trim()
+  if (!rootId) return new Set()
+
+  const collected = new Set()
+  const stack = [rootId]
+  while (stack.length > 0) {
+    const teamId = stack.pop()
+    if (!teamId || collected.has(teamId)) continue
+    collected.add(teamId)
+    const children = childrenByParent.get(teamId) || []
+    for (const childId of children) {
+      if (!collected.has(childId)) {
+        stack.push(childId)
+      }
+    }
+  }
+
+  return collected
+}
+
+const resolveTeamPath = (teamId, teamById) => {
+  const rootId = String(teamId || '').trim()
+  if (!rootId) return []
+
+  const path = []
+  const seen = new Set()
+  let cursor = rootId
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor)
+    const team = teamById.get(cursor)
+    if (!team) break
+    path.unshift(team.name || 'Team')
+    cursor = String(team.parentTeam || '').trim()
+  }
+  return path
 }
 
 const updateOnboardingAssignmentStatus = (assignment) => {
@@ -4807,6 +5006,106 @@ app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
   }
 })
 
+app.post('/api/notifications/read', getSessionUser, async (req, res) => {
+  try {
+    const taskId = String(req.body?.taskId || '').trim()
+    const categoryFromBody = getNotificationCategory(req.body?.category, '')
+    const organizationId = String(req.body?.organizationId || '').trim()
+
+    let reference = null
+    if (taskId) {
+      reference = getNotificationReferenceFromTask({
+        id: taskId,
+        organizationId
+      })
+    }
+
+    if (!reference) {
+      const category = categoryFromBody
+      const assignmentId = String(req.body?.assignmentId || '').trim()
+      const evaluationId = String(req.body?.evaluationId || '').trim()
+      const entityId = category === NOTIFICATION_CATEGORY.documents
+        ? assignmentId
+        : (category === NOTIFICATION_CATEGORY.simplePerformance ? evaluationId : '')
+
+      if (category && entityId) {
+        reference = {
+          category,
+          entityId,
+          organizationId
+        }
+      }
+    }
+
+    if (!reference) {
+      return res.status(400).json({ success: false, error: 'Notification reference is required' })
+    }
+
+    if (reference.organizationId) {
+      const orgIds = getOrganizationIdsFromAccount(req.user)
+      if (!orgIds.includes(reference.organizationId)) {
+        return res.status(403).json({ success: false, error: 'You are not allowed to modify this notification' })
+      }
+    }
+
+    await markNotificationReferencesAsRead({
+      accountId: req.user._id,
+      references: [reference]
+    })
+
+    const updatedAccount = await Account.findById(req.user._id)
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    const summary = await buildNotificationCenterData(updatedAccount, { maxTasks: 6 })
+
+    return res.json({
+      success: true,
+      totalUnread: summary.totalUnread,
+      counts: summary.counts
+    })
+  } catch (error) {
+    console.error('Mark notification read API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to mark notification as read' })
+  }
+})
+
+app.post('/api/notifications/read-all', getSessionUser, async (req, res) => {
+  try {
+    const selectedCategory = getNotificationCategory(req.body?.category, NOTIFICATION_CATEGORY.all)
+    const summary = await buildNotificationCenterData(req.user, {
+      maxTasks: 250,
+      includeAllTasks: true
+    })
+
+    const scopedTasks = selectedCategory === NOTIFICATION_CATEGORY.all
+      ? summary.tasks
+      : summary.tasks.filter(task => task.category === selectedCategory)
+    const references = scopedTasks
+      .map(task => getNotificationReferenceFromTask(task))
+      .filter(Boolean)
+
+    await markNotificationReferencesAsRead({
+      accountId: req.user._id,
+      references
+    })
+
+    const updatedAccount = await Account.findById(req.user._id)
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    const updatedSummary = await buildNotificationCenterData(updatedAccount, { maxTasks: 6 })
+
+    return res.json({
+      success: true,
+      markedCount: references.length,
+      totalUnread: updatedSummary.totalUnread,
+      counts: updatedSummary.counts
+    })
+  } catch (error) {
+    console.error('Mark all notifications read API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to mark notifications as read' })
+  }
+})
+
 app.get('/notifications', getSessionUser, async (req, res) => {
   try {
     const summary = await buildNotificationCenterData(req.user, { maxTasks: 120, includeAllTasks: true })
@@ -4870,6 +5169,16 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
     if (type === NOTIFICATION_CATEGORY.documents) {
       const workflow = normalizeWorkflowType(req.query.workflow, { allowAll: false, fallback: 'all' })
       const assignmentId = String(req.query.assignment || '').trim()
+      if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
+        await markNotificationReferencesAsRead({
+          accountId: req.user._id,
+          references: [{
+            category: NOTIFICATION_CATEGORY.documents,
+            entityId: assignmentId,
+            organizationId
+          }]
+        })
+      }
       const params = new URLSearchParams()
       if (workflow && workflow !== 'all') params.set('workflow', workflow)
       params.set('tab', 'my')
@@ -4881,6 +5190,17 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
     }
 
     if (type === NOTIFICATION_CATEGORY.simplePerformance) {
+      const evaluationId = String(req.query.evaluation || '').trim()
+      if (evaluationId && mongoose.Types.ObjectId.isValid(evaluationId)) {
+        await markNotificationReferencesAsRead({
+          accountId: req.user._id,
+          references: [{
+            category: NOTIFICATION_CATEGORY.simplePerformance,
+            entityId: evaluationId,
+            organizationId
+          }]
+        })
+      }
       return res.redirect('/performance-evaluations?view=overview&reviewed=me')
     }
 
@@ -5437,10 +5757,12 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
     const teamManagementUrl = `/organizations/${orgContext.organizationId}/teams`
 
     const organizationTeams = await Team.find({ organization: orgContext.organizationId })
-      .select('_id name')
+      .select('_id name parentTeam')
       .sort({ name: 1 })
       .lean()
     const organizationTeamCount = organizationTeams.length
+    const { teamById: organizationTeamById, childrenByParent: organizationTeamChildrenByParent } =
+      buildTeamHierarchyMaps(organizationTeams)
 
     const requestedView = getQueryStringValue(req.query.view).trim().toLowerCase()
     let viewMode = 'overview'
@@ -5455,7 +5777,7 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       evaluableTeams = organizationTeams.map(team => ({
         teamId: String(team._id),
         teamName: team.name || 'Team',
-        teamHierarchyPath: [team.name || 'Team']
+        teamHierarchyPath: resolveTeamPath(team._id, organizationTeamById)
       }))
     } else {
       const evaluableTeamMap = new Map()
@@ -5484,9 +5806,12 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       selectedTeam = evaluableTeams[0]
     }
     const selectedTeamId = selectedTeam?.teamId || ''
+    const selectedTeamScopeIds = selectedTeamId
+      ? collectTeamAndDescendantIds(selectedTeamId, organizationTeamChildrenByParent)
+      : new Set()
 
     const teamScopedEvaluableMembers = selectedTeamId
-      ? evaluableMembers.filter(member => String(member.teamId || '') === selectedTeamId)
+      ? evaluableMembers.filter(member => selectedTeamScopeIds.has(String(member.teamId || '').trim()))
       : (canViewAllHistory ? [] : evaluableMembers)
     const teamScopedMemberMap = new Map(teamScopedEvaluableMembers.map(member => [member.accountId, member]))
 
@@ -5514,7 +5839,12 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
       historyQuery.evaluatedMember = req.user._id
     } else {
       if (selectedTeamId) {
-        historyQuery.evaluatedTeam = selectedTeamId
+        const scopedTeamIds = selectedTeamScopeIds.size
+          ? Array.from(selectedTeamScopeIds)
+          : [selectedTeamId]
+        historyQuery.evaluatedTeam = scopedTeamIds.length > 1
+          ? { $in: scopedTeamIds }
+          : scopedTeamIds[0]
       }
       if (requestedMember?.accountId) {
         historyQuery.evaluatedMember = requestedMember.accountId
@@ -5692,12 +6022,27 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
         error: 'Select a valid member to evaluate.'
       })
     }
-    if (requestedTeamId && String(selectedMember.teamId || '') !== requestedTeamId) {
-      return redirectToPerformanceEvaluations(res, {
-        view: 'new',
-        team: requestedTeamId,
-        error: 'Selected member is not in the selected team.'
-      })
+
+    if (requestedTeamId) {
+      const selectedMemberTeamId = String(selectedMember.teamId || '').trim()
+      let teamMatchesSelection = selectedMemberTeamId === requestedTeamId
+
+      if (!teamMatchesSelection) {
+        const organizationTeams = await Team.find({ organization: orgContext.organizationId })
+          .select('_id parentTeam')
+          .lean()
+        const { childrenByParent } = buildTeamHierarchyMaps(organizationTeams)
+        const requestedScopeIds = collectTeamAndDescendantIds(requestedTeamId, childrenByParent)
+        teamMatchesSelection = requestedScopeIds.has(selectedMemberTeamId)
+      }
+
+      if (!teamMatchesSelection) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          team: requestedTeamId,
+          error: 'Selected member is not in the selected team.'
+        })
+      }
     }
 
     const ratings = []
