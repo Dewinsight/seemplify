@@ -1,3 +1,5 @@
+<% const teachNavLabel = typeof teachLabel === 'string' && teachLabel.trim() ? teachLabel.trim() : 'Teach on Seemplify' %>
+
 <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
 <label for="mobile-nav-toggle" class="mobile-nav-overlay" aria-label="Close menu"></label>
 
@@ -10,6 +12,7 @@
 
   <div class="mobile-drawer-links">
     <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(activePage) ? ' active' : '' %>">Explore Courses</a>
+    <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
     <% if (user) { %>
       <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
     <% } %>
@@ -56,6 +59,7 @@
 
   <div class="top-nav-links">
     <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(activePage) ? ' active' : '' %>">Explore Courses</a>
+    <a href="/teach" class="top-nav-link<%= activePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
     <% if (user) { %>
       <a href="/simple-lms" class="top-nav-link<%= activePage === 'simple-lms' ? ' active' : '' %>">Learning Workspace</a>
     <% } %>

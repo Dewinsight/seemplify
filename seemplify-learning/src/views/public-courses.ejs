@@ -12,17 +12,77 @@
 <body>
   <%- include('./partials/nav', { user, activePage }) %>
 
-  <% const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
+  <% 
+    const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+    const catalogVisuals = {
+      hero: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1600&q=80',
+      cueOne: 'https://images.unsplash.com/photo-1467232004584-a241de8bcf5d?auto=format&fit=crop&w=900&q=80',
+      cueTwo: 'https://images.unsplash.com/photo-1526379095098-d400fd0bf935?auto=format&fit=crop&w=900&q=80',
+      cueThree: 'https://images.unsplash.com/photo-1573497019418-b400bb3ab074?auto=format&fit=crop&w=900&q=80'
+    }
+    const fallbackCourseVisuals = [
+      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=900&q=80'
+    ]
+    const categoryVisualHints = [
+      { match: ['design', 'ux', 'ui', 'creative', 'brand'], image: 'https://images.unsplash.com/photo-1452802447250-470a88ac82bc?auto=format&fit=crop&w=900&q=80' },
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=900&q=80' },
+      { match: ['marketing', 'sales', 'growth'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=900&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80' }
+    ]
+    const courseImageFor = (course, index) => {
+      if (course?.banner?.url) return course.banner.url
+      const normalizedCategory = String(course?.category || '').toLowerCase()
+      const match = categoryVisualHints.find((entry) => entry.match.some((term) => normalizedCategory.includes(term)))
+      if (match?.image) return match.image
+      return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
+    }
+    const formatDuration = (minutes) => {
+      const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
+      if (total >= 60) {
+        const hours = Math.floor(total / 60)
+        const remain = total % 60
+        return remain > 0 ? `${hours}h ${remain}m` : `${hours}h`
+      }
+      return `${Math.max(0, Math.round(total))}m`
+    }
+  %>
 
   <main class="public-shell">
-    <section class="public-hero">
-      <p class="public-kicker">Course Catalog</p>
-      <h1 class="public-title">Explore public courses before signing in.</h1>
-      <p class="public-subtitle">
-        Filter by topic, level, or keyword. Open any course to inspect curriculum and details.
-        Login is only needed when you are ready to start a course.
-      </p>
+    <section class="catalog-hero">
+      <img src="<%= catalogVisuals.hero %>" alt="Learners collaborating in a digital class" class="catalog-hero-image">
+      <div class="catalog-hero-layer"></div>
+      <article class="catalog-hero-card">
+        <p class="public-kicker">Course Catalog</p>
+        <h1 class="public-title">Find the right course faster with visual discovery.</h1>
+        <p class="public-subtitle">
+          Explore by topic, level, and depth before committing. Every listing shows enough detail
+          to help you decide confidently.
+        </p>
+        <div class="public-actions">
+          <a href="<%= teachCtaHref %>" class="btn btn-secondary btn-sm"><%= `Teach on ${teachBrand}` %></a>
+          <a href="/teach" class="btn btn-secondary btn-sm">Creator Guide</a>
+        </div>
+      </article>
       <label for="catalog-filter-toggle" class="btn btn-secondary btn-sm catalog-filter-toggle">Open Filters</label>
+    </section>
+
+    <section class="catalog-cues">
+      <article class="catalog-cue-card">
+        <img src="<%= catalogVisuals.cueOne %>" alt="Skill-building through guided lessons">
+        <p>Practical lessons</p>
+      </article>
+      <article class="catalog-cue-card">
+        <img src="<%= catalogVisuals.cueTwo %>" alt="Technical workspace with data visualizations">
+        <p>Deep-dive tracks</p>
+      </article>
+      <article class="catalog-cue-card">
+        <img src="<%= catalogVisuals.cueThree %>" alt="Professional development coaching session">
+        <p>Career outcomes</p>
+      </article>
     </section>
 
     <input type="checkbox" id="catalog-filter-toggle" class="catalog-filter-checkbox">
@@ -73,23 +133,20 @@
         <% if (!courses || courses.length === 0) { %>
           <div class="empty-state">No courses match your filters yet.</div>
         <% } else { %>
-          <div class="course-grid">
-            <% courses.forEach((course) => { %>
+          <div class="course-grid marketplace-course-grid">
+            <% courses.forEach((course, index) => { %>
               <article class="course-card">
                 <a class="course-card-media" href="<%= courseHref(course) %>">
-                  <% if (course.banner?.url) { %>
-                    <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
-                  <% } else { %>
-                    <span><%= course.category || 'Public Course' %></span>
-                  <% } %>
+                  <img src="<%= courseImageFor(course, index) %>" alt="<%= course.title %> banner">
+                  <span class="course-card-media-badge"><%= course.levelLabel %></span>
                 </a>
                 <div class="course-card-body">
                   <div class="course-card-meta">
-                    <span class="course-pill"><%= course.levelLabel %></span>
                     <% if (course.category) { %>
                       <span class="course-pill"><%= course.category %></span>
                     <% } %>
                     <span class="course-pill"><%= course.lessonCount %> lessons</span>
+                    <span class="course-pill"><%= formatDuration(course.estimatedDurationMinutes) %></span>
                   </div>
                   <h3><a href="<%= courseHref(course) %>"><%= course.title %></a></h3>
                   <p><%= course.previewSummary %></p>

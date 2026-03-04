@@ -70,6 +70,30 @@ const AccountSchema = new mongoose.Schema({
     default: 'learner',
     index: true
   },
+  learningProfile: {
+    registrationIntent: {
+      type: String,
+      enum: ['learn', 'teach', 'unknown'],
+      default: 'learn'
+    },
+    intentSource: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: 'direct'
+    },
+    instructorActivatedAt: Date,
+    instructorOnboardingCompleted: {
+      type: Boolean,
+      default: false
+    },
+    firstCourseCreatedAt: Date,
+    firstCourse: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinSimpleLmsCourse',
+      default: null
+    }
+  },
   organizations: {
     type: [organizationMembershipSchema],
     default: []

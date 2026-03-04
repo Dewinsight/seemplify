@@ -6,6 +6,8 @@ import { optionalAuth } from '../middleware/auth.js'
 
 const router = express.Router()
 
+const LEARNING_INTENTS = ['learn', 'teach']
+
 const sanitizeReturnTo = (value) => {
   const normalized = String(value || '').trim()
   if (!normalized.startsWith('/')) return '/simple-lms'
@@ -13,16 +15,59 @@ const sanitizeReturnTo = (value) => {
   return normalized
 }
 
+const sanitizeIntent = (value, fallback = 'learn') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (LEARNING_INTENTS.includes(normalized)) return normalized
+  return fallback
+}
+
+const sanitizeIntentSource = (value, fallback = 'direct') => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return normalized || fallback
+}
+
+const appendQuery = (path, entries = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(entries).forEach(([key, rawValue]) => {
+    const value = String(rawValue || '').trim()
+    if (value) params.set(key, value)
+  })
+  const query = params.toString()
+  if (!query) return path
+  return `${path}${path.includes('?') ? '&' : '?'}${query}`
+}
+
 const createSub = () => `sl_${crypto.randomUUID().replace(/-/g, '')}`
 
 router.get('/login', optionalAuth, async (req, res) => {
+  const returnTo = sanitizeReturnTo(req.query.return_to)
   if (req.user) {
-    return res.redirect('/simple-lms')
+    return res.redirect(returnTo || '/simple-lms')
   }
+
+  const registerIntent = sanitizeIntent(
+    req.query.intent || (returnTo.startsWith('/teach') ? 'teach' : 'learn'),
+    'learn'
+  )
+  const registerSource = sanitizeIntentSource(
+    req.query.source || (registerIntent === 'teach' ? 'teach_login' : 'login'),
+    registerIntent === 'teach' ? 'teach_login' : 'login'
+  )
 
   res.render('login', {
     title: 'Seemplify Learning - Sign in',
-    returnTo: sanitizeReturnTo(req.query.return_to),
+    returnTo,
+    registerUrl: appendQuery('/register', {
+      return_to: returnTo,
+      intent: registerIntent,
+      source: registerSource
+    }),
     error: String(req.query.error || ''),
     success: String(req.query.success || '')
   })
@@ -57,33 +102,71 @@ router.post('/login', async (req, res) => {
 })
 
 router.get('/register', optionalAuth, async (req, res) => {
+  const pendingIntent = req.session?.pendingRegistrationIntent || null
+
+  const intent = sanitizeIntent(req.query.intent || pendingIntent?.intent || 'learn', 'learn')
+  const source = sanitizeIntentSource(
+    req.query.source || pendingIntent?.source || (intent === 'teach' ? 'teach_landing' : 'direct'),
+    intent === 'teach' ? 'teach_landing' : 'direct'
+  )
+  const returnTo = sanitizeReturnTo(
+    req.query.return_to || pendingIntent?.returnTo || (intent === 'teach' ? '/teach/get-started' : '/simple-lms')
+  )
+
+  if (req.session?.pendingRegistrationIntent) {
+    delete req.session.pendingRegistrationIntent
+  }
+
   if (req.user) {
-    return res.redirect('/simple-lms')
+    return res.redirect(returnTo || '/simple-lms')
   }
 
   res.render('register', {
     title: 'Seemplify Learning - Register',
-    error: String(req.query.error || '')
+    error: String(req.query.error || ''),
+    intent,
+    source,
+    returnTo,
+    loginUrl: appendQuery('/login', {
+      return_to: returnTo,
+      intent,
+      source
+    })
   })
 })
 
 router.post('/register', async (req, res) => {
   try {
+    const intent = sanitizeIntent(req.body.intent || 'learn', 'learn')
+    const source = sanitizeIntentSource(
+      req.body.source || (intent === 'teach' ? 'teach_landing' : 'direct'),
+      intent === 'teach' ? 'teach_landing' : 'direct'
+    )
+    const returnTo = sanitizeReturnTo(req.body.return_to || (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
     const name = String(req.body.name || '').trim()
     const email = String(req.body.email || '').trim().toLowerCase()
     const password = String(req.body.password || '')
 
+    const registerRedirect = (errorMessage) => (
+      appendQuery('/register', {
+        error: errorMessage,
+        intent,
+        source,
+        return_to: returnTo
+      })
+    )
+
     if (!name || !email || !password) {
-      return res.redirect(`/register?error=${encodeURIComponent('Name, email, and password are required')}`)
+      return res.redirect(registerRedirect('Name, email, and password are required'))
     }
 
     if (password.length < 8) {
-      return res.redirect(`/register?error=${encodeURIComponent('Password must be at least 8 characters')}`)
+      return res.redirect(registerRedirect('Password must be at least 8 characters'))
     }
 
     const existingAccount = await Account.findOne({ email }).select('_id').lean()
     if (existingAccount) {
-      return res.redirect(`/register?error=${encodeURIComponent('Email already exists')}`)
+      return res.redirect(registerRedirect('Email already exists'))
     }
 
     const passwordHash = await bcrypt.hash(password, 12)
@@ -94,6 +177,7 @@ router.post('/register', async (req, res) => {
       ]
     })
     const bootstrapAsSuperAdmin = !hasExistingSuperAdmin
+    const roleFromIntent = intent === 'teach' ? 'creator' : 'learner'
 
     const account = await Account.create({
       sub: createSub(),
@@ -104,7 +188,13 @@ router.post('/register', async (req, res) => {
         name,
         preferred_username: name
       },
-      learningRole: bootstrapAsSuperAdmin ? 'super_admin' : 'learner',
+      learningRole: bootstrapAsSuperAdmin ? 'super_admin' : roleFromIntent,
+      learningProfile: {
+        registrationIntent: intent,
+        intentSource: source,
+        instructorActivatedAt: intent === 'teach' || bootstrapAsSuperAdmin ? new Date() : null,
+        instructorOnboardingCompleted: bootstrapAsSuperAdmin ? true : false
+      },
       isSystemAdmin: bootstrapAsSuperAdmin,
       isSuperAdmin: bootstrapAsSuperAdmin,
       organizations: [],
@@ -112,14 +202,37 @@ router.post('/register', async (req, res) => {
     })
 
     req.session.accountId = account.sub
+    if (req.session?.pendingRegistrationIntent) {
+      delete req.session.pendingRegistrationIntent
+    }
 
     const successMessage = bootstrapAsSuperAdmin
       ? 'Welcome to Seemplify Learning. Your account was bootstrapped as Super Admin.'
-      : 'Welcome to Seemplify Learning. Your account is ready.'
-    res.redirect(`/simple-lms?success=${encodeURIComponent(successMessage)}`)
+      : (intent === 'teach'
+          ? 'Welcome to Seemplify Learning. Let us set up your creator workspace.'
+          : 'Welcome to Seemplify Learning. Your account is ready.')
+
+    const destination = bootstrapAsSuperAdmin
+      ? '/simple-lms'
+      : (returnTo || (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
+
+    res.redirect(appendQuery(destination, { success: successMessage }))
   } catch (error) {
     console.error('Registration error:', error)
-    res.redirect(`/register?error=${encodeURIComponent('Failed to register account')}`)
+    const fallbackIntent = sanitizeIntent(req.body.intent || 'learn', 'learn')
+    const fallbackSource = sanitizeIntentSource(
+      req.body.source || (fallbackIntent === 'teach' ? 'teach_landing' : 'direct'),
+      fallbackIntent === 'teach' ? 'teach_landing' : 'direct'
+    )
+    const fallbackReturnTo = sanitizeReturnTo(
+      req.body.return_to || (fallbackIntent === 'teach' ? '/teach/get-started' : '/simple-lms')
+    )
+    res.redirect(appendQuery('/register', {
+      error: 'Failed to register account',
+      intent: fallbackIntent,
+      source: fallbackSource,
+      return_to: fallbackReturnTo
+    }))
   }
 })
 

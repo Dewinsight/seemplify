@@ -65,9 +65,31 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .intent-banner {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: var(--input-bg);
+      display: grid;
+      gap: 3px;
+    }
+    .intent-kicker {
+      margin: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .intent-text {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
+  <% const isTeachIntent = intent === 'teach' %>
   <div class="auth-theme-switch">
     <div class="theme-dropdown">
       <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
@@ -106,14 +128,29 @@
   </div>
   <div class="auth-wrap">
     <div class="auth-card">
-      <h1 class="auth-title">Create Seemplify Learning Account</h1>
-      <p class="auth-subtitle">Set up your learning workspace with your own login.</p>
+      <h1 class="auth-title"><%= isTeachIntent ? 'Create Instructor Account' : 'Create Seemplify Learning Account' %></h1>
+      <p class="auth-subtitle">
+        <%= isTeachIntent
+          ? 'Register once, then we guide you through your first course setup.'
+          : 'Set up your learning workspace with your own login.' %>
+      </p>
+
+      <% if (isTeachIntent) { %>
+        <div class="intent-banner">
+          <p class="intent-kicker">Creator Path</p>
+          <p class="intent-text">You are joining to teach. We will open the creator onboarding wizard after signup.</p>
+        </div>
+      <% } %>
 
       <% if (error) { %>
         <div class="alert alert-error"><%= error %></div>
       <% } %>
 
       <form method="post" action="/register" style="display:grid; gap:10px;">
+        <input type="hidden" name="intent" value="<%= intent || 'learn' %>">
+        <input type="hidden" name="source" value="<%= source || 'direct' %>">
+        <input type="hidden" name="return_to" value="<%= returnTo || '/simple-lms' %>">
+
         <label>Full Name</label>
         <input class="input" type="text" name="name" required placeholder="Jane Doe">
 
@@ -123,10 +160,10 @@
         <label>Password</label>
         <input class="input" type="password" name="password" required minlength="8" placeholder="Minimum 8 characters">
 
-        <button class="btn btn-primary" type="submit">Create account</button>
+        <button class="btn btn-primary" type="submit"><%= isTeachIntent ? 'Create creator account' : 'Create account' %></button>
       </form>
 
-      <p class="auth-footer">Already have an account? <a href="/login">Sign in</a></p>
+      <p class="auth-footer">Already have an account? <a href="<%= loginUrl || '/login' %>">Sign in</a></p>
     </div>
   </div>
 </body>

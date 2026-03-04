@@ -107,7 +107,9 @@
   <div class="auth-wrap">
     <div class="auth-card">
       <h1 class="auth-title">Seemplify Learning</h1>
-      <p class="auth-subtitle">Sign in to your learning workspace.</p>
+      <p class="auth-subtitle">
+        <%= String(returnTo || '').startsWith('/teach') ? 'Sign in to continue your creator onboarding.' : 'Sign in to your learning workspace.' %>
+      </p>
 
       <% if (error) { %>
         <div class="alert alert-error"><%= error %></div>
@@ -127,7 +129,7 @@
         <button class="btn btn-primary" type="submit">Sign in</button>
       </form>
 
-      <p class="auth-footer">No account yet? <a href="/register">Create one</a></p>
+      <p class="auth-footer">No account yet? <a href="<%= registerUrl || '/register' %>">Create one</a></p>
     </div>
   </div>
 </body>

@@ -39,8 +39,15 @@ app.use(session({
 
 app.use('/css', express.static(join(__dirname, 'public/css')))
 app.use('/js', express.static(join(__dirname, 'public/js')))
+app.use('/images', express.static(join(__dirname, 'public/images')))
 
 app.use(optionalAuth)
+app.use((req, res, next) => {
+  const hostname = String(req.hostname || req.get('host') || '').trim().toLowerCase()
+  res.locals.teachBrand = resolveTeachBrand(hostname)
+  res.locals.teachLabel = resolveTeachLabel(hostname)
+  next()
+})
 
 const PUBLIC_COURSE_FILTER = {
   status: 'published',
@@ -56,6 +63,109 @@ const COURSE_LEVEL_LABELS = Object.freeze({
   advanced: 'Advanced',
   mixed: 'Mixed'
 })
+
+const resolveTeachBrand = (hostname) => {
+  const normalizedHost = String(hostname || '').trim().toLowerCase()
+  if (normalizedHost.includes('aiinnigeria.com')) {
+    return 'AI Nigeria'
+  }
+  return 'Seemplify'
+}
+
+const resolveTeachLabel = (hostname) => `Teach on ${resolveTeachBrand(hostname)}`
+
+const resolveLearningRole = (account) => {
+  if (!account) return 'learner'
+  if (typeof account.getLearningRole === 'function') {
+    return account.getLearningRole()
+  }
+  if (account.isSuperAdmin) return 'super_admin'
+  if (account.isSystemAdmin) return 'admin'
+  const normalized = String(account.learningRole || '').trim().toLowerCase()
+  return ['super_admin', 'admin', 'creator', 'learner'].includes(normalized) ? normalized : 'learner'
+}
+
+const slugifyValue = (value, fallback = 'item') => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return normalized || fallback
+}
+
+const normalizeMinorAmount = (value) => {
+  const parsed = Number.parseInt(String(value || '0'), 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+const appendQuery = (path, entries = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(entries).forEach(([key, rawValue]) => {
+    const value = String(rawValue || '').trim()
+    if (value) params.set(key, value)
+  })
+  const query = params.toString()
+  if (!query) return path
+  return `${path}${path.includes('?') ? '&' : '?'}${query}`
+}
+
+const buildStarterChapters = ({ courseTitle, topic }) => {
+  const normalizedTopic = String(topic || courseTitle || 'your subject').trim()
+  const chapterOneKey = `welcome-${slugifyValue(normalizedTopic, 'topic')}`
+  const chapterTwoKey = `core-${slugifyValue(normalizedTopic, 'topic')}`
+
+  return [
+    {
+      key: chapterOneKey,
+      title: 'Getting Started',
+      description: `Introduce learners to ${normalizedTopic} and define outcomes.`,
+      order: 1,
+      lessons: [
+        {
+          key: `${chapterOneKey}-lesson-1`,
+          title: 'Welcome and Course Outcomes',
+          description: 'Set expectations and explain who this course is for.',
+          content: `Welcome to ${courseTitle}. In this first lesson, introduce your audience, what they will learn, and how they can apply it.`,
+          durationMinutes: 8,
+          resources: [],
+          quizQuestions: [],
+          order: 1
+        },
+        {
+          key: `${chapterOneKey}-lesson-2`,
+          title: 'How to Navigate This Course',
+          description: 'Explain structure, milestones, and support channels.',
+          content: 'Share the course roadmap, suggested pace, and any prerequisites.',
+          durationMinutes: 6,
+          resources: [],
+          quizQuestions: [],
+          order: 2
+        }
+      ]
+    },
+    {
+      key: chapterTwoKey,
+      title: 'Core Concepts',
+      description: `Cover foundational concepts in ${normalizedTopic}.`,
+      order: 2,
+      lessons: [
+        {
+          key: `${chapterTwoKey}-lesson-1`,
+          title: 'Core Principle 1',
+          description: 'Teach the first key concept with examples.',
+          content: `Explain one core concept in ${normalizedTopic}, then provide a practical example learners can replicate.`,
+          durationMinutes: 12,
+          resources: [],
+          quizQuestions: [],
+          order: 1
+        }
+      ]
+    }
+  ]
+}
 
 const normalizeCurrencyCode = (value, fallback = 'NGN') => {
   const normalized = String(value || '').trim().toUpperCase().slice(0, 3)
@@ -151,10 +261,27 @@ app.get('/', async (req, res) => {
         count: Number(entry.count) || 0
       }))
 
+    const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
+    const teachCtaHref = req.user
+      ? '/teach/get-started'
+      : appendQuery('/register', {
+          intent: 'teach',
+          source: 'public_home',
+          return_to: '/teach/get-started'
+        })
+    const learnRegisterHref = appendQuery('/register', {
+      intent: 'learn',
+      source: 'public_home',
+      return_to: '/simple-lms'
+    })
+
     res.render('public-home', {
       title: 'Seemplify Learning',
       user: req.user || null,
       activePage: 'home',
+      teachBrand,
+      teachCtaHref,
+      learnRegisterHref,
       featuredCourses,
       totalCourses,
       totalLessons: Number(stats.totalLessons) || 0,
@@ -207,11 +334,21 @@ app.get('/courses', async (req, res) => {
       .map((item) => String(item || '').trim())
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b))
+    const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
+    const teachCtaHref = req.user
+      ? '/teach/get-started'
+      : appendQuery('/register', {
+          intent: 'teach',
+          source: 'public_catalog',
+          return_to: '/teach/get-started'
+        })
 
     res.render('public-courses', {
       title: 'Explore Courses - Seemplify Learning',
       user: req.user || null,
       activePage: 'courses',
+      teachBrand,
+      teachCtaHref,
       courses,
       filters: {
         query,
@@ -297,6 +434,180 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
   } catch (error) {
     console.error('Failed to load public course detail:', error)
     res.status(500).send('Failed to load course details.')
+  }
+})
+
+app.get('/teach', async (req, res) => {
+  try {
+    const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
+    const teachLabel = `Teach on ${teachBrand}`
+
+    if (!req.user && req.session) {
+      req.session.pendingRegistrationIntent = {
+        intent: 'teach',
+        source: 'teach_landing',
+        returnTo: '/teach/get-started'
+      }
+    }
+
+    const currentRole = resolveLearningRole(req.user || null)
+    const alreadyCreator = ['creator', 'admin', 'super_admin'].includes(currentRole)
+
+    res.render('teach-landing', {
+      title: `${teachLabel} - Seemplify Learning`,
+      user: req.user || null,
+      activePage: 'teach',
+      teachBrand,
+      teachLabel,
+      alreadyCreator,
+      error: String(req.query.error || ''),
+      success: String(req.query.success || ''),
+      info: String(req.query.info || ''),
+      registerHref: appendQuery('/register', {
+        intent: 'teach',
+        source: 'teach_landing',
+        return_to: '/teach/get-started'
+      }),
+      loginHref: appendQuery('/login', {
+        intent: 'teach',
+        source: 'teach_landing',
+        return_to: '/teach/get-started'
+      }),
+      getStartedHref: '/teach/get-started',
+      browseHref: '/courses'
+    })
+  } catch (error) {
+    console.error('Failed to load teach landing page:', error)
+    res.status(500).send('Failed to load teach page.')
+  }
+})
+
+app.get('/teach/get-started', requireAuth, async (req, res) => {
+  try {
+    const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
+    let role = resolveLearningRole(req.user)
+    let roleWasUpgraded = false
+
+    if (role === 'learner') {
+      req.user.learningRole = 'creator'
+      req.user.learningProfile = req.user.learningProfile || {}
+      req.user.learningProfile.registrationIntent = 'teach'
+      if (!req.user.learningProfile.intentSource || req.user.learningProfile.intentSource === 'direct') {
+        req.user.learningProfile.intentSource = 'teach_get_started'
+      }
+      req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
+      await req.user.save()
+      role = 'creator'
+      roleWasUpgraded = true
+    }
+
+    const [courseCount, latestCourse] = await Promise.all([
+      SimpleLmsCourse.countDocuments({ createdBy: req.user._id, isActive: true }),
+      SimpleLmsCourse.findOne({ createdBy: req.user._id })
+        .select('title status updatedAt _id')
+        .sort({ updatedAt: -1 })
+        .lean()
+    ])
+
+    res.render('teach-onboarding', {
+      title: 'Teach Setup - Seemplify Learning',
+      user: req.user,
+      activePage: 'teach',
+      teachBrand,
+      role,
+      roleWasUpgraded,
+      courseCount,
+      latestCourse,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
+    })
+  } catch (error) {
+    console.error('Failed to load teach onboarding:', error)
+    res.redirect(appendQuery('/teach', { error: 'Failed to load onboarding wizard.' }))
+  }
+})
+
+app.post('/teach/get-started/create-first-course', requireAuth, async (req, res) => {
+  try {
+    let role = resolveLearningRole(req.user)
+    if (role === 'learner') {
+      req.user.learningRole = 'creator'
+      req.user.learningProfile = req.user.learningProfile || {}
+      req.user.learningProfile.registrationIntent = 'teach'
+      req.user.learningProfile.intentSource = req.user.learningProfile.intentSource || 'teach_get_started'
+      req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
+      await req.user.save()
+      role = 'creator'
+    }
+
+    if (!['creator', 'admin', 'super_admin'].includes(role)) {
+      return res.redirect(appendQuery('/teach/get-started', {
+        error: 'Only creators and admins can create courses.'
+      }))
+    }
+
+    const title = String(req.body.title || '').trim().slice(0, 200)
+    const summary = String(req.body.summary || '').trim().slice(0, 600)
+    const description = String(req.body.description || '').trim().slice(0, 16000)
+    const category = String(req.body.category || '').trim().slice(0, 120)
+    const levelInput = String(req.body.level || '').trim().toLowerCase()
+    const level = VALID_LEVELS.includes(levelInput) ? levelInput : 'mixed'
+    const paymentMode = String(req.body.paymentMode || '').trim().toLowerCase() === 'paid'
+      ? 'paid'
+      : 'free'
+    const amount = paymentMode === 'paid' ? normalizeMinorAmount(req.body.amount) : 0
+    const currency = normalizeCurrencyCode(req.body.currency, 'NGN')
+
+    if (!title) {
+      return res.redirect(appendQuery('/teach/get-started', {
+        error: 'Course title is required.'
+      }))
+    }
+
+    const starterCourse = await SimpleLmsCourse.create({
+      organization: null,
+      createdBy: req.user._id,
+      createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
+      createdByEmail: req.user.email || '',
+      title,
+      summary,
+      description,
+      category,
+      level,
+      tags: [],
+      status: 'draft',
+      visibility: 'organization_private',
+      pricing: {
+        paymentMode,
+        amount,
+        currency
+      },
+      chapters: buildStarterChapters({
+        courseTitle: title,
+        topic: category || title
+      }),
+      isActive: true
+    })
+
+    req.user.learningProfile = req.user.learningProfile || {}
+    req.user.learningProfile.registrationIntent = 'teach'
+    req.user.learningProfile.intentSource = req.user.learningProfile.intentSource || 'teach_get_started'
+    req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
+    req.user.learningProfile.instructorOnboardingCompleted = true
+    req.user.learningProfile.firstCourseCreatedAt = req.user.learningProfile.firstCourseCreatedAt || new Date()
+    req.user.learningProfile.firstCourse = req.user.learningProfile.firstCourse || starterCourse._id
+    await req.user.save()
+
+    return res.redirect(appendQuery(`/simple-lms?view=course-studio&editCourse=${starterCourse._id}`, {
+      success: 'Starter course created. Continue in Course Studio to upload banner, videos, and quizzes.',
+      info: 'Use Program Studio next to bundle this course into a pathway.'
+    }))
+  } catch (error) {
+    console.error('Failed to create starter course:', error)
+    return res.redirect(appendQuery('/teach/get-started', {
+      error: 'Failed to create starter course.'
+    }))
   }
 })
 

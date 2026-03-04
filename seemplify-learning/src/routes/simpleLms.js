@@ -1196,13 +1196,30 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
     }
 
     const payload = parseCoursePayload({ body: req.body, role })
-    await SimpleLmsCourse.create({
+    const createdCourse = await SimpleLmsCourse.create({
       ...payload,
       organization: null,
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
       createdByEmail: req.user.email || ''
     })
+
+    if (role === 'creator') {
+      req.user.learningProfile = req.user.learningProfile || {}
+      req.user.learningProfile.registrationIntent =
+        req.user.learningProfile.registrationIntent || 'teach'
+      req.user.learningProfile.intentSource =
+        req.user.learningProfile.intentSource || 'course_studio'
+      req.user.learningProfile.instructorActivatedAt =
+        req.user.learningProfile.instructorActivatedAt || new Date()
+      req.user.learningProfile.instructorOnboardingCompleted = true
+      req.user.learningProfile.firstCourseCreatedAt =
+        req.user.learningProfile.firstCourseCreatedAt || new Date()
+      req.user.learningProfile.firstCourse =
+        req.user.learningProfile.firstCourse || createdCourse._id
+
+      await req.user.save()
+    }
 
     return redirectWithMessage({
       res,

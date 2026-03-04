@@ -12,27 +12,65 @@
 <body>
   <%- include('./partials/nav', { user, activePage }) %>
 
-  <% const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
+  <% 
+    const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+    const editorialVisuals = {
+      hero: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1600&q=80',
+      spotlightOne: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80',
+      spotlightTwo: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=900&q=80',
+      spotlightThree: 'https://images.unsplash.com/photo-1571260899304-425eee4c7efc?auto=format&fit=crop&w=900&q=80'
+    }
+    const fallbackCourseVisuals = [
+      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?auto=format&fit=crop&w=900&q=80'
+    ]
+    const categoryVisualHints = [
+      { match: ['design', 'ux', 'ui', 'creative', 'brand'], image: 'https://images.unsplash.com/photo-1452802447250-470a88ac82bc?auto=format&fit=crop&w=900&q=80' },
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=900&q=80' },
+      { match: ['marketing', 'sales', 'growth'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=900&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80' }
+    ]
+    const courseImageFor = (course, index) => {
+      if (course?.banner?.url) return course.banner.url
+      const normalizedCategory = String(course?.category || '').toLowerCase()
+      const match = categoryVisualHints.find((entry) => entry.match.some((term) => normalizedCategory.includes(term)))
+      if (match?.image) return match.image
+      return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
+    }
+    const formatEnrollments = (value) => {
+      const count = Number.isFinite(Number(value)) ? Number(value) : 0
+      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
+      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`
+      return String(Math.max(0, Math.round(count)))
+    }
+  %>
 
   <main class="public-shell">
-    <section class="public-hero">
-      <p class="public-kicker">Seemplify Learning</p>
-      <h1 class="public-title">Learn from real-world courses before you sign in.</h1>
-      <p class="public-subtitle">
-        Browse published courses, inspect outlines, and decide what to study first.
-        You only need an account when you are ready to start learning.
-      </p>
+    <section class="marketplace-hero">
+      <img src="<%= editorialVisuals.hero %>" alt="People learning together in a modern workplace" class="marketplace-hero-image">
+      <div class="marketplace-hero-layer"></div>
+      <article class="marketplace-hero-card">
+        <p class="public-kicker">Seemplify Learning Marketplace</p>
+        <h1 class="public-title">Learn what matters next, before you even sign in.</h1>
+        <p class="public-subtitle">
+          Discover job-ready courses, preview real curriculum, and pick the right path for your growth.
+          Account creation happens only when you are ready to enroll.
+        </p>
+        <div class="public-actions">
+          <a href="/courses" class="btn btn-primary">Explore Courses</a>
+          <a href="<%= teachCtaHref %>" class="btn btn-secondary"><%= `Teach on ${teachBrand}` %></a>
+          <% if (user) { %>
+            <a href="/simple-lms" class="btn btn-secondary">Open Learning Workspace</a>
+          <% } else { %>
+            <a href="<%= learnRegisterHref %>" class="btn btn-secondary">Create Account</a>
+          <% } %>
+        </div>
+      </article>
 
-      <div class="public-actions">
-        <a href="/courses" class="btn btn-primary">Explore Courses</a>
-        <% if (user) { %>
-          <a href="/simple-lms" class="btn btn-secondary">Open Learning Workspace</a>
-        <% } else { %>
-          <a href="/register" class="btn btn-secondary">Create Account</a>
-        <% } %>
-      </div>
-
-      <div class="public-stats">
+      <div class="marketplace-hero-stats">
         <article class="public-stat">
           <p class="public-stat-label">Published Courses</p>
           <p class="public-stat-value"><%= totalCourses %></p>
@@ -44,6 +82,71 @@
         <article class="public-stat">
           <p class="public-stat-label">Learning Hours</p>
           <p class="public-stat-value"><%= totalDurationHours %></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="marketplace-spotlight">
+      <article class="marketplace-spotlight-copy">
+        <p class="public-kicker">Why Teams Learn Here</p>
+        <h2 class="public-surface-title">Practical learning experiences designed for real work outcomes.</h2>
+        <p class="public-subtitle">
+          Browse with confidence, inspect course depth quickly, and move from discovery to action in minutes.
+        </p>
+      </article>
+      <article class="marketplace-spotlight-card">
+        <img src="<%= editorialVisuals.spotlightOne %>" alt="Team reviewing digital course materials">
+      </article>
+      <article class="marketplace-spotlight-card">
+        <img src="<%= editorialVisuals.spotlightTwo %>" alt="Colleagues discussing upskilling plans">
+      </article>
+      <article class="marketplace-spotlight-card">
+        <img src="<%= editorialVisuals.spotlightThree %>" alt="Learner presenting skills outcomes on screen">
+      </article>
+    </section>
+
+    <section class="public-surface">
+      <div class="public-surface-head">
+        <div>
+          <h2 class="public-surface-title">Choose Your Path</h2>
+          <p class="public-surface-subtitle">One platform, one account, two clear journeys.</p>
+        </div>
+      </div>
+      <div class="audience-grid">
+        <article class="audience-card">
+          <div class="audience-media">
+            <img src="/images/teach-path-learner.svg" alt="Learner journey illustration">
+          </div>
+          <div class="audience-body">
+            <h3>Learn Skills</h3>
+            <p>Browse the catalog, preview content, and enroll when you are ready to start learning.</p>
+            <div class="public-actions">
+              <a href="/courses" class="btn btn-primary btn-sm">Browse Catalog</a>
+              <% if (!user) { %>
+                <a href="<%= learnRegisterHref %>" class="btn btn-secondary btn-sm">Register to Learn</a>
+              <% } else { %>
+                <a href="/simple-lms?view=my-learning" class="btn btn-secondary btn-sm">Open My Learning</a>
+              <% } %>
+            </div>
+          </div>
+        </article>
+
+        <article class="audience-card">
+          <div class="audience-media">
+            <img src="/images/teach-path-creator.svg" alt="Course creator journey illustration">
+          </div>
+          <div class="audience-body">
+            <h3>Teach and Publish</h3>
+            <p>Create courses with chapters, lessons, and quizzes. Use the onboarding wizard to launch your first course faster.</p>
+            <div class="public-actions">
+              <a href="<%= teachCtaHref %>" class="btn btn-primary btn-sm"><%= `Start Teaching on ${teachBrand}` %></a>
+              <% if (!user) { %>
+                <a href="/teach" class="btn btn-secondary btn-sm">See Creator Guide</a>
+              <% } else { %>
+                <a href="/simple-lms?view=course-studio" class="btn btn-secondary btn-sm">Open Course Studio</a>
+              <% } %>
+            </div>
+          </div>
         </article>
       </div>
     </section>
@@ -70,7 +173,7 @@
       <div class="public-surface-head">
         <div>
           <h2 class="public-surface-title">Featured Courses</h2>
-          <p class="public-surface-subtitle">Preview course quality and structure before you enroll.</p>
+          <p class="public-surface-subtitle">Image-forward previews inspired by modern learning marketplaces.</p>
         </div>
         <a href="/courses" class="btn btn-secondary btn-sm">View Full Catalog</a>
       </div>
@@ -80,29 +183,30 @@
           No public courses are available yet.
         </div>
       <% } else { %>
-        <div class="course-grid">
-          <% featuredCourses.forEach((course) => { %>
+        <div class="course-grid marketplace-course-grid">
+          <% featuredCourses.forEach((course, index) => { %>
             <article class="course-card">
               <a class="course-card-media" href="<%= courseHref(course) %>">
-                <% if (course.banner?.url) { %>
-                  <img src="<%= course.banner.url %>" alt="<%= course.title %> banner">
-                <% } else { %>
-                  <span>Course Preview</span>
-                <% } %>
+                <img src="<%= courseImageFor(course, index) %>" alt="<%= course.title %> banner">
+                <span class="course-card-media-badge"><%= course.levelLabel %></span>
               </a>
               <div class="course-card-body">
                 <div class="course-card-meta">
-                  <span class="course-pill"><%= course.levelLabel %></span>
                   <% if (course.category) { %>
                     <span class="course-pill"><%= course.category %></span>
                   <% } %>
+                  <span class="course-pill"><%= course.lessonCount %> lessons</span>
                 </div>
                 <h3><a href="<%= courseHref(course) %>"><%= course.title %></a></h3>
                 <p><%= course.previewSummary %></p>
                 <div class="course-card-footer">
+                  <div class="course-card-footnote">
+                    <span><%= course.authorName %></span>
+                    <span><%= `${formatEnrollments(course.enrollmentCount)} learners` %></span>
+                  </div>
                   <span class="course-price"><%= course.displayPrice %></span>
-                  <a href="<%= courseHref(course) %>" class="btn btn-secondary btn-sm">View Course</a>
                 </div>
+                <a href="<%= courseHref(course) %>" class="btn btn-secondary btn-sm">View Course</a>
               </div>
             </article>
           <% }) %>
