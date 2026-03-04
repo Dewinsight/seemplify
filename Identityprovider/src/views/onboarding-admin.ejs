@@ -85,6 +85,7 @@
                 data-personal-assignment
                 data-personal-status="<%= assignment.status %>"
                 data-personal-workflow="<%= assignmentWorkflowType %>"
+                data-assignment-id="<%= assignment._id %>"
               >
                 <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
                   <div>
@@ -562,6 +563,9 @@
           <div class="center-panel-heading">
             <h3 tabindex="-1">Step 2: Add Custom Items</h3>
             <p>Create any extra tasks needed for this assignment.</p>
+            <div class="center-step-helper" id="custom-step-helper">
+              Configure an item, then click <strong>Add Custom Item</strong>. Continue is unlocked only after at least one item is added and no draft item is left in progress.
+            </div>
           </div>
 
         <div class="card center-items-card" style="margin:0;">
@@ -731,8 +735,10 @@
               </div>
             </div>
             <div class="center-builder-actions">
-              <button class="btn btn-secondary" type="button" onclick="addCustomItem()">Add Custom Item</button>
+              <button class="btn btn-primary" type="button" id="custom-add-item-btn" onclick="addCustomItem()">Add Custom Item</button>
+              <button class="btn btn-secondary" type="button" onclick="clearCustomItemDraft()">Clear Draft</button>
             </div>
+            <div class="center-builder-status" id="custom-builder-status" role="status" aria-live="polite">No items added yet. Add your first custom item to continue.</div>
           </div>
         </div>
 
@@ -779,6 +785,7 @@
           <div class="center-step-indicator" id="center-step-indicator">Step 1 of 3</div>
           <button class="btn btn-secondary" type="button" id="center-step-next" onclick="nextCenterStep()">Continue</button>
         </div>
+        <div class="center-step-note" id="center-step-note" role="status" aria-live="polite"></div>
       </div>
         </div>
       </div>
@@ -1421,11 +1428,210 @@
       select: 'Dropdown'
     };
     let fieldIdSeed = 0;
+    const DEFAULT_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png';
+    let customDraftTouched = false;
+    let customBuilderFeedback = '';
 
     function clampStep(step, max) {
       const n = Number(step);
       if (!Number.isFinite(n)) return 1;
       return Math.max(1, Math.min(max, Math.floor(n)));
+    }
+
+    function isCustomFormDraftModified() {
+      const fields = getFormFieldsForSubmission('custom');
+      if (fields.length !== 1) return fields.length > 0;
+
+      const field = fields[0];
+      if (!field) return false;
+      if ((field.label || '').trim().toLowerCase() !== 'question 1') return true;
+      if (field.type !== 'text') return true;
+      if (field.required !== true) return true;
+      return Array.isArray(field.options) && field.options.length > 0;
+    }
+
+    function hasCustomDraftContent() {
+      const type = document.getElementById('custom-type')?.value || 'form';
+      const title = document.getElementById('custom-title')?.value.trim() || '';
+      const description = document.getElementById('custom-description')?.value.trim() || '';
+      const requiredChecked = document.getElementById('custom-required')?.checked !== false;
+      if (title || description) return true;
+      if (!requiredChecked) return true;
+
+      if (type === 'form') {
+        return isCustomFormDraftModified();
+      }
+
+      if (type === 'upload') {
+        const accept = document.getElementById('custom-accept')?.value.trim() || '';
+        return !!accept && accept !== DEFAULT_UPLOAD_ACCEPT;
+      }
+
+      if (type === 'esign') {
+        const signLabel = document.getElementById('custom-sign-label')?.value.trim() || '';
+        const signText = document.getElementById('custom-sign-text')?.value.trim() || '';
+        const hasExtraSigners = (signerSelectionState.custom || []).some(signer => signer.key !== 'assignee');
+        return Boolean(
+          signatureDocumentState.custom ||
+          (signatureFieldState.custom || []).length ||
+          hasExtraSigners ||
+          signLabel ||
+          signText
+        );
+      }
+
+      return false;
+    }
+
+    function hasUnsavedCustomDraft() {
+      return customDraftTouched && hasCustomDraftContent();
+    }
+
+    function getCustomStepBlockReason() {
+      if (customItems.length === 0) {
+        return 'Add at least one custom item before continuing.';
+      }
+      if (hasUnsavedCustomDraft()) {
+        return 'Finish your current draft by clicking "Add Custom Item" or clear the draft before continuing.';
+      }
+      return '';
+    }
+
+    function updateCustomBuilderStatus() {
+      const statusEl = document.getElementById('custom-builder-status');
+      const helperEl = document.getElementById('custom-step-helper');
+      const addBtn = document.getElementById('custom-add-item-btn');
+      const blockReason = getCustomStepBlockReason();
+      const hasItems = customItems.length > 0;
+      const hasDraft = hasUnsavedCustomDraft();
+
+      if (statusEl) {
+        const statusMessage = customBuilderFeedback || (
+          !hasItems
+            ? 'No items added yet. Add your first custom item to continue.'
+            : (hasDraft
+              ? `${customItems.length} item(s) added. You have a draft item that is not yet added.`
+              : `${customItems.length} item(s) added. Continue now or add another item.`)
+        );
+        statusEl.textContent = statusMessage;
+        statusEl.classList.toggle('is-warning', !hasItems || hasDraft);
+        statusEl.classList.toggle('is-success', hasItems && !hasDraft);
+      }
+
+      if (helperEl) {
+        helperEl.classList.toggle('is-warning', !!blockReason);
+      }
+
+      if (addBtn) {
+        addBtn.textContent = hasItems ? 'Add Another Item' : 'Add Custom Item';
+      }
+    }
+
+    function updateCenterStepNavigationState() {
+      const nextBtn = document.getElementById('center-step-next');
+      const noteEl = document.getElementById('center-step-note');
+      if (!nextBtn) return;
+
+      if (centerWizardState.step === 2) {
+        const blockReason = getCustomStepBlockReason();
+        nextBtn.disabled = !!blockReason;
+        if (noteEl) {
+          noteEl.textContent = blockReason;
+          noteEl.classList.toggle('active', !!blockReason);
+        }
+      } else {
+        nextBtn.disabled = false;
+        if (noteEl) {
+          noteEl.textContent = '';
+          noteEl.classList.remove('active');
+        }
+      }
+    }
+
+    function refreshCustomStepFlowState() {
+      updateCustomBuilderStatus();
+      updateCenterStepNavigationState();
+    }
+
+    function markCustomDraftTouched() {
+      customDraftTouched = true;
+      customBuilderFeedback = '';
+      refreshCustomStepFlowState();
+    }
+
+    function clearCustomItemDraft(options = {}) {
+      const preserveType = options.preserveType !== false;
+      const typeInput = document.getElementById('custom-type');
+      if (!preserveType && typeInput) {
+        typeInput.value = 'form';
+      }
+
+      const titleInput = document.getElementById('custom-title');
+      const descriptionInput = document.getElementById('custom-description');
+      const requiredInput = document.getElementById('custom-required');
+      const acceptInput = document.getElementById('custom-accept');
+      const signTypeInput = document.getElementById('custom-sign-type');
+      const signLabelInput = document.getElementById('custom-sign-label');
+      const signTextInput = document.getElementById('custom-sign-text');
+      const signPageInput = document.getElementById('custom-sign-page');
+      const signOriginInput = document.getElementById('custom-sign-origin');
+      const signXInput = document.getElementById('custom-sign-x');
+      const signYInput = document.getElementById('custom-sign-y');
+      const signWidthInput = document.getElementById('custom-sign-width');
+      const signHeightInput = document.getElementById('custom-sign-height');
+
+      if (titleInput) titleInput.value = '';
+      if (descriptionInput) descriptionInput.value = '';
+      if (requiredInput) requiredInput.checked = true;
+      if (acceptInput) acceptInput.value = DEFAULT_UPLOAD_ACCEPT;
+      if (signTypeInput) signTypeInput.value = 'signature';
+      if (signLabelInput) signLabelInput.value = '';
+      if (signTextInput) signTextInput.value = '';
+      if (signPageInput) signPageInput.value = '1';
+      if (signOriginInput) signOriginInput.value = 'top-left';
+      if (signXInput) signXInput.value = '50';
+      if (signYInput) signYInput.value = '50';
+      if (signWidthInput) signWidthInput.value = '180';
+      if (signHeightInput) signHeightInput.value = '60';
+
+      formFieldState.custom = [createFormField('text', { label: 'Question 1', required: true })];
+      renderFormFieldBuilder('custom');
+
+      const existingDoc = signatureDocumentState.custom;
+      const existingPublicId = existingDoc?.publicId;
+      signatureDocumentState.custom = null;
+      pdfState.custom = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+      placeModeState.custom = false;
+      resetSignatureFields('custom');
+      setDocumentStatus('custom', 'No document uploaded.');
+
+      const viewer = document.getElementById('custom-pdf-viewer');
+      if (viewer) viewer.style.display = 'none';
+      const empty = document.getElementById('custom-pdf-empty');
+      if (empty) empty.style.display = 'none';
+
+      updateSignerSelection('custom', ['assignee'], { silent: true });
+      renderSignerOptions('custom');
+      syncFieldTypeUI('custom');
+      toggleItemInputs('custom');
+
+      if (existingPublicId) {
+        deleteUploadedDocument(existingPublicId);
+      }
+
+      customDraftTouched = false;
+      if (options.feedback) {
+        customBuilderFeedback = options.feedback;
+      } else if (!options.silent) {
+        customBuilderFeedback = 'Draft cleared. Configure your next custom item.';
+      } else {
+        customBuilderFeedback = '';
+      }
+
+      refreshCustomStepFlowState();
+      if (options.focus !== false) {
+        titleInput?.focus();
+      }
     }
 
     function renderCenterReview() {
@@ -1493,6 +1699,8 @@
         renderCenterReview();
       }
 
+      updateCenterStepNavigationState();
+
       if (options.focus !== false) {
         const activePanel = document.querySelector(`[data-center-step-panel="${nextStep}"] h3`);
         if (activePanel) activePanel.focus?.();
@@ -1504,6 +1712,13 @@
         const memberId = document.getElementById('assignmentMember')?.value;
         if (!memberId) {
           alert('Please select a member before continuing.');
+          return false;
+        }
+      }
+      if (step === 2) {
+        const blockReason = getCustomStepBlockReason();
+        if (blockReason) {
+          alert(blockReason);
           return false;
         }
       }
@@ -1745,7 +1960,12 @@
     }
 
     ['template', 'custom'].forEach(prefix => {
-      document.getElementById(`${prefix}-type`).addEventListener('change', () => toggleItemInputs(prefix));
+      document.getElementById(`${prefix}-type`).addEventListener('change', () => {
+        toggleItemInputs(prefix);
+        if (prefix === 'custom') {
+          markCustomDraftTouched();
+        }
+      });
     });
 
     function sanitizeFieldKey(label, fallbackIndex = 1, seenKeys = new Set()) {
@@ -1888,6 +2108,9 @@
         fields[index][key] = value;
       }
 
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderFormFieldBuilder(prefix);
     }
 
@@ -1897,6 +2120,9 @@
       formFieldState[prefix] = nextFields.length > 0
         ? nextFields
         : [createFormField('text', { label: 'Question 1' })];
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderFormFieldBuilder(prefix);
     }
 
@@ -1906,6 +2132,9 @@
       const nextIndex = fields.length + 1;
       const label = type === 'select' ? `Dropdown ${nextIndex}` : `Question ${nextIndex}`;
       fields.push(createFormField(type, { label }));
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderFormFieldBuilder(prefix);
     }
 
@@ -1920,6 +2149,9 @@
       const temp = fields[index];
       fields[index] = fields[nextIndex];
       fields[nextIndex] = temp;
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderFormFieldBuilder(prefix);
     }
 
@@ -2138,6 +2370,9 @@
           container.querySelectorAll('input[type="checkbox"]').forEach(input => {
             input.checked = validKeys.has(input.value);
           });
+        }
+        if (prefix === 'custom') {
+          markCustomDraftTouched();
         }
       }
     }
@@ -2366,6 +2601,9 @@
       } else {
         renderOverlayFields(prefix);
       }
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderSignatureFields(prefix);
     }
 
@@ -2500,6 +2738,9 @@
       if (!existing) {
         setDocumentStatus(prefix, 'No document uploaded.');
         toggleItemInputs(prefix);
+        if (prefix === 'custom') {
+          markCustomDraftTouched();
+        }
         return;
       }
 
@@ -2515,6 +2756,9 @@
       resetSignatureFields(prefix);
       toggleItemInputs(prefix);
       setDocumentStatus(prefix, 'No document uploaded.');
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
 
       if (publicId) {
         await deleteUploadedDocument(publicId);
@@ -2550,6 +2794,9 @@
 
         resetSignatureFields(prefix);
         await loadPdfPreview(prefix, documentData.url);
+        if (prefix === 'custom') {
+          markCustomDraftTouched();
+        }
 
         if (isReplace && existing?.publicId && existing.publicId !== documentData.publicId) {
           await deleteUploadedDocument(existing.publicId);
@@ -2954,6 +3201,9 @@
 
       signatureFieldState[prefix].push(field);
       selectedSignatureFieldIndex[prefix] = signatureFieldState[prefix].length - 1;
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       renderSignatureFields(prefix);
       renderOverlayFields(prefix);
       scrollSignatureFieldIntoView(prefix, selectedSignatureFieldIndex[prefix]);
@@ -3126,6 +3376,9 @@
       };
 
       signatureFieldState[prefix].push(field);
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
       selectSignatureField(prefix, signatureFieldState[prefix].length - 1);
     }
 
@@ -3144,6 +3397,9 @@
       renderSignatureFields(prefix);
       renderOverlayFields(prefix);
       syncSelectedSignatureFieldInputs(prefix);
+      if (prefix === 'custom') {
+        markCustomDraftTouched();
+      }
     }
 
     function resetSignatureFields(prefix) {
@@ -3287,6 +3543,7 @@
     });
 
     function setActiveOnboardingTab(tabKey) {
+      const normalizedTab = tabKey === 'center' ? 'center' : 'my';
       const tabs = document.querySelectorAll('[data-onboarding-tab]');
       const panels = {
         my: document.getElementById('tab-my-onboarding'),
@@ -3294,16 +3551,20 @@
       };
 
       tabs.forEach(button => {
-        const isActive = button.dataset.onboardingTab === tabKey;
+        const isActive = button.dataset.onboardingTab === normalizedTab;
         button.classList.toggle('active', isActive);
       });
 
-      if (panels.my) panels.my.style.display = tabKey === 'my' ? 'block' : 'none';
-      if (panels.center) panels.center.style.display = tabKey === 'center' ? 'block' : 'none';
+      if (panels.my) panels.my.style.display = normalizedTab === 'my' ? 'block' : 'none';
+      if (panels.center) panels.center.style.display = normalizedTab === 'center' ? 'block' : 'none';
 
-      if (tabKey === 'center') {
+      if (normalizedTab === 'center') {
         renderCenterReview();
       }
+
+      try {
+        localStorage.setItem('onboardingAdmin:activeTab', normalizedTab);
+      } catch (error) {}
     }
 
     function setWorkflowFilter(workflowType, options = {}) {
@@ -3393,8 +3654,12 @@
     document.querySelectorAll('[data-center-step]').forEach(button => {
       button.addEventListener('click', () => {
         const targetStep = Number(button.dataset.centerStep || 1);
-        if (targetStep > centerWizardState.step && !validateCenterStep(centerWizardState.step)) {
-          return;
+        if (targetStep > centerWizardState.step) {
+          for (let step = centerWizardState.step; step < targetStep; step += 1) {
+            if (!validateCenterStep(step)) {
+              return;
+            }
+          }
         }
         setCenterStep(targetStep, { focus: false });
       });
@@ -3464,6 +3729,28 @@
       el.addEventListener('input', renderTemplateReview);
     });
 
+    [
+      'custom-title',
+      'custom-description',
+      'custom-required',
+      'custom-accept',
+      'custom-sign-type',
+      'custom-sign-label',
+      'custom-sign-text',
+      'custom-sign-signer',
+      'custom-sign-page',
+      'custom-sign-origin',
+      'custom-sign-x',
+      'custom-sign-y',
+      'custom-sign-width',
+      'custom-sign-height'
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', markCustomDraftTouched);
+      el.addEventListener('input', markCustomDraftTouched);
+    });
+
     const templateModal = document.getElementById('templateModal');
     templateModal?.addEventListener('click', (event) => {
       if (event.target === templateModal) {
@@ -3515,6 +3802,9 @@
       syncBuilderCounts();
       renderCenterReview();
       renderTemplateReview();
+      if (containerId === 'custom-items-list') {
+        refreshCustomStepFlowState();
+      }
     }
 
     function removeItem(containerId, index) {
@@ -3523,6 +3813,7 @@
         renderItems(templateItems, containerId);
       } else {
         customItems.splice(index, 1);
+        customBuilderFeedback = '';
         renderItems(customItems, containerId);
       }
     }
@@ -3536,7 +3827,7 @@
 
       if (!title) {
         alert('Title is required');
-        return;
+        return false;
       }
 
       const item = { type, title, description, required, config: {} };
@@ -3546,7 +3837,7 @@
         item.config.fields = parsedFields;
         if (!item.config.fields.length) {
           alert('Add at least one form field before saving this item');
-          return;
+          return false;
         }
       }
 
@@ -3558,11 +3849,11 @@
         const documentData = signatureDocumentState[prefix];
         if (!documentData) {
           alert('Upload a contract PDF first');
-          return;
+          return false;
         }
         if (!signatureFieldState[prefix].length) {
           alert('Add at least one signature field');
-          return;
+          return false;
         }
 
         const selectedSigners = signerSelectionState[prefix].length
@@ -3578,7 +3869,7 @@
             .map(key => getSignerLabel(prefix, key))
             .join(', ');
           alert(`Assign at least one field to each signer. Missing: ${missingLabels}`);
-          return;
+          return false;
         }
 
         item.config.document = documentData;
@@ -3606,14 +3897,26 @@
         if (empty) empty.style.display = 'block';
         resetSignatureFields(prefix);
       }
+
+      return true;
     }
 
-    function addTemplateItem() {
-      addItem('template', templateItems, 'template-items-list');
+    async function addTemplateItem() {
+      await addItem('template', templateItems, 'template-items-list');
     }
 
-    function addCustomItem() {
-      addItem('custom', customItems, 'custom-items-list');
+    async function addCustomItem() {
+      const title = document.getElementById('custom-title')?.value.trim() || 'Custom item';
+      const added = await addItem('custom', customItems, 'custom-items-list');
+      if (!added) {
+        refreshCustomStepFlowState();
+        return;
+      }
+      clearCustomItemDraft({
+        silent: true,
+        preserveType: true,
+        feedback: `Added "${title}". Add another item or continue.`
+      });
     }
 
     async function createTemplate() {
@@ -3714,6 +4017,57 @@
     }
 
     <% if (typeof personalAssignments !== 'undefined') { %>
+    function setNextStepAfterAction(assignmentId, triggerElement, itemId) {
+      if (!assignmentId) return;
+      const flow = triggerElement?.closest('[data-onboarding-flow]')
+        || document.querySelector(`[data-onboarding-flow][data-assignment="${assignmentId}"]`);
+      if (!flow) return;
+
+      const panels = Array.from(flow.querySelectorAll('[data-step-panel]'));
+      if (!panels.length) return;
+      let currentPanel = triggerElement?.closest('[data-step-panel]');
+      if (!currentPanel && itemId) {
+        currentPanel = flow
+          .querySelector(`[data-step-panel] [data-item="${itemId}"]`)
+          ?.closest('[data-step-panel]');
+      }
+      if (!currentPanel) return;
+
+      const currentIndex = Number(currentPanel.dataset.step || 0);
+      currentPanel.dataset.stepUserdone = '1';
+      currentPanel.dataset.stepActionable = '0';
+
+      const findNextIndex = (start) => panels.findIndex((panel, index) => (
+        index >= start &&
+        panel.dataset.stepActionable === '1' &&
+        panel.dataset.stepUserdone !== '1'
+      ));
+
+      let nextIndex = findNextIndex(currentIndex + 1);
+      if (nextIndex < 0) {
+        nextIndex = findNextIndex(0);
+      }
+      if (nextIndex < 0) {
+        nextIndex = currentIndex;
+      }
+
+      const storageKey = `onboardingFlow:${assignmentId}:step`;
+      try {
+        localStorage.setItem(storageKey, String(nextIndex));
+      } catch (error) {}
+    }
+
+    function redirectToMyDocumentsWithSuccess(message) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('success', message || 'Task completed');
+      url.searchParams.set('tab', 'my');
+      url.searchParams.delete('error');
+      try {
+        localStorage.setItem('onboardingAdmin:activeTab', 'my');
+      } catch (error) {}
+      window.location.assign(`${url.pathname}${url.search}${url.hash}`);
+    }
+
     async function submitForm(form) {
       const assignmentId = form.dataset.assignment;
       const itemId = form.dataset.item;
@@ -3729,7 +4083,8 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        setNextStepAfterAction(assignmentId, form, itemId);
+        redirectToMyDocumentsWithSuccess('Form submitted. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to submit form');
@@ -3759,7 +4114,8 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        setNextStepAfterAction(assignmentId, input, itemId);
+        redirectToMyDocumentsWithSuccess('File uploaded. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to upload file');
@@ -4436,7 +4792,11 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        const triggerButton = document.querySelector(
+          `[data-esign-button][data-assignment="${activeAssignmentId}"][data-item="${activeItemId}"]`
+        );
+        setNextStepAfterAction(activeAssignmentId, triggerButton, activeItemId);
+        redirectToMyDocumentsWithSuccess('Document signed. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to submit signature');
@@ -4480,9 +4840,19 @@
     filterTemplateLibrary(templateFilterInput?.value || '');
     filterAssignments({ query: assignmentFilterInput?.value || '', status: 'all' });
     if (document.querySelector('[data-onboarding-tab]')) {
-      const defaultTab = workspaceModeEnabled
+      const searchParams = new URLSearchParams(window.location.search);
+      const requestedTab = (searchParams.get('tab') || '').toLowerCase();
+      let storedTab = '';
+      try {
+        storedTab = (localStorage.getItem('onboardingAdmin:activeTab') || '').toLowerCase();
+      } catch (error) {}
+
+      const fallbackTab = workspaceModeEnabled
         ? 'center'
         : '<%= (typeof activePage !== "undefined" && activePage === "organizations") ? "center" : "my" %>';
+      const defaultTab = ['my', 'center'].includes(requestedTab)
+        ? requestedTab
+        : (['my', 'center'].includes(storedTab) ? storedTab : fallbackTab);
       setActiveOnboardingTab(defaultTab);
     }
     if (document.querySelector('[data-personal-status-filter]')) {
@@ -4634,6 +5004,18 @@
     }
 
     initOnboardingFlows();
+
+    const focusAssignmentId = new URLSearchParams(window.location.search).get('focusAssignment');
+    if (focusAssignmentId) {
+      try {
+        localStorage.setItem('onboardingAdmin:activeTab', 'my');
+      } catch (error) {}
+      setActiveOnboardingTab('my');
+      const assignmentCard = document.querySelector(`[data-personal-assignment][data-assignment-id="${focusAssignmentId}"]`);
+      if (assignmentCard) {
+        assignmentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   </script>
 
   <script src="/js/invitation-gatekeeper.js"></script>

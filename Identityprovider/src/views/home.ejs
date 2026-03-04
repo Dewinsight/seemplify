@@ -375,6 +375,22 @@
       <div class="alert alert-error"><%= accessError %></div>
     <% } %>
 
+    <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
+      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.35);">
+        <div>
+          <div style="font-weight: 700; font-size: 16px;">You have pending notifications</div>
+          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+            <%= notificationSummary.totalUnread %> task<%= notificationSummary.totalUnread === 1 ? '' : 's' %> need your attention.
+          </div>
+          <div style="margin-top: 8px; display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
+            <span class="pill pill--soft">Documents: <%= notificationSummary.counts?.documents || 0 %></span>
+            <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary.counts?.simplePerformance || 0 %></span>
+          </div>
+        </div>
+        <a href="/notifications" class="btn btn-primary">Open Notifications</a>
+      </div>
+    <% } %>
+
     <% if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
         <div>

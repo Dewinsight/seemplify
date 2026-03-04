@@ -332,8 +332,8 @@ const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'on
   const normalizedWorkflowType = normalizeWorkflowType(workflowType)
   const workflowLabel = getWorkflowLabel(normalizedWorkflowType)
   const baseUrl = issuerUrl || 'http://localhost:4000'
-  const workspaceUrl = `${baseUrl}/documents?workflow=${encodeURIComponent(normalizedWorkflowType)}`
-  const actionLabel = normalizedWorkflowType === 'onboarding' ? 'Complete Onboarding' : `Open ${workflowLabel}`
+  const workspaceUrl = `${baseUrl}/notifications?category=documents`
+  const actionLabel = 'Open Notifications'
   const introLine = normalizedWorkflowType === 'onboarding'
     ? 'Your onboarding tasks are ready. Please complete them to finish your setup.'
     : `You have ${workflowLabel.toLowerCase()} tasks ready for review and signing.`
@@ -345,9 +345,9 @@ const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'on
       <p>Hi ${memberName},</p>
       <p>${introLine}</p>
       <p><a href="${workspaceUrl}" style="display:inline-block;padding:12px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;">${actionLabel}</a></p>
-      <p style="font-size:12px;color:#94a3b8;">If the button doesn't work, copy and paste this link: ${workspaceUrl}</p>
+      <p style="font-size:12px;color:#94a3b8;">Open Notifications to review this task and any other pending actions: ${workspaceUrl}</p>
     `,
-    text: `Hi ${memberName},\n\n${introLine}\n\nOpen it here: ${workspaceUrl}`
+    text: `Hi ${memberName},\n\n${introLine}\n\nOpen Notifications to review your pending tasks: ${workspaceUrl}`
   }
 }
 

@@ -61,6 +61,7 @@
           data-personal-assignment
           data-personal-status="<%= assignment.status %>"
           data-personal-workflow="<%= assignmentWorkflowType %>"
+          data-assignment-id="<%= assignment._id %>"
         >
           <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
             <div>
@@ -466,6 +467,53 @@
       filterPersonalAssignments(activeScopeChip?.dataset.personalStatusFilter || 'current');
     }
 
+    function setNextStepAfterAction(assignmentId, triggerElement, itemId) {
+      if (!assignmentId) return;
+      const flow = triggerElement?.closest('[data-onboarding-flow]')
+        || document.querySelector(`[data-onboarding-flow][data-assignment="${assignmentId}"]`);
+      if (!flow) return;
+
+      const panels = Array.from(flow.querySelectorAll('[data-step-panel]'));
+      if (!panels.length) return;
+      let currentPanel = triggerElement?.closest('[data-step-panel]');
+      if (!currentPanel && itemId) {
+        currentPanel = flow
+          .querySelector(`[data-step-panel] [data-item="${itemId}"]`)
+          ?.closest('[data-step-panel]');
+      }
+      if (!currentPanel) return;
+
+      const currentIndex = Number(currentPanel.dataset.step || 0);
+      currentPanel.dataset.stepUserdone = '1';
+      currentPanel.dataset.stepActionable = '0';
+
+      const findNextIndex = (start) => panels.findIndex((panel, index) => (
+        index >= start &&
+        panel.dataset.stepActionable === '1' &&
+        panel.dataset.stepUserdone !== '1'
+      ));
+
+      let nextIndex = findNextIndex(currentIndex + 1);
+      if (nextIndex < 0) {
+        nextIndex = findNextIndex(0);
+      }
+      if (nextIndex < 0) {
+        nextIndex = currentIndex;
+      }
+
+      const storageKey = `onboardingFlow:${assignmentId}:step`;
+      try {
+        localStorage.setItem(storageKey, String(nextIndex));
+      } catch (error) {}
+    }
+
+    function redirectWithSuccess(message) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('success', message || 'Task completed');
+      url.searchParams.delete('error');
+      window.location.assign(`${url.pathname}${url.search}${url.hash}`);
+    }
+
     async function submitForm(form) {
       const assignmentId = form.dataset.assignment;
       const itemId = form.dataset.item;
@@ -481,7 +529,8 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        setNextStepAfterAction(assignmentId, form, itemId);
+        redirectWithSuccess('Form submitted. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to submit form');
@@ -511,7 +560,8 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        setNextStepAfterAction(assignmentId, input, itemId);
+        redirectWithSuccess('File uploaded. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to upload file');
@@ -1245,7 +1295,11 @@
       });
 
       if (response.ok) {
-        window.location.reload();
+        const triggerButton = document.querySelector(
+          `[data-esign-button][data-assignment="${activeAssignmentId}"][data-item="${activeItemId}"]`
+        );
+        setNextStepAfterAction(activeAssignmentId, triggerButton, activeItemId);
+        redirectWithSuccess('Document signed. Continuing to your next step.');
       } else {
         const result = await response.json();
         alert(result.error || 'Failed to submit signature');
@@ -1403,6 +1457,14 @@
     }
 
     initOnboardingFlows();
+
+    const focusAssignmentId = new URLSearchParams(window.location.search).get('focusAssignment');
+    if (focusAssignmentId) {
+      const assignmentCard = document.querySelector(`[data-personal-assignment][data-assignment-id="${focusAssignmentId}"]`);
+      if (assignmentCard) {
+        assignmentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   </script>
 
   <script src="/js/invitation-gatekeeper.js"></script>

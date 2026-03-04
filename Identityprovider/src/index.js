@@ -3167,75 +3167,12 @@ app.get('/', async (req, res) => {
       }
     }
 
-    const pendingOnboardingAssignments = await OnboardingAssignment.find({
-      $or: [
-        { member: account._id },
-        { 'items.config.signers.member': account._id },
-        { 'items.data.esign.signers.member': account._id }
-      ],
-      status: { $nin: ['completed', 'cancelled'] }
+    const notificationSummary = await buildNotificationCenterData(account, {
+      maxTasks: 12
     })
-      .populate('organization', 'name')
-      .sort({ createdAt: -1 })
-      .lean()
-
-    const unreadPendingOnboardingAssignments = pendingOnboardingAssignments.filter(assignment => {
-      const assignmentOrganizationId =
-        assignment?.organization?._id?.toString() ||
-        assignment?.organization?.toString() ||
-        ''
-      if (!assignmentOrganizationId) {
-        return true
-      }
-
-      const lastViewedAt = getDashboardNotificationViewedAt(
-        account,
-        'documents',
-        assignmentOrganizationId
-      )
-      if (!lastViewedAt) {
-        return true
-      }
-
-      const assignmentTimestamp = assignment?.updatedAt || assignment?.createdAt
-      if (!assignmentTimestamp) {
-        return true
-      }
-
-      return new Date(assignmentTimestamp).getTime() > lastViewedAt.getTime()
-    })
-
-    const performanceNotificationQuery = currentOrgId
-      ? {
-          organization: currentOrgId,
-          evaluatedMember: account._id
-        }
-      : null
-    const performanceNotificationViewedAt = getDashboardNotificationViewedAt(
-      account,
-      'simplePerformance',
-      currentOrgId
-    )
-    if (performanceNotificationQuery && performanceNotificationViewedAt) {
-      performanceNotificationQuery.createdAt = { $gt: performanceNotificationViewedAt }
-    }
-
-    const latestReceivedEvaluations = currentOrgId
-      ? await PerformanceEvaluation.find(performanceNotificationQuery)
-        .select('evaluationDate createdAt evaluatorName evaluatorEmail ratings')
-        .sort({ evaluationDate: -1, createdAt: -1 })
-        .limit(3)
-        .lean()
-      : []
-
-    const receivedEvaluationCount = currentOrgId
-      ? await PerformanceEvaluation.countDocuments(performanceNotificationQuery)
-      : 0
-
-    const latestReceivedEvaluationsWithMetrics = latestReceivedEvaluations.map(entry => ({
-      ...entry,
-      averageRating: calculateAverageRating(entry.ratings)
-    }))
+    const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
+    const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
+    const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
 
     // Render the hub homepage using EJS template
     res.render('home', {
@@ -3246,10 +3183,11 @@ app.get('/', async (req, res) => {
       accessError: req.query?.error === 'app_not_assigned'
         ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
         : null,
-      pendingOnboardingCount: unreadPendingOnboardingAssignments.length,
+      pendingOnboardingCount: notificationSummary.counts?.documents || unreadPendingOnboardingAssignments.length,
       pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
+      notificationSummary,
       simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
       activePage: 'home'
     })
@@ -3966,6 +3904,213 @@ const markDashboardNotificationViewed = async ({ accountId, type, organizationId
   )
 }
 
+const NOTIFICATION_CATEGORY = Object.freeze({
+  all: 'all',
+  documents: 'documents',
+  simplePerformance: 'simplePerformance'
+})
+
+const getNotificationCategory = (value, fallback = NOTIFICATION_CATEGORY.all) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === NOTIFICATION_CATEGORY.documents) return NOTIFICATION_CATEGORY.documents
+  if (raw === NOTIFICATION_CATEGORY.simplePerformance || raw === 'performance') {
+    return NOTIFICATION_CATEGORY.simplePerformance
+  }
+  if (raw === NOTIFICATION_CATEGORY.all) return NOTIFICATION_CATEGORY.all
+  return fallback
+}
+
+const buildNotificationActionUrl = ({
+  type,
+  organizationId,
+  assignmentId,
+  workflowType,
+  evaluationId
+}) => {
+  const params = new URLSearchParams()
+  params.set('type', type)
+  if (organizationId) params.set('org', String(organizationId))
+  if (assignmentId) params.set('assignment', String(assignmentId))
+  if (evaluationId) params.set('evaluation', String(evaluationId))
+  if (workflowType && WORKFLOW_TYPES.includes(String(workflowType))) {
+    params.set('workflow', String(workflowType))
+  }
+  return `/notifications/open?${params.toString()}`
+}
+
+const buildNotificationCenterData = async (account, options = {}) => {
+  if (!account?._id) {
+    return {
+      totalUnread: 0,
+      counts: {
+        documents: 0,
+        simplePerformance: 0
+      },
+      tasks: [],
+      unreadDocumentAssignments: [],
+      unreadPerformanceEvaluations: []
+    }
+  }
+
+  const maxTasks = Number.isFinite(Number(options.maxTasks))
+    ? Math.max(1, Math.min(200, Number(options.maxTasks)))
+    : 50
+  const performanceQueryLimit = Math.max(80, maxTasks * 4)
+
+  const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || ''
+  const organizationIds = getOrganizationIdsFromAccount(account)
+  if (currentOrgId && !organizationIds.includes(currentOrgId)) {
+    organizationIds.push(currentOrgId)
+  }
+
+  const organizationNameById = new Map()
+  if (organizationIds.length > 0) {
+    const organizations = await Organization.find({ _id: { $in: organizationIds } })
+      .select('name')
+      .lean()
+    organizations.forEach(org => {
+      organizationNameById.set(org._id.toString(), org.name || 'Organization')
+    })
+  }
+
+  const pendingOnboardingAssignments = await OnboardingAssignment.find({
+    $or: [
+      { member: account._id },
+      { 'items.config.signers.member': account._id },
+      { 'items.data.esign.signers.member': account._id }
+    ],
+    status: { $nin: ['completed', 'cancelled'] }
+  })
+    .select('organization workflowType status createdAt updatedAt')
+    .populate('organization', 'name')
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean()
+
+  const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
+    const assignmentOrganizationId =
+      assignment?.organization?._id?.toString() ||
+      assignment?.organization?.toString() ||
+      ''
+    if (!assignmentOrganizationId) return true
+
+    const lastViewedAt = getDashboardNotificationViewedAt(
+      account,
+      NOTIFICATION_CATEGORY.documents,
+      assignmentOrganizationId
+    )
+    if (!lastViewedAt) return true
+
+    const assignmentTimestamp = assignment?.updatedAt || assignment?.createdAt
+    if (!assignmentTimestamp) return true
+
+    return new Date(assignmentTimestamp).getTime() > lastViewedAt.getTime()
+  })
+
+  const unreadPerformanceEvaluations = organizationIds.length === 0
+      ? []
+    : (await PerformanceEvaluation.find({
+        organization: { $in: organizationIds },
+        evaluatedMember: account._id
+      })
+        .select('organization evaluationDate createdAt evaluatorName evaluatorEmail ratings')
+        .sort({ evaluationDate: -1, createdAt: -1 })
+        .limit(performanceQueryLimit)
+        .lean())
+      .filter(evaluation => {
+        const evaluationOrganizationId =
+          evaluation?.organization?._id?.toString() ||
+          evaluation?.organization?.toString() ||
+          ''
+        if (!evaluationOrganizationId) return true
+
+        const lastViewedAt = getDashboardNotificationViewedAt(
+          account,
+          NOTIFICATION_CATEGORY.simplePerformance,
+          evaluationOrganizationId
+        )
+        if (!lastViewedAt) return true
+
+        const evaluationTimestamp = evaluation?.createdAt || evaluation?.evaluationDate
+        if (!evaluationTimestamp) return true
+
+        return new Date(evaluationTimestamp).getTime() > lastViewedAt.getTime()
+      })
+      .map(entry => ({
+        ...entry,
+        averageRating: calculateAverageRating(entry.ratings)
+      }))
+
+  const documentTasks = unreadDocumentAssignments.map(assignment => {
+    const organizationId =
+      assignment?.organization?._id?.toString() ||
+      assignment?.organization?.toString() ||
+      currentOrgId
+    const workflowType = normalizeWorkflowType(assignment.workflowType, { allowAll: false, fallback: 'onboarding' })
+    const workflowLabel = WORKFLOW_LABELS[workflowType] || WORKFLOW_LABELS.onboarding
+    const createdAt = assignment.updatedAt || assignment.createdAt || new Date()
+
+    return {
+      id: `documents:${assignment._id}`,
+      category: NOTIFICATION_CATEGORY.documents,
+      title: `${workflowLabel} task pending`,
+      message: `Complete your ${workflowLabel.toLowerCase()} step for ${assignment?.organization?.name || organizationNameById.get(organizationId) || 'your organization'}.`,
+      organizationId,
+      organizationName: assignment?.organization?.name || organizationNameById.get(organizationId) || 'Organization',
+      createdAt,
+      actionLabel: 'Open task',
+      actionUrl: buildNotificationActionUrl({
+        type: NOTIFICATION_CATEGORY.documents,
+        organizationId,
+        assignmentId: assignment._id,
+        workflowType
+      }),
+      workflowType
+    }
+  })
+
+  const performanceTasks = unreadPerformanceEvaluations.map(evaluation => {
+    const organizationId =
+      evaluation?.organization?._id?.toString() ||
+      evaluation?.organization?.toString() ||
+      currentOrgId
+    const createdAt = evaluation.createdAt || evaluation.evaluationDate || new Date()
+    const evaluatorLabel = evaluation.evaluatorName || evaluation.evaluatorEmail || 'Your manager'
+    const dateLabel = new Date(evaluation.evaluationDate || createdAt).toLocaleDateString()
+
+    return {
+      id: `simplePerformance:${evaluation._id}`,
+      category: NOTIFICATION_CATEGORY.simplePerformance,
+      title: 'New simple evaluation available',
+      message: `${evaluatorLabel} submitted feedback on ${dateLabel}.`,
+      organizationId,
+      organizationName: organizationNameById.get(organizationId) || 'Organization',
+      createdAt,
+      actionLabel: 'Review evaluation',
+      actionUrl: buildNotificationActionUrl({
+        type: NOTIFICATION_CATEGORY.simplePerformance,
+        organizationId,
+        evaluationId: evaluation._id
+      }),
+      averageRating: evaluation.averageRating
+    }
+  })
+
+  const tasks = [...documentTasks, ...performanceTasks]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, maxTasks)
+
+  return {
+    totalUnread: documentTasks.length + performanceTasks.length,
+    counts: {
+      documents: documentTasks.length,
+      simplePerformance: performanceTasks.length
+    },
+    tasks,
+    unreadDocumentAssignments,
+    unreadPerformanceEvaluations
+  }
+}
+
 const getQueryStringValue = (value) => {
   if (typeof value === 'string') {
     return value
@@ -4057,7 +4202,7 @@ const sendReviewedMemberEvaluationNotification = async ({
 }) => {
   if (!reviewedMemberEmail) return
 
-  const reviewUrl = `${getIdentityBaseUrl()}/performance-evaluations?view=overview&reviewed=me`
+  const reviewUrl = `${getIdentityBaseUrl()}/notifications?category=${encodeURIComponent(NOTIFICATION_CATEGORY.simplePerformance)}`
   const safeEvaluatorName = escapeEmailHtml(evaluatorName || 'Your manager')
   const safeOrganizationName = escapeEmailHtml(organizationName || 'your organization')
   const subjectName = String(reviewedMemberName || reviewedMemberEmail || 'you').trim()
@@ -4071,8 +4216,8 @@ const sendReviewedMemberEvaluationNotification = async ({
   const html = `
     <p>A new <strong>Simple Evaluation</strong> has been submitted for you in <strong>${safeOrganizationName}</strong>.</p>
     <p><strong>Evaluator:</strong> ${safeEvaluatorName}<br><strong>Date:</strong> ${formattedDate}</p>
-    <p><a href="${reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;">View your evaluation</a></p>
-    <p style="margin-top:14px;color:#64748b;font-size:13px;">You can also open Simple Evaluation from your dashboard and check your history.</p>
+    <p><a href="${reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;">Open notifications</a></p>
+    <p style="margin-top:14px;color:#64748b;font-size:13px;">Open Notifications in your dashboard to review this task and any other pending items.</p>
   `
   const text = [
     'A new Simple Evaluation has been submitted for you.',
@@ -4080,7 +4225,7 @@ const sendReviewedMemberEvaluationNotification = async ({
     `Evaluator: ${evaluatorName || 'Your manager'}`,
     `Date: ${formattedDate}`,
     '',
-    `View your evaluation: ${reviewUrl}`
+    `Open notifications: ${reviewUrl}`
   ].join('\n')
 
   await emailService.sendNotificationEmail({
@@ -4659,6 +4804,105 @@ app.use('/api/teams', teamsRouter)
 app.use('/api', teamsRouter)
 
 // UI Routes (HTML pages)
+
+app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
+  try {
+    const summary = await buildNotificationCenterData(req.user, { maxTasks: 6 })
+    return res.json({
+      success: true,
+      totalUnread: summary.totalUnread,
+      counts: summary.counts,
+      tasks: summary.tasks
+    })
+  } catch (error) {
+    console.error('Notification summary API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to load notification summary' })
+  }
+})
+
+app.get('/notifications', getSessionUser, async (req, res) => {
+  try {
+    const summary = await buildNotificationCenterData(req.user, { maxTasks: 120 })
+    const selectedCategory = getNotificationCategory(req.query.category, NOTIFICATION_CATEGORY.all)
+    const tasks = selectedCategory === NOTIFICATION_CATEGORY.all
+      ? summary.tasks
+      : summary.tasks.filter(task => task.category === selectedCategory)
+
+    res.render('notifications-center', {
+      user: req.user,
+      activePage: 'notifications',
+      notificationSummary: summary,
+      selectedCategory,
+      tasks,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Notification center page error:', error)
+    res.redirect('/?error=Failed to load notifications')
+  }
+})
+
+app.get('/notifications/open', getSessionUser, async (req, res) => {
+  try {
+    const type = getNotificationCategory(req.query.type, '')
+    if (!type || type === NOTIFICATION_CATEGORY.all) {
+      return res.redirect('/notifications?error=Notification target is invalid')
+    }
+
+    const organizationId = String(req.query.org || '').trim()
+    const activeMembership = (req.user.organizations || []).find(membership => {
+      if (membership?.isActive === false) return false
+      const memberOrgId =
+        membership?.organization?._id?.toString() ||
+        membership?.organization?.toString() ||
+        ''
+      return organizationId && memberOrgId === organizationId
+    })
+
+    if (organizationId && !activeMembership) {
+      return res.redirect('/notifications?error=You are no longer an active member of this organization')
+    }
+
+    if (organizationId) {
+      const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString() || ''
+      if (currentOrgId !== organizationId) {
+        await Account.updateOne(
+          { _id: req.user._id },
+          {
+            $set: {
+              currentOrganization: organizationId,
+              updatedAt: new Date()
+            }
+          }
+        )
+        invalidateClaimsCache(req.user.sub)
+      }
+    }
+
+    if (type === NOTIFICATION_CATEGORY.documents) {
+      const workflow = normalizeWorkflowType(req.query.workflow, { allowAll: false, fallback: 'all' })
+      const assignmentId = String(req.query.assignment || '').trim()
+      const params = new URLSearchParams()
+      if (workflow && workflow !== 'all') params.set('workflow', workflow)
+      params.set('tab', 'my')
+      if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
+        params.set('focusAssignment', assignmentId)
+      }
+      const query = params.toString()
+      return res.redirect(query ? `/documents?${query}` : '/documents')
+    }
+
+    if (type === NOTIFICATION_CATEGORY.simplePerformance) {
+      return res.redirect('/performance-evaluations?view=overview&reviewed=me')
+    }
+
+    return res.redirect('/notifications')
+  } catch (error) {
+    console.error('Notification open redirect error:', error)
+    return res.redirect('/notifications?error=Failed to open notification task')
+  }
+})
 
 // Profile page
 app.get('/profile', getSessionUser, async (req, res) => {
