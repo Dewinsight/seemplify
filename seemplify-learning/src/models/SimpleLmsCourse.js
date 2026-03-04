@@ -262,10 +262,21 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
     default: false
   },
   publishedAt: Date,
+  submittedForPublicReviewAt: Date,
   approvedPublicAt: Date,
   approvedPublicBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AiinAccount'
+  },
+  reviewedAt: Date,
+  reviewedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinAccount'
+  },
+  reviewNotes: {
+    type: String,
+    trim: true,
+    maxlength: 2000
   },
   archivedAt: Date,
   chapters: {

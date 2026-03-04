@@ -62,6 +62,8 @@
     table { width: 100%; border-collapse: collapse; min-width: 740px; }
     th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
     th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
+    .inline-form { display: inline-flex; gap: 6px; align-items: center; }
+    .inline-form .input { min-width: 90px; }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
       .shell { gap: 10px; margin-bottom: 18px; }
@@ -99,6 +101,7 @@
         <span class="chip">Role: <%= roleLabel %></span>
         <span class="chip">Courses: <%= stats.publishedCourseCount %></span>
         <span class="chip">Programs: <%= stats.publishedProgramCount %></span>
+        <span class="chip">Course Authors: <%= stats.creatorCount %></span>
         <span class="chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
         <span class="chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
       </div>
@@ -130,6 +133,7 @@
           <article class="kpi"><small>Completed Enrollments</small><strong><%= stats.completionCount %></strong></article>
         </div>
       </section>
+
     <% } %>
 
     <% if (viewMode === 'catalog') { %>
@@ -166,7 +170,7 @@
                     <span class="pill"><%= course.lessonCount %> lessons</span>
                     <% if (course.requiresPayment) { %><span class="pill">Paid</span><% } %>
                   </div>
-                  <p><span class="price"><%= course.displayPrice %></span> • <%= course.authorName %></p>
+                  <p><span class="price"><%= course.displayPrice %></span> &middot; <%= course.authorName %></p>
                   <div class="actions">
                     <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
                     <% if (course.canStart) { %>
@@ -217,7 +221,7 @@
                 <div class="body">
                   <h3><%= item.course.title %></h3>
                   <div class="progress" style="--progress:<%= Math.max(0, Math.min(100, Number(item.progressPercent || 0))) %>%"><span></span></div>
-                  <p><strong><%= item.progressPercent %>%</strong> complete • <%= item.completedCount %>/<%= item.lessonCount %> lessons</p>
+                  <p><strong><%= item.progressPercent %>%</strong> complete &middot; <%= item.completedCount %>/<%= item.lessonCount %> lessons</p>
                   <div class="actions">
                     <a class="btn btn-primary btn-sm" href="/simple-lms/learn/<%= item._id %>/<%= encodeURIComponent(item.nextLessonKey || '') %>"><%= item.isCompleted ? 'Review' : 'Continue' %></a>
                     <a class="btn btn-secondary btn-sm" href="<%= item.course.courseUrl %>">Preview</a>
@@ -236,12 +240,12 @@
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Course ID</th><th>Amount</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
+              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
               <tbody>
                 <% myPayments.forEach((payment) => { %>
                   <tr>
                     <td><%= dateText(payment.paidAt || payment.createdAt) %></td>
-                    <td><%= payment.course %></td>
+                    <td><%= payment.courseTitle %></td>
                     <td><%= payment.amountDisplay %></td>
                     <td><%= payment.txRef %></td>
                     <td><%= payment.flutterwaveTxId || '-' %></td>
@@ -257,18 +261,21 @@
     <% if (viewMode === 'course-studio' && canCreateCourses) { %>
       <section class="panel studio">
         <div class="stack">
-          <div class="head"><div><h2>Create Course</h2><p class="mini">Use JSON curriculum for now. Payments use pricing mode + amount.</p></div></div>
+          <div class="head"><div><h2>Create Course</h2><p class="mini">Use JSON curriculum for now. Public publishing by non-admins is submitted for admin approval.</p></div></div>
           <form method="post" action="/simple-lms/courses/create" class="stack">
             <div class="form-grid">
               <div><label>Title</label><input class="input" name="title" required></div>
               <div><label>Category</label><input class="input" name="category"></div>
               <div><label>Level</label><select class="input" name="level"><% levels.forEach((l) => { %><option value="<%= l %>"><%= nice(l) %></option><% }) %></select></div>
-              <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">published</option></select></div>
+              <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">publish</option></select></div>
               <div><label>Visibility</label><select class="input" name="visibility"><option value="private">private</option><option value="public">public</option></select></div>
               <div><label>Tags</label><input class="input" name="tags" placeholder="tag1, tag2"></div>
               <div><label>Payment Mode</label><select class="input" name="paymentMode"><option value="free">free</option><option value="paid">paid</option></select></div>
               <div><label>Amount (minor)</label><input class="input" type="number" name="amount" min="0" value="0"></div>
               <div><label>Currency</label><input class="input" name="currency" maxlength="3" value="NGN"></div>
+              <% if (canManagePlatform) { %>
+                <div><label>System Course</label><input type="checkbox" name="isSystemCourse" value="on"></div>
+              <% } %>
             </div>
             <div><label>Summary</label><textarea class="input" name="summary" rows="2"></textarea></div>
             <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
@@ -293,6 +300,59 @@
             <% }) %>
           <% } %>
         </aside>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Earnings & Payout</h2><p class="mini">Track your course sales and set payout details for commission settlements.</p></div></div>
+        <div class="kpis">
+          <article class="kpi"><small>Sales</small><strong><%= creatorStats.saleCount %></strong></article>
+          <article class="kpi"><small>Gross Revenue</small><strong><%= creatorStats.grossDisplay %></strong></article>
+          <article class="kpi"><small>Your Commission</small><strong><%= creatorStats.commissionDisplay %></strong></article>
+          <article class="kpi"><small>Active Learners</small><strong><%= creatorStats.enrollmentCount %></strong></article>
+        </div>
+        <div class="studio" style="margin-top:10px;">
+          <div class="stack">
+            <div class="head"><div><h2>Recent Sales</h2><p class="mini">Latest successful payments on your managed courses.</p></div></div>
+            <% if (!myCreatorSales || myCreatorSales.length === 0) { %>
+              <div class="empty">No sales recorded yet.</div>
+            <% } else { %>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Date</th><th>Buyer</th><th>Course</th><th>Amount</th><th>Commission</th><th>Rate</th></tr></thead>
+                  <tbody>
+                    <% myCreatorSales.forEach((sale) => { %>
+                      <tr>
+                        <td><%= dateText(sale.paidAt || sale.createdAt) %></td>
+                        <td><%= sale.buyerName %></td>
+                        <td><%= sale.courseTitle %></td>
+                        <td><%= sale.amountDisplay %></td>
+                        <td><%= sale.creatorCommissionDisplay %></td>
+                        <td><%= sale.creatorCommissionRateDisplay %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
+          </div>
+          <aside class="stack">
+            <div class="head"><div><h2>Payout Profile</h2><p class="mini">Used by admins for creator payout processing.</p></div></div>
+            <form method="post" action="/simple-lms/profile/payout" class="stack">
+              <div class="form-grid">
+                <div><label>Account Name</label><input class="input" name="accountName" value="<%= payoutProfile.accountName || '' %>"></div>
+                <div><label>Account Number</label><input class="input" name="accountNumber" value="<%= payoutProfile.accountNumber || '' %>"></div>
+                <div><label>Bank Name</label><input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>"></div>
+                <div><label>Bank Code</label><input class="input" name="bankCode" value="<%= payoutProfile.bankCode || '' %>"></div>
+                <div><label>SWIFT Code</label><input class="input" name="swiftCode" value="<%= payoutProfile.swiftCode || '' %>"></div>
+                <div><label>Currency</label><input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>"></div>
+                <div><label>Payment Email</label><input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>"></div>
+                <div><label>Country</label><input class="input" name="country" value="<%= payoutProfile.country || '' %>"></div>
+              </div>
+              <div><label>Notes</label><textarea class="input" name="notes" rows="3"><%= payoutProfile.notes || '' %></textarea></div>
+              <div class="actions"><button class="btn btn-primary" type="submit">Save Payout Profile</button></div>
+            </form>
+          </aside>
+        </div>
       </section>
     <% } %>
 
@@ -331,17 +391,19 @@
 
     <% if (viewMode === 'admin' && canManagePlatform) { %>
       <section class="panel">
-        <div class="head"><div><h2>Admin Dashboard</h2><p>Users, roles, and payment operations.</p></div></div>
+        <div class="head"><div><h2>Admin Dashboard</h2><p>Users, approval workflow, commission controls, and payment operations.</p></div></div>
         <div class="kpis">
           <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
           <article class="kpi"><small>Admins</small><strong><%= roleBreakdown.admin %></strong></article>
+          <article class="kpi"><small>Pending Reviews</small><strong><%= pendingReviewCourses.length %></strong></article>
           <article class="kpi"><small>Successful Payments</small><strong><%= paymentStats.successfulCount %></strong></article>
           <article class="kpi"><small>Revenue (Tracked)</small><strong><%= paymentStats.revenueDisplay %></strong></article>
+          <article class="kpi"><small>Creator Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
         </div>
       </section>
 
       <section class="panel">
-        <div class="head"><div><h2>Manage Users & Roles</h2><p>Create additional admins by changing role to <code>admin</code> or <code>super_admin</code>.</p></div></div>
+        <div class="head"><div><h2>Manage Users & Roles</h2><p>All accounts can learn and publish courses. Use role only for admin privileges.</p></div></div>
         <% if (!adminAccounts || adminAccounts.length === 0) { %>
           <div class="empty">No accounts found.</div>
         <% } else { %>
@@ -350,12 +412,121 @@
               <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
                 <div><label>Name</label><input class="input" type="text" value="<%= account.displayName %>" readonly></div>
                 <div><label>Email</label><input class="input" type="text" value="<%= account.email %>" readonly></div>
-                <div><label>Role</label><select class="input" name="role"><option value="learner" <%= account.resolvedRole === 'learner' ? 'selected' : '' %>>learner</option><option value="creator" <%= account.resolvedRole === 'creator' ? 'selected' : '' %>>creator</option><option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option><option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option></select></div>
+                <div><label>Role</label><select class="input" name="role"><option value="learner" <%= (account.resolvedRole === 'learner' || account.resolvedRole === 'creator') ? 'selected' : '' %>>learner</option><option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option><option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option></select></div>
                 <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Update Role</button></div>
               </form>
             <% }) %>
           </div>
         <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Course Approval Queue</h2><p>Public course submissions from members requiring admin approval.</p></div></div>
+        <% if (!pendingReviewCourses || pendingReviewCourses.length === 0) { %>
+          <div class="empty">No courses pending public approval.</div>
+        <% } else { %>
+          <div class="stack">
+            <% pendingReviewCourses.forEach((course) => { %>
+              <article class="card">
+                <div class="body">
+                  <h3><%= course.title %></h3>
+                  <p><%= course.summaryText %></p>
+                  <div class="actions">
+                    <span class="pill">submitted: <%= dateText(course.submittedAt) %></span>
+                    <span class="pill"><%= course.creatorName %></span>
+                    <span class="pill"><%= course.displayPrice %></span>
+                  </div>
+                  <div class="actions">
+                    <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
+                      <input class="input" type="text" name="reviewNotes" placeholder="Optional note">
+                      <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
+                    </form>
+                    <form method="post" action="/simple-lms/courses/<%= course._id %>/reject-public" class="inline-form">
+                      <input class="input" type="text" name="reviewNotes" placeholder="Reason for draft return">
+                      <button class="btn btn-danger btn-sm" type="submit">Return to Draft</button>
+                    </form>
+                  </div>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Commission Management</h2><p>Set global commission plus per-account and per-course overrides.</p></div></div>
+        <div class="studio">
+          <div class="stack">
+            <form method="post" action="/simple-lms/commission/global" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div><label>Global Creator Commission (%)</label><input class="input" type="number" name="globalRatePercent" min="0" max="100" step="0.01" value="<%= commissionSettings.globalRatePercent %>" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Global Rate</button></div>
+            </form>
+
+            <form method="post" action="/simple-lms/commission/account" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div>
+                <label>Account Override</label>
+                <select class="input" name="accountId" required>
+                  <option value="">Select account</option>
+                  <% adminAccounts.forEach((account) => { %>
+                    <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div><label>Commission Rate (%)</label><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Account Override</button></div>
+            </form>
+
+            <form method="post" action="/simple-lms/commission/course" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div>
+                <label>Course Override</label>
+                <select class="input" name="courseId" required>
+                  <option value="">Select course</option>
+                  <% managedCourses.forEach((course) => { %>
+                    <option value="<%= course._id %>"><%= course.title %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div><label>Commission Rate (%)</label><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Course Override</button></div>
+            </form>
+          </div>
+          <aside class="stack">
+            <article class="panel" style="padding:10px;">
+              <div class="head"><div><h2>Account Overrides</h2></div></div>
+              <% if (!commissionSettings.accountOverrides || commissionSettings.accountOverrides.length === 0) { %>
+                <div class="empty">No account overrides.</div>
+              <% } else { %>
+                <div class="stack">
+                  <% commissionSettings.accountOverrides.forEach((item) => { %>
+                    <form method="post" action="/simple-lms/commission/account/remove" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+                      <input type="hidden" name="accountId" value="<%= item.accountId %>">
+                      <div><label>Account</label><input class="input" value="<%= item.accountName %>" readonly></div>
+                      <div><label>Rate</label><input class="input" value="<%= item.ratePercent %>%" readonly></div>
+                      <div style="align-self:end;"><button class="btn btn-danger btn-sm" type="submit">Remove</button></div>
+                    </form>
+                  <% }) %>
+                </div>
+              <% } %>
+            </article>
+            <article class="panel" style="padding:10px;">
+              <div class="head"><div><h2>Course Overrides</h2></div></div>
+              <% if (!commissionSettings.courseOverrides || commissionSettings.courseOverrides.length === 0) { %>
+                <div class="empty">No course overrides.</div>
+              <% } else { %>
+                <div class="stack">
+                  <% commissionSettings.courseOverrides.forEach((item) => { %>
+                    <form method="post" action="/simple-lms/commission/course/remove" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+                      <input type="hidden" name="courseId" value="<%= item.courseId %>">
+                      <div><label>Course</label><input class="input" value="<%= item.courseTitle %>" readonly></div>
+                      <div><label>Rate</label><input class="input" value="<%= item.ratePercent %>%" readonly></div>
+                      <div style="align-self:end;"><button class="btn btn-danger btn-sm" type="submit">Remove</button></div>
+                    </form>
+                  <% }) %>
+                </div>
+              <% } %>
+            </article>
+          </aside>
+        </div>
       </section>
 
       <section class="panel">
@@ -371,7 +542,7 @@
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Status</th><th>Tx Ref</th><th>Provider Tx</th></tr></thead>
+              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Tx Ref</th><th>Provider Tx</th></tr></thead>
               <tbody>
                 <% adminPayments.forEach((payment) => { %>
                   <tr>
@@ -379,6 +550,8 @@
                     <td><%= payment.learnerName %><br><span style="color:var(--muted);font-size:12px;"><%= payment.learnerEmail %></span></td>
                     <td><%= payment.courseTitle %></td>
                     <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.creatorCommissionDisplay %></td>
+                    <td><%= payment.platformShareDisplay %></td>
                     <td><span class="pill"><%= payment.statusLabel %></span></td>
                     <td><%= payment.txRef %></td>
                     <td><%= payment.flutterwaveTxId || '-' %></td>

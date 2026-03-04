@@ -7,6 +7,7 @@ import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
+import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
 
@@ -49,7 +50,7 @@ const resolveRole = (account) => {
 }
 
 const canManagePlatform = (role) => ['super_admin', 'admin'].includes(role)
-const canCreateCourses = (role) => canManagePlatform(role) || role === 'creator'
+const canCreateCourses = (_role) => true
 
 const parseJsonInput = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback
@@ -98,6 +99,59 @@ const formatCurrencyAmount = (amountMinor, currencyCode) => {
 const generateTxRef = () => {
   const randomPart = Math.random().toString(36).slice(2, 10)
   return `sl_${Date.now()}_${randomPart}`
+}
+
+const normalizeCommissionRate = (value, fallback = 70) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+}
+
+const splitCommission = ({ amountMinor = 0, ratePercent = 70 }) => {
+  const amount = Math.max(0, Math.round(Number(amountMinor || 0)))
+  const normalizedRate = normalizeCommissionRate(ratePercent, 70)
+  const creatorCommissionMinor = Math.max(0, Math.round((amount * normalizedRate) / 100))
+  const platformShareMinor = Math.max(0, amount - creatorCommissionMinor)
+  return {
+    creatorCommissionMinor,
+    platformShareMinor
+  }
+}
+
+const getCommissionSettings = async () => {
+  const settings = await SimpleLmsCommissionSetting.findOne({}).lean()
+  if (settings) {
+    return {
+      globalRatePercent: normalizeCommissionRate(settings.globalRatePercent, 70),
+      accountOverrides: Array.isArray(settings.accountOverrides) ? settings.accountOverrides : [],
+      courseOverrides: Array.isArray(settings.courseOverrides) ? settings.courseOverrides : []
+    }
+  }
+  return {
+    globalRatePercent: 70,
+    accountOverrides: [],
+    courseOverrides: []
+  }
+}
+
+const resolveCommissionRate = ({ settings, creatorId, courseId }) => {
+  const globalRate = normalizeCommissionRate(settings?.globalRatePercent, 70)
+  const normalizedCreatorId = toIdString(creatorId)
+  const normalizedCourseId = toIdString(courseId)
+
+  const courseOverride = (settings?.courseOverrides || [])
+    .find((entry) => toIdString(entry?.course) === normalizedCourseId)
+  if (courseOverride) {
+    return normalizeCommissionRate(courseOverride.ratePercent, globalRate)
+  }
+
+  const accountOverride = (settings?.accountOverrides || [])
+    .find((entry) => toIdString(entry?.account) === normalizedCreatorId)
+  if (accountOverride) {
+    return normalizeCommissionRate(accountOverride.ratePercent, globalRate)
+  }
+
+  return globalRate
 }
 
 const isCoursePaidContent = (course) => {
@@ -179,13 +233,13 @@ const requireApiAuth = async (req, res, next) => {
 const canManageCourse = ({ role, accountId, course }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
-  return role === 'creator' && toIdString(course.createdBy) === toIdString(accountId)
+  return toIdString(course.createdBy) === toIdString(accountId)
 }
 
 const canManageProgram = ({ role, accountId, program }) => {
   if (!program) return false
   if (canManagePlatform(role)) return true
-  return role === 'creator' && toIdString(program.createdBy) === toIdString(accountId)
+  return toIdString(program.createdBy) === toIdString(accountId)
 }
 
 const parseViewMode = (value) => {
@@ -197,7 +251,7 @@ const parseViewMode = (value) => {
 
 const parseCourseStatus = (value, fallback = 'draft') => {
   const normalized = String(value || '').trim().toLowerCase()
-  return ['draft', 'published', 'archived'].includes(normalized) ? normalized : fallback
+  return ['draft', 'published', 'archived', 'pending_public_review'].includes(normalized) ? normalized : fallback
 }
 
 const parseProgramStatus = (value, fallback = 'draft') => {
@@ -482,7 +536,11 @@ const parseCoursePayload = ({ body, role, existingCourse = null }) => {
   }
 
   const level = LEVELS.includes(String(body.level || '').trim()) ? String(body.level).trim() : 'mixed'
-  const status = parseCourseStatus(body.status || existingCourse?.status || 'draft', 'draft')
+  const requestedStatus = parseCourseStatus(body.status || existingCourse?.status || 'draft', 'draft')
+  const requiresApproval = !canManagePlatform(role)
+  const status = (requestedStatus === 'published' && requiresApproval)
+    ? 'pending_public_review'
+    : requestedStatus
   const visibility = normalizeVisibility(body.visibility || existingCourse?.visibility, role)
   const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []))
   const bannerPayload = parseJsonInput(body.bannerPayload, {})
@@ -505,6 +563,15 @@ const parseCoursePayload = ({ body, role, existingCourse = null }) => {
       amount,
       currency
     }
+  }
+
+  if (requestedStatus === 'published' && status === 'pending_public_review') {
+    payload.submittedForPublicReviewAt = new Date()
+    payload.reviewedAt = null
+    payload.reviewedBy = null
+    payload.reviewNotes = ''
+    payload.approvedPublicAt = null
+    payload.approvedPublicBy = null
   }
 
   if (bannerPayload && typeof bannerPayload === 'object' && String(bannerPayload.url || '').trim()) {
@@ -530,6 +597,11 @@ const parseCoursePayload = ({ body, role, existingCourse = null }) => {
   if (status === 'draft') {
     payload.archivedAt = null
     payload.isActive = true
+  }
+  if (status === 'pending_public_review') {
+    payload.archivedAt = null
+    payload.isActive = true
+    payload.publishedAt = null
   }
 
   if (canManagePlatform(role)) {
@@ -751,6 +823,7 @@ pageRouter.post('/courses/:courseId/pay', requirePageAuth, async (req, res) => {
     const payment = await SimpleLmsPayment.create({
       account: req.user._id,
       course: course._id,
+      creatorAccount: course.createdBy || null,
       txRef,
       amountMinor,
       currency,
@@ -882,6 +955,21 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
 
     payment.status = 'successful'
     payment.paidAt = new Date()
+    const commissionSettings = await getCommissionSettings()
+    const creatorId = payment.course?.createdBy || payment.creatorAccount
+    const commissionRate = resolveCommissionRate({
+      settings: commissionSettings,
+      creatorId,
+      courseId: payment.course?._id || payment.course
+    })
+    const split = splitCommission({
+      amountMinor: payment.amountMinor,
+      ratePercent: commissionRate
+    })
+    payment.creatorAccount = creatorId || payment.creatorAccount || null
+    payment.creatorCommissionRate = commissionRate
+    payment.creatorCommissionMinor = split.creatorCommissionMinor
+    payment.platformShareMinor = split.platformShareMinor
     await payment.save()
 
     await createOrUpdateEnrollment({
@@ -1191,7 +1279,7 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=course-studio',
-        error: 'Only admins and course creators can create courses.'
+        error: 'You do not have permission to create courses.'
       })
     }
 
@@ -1204,27 +1292,26 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       createdByEmail: req.user.email || ''
     })
 
-    if (role === 'creator') {
-      req.user.learningProfile = req.user.learningProfile || {}
-      req.user.learningProfile.registrationIntent =
-        req.user.learningProfile.registrationIntent || 'teach'
-      req.user.learningProfile.intentSource =
-        req.user.learningProfile.intentSource || 'course_studio'
-      req.user.learningProfile.instructorActivatedAt =
-        req.user.learningProfile.instructorActivatedAt || new Date()
-      req.user.learningProfile.instructorOnboardingCompleted = true
-      req.user.learningProfile.firstCourseCreatedAt =
-        req.user.learningProfile.firstCourseCreatedAt || new Date()
-      req.user.learningProfile.firstCourse =
-        req.user.learningProfile.firstCourse || createdCourse._id
-
-      await req.user.save()
-    }
+    req.user.learningProfile = req.user.learningProfile || {}
+    req.user.learningProfile.registrationIntent =
+      req.user.learningProfile.registrationIntent || 'teach'
+    req.user.learningProfile.intentSource =
+      req.user.learningProfile.intentSource || 'course_studio'
+    req.user.learningProfile.instructorActivatedAt =
+      req.user.learningProfile.instructorActivatedAt || new Date()
+    req.user.learningProfile.instructorOnboardingCompleted = true
+    req.user.learningProfile.firstCourseCreatedAt =
+      req.user.learningProfile.firstCourseCreatedAt || new Date()
+    req.user.learningProfile.firstCourse =
+      req.user.learningProfile.firstCourse || createdCourse._id
+    await req.user.save()
 
     return redirectWithMessage({
       res,
       path: '/simple-lms?view=course-studio',
-      success: 'Course created successfully.'
+      success: createdCourse.status === 'pending_public_review'
+        ? 'Course submitted for admin approval.'
+        : 'Course created successfully.'
     })
   } catch (error) {
     console.error('Create course error:', error)
@@ -1277,7 +1364,9 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     return redirectWithMessage({
       res,
       path: '/simple-lms?view=course-studio',
-      success: 'Course updated successfully.'
+      success: course.status === 'pending_public_review'
+        ? 'Course update submitted for admin approval.'
+        : 'Course updated successfully.'
     })
   } catch (error) {
     console.error('Update course error:', error)
@@ -1387,6 +1476,110 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
   }
 })
 
+pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can approve public courses.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Course not found.'
+      })
+    }
+
+    course.status = 'published'
+    course.isActive = true
+    course.publishedAt = course.publishedAt || new Date()
+    course.approvedPublicAt = new Date()
+    course.approvedPublicBy = req.user._id
+    course.reviewedAt = new Date()
+    course.reviewedBy = req.user._id
+    course.reviewNotes = String(req.body.reviewNotes || '').trim().slice(0, 2000)
+    await course.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: `Course approved and published: ${course.title}.`
+    })
+  } catch (error) {
+    console.error('Approve course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to approve this course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can reject public course submissions.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Course not found.'
+      })
+    }
+
+    course.status = 'draft'
+    course.reviewedAt = new Date()
+    course.reviewedBy = req.user._id
+    course.reviewNotes = String(req.body.reviewNotes || '').trim().slice(0, 2000)
+    await course.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: `Course returned to draft: ${course.title}.`
+    })
+  } catch (error) {
+    console.error('Reject course error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to reject this course submission.'
+    })
+  }
+})
+
 pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) => {
   try {
     const courseId = String(req.params.courseId || '').trim()
@@ -1403,7 +1596,7 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=course-studio',
-        error: 'Only creators and admins can assign courses.'
+        error: 'You do not have permission to assign courses.'
       })
     }
 
@@ -1464,7 +1657,7 @@ pageRouter.post('/programs/create', requirePageAuth, async (req, res) => {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
-        error: 'Only admins and course creators can create programs.'
+        error: 'You do not have permission to create programs.'
       })
     }
 
@@ -1773,7 +1966,7 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
-        error: 'Only creators and admins can assign programs.'
+        error: 'You do not have permission to assign programs.'
       })
     }
 
@@ -1855,7 +2048,8 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
 
     const accountId = String(req.params.accountId || '').trim()
     const nextRole = String(req.body.role || '').trim().toLowerCase()
-    if (!mongoose.Types.ObjectId.isValid(accountId) || !ROLES.includes(nextRole)) {
+    const allowedRoleUpdates = ['learner', 'admin', 'super_admin']
+    if (!mongoose.Types.ObjectId.isValid(accountId) || !allowedRoleUpdates.includes(nextRole)) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=admin',
@@ -1913,6 +2107,223 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     })
   }
 })
+
+pageRouter.post('/commission/global', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update commission settings.'
+      })
+    }
+
+    const globalRatePercent = normalizeCommissionRate(req.body.globalRatePercent, 70)
+    const settings = await SimpleLmsCommissionSetting.findOne({}) || new SimpleLmsCommissionSetting({})
+    settings.globalRatePercent = globalRatePercent
+    settings.updatedBy = req.user._id
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: `Global creator commission set to ${globalRatePercent}%.`
+    })
+  } catch (error) {
+    console.error('Update global commission error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to update global commission.'
+    })
+  }
+})
+
+pageRouter.post('/commission/account', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update commission settings.'
+      })
+    }
+
+    const accountId = String(req.body.accountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Select a valid account.'
+      })
+    }
+
+    const ratePercent = normalizeCommissionRate(req.body.ratePercent, 70)
+    const settings = await SimpleLmsCommissionSetting.findOne({}) || new SimpleLmsCommissionSetting({})
+    const existingIndex = (settings.accountOverrides || []).findIndex((entry) => toIdString(entry.account) === accountId)
+
+    if (existingIndex >= 0) {
+      settings.accountOverrides[existingIndex].ratePercent = ratePercent
+    } else {
+      settings.accountOverrides.push({
+        account: new mongoose.Types.ObjectId(accountId),
+        ratePercent
+      })
+    }
+
+    settings.updatedBy = req.user._id
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: `Account commission override saved at ${ratePercent}%.`
+    })
+  } catch (error) {
+    console.error('Update account commission error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to update account commission override.'
+    })
+  }
+})
+
+pageRouter.post('/commission/account/remove', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update commission settings.'
+      })
+    }
+
+    const accountId = String(req.body.accountId || '').trim()
+    const settings = await SimpleLmsCommissionSetting.findOne({})
+    if (!settings) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        info: 'No commission settings found.'
+      })
+    }
+
+    settings.accountOverrides = (settings.accountOverrides || [])
+      .filter((entry) => toIdString(entry.account) !== accountId)
+    settings.updatedBy = req.user._id
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: 'Account commission override removed.'
+    })
+  } catch (error) {
+    console.error('Remove account commission error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to remove account commission override.'
+    })
+  }
+})
+
+pageRouter.post('/commission/course', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update commission settings.'
+      })
+    }
+
+    const courseId = String(req.body.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Select a valid course.'
+      })
+    }
+
+    const ratePercent = normalizeCommissionRate(req.body.ratePercent, 70)
+    const settings = await SimpleLmsCommissionSetting.findOne({}) || new SimpleLmsCommissionSetting({})
+    const existingIndex = (settings.courseOverrides || []).findIndex((entry) => toIdString(entry.course) === courseId)
+
+    if (existingIndex >= 0) {
+      settings.courseOverrides[existingIndex].ratePercent = ratePercent
+    } else {
+      settings.courseOverrides.push({
+        course: new mongoose.Types.ObjectId(courseId),
+        ratePercent
+      })
+    }
+
+    settings.updatedBy = req.user._id
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: `Course commission override saved at ${ratePercent}%.`
+    })
+  } catch (error) {
+    console.error('Update course commission error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to update course commission override.'
+    })
+  }
+})
+
+pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        error: 'Only admins can update commission settings.'
+      })
+    }
+
+    const courseId = String(req.body.courseId || '').trim()
+    const settings = await SimpleLmsCommissionSetting.findOne({})
+    if (!settings) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=admin',
+        info: 'No commission settings found.'
+      })
+    }
+
+    settings.courseOverrides = (settings.courseOverrides || [])
+      .filter((entry) => toIdString(entry.course) !== courseId)
+    settings.updatedBy = req.user._id
+    await settings.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      success: 'Course commission override removed.'
+    })
+  } catch (error) {
+    console.error('Remove course commission error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=admin',
+      error: 'Failed to remove course commission override.'
+    })
+  }
+})
+
 pageRouter.get('/', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
@@ -1957,7 +2368,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     const managedFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
     const managedProgramFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -1980,15 +2391,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         category: { $exists: true, $nin: ['', null] }
       }),
       Account.countDocuments({}),
-      Account.countDocuments({
-        $or: [
-          { learningRole: 'creator' },
-          { learningRole: 'admin' },
-          { learningRole: 'super_admin' },
-          { isSystemAdmin: true },
-          { isSuperAdmin: true }
-        ]
-      }),
+      SimpleLmsCourse.distinct('createdBy', { isActive: true })
+        .then((ids) => Array.isArray(ids) ? ids.length : 0),
       SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
       canManagePlatform(role)
         ? Account.find({})
@@ -2028,6 +2432,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         status: 'successful'
       })
         .select('course amountMinor currency paidAt txRef flutterwaveTxId')
+        .populate('course', 'title')
         .sort({ paidAt: -1, createdAt: -1 })
         .lean(),
       canManagePlatform(role)
@@ -2037,7 +2442,18 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
           .sort({ createdAt: -1 })
           .limit(200)
           .lean()
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? SimpleLmsCourse.find({
+          status: 'pending_public_review',
+          isActive: true
+        })
+          .populate('createdBy', 'email profile.name')
+          .sort({ submittedForPublicReviewAt: -1, updatedAt: -1 })
+          .limit(200)
+          .lean()
+        : Promise.resolve([]),
+      getCommissionSettings()
     ])
 
     const myEnrollments = myEnrollmentsRaw
@@ -2197,8 +2613,93 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
 
     const myPayments = (myPaymentsRaw || []).map((payment) => ({
       ...payment,
+      courseTitle: payment.course?.title || toIdString(payment.course),
       amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency)
     }))
+
+    const managedCourseIdList = managedRaw.map((course) => course._id)
+    const creatorSalesRaw = managedCourseIdList.length > 0
+      ? await SimpleLmsPayment.find({
+        status: 'successful',
+        course: { $in: managedCourseIdList }
+      })
+        .populate('account', 'email profile.name')
+        .populate('course', 'title createdBy')
+        .sort({ paidAt: -1, createdAt: -1 })
+        .limit(400)
+        .lean()
+      : []
+
+    const commissionSettings = {
+      globalRatePercent: normalizeCommissionRate(commissionSettingsRaw?.globalRatePercent, 70),
+      accountOverrides: Array.isArray(commissionSettingsRaw?.accountOverrides) ? commissionSettingsRaw.accountOverrides : [],
+      courseOverrides: Array.isArray(commissionSettingsRaw?.courseOverrides) ? commissionSettingsRaw.courseOverrides : []
+    }
+
+    const creatorSales = creatorSalesRaw.map((payment) => {
+      const creatorId = toIdString(payment.creatorAccount || payment.course?.createdBy || '')
+      const defaultRate = resolveCommissionRate({
+        settings: commissionSettings,
+        creatorId,
+        courseId: payment.course?._id || payment.course
+      })
+      const hasStoredRate = Number.isFinite(Number(payment.creatorCommissionRate))
+      const finalRate = hasStoredRate
+        ? normalizeCommissionRate(payment.creatorCommissionRate, defaultRate)
+        : defaultRate
+      const split = splitCommission({
+        amountMinor: payment.amountMinor,
+        ratePercent: finalRate
+      })
+      const creatorCommissionMinor = hasStoredRate
+        ? Math.max(0, Math.round(Number(payment.creatorCommissionMinor || 0)))
+        : split.creatorCommissionMinor
+      const platformShareMinor = hasStoredRate
+        ? Math.max(0, Math.round(Number(payment.platformShareMinor || 0)))
+        : split.platformShareMinor
+
+      return {
+        ...payment,
+        creatorId,
+        buyerName: payment.account?.profile?.name || payment.account?.email || 'Learner',
+        buyerEmail: payment.account?.email || '',
+        courseTitle: payment.course?.title || 'Course',
+        amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency),
+        creatorCommissionRateDisplay: `${finalRate}%`,
+        creatorCommissionMinor,
+        creatorCommissionDisplay: formatCurrencyAmount(creatorCommissionMinor, payment.currency),
+        platformShareMinor,
+        platformShareDisplay: formatCurrencyAmount(platformShareMinor, payment.currency)
+      }
+    })
+
+    const myManagedCourseIdSet = new Set(
+      managedRaw
+        .filter((course) => toIdString(course.createdBy) === toIdString(req.user._id))
+        .map((course) => toIdString(course._id))
+    )
+    const effectiveManagedCourseIds = myManagedCourseIdSet
+
+    const myCreatorSales = creatorSales
+      .filter((sale) => effectiveManagedCourseIds.has(toIdString(sale.course?._id || sale.course)))
+      .slice(0, 120)
+
+    const creatorStats = {
+      saleCount: myCreatorSales.length,
+      uniqueLearnerCount: new Set(myCreatorSales.map((sale) => toIdString(sale.account?._id || sale.account))).size,
+      grossMinor: myCreatorSales.reduce((sum, sale) => sum + Math.max(0, Number(sale.amountMinor || 0)), 0),
+      commissionMinor: myCreatorSales.reduce((sum, sale) => sum + Math.max(0, Number(sale.creatorCommissionMinor || 0)), 0),
+      platformShareMinor: myCreatorSales.reduce((sum, sale) => sum + Math.max(0, Number(sale.platformShareMinor || 0)), 0),
+      enrollmentCount: managedCourses
+        .filter((course) => effectiveManagedCourseIds.has(toIdString(course._id)))
+        .reduce((sum, course) => sum + Math.max(0, Number(course.enrollmentCount || 0)), 0),
+      completionCount: managedCourses
+        .filter((course) => effectiveManagedCourseIds.has(toIdString(course._id)))
+        .reduce((sum, course) => sum + Math.max(0, Number(course.completionCount || 0)), 0)
+    }
+    creatorStats.grossDisplay = formatCurrencyAmount(creatorStats.grossMinor, 'NGN')
+    creatorStats.commissionDisplay = formatCurrencyAmount(creatorStats.commissionMinor, 'NGN')
+    creatorStats.platformShareDisplay = formatCurrencyAmount(creatorStats.platformShareMinor, 'NGN')
 
     const adminPayments = (adminPaymentsRaw || []).map((payment) => ({
       ...payment,
@@ -2206,6 +2707,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       learnerEmail: payment.account?.email || '',
       courseTitle: payment.course?.title || 'Course',
       amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency),
+      creatorCommissionDisplay: formatCurrencyAmount(payment.creatorCommissionMinor || 0, payment.currency),
+      platformShareDisplay: formatCurrencyAmount(payment.platformShareMinor || 0, payment.currency),
       statusLabel: String(payment.status || '').replace(/_/g, ' ')
     }))
 
@@ -2216,8 +2719,41 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       failedCount: adminPayments.filter(payment => ['failed', 'cancelled'].includes(payment.status)).length,
       revenueMinor: adminPayments
         .filter(payment => payment.status === 'successful')
-        .reduce((sum, payment) => sum + Math.max(0, Number(payment.amountMinor || 0)), 0)
+        .reduce((sum, payment) => sum + Math.max(0, Number(payment.amountMinor || 0)), 0),
+      creatorPayoutMinor: adminPayments
+        .filter(payment => payment.status === 'successful')
+        .reduce((sum, payment) => sum + Math.max(0, Number(payment.creatorCommissionMinor || 0)), 0)
     }
+
+    const accountNameById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.displayName]))
+    const accountEmailById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.email || '']))
+    const courseNameById = new Map([...managedCourses, ...catalogCourses, ...(pendingReviewCoursesRaw || []).map(decorateCourse)]
+      .map((course) => [toIdString(course._id), course.title || 'Course']))
+
+    const commissionAccountOverrides = (commissionSettings.accountOverrides || []).map((entry) => {
+      const accountId = toIdString(entry.account)
+      return {
+        accountId,
+        ratePercent: normalizeCommissionRate(entry.ratePercent, commissionSettings.globalRatePercent),
+        accountName: accountNameById.get(accountId) || accountEmailById.get(accountId) || accountId
+      }
+    })
+
+    const commissionCourseOverrides = (commissionSettings.courseOverrides || []).map((entry) => {
+      const courseId = toIdString(entry.course)
+      return {
+        courseId,
+        ratePercent: normalizeCommissionRate(entry.ratePercent, commissionSettings.globalRatePercent),
+        courseTitle: courseNameById.get(courseId) || courseId
+      }
+    })
+
+    const pendingReviewCourses = (pendingReviewCoursesRaw || []).map((course) => ({
+      ...decorateCourse(course),
+      creatorName: course.createdBy?.profile?.name || course.createdByName || course.createdByEmail || 'Author',
+      creatorEmail: course.createdBy?.email || course.createdByEmail || '',
+      submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt
+    }))
 
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
 
@@ -2252,14 +2788,24 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       assignableAccounts,
       adminAccounts,
       myPayments,
+      myCreatorSales,
+      creatorStats,
+      payoutProfile: req.user.payoutProfile || {},
       adminPayments,
       paymentStats: {
         ...paymentStats,
-        revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN')
+        revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN'),
+        creatorPayoutDisplay: formatCurrencyAmount(paymentStats.creatorPayoutMinor, 'NGN')
       },
       flutterwave: {
         enabled: isFlutterwaveConfigured(),
         publicKey: getFlutterwavePublicKey()
+      },
+      pendingReviewCourses,
+      commissionSettings: {
+        globalRatePercent: commissionSettings.globalRatePercent,
+        accountOverrides: commissionAccountOverrides,
+        courseOverrides: commissionCourseOverrides
       },
       roleBreakdown,
       stats: {
@@ -2328,8 +2874,26 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
     payment.verifiedAt = new Date()
 
     if (statusMatches && amountMatches && txRefMatches && verifiedCurrency === payment.currency) {
+      const courseForCommission = await SimpleLmsCourse.findById(payment.course)
+        .select('_id createdBy')
+        .lean()
+      const commissionSettings = await getCommissionSettings()
+      const creatorId = courseForCommission?.createdBy || payment.creatorAccount
+      const commissionRate = resolveCommissionRate({
+        settings: commissionSettings,
+        creatorId,
+        courseId: courseForCommission?._id || payment.course
+      })
+      const split = splitCommission({
+        amountMinor: payment.amountMinor,
+        ratePercent: commissionRate
+      })
       payment.status = 'successful'
       payment.paidAt = new Date()
+      payment.creatorAccount = creatorId || payment.creatorAccount || null
+      payment.creatorCommissionRate = commissionRate
+      payment.creatorCommissionMinor = split.creatorCommissionMinor
+      payment.platformShareMinor = split.platformShareMinor
       await payment.save()
 
       await createOrUpdateEnrollment({
@@ -2351,6 +2915,36 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
   }
 })
 
+pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
+  try {
+    req.user.payoutProfile = req.user.payoutProfile || {}
+    req.user.payoutProfile.accountName = String(req.body.accountName || '').trim().slice(0, 200)
+    req.user.payoutProfile.accountNumber = String(req.body.accountNumber || '').trim().slice(0, 64)
+    req.user.payoutProfile.bankName = String(req.body.bankName || '').trim().slice(0, 200)
+    req.user.payoutProfile.bankCode = String(req.body.bankCode || '').trim().slice(0, 80)
+    req.user.payoutProfile.swiftCode = String(req.body.swiftCode || '').trim().slice(0, 80)
+    req.user.payoutProfile.currency = normalizeCurrencyCode(req.body.currency, req.user.payoutProfile.currency || 'NGN')
+    req.user.payoutProfile.paymentEmail = String(req.body.paymentEmail || '').trim().toLowerCase().slice(0, 320)
+    req.user.payoutProfile.country = String(req.body.country || '').trim().slice(0, 80)
+    req.user.payoutProfile.notes = String(req.body.notes || '').trim().slice(0, 1200)
+    req.user.payoutProfile.updatedAt = new Date()
+    await req.user.save()
+
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      success: 'Payout details saved.'
+    })
+  } catch (error) {
+    console.error('Update payout profile error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=course-studio',
+      error: 'Failed to save payout details.'
+    })
+  }
+})
+
 apiRouter.use(requireApiAuth)
 
 apiRouter.get('/workspace', async (_req, res) => res.redirect('/simple-lms'))
@@ -2359,7 +2953,7 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
   try {
     const role = resolveRole(req.user)
     if (!canCreateCourses(role)) {
-      return res.status(403).json({ error: 'Only admins and creators can upload banners.' })
+      return res.status(403).json({ error: 'You do not have permission to upload banners.' })
     }
 
     if (!req.file?.buffer) {

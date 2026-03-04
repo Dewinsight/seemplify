@@ -451,7 +451,7 @@ app.get('/teach', async (req, res) => {
     }
 
     const currentRole = resolveLearningRole(req.user || null)
-    const alreadyCreator = ['creator', 'admin', 'super_admin'].includes(currentRole)
+    const canOpenWorkspace = Boolean(req.user) && ['learner', 'creator', 'admin', 'super_admin'].includes(currentRole)
 
     res.render('teach-landing', {
       title: `${teachLabel} - ${branding.learningName}`,
@@ -459,7 +459,7 @@ app.get('/teach', async (req, res) => {
       activePage: 'teach',
       teachBrand,
       teachLabel,
-      alreadyCreator,
+      canOpenWorkspace,
       error: String(req.query.error || ''),
       success: String(req.query.success || ''),
       info: String(req.query.info || ''),
@@ -486,21 +486,15 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
   try {
     const branding = resolveBranding(req.hostname || req.get('host'))
     const teachBrand = resolveTeachBrand(req.hostname || req.get('host'))
-    let role = resolveLearningRole(req.user)
-    let roleWasUpgraded = false
+    const role = resolveLearningRole(req.user)
 
-    if (role === 'learner') {
-      req.user.learningRole = 'creator'
-      req.user.learningProfile = req.user.learningProfile || {}
-      req.user.learningProfile.registrationIntent = 'teach'
-      if (!req.user.learningProfile.intentSource || req.user.learningProfile.intentSource === 'direct') {
-        req.user.learningProfile.intentSource = 'teach_get_started'
-      }
-      req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
-      await req.user.save()
-      role = 'creator'
-      roleWasUpgraded = true
+    req.user.learningProfile = req.user.learningProfile || {}
+    req.user.learningProfile.registrationIntent = req.user.learningProfile.registrationIntent || 'teach'
+    if (!req.user.learningProfile.intentSource || req.user.learningProfile.intentSource === 'direct') {
+      req.user.learningProfile.intentSource = 'teach_get_started'
     }
+    req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
+    await req.user.save()
 
     const [courseCount, latestCourse] = await Promise.all([
       SimpleLmsCourse.countDocuments({ createdBy: req.user._id, isActive: true }),
@@ -516,7 +510,7 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
       activePage: 'teach',
       teachBrand,
       role,
-      roleWasUpgraded,
+      roleWasUpgraded: false,
       courseCount,
       latestCourse,
       success: String(req.query.success || ''),
@@ -531,23 +525,6 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
 
 app.post('/teach/get-started/create-first-course', requireAuth, async (req, res) => {
   try {
-    let role = resolveLearningRole(req.user)
-    if (role === 'learner') {
-      req.user.learningRole = 'creator'
-      req.user.learningProfile = req.user.learningProfile || {}
-      req.user.learningProfile.registrationIntent = 'teach'
-      req.user.learningProfile.intentSource = req.user.learningProfile.intentSource || 'teach_get_started'
-      req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
-      await req.user.save()
-      role = 'creator'
-    }
-
-    if (!['creator', 'admin', 'super_admin'].includes(role)) {
-      return res.redirect(appendQuery('/teach/get-started', {
-        error: 'Only creators and admins can create courses.'
-      }))
-    }
-
     const title = String(req.body.title || '').trim().slice(0, 200)
     const summary = String(req.body.summary || '').trim().slice(0, 600)
     const description = String(req.body.description || '').trim().slice(0, 16000)
@@ -569,7 +546,7 @@ app.post('/teach/get-started/create-first-course', requireAuth, async (req, res)
     const starterCourse = await SimpleLmsCourse.create({
       organization: null,
       createdBy: req.user._id,
-      createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
+      createdByName: req.user.profile?.name || req.user.email || 'Course Author',
       createdByEmail: req.user.email || '',
       title,
       summary,

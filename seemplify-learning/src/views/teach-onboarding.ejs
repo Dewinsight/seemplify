@@ -17,21 +17,21 @@
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
     <% if (info) { %><div class="alert"><%= info %></div><% } %>
     <% if (roleWasUpgraded) { %>
-      <div class="alert alert-success">Creator mode enabled for your account. You can now build and publish courses.</div>
+      <div class="alert alert-success">Course publishing is enabled for your account.</div>
     <% } %>
 
     <section class="public-surface">
       <div class="public-surface-head">
         <div>
-          <p class="public-kicker">Creator Onboarding</p>
+          <p class="public-kicker">Course Setup</p>
           <h1 class="public-surface-title">Set up your first course</h1>
           <p class="public-surface-subtitle">
-            This wizard creates a starter draft, then sends you to Course Studio for full editing.
+            This wizard creates a starter draft, then sends you to Course Studio for full editing and approval submission.
           </p>
         </div>
       </div>
       <div class="chips">
-        <span class="chip">Role: <%= String(role || 'creator').replace(/_/g, ' ') %></span>
+        <span class="chip">Role: <%= String(role || 'learner').replace(/_/g, ' ') %></span>
         <span class="chip">Courses Created: <%= courseCount %></span>
         <% if (latestCourse) { %>
           <span class="chip">Latest: <%= latestCourse.title %></span>
@@ -119,7 +119,7 @@
             </div>
             <div class="onboard-hint-card">
               <h3>Submit to create your starter draft</h3>
-              <p>After submission, you will land in Course Studio to upload banner images, add videos, and publish.</p>
+              <p>After submission, use Course Studio to upload banner images, add videos, and submit for approval.</p>
             </div>
           </section>
 
@@ -137,7 +137,7 @@
           <li>Upload a banner image for the course card.</li>
           <li>Add chapter lessons and video links.</li>
           <li>Attach quiz questions and resources.</li>
-          <li>Switch from draft to published when ready.</li>
+          <li>Submit for admin approval when ready.</li>
         </ol>
         <div class="public-actions">
           <a href="/simple-lms?view=course-studio" class="btn btn-secondary btn-sm">Open Course Studio</a>

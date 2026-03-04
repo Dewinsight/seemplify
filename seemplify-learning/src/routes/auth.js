@@ -181,7 +181,7 @@ router.post('/register', async (req, res) => {
       ]
     })
     const bootstrapAsSuperAdmin = !hasExistingSuperAdmin
-    const roleFromIntent = intent === 'teach' ? 'creator' : 'learner'
+    const roleFromIntent = 'learner'
 
     const account = await Account.create({
       sub: createSub(),
@@ -212,9 +212,7 @@ router.post('/register', async (req, res) => {
 
     const successMessage = bootstrapAsSuperAdmin
       ? `Welcome to ${branding.learningName}. Your account was bootstrapped as Super Admin.`
-      : (intent === 'teach'
-          ? `Welcome to ${branding.learningName}. Let us set up your creator workspace.`
-          : `Welcome to ${branding.learningName}. Your account is ready.`)
+      : `Welcome to ${branding.learningName}. Your account is ready.`
 
     const destination = bootstrapAsSuperAdmin
       ? '/simple-lms'

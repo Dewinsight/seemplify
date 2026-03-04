@@ -94,6 +94,65 @@ const AccountSchema = new mongoose.Schema({
       default: null
     }
   },
+  payoutProfile: {
+    accountName: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: ''
+    },
+    accountNumber: {
+      type: String,
+      trim: true,
+      maxlength: 64,
+      default: ''
+    },
+    bankName: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: ''
+    },
+    bankCode: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: ''
+    },
+    swiftCode: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: ''
+    },
+    currency: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 3,
+      default: 'NGN'
+    },
+    paymentEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: 320,
+      default: ''
+    },
+    country: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: ''
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 1200,
+      default: ''
+    },
+    updatedAt: Date
+  },
   organizations: {
     type: [organizationMembershipSchema],
     default: []

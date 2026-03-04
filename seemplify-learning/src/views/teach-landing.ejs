@@ -23,14 +23,14 @@
         <h1 class="public-title">Create courses that help people build real skills.</h1>
         <p class="public-subtitle">
           Publish lessons, upload banners, structure chapters, and grow your audience on <%= teachBrand %>.
-          Register once and continue into a guided creator setup wizard.
+          One account does everything: learn, buy courses, and publish your own courses.
         </p>
         <div class="public-actions">
           <% if (user) { %>
-            <a href="<%= getStartedHref %>" class="btn btn-primary"><%= alreadyCreator ? 'Open Creator Setup' : 'Start Creator Setup' %></a>
+            <a href="<%= getStartedHref %>" class="btn btn-primary"><%= canOpenWorkspace ? 'Open Course Setup' : 'Start Course Setup' %></a>
             <a href="/simple-lms?view=course-studio" class="btn btn-secondary">Open Course Studio</a>
           <% } else { %>
-            <a href="<%= registerHref %>" class="btn btn-primary">Get Started as Instructor</a>
+            <a href="<%= registerHref %>" class="btn btn-primary">Create Account to Teach</a>
             <a href="<%= loginHref %>" class="btn btn-secondary">Sign In to Continue</a>
           <% } %>
         </div>
@@ -44,7 +44,7 @@
       <div class="public-surface-head">
         <div>
           <h2 class="public-surface-title">How Teaching Works</h2>
-          <p class="public-surface-subtitle">A practical path from first draft to published learning experience.</p>
+          <p class="public-surface-subtitle">A practical path from first draft to approved public course.</p>
         </div>
       </div>
       <div class="teach-feature-grid">
@@ -66,7 +66,7 @@
           <img src="/images/teach-feature-grow.svg" alt="Grow audience illustration">
           <div class="teach-feature-body">
             <h3>Track and Improve</h3>
-            <p>Use workspace insights to monitor enrollments and refine your lessons based on learner activity.</p>
+            <p>Use workspace insights to monitor learners, sales, and earnings from your approved paid courses.</p>
           </div>
         </article>
       </div>
@@ -75,15 +75,15 @@
     <section class="public-surface teach-steps">
       <div class="public-surface-head">
         <div>
-          <h2 class="public-surface-title">Creator Setup Steps</h2>
-          <p class="public-surface-subtitle">Exactly what happens after signup.</p>
+          <h2 class="public-surface-title">Course Setup Steps</h2>
+          <p class="public-surface-subtitle">Exactly what happens after signup and before publishing publicly.</p>
         </div>
       </div>
       <div class="teach-step-grid">
         <article class="teach-step-card">
           <span class="teach-step-number">1</span>
           <h3>Create your account</h3>
-          <p>Use the same registration flow as learners. We store your intent as a creator.</p>
+          <p>Use the same account flow for learning and publishing courses.</p>
         </article>
         <article class="teach-step-card">
           <span class="teach-step-number">2</span>
@@ -92,15 +92,15 @@
         </article>
         <article class="teach-step-card">
           <span class="teach-step-number">3</span>
-          <h3>Finalize in Course Studio</h3>
-          <p>Add videos, banners, and quizzes, then publish publicly when your content is ready.</p>
+          <h3>Submit for admin approval</h3>
+          <p>Add videos, banners, and quizzes, then submit for review before public publishing.</p>
         </article>
       </div>
       <div class="public-actions">
         <% if (user) { %>
           <a href="<%= getStartedHref %>" class="btn btn-primary">Continue to Wizard</a>
         <% } else { %>
-          <a href="<%= registerHref %>" class="btn btn-primary">Create Creator Account</a>
+          <a href="<%= registerHref %>" class="btn btn-primary">Create Account</a>
         <% } %>
         <a href="<%= browseHref %>" class="btn btn-secondary">Browse Courses Instead</a>
       </div>

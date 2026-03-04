@@ -179,6 +179,42 @@
       </div>
     </section>
 
+    <section class="home-personas reveal-item" data-reveal>
+      <article class="home-persona-card">
+        <div class="home-persona-media">
+          <img src="<%= editorialVisuals.learnerPath %>" alt="Learner studying with notes and laptop">
+        </div>
+        <div class="home-persona-body">
+          <p class="public-kicker">For Learners</p>
+          <h3>Find a course path and start at your own pace.</h3>
+          <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
+          <div class="public-actions">
+            <a href="/courses" class="btn btn-primary btn-sm">Browse Courses</a>
+            <% if (!user) { %>
+              <a href="<%= learnRegisterHref %>" class="btn btn-secondary btn-sm">Create Learner Account</a>
+            <% } else { %>
+              <a href="/simple-lms?view=my-learning" class="btn btn-secondary btn-sm">Go to My Learning</a>
+            <% } %>
+          </div>
+        </div>
+      </article>
+
+      <article class="home-persona-card">
+        <div class="home-persona-media">
+          <img src="<%= editorialVisuals.creatorPath %>" alt="Instructor planning course modules on screen">
+        </div>
+        <div class="home-persona-body">
+          <p class="public-kicker">For Creators</p>
+          <h3>Publish polished courses and grow your audience.</h3>
+          <p>Build chapters, lessons, and quizzes with a guided onboarding flow from day one.</p>
+          <div class="public-actions">
+            <a href="<%= teachCtaHref %>" class="btn btn-primary btn-sm"><%= `Teach on ${teachBrand}` %></a>
+            <a href="/teach" class="btn btn-secondary btn-sm">View Creator Guide</a>
+          </div>
+        </div>
+      </article>
+    </section>
+
     <section class="home-value-strip reveal-item" data-reveal>
       <% valueProps.forEach((item) => { %>
         <article class="home-value-card">
@@ -190,16 +226,16 @@
 
     <section class="home-story reveal-item" data-reveal>
       <article class="home-story-copy">
-        <p class="public-kicker">Why This Homepage Works</p>
-        <h2 class="public-surface-title">Designed like a modern learning front door, not a filter page.</h2>
+        <p class="public-kicker">How It Works</p>
+        <h2 class="public-surface-title">Discover a course, preview the content, then enroll when ready.</h2>
         <p class="public-subtitle">
-          You get visual storytelling, curated direction, and fast jumps into courses or creator tools.
-          The catalog still does deep filtering, but this page now feels like your main product landing surface.
+          Browse public courses, compare outcomes, and start learning only when you decide.
+          If you want to publish, the same account gives you access to course setup and submission.
         </p>
         <ul class="home-story-list">
-          <li>Landing-first experience with rotating hero banners</li>
-          <li>Intent pathways for learners and course creators</li>
-          <li>Curated featured courses without cloning catalog layout</li>
+          <li>Explore <%= totalCourses %> published courses with transparent pricing</li>
+          <li>Preview lessons and course structure before creating an account</li>
+          <li>Use one account to learn courses and publish your own courses</li>
         </ul>
       </article>
       <article class="home-story-media">
@@ -271,41 +307,6 @@
       <% } %>
     </section>
 
-    <section class="home-personas reveal-item" data-reveal>
-      <article class="home-persona-card">
-        <div class="home-persona-media">
-          <img src="<%= editorialVisuals.learnerPath %>" alt="Learner studying with notes and laptop">
-        </div>
-        <div class="home-persona-body">
-          <p class="public-kicker">For Learners</p>
-          <h3>Find a course path and start at your own pace.</h3>
-          <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
-          <div class="public-actions">
-            <a href="/courses" class="btn btn-primary btn-sm">Browse Courses</a>
-            <% if (!user) { %>
-              <a href="<%= learnRegisterHref %>" class="btn btn-secondary btn-sm">Create Learner Account</a>
-            <% } else { %>
-              <a href="/simple-lms?view=my-learning" class="btn btn-secondary btn-sm">Go to My Learning</a>
-            <% } %>
-          </div>
-        </div>
-      </article>
-
-      <article class="home-persona-card">
-        <div class="home-persona-media">
-          <img src="<%= editorialVisuals.creatorPath %>" alt="Instructor planning course modules on screen">
-        </div>
-        <div class="home-persona-body">
-          <p class="public-kicker">For Creators</p>
-          <h3>Publish polished courses and grow your audience.</h3>
-          <p>Build chapters, lessons, and quizzes with a guided onboarding flow from day one.</p>
-          <div class="public-actions">
-            <a href="<%= teachCtaHref %>" class="btn btn-primary btn-sm"><%= `Teach on ${teachBrand}` %></a>
-            <a href="/teach" class="btn btn-secondary btn-sm">View Creator Guide</a>
-          </div>
-        </div>
-      </article>
-    </section>
   </main>
 
   <script>

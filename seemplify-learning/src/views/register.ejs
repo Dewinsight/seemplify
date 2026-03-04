@@ -128,17 +128,17 @@
   </div>
   <div class="auth-wrap">
     <div class="auth-card">
-      <h1 class="auth-title"><%= isTeachIntent ? 'Create Instructor Account' : `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
+      <h1 class="auth-title"><%= `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
       <p class="auth-subtitle">
         <%= isTeachIntent
-          ? 'Register once, then we guide you through your first course setup.'
+          ? 'Register once, then continue to the course publishing setup.'
           : 'Set up your learning workspace with your own login.' %>
       </p>
 
       <% if (isTeachIntent) { %>
         <div class="intent-banner">
-          <p class="intent-kicker">Creator Path</p>
-          <p class="intent-text">You are joining to teach. We will open the creator onboarding wizard after signup.</p>
+          <p class="intent-kicker">Teach Intent</p>
+          <p class="intent-text">You are joining to publish courses. After signup, we will open the course setup wizard.</p>
         </div>
       <% } %>
 
@@ -160,7 +160,7 @@
         <label>Password</label>
         <input class="input" type="password" name="password" required minlength="8" placeholder="Minimum 8 characters">
 
-        <button class="btn btn-primary" type="submit"><%= isTeachIntent ? 'Create creator account' : 'Create account' %></button>
+        <button class="btn btn-primary" type="submit">Create account</button>
       </form>
 
       <p class="auth-footer">Already have an account? <a href="<%= loginUrl || '/login' %>">Sign in</a></p>
