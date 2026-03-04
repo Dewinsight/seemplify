@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-8">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-9">
   <script src="/js/theme.js?v=2"></script>
   <style>
     :root {
@@ -51,9 +51,13 @@
       margin: 0 auto;
       padding: 0 24px 56px;
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       gap: 14px;
       align-content: start;
       flex: 1 0 auto;
+    }
+    .shell > * {
+      min-width: 0;
     }
     .hero,
     .panel {
@@ -164,6 +168,11 @@
     .hero-actions .btn {
       border-radius: 999px;
       padding: 10px 16px;
+    }
+    .workspace-view {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr);
     }
     .chips {
       display: grid;
@@ -377,6 +386,38 @@
       text-transform: uppercase;
       letter-spacing: .05em;
     }
+    .cart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cart-summary-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .cart-summary-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--lms-surface-soft);
+      display: grid;
+      gap: 6px;
+    }
+    .cart-summary-card small {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .cart-summary-card strong {
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: -.03em;
+    }
     .builder {
       display: grid;
       gap: 10px;
@@ -499,6 +540,7 @@
           <div class="hero-actions">
             <a class="btn btn-primary btn-sm" href="<%= tab('catalog') %>">Explore Catalog</a>
             <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
+            <a class="btn btn-secondary btn-sm" href="<%= tab('cart') %>">Open Cart (<%= stats.cartItemCount %>)</a>
             <% if (canCreateCourses) { %>
               <a class="btn btn-secondary btn-sm" href="<%= tab('course-studio') %>">Open Course Studio</a>
             <% } %>
@@ -527,6 +569,7 @@
       <div class="tabs">
         <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
         <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">Catalog</a>
+        <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="<%= tab('cart') %>">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
         <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
         <% if (canCreateCourses) { %>
           <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="<%= tab('course-studio') %>">Course Studio</a>
@@ -560,7 +603,17 @@
 
     <% if (viewMode === 'catalog') { %>
       <section class="panel">
-        <div class="head"><div><h2>Course Catalog</h2><p>Start free courses instantly. Paid courses use Flutterwave checkout.</p></div></div>
+        <div class="head">
+          <div><h2>Course Catalog</h2><p>Start free courses instantly. Paid courses can be added to cart first, then checked out in one clean flow.</p></div>
+          <div class="actions">
+            <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
+              <% cartSummary.totalsByCurrency.forEach((entry) => { %>
+                <span class="cart-total-chip"><%= entry.amountDisplay %></span>
+              <% }) %>
+            <% } %>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=cart">View Cart (<%= stats.cartItemCount %>)</a>
+          </div>
+        </div>
         <form method="get" action="/simple-lms">
           <input type="hidden" name="view" value="catalog">
           <div class="form-grid">
@@ -574,58 +627,6 @@
             <a class="btn btn-secondary" href="/simple-lms?view=catalog">Reset</a>
           </div>
         </form>
-      </section>
-
-      <section class="panel" id="cart-panel">
-        <div class="head">
-          <div><h2>My Cart</h2><p>Save paid courses and purchase when ready.</p></div>
-          <div class="actions">
-            <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
-              <% cartSummary.totalsByCurrency.forEach((entry) => { %>
-                <span class="cart-total-chip"><%= entry.amountDisplay %></span>
-              <% }) %>
-            <% } %>
-            <% if (cartSummary && cartSummary.hasItems) { %>
-              <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
-                <input type="hidden" name="returnTo" value="/simple-lms?view=catalog#cart-panel">
-                <button class="btn btn-primary btn-sm" type="submit">Checkout Next</button>
-              </form>
-              <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
-                <input type="hidden" name="returnTo" value="/simple-lms?view=catalog#cart-panel">
-                <button class="btn btn-danger btn-sm" type="submit">Clear Cart</button>
-              </form>
-            <% } %>
-          </div>
-        </div>
-        <% if (!cartSummary || !cartSummary.hasItems) { %>
-          <div class="empty">Your cart is empty.</div>
-        <% } else { %>
-          <div class="cart-list">
-            <% cartCourses.forEach((course) => { %>
-              <article class="cart-item">
-                <h3><%= course.title %></h3>
-                <p class="mini"><%= course.summaryText %></p>
-                <div class="actions">
-                  <span class="pill"><%= course.levelLabel %></span>
-                  <span class="pill"><%= course.lessonCount %> lessons</span>
-                  <span class="pill"><%= course.displayPrice %></span>
-                </div>
-                <div class="actions">
-                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
-                  <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
-                    <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
-                    <input type="hidden" name="fallback" value="/simple-lms?view=catalog#cart-panel">
-                    <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
-                  </form>
-                  <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
-                    <input type="hidden" name="returnTo" value="/simple-lms?view=catalog#cart-panel">
-                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                  </form>
-                </div>
-              </article>
-            <% }) %>
-          </div>
-        <% } %>
       </section>
 
       <section class="panel">
@@ -690,6 +691,89 @@
                   <div class="actions"><span class="pill"><%= program.totalSteps %> courses</span><span class="pill"><%= program.requiredSteps %> required</span></div>
                   <form method="post" action="/simple-lms/programs/<%= program._id %>/enroll" class="actions">
                     <button class="btn btn-primary btn-sm" type="submit"><%= program.isEnrolled ? 'Refresh Enrollment' : 'Enroll Program' %></button>
+                  </form>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'cart') { %>
+      <section class="panel" id="cart-panel">
+        <div class="head">
+          <div>
+            <h2>My Cart</h2>
+            <p>Review selected paid courses and complete checkout. Catalog content is separated to keep this flow focused.</p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=catalog">Continue Browsing</a>
+          </div>
+        </div>
+
+        <div class="cart-summary-grid">
+          <article class="cart-summary-card">
+            <small>Items in Cart</small>
+            <strong><%= cartSummary?.itemCount || 0 %></strong>
+          </article>
+          <article class="cart-summary-card">
+            <small>Paid Courses</small>
+            <strong><%= (cartCourses || []).filter((course) => course.requiresPayment).length %></strong>
+          </article>
+          <article class="cart-summary-card">
+            <small>Checkout Totals</small>
+            <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
+              <div class="actions">
+                <% cartSummary.totalsByCurrency.forEach((entry) => { %>
+                  <span class="cart-total-chip"><%= entry.amountDisplay %></span>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <strong>0</strong>
+            <% } %>
+          </article>
+        </div>
+
+        <div class="cart-header" style="margin-top: 4px;">
+          <p class="mini">Checkout processes one payable item at a time through Flutterwave and automatically keeps the remaining items in cart.</p>
+          <div class="actions">
+            <% if (cartSummary && cartSummary.hasItems) { %>
+              <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
+                <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                <button class="btn btn-primary btn-sm" type="submit">Checkout Now</button>
+              </form>
+              <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
+                <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                <button class="btn btn-danger btn-sm" type="submit">Clear Cart</button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+
+        <% if (!cartSummary || !cartSummary.hasItems) { %>
+          <div class="empty">Your cart is empty. Add paid courses from the catalog.</div>
+        <% } else { %>
+          <div class="cart-list">
+            <% cartCourses.forEach((course) => { %>
+              <article class="cart-item">
+                <h3><%= course.title %></h3>
+                <p class="mini"><%= course.summaryText %></p>
+                <div class="actions">
+                  <span class="pill"><%= course.levelLabel %></span>
+                  <span class="pill"><%= course.lessonCount %> lessons</span>
+                  <span class="pill"><%= course.displayPrice %></span>
+                </div>
+                <div class="actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
+                  <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
+                    <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
+                    <input type="hidden" name="fallback" value="/simple-lms?view=cart">
+                    <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
+                  </form>
+                  <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
+                    <input type="hidden" name="returnTo" value="/simple-lms?view=cart">
+                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
                   </form>
                 </div>
               </article>

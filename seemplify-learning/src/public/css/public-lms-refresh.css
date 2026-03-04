@@ -285,8 +285,17 @@ body.public-site .top-nav-actions {
 body.public-site .top-nav-user {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: nowrap;
+  min-width: 0;
+}
+
+body.public-site .top-nav-user-info {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+  min-width: 0;
+  max-width: 220px;
 }
 
 body.public-site .top-nav-user .btn {
@@ -296,6 +305,24 @@ body.public-site .top-nav-user .btn {
   font-weight: 700;
   white-space: nowrap;
   border-width: 1px;
+}
+
+body.public-site .top-nav-user-name,
+body.public-site .top-nav-user-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.public-site .top-nav-user-name {
+  max-width: 220px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+body.public-site .top-nav-user-email {
+  max-width: 220px;
+  font-size: 12px;
 }
 
 body.public-site .top-nav-user .btn-primary {
@@ -1900,10 +1927,6 @@ body.public-site.lmsv-auth-page .lmsv-shell {
     font-size: 13px;
   }
 
-  body.public-site .top-nav-user-email {
-    display: none;
-  }
-
   body.public-site .top-nav-brand span {
     font-size: 16px;
   }
@@ -1943,6 +1966,12 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 
   .lmsv-footer-links {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1320px) {
+  body.public-site .top-nav-user-email {
+    display: none;
   }
 }
 

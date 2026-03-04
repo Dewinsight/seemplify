@@ -22,7 +22,7 @@ const upload = multer({
 })
 
 const ROLES = ['super_admin', 'admin', 'creator', 'learner']
-const VIEW_MODES = ['overview', 'catalog', 'my-learning', 'course-studio', 'program-studio', 'admin']
+const VIEW_MODES = ['overview', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
@@ -346,6 +346,7 @@ const parseViewMode = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'studio' || normalized === 'course-studio' || normalized === 'manage') return 'course-studio'
   if (normalized === 'program-studio' || normalized === 'pathways') return 'program-studio'
+  if (normalized === 'checkout') return 'cart'
   return VIEW_MODES.includes(normalized) ? normalized : 'overview'
 }
 
@@ -1262,8 +1263,8 @@ pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayReques
 pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
   try {
     const returnTo = sanitizeInternalPath(
-      req.body?.returnTo || req.body?.fallback || '/simple-lms?view=catalog#cart-panel',
-      '/simple-lms?view=catalog#cart-panel'
+      req.body?.returnTo || req.body?.fallback || '/simple-lms?view=cart',
+      '/simple-lms?view=cart'
     )
     const cartCourseIds = getSessionCartCourseIds(req)
     if (cartCourseIds.length === 0) {
@@ -1328,7 +1329,7 @@ pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
     console.error('Cart checkout error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=catalog#cart-panel',
+      path: '/simple-lms?view=cart',
       error: 'Could not start cart checkout.'
     })
   }
@@ -1403,7 +1404,7 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
 
 pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
   const courseId = String(req.params.courseId || '').trim()
-  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=cart', '/simple-lms?view=cart')
   removeSessionCartCourseId(req, courseId)
   return redirectWithMessage({
     res,
@@ -1413,7 +1414,7 @@ pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
 })
 
 pageRouter.post('/cart/clear', requirePageAuth, async (req, res) => {
-  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=cart', '/simple-lms?view=cart')
   clearSessionCart(req)
   return redirectWithMessage({
     res,
