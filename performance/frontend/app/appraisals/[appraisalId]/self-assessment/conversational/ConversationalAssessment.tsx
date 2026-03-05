@@ -107,7 +107,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [requireSelfRating, setRequireSelfRating] = useState(true);
+  const [allowReviewConversation, setAllowReviewConversation] = useState(false);
+  const [reviewAutoGenerateAttempted, setReviewAutoGenerateAttempted] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+
+  const findLatestReportInThread = useCallback((thread: Message[] = []) => {
+    const reportMessage = [...thread]
+      .reverse()
+      .find((m) => m.structuredData?.type === 'report' && m.structuredData?.data);
+    return reportMessage?.structuredData?.data || null;
+  }, []);
 
   // Load existing conversation or initialize
   const loadConversation = useCallback(async () => {
@@ -133,12 +142,9 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
 
         // Check if we should show report
         if (data.conversationState.currentPhase === 'review' || data.conversationState.currentPhase === 'completed') {
-          // Find the latest report draft in the thread (if any)
-          const reportMessage = [...(data.chatThread || [])]
-            .reverse()
-            .find((m: Message) => m.structuredData?.type === 'report');
-          if (reportMessage?.structuredData?.data) {
-            setReport(reportMessage.structuredData.data);
+          const latestReport = findLatestReportInThread(data.chatThread || []);
+          if (latestReport) {
+            setReport(latestReport);
             setShowReport(true);
           }
         }
@@ -149,7 +155,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
     } finally {
       setIsLoading(false);
     }
-  }, [appraisalId]);
+  }, [appraisalId, findLatestReportInThread]);
 
   useEffect(() => {
     loadConversation();
@@ -198,6 +204,11 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       // Update with AI response
       setMessages(data.chatThread || []);
       setConversationState(data.conversationState);
+      const latestReport = findLatestReportInThread(data.chatThread || []);
+      if (latestReport) {
+        setReport(latestReport);
+        setShowReport(true);
+      }
 
       // Check if we should transition to report generation
       if (data.currentPhase === 'report_generation') {
@@ -239,7 +250,8 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   };
 
   // Generate report
-  const generateReport = async () => {
+  const generateReport = useCallback(async () => {
+    if (isRegenerating) return;
     setIsRegenerating(true);
 
     try {
@@ -250,13 +262,23 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       setConversationState(data.conversationState);
       setMessages(prev => [...prev, ...data.chatThread.slice(-2)]);
       setShowReport(true);
+      setReviewAutoGenerateAttempted(true);
+      setAllowReviewConversation(false);
     } catch (err: any) {
       console.error('Generate report error:', err);
       setError(err.response?.data?.error || 'Failed to generate report');
     } finally {
       setIsRegenerating(false);
     }
-  };
+  }, [appraisalId, isRegenerating]);
+
+  const openReportPreview = useCallback(async () => {
+    if (report) {
+      setShowReport(true);
+      return;
+    }
+    await generateReport();
+  }, [report, generateReport]);
 
   // Edit report
   const handleEditReport = (field: string, value: string) => {
@@ -313,6 +335,40 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       handleSendMessage(`I want to discuss the OKR: "${okr.title}"`);
     }
   };
+
+  useEffect(() => {
+    setAllowReviewConversation(false);
+    setReviewAutoGenerateAttempted(false);
+  }, [appraisalId]);
+
+  useEffect(() => {
+    const phase = conversationState?.currentPhase;
+    if (!phase) return;
+
+    if (phase !== 'review' && phase !== 'report_generation') {
+      setAllowReviewConversation(false);
+      setReviewAutoGenerateAttempted(false);
+      return;
+    }
+
+    const shouldAutoGenerate = !report
+      && !isRegenerating
+      && !reviewAutoGenerateAttempted
+      && !allowReviewConversation;
+
+    if (shouldAutoGenerate) {
+      setReviewAutoGenerateAttempted(true);
+      generateReport();
+    }
+  }, [
+    appraisalId,
+    conversationState?.currentPhase,
+    report,
+    isRegenerating,
+    reviewAutoGenerateAttempted,
+    allowReviewConversation,
+    generateReport
+  ]);
 
   if (isLoading) {
     return (
@@ -453,16 +509,27 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         />
 
         {/* Quick Actions */}
-        {conversationState?.currentPhase === 'review' && (
+        {(conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation') && (
           <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={() => setShowReport(true)}
-              sx={{ borderRadius: 999 }}
-            >
-              View Report
-            </Button>
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <Button
+                fullWidth
+                variant="contained"
+                onClick={openReportPreview}
+                disabled={isRegenerating}
+                sx={{ borderRadius: 999 }}
+              >
+                {isRegenerating ? 'Generating Report...' : report ? 'View Report' : 'Generate Report'}
+              </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                onClick={() => setAllowReviewConversation(prev => !prev)}
+                sx={{ borderRadius: 999 }}
+              >
+                {allowReviewConversation ? 'Pause Conversation' : 'Continue Conversation'}
+              </Button>
+            </Box>
           </Box>
         )}
       </Paper>
@@ -474,13 +541,24 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
             {error}
           </Alert>
         )}
+        {(conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation') && !showReport && (
+          <Alert severity="info" sx={{ mx: 2, mt: 2, mb: 0 }}>
+            We have enough input to generate your report. Use `Generate Report`, or choose `Continue Conversation` to add more details first.
+          </Alert>
+        )}
         <ChatInterface
           messages={messages}
           onSendMessage={handleSendMessage}
           onUploadFile={handleUploadFile}
           isLoading={isProcessing}
           currentPhase={conversationState?.currentPhase || 'okr_reflection'}
-          disabled={conversationState?.currentPhase === 'completed'}
+          disabled={
+            conversationState?.currentPhase === 'completed'
+            || (
+              (conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation')
+              && !allowReviewConversation
+            )
+          }
           canAdvancePhase={false}
         />
       </Box>

@@ -800,6 +800,21 @@ Respond to them and continue the conversation. If appropriate, extract any struc
         }
       }
 
+      // Never jump directly to review from an earlier phase.
+      // Report generation must happen first so the frontend has a concrete draft to display.
+      if (nextPhase === 'review' && currentPhase !== 'review') {
+        nextPhase = 'report_generation';
+      }
+
+      const normalizedResponse = this.normalizeText(parsed.response).toLowerCase();
+      const indicatesReportGeneration = /generate(?:\\s+your|\\s+the)?\\s+(?:self-assessment|review)?\\s*report|report\\s+is\\s+ready|compile\\s+.*report/.test(normalizedResponse);
+      if (
+        indicatesReportGeneration
+        && (nextPhase === currentPhase || nextPhase === 'future_goals' || nextPhase === 'review')
+      ) {
+        nextPhase = 'report_generation';
+      }
+
       return {
         response: parsed.response,
         extractedData: parsed.extractedData,

@@ -50,7 +50,7 @@ const phasePlaceholders: Record<string, string> = {
   challenges: 'Describe a challenge, how you handled it, and what changed after.',
   learnings: 'Share what you learned and how you applied it in your work.',
   future_goals: 'Add a specific goal for next period with success criteria and timeline.',
-  review: 'Refine your details before generating the final self-assessment.',
+  review: 'Use Generate Report, or continue chat to add more detail.',
   completed: 'Assessment completed'
 };
 
@@ -315,7 +315,7 @@ export default function ChatInterface({
 
   const helperPrompts = phaseQuickPrompts[currentPhase] || phaseQuickPrompts.default;
   const placeholder = disabled
-    ? phasePlaceholders.completed
+    ? (currentPhase === 'completed' ? phasePlaceholders.completed : (phasePlaceholders[currentPhase] || 'Conversation paused'))
     : (phasePlaceholders[currentPhase] || 'Type your response...');
   const trimmedLength = inputValue.trim().length;
   const hasWarningLength = trimmedLength > 0 && trimmedLength < 16;
