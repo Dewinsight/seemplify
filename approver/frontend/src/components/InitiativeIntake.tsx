@@ -1,15 +1,42 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import './InitiativeIntake.css';
+
+interface SubmitterUser {
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    email?: string;
+    phone?: string;
+    phoneNumber?: string;
+    mobile?: string;
+    mobileNumber?: string;
+}
+
+const normalizeText = (value?: string | null): string => (typeof value === 'string' ? value.trim() : '');
+
+const resolveSubmitterPrefill = (user: SubmitterUser | null | undefined) => {
+    const fullName = [normalizeText(user?.firstName), normalizeText(user?.lastName)].filter(Boolean).join(' ').trim();
+    const name = fullName || normalizeText(user?.username);
+    const email = normalizeText(user?.email);
+    const phone =
+        normalizeText(user?.phone) ||
+        normalizeText(user?.phoneNumber) ||
+        normalizeText(user?.mobile) ||
+        normalizeText(user?.mobileNumber);
+
+    return { name, email, phone };
+};
 
 // Sample: Likely to PASS — has Group Head approval, HEART classification, strong business case
 const samplePass = {
     initiativeName: 'Customer Service AI Assistant',
-    submitterName: 'Sarah Johnson',
+    submitterName: 'Initiative Sponsor',
     submitterTitle: 'Head of Customer Experience',
-    submitterEmail: 'sarah.johnson@sterling.com',
-    submitterPhone: '+234 801 234 5678',
+    submitterEmail: 'sponsor@company.com',
+    submitterPhone: '',
     groupHeadName: 'Michael Adeyemi',
     heartSectorClassification: 'direct_heart_impact' as const,
     confirmGroupHeadApproval: true,
@@ -43,9 +70,9 @@ const samplePass = {
 // Sample: Likely to REJECT — missing Group Head approval, no HEART classification (fails mandatory rules)
 const sampleReject = {
     initiativeName: 'Internal Spreadsheet Automation',
-    submitterName: 'John Doe',
+    submitterName: 'Initiative Submitter',
     submitterTitle: 'Operations Analyst',
-    submitterEmail: 'john.doe@sterling.com',
+    submitterEmail: 'submitter@company.com',
     submitterPhone: '',
     groupHeadName: '',
     heartSectorClassification: '' as const,
@@ -84,12 +111,14 @@ interface InitiativeIntakeProps {
 
 const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, onCancel }) => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
     const [error, setError] = useState('');
     const [analysisJobId, setAnalysisJobId] = useState('');
     const [analysisProgress, setAnalysisProgress] = useState<any>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const submitterPrefill = resolveSubmitterPrefill(user as SubmitterUser | null);
 
     // Form State
     const [form, setForm] = useState({
@@ -156,8 +185,18 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         { id: 8, label: 'Review', icon: '✅' },
     ];
 
-    const fillSamplePass = () => setForm(samplePass as any);
-    const fillSampleReject = () => setForm(sampleReject as any);
+    const fillSamplePass = () => setForm({
+        ...(samplePass as any),
+        submitterName: submitterPrefill.name || samplePass.submitterName,
+        submitterEmail: submitterPrefill.email || samplePass.submitterEmail,
+        submitterPhone: submitterPrefill.phone || samplePass.submitterPhone
+    });
+    const fillSampleReject = () => setForm({
+        ...(sampleReject as any),
+        submitterName: submitterPrefill.name || sampleReject.submitterName,
+        submitterEmail: submitterPrefill.email || sampleReject.submitterEmail,
+        submitterPhone: submitterPrefill.phone || sampleReject.submitterPhone
+    });
 
     const nextStep = () => setStep(prev => Math.min(prev + 1, totalSteps));
     const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
@@ -173,6 +212,31 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         return () => stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (!submitterPrefill.name && !submitterPrefill.email && !submitterPrefill.phone) {
+            return;
+        }
+
+        setForm((prev) => {
+            const next = {
+                ...prev,
+                submitterName: prev.submitterName || submitterPrefill.name,
+                submitterEmail: prev.submitterEmail || submitterPrefill.email,
+                submitterPhone: prev.submitterPhone || submitterPrefill.phone
+            };
+
+            if (
+                next.submitterName === prev.submitterName &&
+                next.submitterEmail === prev.submitterEmail &&
+                next.submitterPhone === prev.submitterPhone
+            ) {
+                return prev;
+            }
+
+            return next;
+        });
+    }, [submitterPrefill.email, submitterPrefill.name, submitterPrefill.phone]);
 
     const startPolling = (jobId: string) => {
         stopPolling();
@@ -217,6 +281,7 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
 ## Initiative Overview
 **Submitter:** ${form.submitterName} (${form.submitterTitle})
 **Email:** ${form.submitterEmail}
+**Phone:** ${form.submitterPhone || '(not provided)'}
 **Group Head:** ${form.groupHeadName || '(not provided)'}
 **Group Head approval confirmed:** ${form.confirmGroupHeadApproval ? 'Yes' : 'No'}
 **HEART Sector Classification:** ${(form.heartSectorClassification || '').replace(/_/g, ' ') || '(not provided)'}
@@ -436,6 +501,17 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 <div className="form-group">
                                     <label className="form-label">Your Title</label>
                                     <input className="form-input" type="text" value={form.submitterTitle} onChange={(e) => setForm({ ...form, submitterTitle: e.target.value })} placeholder="Job Title" />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Your Email</label>
+                                    <input className="form-input" type="email" value={form.submitterEmail} onChange={(e) => setForm({ ...form, submitterEmail: e.target.value })} placeholder="name@company.com" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Your Phone</label>
+                                    <input className="form-input" type="tel" value={form.submitterPhone} onChange={(e) => setForm({ ...form, submitterPhone: e.target.value })} placeholder="+44 7000 000000" />
                                 </div>
                             </div>
                         </div>
@@ -663,6 +739,14 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                                 <div className="review-item">
                                     <div className="review-label">Submitter</div>
                                     <div className="review-value">{form.submitterName}</div>
+                                </div>
+                                <div className="review-item">
+                                    <div className="review-label">Email</div>
+                                    <div className="review-value">{form.submitterEmail || '(not provided)'}</div>
+                                </div>
+                                <div className="review-item">
+                                    <div className="review-label">Phone</div>
+                                    <div className="review-value">{form.submitterPhone || '(not provided)'}</div>
                                 </div>
                                 <div className="review-item">
                                     <div className="review-label">Problem</div>
