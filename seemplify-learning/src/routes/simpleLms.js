@@ -14,6 +14,7 @@ import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwa
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 
 const pageRouter = express.Router()
+const adminPageRouter = express.Router()
 const apiRouter = express.Router()
 
 const upload = multer({
@@ -349,6 +350,19 @@ const requirePageAuth = async (req, res, next) => {
   return next()
 }
 
+const requireAdminPageAuth = async (req, res, next) => {
+  const sub = String(req.session?.accountId || '').trim()
+  if (!sub) {
+    return res.redirect(`/admin/login?return_to=${encodeURIComponent(req.originalUrl || '/admin')}`)
+  }
+  const account = await Account.findOne({ sub })
+  if (!account) {
+    return res.redirect(`/admin/login?return_to=${encodeURIComponent(req.originalUrl || '/admin')}`)
+  }
+  req.user = account
+  return next()
+}
+
 const requireApiAuth = async (req, res, next) => {
   const sub = String(req.session?.accountId || '').trim()
   if (!sub) {
@@ -392,7 +406,8 @@ const buildAdminPaymentsReturnTo = ({
   currency = 'all',
   dateFrom = '',
   dateTo = '',
-  search = ''
+  search = '',
+  basePath = '/simple-lms?view=admin'
 } = {}) => {
   const params = new URLSearchParams()
   if (status && status !== 'all') params.set('paymentStatus', status)
@@ -401,7 +416,7 @@ const buildAdminPaymentsReturnTo = ({
   if (dateTo) params.set('paymentTo', dateTo)
   if (search) params.set('paymentSearch', search)
   const queryString = params.toString()
-  return queryString ? `/simple-lms?view=admin&${queryString}` : '/simple-lms?view=admin'
+  return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
 }
 
 const canManageProgram = ({ role, accountId, program }) => {
@@ -920,6 +935,7 @@ const parseCoursePayload = ({
   body,
   role,
   existingCourse = null,
+  studioContext = '',
   creatorSettings = CREATOR_SETTING_DEFAULTS,
   platformSettings = PLATFORM_SETTING_DEFAULTS
 }) => {
@@ -956,7 +972,20 @@ const parseCoursePayload = ({
         : []
     }))
   const bannerPayload = parseJsonInput(body.bannerPayload, {})
-  const hasBannerFromPayload = Boolean(String(bannerPayload?.url || '').trim())
+  const bannerFromFields = {
+    url: String(body.bannerUrl || '').trim().slice(0, 2000),
+    publicId: String(body.bannerPublicId || '').trim().slice(0, 400),
+    width: Number.isFinite(Number(body.bannerWidth)) ? Number(body.bannerWidth) : undefined,
+    height: Number.isFinite(Number(body.bannerHeight)) ? Number(body.bannerHeight) : undefined
+  }
+  const effectiveBannerPayload = (
+    bannerPayload
+    && typeof bannerPayload === 'object'
+    && (String(bannerPayload.url || '').trim() || String(bannerPayload.publicId || '').trim())
+  )
+    ? bannerPayload
+    : bannerFromFields
+  const hasBannerFromPayload = Boolean(String(effectiveBannerPayload?.url || '').trim())
   const hasExistingBanner = Boolean(existingCourse?.banner?.url)
   if (normalizedPlatformSettings.requireCourseThumbnail && !hasBannerFromPayload && !hasExistingBanner) {
     throw new Error('Course banner is required by platform settings.')
@@ -975,9 +1004,13 @@ const parseCoursePayload = ({
     existingCourse?.pricing?.currency || normalizedCreatorSettings.defaultCurrency || normalizedPlatformSettings.defaultCurrency || 'NGN'
   )
   const category = String(body.category || '').trim().slice(0, 120)
+  const slugSource = String(body.slug || existingCourse?.slug || title).trim()
+  const slug = slugifyValue(slugSource, 'course')
+  const normalizedStudioContext = String(studioContext || body.studioContext || '').trim().toLowerCase()
 
   const payload = {
     title: title.slice(0, 200),
+    slug,
     summary: String(body.summary || '').trim().slice(0, 600),
     description: String(body.description || '').trim().slice(0, 16000),
     category: category || (existingCourse ? existingCourse.category : normalizedCreatorSettings.defaultCategory || ''),
@@ -1002,12 +1035,12 @@ const parseCoursePayload = ({
     payload.approvedPublicBy = null
   }
 
-  if (bannerPayload && typeof bannerPayload === 'object' && String(bannerPayload.url || '').trim()) {
+  if (effectiveBannerPayload && typeof effectiveBannerPayload === 'object' && String(effectiveBannerPayload.url || '').trim()) {
     payload.banner = {
-      url: String(bannerPayload.url || '').trim().slice(0, 2000),
-      publicId: String(bannerPayload.publicId || '').trim().slice(0, 400),
-      width: Number.isFinite(Number(bannerPayload.width)) ? Number(bannerPayload.width) : undefined,
-      height: Number.isFinite(Number(bannerPayload.height)) ? Number(bannerPayload.height) : undefined
+      url: String(effectiveBannerPayload.url || '').trim().slice(0, 2000),
+      publicId: String(effectiveBannerPayload.publicId || '').trim().slice(0, 400),
+      width: Number.isFinite(Number(effectiveBannerPayload.width)) ? Number(effectiveBannerPayload.width) : undefined,
+      height: Number.isFinite(Number(effectiveBannerPayload.height)) ? Number(effectiveBannerPayload.height) : undefined
     }
   } else if (existingCourse?.banner?.url) {
     payload.banner = existingCourse.banner
@@ -1033,7 +1066,19 @@ const parseCoursePayload = ({
   }
 
   if (canManagePlatform(role)) {
-    payload.isSystemCourse = body.isSystemCourse === true || body.isSystemCourse === 'on'
+    if (normalizedStudioContext === 'admin' && !existingCourse) {
+      payload.isSystemCourse = true
+    } else if (normalizedStudioContext === 'creator' && !existingCourse) {
+      payload.isSystemCourse = false
+    } else if (body.isSystemCourse === true || body.isSystemCourse === 'on') {
+      payload.isSystemCourse = true
+    } else if (body.isSystemCourse === false || body.isSystemCourse === 'off') {
+      payload.isSystemCourse = false
+    } else if (existingCourse) {
+      payload.isSystemCourse = Boolean(existingCourse.isSystemCourse)
+    } else {
+      payload.isSystemCourse = false
+    }
   } else if (existingCourse) {
     payload.isSystemCourse = Boolean(existingCourse.isSystemCourse)
   } else {
@@ -1137,6 +1182,14 @@ const sanitizeInternalPath = (value, fallback = '/simple-lms?view=catalog') => {
   }
   return candidate
 }
+
+const resolveAdminReturnPath = (req, fallback = '/simple-lms?view=admin') => (
+  sanitizeInternalPath(req.body?.returnTo || req.query?.returnTo || fallback, fallback)
+)
+
+const resolveCourseStudioReturnPath = (req, fallback = '/simple-lms/studio/courses') => (
+  sanitizeInternalPath(req.body?.returnTo || req.query?.returnTo || fallback, fallback)
+)
 
 const findPublicCourseForLearning = async (courseId) => {
   if (!mongoose.Types.ObjectId.isValid(courseId)) return null
@@ -2184,12 +2237,13 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
   }
 })
 pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canCreateCourses(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to create courses.'
       })
     }
@@ -2198,6 +2252,7 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
     const payload = parseCoursePayload({
       body: req.body,
       role,
+      studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
       platformSettings
     })
@@ -2225,7 +2280,7 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: createdCourse.status === 'pending_public_review'
         ? 'Course submitted for admin approval.'
         : 'Course created successfully.'
@@ -2234,19 +2289,20 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
     console.error('Create course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: error.message || 'Failed to create course.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const courseId = String(req.params.courseId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2256,7 +2312,7 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     if (!course) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Course not found.'
       })
     }
@@ -2264,7 +2320,7 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     if (!canManageCourse({ role, accountId: req.user._id, course })) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to update this course.'
       })
     }
@@ -2274,6 +2330,7 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       body: req.body,
       role,
       existingCourse: course,
+      studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
       platformSettings
     })
@@ -2283,7 +2340,7 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: course.status === 'pending_public_review'
         ? 'Course update submitted for admin approval.'
         : 'Course updated successfully.'
@@ -2292,19 +2349,20 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     console.error('Update course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: error.message || 'Failed to update course.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const courseId = String(req.params.courseId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2314,7 +2372,7 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
     if (!course) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Course not found.'
       })
     }
@@ -2322,7 +2380,7 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
     if (!canManageCourse({ role, accountId: req.user._id, course })) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to archive this course.'
       })
     }
@@ -2334,26 +2392,27 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: 'Course archived.'
     })
   } catch (error) {
     console.error('Archive course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: 'Failed to archive course.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const courseId = String(req.params.courseId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2363,7 +2422,7 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
     if (!course) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Course not found.'
       })
     }
@@ -2371,7 +2430,7 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
     if (!canManageCourse({ role, accountId: req.user._id, course })) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to restore this course.'
       })
     }
@@ -2383,26 +2442,27 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: 'Course restored to draft.'
     })
   } catch (error) {
     console.error('Restore course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: 'Failed to restore course.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can approve public courses.'
       })
     }
@@ -2411,7 +2471,7 @@ pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2420,7 +2480,7 @@ pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req
     if (!course) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Course not found.'
       })
     }
@@ -2437,26 +2497,27 @@ pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: `Course approved and published: ${course.title}.`
     })
   } catch (error) {
     console.error('Approve course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to approve this course.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can reject public course submissions.'
       })
     }
@@ -2465,7 +2526,7 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2474,7 +2535,7 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
     if (!course) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Course not found.'
       })
     }
@@ -2487,26 +2548,27 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: `Course returned to draft: ${course.title}.`
     })
   } catch (error) {
     console.error('Reject course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to reject this course submission.'
     })
   }
 })
 
 pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const courseId = String(req.params.courseId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Invalid course selected.'
       })
     }
@@ -2515,7 +2577,7 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     if (!canCreateCourses(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You do not have permission to assign courses.'
       })
     }
@@ -2524,7 +2586,7 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     if (!course || !canManageCourse({ role, accountId: req.user._id, course })) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'You cannot assign this course.'
       })
     }
@@ -2542,7 +2604,7 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     if (!targetAccount) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=course-studio',
+        path: returnTo,
         error: 'Target learner not found. Select an account or use a valid email.'
       })
     }
@@ -2557,14 +2619,14 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       success: `Course assigned to ${targetAccount.profile?.name || targetAccount.email}.`
     })
   } catch (error) {
     console.error('Assign course error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=course-studio',
+      path: returnTo,
       error: 'Failed to assign course.'
     })
   }
@@ -2956,12 +3018,13 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
 })
 
 pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const actorRole = resolveRole(req.user)
     if (!canManagePlatform(actorRole)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update roles.'
       })
     }
@@ -2972,7 +3035,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     if (!mongoose.Types.ObjectId.isValid(accountId) || !allowedRoleUpdates.includes(nextRole)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Invalid role update request.'
       })
     }
@@ -2981,7 +3044,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     if (!target) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Account not found.'
       })
     }
@@ -2989,7 +3052,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     if (nextRole === 'super_admin' && actorRole !== 'super_admin') {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only super admins can assign super admin role.'
       })
     }
@@ -3002,7 +3065,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
       if (superAdminCount <= 1) {
         return redirectWithMessage({
           res,
-          path: '/simple-lms?view=admin',
+          path: returnTo,
           error: 'At least one super admin must remain in the system.'
         })
       }
@@ -3015,26 +3078,27 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: 'Role updated successfully.'
     })
   } catch (error) {
     console.error('Role update error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to update role.'
     })
   }
 })
 
 pageRouter.post('/commission/global', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update commission settings.'
       })
     }
@@ -3047,26 +3111,27 @@ pageRouter.post('/commission/global', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: `Global creator commission set to ${globalRatePercent}%.`
     })
   } catch (error) {
     console.error('Update global commission error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to update global commission.'
     })
   }
 })
 
 pageRouter.post('/commission/account', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update commission settings.'
       })
     }
@@ -3075,7 +3140,7 @@ pageRouter.post('/commission/account', requirePageAuth, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(accountId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Select a valid account.'
       })
     }
@@ -3098,26 +3163,27 @@ pageRouter.post('/commission/account', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: `Account commission override saved at ${ratePercent}%.`
     })
   } catch (error) {
     console.error('Update account commission error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to update account commission override.'
     })
   }
 })
 
 pageRouter.post('/commission/account/remove', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update commission settings.'
       })
     }
@@ -3127,7 +3193,7 @@ pageRouter.post('/commission/account/remove', requirePageAuth, async (req, res) 
     if (!settings) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         info: 'No commission settings found.'
       })
     }
@@ -3139,26 +3205,27 @@ pageRouter.post('/commission/account/remove', requirePageAuth, async (req, res) 
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: 'Account commission override removed.'
     })
   } catch (error) {
     console.error('Remove account commission error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to remove account commission override.'
     })
   }
 })
 
 pageRouter.post('/commission/course', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update commission settings.'
       })
     }
@@ -3167,7 +3234,7 @@ pageRouter.post('/commission/course', requirePageAuth, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Select a valid course.'
       })
     }
@@ -3190,26 +3257,27 @@ pageRouter.post('/commission/course', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: `Course commission override saved at ${ratePercent}%.`
     })
   } catch (error) {
     console.error('Update course commission error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to update course commission override.'
     })
   }
 })
 
 pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update commission settings.'
       })
     }
@@ -3219,7 +3287,7 @@ pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) =
     if (!settings) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         info: 'No commission settings found.'
       })
     }
@@ -3231,14 +3299,14 @@ pageRouter.post('/commission/course/remove', requirePageAuth, async (req, res) =
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: 'Course commission override removed.'
     })
   } catch (error) {
     console.error('Remove course commission error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to remove course commission override.'
     })
   }
@@ -3348,39 +3416,57 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
 })
 
 pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=admin',
+        path: returnTo,
         error: 'Only admins can update platform settings.'
       })
     }
 
+    const currentPlatformSettings = await getPlatformSettings()
+    const parseCheckboxValue = (value) => (
+      Array.isArray(value)
+        ? value.includes('on')
+        : String(value || '').toLowerCase() === 'on'
+    )
+    const pickValue = (field) => (
+      req.body?.[field] !== undefined
+        ? req.body[field]
+        : currentPlatformSettings[field]
+    )
+    const pickBoolean = (field) => (
+      req.body?.[field] !== undefined
+        ? parseCheckboxValue(req.body[field])
+        : Boolean(currentPlatformSettings[field])
+    )
+
     const normalized = normalizePlatformSettings({
-      defaultCurrency: req.body.defaultCurrency,
-      defaultPaymentMode: req.body.defaultPaymentMode,
-      defaultCourseVisibility: req.body.defaultCourseVisibility,
-      defaultCourseStatus: req.body.defaultCourseStatus,
-      requirePublicReviewForCreators: req.body.requirePublicReviewForCreators === 'on',
-      allowExternalMediaEmbeds: req.body.allowExternalMediaEmbeds === 'on',
-      allowAudioLessons: req.body.allowAudioLessons === 'on',
-      minCoursePriceMinor: req.body.minCoursePriceMinor,
-      maxCoursePriceMinor: req.body.maxCoursePriceMinor,
-      analyticsLookbackDays: req.body.analyticsLookbackDays,
-      cartExpiryDays: req.body.cartExpiryDays,
-      featuredRefreshHours: req.body.featuredRefreshHours,
-      maxChaptersPerCourse: req.body.maxChaptersPerCourse,
-      maxLessonsPerChapter: req.body.maxLessonsPerChapter,
-      allowCourseComments: req.body.allowCourseComments === 'on',
-      requireCourseThumbnail: req.body.requireCourseThumbnail === 'on',
-      enableWishlist: req.body.enableWishlist === 'on',
-      autoApproveSystemCourses: req.body.autoApproveSystemCourses === 'on',
-      homepageFeaturedCourseLimit: req.body.homepageFeaturedCourseLimit,
-      maintenanceMode: req.body.maintenanceMode === 'on',
-      maintenanceMessage: req.body.maintenanceMessage,
-      creatorSubmissionGuidelines: req.body.creatorSubmissionGuidelines
+      defaultCurrency: pickValue('defaultCurrency'),
+      defaultPaymentMode: pickValue('defaultPaymentMode'),
+      defaultCourseVisibility: pickValue('defaultCourseVisibility'),
+      defaultCourseStatus: pickValue('defaultCourseStatus'),
+      requirePublicReviewForCreators: pickBoolean('requirePublicReviewForCreators'),
+      allowExternalMediaEmbeds: pickBoolean('allowExternalMediaEmbeds'),
+      allowAudioLessons: pickBoolean('allowAudioLessons'),
+      minCoursePriceMinor: pickValue('minCoursePriceMinor'),
+      maxCoursePriceMinor: pickValue('maxCoursePriceMinor'),
+      analyticsLookbackDays: pickValue('analyticsLookbackDays'),
+      cartExpiryDays: pickValue('cartExpiryDays'),
+      featuredRefreshHours: pickValue('featuredRefreshHours'),
+      maxChaptersPerCourse: pickValue('maxChaptersPerCourse'),
+      maxLessonsPerChapter: pickValue('maxLessonsPerChapter'),
+      allowCourseComments: pickBoolean('allowCourseComments'),
+      requireCourseThumbnail: pickBoolean('requireCourseThumbnail'),
+      enableWishlist: pickBoolean('enableWishlist'),
+      autoApproveSystemCourses: pickBoolean('autoApproveSystemCourses'),
+      homepageFeaturedCourseLimit: pickValue('homepageFeaturedCourseLimit'),
+      maintenanceMode: pickBoolean('maintenanceMode'),
+      maintenanceMessage: pickValue('maintenanceMessage'),
+      creatorSubmissionGuidelines: pickValue('creatorSubmissionGuidelines')
     })
 
     const settings = await SimpleLmsPlatformSetting.findOne({}) || new SimpleLmsPlatformSetting({})
@@ -3389,21 +3475,21 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       success: 'Platform settings updated.'
     })
   } catch (error) {
     console.error('Update platform settings error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=admin',
+      path: returnTo,
       error: 'Failed to update platform settings.'
     })
   }
 })
 
 pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (req, res) => {
-  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/simple-lms?view=admin', '/simple-lms?view=admin')
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin', '/admin')
   try {
     const role = resolveRole(req.user)
     if (!canManagePlatform(role)) {
@@ -3541,11 +3627,42 @@ pageRouter.get('/cart', requirePageAuth, async (req, res) => {
   }
 })
 
-pageRouter.get('/', requirePageAuth, async (req, res) => {
+const renderWorkspacePage = async (
+  req,
+  res,
+  { forcedViewMode = '', adminPortal = false, studioPortal = false, studioContext = '' } = {}
+) => {
   try {
     const role = resolveRole(req.user)
-    const viewMode = parseViewMode(req.query.view)
-    if (viewMode === 'cart') {
+    const viewMode = forcedViewMode || parseViewMode(req.query.view)
+    const resolvedStudioContext = String(
+      studioContext || (adminPortal ? 'admin' : 'creator')
+    ).trim().toLowerCase() === 'admin'
+      ? 'admin'
+      : 'creator'
+
+    if (!adminPortal && viewMode === 'admin') {
+      const params = new URLSearchParams(req.query || {})
+      params.delete('view')
+      const queryString = params.toString()
+      return res.redirect(queryString ? `/admin?${queryString}` : '/admin')
+    }
+
+    if (!studioPortal && viewMode === 'course-studio') {
+      const params = new URLSearchParams(req.query || {})
+      params.delete('view')
+      const queryString = params.toString()
+      return res.redirect(queryString ? `/simple-lms/studio/courses?${queryString}` : '/simple-lms/studio/courses')
+    }
+
+    if (adminPortal && !canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms',
+        error: 'Only admins can open the admin portal.'
+      })
+    }
+    if (!adminPortal && viewMode === 'cart') {
       const params = new URLSearchParams(req.query || {})
       params.delete('view')
       const queryString = params.toString()
@@ -3585,7 +3702,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       currency: paymentCurrencyFilter,
       dateFrom: paymentFromFilter,
       dateTo: paymentToFilter,
-      search: paymentSearchFilter
+      search: paymentSearchFilter,
+      basePath: adminPortal ? '/admin' : '/simple-lms?view=admin'
     })
 
     const catalogFilter = {
@@ -3618,8 +3736,13 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       ]
     }
 
-    const managedFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
-    const managedProgramFilter = canManagePlatform(role) ? {} : { createdBy: req.user._id }
+    const isCreatorStudioContext = studioPortal && resolvedStudioContext === 'creator'
+    const managedFilter = canManagePlatform(role) && !isCreatorStudioContext
+      ? {}
+      : { createdBy: req.user._id }
+    const managedProgramFilter = canManagePlatform(role) && !isCreatorStudioContext
+      ? {}
+      : { createdBy: req.user._id }
 
     const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
@@ -4333,16 +4456,30 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     }))
 
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
-    const templateName = viewMode === 'settings'
-      ? 'simple-lms-settings'
-      : (viewMode === 'overview' ? 'simple-lms-workspace' : 'simple-lms')
+    const templateName = studioPortal
+      ? 'course-studio'
+      : (adminPortal
+          ? 'admin-dashboard'
+          : (viewMode === 'settings'
+              ? 'simple-lms-settings'
+              : (viewMode === 'overview' ? 'simple-lms-workspace' : 'simple-lms')))
 
     return res.render(templateName, {
-      title: `${learningName} - ${viewMode === 'settings' ? 'Settings' : 'Workspace'}`,
+      title: studioPortal
+        ? `${learningName} - ${resolvedStudioContext === 'admin' ? 'Admin Course Studio' : 'Creator Studio'}`
+        : (adminPortal
+            ? `${learningName} - Admin`
+            : `${learningName} - ${viewMode === 'settings' ? 'Settings' : 'Workspace'}`),
       user: req.user,
-      activePage: 'simple-lms',
+      activePage: adminPortal ? 'admin' : 'simple-lms',
       role,
       viewMode,
+      adminPortal,
+      studioPortal,
+      studioContext: resolvedStudioContext,
+      creatorStudioPath: '/simple-lms/studio/courses',
+      adminStudioPath: '/admin/course-studio',
+      courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/course-studio' : '/simple-lms/studio/courses',
       settingsTab,
       canCreateCourses: canCreateCourses(role),
       canManagePlatform: canManagePlatform(role),
@@ -4423,14 +4560,44 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
       info: String(req.query.info || '')
     })
   } catch (error) {
-    console.error('Simple LMS load error:', error)
+    const pageLabel = studioPortal
+      ? `${studioContext === 'admin' ? 'admin' : 'creator'} studio`
+      : (adminPortal ? 'admin portal' : 'workspace')
+    console.error(`Simple LMS ${pageLabel} load error:`, error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms',
-      error: 'Failed to load workspace.'
+      path: studioPortal
+        ? (studioContext === 'admin' ? '/admin/course-studio' : '/simple-lms/studio/courses')
+        : (adminPortal ? '/admin' : '/simple-lms'),
+      error: studioPortal
+        ? 'Failed to load course studio.'
+        : (adminPortal ? 'Failed to load admin portal.' : 'Failed to load workspace.')
     })
   }
-})
+}
+
+pageRouter.get('/studio/courses', requirePageAuth, async (req, res) => (
+  renderWorkspacePage(req, res, {
+    forcedViewMode: 'course-studio',
+    studioPortal: true,
+    studioContext: 'creator'
+  })
+))
+
+pageRouter.get('/', requirePageAuth, async (req, res) => renderWorkspacePage(req, res))
+
+adminPageRouter.get('/', requireAdminPageAuth, async (req, res) => (
+  renderWorkspacePage(req, res, { forcedViewMode: 'admin', adminPortal: true })
+))
+
+adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => (
+  renderWorkspacePage(req, res, {
+    forcedViewMode: 'course-studio',
+    adminPortal: true,
+    studioPortal: true,
+    studioContext: 'admin'
+  })
+))
 
 apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
   try {
@@ -4672,6 +4839,6 @@ apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
   }
 })
 
-export { pageRouter as simpleLmsRouter, apiRouter as simpleLmsApiRouter }
+export { pageRouter as simpleLmsRouter, adminPageRouter as simpleLmsAdminRouter, apiRouter as simpleLmsApiRouter }
 export default pageRouter
 

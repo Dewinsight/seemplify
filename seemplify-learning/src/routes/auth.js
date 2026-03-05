@@ -49,6 +49,7 @@ const createSub = () => `sl_${crypto.randomUUID().replace(/-/g, '')}`
 router.get('/login', optionalAuth, async (req, res) => {
   const branding = resolveBranding(req.hostname || req.get('host'))
   const returnTo = sanitizeReturnTo(req.query.return_to)
+  const loginMode = String(req.query.mode || '').trim().toLowerCase() === 'admin' ? 'admin' : 'workspace'
   if (req.user) {
     return res.redirect(returnTo || '/simple-lms')
   }
@@ -65,10 +66,32 @@ router.get('/login', optionalAuth, async (req, res) => {
   res.render('login', {
     title: `${branding.learningName} - Sign in`,
     returnTo,
+    loginMode,
     registerUrl: appendQuery('/register', {
       return_to: returnTo,
       intent: registerIntent,
       source: registerSource
+    }),
+    error: String(req.query.error || ''),
+    success: String(req.query.success || '')
+  })
+})
+
+router.get('/admin/login', optionalAuth, async (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
+  const returnTo = sanitizeReturnTo(req.query.return_to || '/admin')
+  if (req.user) {
+    return res.redirect(returnTo || '/admin')
+  }
+
+  res.render('login', {
+    title: `${branding.learningName} - Admin Sign in`,
+    returnTo,
+    loginMode: 'admin',
+    registerUrl: appendQuery('/register', {
+      return_to: returnTo,
+      intent: 'learn',
+      source: 'admin_login'
     }),
     error: String(req.query.error || ''),
     success: String(req.query.success || '')

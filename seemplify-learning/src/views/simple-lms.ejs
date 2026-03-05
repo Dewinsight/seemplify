@@ -542,7 +542,7 @@
             <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
             <a class="btn btn-secondary btn-sm" href="/simple-lms/cart">Open Cart (<%= stats.cartItemCount %>)</a>
             <% if (canCreateCourses) { %>
-              <a class="btn btn-secondary btn-sm" href="<%= tab('course-studio') %>">Open Course Studio</a>
+              <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses">Open Course Studio</a>
             <% } %>
           </div>
           <div class="chips">
@@ -572,11 +572,11 @@
         <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
         <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
         <% if (canCreateCourses) { %>
-          <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="<%= tab('course-studio') %>">Course Studio</a>
+          <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="/simple-lms/studio/courses">Course Studio</a>
           <a class="tab <%= viewMode === 'program-studio' ? 'active' : '' %>" href="<%= tab('program-studio') %>">Program Studio</a>
         <% } %>
         <% if (canManagePlatform) { %>
-          <a class="tab <%= viewMode === 'admin' ? 'active' : '' %>" href="<%= tab('admin') %>">Admin</a>
+          <a class="tab" href="/admin">Admin</a>
         <% } %>
       </div>
     </section>
@@ -887,7 +887,7 @@
                 <p><%= course.summaryText %></p>
                 <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span></div>
                 <div class="actions">
-                  <a class="btn btn-secondary btn-sm" href="/simple-lms?view=course-studio&editCourse=<%= course._id %>">Edit</a>
+                  <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a>
                   <% if (course.isActive) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/archive" style="display:inline-flex;"><button class="btn btn-danger btn-sm" type="submit">Archive</button></form><% } else { %><form method="post" action="/simple-lms/courses/<%= course._id %>/restore" style="display:inline-flex;"><button class="btn btn-primary btn-sm" type="submit">Restore</button></form><% } %>
                 </div>
               </div></article>
@@ -1055,6 +1055,7 @@
       <section class="panel">
         <div class="head"><div><h2>Platform Settings & Controls</h2><p>Central controls for creator defaults, moderation policy, and analytics windows.</p></div></div>
         <form method="post" action="/simple-lms/settings/platform" class="stack">
+          <input type="hidden" name="platformFormComplete" value="1">
           <div class="form-grid">
             <div><label>Default Currency</label><input class="input" name="defaultCurrency" maxlength="3" value="<%= platformDefaults.defaultCurrency || 'NGN' %>"></div>
             <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (platformDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= platformDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
@@ -1068,14 +1069,14 @@
             <div><label>Max Chapters Per Course</label><input class="input" type="number" name="maxChaptersPerCourse" min="1" max="100" value="<%= platformDefaults.maxChaptersPerCourse || 25 %>"></div>
             <div><label>Max Lessons Per Chapter</label><input class="input" type="number" name="maxLessonsPerChapter" min="1" max="200" value="<%= platformDefaults.maxLessonsPerChapter || 60 %>"></div>
             <div><label>Homepage Featured Limit</label><input class="input" type="number" name="homepageFeaturedCourseLimit" min="1" max="24" value="<%= platformDefaults.homepageFeaturedCourseLimit || 8 %>"></div>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformDefaults.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require admin review before creator public publish</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowExternalMediaEmbeds" <%= platformDefaults.allowExternalMediaEmbeds !== false ? 'checked' : '' %>> Allow external media embeds in lessons</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowAudioLessons" <%= platformDefaults.allowAudioLessons !== false ? 'checked' : '' %>> Allow audio lesson links</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowCourseComments" <%= platformDefaults.allowCourseComments !== false ? 'checked' : '' %>> Enable learner comments/discussion support</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requireCourseThumbnail" <%= platformDefaults.requireCourseThumbnail ? 'checked' : '' %>> Require banner image before publishing</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="enableWishlist" <%= platformDefaults.enableWishlist !== false ? 'checked' : '' %>> Enable wishlist/favorites features</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoApproveSystemCourses" <%= platformDefaults.autoApproveSystemCourses !== false ? 'checked' : '' %>> Auto-approve system-owned courses</label>
-            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformDefaults.maintenanceMode ? 'checked' : '' %>> Enable maintenance mode banner</label>
+            <input type="hidden" name="requirePublicReviewForCreators" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformDefaults.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require admin review before creator public publish</label>
+            <input type="hidden" name="allowExternalMediaEmbeds" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowExternalMediaEmbeds" <%= platformDefaults.allowExternalMediaEmbeds !== false ? 'checked' : '' %>> Allow external media embeds in lessons</label>
+            <input type="hidden" name="allowAudioLessons" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowAudioLessons" <%= platformDefaults.allowAudioLessons !== false ? 'checked' : '' %>> Allow audio lesson links</label>
+            <input type="hidden" name="allowCourseComments" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowCourseComments" <%= platformDefaults.allowCourseComments !== false ? 'checked' : '' %>> Enable learner comments/discussion support</label>
+            <input type="hidden" name="requireCourseThumbnail" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requireCourseThumbnail" <%= platformDefaults.requireCourseThumbnail ? 'checked' : '' %>> Require banner image before publishing</label>
+            <input type="hidden" name="enableWishlist" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="enableWishlist" <%= platformDefaults.enableWishlist !== false ? 'checked' : '' %>> Enable wishlist/favorites features</label>
+            <input type="hidden" name="autoApproveSystemCourses" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoApproveSystemCourses" <%= platformDefaults.autoApproveSystemCourses !== false ? 'checked' : '' %>> Auto-approve system-owned courses</label>
+            <input type="hidden" name="maintenanceMode" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformDefaults.maintenanceMode ? 'checked' : '' %>> Enable maintenance mode banner</label>
           </div>
           <div><label>Maintenance Message</label><textarea class="input" name="maintenanceMessage" rows="2"><%= platformDefaults.maintenanceMessage || '' %></textarea></div>
           <div><label>Creator Submission Guidelines</label><textarea class="input" name="creatorSubmissionGuidelines" rows="4"><%= platformDefaults.creatorSubmissionGuidelines || '' %></textarea></div>

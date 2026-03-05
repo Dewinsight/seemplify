@@ -108,7 +108,11 @@
     <div class="auth-card">
       <h1 class="auth-title"><%= brandLearningName || 'Seemplify Learning' %></h1>
       <p class="auth-subtitle">
-        <%= String(returnTo || '').startsWith('/teach') ? 'Sign in to continue your course setup.' : 'Sign in to your learning workspace.' %>
+        <%= loginMode === 'admin'
+          ? 'Sign in to the LMS admin control center.'
+          : (String(returnTo || '').startsWith('/teach')
+            ? 'Sign in to continue your course setup.'
+            : 'Sign in to your learning workspace.') %>
       </p>
 
       <% if (error) { %>

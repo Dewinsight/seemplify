@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import authRouter from './routes/auth.js'
 import setupRouter from './routes/setup.js'
-import { simpleLmsRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
+import { simpleLmsRouter, simpleLmsAdminRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
@@ -654,6 +654,7 @@ app.get('/subscription', requireAuth, (req, res) => {
 app.use(authRouter)
 app.use('/setup', setupRouter)
 app.use('/simple-lms', simpleLmsRouter)
+app.use('/admin', simpleLmsAdminRouter)
 app.use('/api/simple-lms', simpleLmsApiRouter)
 
 app.use((error, _req, res, _next) => {
