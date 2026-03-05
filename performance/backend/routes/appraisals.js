@@ -3467,14 +3467,14 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     ensureConversationAssessmentState(appraisal);
     const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
 
-    const { report, edits } = req.body;
+    const { report, edits } = req.body || {};
 
-    if (!report) {
+    if (!report || typeof report !== 'object') {
       return res.status(400).json({ success: false, error: 'Report data is required' });
     }
 
     // Apply any edits
-    const finalReport = edits ? { ...report, ...edits } : report;
+    const finalReport = (edits && typeof edits === 'object') ? { ...report, ...edits } : report;
 
     const normalizedSummary = normalizeSelfAssessmentSummary(finalReport.overallSummary || {});
     const missingSummarySections = getMissingSelfAssessmentSections(normalizedSummary);
@@ -3514,21 +3514,31 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       !Number.isNaN(aiRatingSuggestion.suggestedRating)
     ) ? aiRatingSuggestion : null;
 
-    // Update self-assessment with report data
-    appraisal.selfAssessment = {
-      ...appraisal.selfAssessment,
+    // Update self-assessment with report data.
+    // Avoid writing undefined nested values (e.g., aiInsights) because that can trigger validation errors.
+    const nextSelfAssessment = {
       overallSummary: normalizedSummary,
+      competencyRatings: appraisal.selfAssessment?.competencyRatings || [],
       okrAssessment: finalReport.okrAssessment || appraisal.selfAssessment?.okrAssessment || [],
       overallSelfRating: finalReport.overallSelfRating,
       aiRatingSuggestion: normalizedAiRatingSuggestion ? {
         ...normalizedAiRatingSuggestion,
         generatedAt: new Date()
       } : null,
-      // Populate AI insights after submission (based on the employee-approved content)
-      aiInsights: appraisal.selfAssessment?.aiInsights,
       submittedAt: new Date(),
       lastSavedAt: new Date()
     };
+
+    const existingAiInsights = appraisal.selfAssessment?.aiInsights;
+    if (existingAiInsights && typeof existingAiInsights.toObject === 'function') {
+      nextSelfAssessment.aiInsights = existingAiInsights.toObject();
+    } else if (existingAiInsights && typeof existingAiInsights === 'object') {
+      nextSelfAssessment.aiInsights = existingAiInsights;
+    } else {
+      nextSelfAssessment.aiInsights = null;
+    }
+
+    appraisal.selfAssessment = nextSelfAssessment;
 
     // Generate AI insights only when AI assistance is enabled for this cycle.
     if (aiAssistEnabled) {
@@ -3576,7 +3586,13 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       createdAt: new Date()
     });
 
-    appraisal.addAuditLog('self_assessment_submitted', req.session.user, {
+    const auditActor = req.session?.user || {
+      id: req.session?.user?.id || req.session?.user?.sub || 'unknown',
+      name: req.session?.user?.name || req.session?.user?.email || 'Unknown User',
+      role: req.userRole || 'employee'
+    };
+
+    appraisal.addAuditLog('self_assessment_submitted', auditActor, {
       mode: 'conversation',
       submissionWarnings: missingSummarySections
     });
@@ -3602,7 +3618,14 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     });
   } catch (error) {
     console.error('Finalize report error:', error);
-    res.status(500).json({ success: false, error: 'Failed to finalize report' });
+    const validationMessage = error?.name === 'ValidationError'
+      ? Object.values(error.errors || {}).map((issue) => issue?.message).filter(Boolean).join('; ')
+      : null;
+
+    res.status(validationMessage ? 400 : 500).json({
+      success: false,
+      error: validationMessage || 'Failed to finalize report'
+    });
   }
 });
 
