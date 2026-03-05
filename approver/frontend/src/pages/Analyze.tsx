@@ -130,6 +130,10 @@ const Analyze: React.FC = () => {
     }, [searchParams, editProjectId]);
 
     useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, [activeTab, editProjectId]);
+
+    useEffect(() => {
         if (activeTab === 'view') {
             fetchProjects();
         }

@@ -211,7 +211,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
           {navItems.map(item => (
             <Link
               key={item.path}
-              to={item.path}
+              to={item.path === '/analyze' ? '/analyze?tab=view' : item.path}
               className={`sidebar-nav-item ${isActive(item.path) ? 'active' : ''}`}
               onClick={handleNavClick}
             >
