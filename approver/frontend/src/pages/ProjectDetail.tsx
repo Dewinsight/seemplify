@@ -87,6 +87,7 @@ interface Project {
     escalationTriggers?: string[];
     needEnhancedOversight?: boolean;
     workflowStage?: string;
+    currentStageKey?: 'CenterOfExcellence' | 'Governance' | 'Executive' | null;
     approvalHistory?: ApprovalHistoryItem[];
     submittedAt?: string;
     analysisResult: {
@@ -256,6 +257,13 @@ const ProjectDetail: React.FC = () => {
         activeOrganization?.isAdmin ||
         (user?.id && project.requester?._id && String(user.id) === String(project.requester._id))
     );
+    const activeStageKey = project.currentStageKey
+        || (project.approvalStatus === 'Pending Center of Excellence' ? 'CenterOfExcellence' : null)
+        || (project.approvalStatus === 'Pending Governance' ? 'Governance' : null)
+        || (project.approvalStatus === 'Pending Executive' ? 'Executive' : null);
+    const isPendingCoE = activeStageKey === 'CenterOfExcellence';
+    const isPendingGovernance = activeStageKey === 'Governance';
+    const isPendingExecutive = activeStageKey === 'Executive';
     const ruleAnalyses = project.analysisResult?.rulesAnalysis || [];
     const rulesPassEquivalentCount = ruleAnalyses.filter((rule) => isRulePassEquivalent(rule.status)).length;
 
@@ -593,7 +601,7 @@ const ProjectDetail: React.FC = () => {
             )}
 
             {/* CoE Review Panel */}
-            {project.approvalStatus === 'Pending Center of Excellence' && canCoEReview && (
+            {isPendingCoE && canCoEReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #2196f3' }}>
                     <h3 style={{ marginTop: 0, color: '#2196f3' }}>🏢 Center of Excellence Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This initiative requires Center of Excellence review before proceeding.</p>
@@ -624,7 +632,7 @@ const ProjectDetail: React.FC = () => {
             )}
 
             {/* Governance Review Panel */}
-            {project.approvalStatus === 'Pending Governance' && canGovernanceReview && (
+            {isPendingGovernance && canGovernanceReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #ff9800' }}>
                     <h3 style={{ marginTop: 0, color: '#ff9800' }}>⚖️ Governance Committee Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier {project.tier} initiative requires Governance Committee review before proceeding.</p>
@@ -660,7 +668,7 @@ const ProjectDetail: React.FC = () => {
             )}
 
             {/* Executive Review Panel */}
-            {project.approvalStatus === 'Pending Executive' && canExecutiveReview && (
+            {isPendingExecutive && canExecutiveReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid var(--sterling-red)' }}>
                     <h3 style={{ marginTop: 0, color: 'var(--sterling-red)' }}>👔 Executive Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier 3 initiative requires Executive approval for final decision.</p>
