@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppraisalAdminAnalytics, useUserContext } from '@/lib/hooks';
+import api from '@/lib/api';
 import {
   Box,
   Typography,
@@ -21,17 +22,23 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Stack
+  Stack,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Divider
 } from '@mui/material';
 import {
   Settings,
   Assessment,
-  Groups,
   TrendingUp,
   Warning,
   Flag,
   Insights,
-  ArrowForward
+  ArrowForward,
+  Business,
+  AccountTree
 } from '@mui/icons-material';
 import {
   BarChart,
@@ -51,6 +58,53 @@ import {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
 
+type AdminEmployee = {
+  userId: string;
+  name: string;
+  email: string;
+  jobTitle?: string;
+  department?: string;
+  teamName?: string;
+  isManager?: boolean;
+};
+
+type AdminOkr = {
+  _id: string;
+  ownerId?: string;
+  title?: string;
+  type?: string;
+  status?: string;
+  progress?: number;
+  period?: string;
+};
+
+type AdminAppraisal = {
+  _id: string;
+  status?: string;
+  employee?: {
+    userId?: string;
+    name?: string;
+    email?: string;
+    teamName?: string;
+    department?: string;
+  };
+  manager?: {
+    userId?: string;
+    name?: string;
+  };
+};
+
+type DepartmentDrilldown = {
+  department: string;
+  members: number;
+  managers: number;
+  okrs: number;
+  activeOkrs: number;
+  appraisals: number;
+  completed: number;
+  stageCounts: Record<string, number>;
+};
+
 function formatLabel(value: string) {
   return (value || 'unknown')
     .replace(/_/g, ' ')
@@ -69,36 +123,59 @@ export default function AdminOverviewPage() {
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
   const { analytics, isLoading, isError } = useAppraisalAdminAnalytics();
 
-  if (userLoading || isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '55vh' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const [employees, setEmployees] = useState<AdminEmployee[]>([]);
+  const [okrs, setOkrs] = useState<AdminOkr[]>([]);
+  const [appraisals, setAppraisals] = useState<AdminAppraisal[]>([]);
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drilldownError, setDrilldownError] = useState<string | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const [selectedStage, setSelectedStage] = useState<string>('all');
 
-  if (!isHRAdmin) {
-    return (
-      <Alert severity="error">
-        Access denied. Only HR Administrators can access the Admin Panel.
-      </Alert>
-    );
-  }
+  const overview = analytics?.overview || {};
+  const workflow = analytics?.workflow || {};
+  const ratings = analytics?.ratings || {};
+  const cycleHealth = analytics?.cycleHealth || [];
+  const teamInsights = analytics?.teamInsights || [];
+  const monthlyTrend = analytics?.monthlyTrend || [];
 
-  if (isError || !analytics) {
-    return (
-      <Alert severity="error">
-        Unable to load admin analytics. Please refresh and try again.
-      </Alert>
-    );
-  }
+  const completionFunnel = useMemo(() => [
+    { stage: 'Self Submitted', value: workflow.selfCompletionRate || 0, color: 'success.main' },
+    { stage: 'Manager Submitted', value: workflow.managerCompletionRate || 0, color: 'info.main' },
+    { stage: 'Finalized', value: workflow.finalizationRate || 0, color: 'secondary.main' }
+  ], [workflow.selfCompletionRate, workflow.managerCompletionRate, workflow.finalizationRate]);
 
-  const overview = analytics.overview || {};
-  const workflow = analytics.workflow || {};
-  const ratings = analytics.ratings || {};
-  const cycleHealth = analytics.cycleHealth || [];
-  const teamInsights = analytics.teamInsights || [];
-  const monthlyTrend = analytics.monthlyTrend || [];
+  useEffect(() => {
+    if (!isHRAdmin) return;
+
+    let isMounted = true;
+    const loadDrilldownData = async () => {
+      setDrilldownLoading(true);
+      setDrilldownError(null);
+      try {
+        const [employeesRes, okrsRes, appraisalsRes] = await Promise.all([
+          api.get('/user/employees-for-appraisal'),
+          api.get('/okrs'),
+          api.get('/appraisals/team')
+        ]);
+
+        if (!isMounted) return;
+        setEmployees(employeesRes.data?.data?.employees || []);
+        setOkrs(okrsRes.data?.data || []);
+        setAppraisals(appraisalsRes.data?.data || []);
+      } catch (error: unknown) {
+        if (!isMounted) return;
+        const axiosError = error as { response?: { data?: { error?: string } } };
+        setDrilldownError(axiosError.response?.data?.error || 'Failed to load organization drill-down data');
+      } finally {
+        if (isMounted) {
+          setDrilldownLoading(false);
+        }
+      }
+    };
+
+    loadDrilldownData();
+    return () => { isMounted = false; };
+  }, [isHRAdmin]);
 
   const summaryCards = [
     {
@@ -136,13 +213,8 @@ export default function AdminOverviewPage() {
     count: item.count
   }));
 
-  const phaseChartData = (workflow.phaseBreakdown || []).map((item: any) => ({
-    name: formatLabel(item.phase),
-    count: item.count
-  }));
-
   const ratingChartData = (ratings.distribution || []).map((item: any) => ({
-    rating: `${item.rating}★`,
+    rating: `${item.rating} stars`,
     count: item.count
   }));
 
@@ -154,11 +226,131 @@ export default function AdminOverviewPage() {
     completed: point.completed || 0
   }));
 
-  const completionFunnel = useMemo(() => [
-    { stage: 'Self Submitted', value: workflow.selfCompletionRate || 0, color: 'success.main' },
-    { stage: 'Manager Submitted', value: workflow.managerCompletionRate || 0, color: 'info.main' },
-    { stage: 'Finalized', value: workflow.finalizationRate || 0, color: 'secondary.main' }
-  ], [workflow.selfCompletionRate, workflow.managerCompletionRate, workflow.finalizationRate]);
+  const departmentMetrics = useMemo<DepartmentDrilldown[]>(() => {
+    const deptMap = new Map<string, DepartmentDrilldown>();
+
+    const getDepartment = (department?: string, teamName?: string) => {
+      const raw = (department || teamName || 'Unassigned').trim();
+      return raw || 'Unassigned';
+    };
+
+    employees.forEach((employee) => {
+      const department = getDepartment(employee.department, employee.teamName);
+      if (!deptMap.has(department)) {
+        deptMap.set(department, {
+          department,
+          members: 0,
+          managers: 0,
+          okrs: 0,
+          activeOkrs: 0,
+          appraisals: 0,
+          completed: 0,
+          stageCounts: {}
+        });
+      }
+
+      const dept = deptMap.get(department)!;
+      dept.members += 1;
+      if (employee.isManager) {
+        dept.managers += 1;
+      }
+    });
+
+    const ownerToDepartment = new Map<string, string>();
+    employees.forEach((employee) => {
+      if (!employee.userId) return;
+      ownerToDepartment.set(employee.userId, getDepartment(employee.department, employee.teamName));
+    });
+
+    okrs.forEach((okr) => {
+      const department = ownerToDepartment.get(okr.ownerId || '') || 'Unassigned';
+      if (!deptMap.has(department)) {
+        deptMap.set(department, {
+          department,
+          members: 0,
+          managers: 0,
+          okrs: 0,
+          activeOkrs: 0,
+          appraisals: 0,
+          completed: 0,
+          stageCounts: {}
+        });
+      }
+
+      const dept = deptMap.get(department)!;
+      dept.okrs += 1;
+      if (okr.status === 'active') {
+        dept.activeOkrs += 1;
+      }
+    });
+
+    appraisals.forEach((appraisal) => {
+      const department = getDepartment(appraisal.employee?.department, appraisal.employee?.teamName);
+      if (!deptMap.has(department)) {
+        deptMap.set(department, {
+          department,
+          members: 0,
+          managers: 0,
+          okrs: 0,
+          activeOkrs: 0,
+          appraisals: 0,
+          completed: 0,
+          stageCounts: {}
+        });
+      }
+
+      const dept = deptMap.get(department)!;
+      const stage = appraisal.status || 'unknown';
+      dept.appraisals += 1;
+      if (stage === 'completed' || stage === 'employee_acknowledged') {
+        dept.completed += 1;
+      }
+      dept.stageCounts[stage] = (dept.stageCounts[stage] || 0) + 1;
+    });
+
+    return Array.from(deptMap.values()).sort((a, b) => b.appraisals - a.appraisals || b.members - a.members);
+  }, [employees, okrs, appraisals]);
+
+  const stageOptions = useMemo(() => {
+    const stages = new Set<string>();
+    appraisals.forEach((item) => {
+      if (item.status) stages.add(item.status);
+    });
+    return Array.from(stages).sort();
+  }, [appraisals]);
+
+  const filteredAppraisals = useMemo(() => {
+    return appraisals.filter((item) => {
+      const department = item.employee?.department || item.employee?.teamName || 'Unassigned';
+      if (selectedDepartment !== 'all' && department !== selectedDepartment) return false;
+      if (selectedStage !== 'all' && (item.status || 'unknown') !== selectedStage) return false;
+      return true;
+    });
+  }, [appraisals, selectedDepartment, selectedStage]);
+
+  if (userLoading || isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '55vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!isHRAdmin) {
+    return (
+      <Alert severity="error">
+        Access denied. Only HR Administrators can access the Admin Panel.
+      </Alert>
+    );
+  }
+
+  if (isError || !analytics) {
+    return (
+      <Alert severity="error">
+        Unable to load admin analytics. Please refresh and try again.
+      </Alert>
+    );
+  }
 
   return (
     <Box>
@@ -183,6 +375,12 @@ export default function AdminOverviewPage() {
           </Button>
         </Stack>
       </Box>
+
+      {drilldownError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {drilldownError}
+        </Alert>
+      )}
 
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
         {summaryCards.map((card) => (
@@ -388,6 +586,205 @@ export default function AdminOverviewPage() {
               <Typography variant="caption" color="text.secondary">
                 Bars show completion rate (%) by team.
               </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={2.5} sx={{ mt: 1 }}>
+        <Grid size={{ xs: 12 }}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="h6" fontWeight={700}>
+                  Department Drill-down
+                </Typography>
+                <Chip icon={<Business />} label={`${departmentMetrics.length} departments`} variant="outlined" />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                View departments with member count, line-manager count, OKRs, appraisal volume, and completion rates.
+              </Typography>
+
+              {drilldownLoading ? (
+                <Box sx={{ py: 2 }}>
+                  <CircularProgress size={24} />
+                </Box>
+              ) : (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Department</TableCell>
+                        <TableCell align="right">Members</TableCell>
+                        <TableCell align="right">Line Managers</TableCell>
+                        <TableCell align="right">OKRs</TableCell>
+                        <TableCell align="right">Appraisals</TableCell>
+                        <TableCell align="right">Completed</TableCell>
+                        <TableCell align="right">Completion Rate</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {departmentMetrics.map((dept) => {
+                        const completionRate = dept.appraisals > 0 ? Math.round((dept.completed / dept.appraisals) * 100) : 0;
+                        return (
+                          <TableRow key={dept.department} hover>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={700}>{dept.department}</Typography>
+                              <Typography variant="caption" color="text.secondary">Active OKRs: {dept.activeOkrs}</Typography>
+                            </TableCell>
+                            <TableCell align="right">{dept.members}</TableCell>
+                            <TableCell align="right">{dept.managers}</TableCell>
+                            <TableCell align="right">{dept.okrs}</TableCell>
+                            <TableCell align="right">{dept.appraisals}</TableCell>
+                            <TableCell align="right">{dept.completed}</TableCell>
+                            <TableCell align="right">
+                              <Chip size="small" label={`${completionRate}%`} color={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'default'} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {departmentMetrics.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7}>
+                            <Typography variant="body2" color="text.secondary">
+                              No department drill-down data available.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={2.5} sx={{ mt: 1 }}>
+        <Grid size={{ xs: 12 }}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="h6" fontWeight={700}>
+                  Pipeline And OKR Drill-down
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Chip icon={<AccountTree />} label={`${filteredAppraisals.length} appraisals`} size="small" />
+                  <Chip label={`${okrs.length} OKRs`} size="small" variant="outlined" />
+                </Stack>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Filter appraisal stage by department and status, then review the corresponding employee records.
+              </Typography>
+
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
+                <FormControl size="small" sx={{ minWidth: 240 }}>
+                  <InputLabel>Department</InputLabel>
+                  <Select
+                    label="Department"
+                    value={selectedDepartment}
+                    onChange={(event) => setSelectedDepartment(event.target.value)}
+                  >
+                    <MenuItem value="all">All Departments</MenuItem>
+                    {departmentMetrics.map((dept) => (
+                      <MenuItem key={dept.department} value={dept.department}>{dept.department}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 240 }}>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    label="Status"
+                    value={selectedStage}
+                    onChange={(event) => setSelectedStage(event.target.value)}
+                  >
+                    <MenuItem value="all">All Statuses</MenuItem>
+                    {stageOptions.map((stage) => (
+                      <MenuItem key={stage} value={stage}>{formatLabel(stage)}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+
+              <Divider sx={{ mb: 2 }} />
+
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, lg: 7 }}>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Employee</TableCell>
+                          <TableCell>Department</TableCell>
+                          <TableCell>Line Manager</TableCell>
+                          <TableCell>Status</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {filteredAppraisals.slice(0, 120).map((item) => (
+                          <TableRow key={item._id} hover>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={600}>{item.employee?.name || 'Unknown'}</Typography>
+                              <Typography variant="caption" color="text.secondary">{item.employee?.email || '-'}</Typography>
+                            </TableCell>
+                            <TableCell>{item.employee?.department || item.employee?.teamName || 'Unassigned'}</TableCell>
+                            <TableCell>{item.manager?.name || '-'}</TableCell>
+                            <TableCell>
+                              <Chip size="small" label={formatLabel(item.status || 'unknown')} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {filteredAppraisals.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={4}>
+                              <Typography variant="body2" color="text.secondary">
+                                No appraisals match the selected filters.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+
+                <Grid size={{ xs: 12, lg: 5 }}>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>OKR</TableCell>
+                          <TableCell>Owner ID</TableCell>
+                          <TableCell align="right">Progress</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {okrs.slice(0, 40).map((okr) => (
+                          <TableRow key={okr._id} hover>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={600}>{okr.title || 'Untitled OKR'}</Typography>
+                              <Typography variant="caption" color="text.secondary">{formatLabel(okr.status || 'unknown')}</Typography>
+                            </TableCell>
+                            <TableCell>{okr.ownerId || '-'}</TableCell>
+                            <TableCell align="right">{okr.progress ?? 0}%</TableCell>
+                          </TableRow>
+                        ))}
+                        {okrs.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={3}>
+                              <Typography variant="body2" color="text.secondary">
+                                No OKRs found for this organization.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>

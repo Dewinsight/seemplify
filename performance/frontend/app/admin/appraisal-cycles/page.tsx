@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUserContext, useAppraisalCycles, useDirectReports } from '@/lib/hooks';
+import { useUserContext, useAppraisalCycles } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
   Box, Typography, Card, CardContent, Grid, Button, TextField, Chip, Alert,
@@ -16,7 +16,7 @@ import {
 import { gradients } from '../../theme';
 import {
   Add, PlayArrow, Pause, CheckCircle, Settings, People, Assessment,
-  Schedule, Edit, Delete, Visibility, Rocket, ArrowForward, Warning,
+  Schedule, Edit, Delete, Visibility, Rocket, Warning,
   TrendingUp, Groups, Star, Insights
 } from '@mui/icons-material';
 
@@ -226,15 +226,6 @@ export default function AppraisalCyclesAdminPage() {
     }
   };
 
-  const handleUpdatePhase = async (cycleId: string, phase: string) => {
-    try {
-      await api.patch(`/appraisals/cycles/${cycleId}/phase`, { phase });
-      mutate();
-    } catch (error) {
-      console.error('Update phase error:', error);
-    }
-  };
-
   const renderCycleCard = (cycle: AppraisalCycle) => {
     const progress = cycle.stats
       ? (cycle.stats.completedAppraisals / cycle.stats.totalEmployees) * 100
@@ -326,20 +317,9 @@ export default function AppraisalCyclesAdminPage() {
                 )}
                 {cycle.status === 'active' && (
                   <>
-                    <Button
-                      variant="outlined"
-                      startIcon={<ArrowForward />}
-                      onClick={() => {
-                        const phases = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
-                        const currentIndex = phases.indexOf(cycle.currentPhase);
-                        if (currentIndex < phases.length - 1) {
-                          handleUpdatePhase(cycle._id, phases[currentIndex + 1]);
-                        }
-                      }}
-                      size="small"
-                    >
-                      Next Phase
-                    </Button>
+                    <Tooltip title="Phases now progress automatically from appraisal submissions. Manual phase advance was removed to prevent workflow drift.">
+                      <Chip size="small" color="info" variant="outlined" label="Phase Auto-Progress" />
+                    </Tooltip>
                     <Button
                       variant="outlined"
                       startIcon={<Visibility />}

@@ -32,6 +32,7 @@ export default function FinalReviewPage() {
 
     const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
     const { user, isManager, isHRAdmin } = useUserContext();
+    const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
 
     const [aiLoading, setAiLoading] = useState(false);
     const [aiSuggestion, setAiSuggestion] = useState<AIRatingSuggestion | null>(null);
@@ -53,6 +54,7 @@ export default function FinalReviewPage() {
     const needsCalibration = appraisal?.status === 'calibration_pending' || appraisal?.status === 'calibration_in_progress';
 
     const fetchAiSuggestion = async () => {
+        if (!aiAssistEnabled) return;
         setAiLoading(true);
         try {
             const res = await api.post(`/appraisals/${appraisalId}/ai-rating-suggestion`);
@@ -76,6 +78,7 @@ export default function FinalReviewPage() {
     // If there's a notable mismatch, auto-fetch AI arbitration.
     useEffect(() => {
         if (!appraisal) return;
+        if (!aiAssistEnabled) return;
         if (aiSuggestion) return;
         const hasDispute = !!appraisal.flags?.hasDispute;
         const hasGap = !!(selfRating && managerRating && Math.abs(selfRating - managerRating) >= 2);
@@ -83,7 +86,7 @@ export default function FinalReviewPage() {
             fetchAiSuggestion();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appraisal, aiSuggestion, selfRating, managerRating]);
+    }, [appraisal, aiAssistEnabled, aiSuggestion, selfRating, managerRating]);
 
     return (
         <Box>
@@ -135,7 +138,9 @@ export default function FinalReviewPage() {
                         )}
 
                         <Alert severity="info" sx={{ mb: 3 }}>
-                            Use this step to finalize the overall rating. AI can recommend a rating, but the final decision is yours.
+                            {aiAssistEnabled
+                                ? 'Use this step to finalize the overall rating. AI can recommend a rating, but the final decision is yours.'
+                                : 'Use this step to finalize the overall rating. AI assistance is disabled for this cycle.'}
                         </Alert>
 
                         <Card sx={{ mb: 3, bgcolor: 'action.hover' }}>
@@ -170,7 +175,7 @@ export default function FinalReviewPage() {
                                             AI Recommendation
                                         </Typography>
                                     </Box>
-                                    {!aiSuggestion && (
+                                    {!aiSuggestion && aiAssistEnabled && (
                                         <Button
                                             size="small"
                                             variant="outlined"
@@ -195,7 +200,9 @@ export default function FinalReviewPage() {
                                     </Box>
                                 ) : (
                                     <Typography variant="body2" color="text.secondary">
-                                        AI suggestion is optional. You can finalize without it.
+                                        {aiAssistEnabled
+                                            ? 'AI suggestion is optional. You can finalize without it.'
+                                            : 'AI suggestion is unavailable because AI assistance is disabled for this cycle.'}
                                     </Typography>
                                 )}
                             </CardContent>

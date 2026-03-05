@@ -189,6 +189,87 @@ function isCalibrationEnabledForCycle(cycle) {
   );
 }
 
+function isAiAssistEnabledForCycle(cycle) {
+  return cycle?.settings?.enableAiAssist !== false;
+}
+
+async function isAiAssistEnabledForAppraisal(appraisal) {
+  if (!appraisal) return true;
+
+  const cycleRef = appraisal.cycleId;
+  if (cycleRef && typeof cycleRef === 'object' && cycleRef.settings) {
+    return isAiAssistEnabledForCycle(cycleRef);
+  }
+
+  const cycleId = cycleRef?._id || cycleRef;
+  if (!cycleId) return true;
+
+  const cycle = await AppraisalCycle.findById(cycleId).select('settings.enableAiAssist');
+  return isAiAssistEnabledForCycle(cycle);
+}
+
+function hasStatus(statusCounts, statuses = []) {
+  return statuses.some((status) => (statusCounts[status] || 0) > 0);
+}
+
+async function syncCycleProgress(cycleId) {
+  if (!cycleId) return;
+
+  const cycle = await AppraisalCycle.findById(cycleId);
+  if (!cycle || cycle.status === 'cancelled') return;
+
+  const appraisals = await Appraisal.find({ cycleId: cycle._id }).select('status');
+  if (!Array.isArray(appraisals) || appraisals.length === 0) return;
+
+  const statusCounts = appraisals.reduce((acc, appraisal) => {
+    const status = appraisal?.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const allCompleted = appraisals.every((appraisal) =>
+    APPRAISAL_COMPLETED_STATUSES.includes(appraisal.status)
+  );
+
+  const selfStatuses = ['not_started', 'goal_setting', 'goal_approval_pending', 'self_assessment_pending', 'self_assessment_in_progress'];
+  const managerStatuses = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'];
+  const calibrationStatuses = ['manager_review_submitted', 'calibration_pending', 'calibration_in_progress'];
+  const finalStatuses = ['calibration_completed', 'final_review_pending', 'discussion_scheduled', 'discussion_completed', ...APPRAISAL_COMPLETED_STATUSES];
+
+  const calibrationEnabled = isCalibrationEnabledForCycle(cycle);
+
+  let nextPhase = cycle.currentPhase || 'selfAssessment';
+  if (allCompleted) {
+    nextPhase = 'completed';
+  } else if (hasStatus(statusCounts, selfStatuses)) {
+    nextPhase = 'selfAssessment';
+  } else if (hasStatus(statusCounts, managerStatuses)) {
+    nextPhase = 'managerReview';
+  } else if (calibrationEnabled && hasStatus(statusCounts, calibrationStatuses)) {
+    nextPhase = 'calibration';
+  } else if (hasStatus(statusCounts, finalStatuses) || (!calibrationEnabled && hasStatus(statusCounts, calibrationStatuses))) {
+    nextPhase = 'finalReview';
+  }
+
+  const phaseOrder = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
+  const currentIndex = phaseOrder.indexOf(nextPhase);
+
+  phaseOrder.forEach((phase, index) => {
+    if (!cycle.phases?.[phase]) return;
+    cycle.phases[phase].isActive = false;
+    cycle.phases[phase].isCompleted = nextPhase === 'completed' ? true : (currentIndex >= 0 && index < currentIndex);
+  });
+
+  if (nextPhase !== 'completed' && cycle.phases?.[nextPhase]) {
+    cycle.phases[nextPhase].isActive = true;
+  }
+
+  cycle.currentPhase = nextPhase;
+  cycle.status = nextPhase === 'completed' ? 'completed' : 'active';
+  cycle.markModified('phases');
+  await cycle.save();
+}
+
 function isSelfAssessmentEditable(appraisal) {
   if (!appraisal) return false;
   if (appraisal?.selfAssessment?.submittedAt) return false;
@@ -620,27 +701,10 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
 
 // Update cycle phase (HR Admin)
 router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, res) => {
-  try {
-    const { phase } = req.body;
-    const cycle = await AppraisalCycle.findById(req.params.cycleId);
-
-    if (!cycle) {
-      return res.status(404).json({ success: false, error: 'Cycle not found' });
-    }
-
-    // Update phase status
-    const phases = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
-    phases.forEach(p => {
-      cycle.phases[p].isActive = (p === phase);
-    });
-    cycle.currentPhase = phase;
-
-    await cycle.save();
-    res.json({ success: true, data: cycle });
-  } catch (error) {
-    console.error('Update phase error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update phase' });
-  }
+  res.status(409).json({
+    success: false,
+    error: 'Manual phase updates are disabled. Cycle phase now advances automatically from appraisal submissions.'
+  });
 });
 
 // =============================================
@@ -824,6 +888,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       cycle.phases.selfAssessment.isActive = true;
       cycle.markModified('phases'); // Ensure nested changes are detected
       await cycle.save();
+      await syncCycleProgress(cycle._id);
       console.log('Cycle updated successfully');
     }
 
@@ -1603,6 +1668,7 @@ router.post('/:appraisalId/start', requireAuth, async (req, res) => {
     appraisal.addAuditLog('appraisal_started', req.session.user, { previousStatus: 'not_started' });
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId);
 
     res.json({
       success: true,
@@ -1684,6 +1750,7 @@ router.post('/:appraisalId/reset', requireAuth, requireManager, async (req, res)
     });
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId);
 
     res.json({
       success: true,
@@ -1724,6 +1791,7 @@ router.post('/:appraisalId/submit-goals', requireAuth, async (req, res) => {
 
     appraisal.addAuditLog('goals_submitted', req.session.user, { goalsCount: appraisal.goals?.length || 0 });
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId);
 
     // Notify Manager
     try {
@@ -1754,6 +1822,7 @@ router.post('/:appraisalId/approve-goals', requireAuth, requireManager, async (r
     appraisal.status = 'self_assessment_pending';
     appraisal.addAuditLog('goals_approved', req.session.user, {});
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId);
 
     // Notify Employee
     try {
@@ -1792,6 +1861,7 @@ router.post('/:appraisalId/reject-goals', requireAuth, requireManager, async (re
     // Let's just rely on Email + Audit Log for now. The status reversion is key.
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId);
 
     // Notify Employee
     try {
@@ -1811,7 +1881,7 @@ router.post('/:appraisalId/reject-goals', requireAuth, requireManager, async (re
 // Save self-assessment (draft or submit)
 router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -1831,6 +1901,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       });
     }
 
+    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
     const { selfAssessment = {}, submit } = req.body;
 
     // Update self-assessment
@@ -1850,19 +1921,21 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
         'self_assessment_submitted'
       );
 
-      // Generate AI insights
-      try {
-        const aiInsights = await appraisalAIService.analyzeSelfAssessment(
-          appraisal.selfAssessment,
-          appraisal.selfAssessment.okrAssessment,
-          []
-        );
-        appraisal.selfAssessment.aiInsights = {
-          ...aiInsights,
-          generatedAt: new Date()
-        };
-      } catch (aiError) {
-        console.error('AI insights error:', aiError);
+      // Generate AI insights when AI assistance is enabled for this cycle.
+      if (aiAssistEnabled) {
+        try {
+          const aiInsights = await appraisalAIService.analyzeSelfAssessment(
+            appraisal.selfAssessment,
+            appraisal.selfAssessment.okrAssessment,
+            []
+          );
+          appraisal.selfAssessment.aiInsights = {
+            ...aiInsights,
+            generatedAt: new Date()
+          };
+        } catch (aiError) {
+          console.error('AI insights error:', aiError);
+        }
       }
 
       appraisal.addAuditLog('self_assessment_submitted', req.session.user, {});
@@ -1871,6 +1944,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     }
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
 
     // Notify manager (best-effort; do not fail submission if email is not configured)
     if (submit) {
@@ -1919,6 +1993,7 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
       });
     }
 
+    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
     const { managerReview = {}, submit } = req.body;
 
     // Update manager review
@@ -1956,20 +2031,22 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
         appraisal.flags.disputeReason = `Self vs manager rating gap (${selfRating} vs ${managerRating})`;
       }
 
-      // Check for bias
-      try {
-        const biasCheck = await appraisalAIService.checkForBias(
-          appraisal.managerReview,
-          appraisal.selfAssessment,
-          {}
-        );
-        appraisal.managerReview.aiAssist = {
-          ...appraisal.managerReview.aiAssist,
-          biasCheck,
-          generatedAt: new Date()
-        };
-      } catch (aiError) {
-        console.error('Bias check error:', aiError);
+      // Check for bias only when AI assistance is enabled for this cycle.
+      if (aiAssistEnabled) {
+        try {
+          const biasCheck = await appraisalAIService.checkForBias(
+            appraisal.managerReview,
+            appraisal.selfAssessment,
+            {}
+          );
+          appraisal.managerReview.aiAssist = {
+            ...appraisal.managerReview.aiAssist,
+            biasCheck,
+            generatedAt: new Date()
+          };
+        } catch (aiError) {
+          console.error('Bias check error:', aiError);
+        }
       }
 
       markManagerNotificationsRead(appraisal, { types: ['self_assessment_submitted', 'manager_review_requested'] });
@@ -1983,6 +2060,7 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
     }
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
     res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Save manager review error:', error);
@@ -1993,7 +2071,7 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
 // Get AI assistance for manager review
 router.post('/:appraisalId/ai-assist', requireAuth, requireManager, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -2001,6 +2079,13 @@ router.post('/:appraisalId/ai-assist', requireAuth, requireManager, async (req, 
     const canManage = await canManageAppraisal(req, appraisal);
     if (!canManage) {
       return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle'
+      });
     }
 
     const { managerNotes } = req.body;
@@ -2074,6 +2159,7 @@ router.post('/:appraisalId/chat', requireAuth, async (req, res) => {
 
     const { message, messageType, requestAI } = req.body;
     const senderRole = isEmployee ? 'employee' : 'manager';
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
 
     // Add user message
     appraisal.addChatMessage(
@@ -2084,6 +2170,17 @@ router.post('/:appraisalId/chat', requireAuth, async (req, res) => {
 
     // Generate AI response if requested
     if (requestAI) {
+      if (!aiAssistEnabled) {
+        appraisal.chatThread.push({
+          sender: { userId: 'system', name: 'System', role: 'system' },
+          message: 'AI assistance is disabled for this appraisal cycle.',
+          messageType: 'system',
+          createdAt: new Date()
+        });
+        await appraisal.save();
+        return res.json({ success: true, data: appraisal.chatThread });
+      }
+
       try {
         const aiResponse = await appraisalAIService.generateChatResponse(
           appraisal.chatThread,
@@ -2263,6 +2360,7 @@ router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, 
     }
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
     res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Update discussion error:', error);
@@ -2449,18 +2547,23 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
     appraisal.addAuditLog('appraisal_finalized', req.session.user, { finalRating: appraisal.finalRating });
 
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
 
-    // Generate development plan suggestions
-    try {
-      const devPlan = await appraisalAIService.suggestDevelopmentPlan(appraisal, appraisal.selfAssessment?.okrAssessment || [], {
-        employeeName: appraisal.employee.name,
-        jobTitle: appraisal.employee.jobTitle
-      });
-      // Store in response but don't persist automatically
-      res.json({ success: true, data: appraisal, developmentPlanSuggestions: devPlan });
-    } catch (aiError) {
-      res.json({ success: true, data: appraisal });
+    // Generate development plan suggestions only when AI assistance is enabled for this cycle.
+    if (isAiAssistEnabledForCycle(cycle)) {
+      try {
+        const devPlan = await appraisalAIService.suggestDevelopmentPlan(appraisal, appraisal.selfAssessment?.okrAssessment || [], {
+          employeeName: appraisal.employee.name,
+          jobTitle: appraisal.employee.jobTitle
+        });
+        // Store in response but don't persist automatically
+        return res.json({ success: true, data: appraisal, developmentPlanSuggestions: devPlan });
+      } catch (aiError) {
+        return res.json({ success: true, data: appraisal });
+      }
     }
+
+    res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Finalize appraisal error:', error);
     res.status(500).json({ success: false, error: 'Failed to finalize appraisal' });
@@ -2529,7 +2632,7 @@ router.post('/ai-suggest', requireAuth, async (req, res) => {
  */
 router.post('/:appraisalId/check-bias', requireAuth, requireManager, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -2537,6 +2640,13 @@ router.post('/:appraisalId/check-bias', requireAuth, requireManager, async (req,
     const canManage = await canManageAppraisal(req, appraisal);
     if (!canManage) {
       return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle'
+      });
     }
 
     const { managerReview, selfAssessment } = req.body;
@@ -2585,6 +2695,13 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       return res.status(400).json({
         success: false,
         error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
 
@@ -2705,6 +2822,13 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       return res.status(400).json({
         success: false,
         error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
 
@@ -2847,7 +2971,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
  */
 router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -2864,6 +2988,13 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
       return res.status(400).json({
         success: false,
         error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
 
@@ -3020,6 +3151,14 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
       });
     }
 
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
+    if (!aiAssistEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
+      });
+    }
+
     ensureConversationAssessmentState(appraisal);
 
     const { targetPhase } = req.body;
@@ -3113,6 +3252,7 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
     res.json({
       success: true,
       data: {
+        aiAssistEnabled: isAiAssistEnabledForCycle(appraisal.cycleId),
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread,
         okrs,
@@ -3154,6 +3294,13 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       return res.status(400).json({
         success: false,
         error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
 
@@ -3251,6 +3398,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     }
 
     ensureConversationAssessmentState(appraisal);
+    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
 
     const { report, edits } = req.body;
 
@@ -3315,20 +3463,22 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       lastSavedAt: new Date()
     };
 
-    // Generate AI insights (strengths/development areas) from the finalized self-assessment.
-    try {
-      const aiInsights = await appraisalAIService.analyzeSelfAssessment(
-        appraisal.selfAssessment,
-        appraisal.selfAssessment.okrAssessment || [],
-        []
-      );
-      appraisal.selfAssessment.aiInsights = {
-        ...aiInsights,
-        generatedAt: new Date()
-      };
-    } catch (aiError) {
-      console.error('AI insights error (finalize report):', aiError);
-      // Keep whatever we already have (or none).
+    // Generate AI insights only when AI assistance is enabled for this cycle.
+    if (aiAssistEnabled) {
+      try {
+        const aiInsights = await appraisalAIService.analyzeSelfAssessment(
+          appraisal.selfAssessment,
+          appraisal.selfAssessment.okrAssessment || [],
+          []
+        );
+        appraisal.selfAssessment.aiInsights = {
+          ...aiInsights,
+          generatedAt: new Date()
+        };
+      } catch (aiError) {
+        console.error('AI insights error (finalize report):', aiError);
+        // Keep whatever we already have (or none).
+      }
     }
 
     ensureConversationAssessmentState(appraisal);
@@ -3364,6 +3514,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       submissionWarnings: missingSummarySections
     });
     await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
 
     // Notify manager
     try {
@@ -3444,6 +3595,13 @@ router.post('/:appraisalId/ai-rating-suggestion', requireAuth, requireManager, a
     const canManage = await canManageAppraisal(req, appraisal);
     if (!canManage) {
       return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI assistance is disabled for this appraisal cycle'
+      });
     }
 
     // Get OKRs

@@ -92,6 +92,7 @@ export default function ManagerReviewPage() {
   const { user, isManager } = useUserContext();
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
+  const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
 
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -226,6 +227,10 @@ export default function ManagerReviewPage() {
   };
 
   const fetchAISuggestion = async () => {
+    if (!aiAssistEnabled) {
+      setSnackbar({ open: true, message: 'AI assistance is disabled for this cycle.', severity: 'warning' });
+      return;
+    }
     setScoringLoading(true);
     try {
       const res = await api.post(`/appraisals/${appraisalId}/ai-rating-suggestion`);
@@ -266,12 +271,14 @@ export default function ManagerReviewPage() {
   };
 
   const handleSubmit = async () => {
-    // Check for bias first
-    if (!biasCheck) {
-      await checkForBias();
+    let hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
+
+    // Check for bias first when AI assistance is enabled.
+    if (aiAssistEnabled && !biasCheck) {
+      hasPotentialBias = await checkForBias();
     }
 
-    if (biasCheck?.hasPotentialBias) {
+    if (aiAssistEnabled && hasPotentialBias) {
       setSnackbar({
         open: true,
         message: 'Please review the bias detection alerts before submitting',
@@ -298,6 +305,10 @@ export default function ManagerReviewPage() {
   };
 
   const getAIAssist = async () => {
+    if (!aiAssistEnabled) {
+      setSnackbar({ open: true, message: 'AI assistance is disabled for this cycle.', severity: 'warning' });
+      return;
+    }
     setAiLoading(true);
     try {
       const response = await api.post(`/appraisals/${appraisalId}/ai-assist`, {
@@ -312,7 +323,11 @@ export default function ManagerReviewPage() {
     }
   };
 
-  const checkForBias = async () => {
+  const checkForBias = async (): Promise<boolean> => {
+    if (!aiAssistEnabled) {
+      setSnackbar({ open: true, message: 'AI assistance is disabled for this cycle.', severity: 'warning' });
+      return false;
+    }
     setAiLoading(true);
     try {
       const response = await api.post(`/appraisals/${appraisalId}/check-bias`, {
@@ -320,15 +335,18 @@ export default function ManagerReviewPage() {
         selfAssessment: appraisal?.selfAssessment
       });
       setBiasCheck(response.data);
-      if (response.data?.hasPotentialBias) {
+      const hasPotentialBias = Boolean(response.data?.hasPotentialBias);
+      if (hasPotentialBias) {
         setSnackbar({
           open: true,
           message: 'Potential bias detected - please review',
           severity: 'warning'
         });
       }
+      return hasPotentialBias;
     } catch (error) {
       console.error('Bias check error:', error);
+      return false;
     } finally {
       setAiLoading(false);
     }
@@ -429,7 +447,7 @@ export default function ManagerReviewPage() {
           <Box>
             <Typography variant="h6" fontWeight={600}>{appraisal.employee.name}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {appraisal.employee.jobTitle || 'Team Member'} • {appraisal.employee.department || 'Department'}
+              {appraisal.employee.jobTitle || 'Team Member'} - {appraisal.employee.department || 'Department'}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
               {selfAssessment.overallSelfRating && (
@@ -566,26 +584,34 @@ export default function ManagerReviewPage() {
         </AccordionDetails>
       </Accordion>
 
-      <Button
-        variant="outlined"
-        startIcon={aiLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
-        onClick={getAIAssist}
-        disabled={aiLoading}
-        sx={{ mt: 3 }}
-      >
-        Get AI-Powered Review Suggestions
-      </Button>
+      {aiAssistEnabled ? (
+        <>
+          <Button
+            variant="outlined"
+            startIcon={aiLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
+            onClick={getAIAssist}
+            disabled={aiLoading}
+            sx={{ mt: 3 }}
+          >
+            Get AI-Powered Review Suggestions
+          </Button>
 
-      {aiAssist && (
-        <Paper sx={{ p: 2, mt: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
-          <Typography variant="subtitle1" fontWeight={600} color="primary.main" gutterBottom>
-            AI Review Assistance
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 2 }}>{aiAssist.overallSuggestion}</Typography>
-          {aiAssist.suggestedRating && (
-            <Chip label={`Suggested Rating: ${aiAssist.suggestedRating}/5`} color="primary" />
+          {aiAssist && (
+            <Paper sx={{ p: 2, mt: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
+              <Typography variant="subtitle1" fontWeight={600} color="primary.main" gutterBottom>
+                AI Review Assistance
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>{aiAssist.overallSuggestion}</Typography>
+              {aiAssist.suggestedRating && (
+                <Chip label={`Suggested Rating: ${aiAssist.suggestedRating}/5`} color="primary" />
+              )}
+            </Paper>
           )}
-        </Paper>
+        </>
+      ) : (
+        <Alert severity="info" sx={{ mt: 3 }}>
+          AI assistance is disabled for this cycle. Complete the review manually.
+        </Alert>
       )}
     </Box>
   );
@@ -863,160 +889,168 @@ export default function ManagerReviewPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Calculate fontSize="small" color="action" />
               <Typography variant="caption" color="text.secondary">
-                Formula: (OKR Score × {scoringData.breakdown.okrWeight}%) + (Competency Score × {scoringData.breakdown.competencyWeight}%) = {scoringData.compositeScore.toFixed(2)}
+                Formula: (OKR Score x {scoringData.breakdown.okrWeight}%) + (Competency Score x {scoringData.breakdown.competencyWeight}%) = {scoringData.compositeScore.toFixed(2)}
               </Typography>
             </Box>
           </CardContent>
         </Card>
       )}
 
-      {/* AI Suggested Rating Card */}
-      <Card sx={{ mb: 3, bgcolor: 'secondary.lighter', border: 1, borderColor: 'secondary.main' }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SmartToy color="secondary" />
-              <Typography variant="h6" fontWeight={600}>
-                AI Rating Suggestion
-              </Typography>
-            </Box>
-            {!aiSuggestion && (
-              <Button
-                variant="outlined"
-                color="secondary"
-                size="small"
-                startIcon={scoringLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
-                onClick={fetchAISuggestion}
-                disabled={scoringLoading}
-              >
-                Get AI Suggestion
-              </Button>
-            )}
-          </Box>
-
-          {aiSuggestion ? (
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.paper' }}>
-                  <Typography variant="h3" fontWeight={700} color="secondary.main">
-                    {aiSuggestion.suggestedRating}
-                  </Typography>
-                  <Typography variant="caption">Suggested Rating</Typography>
-                </Paper>
-                <Box sx={{ flex: 1 }}>
-                  <Chip
-                    label={ratingLabels[aiSuggestion.suggestedRating] || 'N/A'}
-                    color={aiSuggestion.suggestedRating >= 4 ? 'success' : aiSuggestion.suggestedRating >= 3 ? 'info' : 'warning'}
-                    size="small"
-                    sx={{ mb: 1 }}
-                  />
-                  <Typography variant="body2" color="text.secondary">
-                    {aiSuggestion.ratingJustification}
+      {aiAssistEnabled ? (
+        <>
+          {/* AI Suggested Rating Card */}
+          <Card sx={{ mb: 3, bgcolor: 'secondary.lighter', border: 1, borderColor: 'secondary.main' }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SmartToy color="secondary" />
+                  <Typography variant="h6" fontWeight={600}>
+                    AI Rating Suggestion
                   </Typography>
                 </Box>
+                {!aiSuggestion && (
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    size="small"
+                    startIcon={scoringLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
+                    onClick={fetchAISuggestion}
+                    disabled={scoringLoading}
+                  >
+                    Get AI Suggestion
+                  </Button>
+                )}
               </Box>
 
-              {/* Key Strengths & Development Areas */}
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                {aiSuggestion.keyStrengths && aiSuggestion.keyStrengths.length > 0 && (
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="caption" fontWeight={600} color="success.main">
-                      Key Strengths
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                      {aiSuggestion.keyStrengths.map((strength, idx) => (
-                        <Chip
-                          key={idx}
-                          label={strength}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          icon={<TrendingUp fontSize="small" />}
-                        />
-                      ))}
+              {aiSuggestion ? (
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.paper' }}>
+                      <Typography variant="h3" fontWeight={700} color="secondary.main">
+                        {aiSuggestion.suggestedRating}
+                      </Typography>
+                      <Typography variant="caption">Suggested Rating</Typography>
+                    </Paper>
+                    <Box sx={{ flex: 1 }}>
+                      <Chip
+                        label={ratingLabels[aiSuggestion.suggestedRating] || 'N/A'}
+                        color={aiSuggestion.suggestedRating >= 4 ? 'success' : aiSuggestion.suggestedRating >= 3 ? 'info' : 'warning'}
+                        size="small"
+                        sx={{ mb: 1 }}
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {aiSuggestion.ratingJustification}
+                      </Typography>
                     </Box>
-                  </Grid>
-                )}
-                {aiSuggestion.developmentAreas && aiSuggestion.developmentAreas.length > 0 && (
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="caption" fontWeight={600} color="warning.main">
-                      Development Areas
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                      {aiSuggestion.developmentAreas.map((area, idx) => (
-                        <Chip
-                          key={idx}
-                          label={area}
-                          size="small"
-                          color="warning"
-                          variant="outlined"
-                          icon={<TrendingDown fontSize="small" />}
-                        />
-                      ))}
-                    </Box>
-                  </Grid>
-                )}
-              </Grid>
+                  </Box>
 
-              {/* Rating Gaps & Concerns */}
-              {aiSuggestion.ratingGaps && (
-                <Accordion>
-                  <AccordionSummary expandIcon={<ExpandMore />}>
-                    <Typography variant="body2" fontWeight={600}>Rating Analysis</Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    {aiSuggestion.ratingGaps.selfVsObjective && (
-                      <Box sx={{ mb: 1 }}>
-                        <Typography variant="caption" fontWeight={600}>Self vs Objective Performance</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {aiSuggestion.ratingGaps.selfVsObjective}
+                  {/* Key Strengths & Development Areas */}
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    {aiSuggestion.keyStrengths && aiSuggestion.keyStrengths.length > 0 && (
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <Typography variant="caption" fontWeight={600} color="success.main">
+                          Key Strengths
                         </Typography>
-                      </Box>
-                    )}
-                    {aiSuggestion.ratingGaps.concerns && aiSuggestion.ratingGaps.concerns.length > 0 && (
-                      <Box>
-                        <Typography variant="caption" fontWeight={600} color="warning.main">Concerns</Typography>
-                        <ul style={{ margin: 0, paddingLeft: 16 }}>
-                          {aiSuggestion.ratingGaps.concerns.map((concern, idx) => (
-                            <li key={idx}>
-                              <Typography variant="body2">{concern}</Typography>
-                            </li>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                          {aiSuggestion.keyStrengths.map((strength, idx) => (
+                            <Chip
+                              key={idx}
+                              label={strength}
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              icon={<TrendingUp fontSize="small" />}
+                            />
                           ))}
-                        </ul>
-                      </Box>
+                        </Box>
+                      </Grid>
                     )}
-                  </AccordionDetails>
-                </Accordion>
-              )}
+                    {aiSuggestion.developmentAreas && aiSuggestion.developmentAreas.length > 0 && (
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <Typography variant="caption" fontWeight={600} color="warning.main">
+                          Development Areas
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                          {aiSuggestion.developmentAreas.map((area, idx) => (
+                            <Chip
+                              key={idx}
+                              label={area}
+                              size="small"
+                              color="warning"
+                              variant="outlined"
+                              icon={<TrendingDown fontSize="small" />}
+                            />
+                          ))}
+                        </Box>
+                      </Grid>
+                    )}
+                  </Grid>
 
-              {/* Calibration Notes */}
-              {aiSuggestion.calibrationNotes && (
-                <Alert severity="info" sx={{ mt: 2 }} icon={<EmojiObjects />}>
-                  <Typography variant="caption" fontWeight={600}>Calibration Notes</Typography>
-                  <Typography variant="body2">{aiSuggestion.calibrationNotes}</Typography>
-                </Alert>
-              )}
+                  {/* Rating Gaps & Concerns */}
+                  {aiSuggestion.ratingGaps && (
+                    <Accordion>
+                      <AccordionSummary expandIcon={<ExpandMore />}>
+                        <Typography variant="body2" fontWeight={600}>Rating Analysis</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {aiSuggestion.ratingGaps.selfVsObjective && (
+                          <Box sx={{ mb: 1 }}>
+                            <Typography variant="caption" fontWeight={600}>Self vs Objective Performance</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {aiSuggestion.ratingGaps.selfVsObjective}
+                            </Typography>
+                          </Box>
+                        )}
+                        {aiSuggestion.ratingGaps.concerns && aiSuggestion.ratingGaps.concerns.length > 0 && (
+                          <Box>
+                            <Typography variant="caption" fontWeight={600} color="warning.main">Concerns</Typography>
+                            <ul style={{ margin: 0, paddingLeft: 16 }}>
+                              {aiSuggestion.ratingGaps.concerns.map((concern, idx) => (
+                                <li key={idx}>
+                                  <Typography variant="body2">{concern}</Typography>
+                                </li>
+                              ))}
+                            </ul>
+                          </Box>
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
+                  )}
 
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                <Typography variant="caption">
-                  This is a recommendation only. Your final rating should be based on your direct observations and judgment.
+                  {/* Calibration Notes */}
+                  {aiSuggestion.calibrationNotes && (
+                    <Alert severity="info" sx={{ mt: 2 }} icon={<EmojiObjects />}>
+                      <Typography variant="caption" fontWeight={600}>Calibration Notes</Typography>
+                      <Typography variant="body2">{aiSuggestion.calibrationNotes}</Typography>
+                    </Alert>
+                  )}
+
+                  <Alert severity="warning" sx={{ mt: 2 }}>
+                    <Typography variant="caption">
+                      This is a recommendation only. Your final rating should be based on your direct observations and judgment.
+                    </Typography>
+                  </Alert>
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Click "Get AI Suggestion" to receive an AI-powered rating recommendation based on OKR achievement,
+                  competency ratings, and conversation analysis.
                 </Typography>
-              </Alert>
-            </Box>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Click "Get AI Suggestion" to receive an AI-powered rating recommendation based on OKR achievement,
-              competency ratings, and conversation analysis.
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Bias Check Alert */}
-      {biasCheck?.hasPotentialBias && (
-        <Alert severity="warning" sx={{ mb: 3 }} icon={<Balance />}>
-          <Typography variant="subtitle2" fontWeight={600}>Potential Bias Detected</Typography>
-          <Typography variant="body2">{biasCheck.biasType}: {biasCheck.suggestion}</Typography>
+          {/* Bias Check Alert */}
+          {biasCheck?.hasPotentialBias && (
+            <Alert severity="warning" sx={{ mb: 3 }} icon={<Balance />}>
+              <Typography variant="subtitle2" fontWeight={600}>Potential Bias Detected</Typography>
+              <Typography variant="body2">{biasCheck.biasType}: {biasCheck.suggestion}</Typography>
+            </Alert>
+          )}
+        </>
+      ) : (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          AI rating suggestion and bias checks are disabled for this cycle.
         </Alert>
       )}
 
@@ -1124,15 +1158,17 @@ export default function ManagerReviewPage() {
       </Card>
 
       {/* Bias Check Button */}
-      <Button
-        variant="outlined"
-        startIcon={aiLoading ? <CircularProgress size={16} /> : <Balance />}
-        onClick={checkForBias}
-        disabled={aiLoading}
-        sx={{ mt: 3 }}
-      >
-        Run AI Bias Check
-      </Button>
+      {aiAssistEnabled && (
+        <Button
+          variant="outlined"
+          startIcon={aiLoading ? <CircularProgress size={16} /> : <Balance />}
+          onClick={checkForBias}
+          disabled={aiLoading}
+          sx={{ mt: 3 }}
+        >
+          Run AI Bias Check
+        </Button>
+      )}
 
       {/* Submit Warning */}
       <Alert severity="info" sx={{ mt: 3 }}>
