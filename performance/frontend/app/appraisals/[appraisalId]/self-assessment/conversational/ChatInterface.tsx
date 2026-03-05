@@ -88,6 +88,7 @@ const phaseQuickPrompts: Record<string, string[]> = {
 };
 
 const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean }) => {
+  const theme = useTheme();
   const sender = message.sender || { role: 'system', name: 'System', userId: 'system' };
   const isAI = sender.role === 'ai';
   const isSystem = sender.role === 'system';
@@ -114,16 +115,20 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
         sx={{
           display: 'flex',
           justifyContent: isUser ? 'flex-end' : 'flex-start',
-          mb: 2,
-          gap: 1
+          mb: 2.25,
+          gap: 1.25,
+          alignItems: 'flex-end'
         }}
       >
         {!isUser && (
           <Avatar
             sx={{
-              bgcolor: isAI ? 'primary.main' : 'secondary.main',
+              background: isAI
+                ? `linear-gradient(140deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`
+                : `linear-gradient(140deg, ${theme.palette.secondary.main} 0%, ${theme.palette.warning.main} 100%)`,
               width: 36,
-              height: 36
+              height: 36,
+              boxShadow: `0 8px 18px -12px ${alpha(theme.palette.primary.main, 0.8)}`
             }}
           >
             {isAI ? <SmartToy fontSize="small" /> : <Person fontSize="small" />}
@@ -131,20 +136,43 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
         )}
 
         <Box sx={{ maxWidth: { xs: '88%', sm: '74%', md: '70%' } }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              mb: 0.5,
+              px: 0.5,
+              color: 'text.secondary',
+              textAlign: isUser ? 'right' : 'left',
+              letterSpacing: '0.01em'
+            }}
+          >
+            {isUser ? 'You' : (isAI ? 'AI Coach' : sender.name)}
+          </Typography>
           <Paper
             elevation={1}
             sx={{
               p: 2,
-              bgcolor: isUser ? 'primary.main' : isAI ? 'background.paper' : 'background.default',
+              bgcolor: isUser
+                ? 'transparent'
+                : isAI
+                  ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.08)
+                  : 'background.default',
+              backgroundImage: isUser
+                ? `linear-gradient(145deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`
+                : undefined,
               color: isUser ? 'white' : 'text.primary',
               border: isAI ? 1 : 0,
               borderColor: 'divider',
-              borderRadius: 2,
-              borderTopLeftRadius: isUser ? 16 : 4,
-              borderTopRightRadius: isUser ? 4 : 16
+              borderRadius: 2.75,
+              borderTopLeftRadius: isUser ? 18 : 8,
+              borderTopRightRadius: isUser ? 8 : 18,
+              boxShadow: isUser
+                ? `0 10px 24px -16px ${alpha(theme.palette.primary.main, 0.9)}`
+                : `0 8px 20px -16px ${alpha(theme.palette.common.black, 0.5)}`
             }}
           >
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
               {message.message}
             </Typography>
           </Paper>
@@ -154,7 +182,15 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
               {message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
             </Typography>
             {message.phase && (
-              <Chip size="small" label={message.phase.replace('_', ' ')} sx={{ height: 18, fontSize: '0.65rem' }} />
+              <Chip
+                size="small"
+                label={message.phase.replace('_', ' ')}
+                sx={{
+                  height: 18,
+                  fontSize: '0.65rem',
+                  bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.08)
+                }}
+              />
             )}
             {message.aiContext?.confidence && (
               <Tooltip title={`AI Confidence: ${Math.round(message.aiContext.confidence * 100)}%`}>
@@ -180,11 +216,20 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
 };
 
 const TypingIndicator = () => (
-  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-    <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36 }}>
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.25 }}>
+    <Avatar sx={{ background: 'linear-gradient(140deg, #0f766e 0%, #0284c7 100%)', width: 36, height: 36 }}>
       <SmartToy fontSize="small" />
     </Avatar>
-    <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 2 }}>
+    <Paper
+      elevation={1}
+      sx={{
+        p: 1.5,
+        bgcolor: 'action.hover',
+        borderRadius: 2.75,
+        border: 1,
+        borderColor: 'divider'
+      }}
+    >
       <Box sx={{ display: 'flex', gap: 0.5 }}>
         {[0, 1, 2].map((i) => (
           <Box
@@ -276,15 +321,31 @@ export default function ChatInterface({
   const hasWarningLength = trimmedLength > 0 && trimmedLength < 16;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        borderRadius: 3,
+        overflow: 'hidden',
+        border: 1,
+        borderColor: 'divider',
+        backgroundColor: alpha(theme.palette.background.paper, 0.82),
+        backdropFilter: 'blur(8px)'
+      }}
+    >
       {/* Messages Area */}
       <Box
         sx={{
           flex: 1,
           overflow: 'auto',
-          p: 2,
+          p: { xs: 1.5, sm: 2 },
           bgcolor: 'background.default',
-          backgroundImage: `linear-gradient(180deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.03)} 0%, ${alpha(theme.palette.background.default, 0)} 35%)`
+          backgroundImage: `
+            radial-gradient(circle at 6% 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, transparent 40%),
+            radial-gradient(circle at 95% 8%, ${alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.14 : 0.06)} 0%, transparent 42%),
+            linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.96)} 0%, ${alpha(theme.palette.background.paper, 0.45)} 100%)
+          `
         }}
       >
         {messages.map((msg, index) => (
@@ -305,7 +366,10 @@ export default function ChatInterface({
         elevation={3}
         sx={{
           borderTop: 1,
-          borderColor: 'divider'
+          borderColor: 'divider',
+          borderRadius: 0,
+          bgcolor: alpha(theme.palette.background.paper, 0.92),
+          backdropFilter: 'blur(6px)'
         }}
       >
         {/* Next Phase Button */}
@@ -322,20 +386,27 @@ export default function ChatInterface({
           </Box>
         )}
 
-        <Box sx={{ p: 2, pt: canAdvancePhase ? 1.5 : 2 }}>
+        <Box sx={{ p: { xs: 1.5, sm: 2 }, pt: canAdvancePhase ? 1.5 : 2 }}>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.25 }}>
             {helperPrompts.map((prompt) => (
               <Chip
                 key={prompt}
                 size="small"
-                variant="outlined"
+                variant="filled"
                 label={prompt}
                 onClick={() => {
                   if (disabled || isLoading) return;
                   setInputError('');
                   setInputValue((prev) => (prev ? `${prev}\n${prompt}` : prompt));
                 }}
-                sx={{ cursor: disabled || isLoading ? 'default' : 'pointer' }}
+                sx={{
+                  cursor: disabled || isLoading ? 'default' : 'pointer',
+                  bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.1),
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.16)
+                  }
+                }}
                 disabled={disabled || isLoading}
               />
             ))}
@@ -356,7 +427,13 @@ export default function ChatInterface({
                   onClick={() => fileInputRef.current?.click()}
                   disabled={disabled || isLoading}
                   color="primary"
-                  sx={{ mb: 0.5 }}
+                  sx={{
+                    mb: 0.5,
+                    bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.1),
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.16)
+                    }
+                  }}
                 >
                   <AttachFile />
                 </IconButton>
@@ -393,7 +470,14 @@ export default function ChatInterface({
                 bgcolor: 'primary.main',
                 color: 'white',
                 mb: 0.5,
-                '&:hover': { bgcolor: 'primary.dark' },
+                borderRadius: 2.5,
+                width: 42,
+                height: 42,
+                backgroundImage: `linear-gradient(145deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`,
+                '&:hover': {
+                  bgcolor: 'primary.dark',
+                  transform: 'translateY(-1px)'
+                },
                 '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' }
               }}
             >

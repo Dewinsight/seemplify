@@ -175,6 +175,24 @@ export default function ManagerReviewPage() {
     }
   }, [appraisal]);
 
+  useEffect(() => {
+    if (!appraisal || !isManager) return;
+    if (!appraisal.selfAssessment?.submittedAt) return;
+    if (appraisal.managerReview?.submittedAt) return;
+
+    const markNotificationsRead = async () => {
+      try {
+        await api.post(`/appraisals/${appraisalId}/notifications/read`, {
+          types: ['self_assessment_submitted']
+        });
+      } catch (e) {
+        console.error('Failed to mark manager notifications as read', e);
+      }
+    };
+
+    markNotificationsRead();
+  }, [appraisal, appraisalId, isManager]);
+
   const fetchFeedback = async () => {
     try {
       const res = await api.get('/feedback/direct-reports');

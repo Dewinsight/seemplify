@@ -11,7 +11,24 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { authApi } from '@/lib/api';
+import api, { authApi } from '@/lib/api';
+
+interface ManagerPortalNotification {
+  appraisalId: string;
+  message: string;
+  sentAt?: string;
+  employee?: {
+    name?: string;
+  };
+}
+
+interface TeamOption {
+  id: string;
+  name: string;
+  organizationId?: string;
+  role?: string;
+  roleDisplay?: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -42,10 +59,12 @@ export default function DashboardPage() {
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [mounted, setMounted] = useState(false);
   const [selectedTeamView, setSelectedTeamView] = useState<string>('current'); // 'current', 'all', or specific teamId
+  const [managerNotifications, setManagerNotifications] = useState<ManagerPortalNotification[]>([]);
+  const [managerNotificationLoading, setManagerNotificationLoading] = useState(false);
 
   // Filter teams by current organization
   const { currentOrganization } = useAuth();
-  const orgTeams = teams.filter((t: any) => {
+  const orgTeams = (teams as TeamOption[]).filter((t) => {
     const orgId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
     return t.organizationId === orgId;
   });
@@ -77,7 +96,7 @@ export default function DashboardPage() {
   const getTeamViewDisplay = () => {
     if (selectedTeamView === 'all') return 'All Teams';
     if (selectedTeamView === 'current') return activeCurrentTeam?.name || orgTeams[0]?.name || 'Select Team';
-    const team = orgTeams.find((t: any) => t.id === selectedTeamView);
+    const team = orgTeams.find((t) => t.id === selectedTeamView);
     return team?.name || 'Select Team';
   };
 
@@ -115,6 +134,37 @@ export default function DashboardPage() {
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isManager) return;
+
+    const loadManagerNotifications = async () => {
+      setManagerNotificationLoading(true);
+      try {
+        const res = await api.get('/appraisals/notifications/manager?limit=5');
+        const notifications = res.data?.data?.notifications || [];
+        setManagerNotifications(notifications);
+      } catch (error) {
+        console.error('Failed to load manager notifications', error);
+      } finally {
+        setManagerNotificationLoading(false);
+      }
+    };
+
+    loadManagerNotifications();
+  }, [isManager]);
+
+  const handleOpenManagerNotification = async (notification: ManagerPortalNotification) => {
+    try {
+      await api.post(`/appraisals/${notification.appraisalId}/notifications/read`, {
+        types: ['self_assessment_submitted']
+      });
+    } catch (error) {
+      console.error('Failed to mark manager notification as read', error);
+    } finally {
+      router.push(`/appraisals/${notification.appraisalId}/manager-review`);
+    }
+  };
 
   const user = authUser || contextUser;
   const isLoading = authLoading || dashboardLoading || contextLoading;
@@ -319,7 +369,7 @@ export default function DashboardPage() {
                         </button>
 
                         {/* Individual Teams */}
-                        {orgTeams.map((team: any) => {
+                        {orgTeams.map((team) => {
                           const isActiveTeam = selectedTeamView === 'current' && team.id === activeCurrentTeam?.id;
                           const isSelectedTeam = selectedTeamView === team.id;
                           const isActive = isActiveTeam || isSelectedTeam;
@@ -420,6 +470,51 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        {isManager && (
+          <div className="glass-card rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-500" />
+                Manager Notifications
+              </h2>
+              {managerNotifications.length > 0 && (
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                  {managerNotifications.length} pending
+                </span>
+              )}
+            </div>
+
+            {managerNotificationLoading ? (
+              <div className="text-sm text-muted-foreground">Loading notifications...</div>
+            ) : managerNotifications.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No new manager notifications.</div>
+            ) : (
+              <div className="space-y-2">
+                {managerNotifications.map((notification) => (
+                  <button
+                    key={`${notification.appraisalId}-${notification.sentAt || 'now'}`}
+                    type="button"
+                    onClick={() => handleOpenManagerNotification(notification)}
+                    className="w-full text-left p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">
+                          {notification.employee?.name || 'Employee'}
+                        </div>
+                        <div className="text-sm text-muted-foreground">{notification.message}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground whitespace-nowrap">
+                        {notification.sentAt ? new Date(notification.sentAt).toLocaleDateString() : 'Now'}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Role-specific sections */}
         {isManager && managerData && managerData.directReportCount > 0 && (

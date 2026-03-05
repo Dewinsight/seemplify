@@ -1207,14 +1207,14 @@ Provide a recommendation in JSON format:
 
   sanitizeExtractedData(extractedData = {}) {
     const achievements = (extractedData.achievements || [])
-      .filter(item => this.isMeaningfulText(item?.text, { minLength: 12, minWords: 3 }))
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 8, minWords: 2 }))
       .map(item => ({
         ...item,
         text: this.normalizeText(item?.text)
       }));
 
     const challenges = (extractedData.challenges || [])
-      .filter(item => this.isMeaningfulText(item?.text, { minLength: 12, minWords: 3 }))
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 8, minWords: 2 }))
       .map(item => ({
         ...item,
         text: this.normalizeText(item?.text),
@@ -1231,7 +1231,7 @@ Provide a recommendation in JSON format:
       }));
 
     const goals = (extractedData.goals || [])
-      .filter(item => this.isMeaningfulText(item?.goal || item?.text, { minLength: 8, minWords: 2 }))
+      .filter(item => this.isMeaningfulText(item?.goal || item?.text, { minLength: 6, minWords: 2 }))
       .map(item => ({
         ...item,
         goal: this.normalizeText(item?.goal || item?.text),
@@ -1275,12 +1275,46 @@ Provide a recommendation in JSON format:
       goals: extractedData.goals?.length || 0
     };
 
+    const phaseDerivedCounts = {
+      achievements: 0,
+      challenges: 0,
+      learnings: 0,
+      goals: 0
+    };
+
+    (chatThread || [])
+      .filter(m => m.sender?.role === 'employee')
+      .forEach((message) => {
+        const text = this.normalizeText(message?.message);
+        if (!this.isMeaningfulText(text, { minLength: 10, minWords: 2 })) return;
+
+        const phase = this.normalizeText(message?.phase).toLowerCase();
+        if (phase === 'okr_reflection' || phase === 'achievements') {
+          phaseDerivedCounts.achievements += 1;
+        } else if (phase === 'challenges') {
+          phaseDerivedCounts.challenges += 1;
+        } else if (phase === 'learnings' || phase === 'competencies') {
+          phaseDerivedCounts.learnings += 1;
+        } else if (phase === 'future_goals') {
+          phaseDerivedCounts.goals += 1;
+        }
+      });
+
+    const inferredCounts = {
+      achievements: Math.max(extractedCounts.achievements, phaseDerivedCounts.achievements > 0 ? 1 : 0),
+      challenges: Math.max(extractedCounts.challenges, phaseDerivedCounts.challenges > 0 ? 1 : 0),
+      learnings: Math.max(extractedCounts.learnings, phaseDerivedCounts.learnings > 0 ? 1 : 0),
+      goals: Math.max(extractedCounts.goals, phaseDerivedCounts.goals > 0 ? 1 : 0)
+    };
+
     return {
       employeeMessageCount: employeeMessages.length,
       meaningfulMessageCount: meaningfulMessages.length,
       employeeWordCount,
       uniqueWords,
       extractedCounts,
+      inferredCounts,
+      phaseDerivedCounts,
       totalExtracted:
         extractedCounts.achievements +
         extractedCounts.challenges +
@@ -1291,10 +1325,10 @@ Provide a recommendation in JSON format:
 
   getMissingSelfAssessmentInfo(signal) {
     const missing = [];
-    const counts = signal?.extractedCounts || {};
+    const counts = signal?.inferredCounts || signal?.extractedCounts || {};
 
-    if ((counts.achievements || 0) < 2) {
-      missing.push('Add 2-3 key achievements (ideally with outcomes/metrics)');
+    if ((counts.achievements || 0) < 1) {
+      missing.push('Add at least 1 key achievement (ideally with outcomes/metrics)');
     }
     if ((counts.challenges || 0) < 1) {
       missing.push('Add at least 1 challenge and how you addressed it');
@@ -1305,7 +1339,10 @@ Provide a recommendation in JSON format:
     if ((counts.goals || 0) < 1) {
       missing.push('Add 1-2 goals for the next period');
     }
-    if ((signal?.employeeWordCount || 0) < 60 || (signal?.uniqueWords || 0) < 25) {
+    if (
+      ((signal?.employeeWordCount || 0) < 35 && (signal?.uniqueWords || 0) < 16) ||
+      (signal?.meaningfulMessageCount || 0) < 3
+    ) {
       missing.push('Provide more specific detail and examples (metrics, outcomes, and context)');
     }
 

@@ -43,6 +43,8 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
   'calibration_pending': { label: 'Calibration Pending', color: 'warning', icon: <TrendingUp /> },
+  'calibration_in_progress': { label: 'Calibration In Progress', color: 'info', icon: <TrendingUp /> },
+  'calibration_completed': { label: 'Calibration Completed', color: 'success', icon: <CheckCircle /> },
   'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
   'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
 };
@@ -196,14 +198,14 @@ export default function AppraisalDetailPage() {
               </Button>
             )}
 
-            {isHRAdmin && appraisal.status === 'calibration_pending' && (
+            {hasManagerAccess && (appraisal.status === 'calibration_pending' || appraisal.status === 'calibration_in_progress') && (
               <Button
                 variant="contained"
                 color="secondary"
                 startIcon={<TrendingUp />}
                 onClick={() => router.push(`/appraisals/${appraisalId}/calibration`)}
               >
-                Start Calibration
+                {appraisal.status === 'calibration_in_progress' ? 'Continue Calibration' : 'Start Calibration'}
               </Button>
             )}
 

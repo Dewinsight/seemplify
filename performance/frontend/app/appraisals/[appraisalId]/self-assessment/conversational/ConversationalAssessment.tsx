@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Box, Paper, Alert, CircularProgress, Button, Typography, Snackbar } from '@mui/material';
-import { PlayArrow } from '@mui/icons-material';
+import { Box, Paper, Alert, CircularProgress, Button, Typography, Snackbar, Chip } from '@mui/material';
+import { PlayArrow, AutoAwesome } from '@mui/icons-material';
+import { alpha, useTheme } from '@mui/material/styles';
 import api from '@/lib/api';
 import ChatInterface from './ChatInterface';
 import PhaseProgress from './PhaseProgress';
@@ -64,7 +65,7 @@ interface ReportData {
   };
   okrAssessment?: any[];
   // AI suggestion (not the employee's final self-rating)
-  suggestedOverallRating: number;
+  suggestedOverallRating: number | null;
   ratingJustification: string;
   aiSuggestedRating?: {
     suggestedRating: number;
@@ -94,6 +95,7 @@ interface ConversationalAssessmentProps {
 }
 
 export default function ConversationalAssessment({ appraisalId, onComplete }: ConversationalAssessmentProps) {
+  const theme = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +106,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   const [report, setReport] = useState<ReportData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [requireSelfRating, setRequireSelfRating] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   // Load existing conversation or initialize
@@ -115,6 +118,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       // Try to get existing conversation context
       const response = await api.get(`/appraisals/${appraisalId}/conversation/context`);
       const data = response.data.data;
+      setRequireSelfRating(data?.cycle?.settings?.allowSelfRating !== false);
 
       if (data.conversationState && data.chatThread && data.chatThread.length > 0) {
         // Resume existing conversation
@@ -264,7 +268,13 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
     if (fields.length === 2 && fields[0] === 'overallSummary') {
       (newReport.overallSummary as any)[fields[1]] = value;
     } else if (field === 'overallSelfRating') {
-      newReport.overallSelfRating = parseInt(value);
+      const normalized = value?.trim();
+      if (!normalized) {
+        newReport.overallSelfRating = undefined;
+      } else {
+        const parsed = Number(normalized);
+        newReport.overallSelfRating = Number.isNaN(parsed) ? undefined : parsed;
+      }
     }
 
     setReport(newReport);
@@ -321,7 +331,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ mb: 4, maxWidth: 500, mx: 'auto' }}>
           Have a conversation with our AI assistant to complete your self-assessment.
-          We'll guide you through reflecting on your OKRs, achievements, challenges, and goals.
+          We will guide you through reflecting on your OKRs, achievements, challenges, and goals.
         </Typography>
         <Button
           variant="contained"
@@ -348,7 +358,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         <Button
           variant="outlined"
           onClick={() => setShowReport(false)}
-          sx={{ mb: 2 }}
+          sx={{ mb: 2, borderRadius: 999 }}
         >
           Back to Conversation
         </Button>
@@ -359,6 +369,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           onRegenerate={generateReport}
           isSubmitting={isSubmitting}
           isRegenerating={isRegenerating}
+          requireSelfRating={requireSelfRating}
         />
         <Snackbar
           open={snackbar.open}
@@ -372,16 +383,55 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
 
   // Main conversation view
   return (
-    <Box
-      sx={{
-        display: { xs: 'block', md: 'flex' },
-        height: { xs: 'auto', md: 'calc(100vh - 220px)' },
-        minHeight: { md: 620 }
-      }}
-    >
+    <Box>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.5, sm: 2 },
+          mb: 2,
+          borderRadius: 2.5,
+          borderColor: alpha(theme.palette.primary.main, 0.22),
+          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 0.86)} 100%)`
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="overline" color="text.secondary">
+              Conversational Assistant
+            </Typography>
+            <Typography variant="h5" sx={{ mt: -0.5 }}>
+              Guided Self-Assessment
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Share your outcomes and reflections. We will draft a report you can refine before submitting.
+            </Typography>
+          </Box>
+          <Chip
+            icon={<AutoAwesome />}
+            color="primary"
+            variant="outlined"
+            label={conversationState?.currentPhase?.replace(/_/g, ' ') || 'okr reflection'}
+            sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+          />
+        </Box>
+      </Paper>
+
+      <Box
+        sx={{
+          display: { xs: 'block', md: 'flex' },
+          height: { xs: 'auto', md: 'calc(100vh - 280px)' },
+          minHeight: { md: 620 },
+          borderRadius: 3,
+          overflow: 'hidden',
+          border: 1,
+          borderColor: 'divider',
+          bgcolor: alpha(theme.palette.background.paper, 0.84),
+          backdropFilter: 'blur(8px)'
+        }}
+      >
       {/* Progress Sidebar */}
       <Paper
-        elevation={1}
+        elevation={0}
         sx={{
           width: { xs: '100%', md: 280 },
           flexShrink: 0,
@@ -405,7 +455,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         {/* Quick Actions */}
         {conversationState?.currentPhase === 'review' && (
           <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Button fullWidth variant="contained" onClick={() => setShowReport(true)}>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => setShowReport(true)}
+              sx={{ borderRadius: 999 }}
+            >
               View Report
             </Button>
           </Box>
@@ -428,6 +483,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           disabled={conversationState?.currentPhase === 'completed'}
           canAdvancePhase={false}
         />
+      </Box>
       </Box>
 
       <Snackbar

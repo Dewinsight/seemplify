@@ -1,8 +1,21 @@
 import type { Metadata } from "next";
+import { Manrope, Sora } from "next/font/google";
 import "./globals.css";
 import ThemeRegistry from "./ThemeRegistry";
 import Providers from "./Providers";
 import ConditionalLayout from "@/components/ConditionalLayout";
+
+const bodyFont = Manrope({
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+const displayFont = Sora({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
 
 // Force all pages to be dynamic
 export const dynamic = 'force-dynamic';
@@ -10,7 +23,7 @@ export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Performance Management - SmartHR",
-  description: "AI-Powered Performance Management System - v2.0",
+  description: "AI-powered performance conversations, reviews, and growth planning.",
 };
 
 export default function RootLayout({
@@ -20,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>
+      <body className={`${bodyFont.variable} ${displayFont.variable}`} suppressHydrationWarning>
         <Providers>
           <ThemeRegistry>
             <ConditionalLayout>{children}</ConditionalLayout>

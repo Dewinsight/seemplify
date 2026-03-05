@@ -67,12 +67,12 @@ function sanitizeConversationExtraction(type, data) {
   switch (type) {
     case 'achievement': {
       const text = normalizeConversationText(data.text);
-      if (!hasMeaningfulConversationText(text, { minLength: 12, minWords: 3 })) return null;
+      if (!hasMeaningfulConversationText(text, { minLength: 8, minWords: 2 })) return null;
       return { text };
     }
     case 'challenge': {
       const text = normalizeConversationText(data.text);
-      if (!hasMeaningfulConversationText(text, { minLength: 12, minWords: 3 })) return null;
+      if (!hasMeaningfulConversationText(text, { minLength: 8, minWords: 2 })) return null;
       return {
         text,
         resolution: normalizeConversationText(data.resolution),
@@ -90,7 +90,7 @@ function sanitizeConversationExtraction(type, data) {
     }
     case 'goal': {
       const goal = normalizeConversationText(data.text || data.goal);
-      if (!hasMeaningfulConversationText(goal, { minLength: 8, minWords: 2 })) return null;
+      if (!hasMeaningfulConversationText(goal, { minLength: 6, minWords: 2 })) return null;
       return {
         goal,
         measurable: Boolean(data.measurable),
@@ -129,10 +129,136 @@ function getMissingSelfAssessmentSections(summary = {}) {
   return missing;
 }
 
+function normalizeSelfAssessmentSummary(summary = {}) {
+  const fallbackText = 'Not provided.';
+  return {
+    achievements: normalizeConversationText(summary?.achievements) || fallbackText,
+    challenges: normalizeConversationText(summary?.challenges) || fallbackText,
+    learnings: normalizeConversationText(summary?.learnings) || fallbackText,
+    improvements: normalizeConversationText(summary?.improvements) || fallbackText,
+    goals: normalizeConversationText(summary?.goals) || fallbackText
+  };
+}
+
+function ensureConversationAssessmentState(appraisal) {
+  if (!appraisal) return;
+
+  appraisal.conversationAssessment = appraisal.conversationAssessment || {};
+  appraisal.conversationAssessment.mode = appraisal.conversationAssessment.mode || 'conversation';
+  appraisal.conversationAssessment.currentPhase = appraisal.conversationAssessment.currentPhase || 'initialized';
+  appraisal.conversationAssessment.currentOkrIndex = Number.isInteger(appraisal.conversationAssessment.currentOkrIndex)
+    ? appraisal.conversationAssessment.currentOkrIndex
+    : 0;
+  appraisal.conversationAssessment.completedPhases = Array.isArray(appraisal.conversationAssessment.completedPhases)
+    ? appraisal.conversationAssessment.completedPhases
+    : [];
+  appraisal.conversationAssessment.extractedData = appraisal.conversationAssessment.extractedData || {};
+  appraisal.conversationAssessment.extractedData.achievements = Array.isArray(appraisal.conversationAssessment.extractedData.achievements)
+    ? appraisal.conversationAssessment.extractedData.achievements
+    : [];
+  appraisal.conversationAssessment.extractedData.challenges = Array.isArray(appraisal.conversationAssessment.extractedData.challenges)
+    ? appraisal.conversationAssessment.extractedData.challenges
+    : [];
+  appraisal.conversationAssessment.extractedData.skills = Array.isArray(appraisal.conversationAssessment.extractedData.skills)
+    ? appraisal.conversationAssessment.extractedData.skills
+    : [];
+  appraisal.conversationAssessment.extractedData.goals = Array.isArray(appraisal.conversationAssessment.extractedData.goals)
+    ? appraisal.conversationAssessment.extractedData.goals
+    : [];
+  appraisal.conversationAssessment.startedAt = appraisal.conversationAssessment.startedAt || new Date();
+  appraisal.conversationAssessment.lastActivityAt = appraisal.conversationAssessment.lastActivityAt || new Date();
+  appraisal.conversationAssessment.totalTokensUsed = typeof appraisal.conversationAssessment.totalTokensUsed === 'number'
+    ? appraisal.conversationAssessment.totalTokensUsed
+    : 0;
+  appraisal.conversationAssessment.messageCount = typeof appraisal.conversationAssessment.messageCount === 'number'
+    ? appraisal.conversationAssessment.messageCount
+    : 0;
+}
+
+function isCalibrationEnabledForCycle(cycle) {
+  if (!cycle) return false;
+  const calibrationPhase = cycle?.phases?.calibration;
+  if (!calibrationPhase) return false;
+
+  return Boolean(
+    calibrationPhase.isActive ||
+    calibrationPhase.isCompleted ||
+    calibrationPhase.startDate ||
+    calibrationPhase.endDate ||
+    cycle.currentPhase === 'calibration'
+  );
+}
+
+function isSelfAssessmentEditable(appraisal) {
+  if (!appraisal) return false;
+  if (appraisal?.selfAssessment?.submittedAt) return false;
+  return SELF_ASSESSMENT_EDITABLE_STATUSES.includes(appraisal.status);
+}
+
+function addManagerNotification(appraisal, message, type = 'self_assessment_submitted') {
+  if (!appraisal || !message) return;
+
+  appraisal.notifications = Array.isArray(appraisal.notifications) ? appraisal.notifications : [];
+
+  const now = new Date();
+  const dedupeWindowMs = 15 * 60 * 1000;
+  const normalizedMessage = message.toString().trim();
+
+  const hasRecentDuplicate = appraisal.notifications.some((notification) => {
+    if (!notification) return false;
+    if (notification.type !== type) return false;
+    if (notification.readAt) return false;
+    if ((notification.message || '').toString().trim() !== normalizedMessage) return false;
+    if (!notification.sentAt) return true;
+
+    const sentAt = new Date(notification.sentAt).getTime();
+    if (Number.isNaN(sentAt)) return false;
+    return Math.abs(now.getTime() - sentAt) <= dedupeWindowMs;
+  });
+
+  if (hasRecentDuplicate) return;
+
+  appraisal.notifications.unshift({
+    type,
+    message: normalizedMessage,
+    sentAt: now
+  });
+
+  if (appraisal.notifications.length > 100) {
+    appraisal.notifications = appraisal.notifications.slice(0, 100);
+  }
+}
+
+function markManagerNotificationsRead(appraisal, options = {}) {
+  if (!appraisal || !Array.isArray(appraisal.notifications) || appraisal.notifications.length === 0) {
+    return 0;
+  }
+
+  const allowedTypes = Array.isArray(options.types) && options.types.length > 0
+    ? new Set(options.types)
+    : null;
+
+  const readAt = new Date();
+  let markedCount = 0;
+
+  appraisal.notifications.forEach((notification) => {
+    if (!notification || notification.readAt) return;
+    if (allowedTypes && !allowedTypes.has(notification.type)) return;
+    notification.readAt = readAt;
+    markedCount += 1;
+  });
+
+  return markedCount;
+}
+
 const APPRAISAL_COMPLETED_STATUSES = ['completed', 'employee_acknowledged'];
+const SELF_ASSESSMENT_EDITABLE_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
 const SELF_ASSESSMENT_PENDING_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
+const MANAGER_REVIEW_EDITABLE_STATUSES = ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'];
 const MANAGER_REVIEW_PENDING_STATUSES = ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'];
+const CALIBRATION_EDITABLE_STATUSES = ['calibration_pending', 'calibration_in_progress', 'manager_review_submitted'];
 const CALIBRATION_PENDING_STATUSES = ['calibration_pending', 'calibration_in_progress', 'manager_review_submitted'];
+const FINAL_REVIEW_ALLOWED_STATUSES = ['final_review_pending', 'discussion_completed', 'discussion_scheduled', 'manager_review_submitted', 'calibration_completed'];
 const FINAL_REVIEW_PENDING_STATUSES = ['final_review_pending', 'discussion_completed', 'discussion_scheduled'];
 
 const DEFAULT_CYCLE_STATS = {
@@ -1307,6 +1433,69 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
   }
 });
 
+// Get in-portal notifications for managers
+router.get('/notifications/manager', requireAuth, requireManager, async (req, res) => {
+  try {
+    const { userId, userEmail } = getRequesterIdentity(req);
+    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const unreadOnly = req.query.unreadOnly !== 'false';
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+
+    const query = orgId ? { organizationId: orgId } : {};
+
+    if (req.userRole !== 'hr_admin') {
+      query.$or = [
+        { 'manager.userId': userId },
+        { 'manager.email': userEmail }
+      ];
+    }
+
+    query['notifications.0'] = { $exists: true };
+
+    const appraisals = await Appraisal.find(query)
+      .select('_id cycleId status employee manager notifications updatedAt')
+      .populate('cycleId', 'name')
+      .sort({ updatedAt: -1 })
+      .limit(300);
+
+    const supportedTypes = new Set(['self_assessment_submitted', 'manager_review_requested']);
+    const notifications = [];
+
+    appraisals.forEach((appraisal) => {
+      const entries = Array.isArray(appraisal.notifications) ? appraisal.notifications : [];
+      entries.forEach((notification) => {
+        if (!notification || !supportedTypes.has(notification.type)) return;
+        if (unreadOnly && notification.readAt) return;
+
+        notifications.push({
+          appraisalId: appraisal._id,
+          cycleName: appraisal.cycleId?.name || 'Performance Review',
+          appraisalStatus: appraisal.status,
+          employee: appraisal.employee,
+          manager: appraisal.manager,
+          type: notification.type,
+          message: notification.message,
+          sentAt: notification.sentAt,
+          readAt: notification.readAt
+        });
+      });
+    });
+
+    notifications.sort((a, b) => new Date(b.sentAt || 0).getTime() - new Date(a.sentAt || 0).getTime());
+
+    res.json({
+      success: true,
+      data: {
+        notifications: notifications.slice(0, limit),
+        unreadCount: notifications.filter((item) => !item.readAt).length
+      }
+    });
+  } catch (error) {
+    console.error('Get manager notifications error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch manager notifications' });
+  }
+});
+
 // Get single appraisal
 router.get('/:appraisalId', requireAuth, async (req, res) => {
   try {
@@ -1342,6 +1531,38 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get appraisal error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch appraisal' });
+  }
+});
+
+// Mark appraisal notifications as read (manager portal)
+router.post('/:appraisalId/notifications/read', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    const canManage = await canManageAppraisal(req, appraisal);
+    if (!canManage && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const requestedTypes = Array.isArray(req.body?.types)
+      ? req.body.types.filter((type) => typeof type === 'string' && type.trim())
+      : [];
+
+    const markedCount = markManagerNotificationsRead(appraisal, {
+      types: requestedTypes.length > 0 ? requestedTypes : null
+    });
+
+    if (markedCount > 0) {
+      await appraisal.save();
+    }
+
+    res.json({ success: true, data: { markedCount } });
+  } catch (error) {
+    console.error('Mark appraisal notifications error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update notifications' });
   }
 });
 
@@ -1603,7 +1824,14 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Only the employee can submit self-assessment' });
     }
 
-    const { selfAssessment, submit } = req.body;
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    const { selfAssessment = {}, submit } = req.body;
 
     // Update self-assessment
     appraisal.selfAssessment = {
@@ -1615,6 +1843,12 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     if (submit) {
       appraisal.selfAssessment.submittedAt = new Date();
       appraisal.status = 'manager_review_pending';
+
+      addManagerNotification(
+        appraisal,
+        `${appraisal.employee.name} submitted a self-assessment and is ready for your review.`,
+        'self_assessment_submitted'
+      );
 
       // Generate AI insights
       try {
@@ -1663,7 +1897,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 // Save manager review (draft or submit)
 router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -1674,7 +1908,18 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
       return res.status(403).json({ success: false, error: 'Only an authorized manager can submit review' });
     }
 
-    const { managerReview, submit } = req.body;
+    if (!appraisal.selfAssessment?.submittedAt) {
+      return res.status(400).json({ success: false, error: 'Self-assessment must be submitted before manager review' });
+    }
+
+    if (!MANAGER_REVIEW_EDITABLE_STATUSES.includes(appraisal.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Manager review is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    const { managerReview = {}, submit } = req.body;
 
     // Update manager review
     appraisal.managerReview = {
@@ -1698,7 +1943,8 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
 
     if (submit) {
       appraisal.managerReview.submittedAt = new Date();
-      appraisal.status = 'final_review_pending';
+      const calibrationRequired = isCalibrationEnabledForCycle(appraisal.cycleId);
+      appraisal.status = calibrationRequired ? 'calibration_pending' : 'final_review_pending';
 
       // Flag rating gaps for follow-up/arbitration in final review
       const selfRating = appraisal.selfAssessment?.overallSelfRating;
@@ -1726,7 +1972,12 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
         console.error('Bias check error:', aiError);
       }
 
-      appraisal.addAuditLog('manager_review_submitted', req.session.user, {});
+      markManagerNotificationsRead(appraisal, { types: ['self_assessment_submitted', 'manager_review_requested'] });
+
+      appraisal.addAuditLog('manager_review_submitted', req.session.user, {
+        nextStatus: appraisal.status,
+        calibrationRequired
+      });
     } else {
       appraisal.status = 'manager_review_in_progress';
     }
@@ -2023,6 +2274,92 @@ router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, 
 // FINALIZATION
 // =============================================
 
+// Save calibration decision (draft or submit)
+router.post('/:appraisalId/calibration', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    const canManage = await canManageAppraisal(req, appraisal);
+    if (!canManage) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    if (!appraisal.selfAssessment?.submittedAt || !appraisal.managerReview?.submittedAt) {
+      return res.status(400).json({
+        success: false,
+        error: 'Calibration can only start after self-assessment and manager review are submitted'
+      });
+    }
+
+    const cycle = appraisal.cycleId;
+    if (!isCalibrationEnabledForCycle(cycle)) {
+      return res.status(400).json({ success: false, error: 'Calibration is not enabled for this cycle' });
+    }
+
+    if (!CALIBRATION_EDITABLE_STATUSES.includes(appraisal.status) && appraisal.status !== 'final_review_pending') {
+      return res.status(400).json({
+        success: false,
+        error: `Calibration is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    const { calibration = {}, submit } = req.body || {};
+    const requestedRating = calibration.calibratedRating ?? appraisal.managerReview?.overallManagerRating;
+    const minRating = cycle?.ratingScale?.min ?? 1;
+    const maxRating = cycle?.ratingScale?.max ?? 5;
+
+    if (requestedRating === undefined || requestedRating === null) {
+      return res.status(400).json({ success: false, error: 'Calibrated rating is required' });
+    }
+
+    const numericRating = Number(requestedRating);
+    if (Number.isNaN(numericRating) || numericRating < minRating || numericRating > maxRating) {
+      return res.status(400).json({
+        success: false,
+        error: `Calibrated rating must be a number from ${minRating} to ${maxRating}`
+      });
+    }
+
+    const normalizedJustification = typeof calibration.justification === 'string'
+      ? calibration.justification.trim()
+      : '';
+
+    appraisal.calibration = {
+      ...(appraisal.calibration || {}),
+      originalRating: Number(appraisal.managerReview?.overallManagerRating ?? numericRating),
+      calibratedRating: numericRating,
+      calibratedBy: {
+        userId: req.session.user.id,
+        name: req.session.user.name
+      },
+      justification: normalizedJustification || undefined
+    };
+
+    if (submit) {
+      appraisal.calibration.calibratedAt = new Date();
+      appraisal.status = 'final_review_pending';
+      appraisal.addAuditLog('calibration_submitted', req.session.user, {
+        calibratedRating: numericRating,
+        justification: normalizedJustification || undefined
+      });
+    } else if (appraisal.status === 'calibration_pending' || appraisal.status === 'manager_review_submitted') {
+      appraisal.status = 'calibration_in_progress';
+      appraisal.addAuditLog('calibration_saved', req.session.user, {
+        calibratedRating: numericRating
+      });
+    }
+
+    await appraisal.save();
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    console.error('Save calibration error:', error);
+    res.status(500).json({ success: false, error: 'Failed to save calibration' });
+  }
+});
+
 // Finalize appraisal
 router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, res) => {
   try {
@@ -2039,6 +2376,26 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
 
     const { finalRating, calibratedRating, justification } = req.body;
     const cycle = appraisal.cycleId;
+
+    if (!appraisal.selfAssessment?.submittedAt) {
+      return res.status(400).json({ success: false, error: 'Self-assessment must be submitted first' });
+    }
+
+    if (!appraisal.managerReview?.submittedAt) {
+      return res.status(400).json({ success: false, error: 'Manager review must be submitted first' });
+    }
+
+    const calibrationRequired = isCalibrationEnabledForCycle(cycle);
+    if (calibrationRequired && !appraisal.calibration?.calibratedAt) {
+      return res.status(400).json({ success: false, error: 'Calibration must be completed before final review' });
+    }
+
+    if (!FINAL_REVIEW_ALLOWED_STATUSES.includes(appraisal.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot finalize appraisal while in '${appraisal.status}' status`
+      });
+    }
 
     const minRating = cycle?.ratingScale?.min ?? 1;
     const maxRating = cycle?.ratingScale?.max ?? 5;
@@ -2224,11 +2581,43 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       return res.status(403).json({ success: false, error: 'Only the employee can start the conversation' });
     }
 
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
     // Get employee's OKRs
     const okrs = await OKR.find({
       ownerId: appraisal.employee.userId,
       status: { $in: ['active', 'closed'] }
     });
+
+    const existingConversation = (
+      appraisal.conversationAssessment?.startedAt &&
+      Array.isArray(appraisal.chatThread) &&
+      appraisal.chatThread.length > 0
+    );
+
+    if (existingConversation) {
+      const okrSummary = okrs.map((okr, index) => ({
+        id: okr._id,
+        title: okr.title || okr.objectives?.[0]?.title || `OKR ${index + 1}`,
+        progress: okr.progress || 0,
+        objectives: okr.objectives
+      }));
+
+      return res.json({
+        success: true,
+        data: {
+          greeting: null,
+          okrSummary,
+          conversationState: appraisal.conversationAssessment,
+          chatThread: appraisal.chatThread.slice(-20)
+        }
+      });
+    }
 
     // Start conversation via AI service
     const result = await appraisalAIService.startSelfAssessmentConversation(
@@ -2310,6 +2699,19 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can participate in the conversation' });
+    }
+
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    ensureConversationAssessmentState(appraisal);
+
+    if (!appraisal.conversationAssessment?.startedAt || (appraisal.chatThread || []).length === 0) {
+      return res.status(400).json({ success: false, error: 'Conversation has not been started yet' });
     }
 
     const { message } = req.body;
@@ -2458,6 +2860,15 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    ensureConversationAssessmentState(appraisal);
+
     const file = req.file;
     if (!file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
@@ -2602,6 +3013,15 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    ensureConversationAssessmentState(appraisal);
+
     const { targetPhase } = req.body;
     const phases = ['initialized', 'okr_reflection', 'achievements', 'challenges', 'learnings', 'future_goals', 'competencies', 'report_generation', 'review', 'completed'];
 
@@ -2730,6 +3150,19 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       return res.status(403).json({ success: false, error: 'Only the employee can generate the report' });
     }
 
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    ensureConversationAssessmentState(appraisal);
+
+    if (!appraisal.conversationAssessment?.startedAt || (appraisal.chatThread || []).length === 0) {
+      return res.status(400).json({ success: false, error: 'Conversation has not been started yet' });
+    }
+
     // Get OKRs
     const okrs = await OKR.find({
       ownerId: appraisal.employee.userId,
@@ -2743,16 +3176,24 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       appraisal.documents
     );
 
+    ensureConversationAssessmentState(appraisal);
+
     // Update conversation phase
     appraisal.conversationAssessment.currentPhase = 'review';
     if (!appraisal.conversationAssessment.completedPhases.includes('report_generation')) {
       appraisal.conversationAssessment.completedPhases.push('report_generation');
     }
+    appraisal.conversationAssessment.lastActivityAt = new Date();
+
+    const reportNeedsMoreDetail = Array.isArray(report?.missingInfo) && report.missingInfo.length > 0;
+    const reportDraftMessage = reportNeedsMoreDetail
+      ? "I've drafted your self-assessment report. Some sections could use more detail, but you can still refine and submit this draft now."
+      : "I've generated your self-assessment report based on our conversation. Please review it below and let me know if you'd like any changes before submitting.";
 
     // Add report draft message
     appraisal.chatThread.push({
       sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
-      message: "I've generated your self-assessment report based on our conversation. Please review it below and let me know if you'd like any changes before submitting.",
+      message: reportDraftMessage,
       messageType: 'report_draft',
       phase: 'review',
       structuredData: {
@@ -2802,6 +3243,15 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       return res.status(403).json({ success: false, error: 'Only the employee can finalize the report' });
     }
 
+    if (!isSelfAssessmentEditable(appraisal)) {
+      return res.status(400).json({
+        success: false,
+        error: `Self-assessment is not editable in '${appraisal.status}' status`
+      });
+    }
+
+    ensureConversationAssessmentState(appraisal);
+
     const { report, edits } = req.body;
 
     if (!report) {
@@ -2811,15 +3261,8 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     // Apply any edits
     const finalReport = edits ? { ...report, ...edits } : report;
 
-    // Require meaningful self-assessment content before submission.
-    const missingSummarySections = getMissingSelfAssessmentSections(finalReport.overallSummary || {});
-    if (missingSummarySections.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Please complete required self-assessment sections before submitting: ${missingSummarySections.join(', ')}`,
-        missingSections: missingSummarySections
-      });
-    }
+    const normalizedSummary = normalizeSelfAssessmentSummary(finalReport.overallSummary || {});
+    const missingSummarySections = getMissingSelfAssessmentSections(normalizedSummary);
 
     // Employee must provide their own self-rating. AI rating is stored separately.
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;
@@ -2833,6 +3276,15 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
         return res.status(400).json({ success: false, error: 'Overall self-rating must be a number from 1 to 5' });
       }
       finalReport.overallSelfRating = rating;
+    } else if (finalReport.overallSelfRating !== undefined && finalReport.overallSelfRating !== null) {
+      const rating = typeof finalReport.overallSelfRating === 'string'
+        ? Number(finalReport.overallSelfRating)
+        : finalReport.overallSelfRating;
+      if (typeof rating === 'number' && !Number.isNaN(rating) && rating >= 1 && rating <= 5) {
+        finalReport.overallSelfRating = rating;
+      } else {
+        finalReport.overallSelfRating = undefined;
+      }
     }
 
     const aiRatingSuggestion = finalReport.aiSuggestedRating || (
@@ -2850,7 +3302,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     // Update self-assessment with report data
     appraisal.selfAssessment = {
       ...appraisal.selfAssessment,
-      overallSummary: finalReport.overallSummary,
+      overallSummary: normalizedSummary,
       okrAssessment: finalReport.okrAssessment || appraisal.selfAssessment?.okrAssessment || [],
       overallSelfRating: finalReport.overallSelfRating,
       aiRatingSuggestion: normalizedAiRatingSuggestion ? {
@@ -2879,14 +3331,23 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       // Keep whatever we already have (or none).
     }
 
+    ensureConversationAssessmentState(appraisal);
+
     // Update conversation state
     appraisal.conversationAssessment.currentPhase = 'completed';
     if (!appraisal.conversationAssessment.completedPhases.includes('review')) {
       appraisal.conversationAssessment.completedPhases.push('review');
     }
+    appraisal.conversationAssessment.lastActivityAt = new Date();
 
     // Update status
     appraisal.status = 'manager_review_pending';
+
+    addManagerNotification(
+      appraisal,
+      `${appraisal.employee.name} submitted a self-assessment and is ready for your review.`,
+      'self_assessment_submitted'
+    );
 
     // Add completion message
     appraisal.chatThread.push({
@@ -2898,7 +3359,10 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       createdAt: new Date()
     });
 
-    appraisal.addAuditLog('self_assessment_submitted', req.session.user, { mode: 'conversation' });
+    appraisal.addAuditLog('self_assessment_submitted', req.session.user, {
+      mode: 'conversation',
+      submissionWarnings: missingSummarySections
+    });
     await appraisal.save();
 
     // Notify manager
@@ -2914,7 +3378,8 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       success: true,
       data: {
         appraisal,
-        message: 'Self-assessment submitted successfully'
+        message: 'Self-assessment submitted successfully',
+        warnings: missingSummarySections
       }
     });
   } catch (error) {

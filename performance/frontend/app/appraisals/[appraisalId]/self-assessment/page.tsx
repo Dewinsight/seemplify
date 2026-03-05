@@ -2,11 +2,13 @@
 
 import { useRouter, useParams } from 'next/navigation';
 import { useAppraisal } from '@/lib/hooks';
-import { Box, Typography, Button, Alert, CircularProgress, Fade } from '@mui/material';
-import { ArrowBack } from '@mui/icons-material';
+import { Box, Typography, Button, Alert, CircularProgress, Fade, Paper, Chip } from '@mui/material';
+import { ArrowBack, AutoAwesome } from '@mui/icons-material';
+import { alpha, useTheme } from '@mui/material/styles';
 import ConversationalAssessment from './conversational/ConversationalAssessment';
 
 export default function SelfAssessmentPage() {
+  const theme = useTheme();
   const params = useParams();
   const router = useRouter();
   const appraisalId = params.appraisalId as string;
@@ -32,6 +34,9 @@ export default function SelfAssessmentPage() {
     );
   }
 
+  const editableStatuses = ['self_assessment_pending', 'self_assessment_in_progress'];
+  const isEditable = editableStatuses.includes(appraisal.status);
+
   // Check if already submitted
   if (appraisal.selfAssessment?.submittedAt) {
     return (
@@ -50,26 +55,63 @@ export default function SelfAssessmentPage() {
     );
   }
 
+  if (!isEditable) {
+    return (
+      <Box>
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" fontWeight={600}>Self-Assessment Unavailable</Typography>
+          <Typography variant="body2">
+            This appraisal is currently in <strong>{appraisal.status.replace(/_/g, ' ')}</strong> status,
+            so self-assessment editing is closed.
+          </Typography>
+        </Alert>
+        <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => router.push(`/appraisals/${appraisalId}`)}>
+          Back to Appraisal
+        </Button>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Button
-            startIcon={<ArrowBack />}
-            onClick={() => router.push('/appraisals')}
-            sx={{ mb: 1 }}
-          >
-            Back to Appraisals
-          </Button>
-          <Typography variant="h4" fontWeight={700}>
-            Self-Assessment
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            {appraisal.cycleId?.name || 'Performance Review'}
-          </Typography>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.5, sm: 2.5 },
+          mb: 3,
+          borderRadius: 2.5,
+          borderColor: alpha(theme.palette.primary.main, 0.25),
+          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 0.86)} 100%)`
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <Box>
+            <Button
+              startIcon={<ArrowBack />}
+              onClick={() => router.push('/appraisals')}
+              sx={{ mb: 1, borderRadius: 999 }}
+              variant="outlined"
+              size="small"
+            >
+              Back to Appraisals
+            </Button>
+            <Typography variant="h4" fontWeight={700}>
+              Self-Assessment
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              {appraisal.cycleId?.name || 'Performance Review'}
+            </Typography>
+          </Box>
+          <Chip
+            icon={<AutoAwesome />}
+            color="primary"
+            variant="outlined"
+            label="Conversational Mode"
+            sx={{ fontWeight: 600 }}
+          />
         </Box>
-      </Box>
+      </Paper>
 
       {/* Deadline Warning */}
       {appraisal.deadlines?.selfAssessmentDue && (

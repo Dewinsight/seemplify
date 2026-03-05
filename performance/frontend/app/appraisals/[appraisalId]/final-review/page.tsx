@@ -18,7 +18,12 @@ import {
   Card,
   CardContent
 } from '@mui/material';
-import { ArrowBack, CheckCircle, SmartToy, Person, Star } from '@mui/icons-material';
+import { ArrowBack, CheckCircle, SmartToy, Person, Star, TrendingUp } from '@mui/icons-material';
+
+interface AIRatingSuggestion {
+    suggestedRating: number;
+    ratingJustification: string;
+}
 
 export default function FinalReviewPage() {
     const params = useParams();
@@ -29,7 +34,7 @@ export default function FinalReviewPage() {
     const { user, isManager, isHRAdmin } = useUserContext();
 
     const [aiLoading, setAiLoading] = useState(false);
-    const [aiSuggestion, setAiSuggestion] = useState<any>(null);
+    const [aiSuggestion, setAiSuggestion] = useState<AIRatingSuggestion | null>(null);
 
     const [finalRating, setFinalRating] = useState<number>(3);
     const [finalRatingTouched, setFinalRatingTouched] = useState(false);
@@ -44,6 +49,8 @@ export default function FinalReviewPage() {
 
     const selfRating = appraisal?.selfAssessment?.overallSelfRating;
     const managerRating = appraisal?.managerReview?.overallManagerRating;
+    const canFinalize = appraisal?.status === 'final_review_pending';
+    const needsCalibration = appraisal?.status === 'calibration_pending' || appraisal?.status === 'calibration_in_progress';
 
     const fetchAiSuggestion = async () => {
         setAiLoading(true);
@@ -105,7 +112,23 @@ export default function FinalReviewPage() {
 
                 {!isLoading && appraisal && (hasManagerAccess || isHRAdmin) && (
                     <>
-                        {appraisal.status !== 'final_review_pending' && (
+                        {needsCalibration && (
+                            <Alert severity="warning" sx={{ mb: 3 }}>
+                                Calibration is still in progress. Complete calibration before finalizing this appraisal.
+                                <Box sx={{ mt: 1 }}>
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<TrendingUp />}
+                                        onClick={() => router.push(`/appraisals/${appraisalId}/calibration`)}
+                                    >
+                                        Open Calibration
+                                    </Button>
+                                </Box>
+                            </Alert>
+                        )}
+
+                        {!canFinalize && !needsCalibration && (
                             <Alert severity="warning" sx={{ mb: 3 }}>
                                 This appraisal is not marked as Final Review Pending (current status: {appraisal.status}).
                             </Alert>
@@ -214,7 +237,7 @@ export default function FinalReviewPage() {
                                 variant="contained"
                                 color="success"
                                 startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <CheckCircle />}
-                                disabled={submitting || (aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && !justification.trim())}
+                                disabled={!canFinalize || submitting || (aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && !justification.trim())}
                                 onClick={async () => {
                                     setSubmitting(true);
                                     try {
@@ -224,9 +247,10 @@ export default function FinalReviewPage() {
                                         });
                                         mutate();
                                         router.push(`/appraisals/${appraisalId}`);
-                                    } catch (e: any) {
+                                    } catch (e: unknown) {
+                                        const axiosError = e as { response?: { data?: { error?: string } } };
                                         console.error('Finalize failed', e);
-                                        alert(e.response?.data?.error || 'Failed to finalize appraisal');
+                                        alert(axiosError.response?.data?.error || 'Failed to finalize appraisal');
                                     } finally {
                                         setSubmitting(false);
                                     }

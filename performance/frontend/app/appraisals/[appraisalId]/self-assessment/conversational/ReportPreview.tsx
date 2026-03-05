@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box, Typography, Paper, Card, CardContent, TextField, Button,
   Accordion, AccordionSummary, AccordionDetails, Chip, Rating,
   Alert, Divider, CircularProgress, Grid, Stack, LinearProgress
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import {
   ExpandMore, Edit, Save, Send, Flag, Assignment, EmojiObjects,
   TrendingUp, Star, Refresh, SmartToy, Person, Close
@@ -52,6 +53,7 @@ interface ReportPreviewProps {
   onRegenerate: () => Promise<void>;
   isSubmitting: boolean;
   isRegenerating: boolean;
+  requireSelfRating?: boolean;
 }
 
 const ratingLabels: Record<number, string> = {
@@ -97,31 +99,45 @@ const SectionEditor = ({
   targetWords: number;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value || '');
+  const [editValue, setEditValue] = useState('');
+  const [initialValue, setInitialValue] = useState('');
 
-  useEffect(() => {
-    setEditValue(value || '');
-  }, [value]);
-
-  const wordCount = countWords(editValue);
+  const currentText = isEditing ? editValue : (value || '');
+  const wordCount = countWords(currentText);
   const completion = Math.min(100, Math.round((wordCount / targetWords) * 100));
-  const hasContent = isMeaningfulSummaryText(editValue);
+  const hasContent = isMeaningfulSummaryText(currentText);
+
+  const commitEditValue = (nextValue: string) => {
+    setEditValue(nextValue);
+    onEdit(fieldName, nextValue);
+  };
 
   const appendPrompt = (prompt: string) => {
-    setEditValue((prev) => {
+    const nextValue = ((prev: string) => {
       const base = (prev || '').trim();
       return base ? `${base}\n- ${prompt}` : `- ${prompt}`;
-    });
+    })(editValue);
+    commitEditValue(nextValue);
   };
 
   const handleSave = () => {
-    onEdit(fieldName, editValue.trim());
+    const trimmed = editValue.trim();
+    commitEditValue(trimmed);
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setEditValue(value || '');
+    const resetValue = initialValue || '';
+    setEditValue(resetValue);
+    onEdit(fieldName, resetValue);
     setIsEditing(false);
+  };
+
+  const handleStartEditing = () => {
+    const currentValue = value || '';
+    setInitialValue(currentValue);
+    setEditValue(currentValue);
+    setIsEditing(true);
   };
 
   return (
@@ -152,7 +168,7 @@ const SectionEditor = ({
               size="small"
               variant={isEditing ? 'contained' : 'text'}
               startIcon={isEditing ? <Save /> : <Edit />}
-              onClick={isEditing ? handleSave : () => setIsEditing(true)}
+              onClick={isEditing ? handleSave : handleStartEditing}
             >
               {isEditing ? 'Save' : value ? 'Refine' : 'Add details'}
             </Button>
@@ -176,7 +192,7 @@ const SectionEditor = ({
               minRows={5}
               maxRows={12}
               value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
+              onChange={(e) => commitEditValue(e.target.value)}
               placeholder={placeholder}
               helperText={guidance}
               sx={{ mb: 1.5 }}
@@ -220,8 +236,10 @@ export default function ReportPreview({
   onSubmit,
   onRegenerate,
   isSubmitting,
-  isRegenerating
+  isRegenerating,
+  requireSelfRating = true
 }: ReportPreviewProps) {
+  const theme = useTheme();
   const aiSuggestedRating = report.aiSuggestedRating?.suggestedRating ?? report.suggestedOverallRating ?? null;
   const aiJustification = report.aiSuggestedRating?.ratingJustification ?? report.ratingJustification;
   const hasInsufficientSignal = (report.missingInfo?.length || 0) > 0;
@@ -238,34 +256,48 @@ export default function ReportPreview({
     return Math.round((completed / requiredFields.length) * 100);
   }, [report.overallSummary]);
 
-  const [overallSelfRating, setOverallSelfRating] = useState<number | null>(report.overallSelfRating ?? null);
+  const overallSelfRating = report.overallSelfRating ?? null;
 
-  useEffect(() => {
-    setOverallSelfRating(report.overallSelfRating ?? null);
-  }, [report.overallSelfRating]);
-
-  const handleSelfRatingChange = (_: any, value: number | null) => {
-    setOverallSelfRating(value);
+  const handleSelfRatingChange = (_: unknown, value: number | null) => {
     if (value) {
       onEdit('overallSelfRating', String(value));
+    } else {
+      onEdit('overallSelfRating', '');
     }
   };
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2 } }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
-        <Typography variant="h5" fontWeight={700}>
-          Self-Assessment Report
-        </Typography>
-        <Button
-          variant="outlined"
-          startIcon={isRegenerating ? <CircularProgress size={16} /> : <Refresh />}
-          onClick={onRegenerate}
-          disabled={isRegenerating || isSubmitting}
-        >
-          Regenerate
-        </Button>
-      </Box>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.5, sm: 2 },
+          mb: 2,
+          borderRadius: 2.5,
+          borderColor: alpha(theme.palette.primary.main, 0.25),
+          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 0.86)} 100%)`
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography variant="overline" color="text.secondary">
+              Review Draft
+            </Typography>
+            <Typography variant="h5" fontWeight={700} sx={{ mt: -0.5 }}>
+              Self-Assessment Report
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={isRegenerating ? <CircularProgress size={16} /> : <Refresh />}
+            onClick={onRegenerate}
+            disabled={isRegenerating || isSubmitting}
+            sx={{ borderRadius: 999 }}
+          >
+            Regenerate
+          </Button>
+        </Box>
+      </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 2 }}>
@@ -285,7 +317,7 @@ export default function ReportPreview({
           sx={{ height: 9, borderRadius: 4.5 }}
         />
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-          Complete achievements, challenges, learnings, and next goals before submitting.
+          Complete achievements, challenges, learnings, and next goals for a stronger report.
         </Typography>
       </Paper>
 
@@ -296,7 +328,7 @@ export default function ReportPreview({
       {report.missingInfo && report.missingInfo.length > 0 && (
         <Alert severity="warning" sx={{ mb: 3 }}>
           <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-            Missing Information
+            Suggested Improvements
           </Typography>
           <Box component="ul" sx={{ m: 0, pl: 2 }}>
             {report.missingInfo.map((item, idx) => (
@@ -308,13 +340,22 @@ export default function ReportPreview({
         </Alert>
       )}
 
-      <Paper sx={{ p: 3, mb: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
+      <Paper
+        sx={{
+          p: 3,
+          mb: 2,
+          bgcolor: 'primary.lighter',
+          border: 1,
+          borderColor: alpha(theme.palette.primary.main, 0.35),
+          borderRadius: 2.5
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <Person color="primary" />
           <Typography variant="subtitle1" fontWeight={600}>
             Your Overall Self-Rating
           </Typography>
-          <Chip size="small" color="warning" label="Required" />
+          <Chip size="small" color={requireSelfRating ? 'warning' : 'default'} label={requireSelfRating ? 'Required' : 'Optional'} />
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
@@ -329,14 +370,14 @@ export default function ReportPreview({
           )}
         </Box>
 
-        {!overallSelfRating && (
+        {requireSelfRating && !overallSelfRating && (
           <Alert severity="warning" sx={{ mt: 1 }}>
             Choose your self-rating to submit.
           </Alert>
         )}
       </Paper>
 
-      <Paper sx={{ p: 3, mb: 3, border: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+      <Paper sx={{ p: 3, mb: 3, border: 1, borderColor: 'divider', bgcolor: 'background.paper', borderRadius: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <SmartToy color="secondary" />
           <Typography variant="subtitle1" fontWeight={600}>
@@ -521,8 +562,8 @@ export default function ReportPreview({
       </Alert>
 
       {hasInsufficientSignal && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Add the missing details above before submitting.
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Some areas still need more detail, but you can submit when ready.
         </Alert>
       )}
 
@@ -533,7 +574,8 @@ export default function ReportPreview({
           size="large"
           startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <Send />}
           onClick={onSubmit}
-          disabled={isSubmitting || isRegenerating || !overallSelfRating || hasInsufficientSignal}
+          disabled={isSubmitting || isRegenerating || (requireSelfRating && !overallSelfRating)}
+          sx={{ borderRadius: 999, width: { xs: '100%', sm: 'auto' }, px: 3 }}
         >
           Submit Self-Assessment
         </Button>
@@ -541,4 +583,3 @@ export default function ReportPreview({
     </Box>
   );
 }
-
