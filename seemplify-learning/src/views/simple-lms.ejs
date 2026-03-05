@@ -906,13 +906,19 @@
             <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (creatorDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= creatorDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
             <div><label>Default Currency</label><input class="input" name="defaultCurrency" maxlength="3" value="<%= creatorDefaults.defaultCurrency || 'NGN' %>"></div>
             <div><label>Preferred Lesson Duration (mins)</label><input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorDefaults.preferredLessonDurationMinutes || 12 %>"></div>
+            <div><label>Default Lesson Media Type</label><select class="input" name="defaultLessonMediaType"><option value="video" <%= (creatorDefaults.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option><option value="audio" <%= creatorDefaults.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option><option value="document" <%= creatorDefaults.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option></select></div>
+            <div><label>Auto-save Draft Interval (mins)</label><input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorDefaults.autoSaveDraftMinutes || 5 %>"></div>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorDefaults.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum on new course form</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorDefaults.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate slug from title</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="publishNotifyByEmail" <%= creatorDefaults.publishNotifyByEmail !== false ? 'checked' : '' %>> Send creator email when course status changes</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="showSalesDashboard" <%= creatorDefaults.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="showCreatorTips" <%= creatorDefaults.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips and submission hints</label>
           </div>
           <div class="actions"><button class="btn btn-primary" type="submit">Save Creator Settings</button></div>
         </form>
       </section>
 
+      <% if (creatorDefaults.showSalesDashboard !== false) { %>
       <section class="panel">
         <div class="head"><div><h2>Earnings & Payout</h2><p class="mini">Track your course sales and set payout details for commission settlements.</p></div></div>
         <div class="kpis">
@@ -920,6 +926,9 @@
           <article class="kpi"><small>Gross Revenue</small><strong><%= creatorStats.grossDisplay %></strong></article>
           <article class="kpi"><small>Your Commission</small><strong><%= creatorStats.commissionDisplay %></strong></article>
           <article class="kpi"><small>Active Learners</small><strong><%= creatorStats.enrollmentCount %></strong></article>
+          <article class="kpi"><small>Avg Order Value</small><strong><%= creatorStats.avgOrderDisplay %></strong></article>
+          <article class="kpi"><small>Sales Conversion</small><strong><%= creatorStats.conversionRatePercent %>%</strong></article>
+          <article class="kpi"><small>Completion Rate</small><strong><%= creatorStats.completionRatePercent %>%</strong></article>
         </div>
         <div class="studio" style="margin-top:10px;">
           <div class="stack">
@@ -991,6 +1000,7 @@
           </div>
         <% } %>
       </section>
+      <% } %>
     <% } %>
 
     <% if (viewMode === 'program-studio' && canCreateCourses) { %>
@@ -1036,6 +1046,9 @@
           <article class="kpi"><small>Successful Payments</small><strong><%= paymentStats.successfulCount %></strong></article>
           <article class="kpi"><small>Revenue (Tracked)</small><strong><%= paymentStats.revenueDisplay %></strong></article>
           <article class="kpi"><small>Creator Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
+          <article class="kpi"><small>Payment Success Rate</small><strong><%= paymentStats.successRatePercent %>%</strong></article>
+          <article class="kpi"><small>Average Order Value</small><strong><%= paymentStats.averageOrderDisplay %></strong></article>
+          <article class="kpi"><small>Payout Ratio</small><strong><%= paymentStats.creatorPayoutRatePercent %>%</strong></article>
         </div>
       </section>
 
@@ -1050,10 +1063,18 @@
             <div><label>Minimum Course Price (minor)</label><input class="input" type="number" name="minCoursePriceMinor" min="0" value="<%= platformDefaults.minCoursePriceMinor || 0 %>"></div>
             <div><label>Maximum Course Price (minor)</label><input class="input" type="number" name="maxCoursePriceMinor" min="0" value="<%= platformDefaults.maxCoursePriceMinor || 50000000 %>"></div>
             <div><label>Analytics Lookback (days)</label><input class="input" type="number" name="analyticsLookbackDays" min="7" max="365" value="<%= platformDefaults.analyticsLookbackDays || 30 %>"></div>
+            <div><label>Cart Expiry (days)</label><input class="input" type="number" name="cartExpiryDays" min="1" max="365" value="<%= platformDefaults.cartExpiryDays || 30 %>"></div>
+            <div><label>Featured Refresh (hours)</label><input class="input" type="number" name="featuredRefreshHours" min="1" max="168" value="<%= platformDefaults.featuredRefreshHours || 24 %>"></div>
+            <div><label>Max Chapters Per Course</label><input class="input" type="number" name="maxChaptersPerCourse" min="1" max="100" value="<%= platformDefaults.maxChaptersPerCourse || 25 %>"></div>
+            <div><label>Max Lessons Per Chapter</label><input class="input" type="number" name="maxLessonsPerChapter" min="1" max="200" value="<%= platformDefaults.maxLessonsPerChapter || 60 %>"></div>
             <div><label>Homepage Featured Limit</label><input class="input" type="number" name="homepageFeaturedCourseLimit" min="1" max="24" value="<%= platformDefaults.homepageFeaturedCourseLimit || 8 %>"></div>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformDefaults.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require admin review before creator public publish</label>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowExternalMediaEmbeds" <%= platformDefaults.allowExternalMediaEmbeds !== false ? 'checked' : '' %>> Allow external media embeds in lessons</label>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowAudioLessons" <%= platformDefaults.allowAudioLessons !== false ? 'checked' : '' %>> Allow audio lesson links</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowCourseComments" <%= platformDefaults.allowCourseComments !== false ? 'checked' : '' %>> Enable learner comments/discussion support</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requireCourseThumbnail" <%= platformDefaults.requireCourseThumbnail ? 'checked' : '' %>> Require banner image before publishing</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="enableWishlist" <%= platformDefaults.enableWishlist !== false ? 'checked' : '' %>> Enable wishlist/favorites features</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoApproveSystemCourses" <%= platformDefaults.autoApproveSystemCourses !== false ? 'checked' : '' %>> Auto-approve system-owned courses</label>
             <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformDefaults.maintenanceMode ? 'checked' : '' %>> Enable maintenance mode banner</label>
           </div>
           <div><label>Maintenance Message</label><textarea class="input" name="maintenanceMessage" rows="2"><%= platformDefaults.maintenanceMessage || '' %></textarea></div>
@@ -1119,6 +1140,23 @@
               <div class="stack-tight">
                 <% analytics.topCreatorsByRevenue.forEach((entry) => { %>
                   <div class="analytic-meta"><span class="pill"><%= entry.saleCount %> sales</span><span class="pill"><%= entry.revenueDisplay %></span><strong><%= entry.creatorName %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Category Performance</h4>
+            <% if (!analytics.categoryInsights || analytics.categoryInsights.length === 0) { %>
+              <p class="mini">No category breakdown available yet.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.categoryInsights.forEach((entry) => { %>
+                  <div class="analytic-meta">
+                    <span class="pill"><%= entry.publishedCourseCount %> courses</span>
+                    <span class="pill"><%= entry.enrollmentCount %> enrollments</span>
+                    <span class="pill"><%= entry.completionRatePercent %>% completion</span>
+                    <strong><%= entry.category %></strong>
+                  </div>
                 <% }) %>
               </div>
             <% } %>

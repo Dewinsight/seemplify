@@ -447,7 +447,20 @@
             <label>Preferred Lesson Duration (minutes)
               <input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorSettings.preferredLessonDurationMinutes || 12 %>">
             </label>
+            <label>Default Lesson Media Type
+              <select class="input" name="defaultLessonMediaType">
+                <option value="video" <%= (creatorSettings.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option>
+                <option value="audio" <%= creatorSettings.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option>
+                <option value="document" <%= creatorSettings.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option>
+              </select>
+            </label>
+            <label>Auto-save Draft Interval (minutes)
+              <input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorSettings.autoSaveDraftMinutes || 5 %>">
+            </label>
             <label><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorSettings.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum</label>
+            <label><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorSettings.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate course slugs from title</label>
+            <label><input type="checkbox" name="publishNotifyByEmail" <%= creatorSettings.publishNotifyByEmail !== false ? 'checked' : '' %>> Send email when course status changes</label>
+            <label><input type="checkbox" name="showSalesDashboard" <%= creatorSettings.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
             <label><input type="checkbox" name="showCreatorTips" <%= creatorSettings.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips</label>
             <button class="btn-primary-soft" type="submit">Save Creator Settings</button>
           </form>
@@ -483,6 +496,13 @@
             </label>
             <button class="btn-primary-soft" type="submit">Save Payout Details</button>
           </form>
+          <h3 style="margin-top:10px;">Creator Performance Snapshot</h3>
+          <div class="workspace-overview-chip-row">
+            <span class="workspace-overview-chip">Sales: <%= numberOrZero(creatorStats?.saleCount) %></span>
+            <span class="workspace-overview-chip">Avg Order: <%= creatorStats?.avgOrderDisplay || 'NGN 0.00' %></span>
+            <span class="workspace-overview-chip">Conversion: <%= numberOrZero(creatorStats?.conversionRatePercent) %>%</span>
+            <span class="workspace-overview-chip">Completion: <%= numberOrZero(creatorStats?.completionRatePercent) %>%</span>
+          </div>
         </aside>
       </section>
     <% } %>
@@ -502,6 +522,7 @@
               <button class="btn btn-secondary" type="submit">Clear Cart</button>
             </form>
           <% } %>
+          <a class="btn btn-secondary" href="/simple-lms/cart">Open Dedicated Cart</a>
           <a class="btn btn-secondary" href="/courses">Browse Courses</a>
         </div>
         <% if (!cartSummary || !cartSummary.hasItems) { %>

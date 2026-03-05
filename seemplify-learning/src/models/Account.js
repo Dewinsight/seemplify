@@ -192,6 +192,29 @@ const AccountSchema = new mongoose.Schema({
       type: Boolean,
       default: false
     },
+    autoGenerateCourseSlug: {
+      type: Boolean,
+      default: true
+    },
+    defaultLessonMediaType: {
+      type: String,
+      enum: ['video', 'audio', 'document'],
+      default: 'video'
+    },
+    autoSaveDraftMinutes: {
+      type: Number,
+      min: 1,
+      max: 30,
+      default: 5
+    },
+    publishNotifyByEmail: {
+      type: Boolean,
+      default: true
+    },
+    showSalesDashboard: {
+      type: Boolean,
+      default: true
+    },
     showCreatorTips: {
       type: Boolean,
       default: true

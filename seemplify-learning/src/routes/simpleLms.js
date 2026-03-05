@@ -49,6 +49,14 @@ const PLATFORM_SETTING_DEFAULTS = Object.freeze({
   minCoursePriceMinor: 0,
   maxCoursePriceMinor: 50000000,
   analyticsLookbackDays: 30,
+  cartExpiryDays: 30,
+  featuredRefreshHours: 24,
+  maxChaptersPerCourse: 25,
+  maxLessonsPerChapter: 60,
+  allowCourseComments: true,
+  requireCourseThumbnail: false,
+  enableWishlist: true,
+  autoApproveSystemCourses: true,
   homepageFeaturedCourseLimit: 8,
   maintenanceMode: false,
   maintenanceMessage: '',
@@ -63,6 +71,11 @@ const CREATOR_SETTING_DEFAULTS = Object.freeze({
   defaultCurrency: 'NGN',
   preferredLessonDurationMinutes: 12,
   autoLoadSampleCurriculum: false,
+  autoGenerateCourseSlug: true,
+  defaultLessonMediaType: 'video',
+  autoSaveDraftMinutes: 5,
+  publishNotifyByEmail: true,
+  showSalesDashboard: true,
   showCreatorTips: true
 })
 
@@ -127,6 +140,10 @@ const normalizeCreatorSettings = (raw = {}) => {
     ? String(raw.defaultPaymentMode).trim().toLowerCase()
     : CREATOR_SETTING_DEFAULTS.defaultPaymentMode
 
+  const defaultLessonMediaType = ['video', 'audio', 'document'].includes(String(raw?.defaultLessonMediaType || '').trim().toLowerCase())
+    ? String(raw.defaultLessonMediaType).trim().toLowerCase()
+    : CREATOR_SETTING_DEFAULTS.defaultLessonMediaType
+
   return {
     defaultCategory: String(raw?.defaultCategory || '').trim().slice(0, 120),
     defaultLevel,
@@ -135,6 +152,11 @@ const normalizeCreatorSettings = (raw = {}) => {
     defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, CREATOR_SETTING_DEFAULTS.defaultCurrency),
     preferredLessonDurationMinutes: Math.min(600, Math.max(1, Math.round(Number(raw?.preferredLessonDurationMinutes || CREATOR_SETTING_DEFAULTS.preferredLessonDurationMinutes)))),
     autoLoadSampleCurriculum: Boolean(raw?.autoLoadSampleCurriculum),
+    autoGenerateCourseSlug: raw?.autoGenerateCourseSlug !== false,
+    defaultLessonMediaType,
+    autoSaveDraftMinutes: Math.min(30, Math.max(1, Math.round(Number(raw?.autoSaveDraftMinutes || CREATOR_SETTING_DEFAULTS.autoSaveDraftMinutes)))),
+    publishNotifyByEmail: raw?.publishNotifyByEmail !== false,
+    showSalesDashboard: raw?.showSalesDashboard !== false,
     showCreatorTips: raw?.showCreatorTips !== false
   }
 }
@@ -169,6 +191,14 @@ const normalizePlatformSettings = (raw = {}) => {
     minCoursePriceMinor,
     maxCoursePriceMinor,
     analyticsLookbackDays: Math.min(365, Math.max(7, Math.round(Number(raw?.analyticsLookbackDays ?? PLATFORM_SETTING_DEFAULTS.analyticsLookbackDays)))),
+    cartExpiryDays: Math.min(365, Math.max(1, Math.round(Number(raw?.cartExpiryDays ?? PLATFORM_SETTING_DEFAULTS.cartExpiryDays)))),
+    featuredRefreshHours: Math.min(168, Math.max(1, Math.round(Number(raw?.featuredRefreshHours ?? PLATFORM_SETTING_DEFAULTS.featuredRefreshHours)))),
+    maxChaptersPerCourse: Math.min(100, Math.max(1, Math.round(Number(raw?.maxChaptersPerCourse ?? PLATFORM_SETTING_DEFAULTS.maxChaptersPerCourse)))),
+    maxLessonsPerChapter: Math.min(200, Math.max(1, Math.round(Number(raw?.maxLessonsPerChapter ?? PLATFORM_SETTING_DEFAULTS.maxLessonsPerChapter)))),
+    allowCourseComments: raw?.allowCourseComments !== false,
+    requireCourseThumbnail: Boolean(raw?.requireCourseThumbnail),
+    enableWishlist: raw?.enableWishlist !== false,
+    autoApproveSystemCourses: raw?.autoApproveSystemCourses !== false,
     homepageFeaturedCourseLimit: Math.min(24, Math.max(1, Math.round(Number(raw?.homepageFeaturedCourseLimit ?? PLATFORM_SETTING_DEFAULTS.homepageFeaturedCourseLimit)))),
     maintenanceMode: Boolean(raw?.maintenanceMode),
     maintenanceMessage: String(raw?.maintenanceMessage || '').trim().slice(0, 500),
@@ -917,7 +947,20 @@ const parseCoursePayload = ({
     || normalizedPlatformSettings.defaultCourseVisibility
   const visibility = normalizeVisibility(visibilityInput, role)
   const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []))
+  const limitedChapters = chapters
+    .slice(0, normalizedPlatformSettings.maxChaptersPerCourse)
+    .map((chapter) => ({
+      ...chapter,
+      lessons: Array.isArray(chapter.lessons)
+        ? chapter.lessons.slice(0, normalizedPlatformSettings.maxLessonsPerChapter)
+        : []
+    }))
   const bannerPayload = parseJsonInput(body.bannerPayload, {})
+  const hasBannerFromPayload = Boolean(String(bannerPayload?.url || '').trim())
+  const hasExistingBanner = Boolean(existingCourse?.banner?.url)
+  if (normalizedPlatformSettings.requireCourseThumbnail && !hasBannerFromPayload && !hasExistingBanner) {
+    throw new Error('Course banner is required by platform settings.')
+  }
   const paymentModeInput = String(
     body.paymentMode
     || existingCourse?.pricing?.paymentMode
@@ -942,7 +985,7 @@ const parseCoursePayload = ({
     tags: parseTags(body.tags),
     status,
     visibility,
-    chapters,
+    chapters: limitedChapters,
     pricing: {
       paymentMode,
       amount,
@@ -3274,6 +3317,11 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
       defaultCurrency: req.body.defaultCurrency,
       preferredLessonDurationMinutes: req.body.preferredLessonDurationMinutes,
       autoLoadSampleCurriculum: req.body.autoLoadSampleCurriculum === 'on',
+      autoGenerateCourseSlug: req.body.autoGenerateCourseSlug === 'on',
+      defaultLessonMediaType: req.body.defaultLessonMediaType,
+      autoSaveDraftMinutes: req.body.autoSaveDraftMinutes,
+      publishNotifyByEmail: req.body.publishNotifyByEmail === 'on',
+      showSalesDashboard: req.body.showSalesDashboard === 'on',
       showCreatorTips: req.body.showCreatorTips === 'on'
     })
 
@@ -3321,6 +3369,14 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
       minCoursePriceMinor: req.body.minCoursePriceMinor,
       maxCoursePriceMinor: req.body.maxCoursePriceMinor,
       analyticsLookbackDays: req.body.analyticsLookbackDays,
+      cartExpiryDays: req.body.cartExpiryDays,
+      featuredRefreshHours: req.body.featuredRefreshHours,
+      maxChaptersPerCourse: req.body.maxChaptersPerCourse,
+      maxLessonsPerChapter: req.body.maxLessonsPerChapter,
+      allowCourseComments: req.body.allowCourseComments === 'on',
+      requireCourseThumbnail: req.body.requireCourseThumbnail === 'on',
+      enableWishlist: req.body.enableWishlist === 'on',
+      autoApproveSystemCourses: req.body.autoApproveSystemCourses === 'on',
       homepageFeaturedCourseLimit: req.body.homepageFeaturedCourseLimit,
       maintenanceMode: req.body.maintenanceMode === 'on',
       maintenanceMessage: req.body.maintenanceMessage,
@@ -4030,6 +4086,16 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
     creatorStats.grossDisplay = formatCurrencyAmount(creatorStats.grossMinor, 'NGN')
     creatorStats.commissionDisplay = formatCurrencyAmount(creatorStats.commissionMinor, 'NGN')
     creatorStats.platformShareDisplay = formatCurrencyAmount(creatorStats.platformShareMinor, 'NGN')
+    creatorStats.avgOrderMinor = creatorStats.saleCount > 0
+      ? Math.round(creatorStats.grossMinor / creatorStats.saleCount)
+      : 0
+    creatorStats.avgOrderDisplay = formatCurrencyAmount(creatorStats.avgOrderMinor, 'NGN')
+    creatorStats.conversionRatePercent = creatorStats.enrollmentCount > 0
+      ? Math.round((creatorStats.saleCount / Math.max(1, creatorStats.enrollmentCount)) * 100)
+      : 0
+    creatorStats.completionRatePercent = creatorStats.enrollmentCount > 0
+      ? Math.round((creatorStats.completionCount / Math.max(1, creatorStats.enrollmentCount)) * 100)
+      : 0
 
     let adminPayments = (adminPaymentsRaw || []).map((payment) => ({
       ...payment,
@@ -4071,6 +4137,42 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
         .filter(payment => payment.status === 'successful')
         .reduce((sum, payment) => sum + Math.max(0, Number(payment.creatorCommissionMinor || 0)), 0)
     }
+    paymentStats.successRatePercent = paymentStats.totalCount > 0
+      ? Math.round((paymentStats.successfulCount / paymentStats.totalCount) * 100)
+      : 0
+    paymentStats.averageOrderMinor = paymentStats.successfulCount > 0
+      ? Math.round(paymentStats.revenueMinor / paymentStats.successfulCount)
+      : 0
+    paymentStats.averageOrderDisplay = formatCurrencyAmount(paymentStats.averageOrderMinor, 'NGN')
+    paymentStats.creatorPayoutRatePercent = paymentStats.revenueMinor > 0
+      ? Math.round((paymentStats.creatorPayoutMinor / paymentStats.revenueMinor) * 100)
+      : 0
+
+    const categoryInsightsMap = new Map()
+    for (const course of catalogCourses) {
+      const key = String(course?.category || 'Uncategorized').trim() || 'Uncategorized'
+      const existing = categoryInsightsMap.get(key) || {
+        category: key,
+        publishedCourseCount: 0,
+        paidCourseCount: 0,
+        enrollmentCount: 0,
+        completionCount: 0
+      }
+      existing.publishedCourseCount += 1
+      if (course?.requiresPayment) existing.paidCourseCount += 1
+      existing.enrollmentCount += Math.max(0, Number(course?.enrollmentCount || 0))
+      existing.completionCount += Math.max(0, Number(course?.completionCount || 0))
+      categoryInsightsMap.set(key, existing)
+    }
+    const categoryInsights = Array.from(categoryInsightsMap.values())
+      .map((entry) => ({
+        ...entry,
+        completionRatePercent: entry.enrollmentCount > 0
+          ? Math.round((entry.completionCount / Math.max(1, entry.enrollmentCount)) * 100)
+          : 0
+      }))
+      .sort((a, b) => (b.enrollmentCount - a.enrollmentCount) || (b.publishedCourseCount - a.publishedCourseCount))
+      .slice(0, 10)
 
     const analyticsLookbackDays = Math.min(365, Math.max(7, Number(platformSettings.analyticsLookbackDays || 30)))
     const now = new Date()
@@ -4201,7 +4303,8 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
           revenueDisplay: formatCurrencyAmount(entry.revenueMinor, 'NGN'),
           commissionDisplay: formatCurrencyAmount(entry.creatorCommissionMinor, 'NGN')
         }
-      })
+      }),
+      categoryInsights
     }
 
     const commissionAccountOverrides = (commissionSettings.accountOverrides || []).map((entry) => {

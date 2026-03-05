@@ -337,6 +337,42 @@
       font-size: 12px;
       color: var(--muted);
     }
+    .quiz-results {
+      display: grid;
+      gap: 8px;
+    }
+    .quiz-result-card {
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
+      padding: 8px;
+      background: var(--player-surface-strong);
+      display: grid;
+      gap: 6px;
+    }
+    .quiz-result-head {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .quiz-result-pass {
+      color: #15803d;
+    }
+    .quiz-result-fail {
+      color: #b91c1c;
+    }
+    .quiz-result-list {
+      margin: 0;
+      padding: 0 0 0 16px;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
     .resource-list {
       margin: 0;
       padding: 0 0 0 18px;
@@ -571,6 +607,7 @@
       <p id="chapterQuizMeta" class="quiz-modal-meta"></p>
       <form id="chapterQuizForm" class="quiz-wrap"></form>
       <p id="chapterQuizStatus" class="quiz-modal-status"></p>
+      <div id="chapterQuizResults" class="quiz-results"></div>
       <div class="player-actions">
         <button type="submit" class="btn btn-primary" id="chapterQuizSubmit" form="chapterQuizForm">Submit Quiz</button>
       </div>
@@ -601,6 +638,8 @@
       const titleNode = document.getElementById('chapterQuizTitle')
       const metaNode = document.getElementById('chapterQuizMeta')
       const statusNode = document.getElementById('chapterQuizStatus')
+      const resultsNode = document.getElementById('chapterQuizResults')
+      const submitButton = document.getElementById('chapterQuizSubmit')
       let activeChapter = null
       let submitting = false
 
@@ -623,6 +662,8 @@
         activeChapter = null
         if (form) form.innerHTML = ''
         if (statusNode) statusNode.textContent = ''
+        if (resultsNode) resultsNode.innerHTML = ''
+        if (submitButton) submitButton.disabled = false
         setModalOpen(false)
       }
 
@@ -632,8 +673,9 @@
         activeChapter = chapter
         titleNode.textContent = `Chapter ${chapter.chapterNumber} Quiz`
         const questionTotal = chapter.quizLessons.reduce((count, lesson) => count + ((lesson.quizQuestions || []).length), 0)
-        metaNode.textContent = `${chapter.title} • ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
+        metaNode.textContent = `${chapter.title} - ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
         statusNode.textContent = ''
+        if (resultsNode) resultsNode.innerHTML = ''
         form.innerHTML = chapter.quizLessons.map((lesson) => `
           <section>
             <h3 class="quiz-section-head">Lesson ${chapter.chapterNumber}.${lesson.lessonNumber}: ${escapeHtml(lesson.title)}</h3>
@@ -658,26 +700,82 @@
         if (!activeChapter || submitting || !enrollmentId) return
         submitting = true
         statusNode.textContent = 'Submitting quiz...'
-        const submitButton = document.getElementById('chapterQuizSubmit')
+        if (resultsNode) resultsNode.innerHTML = ''
         if (submitButton) submitButton.disabled = true
 
         try {
+          const lessonResults = []
+          let chapterScore = 0
+          let chapterMaxScore = 0
+
           for (const lesson of activeChapter.quizLessons || []) {
             const body = new URLSearchParams()
             ;(lesson.quizQuestions || []).forEach((_, questionIndex) => {
               const input = form.querySelector(`input[name="${lesson.key}_answer_${questionIndex}"]:checked`)
               if (input) body.append(`answer_${questionIndex}`, input.value)
             })
-            await fetch(`/simple-lms/enrollments/${encodeURIComponent(enrollmentId)}/lessons/${encodeURIComponent(lesson.key)}/quiz`, {
+
+            const response = await fetch(`/simple-lms/enrollments/${encodeURIComponent(enrollmentId)}/lessons/${encodeURIComponent(lesson.key)}/quiz?format=json`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+              },
               body: body.toString(),
               credentials: 'same-origin'
             })
+            const payload = await response.json().catch(() => null)
+            if (!response.ok || !payload || payload.ok !== true) {
+              throw new Error((payload && payload.error) || 'Quiz submission failed.')
+            }
+
+            chapterScore += Number(payload.score || 0)
+            chapterMaxScore += Number(payload.maxScore || 0)
+            lessonResults.push({
+              lesson,
+              score: Number(payload.score || 0),
+              maxScore: Number(payload.maxScore || 0),
+              percentage: Number(payload.percentage || 0),
+              passed: Boolean(payload.passed),
+              questionResults: Array.isArray(payload.questionResults) ? payload.questionResults : []
+            })
           }
-          window.location.reload()
+
+          const chapterPercent = chapterMaxScore > 0 ? Math.round((chapterScore / chapterMaxScore) * 100) : 0
+          const chapterPassed = chapterPercent >= 70
+          statusNode.innerHTML = `${chapterPassed ? '<strong class="quiz-result-pass">Passed</strong>' : '<strong class="quiz-result-fail">Not passed</strong>'} - Score: <strong>${chapterScore}/${chapterMaxScore}</strong> (${chapterPercent}%).`
+
+          if (resultsNode) {
+            resultsNode.innerHTML = lessonResults.map((result) => {
+              const feedbackList = result.questionResults
+                .filter((entry) => !entry.isCorrect)
+                .map((entry) => {
+                  const question = result.lesson.quizQuestions[entry.questionIndex]
+                  const selectedChoice = entry.selectedIndex >= 0
+                    ? (question && question.choices && question.choices[entry.selectedIndex] ? question.choices[entry.selectedIndex].text : 'Invalid answer')
+                    : 'No answer selected'
+                  const correctChoice = entry.correctIndex >= 0
+                    ? (question && question.choices && question.choices[entry.correctIndex] ? question.choices[entry.correctIndex].text : 'Unavailable')
+                    : 'Unavailable'
+                  return `<li>Q${entry.questionIndex + 1}: you picked "${escapeHtml(selectedChoice)}"; correct answer is "${escapeHtml(correctChoice)}".</li>`
+                })
+              return `
+                <section class="quiz-result-card">
+                  <p class="quiz-result-head">
+                    <span>Lesson ${activeChapter.chapterNumber}.${result.lesson.lessonNumber}: ${escapeHtml(result.lesson.title)}</span>
+                    <span class="${result.passed ? 'quiz-result-pass' : 'quiz-result-fail'}">${result.score}/${result.maxScore} (${result.percentage}%)</span>
+                  </p>
+                  ${feedbackList.length > 0
+                    ? `<ul class="quiz-result-list">${feedbackList.join('')}</ul>`
+                    : '<p class="quiz-modal-meta">All answers were correct for this lesson quiz.</p>'}
+                </section>
+              `
+            }).join('')
+          }
         } catch (error) {
-          statusNode.textContent = 'Quiz submission failed. Please try again.'
+          statusNode.textContent = error && error.message ? error.message : 'Quiz submission failed. Please try again.'
+        } finally {
           submitting = false
           if (submitButton) submitButton.disabled = false
         }

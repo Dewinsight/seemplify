@@ -51,6 +51,46 @@ const SimpleLmsPlatformSettingSchema = new mongoose.Schema({
     max: 365,
     default: 30
   },
+  cartExpiryDays: {
+    type: Number,
+    min: 1,
+    max: 365,
+    default: 30
+  },
+  featuredRefreshHours: {
+    type: Number,
+    min: 1,
+    max: 168,
+    default: 24
+  },
+  maxChaptersPerCourse: {
+    type: Number,
+    min: 1,
+    max: 100,
+    default: 25
+  },
+  maxLessonsPerChapter: {
+    type: Number,
+    min: 1,
+    max: 200,
+    default: 60
+  },
+  allowCourseComments: {
+    type: Boolean,
+    default: true
+  },
+  requireCourseThumbnail: {
+    type: Boolean,
+    default: false
+  },
+  enableWishlist: {
+    type: Boolean,
+    default: true
+  },
+  autoApproveSystemCourses: {
+    type: Boolean,
+    default: true
+  },
   homepageFeaturedCourseLimit: {
     type: Number,
     min: 1,
