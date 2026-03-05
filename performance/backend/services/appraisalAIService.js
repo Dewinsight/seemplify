@@ -1,4 +1,4 @@
-const { AzureOpenAI } = require('openai');
+const { AzureOpenAI, OpenAI } = require('openai');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -22,7 +22,11 @@ const CONVERSATION_PHASES = [
 class AppraisalAIService {
   constructor() {
     this.client = null;
-    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
+    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+      || process.env.AZURE_OPENAI_DEPLOYMENT
+      || process.env.OPENAI_MODEL
+      || 'gpt-4.1-mini';
+    this.provider = null;
     this.initialized = false;
   }
 
@@ -34,20 +38,26 @@ class AppraisalAIService {
 
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
-
-    if (!endpoint || !apiKey) {
-      console.warn('Azure OpenAI credentials not configured. AI features will be limited.');
-      return;
-    }
+    const openAIKey = process.env.OPENAI_API_KEY;
 
     try {
-      this.client = new AzureOpenAI({
-        endpoint,
-        apiKey,
-        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview'
-      });
+      if (endpoint && apiKey) {
+        this.client = new AzureOpenAI({
+          endpoint,
+          apiKey,
+          apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
+        });
+        this.provider = 'azure';
+      } else if (openAIKey) {
+        this.client = new OpenAI({ apiKey: openAIKey });
+        this.provider = 'openai';
+      } else {
+        console.warn('No Azure or OpenAI credentials configured. AI features will be limited.');
+        return;
+      }
+
       this.initialized = true;
-      console.log('Appraisal AI Service initialized');
+      console.log(`Appraisal AI Service initialized (${this.provider})`);
     } catch (error) {
       console.error('Failed to initialize Appraisal AI Service:', error);
     }
@@ -110,7 +120,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Document analysis error:', error);
       return this.getFallbackDocumentAnalysis(documentText);
@@ -173,7 +183,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Self-assessment analysis error:', error);
       return this.getFallbackSelfAssessmentAnalysis();
@@ -236,7 +246,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Manager review assist error:', error);
       return { suggestions: ['AI assistance temporarily unavailable.'] };
@@ -301,7 +311,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Bias check error:', error);
       return { hasPotentialBias: false, error: 'Bias check failed' };
@@ -378,7 +388,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Development plan suggestion error:', error);
       return { suggestions: [] };
@@ -774,7 +784,7 @@ Respond to them and continue the conversation. If appropriate, extract any struc
       });
 
       const content = response.choices[0]?.message?.content;
-      const parsed = JSON.parse(content);
+      const parsed = this.parseJsonResponse(content);
       const tokensUsed = response.usage?.total_tokens || 0;
 
       // Determine next phase
@@ -926,6 +936,12 @@ Keep it to 2-3 sentences.`;
 
     // Ground the report body in extracted data (deterministic) to avoid "demo-ish" hallucinations.
     const baseReport = this.getFallbackReport(sanitizedExtractedData, okrPerformance);
+    const draftSelfAssessment = {
+      overallSummary: baseReport.overallSummary,
+      okrAssessment: baseReport.okrAssessment,
+      overallSelfRating: null,
+      competencyRatings: []
+    };
 
     const conversationSignal = this.collectConversationSignal(chatThread, sanitizedExtractedData);
     const missingInfo = this.getMissingSelfAssessmentInfo(conversationSignal);
@@ -933,11 +949,26 @@ Keep it to 2-3 sentences.`;
 
     // Prevent "demo-ish" hallucinated reports when there's too little signal.
     if (!hasEnoughSignal) {
+      let lowSignalInsights = null;
+      if (this.client) {
+        try {
+          lowSignalInsights = await this.analyzeSelfAssessment(draftSelfAssessment, baseReport.okrAssessment || [], []);
+        } catch (error) {
+          console.error('Low-signal AI insights generation error:', error);
+        }
+      }
+
       return {
         ...baseReport,
         suggestedOverallRating: null,
         ratingJustification: 'Not enough evidence was captured to suggest a rating yet.',
         aiSuggestedRating: undefined,
+        aiInsights: {
+          strengths: lowSignalInsights?.strengths || baseReport.aiInsights?.strengths || [],
+          developmentAreas: lowSignalInsights?.developmentAreas || baseReport.aiInsights?.developmentAreas || [],
+          suggestions: lowSignalInsights?.suggestions || missingInfo,
+          sentiment: lowSignalInsights?.sentiment || 'neutral'
+        },
         missingInfo,
         tokensUsed: 0,
         success: true,
@@ -950,14 +981,7 @@ Keep it to 2-3 sentences.`;
     }
 
     try {
-      const draftSelfAssessment = {
-        overallSummary: baseReport.overallSummary,
-        okrAssessment: baseReport.okrAssessment,
-        overallSelfRating: null,
-        competencyRatings: []
-      };
-
-      const [aiInsights, aiSuggestion] = await Promise.all([
+      const [aiInsightsResult, aiSuggestionResult] = await Promise.allSettled([
         this.analyzeSelfAssessment(draftSelfAssessment, baseReport.okrAssessment || [], []),
         this.generateAISuggestedRating({
           employee: appraisal.employee,
@@ -965,6 +989,16 @@ Keep it to 2-3 sentences.`;
           selfAssessment: draftSelfAssessment
         }, okrs)
       ]);
+
+      const aiInsights = aiInsightsResult.status === 'fulfilled' ? aiInsightsResult.value : null;
+      const aiSuggestion = aiSuggestionResult.status === 'fulfilled' ? aiSuggestionResult.value : null;
+
+      if (aiInsightsResult.status === 'rejected') {
+        console.error('AI insights generation failed during report creation:', aiInsightsResult.reason);
+      }
+      if (aiSuggestionResult.status === 'rejected') {
+        console.error('AI rating suggestion failed during report creation:', aiSuggestionResult.reason);
+      }
 
       const suggestedRating = aiSuggestion?.suggestedRating ?? baseReport.suggestedOverallRating;
       const ratingJustification = aiSuggestion?.ratingJustification ?? baseReport.ratingJustification;
@@ -982,14 +1016,14 @@ Keep it to 2-3 sentences.`;
         suggestedOverallRating: suggestedRating,
         ratingJustification,
         aiInsights: {
-          strengths: aiInsights?.strengths || [],
-          developmentAreas: aiInsights?.developmentAreas || [],
-          suggestions: aiInsights?.suggestions || [],
+          strengths: aiInsights?.strengths || baseReport.aiInsights?.strengths || [],
+          developmentAreas: aiInsights?.developmentAreas || baseReport.aiInsights?.developmentAreas || [],
+          suggestions: aiInsights?.suggestions || baseReport.aiInsights?.suggestions || [],
           sentiment: aiInsights?.sentiment || 'neutral'
         },
         tokensUsed: aiSuggestion?.tokensUsed || 0,
         success: true,
-        fallback: false
+        fallback: !aiInsights || !aiSuggestion
       };
     } catch (error) {
       console.error('Report generation error:', error);
@@ -1165,7 +1199,7 @@ Provide a recommendation in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      const result = JSON.parse(content);
+      const result = this.parseJsonResponse(content);
 
       return {
         ...result,
@@ -1189,6 +1223,31 @@ Provide a recommendation in JSON format:
   // =========================================
   // CONVERSATION HELPER METHODS
   // =========================================
+
+  parseJsonResponse(content) {
+    if (content && typeof content === 'object') {
+      return content;
+    }
+
+    const raw = (content || '').toString().trim();
+    if (!raw) {
+      throw new Error('Model returned empty content when JSON was expected.');
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (primaryError) {
+      const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const candidate = fencedMatch?.[1] || raw;
+      const firstBrace = candidate.indexOf('{');
+      const lastBrace = candidate.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        const jsonSlice = candidate.slice(firstBrace, lastBrace + 1);
+        return JSON.parse(jsonSlice);
+      }
+      throw primaryError;
+    }
+  }
 
   normalizeText(value) {
     return (value || '')
