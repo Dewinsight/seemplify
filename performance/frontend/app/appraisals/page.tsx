@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles } from '@/lib/hooks';
 import api from '@/lib/api';
@@ -36,6 +36,21 @@ interface Appraisal {
     sentAt?: string;
     readAt?: string;
   }>;
+}
+
+interface ManagerNotification {
+  appraisalId: string;
+  cycleName?: string;
+  appraisalStatus?: string;
+  employee?: {
+    userId?: string;
+    name?: string;
+    email?: string;
+  };
+  type?: string;
+  message?: string;
+  sentAt?: string;
+  readAt?: string;
 }
 
 interface AppraisalCycle {
@@ -85,6 +100,7 @@ export default function AppraisalsPage() {
 
   const [selectedTab, setSelectedTab] = useState(0);
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
+  const [managerNotifications, setManagerNotifications] = useState<ManagerNotification[]>([]);
 
   const { appraisals: myAppraisals, isLoading: myLoading, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
   const { appraisals: teamAppraisals, isLoading: teamLoading, mutate: mutateTeamAppraisals } = useTeamAppraisals({ cycleId: selectedCycleId || undefined });
@@ -102,6 +118,28 @@ export default function AppraisalsPage() {
 
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
+
+  const loadManagerNotifications = useCallback(async () => {
+    if (!isManager) {
+      setManagerNotifications([]);
+      return;
+    }
+
+    try {
+      const response = await api.get('/appraisals/notifications/manager', {
+        params: { unreadOnly: true, limit: 20 }
+      });
+      const notifications = response.data?.data?.notifications || [];
+      setManagerNotifications(notifications);
+    } catch (error) {
+      console.error('Failed to fetch manager notifications', error);
+      setManagerNotifications([]);
+    }
+  }, [isManager]);
+
+  useEffect(() => {
+    loadManagerNotifications();
+  }, [loadManagerNotifications]);
 
 
 
@@ -192,29 +230,14 @@ export default function AppraisalsPage() {
     return ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'].includes(status) && due < now;
   };
 
-  const managerNotifications = (isManager ? teamAppraisals : [])
-    .flatMap((appraisal: Appraisal) => (
-      appraisal.notifications || []
-    ).map((notification) => ({
-      appraisalId: appraisal._id,
-      employeeName: appraisal.employee?.name || 'Employee',
-      status: appraisal.status,
-      type: notification.type,
-      message: notification.message || `${appraisal.employee?.name || 'An employee'} submitted a self-assessment.`,
-      sentAt: notification.sentAt,
-      readAt: notification.readAt
-    })))
-    .filter((item) => item.type === 'self_assessment_submitted' && !item.readAt)
-    .sort((a, b) => new Date(b.sentAt || 0).getTime() - new Date(a.sentAt || 0).getTime());
-
-  const unreadManagerNotificationCount = managerNotifications.length;
+  const unreadManagerNotificationCount = managerNotifications.filter((notification) => !notification.readAt).length;
 
   const handleOpenReviewFromNotification = async (appraisalId: string) => {
     try {
       await api.post(`/appraisals/${appraisalId}/notifications/read`, {
         types: ['self_assessment_submitted']
       });
-      await mutateTeamAppraisals();
+      await Promise.all([mutateTeamAppraisals(), loadManagerNotifications()]);
     } catch (error) {
       console.error('Failed to mark notification as read', error);
     } finally {
@@ -662,11 +685,11 @@ export default function AppraisalsPage() {
               >
                 <ListItemAvatar>
                   <Avatar sx={{ width: 34, height: 34, bgcolor: alpha(theme.palette.warning.main, 0.2), color: 'warning.dark' }}>
-                    {notification.employeeName?.[0] || 'E'}
+                    {notification.employee?.name?.[0] || 'E'}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
-                  primary={notification.message}
+                  primary={notification.message || `${notification.employee?.name || 'An employee'} submitted a self-assessment.`}
                   secondary={notification.sentAt ? new Date(notification.sentAt).toLocaleString() : 'Just now'}
                   primaryTypographyProps={{ variant: 'body2', fontWeight: 600 }}
                   secondaryTypographyProps={{ variant: 'caption' }}
