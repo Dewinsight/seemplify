@@ -48,6 +48,90 @@
       flex: 1 0 auto;
       align-items: start;
     }
+
+    /* Banner Upload Styles */
+    .banner-upload-section {
+      margin-bottom: 1rem;
+    }
+    .banner-upload-section > label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--studio-text);
+    }
+    .banner-upload-area {
+      border: 2px dashed var(--studio-border);
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--studio-soft);
+    }
+    .banner-upload-area:hover {
+      border-color: var(--studio-primary);
+      background: rgba(14, 116, 144, 0.05);
+    }
+    .banner-upload-area.drag-over {
+      border-color: var(--studio-primary);
+      background: rgba(14, 116, 144, 0.1);
+    }
+    .banner-upload-placeholder svg {
+      width: 48px;
+      height: 48px;
+      color: var(--studio-muted);
+      margin-bottom: 0.75rem;
+    }
+    .banner-upload-placeholder p {
+      margin: 0 0 0.5rem;
+      color: var(--studio-text);
+      font-weight: 500;
+    }
+    .banner-upload-placeholder span {
+      font-size: 0.875rem;
+      color: var(--studio-muted);
+    }
+    .banner-preview {
+      position: relative;
+    }
+    .banner-preview img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: 8px;
+    }
+    .banner-remove-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .banner-remove-btn:hover {
+      background: rgba(0, 0, 0, 0.8);
+    }
+    .banner-progress {
+      padding: 2rem;
+      text-align: center;
+    }
+    .banner-progress-bar {
+      height: 8px;
+      background: var(--studio-primary);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    .banner-progress-text {
+      display: block;
+      margin-top: 0.75rem;
+      color: var(--studio-muted);
+      font-size: 0.875rem;
+    }
     .studio-rail {
       border: 1px solid var(--studio-border);
       border-radius: 20px;
@@ -577,10 +661,36 @@
                   </select>
                 </label>
               <% } %>
-              <label>Banner URL<input class="input" name="bannerUrl" value="<%= editingCourse.banner?.url || '' %>" placeholder="https://..."></label>
-              <label>Banner Public ID<input class="input" name="bannerPublicId" value="<%= editingCourse.banner?.publicId || '' %>"></label>
-              <label>Banner Width<input class="input" type="number" min="0" name="bannerWidth" value="<%= Number(editingCourse.banner?.width || 0) || '' %>"></label>
-              <label>Banner Height<input class="input" type="number" min="0" name="bannerHeight" value="<%= Number(editingCourse.banner?.height || 0) || '' %>"></label>
+              <div class="banner-upload-section">
+                <label>Course Banner</label>
+                <div class="banner-upload-area" id="banner-upload-area">
+                  <% if (editingCourse.banner?.url) { %>
+                    <div class="banner-preview">
+                      <img src="<%= editingCourse.banner.url %>" alt="Current banner">
+                      <button type="button" class="banner-remove-btn" onclick="removeBanner()">Remove</button>
+                    </div>
+                  <% } else { %>
+                    <div class="banner-upload-placeholder">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <p>Click or drag to upload banner image</p>
+                      <span>Recommended: 1200x630px, max 5MB</span>
+                    </div>
+                  <% } %>
+                  <input type="file" id="banner-file-input" accept="image/*" style="display:none;">
+                </div>
+                <div class="banner-progress" id="banner-progress" style="display:none;">
+                  <div class="banner-progress-bar"></div>
+                  <span class="banner-progress-text">Uploading...</span>
+                </div>
+                <input type="hidden" name="bannerUrl" id="banner-url-input" value="<%= editingCourse.banner?.url || '' %>">
+                <input type="hidden" name="bannerPublicId" id="banner-public-id-input" value="<%= editingCourse.banner?.publicId || '' %>">
+                <input type="hidden" name="bannerWidth" id="banner-width-input" value="<%= editingCourse.banner?.width || '' %>">
+                <input type="hidden" name="bannerHeight" id="banner-height-input" value="<%= editingCourse.banner?.height || '' %>">
+              </div>
             </div>
             <label>Summary<textarea class="input" name="summary" rows="2"><%= editingCourse.summary || '' %></textarea></label>
             <label>Description<textarea class="input" name="description" rows="5"><%= editingCourse.description || '' %></textarea></label>
@@ -650,10 +760,29 @@
             <label>Amount (minor)<input class="input" type="number" name="amount" min="<%= platformSettings.minCoursePriceMinor || 0 %>" max="<%= platformSettings.maxCoursePriceMinor || 50000000 %>" value="<%= platformSettings.minCoursePriceMinor || 0 %>"></label>
             <label>Currency<input class="input" name="currency" maxlength="3" value="<%= creatorSettings.defaultCurrency || platformSettings.defaultCurrency || 'NGN' %>"></label>
             <label>Tags (comma-separated)<input class="input" name="tags" placeholder="productivity, agile"></label>
-            <label>Banner URL<input class="input" name="bannerUrl" placeholder="https://..."></label>
-            <label>Banner Public ID<input class="input" name="bannerPublicId" placeholder="cloudinary id"></label>
-            <label>Banner Width<input class="input" type="number" min="0" name="bannerWidth"></label>
-            <label>Banner Height<input class="input" type="number" min="0" name="bannerHeight"></label>
+            <div class="banner-upload-section">
+              <label>Course Banner</label>
+              <div class="banner-upload-area" id="create-banner-upload-area">
+                <div class="banner-upload-placeholder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  <p>Click or drag to upload banner image</p>
+                  <span>Recommended: 1200x630px, max 5MB</span>
+                </div>
+                <input type="file" id="create-banner-file-input" accept="image/*" style="display:none;">
+              </div>
+              <div class="banner-progress" id="create-banner-progress" style="display:none;">
+                <div class="banner-progress-bar"></div>
+                <span class="banner-progress-text">Uploading...</span>
+              </div>
+              <input type="hidden" name="bannerUrl" id="create-banner-url-input" value="">
+              <input type="hidden" name="bannerPublicId" id="create-banner-public-id-input" value="">
+              <input type="hidden" name="bannerWidth" id="create-banner-width-input" value="">
+              <input type="hidden" name="bannerHeight" id="create-banner-height-input" value="">
+            </div>
           </div>
           <label>Summary<textarea class="input" name="summary" rows="2"></textarea></label>
           <label>Description<textarea class="input" name="description" rows="5"></textarea></label>
@@ -1097,6 +1226,251 @@
         sampleButtonId: '',
         allowAutoSample: false
       })
+
+      // Banner Upload Handler
+      const bannerUploadArea = document.getElementById('banner-upload-area')
+      const bannerFileInput = document.getElementById('banner-file-input')
+      const bannerProgress = document.getElementById('banner-progress')
+      const bannerProgressBar = bannerProgress?.querySelector('.banner-progress-bar')
+      const bannerProgressText = bannerProgress?.querySelector('.banner-progress-text')
+      const bannerUrlInput = document.getElementById('banner-url-input')
+      const bannerPublicIdInput = document.getElementById('banner-public-id-input')
+      const bannerWidthInput = document.getElementById('banner-width-input')
+      const bannerHeightInput = document.getElementById('banner-height-input')
+
+      if (bannerUploadArea && bannerFileInput) {
+        bannerUploadArea.addEventListener('click', () => bannerFileInput.click())
+        
+        bannerFileInput.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          await uploadBanner(file)
+        })
+
+        // Drag and drop
+        bannerUploadArea.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          bannerUploadArea.classList.add('drag-over')
+        })
+        
+        bannerUploadArea.addEventListener('dragleave', () => {
+          bannerUploadArea.classList.remove('drag-over')
+        })
+        
+        bannerUploadArea.addEventListener('drop', async (e) => {
+          e.preventDefault()
+          bannerUploadArea.classList.remove('drag-over')
+          const file = e.dataTransfer?.files?.[0]
+          if (file && file.type.startsWith('image/')) {
+            await uploadBanner(file)
+          }
+        })
+      }
+
+      async function uploadBanner(file) {
+        if (!bannerUploadArea || !bannerProgress) return
+
+        // Validate file
+        const maxSize = 5 * 1024 * 1024 // 5MB
+        if (file.size > maxSize) {
+          alert('File too large. Maximum size is 5MB.')
+          return
+        }
+
+        // Show progress
+        bannerUploadArea.style.display = 'none'
+        bannerProgress.style.display = 'block'
+        bannerProgressBar.style.width = '0%'
+        bannerProgressText.textContent = 'Uploading...'
+
+        const formData = new FormData()
+        formData.append('banner', file)
+
+        try {
+          const response = await fetch('/api/upload/banner', {
+            method: 'POST',
+            body: formData
+          })
+
+          const data = await response.json()
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Upload failed')
+          }
+
+          // Update hidden inputs
+          bannerUrlInput.value = data.url
+          bannerPublicIdInput.value = data.publicId
+          bannerWidthInput.value = data.width
+          bannerHeightInput.value = data.height
+
+          // Show preview
+          showBannerPreview(data.url)
+
+          bannerProgressText.textContent = 'Upload complete!'
+          setTimeout(() => {
+            bannerProgress.style.display = 'none'
+          }, 1500)
+
+        } catch (error) {
+          console.error('Banner upload error:', error)
+          alert('Failed to upload banner: ' + error.message)
+          bannerUploadArea.style.display = 'block'
+          bannerProgress.style.display = 'none'
+        }
+      }
+
+      function showBannerPreview(url) {
+        const bannerUploadArea = document.getElementById('banner-upload-area')
+        if (!bannerUploadArea) return
+
+        bannerUploadArea.innerHTML = `
+          <div class="banner-preview">
+            <img src="${url}" alt="Banner preview">
+            <button type="button" class="banner-remove-btn" onclick="removeBanner()">Remove</button>
+          </div>
+        `
+      }
+
+      window.removeBanner = function() {
+        const bannerUploadArea = document.getElementById('banner-upload-area')
+        if (!bannerUploadArea) return
+
+        // Clear hidden inputs
+        if (bannerUrlInput) bannerUrlInput.value = ''
+        if (bannerPublicIdInput) bannerPublicIdInput.value = ''
+        if (bannerWidthInput) bannerWidthInput.value = ''
+        if (bannerHeightInput) bannerHeightInput.value = ''
+
+        // Reset upload area
+        bannerUploadArea.innerHTML = `
+          <div class="banner-upload-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>Click or drag to upload banner image</p>
+            <span>Recommended: 1200x630px, max 5MB</span>
+          </div>
+        `
+        bannerUploadArea.style.display = 'block'
+      }
+
+      // Banner Upload Handler for Create Course Form
+      const createBannerUploadArea = document.getElementById('create-banner-upload-area')
+      const createBannerFileInput = document.getElementById('create-banner-file-input')
+      const createBannerProgress = document.getElementById('create-banner-progress')
+      const createBannerProgressBar = createBannerProgress?.querySelector('.banner-progress-bar')
+      const createBannerProgressText = createBannerProgress?.querySelector('.banner-progress-text')
+      const createBannerUrlInput = document.getElementById('create-banner-url-input')
+      const createBannerPublicIdInput = document.getElementById('create-banner-public-id-input')
+      const createBannerWidthInput = document.getElementById('create-banner-width-input')
+      const createBannerHeightInput = document.getElementById('create-banner-height-input')
+
+      if (createBannerUploadArea && createBannerFileInput) {
+        createBannerUploadArea.addEventListener('click', () => createBannerFileInput.click())
+        
+        createBannerFileInput.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          await uploadCreateBanner(file)
+        })
+
+        createBannerUploadArea.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          createBannerUploadArea.classList.add('drag-over')
+        })
+        
+        createBannerUploadArea.addEventListener('dragleave', () => {
+          createBannerUploadArea.classList.remove('drag-over')
+        })
+        
+        createBannerUploadArea.addEventListener('drop', async (e) => {
+          e.preventDefault()
+          createBannerUploadArea.classList.remove('drag-over')
+          const file = e.dataTransfer?.files?.[0]
+          if (file && file.type.startsWith('image/')) {
+            await uploadCreateBanner(file)
+          }
+        })
+      }
+
+      async function uploadCreateBanner(file) {
+        if (!createBannerUploadArea || !createBannerProgress) return
+
+        const maxSize = 5 * 1024 * 1024
+        if (file.size > maxSize) {
+          alert('File too large. Maximum size is 5MB.')
+          return
+        }
+
+        createBannerUploadArea.style.display = 'none'
+        createBannerProgress.style.display = 'block'
+        if (createBannerProgressBar) createBannerProgressBar.style.width = '0%'
+        if (createBannerProgressText) createBannerProgressText.textContent = 'Uploading...'
+
+        const formData = new FormData()
+        formData.append('banner', file)
+
+        try {
+          const response = await fetch('/api/upload/banner', {
+            method: 'POST',
+            body: formData
+          })
+
+          const data = await response.json()
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Upload failed')
+          }
+
+          createBannerUrlInput.value = data.url
+          createBannerPublicIdInput.value = data.publicId
+          createBannerWidthInput.value = data.width
+          createBannerHeightInput.value = data.height
+
+          createBannerUploadArea.innerHTML = `
+            <div class="banner-preview">
+              <img src="${data.url}" alt="Banner preview">
+              <button type="button" class="banner-remove-btn" onclick="removeCreateBanner()">Remove</button>
+            </div>
+          `
+
+          if (createBannerProgressText) createBannerProgressText.textContent = 'Upload complete!'
+          setTimeout(() => {
+            createBannerProgress.style.display = 'none'
+          }, 1500)
+
+        } catch (error) {
+          console.error('Banner upload error:', error)
+          alert('Failed to upload banner: ' + error.message)
+          createBannerUploadArea.style.display = 'block'
+          createBannerProgress.style.display = 'none'
+        }
+      }
+
+      window.removeCreateBanner = function() {
+        if (!createBannerUploadArea) return
+
+        createBannerUrlInput.value = ''
+        createBannerPublicIdInput.value = ''
+        createBannerWidthInput.value = ''
+        createBannerHeightInput.value = ''
+
+        createBannerUploadArea.innerHTML = `
+          <div class="banner-upload-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>Click or drag to upload banner image</p>
+            <span>Recommended: 1200x630px, max 5MB</span>
+          </div>
+        `
+        createBannerUploadArea.style.display = 'block'
+      }
     })()
   </script>
 </body>
