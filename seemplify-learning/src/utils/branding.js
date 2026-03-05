@@ -6,7 +6,7 @@ export const resolveBranding = (hostname) => {
 
   const brandKey = isAiinNigeria ? 'aiin' : 'seemplify'
   const brandName = isAiinNigeria ? 'AIIN Nigeria' : 'Seemplify'
-  const learningName = `${brandName} Learning`
+  const learningName = isAiinNigeria ? 'AIIN Learning' : `${brandName} Learning`
 
   return {
     brandKey,
