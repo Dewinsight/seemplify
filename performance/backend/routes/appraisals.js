@@ -388,7 +388,31 @@ function mergeCycleStats(storedStats = {}, computedStats = {}) {
   return merged;
 }
 
-async function buildCycleStatsMap(cycleIds = [], orgId = null) {
+function buildOverdueExpression(referenceDate = new Date()) {
+  const reference = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  const safeReference = Number.isNaN(reference.getTime()) ? new Date() : reference;
+
+  return {
+    $or: [
+      {
+        $and: [
+          { $in: ['$status', SELF_ASSESSMENT_PENDING_STATUSES] },
+          { $ne: ['$deadlines.selfAssessmentDue', null] },
+          { $lt: ['$deadlines.selfAssessmentDue', safeReference] }
+        ]
+      },
+      {
+        $and: [
+          { $in: ['$status', MANAGER_REVIEW_PENDING_STATUSES] },
+          { $ne: ['$deadlines.managerReviewDue', null] },
+          { $lt: ['$deadlines.managerReviewDue', safeReference] }
+        ]
+      }
+    ]
+  };
+}
+
+async function buildCycleStatsMap(cycleIds = [], orgId = null, referenceDate = new Date()) {
   if (!Array.isArray(cycleIds) || cycleIds.length === 0) {
     return new Map();
   }
@@ -404,6 +428,8 @@ async function buildCycleStatsMap(cycleIds = [], orgId = null) {
   if (orgId) {
     matchQuery.organizationId = orgId;
   }
+
+  const overdueExpression = buildOverdueExpression(referenceDate);
 
   const statsRows = await Appraisal.aggregate([
     { $match: matchQuery },
@@ -453,7 +479,7 @@ async function buildCycleStatsMap(cycleIds = [], orgId = null) {
         },
         overdueAppraisals: {
           $sum: {
-            $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+            $cond: [overdueExpression, 1, 0]
           }
         },
         averageRating: { $avg: '$finalRating.overall' }
@@ -1068,6 +1094,8 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
     const cycleQuery = orgId ? { organizationId: orgId } : {};
     const appraisalQuery = orgId ? { organizationId: orgId } : {};
+    const analyticsComputedAt = new Date();
+    const overdueExpression = buildOverdueExpression(analyticsComputedAt);
 
     const trendStart = new Date();
     trendStart.setMonth(trendStart.getMonth() - 11);
@@ -1123,7 +1151,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             },
             overdue: {
               $sum: {
-                $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+                $cond: [overdueExpression, 1, 0]
               }
             }
           }
@@ -1221,7 +1249,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             },
             overdue: {
               $sum: {
-                $cond: [{ $eq: ['$flags.isOverdue', true] }, 1, 0]
+                $cond: [overdueExpression, 1, 0]
               }
             },
             avgFinalRating: { $avg: '$finalRating.overall' }
@@ -1276,7 +1304,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
       ])
     ]);
 
-    const cycleStatsMap = await buildCycleStatsMap(cycles.map((cycle) => cycle._id), orgId);
+    const cycleStatsMap = await buildCycleStatsMap(cycles.map((cycle) => cycle._id), orgId, analyticsComputedAt);
 
     const workflow = workflowRows[0] || {
       selfSubmitted: 0,
@@ -1365,6 +1393,47 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     }
 
     const uniqueEmployees = uniqueEmployeesRows[0]?.count || 0;
+    const statusBreakdown = statusBreakdownRows.map((row) => ({
+      status: row._id,
+      count: row.count
+    }));
+
+    const statusBreakdownTotal = statusBreakdown.reduce((sum, row) => sum + (row.count || 0), 0);
+    const completedFromStatusBreakdown = statusBreakdown.reduce((sum, row) => (
+      APPRAISAL_COMPLETED_STATUSES.includes(row.status) ? sum + (row.count || 0) : sum
+    ), 0);
+    const teamTotalAppraisals = teamInsights.reduce((sum, team) => sum + (team.total || 0), 0);
+    const cycleTotalAppraisals = cycleHealth.reduce((sum, cycle) => sum + (cycle?.stats?.totalEmployees || 0), 0);
+    const workflowCompleted = workflow.completed || 0;
+
+    const auditChecks = {
+      statusBreakdownMatchesTotal: statusBreakdownTotal === totalAppraisals,
+      completedMatchesStatusBreakdown: workflowCompleted === completedFromStatusBreakdown,
+      teamTotalsMatchOverall: teamTotalAppraisals === totalAppraisals,
+      cycleTotalsMatchOverall: cycleTotalAppraisals === totalAppraisals
+    };
+
+    const discrepancies = [];
+    if (!auditChecks.statusBreakdownMatchesTotal) {
+      discrepancies.push(`Status breakdown total (${statusBreakdownTotal}) does not match appraisals total (${totalAppraisals}).`);
+    }
+    if (!auditChecks.completedMatchesStatusBreakdown) {
+      discrepancies.push(`Completed appraisals in workflow (${workflowCompleted}) does not match status breakdown (${completedFromStatusBreakdown}).`);
+    }
+    if (!auditChecks.teamTotalsMatchOverall) {
+      discrepancies.push(`Team total appraisals (${teamTotalAppraisals}) does not match appraisals total (${totalAppraisals}).`);
+    }
+    if (!auditChecks.cycleTotalsMatchOverall) {
+      discrepancies.push(`Cycle total appraisals (${cycleTotalAppraisals}) does not match appraisals total (${totalAppraisals}).`);
+    }
+
+    const analyticsAudit = {
+      checkedAt: analyticsComputedAt.toISOString(),
+      overdueReferenceDate: analyticsComputedAt.toISOString(),
+      checks: auditChecks,
+      discrepancies
+    };
+
     const cycleCounts = cycles.reduce((acc, cycle) => {
       acc.total += 1;
       if (cycle.status === 'active') acc.active += 1;
@@ -1402,10 +1471,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
           selfCompletionRate: totalAppraisals > 0 ? roundTo(((workflow.selfSubmitted || 0) / totalAppraisals) * 100, 1) : 0,
           managerCompletionRate: totalAppraisals > 0 ? roundTo(((workflow.managerSubmitted || 0) / totalAppraisals) * 100, 1) : 0,
           finalizationRate: totalAppraisals > 0 ? roundTo(((workflow.finalized || 0) / totalAppraisals) * 100, 1) : 0,
-          statusBreakdown: statusBreakdownRows.map((row) => ({
-            status: row._id,
-            count: row.count
-          })),
+          statusBreakdown,
           phaseBreakdown
         },
         ratings: {
@@ -1418,7 +1484,8 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
         },
         cycleHealth,
         teamInsights,
-        monthlyTrend
+        monthlyTrend,
+        audit: analyticsAudit
       }
     });
   } catch (error) {

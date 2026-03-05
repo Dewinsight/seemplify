@@ -30,80 +30,6 @@ const resolveSubmitterPrefill = (user: SubmitterUser | null | undefined) => {
     return { name, email, phone };
 };
 
-// Sample: Likely to PASS — has Group Head approval, HEART classification, strong business case
-const samplePass = {
-    initiativeName: 'Customer Service AI Assistant',
-    submitterName: 'Initiative Sponsor',
-    submitterTitle: 'Head of Customer Experience',
-    submitterEmail: 'sponsor@company.com',
-    submitterPhone: '',
-    groupHeadName: 'Michael Adeyemi',
-    heartSectorClassification: 'direct_heart_impact' as const,
-    confirmGroupHeadApproval: true,
-    problemDescription: 'Our customer service team handles over 5,000 calls daily, with 60% being routine inquiries about account balances, transaction status, and branch locations. This creates long wait times (average 8 minutes) and prevents agents from handling complex issues that truly need human attention.\n\nCustomer satisfaction scores have dropped 15% over the past quarter, primarily due to wait times. Staff turnover in the call center is also increasing due to repetitive work.',
-    whoAffected: 'all' as const,
-    currentHandling: 'Currently, all calls go through a basic IVR menu, then to human agents. Agents manually look up information across multiple systems. We have no self-service options beyond the IVR.',
-    aiDirection: 'customer_experience' as const,
-    aiIdea: 'An AI-powered virtual assistant that can handle routine inquiries 24/7, understand natural language, and seamlessly escalate complex issues to human agents with full context. The AI would integrate with our core banking system to provide real-time information.',
-    improvements: ['time', 'customer', 'errors'],
-    timeSaved: '2000 hours per month',
-    moneySaved: '₦50,000,000 annually',
-    customerBenefit: 'Instant responses to common questions, 24/7 availability',
-    errorReduction: 'Fewer miscommunications and information lookup errors',
-    betterDecisions: '',
-    successMeasure: 'Reduction in average wait time to under 2 minutes, customer satisfaction score increase of 20%, and handling 40% of routine inquiries without human intervention.',
-    dataNeeded: 'Customer account information (read-only), transaction history, FAQ database, call recordings for training, product and service catalog',
-    dataStorage: 'banking_system' as const,
-    involvesPersonalInfo: 'yes' as const,
-    urgency: 'important_6months' as const,
-    budgetAvailable: 'yes' as const,
-    budgetAmount: '₦75,000,000',
-    teamTimeCommitment: 'yes' as const,
-    teamHoursPerWeek: '20',
-    previousAttempts: 'We piloted a basic chatbot 2 years ago, but it had limited capabilities and poor natural language understanding. Customers found it frustrating. AI technology has advanced significantly since then.',
-    regulations: 'Must comply with CBN data protection guidelines, customer consent requirements for AI interactions, and our internal data governance policies.',
-    additionalContext: 'We have executive sponsorship for this initiative. Our IT team has already done preliminary architecture assessment and believes integration is feasible.',
-    confirmAccuracy: true,
-    confirmContactAcknowledgment: true
-};
-
-// Sample: Likely to REJECT — missing Group Head approval, no HEART classification (fails mandatory rules)
-const sampleReject = {
-    initiativeName: 'Internal Spreadsheet Automation',
-    submitterName: 'Initiative Submitter',
-    submitterTitle: 'Operations Analyst',
-    submitterEmail: 'submitter@company.com',
-    submitterPhone: '',
-    groupHeadName: '',
-    heartSectorClassification: '' as const,
-    confirmGroupHeadApproval: false,
-    problemDescription: 'We manually copy data between Excel files every week. It takes a few hours.',
-    whoAffected: 'staff' as const,
-    currentHandling: 'Manual copy-paste in Excel.',
-    aiDirection: 'automate' as const,
-    aiIdea: 'Use some AI or automation to reduce the manual work. Not sure exactly how.',
-    improvements: ['time'],
-    timeSaved: '5 hours per month',
-    moneySaved: '',
-    customerBenefit: '',
-    errorReduction: '',
-    betterDecisions: '',
-    successMeasure: 'Less manual work.',
-    dataNeeded: 'Excel files',
-    dataStorage: 'excel' as const,
-    involvesPersonalInfo: 'no' as const,
-    urgency: 'nice_to_have' as const,
-    budgetAvailable: 'not_sure' as const,
-    budgetAmount: '',
-    teamTimeCommitment: 'limited' as const,
-    teamHoursPerWeek: '2',
-    previousAttempts: '',
-    regulations: '',
-    additionalContext: 'Haven\'t discussed with anyone yet. Just an idea.',
-    confirmAccuracy: false,
-    confirmContactAcknowledgment: false
-};
-
 interface InitiativeIntakeProps {
     activeDepartment: any;
     onCancel: () => void;
@@ -184,19 +110,6 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         { id: 7, label: 'Context', icon: '🧩' },
         { id: 8, label: 'Review', icon: '✅' },
     ];
-
-    const fillSamplePass = () => setForm({
-        ...(samplePass as any),
-        submitterName: submitterPrefill.name || samplePass.submitterName,
-        submitterEmail: submitterPrefill.email || samplePass.submitterEmail,
-        submitterPhone: submitterPrefill.phone || samplePass.submitterPhone
-    });
-    const fillSampleReject = () => setForm({
-        ...(sampleReject as any),
-        submitterName: submitterPrefill.name || sampleReject.submitterName,
-        submitterEmail: submitterPrefill.email || sampleReject.submitterEmail,
-        submitterPhone: submitterPrefill.phone || sampleReject.submitterPhone
-    });
 
     const nextStep = () => setStep(prev => Math.min(prev + 1, totalSteps));
     const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
@@ -384,14 +297,6 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             <div className="intake-header">
                 <h2 className="intake-title">Start a New AI Initiative</h2>
                 <div className="intake-subtitle">Let's shape the future of banking together</div>
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <button type="button" onClick={fillSamplePass} style={{ background: 'rgba(76, 175, 80, 0.15)', border: '1px solid rgba(76, 175, 80, 0.5)', padding: '0.4rem 1rem', borderRadius: '50px', cursor: 'pointer', fontSize: '0.8rem', color: '#4caf50' }}>
-                        ✅ Sample: Likely to Pass
-                    </button>
-                    <button type="button" onClick={fillSampleReject} style={{ background: 'rgba(244, 67, 54, 0.15)', border: '1px solid rgba(244, 67, 54, 0.5)', padding: '0.4rem 1rem', borderRadius: '50px', cursor: 'pointer', fontSize: '0.8rem', color: '#f44336' }}>
-                        ❌ Sample: Likely to Reject
-                    </button>
-                </div>
             </div>
 
             {/* Steps Progress */}
@@ -865,3 +770,4 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
 };
 
 export default InitiativeIntake;
+

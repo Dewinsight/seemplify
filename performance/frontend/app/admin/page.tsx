@@ -137,6 +137,11 @@ export default function AdminOverviewPage() {
   const cycleHealth = analytics?.cycleHealth || [];
   const teamInsights = analytics?.teamInsights || [];
   const monthlyTrend = analytics?.monthlyTrend || [];
+  const analyticsAudit = analytics?.audit || null;
+  const auditDiscrepancies = Array.isArray(analyticsAudit?.discrepancies) ? analyticsAudit.discrepancies : [];
+  const auditCheckedAtLabel = analyticsAudit?.checkedAt
+    ? new Date(analyticsAudit.checkedAt).toLocaleString()
+    : 'unknown';
 
   const completionFunnel = useMemo(() => [
     { stage: 'Self Submitted', value: workflow.selfCompletionRate || 0, color: 'success.main' },
@@ -328,6 +333,11 @@ export default function AdminOverviewPage() {
     });
   }, [appraisals, selectedDepartment, selectedStage]);
 
+  const openDepartmentDetails = (departmentName?: string) => {
+    if (!departmentName) return;
+    router.push(`/admin/departments/${encodeURIComponent(departmentName)}`);
+  };
+
   if (userLoading || isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '55vh' }}>
@@ -379,6 +389,22 @@ export default function AdminOverviewPage() {
       {drilldownError && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           {drilldownError}
+        </Alert>
+      )}
+
+      {analyticsAudit && (
+        <Alert severity={auditDiscrepancies.length > 0 ? 'warning' : 'success'} sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight={700}>
+            Analytics audit {auditDiscrepancies.length > 0 ? 'detected inconsistencies' : 'passed consistency checks'}.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Checked at {auditCheckedAtLabel}.
+          </Typography>
+          {auditDiscrepancies.map((message: string, index: number) => (
+            <Typography key={`${message}-${index}`} variant="caption" display="block" sx={{ mt: 0.5 }}>
+              {message}
+            </Typography>
+          ))}
         </Alert>
       )}
 
@@ -533,7 +559,12 @@ export default function AdminOverviewPage() {
                   </TableHead>
                   <TableBody>
                     {cycleHealth.slice(0, 8).map((cycle: any) => (
-                      <TableRow key={cycle.cycleId}>
+                      <TableRow
+                        key={cycle.cycleId}
+                        hover
+                        onClick={() => router.push(`/admin/appraisal-cycles/${cycle.cycleId}`)}
+                        sx={{ cursor: 'pointer' }}
+                      >
                         <TableCell>
                           <Typography variant="body2" fontWeight={600}>{cycle.name}</Typography>
                           <Typography variant="caption" color="text.secondary">{formatLabel(cycle.currentPhase)}</Typography>
@@ -575,14 +606,23 @@ export default function AdminOverviewPage() {
                 Team Insights
               </Typography>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={teamInsights.slice(0, 8)} layout="vertical" margin={{ left: 18 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="teamName" width={90} />
-                  <Tooltip />
-                  <Bar dataKey="completionRate" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
+                  <BarChart data={teamInsights.slice(0, 8)} layout="vertical" margin={{ left: 18 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis type="category" dataKey="teamName" width={90} />
+                    <Tooltip />
+                    <Bar
+                      dataKey="completionRate"
+                      fill="#10b981"
+                      cursor="pointer"
+                      onClick={(point: unknown) => {
+                        const insightPoint = point as { teamName?: string; payload?: { teamName?: string } };
+                        const teamName = insightPoint?.teamName || insightPoint?.payload?.teamName;
+                        openDepartmentDetails(teamName);
+                      }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               <Typography variant="caption" color="text.secondary">
                 Bars show completion rate (%) by team.
               </Typography>
@@ -627,7 +667,12 @@ export default function AdminOverviewPage() {
                       {departmentMetrics.map((dept) => {
                         const completionRate = dept.appraisals > 0 ? Math.round((dept.completed / dept.appraisals) * 100) : 0;
                         return (
-                          <TableRow key={dept.department} hover>
+                          <TableRow
+                            key={dept.department}
+                            hover
+                            onClick={() => openDepartmentDetails(dept.department)}
+                            sx={{ cursor: 'pointer' }}
+                          >
                             <TableCell>
                               <Typography variant="body2" fontWeight={700}>{dept.department}</Typography>
                               <Typography variant="caption" color="text.secondary">Active OKRs: {dept.activeOkrs}</Typography>
@@ -724,7 +769,12 @@ export default function AdminOverviewPage() {
                       </TableHead>
                       <TableBody>
                         {filteredAppraisals.slice(0, 120).map((item) => (
-                          <TableRow key={item._id} hover>
+                          <TableRow
+                            key={item._id}
+                            hover
+                            onClick={() => router.push(`/appraisals/${item._id}`)}
+                            sx={{ cursor: 'pointer' }}
+                          >
                             <TableCell>
                               <Typography variant="body2" fontWeight={600}>{item.employee?.name || 'Unknown'}</Typography>
                               <Typography variant="caption" color="text.secondary">{item.employee?.email || '-'}</Typography>
