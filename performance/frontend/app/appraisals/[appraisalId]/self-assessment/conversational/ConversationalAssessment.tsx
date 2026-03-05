@@ -186,6 +186,14 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   // Send a message
   const handleSendMessage = async (message: string) => {
     setIsProcessing(true);
+    const isReviewPhase = conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation';
+
+    // If user continues chatting in review mode, invalidate any existing draft until report is regenerated.
+    if (isReviewPhase && report) {
+      setReport(null);
+      setShowReport(false);
+      setReviewAutoGenerateAttempted(false);
+    }
 
     // Optimistically add user message
     const userMessage: Message = {
@@ -204,11 +212,6 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       // Update with AI response
       setMessages(data.chatThread || []);
       setConversationState(data.conversationState);
-      const latestReport = findLatestReportInThread(data.chatThread || []);
-      if (latestReport) {
-        setReport(latestReport);
-        setShowReport(true);
-      }
 
       // Check if we should transition to report generation
       if (data.currentPhase === 'report_generation') {

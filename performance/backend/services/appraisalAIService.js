@@ -933,9 +933,10 @@ Keep it to 2-3 sentences.`;
 
     // Filter out low-signal extracted snippets (e.g., "no", "n/a")
     const sanitizedExtractedData = this.sanitizeExtractedData(extractedData);
+    const groundedExtractedData = this.buildGroundedExtractedData(chatThread, sanitizedExtractedData);
 
-    // Ground the report body in extracted data (deterministic) to avoid "demo-ish" hallucinations.
-    const baseReport = this.getFallbackReport(sanitizedExtractedData, okrPerformance);
+    // Ground the report body in employee conversation evidence to avoid generic/demo-like output.
+    const baseReport = this.getFallbackReport(groundedExtractedData, okrPerformance);
     const draftSelfAssessment = {
       overallSummary: baseReport.overallSummary,
       okrAssessment: baseReport.okrAssessment,
@@ -943,7 +944,7 @@ Keep it to 2-3 sentences.`;
       competencyRatings: []
     };
 
-    const conversationSignal = this.collectConversationSignal(chatThread, sanitizedExtractedData);
+    const conversationSignal = this.collectConversationSignal(chatThread, groundedExtractedData);
     const missingInfo = this.getMissingSelfAssessmentInfo(conversationSignal);
     const hasEnoughSignal = missingInfo.length === 0;
 
@@ -1279,6 +1280,233 @@ Provide a recommendation in JSON format:
     return normalized.length >= minLength && words.length >= minWords;
   }
 
+  truncateText(value, maxLength = 260) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) return '';
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+  }
+
+  isOperationalConversationMessage(value) {
+    const normalized = this.normalizeText(value).toLowerCase();
+    if (!normalized) return true;
+
+    return (
+      /^(?:ok|okay|yes|yeah|yep|sure|continue|next|done|got it|understood|thanks|thank you|sounds good|looks good|fine)$/i.test(normalized) ||
+      /^#?\d+$/.test(normalized) ||
+      /^i want to discuss the okr:/i.test(normalized) ||
+      /^generate(?:\s+the|\s+my)?\s+report$/i.test(normalized) ||
+      /^view report$/i.test(normalized)
+    );
+  }
+
+  extractConversationSnippets(value, options = {}) {
+    const {
+      minLength = 12,
+      minWords = 3,
+      maxSnippetLength = 260
+    } = options;
+
+    const normalized = this.normalizeText(value);
+    if (!this.isMeaningfulText(normalized, { minLength, minWords })) {
+      return [];
+    }
+    if (this.isOperationalConversationMessage(normalized)) {
+      return [];
+    }
+
+    const rawParts = normalized
+      .split(/\n+/)
+      .flatMap((line) => line.split(/\s*[;|•]\s*/))
+      .map((part) => this.normalizeText(part.replace(/^[-*•\d.)\s]+/, '')))
+      .filter(Boolean);
+
+    const expandedParts = rawParts.flatMap((part) => {
+      if (part.length <= maxSnippetLength * 1.4) return [part];
+      return part
+        .split(/(?<=[.!?])\s+/)
+        .map((snippet) => this.normalizeText(snippet))
+        .filter(Boolean);
+    });
+
+    return expandedParts
+      .filter((part) => this.isMeaningfulText(part, { minLength, minWords }))
+      .map((part) => this.truncateText(part, maxSnippetLength));
+  }
+
+  toUniqueTextItems(items = [], options = {}) {
+    const {
+      maxItems = 6,
+      minLength = 12,
+      minWords = 3,
+      allowSingleWord = false,
+      maxSnippetLength = 260
+    } = options;
+
+    const unique = [];
+    const seen = new Set();
+
+    for (const item of items) {
+      const text = this.normalizeText(item);
+      if (!this.isMeaningfulText(text, { minLength, minWords, allowSingleWord })) continue;
+      if (this.isOperationalConversationMessage(text)) continue;
+
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      unique.push(this.truncateText(text, maxSnippetLength));
+      if (unique.length >= maxItems) break;
+    }
+
+    return unique;
+  }
+
+  mergeUniqueTextItems(primary = [], secondary = [], options = {}) {
+    return this.toUniqueTextItems([...(primary || []), ...(secondary || [])], options);
+  }
+
+  findEntryByText(items = [], text = '', fields = []) {
+    const target = this.normalizeText(text).toLowerCase();
+    if (!target || !Array.isArray(items) || items.length === 0) return null;
+
+    return items.find((entry) =>
+      fields.some((field) => this.normalizeText(entry?.[field]).toLowerCase() === target)
+    ) || null;
+  }
+
+  collectEmployeePhaseSnippets(chatThread = [], phases = [], options = {}) {
+    const {
+      maxItems = 6,
+      minLength = 12,
+      minWords = 3
+    } = options;
+
+    const phaseSet = new Set((phases || []).map((phase) => this.normalizeText(phase).toLowerCase()));
+    const snippets = [];
+
+    (chatThread || [])
+      .filter((message) => message?.sender?.role === 'employee')
+      .forEach((message) => {
+        const phase = this.normalizeText(message?.phase).toLowerCase();
+        if (phaseSet.size > 0 && !phaseSet.has(phase)) return;
+
+        const messageText = this.normalizeText(message?.message);
+        if (!messageText || this.isOperationalConversationMessage(messageText)) return;
+
+        const parts = this.extractConversationSnippets(messageText, {
+          minLength,
+          minWords
+        });
+        snippets.push(...parts);
+      });
+
+    return this.toUniqueTextItems(snippets, {
+      maxItems,
+      minLength,
+      minWords
+    });
+  }
+
+  buildGroundedExtractedData(chatThread = [], extractedData = {}) {
+    const extractedAchievements = extractedData.achievements || [];
+    const conversationAchievements = extractedAchievements.filter((item) => item?.extractedFrom !== 'document');
+    const documentAchievements = extractedAchievements.filter((item) => item?.extractedFrom === 'document');
+
+    const achievementSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['okr_reflection', 'achievements', 'review'],
+      { maxItems: 8, minLength: 8, minWords: 2 }
+    );
+    const challengeSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['challenges', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+    const learningSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['learnings', 'competencies', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+    const goalSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['future_goals', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+
+    let achievementTexts = this.mergeUniqueTextItems(
+      conversationAchievements.map((item) => item?.text),
+      achievementSnippets,
+      { maxItems: 8, minLength: 8, minWords: 2 }
+    );
+
+    // Use document-derived achievements only when we have no direct conversation evidence.
+    if (achievementTexts.length === 0) {
+      achievementTexts = this.toUniqueTextItems(
+        documentAchievements.map((item) => item?.text),
+        { maxItems: 6, minLength: 8, minWords: 2 }
+      );
+    }
+
+    const challengeTexts = this.mergeUniqueTextItems(
+      (extractedData.challenges || []).map((item) => item?.text),
+      challengeSnippets,
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+
+    const learningTexts = this.mergeUniqueTextItems(
+      (extractedData.skills || []).map((item) => item?.skill || item?.text),
+      learningSnippets,
+      { maxItems: 6, minLength: 3, minWords: 1, allowSingleWord: true }
+    );
+
+    const goalTexts = this.mergeUniqueTextItems(
+      (extractedData.goals || []).map((item) => item?.goal || item?.text),
+      goalSnippets,
+      { maxItems: 6, minLength: 6, minWords: 2 }
+    );
+
+    const achievements = achievementTexts.map((text) => {
+      const source = this.findEntryByText(extractedAchievements, text, ['text']);
+      return {
+        ...source,
+        text
+      };
+    });
+
+    const challenges = challengeTexts.map((text) => {
+      const source = this.findEntryByText(extractedData.challenges || [], text, ['text']);
+      return {
+        text,
+        resolution: this.truncateText(source?.resolution, 220),
+        learnings: this.truncateText(source?.learnings, 220)
+      };
+    });
+
+    const skills = learningTexts.map((skill) => {
+      const source = this.findEntryByText(extractedData.skills || [], skill, ['skill', 'text']);
+      return {
+        skill,
+        evidence: this.truncateText(source?.evidence || source?.context, 220)
+      };
+    });
+
+    const goals = goalTexts.map((goal) => {
+      const source = this.findEntryByText(extractedData.goals || [], goal, ['goal', 'text']);
+      return {
+        goal,
+        timeframe: this.truncateText(source?.timeframe, 120)
+      };
+    });
+
+    return {
+      achievements,
+      challenges,
+      skills,
+      goals
+    };
+  }
+
   sanitizeExtractedData(extractedData = {}) {
     const achievements = (extractedData.achievements || [])
       .filter(item => this.isMeaningfulText(item?.text, { minLength: 8, minWords: 2 }))
@@ -1324,7 +1552,7 @@ Provide a recommendation in JSON format:
     const employeeMessages = (chatThread || [])
       .filter(m => m.sender?.role === 'employee')
       .map(m => this.normalizeText(m.message))
-      .filter(Boolean);
+      .filter((msg) => msg && !this.isOperationalConversationMessage(msg));
 
     const meaningfulMessages = employeeMessages.filter(msg =>
       this.isMeaningfulText(msg, { minLength: 10, minWords: 2 })
@@ -1360,6 +1588,7 @@ Provide a recommendation in JSON format:
       .filter(m => m.sender?.role === 'employee')
       .forEach((message) => {
         const text = this.normalizeText(message?.message);
+        if (this.isOperationalConversationMessage(text)) return;
         if (!this.isMeaningfulText(text, { minLength: 10, minWords: 2 })) return;
 
         const phase = this.normalizeText(message?.phase).toLowerCase();
@@ -1476,24 +1705,38 @@ Provide a recommendation in JSON format:
 
   getFallbackReport(extractedData, okrPerformance) {
     const heuristic = this.estimateSelfSuggestedRating(okrPerformance, extractedData);
-    const achievements = extractedData.achievements?.length
-      ? extractedData.achievements.map(a => `- ${a.text}`).join('\n')
-      : 'Not provided.';
+    const achievementItems = (extractedData.achievements || [])
+      .map(a => this.truncateText(a?.text, 280))
+      .filter(text => this.isMeaningfulText(text, { minLength: 8, minWords: 2 }))
+      .map(text => `- ${text}`);
+    const achievements = achievementItems.length > 0 ? achievementItems.join('\n') : 'Not provided.';
 
-    const challenges = extractedData.challenges?.length
-      ? extractedData.challenges.map(c => {
-        if (c.resolution) return `- ${c.text}\n  Resolution: ${c.resolution}`;
-        return `- ${c.text}`;
-      }).join('\n')
-      : 'Not provided.';
+    const challengeItems = (extractedData.challenges || [])
+      .map((c) => {
+        const challengeText = this.truncateText(c?.text, 280);
+        if (!this.isMeaningfulText(challengeText, { minLength: 8, minWords: 2 })) return null;
+        const resolution = this.truncateText(c?.resolution, 220);
+        if (resolution) return `- ${challengeText}\n  Resolution: ${resolution}`;
+        return `- ${challengeText}`;
+      })
+      .filter(Boolean);
+    const challenges = challengeItems.length > 0 ? challengeItems.join('\n') : 'Not provided.';
 
-    const learnings = extractedData.skills?.length
-      ? extractedData.skills.map(s => s.evidence ? `- ${s.skill} (${s.evidence})` : `- ${s.skill}`).join('\n')
-      : 'Not provided.';
+    const learningItems = (extractedData.skills || [])
+      .map((s) => {
+        const skill = this.truncateText(s?.skill || s?.text, 220);
+        if (!this.isMeaningfulText(skill, { minLength: 3, minWords: 1, allowSingleWord: true })) return null;
+        const evidence = this.truncateText(s?.evidence, 180);
+        return evidence ? `- ${skill} (${evidence})` : `- ${skill}`;
+      })
+      .filter(Boolean);
+    const learnings = learningItems.length > 0 ? learningItems.join('\n') : 'Not provided.';
 
-    const goals = extractedData.goals?.length
-      ? extractedData.goals.map(g => `- ${g.goal}`).join('\n')
-      : 'Not provided.';
+    const goalItems = (extractedData.goals || [])
+      .map((g) => this.truncateText(g?.goal || g?.text, 240))
+      .filter((goal) => this.isMeaningfulText(goal, { minLength: 6, minWords: 2 }))
+      .map((goal) => `- ${goal}`);
+    const goals = goalItems.length > 0 ? goalItems.join('\n') : 'Not provided.';
 
     return {
       overallSummary: {
