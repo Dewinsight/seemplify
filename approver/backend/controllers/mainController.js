@@ -626,9 +626,11 @@ const analyzeProjectPipeline = async ({
     organization,
     user,
     payload,
-    onProgress
+    onProgress,
+    existingProject = null
 }) => {
     const { name, description, repoUrl, formData } = payload;
+    const isResubmission = Boolean(existingProject);
     const department = await resolveDepartmentForAnalysis({
         requestedDepartment: payload.department,
         user,
@@ -929,36 +931,53 @@ const analyzeProjectPipeline = async ({
         ? (needEnhancedOversight || escalationTriggers.length > 0 ? 'Escalated' : 'Approved')
         : 'Rejected';
 
-    const project = new Project({
-        name,
-        description,
-        repoUrl,
-        organization,
-        analysisResult,
-        approvalStatus,
-        status: simpleStatus,
+    const project = isResubmission
+        ? existingProject
+        : new Project({
+            name,
+            description,
+            repoUrl,
+            organization,
+            requester: user ? user.id : null
+        });
+
+    project.name = name;
+    project.description = description;
+    project.repoUrl = repoUrl;
+    project.organization = organization;
+    project.analysisResult = analysisResult;
+    project.approvalStatus = approvalStatus;
+    project.status = simpleStatus;
+    project.score = score;
+    project.department = department;
+    project.formData = formData || null;
+    project.submittedAt = new Date();
+    project.tier = tier;
+    project.priorityScore = priorityScore;
+    project.scoringBreakdown = scoringBreakdown;
+    project.escalationTriggers = escalationTriggers;
+    project.needEnhancedOversight = needEnhancedOversight || false;
+    project.workflowStage = workflowStage;
+    project.workflowPolicy = workflowPolicy?._id || null;
+    project.currentStageKey = currentStageKey;
+    project.workflowPlan = workflowPlanSnapshot;
+    project.overrideBy = null;
+    project.overrideReason = '';
+
+    if (!project.requester && user?.id) {
+        project.requester = user.id;
+    }
+
+    if (!Array.isArray(project.approvalHistory)) {
+        project.approvalHistory = [];
+    }
+    project.approvalHistory.push({
+        stage: isResubmission ? 'AI Resubmission' : 'AI',
+        action: aiAction,
+        by: isResubmission && user?.id ? user.id : null,
+        reason: aiDecisionReason,
         score,
-        requester: user ? user.id : null,
-        department: department,
-        formData: formData || null,
-        submittedAt: new Date(),
-        tier,
-        priorityScore,
-        scoringBreakdown,
-        escalationTriggers,
-        needEnhancedOversight: needEnhancedOversight || false,
-        workflowStage,
-        workflowPolicy: workflowPolicy?._id || null,
-        currentStageKey,
-        workflowPlan: workflowPlanSnapshot,
-        approvalHistory: [{
-            stage: 'AI',
-            action: aiAction,
-            by: null,
-            reason: aiDecisionReason,
-            score,
-            timestamp: new Date()
-        }]
+        timestamp: new Date()
     });
 
     if (weaviateVectorService.isInitiativeMemoryEnabled()) {
@@ -1068,6 +1087,37 @@ const updateAnalysisJob = (jobId, patch = {}) => {
     ANALYSIS_JOBS.set(jobId, next);
     return next;
 };
+
+const createHttpError = (status, message) => {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+};
+
+const getProjectForResubmission = async (req, projectId) => {
+    if (!projectId) {
+        throw createHttpError(400, 'Project ID is required.');
+    }
+
+    const project = await Project.findOne({ _id: projectId, organization: req.organization });
+    if (!project) {
+        throw createHttpError(404, 'Project not found.');
+    }
+
+    if (!req.user.isAdmin && String(project.requester || '') !== String(req.user.id || '')) {
+        throw createHttpError(403, 'Only the original submitter or an admin can edit and resubmit this initiative.');
+    }
+
+    return project;
+};
+
+const buildResubmissionPayload = (project, body = {}) => ({
+    ...body,
+    name: body.name || project.name || '',
+    description: body.description || project.description || '',
+    formData: body.formData || project.formData || null,
+    department: body.department || project.department || null
+});
 
 const syncRuleEmbedding = async ({ organizationId, rule }) => {
     const now = new Date();
@@ -1282,6 +1332,88 @@ exports.analyzeProjectAsync = async (req, res) => {
                     status: 'failed',
                     phase: 'failed',
                     message: 'Analysis failed.',
+                    error: error.message || 'Unknown analysis error'
+                });
+                scheduleAnalysisJobCleanup(job.jobId);
+            }
+        });
+
+        return res.status(202).json({
+            jobId: job.jobId,
+            status: 'running'
+        });
+    } catch (error) {
+        const status = Number(error.status) || 500;
+        return res.status(status).json({ error: error.message });
+    }
+};
+
+exports.resubmitProject = async (req, res) => {
+    try {
+        const project = await getProjectForResubmission(req, req.params.id);
+        const userContext = buildUserContext(req.user);
+        const payload = buildResubmissionPayload(project, req.body || {});
+
+        const updatedProject = await analyzeProjectPipeline({
+            organization: req.organization,
+            user: userContext,
+            payload,
+            existingProject: project
+        });
+
+        res.json(updatedProject);
+    } catch (error) {
+        const status = Number(error.status) || 500;
+        res.status(status).json({ error: error.message });
+    }
+};
+
+exports.resubmitProjectAsync = async (req, res) => {
+    try {
+        const project = await getProjectForResubmission(req, req.params.id);
+        const userContext = buildUserContext(req.user);
+        const payload = buildResubmissionPayload(project, req.body || {});
+
+        const job = createAnalysisJob({
+            organization: req.organization,
+            userId: req.user.id
+        });
+
+        updateAnalysisJob(job.jobId, {
+            status: 'running',
+            phase: 'preparing',
+            message: 'Starting initiative resubmission analysis...'
+        });
+
+        setImmediate(async () => {
+            try {
+                const updatedProject = await analyzeProjectPipeline({
+                    organization: req.organization,
+                    user: userContext,
+                    payload,
+                    existingProject: project,
+                    onProgress: (progress) => {
+                        updateAnalysisJob(job.jobId, {
+                            status: 'running',
+                            ...progress
+                        });
+                    }
+                });
+
+                updateAnalysisJob(job.jobId, {
+                    status: 'completed',
+                    phase: 'completed',
+                    message: 'Resubmission analysis completed successfully.',
+                    projectId: String(updatedProject._id || ''),
+                    currentRule: '',
+                    currentRuleStatus: ''
+                });
+                scheduleAnalysisJobCleanup(job.jobId);
+            } catch (error) {
+                updateAnalysisJob(job.jobId, {
+                    status: 'failed',
+                    phase: 'failed',
+                    message: 'Resubmission analysis failed.',
                     error: error.message || 'Unknown analysis error'
                 });
                 scheduleAnalysisJobCleanup(job.jobId);

@@ -99,6 +99,7 @@ interface Project {
         calculatedTier?: number;
     };
     requester: {
+        _id?: string;
         username?: string;
         firstName?: string;
         lastName?: string;
@@ -141,7 +142,7 @@ const getRuleStatusVisuals = (status: string) => {
 const ProjectDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { activeOrganization } = useAuth();
+    const { user, activeOrganization } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [showOverride, setShowOverride] = useState(false);
@@ -251,6 +252,10 @@ const ProjectDetail: React.FC = () => {
 
     // Check if user can perform executive review
     const canExecutiveReview = hasAnyCapability(activeOrganization, ['projects.review.executive'], projectDeptId);
+    const canEditResubmit = Boolean(
+        activeOrganization?.isAdmin ||
+        (user?.id && project.requester?._id && String(user.id) === String(project.requester._id))
+    );
     const ruleAnalyses = project.analysisResult?.rulesAnalysis || [];
     const rulesPassEquivalentCount = ruleAnalyses.filter((rule) => isRulePassEquivalent(rule.status)).length;
 
@@ -309,6 +314,15 @@ const ProjectDetail: React.FC = () => {
                             <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#ff9800' }}>
                                 ⚠️ Enhanced oversight required (Priority Score 1.5–2.0)
                             </div>
+                        )}
+                        {canEditResubmit && (
+                            <button
+                                className="btn-primary"
+                                onClick={() => navigate('/analyze?tab=new&editProjectId=' + project._id)}
+                                style={{ marginTop: '0.75rem' }}
+                            >
+                                Edit & Resubmit
+                            </button>
                         )}
                     </div>
                 </div>
@@ -751,3 +765,4 @@ const ProjectDetail: React.FC = () => {
 };
 
 export default ProjectDetail;
+

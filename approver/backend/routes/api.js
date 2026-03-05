@@ -71,6 +71,8 @@ router.patch('/rules/:id', verifyToken, injectOrgContext, verifyRole(['rules.man
 router.post('/projects/analyze-async', verifyToken, injectOrgContext, mainController.analyzeProjectAsync);
 router.get('/projects/analyze-jobs/:jobId', verifyToken, injectOrgContext, mainController.getAnalyzeJobStatus);
 router.post('/projects/analyze', verifyToken, injectOrgContext, mainController.analyzeProject);
+router.post('/projects/:id/resubmit-async', verifyToken, injectOrgContext, mainController.resubmitProjectAsync);
+router.post('/projects/:id/resubmit', verifyToken, injectOrgContext, mainController.resubmitProject);
 router.get('/projects', verifyToken, injectOrgContext, mainController.getProjects);
 router.get('/projects/:id', verifyToken, injectOrgContext, mainController.getProjectById);
 router.patch('/projects/:id/override', verifyToken, injectOrgContext, verifyRole(['projects.override']), mainController.overrideProject);

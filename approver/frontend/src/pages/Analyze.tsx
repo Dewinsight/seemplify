@@ -9,10 +9,14 @@ const Analyze: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { activeDepartment } = useAuth();
+    const editProjectId = searchParams.get('editProjectId');
 
     const [activeTab, setActiveTab] = useState<'view' | 'new'>('view');
     const [projects, setProjects] = useState<any[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
+    const [loadingEditProject, setLoadingEditProject] = useState(false);
+    const [editingProject, setEditingProject] = useState<any | null>(null);
+    const [editLoadError, setEditLoadError] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
@@ -121,15 +125,48 @@ const Analyze: React.FC = () => {
     // Reset to page 1 when search changes
     useEffect(() => {
         const tabParam = searchParams.get('tab');
-        if (tabParam === 'new') setActiveTab('new');
+        if (tabParam === 'new' || editProjectId) setActiveTab('new');
         else setActiveTab('view');
-    }, [searchParams]);
+    }, [searchParams, editProjectId]);
 
     useEffect(() => {
         if (activeTab === 'view') {
             fetchProjects();
         }
     }, [activeTab, activeDepartment]);
+
+    useEffect(() => {
+        if (activeTab !== 'new') return;
+
+        if (!editProjectId) {
+            setEditingProject(null);
+            setEditLoadError('');
+            setLoadingEditProject(false);
+            return;
+        }
+
+        let cancelled = false;
+        setLoadingEditProject(true);
+        setEditLoadError('');
+
+        api.get(`/projects/${editProjectId}`)
+            .then((res) => {
+                if (cancelled) return;
+                setEditingProject(res.data || null);
+            })
+            .catch((err: any) => {
+                if (cancelled) return;
+                setEditingProject(null);
+                setEditLoadError(err.response?.data?.error || 'Unable to load initiative for editing.');
+            })
+            .finally(() => {
+                if (!cancelled) setLoadingEditProject(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, editProjectId]);
 
     const fetchProjects = async () => {
         setLoadingProjects(true);
@@ -162,7 +199,7 @@ const Analyze: React.FC = () => {
                     )}
                     <div className="mobile-stack" style={{ display: 'flex', background: 'var(--glass-border)', borderRadius: '8px', padding: '4px' }}>
                         <button
-                            onClick={() => setActiveTab('view')}
+                            onClick={() => navigate('/analyze?tab=view')}
                             style={{
                                 background: activeTab === 'view' ? 'var(--brand-primary)' : 'transparent',
                                 color: activeTab === 'view' ? 'white' : 'var(--text-primary)',
@@ -174,7 +211,7 @@ const Analyze: React.FC = () => {
                             View All Initiatives
                         </button>
                         <button
-                            onClick={() => setActiveTab('new')}
+                            onClick={() => navigate('/analyze?tab=new')}
                             style={{
                                 background: activeTab === 'new' ? 'var(--brand-primary)' : 'transparent',
                                 color: activeTab === 'new' ? 'white' : 'var(--text-primary)',
@@ -357,10 +394,29 @@ const Analyze: React.FC = () => {
 
                     {loadingProjects && <div style={{ padding: '1rem', textAlign: 'center' }}>Loading...</div>}
                 </div>
+            ) : loadingEditProject ? (
+                <div className="glass-panel" style={{ textAlign: 'center' }}>
+                    Loading initiative details...
+                </div>
+            ) : (editProjectId && !editingProject) ? (
+                <div className="glass-panel" style={{ textAlign: 'center' }}>
+                    <div style={{ marginBottom: '1rem', color: '#f44336' }}>{editLoadError || 'Unable to load this initiative.'}</div>
+                    <button
+                        className="btn-primary"
+                        onClick={() => navigate('/analyze?tab=new')}
+                    >
+                        Start New Initiative
+                    </button>
+                </div>
             ) : (
                 <InitiativeIntake
                     activeDepartment={activeDepartment}
-                    onCancel={() => setActiveTab('view')}
+                    mode={editingProject ? 'edit' : 'create'}
+                    projectId={editingProject?._id}
+                    initialFormData={editingProject?.formData || null}
+                    initialInitiativeName={editingProject?.name || ''}
+                    initialDepartmentId={editingProject?.department?._id || null}
+                    onCancel={() => navigate('/analyze?tab=view')}
                 />
             )}
         </div>

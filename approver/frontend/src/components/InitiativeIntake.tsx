@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -33,11 +33,133 @@ const resolveSubmitterPrefill = (user: SubmitterUser | null | undefined) => {
 interface InitiativeIntakeProps {
     activeDepartment: any;
     onCancel: () => void;
+    mode?: 'create' | 'edit';
+    projectId?: string;
+    initialFormData?: Partial<InitiativeFormState> | null;
+    initialInitiativeName?: string;
+    initialDepartmentId?: string | null;
 }
 
-const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, onCancel }) => {
+type HeartSectorClassification = '' | 'direct_heart_impact' | 'indirect_heart_impact' | 'heart_adjacent' | 'non_heart';
+type WhoAffected = '' | 'customers' | 'staff' | 'operations' | 'all';
+type AiDirection = '' | 'automate' | 'decisions' | 'customer_experience' | 'detect_patterns' | 'not_sure';
+type DataStorage = '' | 'excel' | 'banking_system' | 'customer_files' | 'external' | 'not_sure';
+type InvolvesPersonalInfo = '' | 'yes' | 'no' | 'not_sure';
+type Urgency = '' | 'urgent_3months' | 'important_6months' | 'can_wait_1year' | 'nice_to_have';
+type BudgetAvailable = '' | 'yes' | 'no' | 'not_sure';
+type TeamTimeCommitment = '' | 'yes' | 'limited' | 'no';
+
+interface InitiativeFormState {
+    initiativeName: string;
+    submitterName: string;
+    submitterTitle: string;
+    submitterEmail: string;
+    submitterPhone: string;
+    groupHeadName: string;
+    groupHeadApproval: boolean;
+    heartSectorClassification: HeartSectorClassification;
+    problemDescription: string;
+    whoAffected: WhoAffected;
+    currentHandling: string;
+    aiDirection: AiDirection;
+    aiIdea: string;
+    improvements: string[];
+    timeSaved: string;
+    moneySaved: string;
+    customerBenefit: string;
+    errorReduction: string;
+    betterDecisions: string;
+    successMeasure: string;
+    dataNeeded: string;
+    dataStorage: DataStorage;
+    involvesPersonalInfo: InvolvesPersonalInfo;
+    urgency: Urgency;
+    budgetAvailable: BudgetAvailable;
+    budgetAmount: string;
+    teamTimeCommitment: TeamTimeCommitment;
+    teamHoursPerWeek: string;
+    previousAttempts: string;
+    regulations: string;
+    additionalContext: string;
+    confirmAccuracy: boolean;
+    confirmGroupHeadApproval: boolean;
+    confirmContactAcknowledgment: boolean;
+}
+
+const INITIATIVE_FORM_DEFAULTS: InitiativeFormState = {
+    initiativeName: '',
+    submitterName: '',
+    submitterTitle: '',
+    submitterEmail: '',
+    submitterPhone: '',
+    groupHeadName: '',
+    groupHeadApproval: false,
+    heartSectorClassification: '',
+    problemDescription: '',
+    whoAffected: '',
+    currentHandling: '',
+    aiDirection: '',
+    aiIdea: '',
+    improvements: [],
+    timeSaved: '',
+    moneySaved: '',
+    customerBenefit: '',
+    errorReduction: '',
+    betterDecisions: '',
+    successMeasure: '',
+    dataNeeded: '',
+    dataStorage: '',
+    involvesPersonalInfo: '',
+    urgency: '',
+    budgetAvailable: '',
+    budgetAmount: '',
+    teamTimeCommitment: '',
+    teamHoursPerWeek: '',
+    previousAttempts: '',
+    regulations: '',
+    additionalContext: '',
+    confirmAccuracy: false,
+    confirmGroupHeadApproval: false,
+    confirmContactAcknowledgment: false
+};
+
+const buildInitialFormState = (
+    initialFormData: Partial<InitiativeFormState> | null | undefined,
+    initialInitiativeName: string | undefined,
+    submitterPrefill: { name: string; email: string; phone: string }
+): InitiativeFormState => {
+    const base: InitiativeFormState = {
+        ...INITIATIVE_FORM_DEFAULTS,
+        ...(initialFormData || {})
+    };
+
+    if (!Array.isArray(base.improvements)) {
+        base.improvements = [];
+    }
+
+    if (initialInitiativeName && !base.initiativeName) {
+        base.initiativeName = initialInitiativeName;
+    }
+
+    base.submitterName = base.submitterName || submitterPrefill.name;
+    base.submitterEmail = base.submitterEmail || submitterPrefill.email;
+    base.submitterPhone = base.submitterPhone || submitterPrefill.phone;
+
+    return base;
+};
+
+const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({
+    activeDepartment,
+    onCancel,
+    mode = 'create',
+    projectId,
+    initialFormData,
+    initialInitiativeName,
+    initialDepartmentId
+}) => {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const isEditMode = mode === 'edit' && Boolean(projectId);
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
     const [error, setError] = useState('');
@@ -45,59 +167,13 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
     const [analysisProgress, setAnalysisProgress] = useState<any>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const submitterPrefill = resolveSubmitterPrefill(user as SubmitterUser | null);
+    const initialFormSeed = useMemo(
+        () => buildInitialFormState(initialFormData, initialInitiativeName, submitterPrefill),
+        [initialFormData, initialInitiativeName, submitterPrefill.email, submitterPrefill.name, submitterPrefill.phone]
+    );
 
     // Form State
-    const [form, setForm] = useState({
-        // Section 1: Basic Information
-        initiativeName: '',
-        submitterName: '',
-        submitterTitle: '',
-        submitterEmail: '',
-        submitterPhone: '',
-        groupHeadName: '',
-        groupHeadApproval: false,
-        heartSectorClassification: '' as '' | 'direct_heart_impact' | 'indirect_heart_impact' | 'heart_adjacent' | 'non_heart',
-
-        // Section 2: Problem Statement
-        problemDescription: '',
-        whoAffected: '' as '' | 'customers' | 'staff' | 'operations' | 'all',
-        currentHandling: '',
-
-        // Section 3: AI Solution
-        aiDirection: '' as '' | 'automate' | 'decisions' | 'customer_experience' | 'detect_patterns' | 'not_sure',
-        aiIdea: '',
-
-        // Section 4: Success Metrics
-        improvements: [] as string[],
-        timeSaved: '',
-        moneySaved: '',
-        customerBenefit: '',
-        errorReduction: '',
-        betterDecisions: '',
-        successMeasure: '',
-
-        // Section 5: Data Requirements
-        dataNeeded: '',
-        dataStorage: '' as '' | 'excel' | 'banking_system' | 'customer_files' | 'external' | 'not_sure',
-        involvesPersonalInfo: '' as '' | 'yes' | 'no' | 'not_sure',
-
-        // Section 6: Resources & Timeline
-        urgency: '' as '' | 'urgent_3months' | 'important_6months' | 'can_wait_1year' | 'nice_to_have',
-        budgetAvailable: '' as '' | 'yes' | 'no' | 'not_sure',
-        budgetAmount: '',
-        teamTimeCommitment: '' as '' | 'yes' | 'limited' | 'no',
-        teamHoursPerWeek: '',
-
-        // Section 7: Extra Context
-        previousAttempts: '',
-        regulations: '',
-        additionalContext: '',
-
-        // Section 8: Confirmation
-        confirmAccuracy: false,
-        confirmGroupHeadApproval: false,
-        confirmContactAcknowledgment: false
-    });
+    const [form, setForm] = useState<InitiativeFormState>(initialFormSeed);
 
     const totalSteps = 8;
     const steps = [
@@ -125,6 +201,17 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         return () => stopPolling();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        stopPolling();
+        setStep(1);
+        setAnalyzing(false);
+        setError('');
+        setAnalysisJobId('');
+        setAnalysisProgress(null);
+        setForm(initialFormSeed);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialFormSeed, mode, projectId]);
 
     useEffect(() => {
         if (!submitterPrefill.name && !submitterPrefill.email && !submitterPrefill.phone) {
@@ -188,6 +275,12 @@ const InitiativeIntake: React.FC<InitiativeIntakeProps> = ({ activeDepartment, o
         setAnalysisJobId('');
         setAnalysisProgress(null);
         let payload: any = null;
+        const asyncEndpoint = isEditMode && projectId
+            ? `/projects/${projectId}/resubmit-async`
+            : '/projects/analyze-async';
+        const syncEndpoint = isEditMode && projectId
+            ? `/projects/${projectId}/resubmit`
+            : '/projects/analyze';
         try {
             // Build description from form fields for AI analysis
             const description = `
@@ -235,13 +328,15 @@ ${form.regulations ? `**Regulations:** ${form.regulations}` : ''}
 ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             `.trim();
 
+            const targetDepartmentId = activeDepartment?._id || initialDepartmentId || undefined;
             payload = {
                 name: form.initiativeName,
                 description,
-                department: activeDepartment?._id,
+                department: targetDepartmentId,
                 formData: form
             };
-            const res = await api.post('/projects/analyze-async', payload);
+
+            const res = await api.post(asyncEndpoint, payload);
             const jobId = res.data?.jobId;
             if (!jobId) {
                 throw new Error('No analysis job ID returned.');
@@ -251,7 +346,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             setAnalysisProgress({
                 status: 'running',
                 phase: 'queued',
-                message: 'Analysis queued...',
+                message: isEditMode ? 'Resubmission queued...' : 'Analysis queued...',
                 progressPercent: 0
             });
             startPolling(jobId);
@@ -259,10 +354,10 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
             // Backward-compatible fallback if async endpoint is not yet deployed.
             if (err.response?.status === 404) {
                 try {
-                    const fallbackRes = await api.post('/projects/analyze', payload || {
+                    const fallbackRes = await api.post(syncEndpoint, payload || {
                         name: form.initiativeName,
                         description: '',
-                        department: activeDepartment?._id,
+                        department: activeDepartment?._id || initialDepartmentId || undefined,
                         formData: form
                     });
                     navigate(`/projects/${fallbackRes.data.projectId || fallbackRes.data._id}`);
@@ -295,8 +390,8 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
         <div className="intake-container">
             {/* Header */}
             <div className="intake-header">
-                <h2 className="intake-title">Start a New AI Initiative</h2>
-                <div className="intake-subtitle">Let's shape the future of banking together</div>
+                <h2 className="intake-title">{isEditMode ? 'Edit and Resubmit Initiative' : 'Start a New AI Initiative'}</h2>
+                <div className="intake-subtitle">{isEditMode ? 'Update details and rerun AI evaluation' : 'Let\'s shape the future of banking together'}</div>
             </div>
 
             {/* Steps Progress */}
@@ -760,7 +855,7 @@ ${form.additionalContext ? `**Notes:** ${form.additionalContext}` : ''}
                         </button>
                     ) : (
                         <button className="btn-next" onClick={handleSubmit} disabled={analyzing} style={{ backgroundColor: '#00E676' }}>
-                            {analyzing ? 'Analyzing...' : 'Submit Initiative ✨'}
+                            {analyzing ? 'Analyzing...' : (isEditMode ? 'Resubmit Initiative ✨' : 'Submit Initiative ✨')}
                         </button>
                     )}
                 </div>
