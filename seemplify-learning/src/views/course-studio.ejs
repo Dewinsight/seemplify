@@ -1237,6 +1237,7 @@
       const bannerPublicIdInput = document.getElementById('banner-public-id-input')
       const bannerWidthInput = document.getElementById('banner-width-input')
       const bannerHeightInput = document.getElementById('banner-height-input')
+      const bannerUploadEndpoint = '/api/simple-lms/upload/banner'
 
       if (bannerUploadArea && bannerFileInput) {
         bannerUploadArea.addEventListener('click', () => bannerFileInput.click())
@@ -1287,16 +1288,14 @@
         formData.append('banner', file)
 
         try {
-          const response = await fetch('/api/upload/banner', {
+          const response = await fetch(bannerUploadEndpoint, {
             method: 'POST',
+            headers: {
+              Accept: 'application/json'
+            },
             body: formData
           })
-
-          const data = await response.json()
-
-          if (!response.ok) {
-            throw new Error(data.error || 'Upload failed')
-          }
+          const data = await parseBannerUploadResponse(response)
 
           // Update hidden inputs
           bannerUrlInput.value = data.url
@@ -1414,16 +1413,14 @@
         formData.append('banner', file)
 
         try {
-          const response = await fetch('/api/upload/banner', {
+          const response = await fetch(bannerUploadEndpoint, {
             method: 'POST',
+            headers: {
+              Accept: 'application/json'
+            },
             body: formData
           })
-
-          const data = await response.json()
-
-          if (!response.ok) {
-            throw new Error(data.error || 'Upload failed')
-          }
+          const data = await parseBannerUploadResponse(response)
 
           createBannerUrlInput.value = data.url
           createBannerPublicIdInput.value = data.publicId
@@ -1470,6 +1467,27 @@
           </div>
         `
         createBannerUploadArea.style.display = 'block'
+      }
+
+      async function parseBannerUploadResponse(response) {
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        const isJsonResponse = contentType.includes('application/json')
+
+        if (isJsonResponse) {
+          const payload = await response.json()
+          if (!response.ok) {
+            throw new Error(payload?.error || `Upload failed (${response.status}).`)
+          }
+          return payload
+        }
+
+        const textPayload = await response.text()
+        if (!response.ok && response.status === 404) {
+          throw new Error('Banner upload endpoint was not found (404). Please refresh this page and try again.')
+        }
+
+        const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+        throw new Error(`Upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
       }
     })()
   </script>
