@@ -534,11 +534,11 @@
             </div>
           <% } %>
           <div class="player-actions">
-            <form method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
+            <form id="markCompleteForm" method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
               <button class="btn btn-primary" type="submit">Mark Lesson Complete</button>
             </form>
             <% if (nextLesson) { %>
-              <form method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
+              <form id="completeNextForm" method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
                 <input type="hidden" name="next" value="1">
                 <button class="btn btn-secondary" type="submit">Complete & Next</button>
               </form>
@@ -617,6 +617,8 @@
   <%- include('./partials/public-footer') %>
   <script>
     (() => {
+      const mediaType = <%- JSON.stringify((lessonMedia && lessonMedia.kind) ? String(lessonMedia.kind) : '') %>
+      const mediaEmbedUrl = <%- JSON.stringify((lessonMedia && lessonMedia.embedUrl) ? String(lessonMedia.embedUrl) : '') %>
       const chapterQuizData = <%- JSON.stringify((chapterSections || []).map((chapter) => ({
         key: chapter.key,
         chapterNumber: chapter.chapterNumber,
@@ -640,8 +642,13 @@
       const statusNode = document.getElementById('chapterQuizStatus')
       const resultsNode = document.getElementById('chapterQuizResults')
       const submitButton = document.getElementById('chapterQuizSubmit')
+      const markCompleteForm = document.getElementById('markCompleteForm')
+      const completeNextForm = document.getElementById('completeNextForm')
+      const lessonIframe = document.querySelector('.player-media iframe')
+      const lessonNativeMedia = document.querySelector('.player-media video, .player-media audio')
       let activeChapter = null
       let submitting = false
+      let autoAdvanceSubmitting = false
 
       const escapeHtml = (value) => String(value || '')
         .replace(/&/g, '&amp;')
@@ -801,8 +808,165 @@
       if (form) {
         form.addEventListener('submit', submitChapterQuiz)
       }
+
+      const submitAutoAdvance = () => {
+        if (autoAdvanceSubmitting) return
+        const targetForm = completeNextForm || markCompleteForm
+        if (!targetForm) return
+
+        autoAdvanceSubmitting = true
+        const marker = document.createElement('input')
+        marker.type = 'hidden'
+        marker.name = 'auto'
+        marker.value = '1'
+        targetForm.appendChild(marker)
+
+        if (typeof targetForm.requestSubmit === 'function') {
+          targetForm.requestSubmit()
+          return
+        }
+        targetForm.submit()
+      }
+
+      if (lessonNativeMedia) {
+        lessonNativeMedia.addEventListener('ended', submitAutoAdvance, { once: true })
+      }
+
+      const normalizeEmbedUrl = (urlValue, updateParams = () => {}) => {
+        if (!urlValue) return null
+        try {
+          const parsed = new URL(urlValue, window.location.origin)
+          updateParams(parsed.searchParams)
+          return parsed.toString()
+        } catch (_) {
+          return null
+        }
+      }
+
+      const configureYouTubeAutoAdvance = async (iframe, embedUrl) => {
+        if (!iframe || !embedUrl) return
+
+        const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (!params.get('enablejsapi')) params.set('enablejsapi', '1')
+          if (!params.get('origin')) params.set('origin', window.location.origin)
+          if (!params.get('playsinline')) params.set('playsinline', '1')
+          if (!params.get('rel')) params.set('rel', '0')
+          if (!params.get('modestbranding')) params.set('modestbranding', '1')
+        })
+
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
+
+        const ensureYouTubeApi = () => new Promise((resolve, reject) => {
+          if (window.YT && window.YT.Player) {
+            resolve(window.YT)
+            return
+          }
+
+          const existingTag = document.querySelector('script[data-player-api="youtube"]')
+          const previousReady = window.onYouTubeIframeAPIReady
+          window.onYouTubeIframeAPIReady = () => {
+            if (typeof previousReady === 'function') previousReady()
+            resolve(window.YT)
+          }
+
+          if (existingTag) return
+
+          const script = document.createElement('script')
+          script.src = 'https://www.youtube.com/iframe_api'
+          script.async = true
+          script.dataset.playerApi = 'youtube'
+          script.onerror = () => reject(new Error('YouTube API failed to load.'))
+          document.head.appendChild(script)
+        })
+
+        try {
+          const youtubeApi = await ensureYouTubeApi()
+          if (!youtubeApi || !youtubeApi.Player) return
+
+          if (!iframe.id) {
+            iframe.id = `lesson-media-youtube-${Date.now()}`
+          }
+
+          // eslint-disable-next-line no-new
+          new youtubeApi.Player(iframe.id, {
+            events: {
+              onStateChange: (event) => {
+                if (event && event.data === youtubeApi.PlayerState.ENDED) {
+                  submitAutoAdvance()
+                }
+              }
+            }
+          })
+        } catch (_) {
+          // Ignore API load failures and keep manual controls available.
+        }
+      }
+
+      const configureVimeoAutoAdvance = (iframe, embedUrl) => {
+        if (!iframe || !embedUrl) return
+
+        if (!iframe.id) {
+          iframe.id = `lesson-media-vimeo-${Date.now()}`
+        }
+        const playerId = iframe.id
+
+        const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (!params.get('api')) params.set('api', '1')
+          params.set('player_id', playerId)
+        })
+
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
+
+        const onLoad = () => {
+          try {
+            iframe.contentWindow?.postMessage(JSON.stringify({
+              method: 'addEventListener',
+              value: 'ended'
+            }), 'https://player.vimeo.com')
+          } catch (_) {
+            // Ignore cross-origin postMessage failures.
+          }
+        }
+
+        iframe.addEventListener('load', onLoad)
+        if (iframe.contentWindow) onLoad()
+
+        window.addEventListener('message', (event) => {
+          if (!event || typeof event.origin !== 'string' || !event.origin.includes('vimeo.com')) return
+
+          let payload = event.data
+          if (typeof payload === 'string') {
+            try {
+              payload = JSON.parse(payload)
+            } catch (_) {
+              return
+            }
+          }
+
+          if (!payload || typeof payload !== 'object') return
+          const eventName = String(payload.event || payload.method || '').toLowerCase()
+          const payloadPlayerId = String(payload.player_id || '')
+          if ((eventName === 'ended' || eventName === 'finish') && payloadPlayerId === playerId) {
+            submitAutoAdvance()
+          }
+        })
+      }
+
+      if (lessonIframe && mediaType === 'embed' && mediaEmbedUrl) {
+        const embedLower = mediaEmbedUrl.toLowerCase()
+        if (embedLower.includes('youtube.com/embed/')) {
+          configureYouTubeAutoAdvance(lessonIframe, mediaEmbedUrl)
+        } else if (embedLower.includes('player.vimeo.com/video/')) {
+          configureVimeoAutoAdvance(lessonIframe, mediaEmbedUrl)
+        }
+      }
     })()
   </script>
 </body>
 </html>
+
 
