@@ -8,8 +8,30 @@
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
   <style>
-    body { margin:0; background:#f1f5f9; color:#0f172a; font-family:Segoe UI,Tahoma,sans-serif; }
-    .layout { min-height:100vh; display:grid; grid-template-columns:280px minmax(0,1fr); }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    body.admin-page {
+      margin: 0 !important;
+      padding: 0 !important;
+      max-width: none !important;
+      min-height: 100vh;
+      background:#f1f5f9;
+      color:#0f172a;
+      font-family:Segoe UI,Tahoma,sans-serif;
+      overflow-x: hidden;
+    }
+    .layout {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      min-height:100vh;
+      display:grid;
+      grid-template-columns:280px minmax(0,1fr);
+    }
     .side {
       background:linear-gradient(180deg,#0b172a 0%,#0f172a 45%,#111c31 100%);
       color:#cbd5e1;
@@ -120,7 +142,7 @@
     }
   </style>
 </head>
-<body>
+<body class="admin-page">
 <%
   const sectionPath = (section) => section === 'overview' ? '/admin' : `/admin/${section}`
   const navItems = [
