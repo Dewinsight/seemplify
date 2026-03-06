@@ -418,7 +418,7 @@
 
       <% if (currentSection === 'creators') { %>
         <section class="card">
-          <div class="head"><div><h2>Creator Management</h2><p class="mini">Manage creator course inventory, commission rates, and handoff to course management.</p></div></div>
+          <div class="head"><div><h2>Creator Management</h2><p class="mini">Manage creator sales, balances, withdrawal requests, commissions, and payout details.</p></div></div>
           <form method="get" action="/admin/creators" class="form-grid">
             <select class="input" name="creatorId">
               <option value="">All creators</option>
@@ -443,7 +443,9 @@
                     <th>Creator</th>
                     <th>Courses</th>
                     <th>Learners</th>
-                    <th>Sales</th>
+                    <th>Sales & Earnings</th>
+                    <th>Balance</th>
+                    <th>Payout Profile</th>
                     <th>Commission</th>
                     <th>Actions</th>
                   </tr>
@@ -482,7 +484,26 @@
                         <span class="mini">
                           Sales: <strong><%= creator.saleCount %></strong><br>
                           Gross: <strong><%= creator.grossDisplay %></strong><br>
-                          Payout: <strong><%= creator.creatorCommissionDisplay %></strong>
+                          Earnings: <strong><%= creator.creatorCommissionDisplay %></strong>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          Available: <strong><%= creator.availableBalanceDisplay %></strong><br>
+                          Pending: <strong><%= creator.pendingWithdrawalDisplay %></strong><br>
+                          Paid Out: <strong><%= creator.paidWithdrawalDisplay %></strong><br>
+                          Requests: <strong><%= creator.withdrawalRequestCount %></strong>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          <% if (creator.hasPayoutProfile) { %>
+                            <%= creator.payoutBankName || 'Bank details saved' %><br>
+                            <%= creator.payoutAccountName || '-' %> <%= creator.payoutAccountMasked || '' %><br>
+                            <%= creator.payoutPaymentEmail || '-' %>
+                          <% } else { %>
+                            Payout details missing
+                          <% } %>
                         </span>
                       </td>
                       <td>
@@ -519,6 +540,69 @@
               </table>
             </div>
           <% } %>
+
+          <article class="card">
+            <strong>Withdrawal Requests</strong>
+            <% if (!adminWithdrawalRequests || adminWithdrawalRequests.length === 0) { %>
+              <p class="mini">No withdrawal requests found.</p>
+            <% } else { %>
+              <div class="table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Creator</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Payout Snapshot</th>
+                      <th>Notes</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% adminWithdrawalRequests.forEach((request) => { %>
+                      <tr>
+                        <td><%= dateText(request.requestedAt || request.createdAt) %></td>
+                        <td><strong><%= request.creatorName %></strong><br><span class="mini"><%= request.creatorEmail || '-' %></span></td>
+                        <td><%= request.amountDisplay %></td>
+                        <td><span class="pill"><%= request.statusLabel %></span></td>
+                        <td>
+                          <span class="mini">
+                            <%= request.payoutProfileSnapshot?.bankName || '-' %><br>
+                            <%= request.payoutProfileSnapshot?.accountName || '-' %><br>
+                            <%= request.payoutProfileSnapshot?.paymentEmail || '-' %>
+                          </span>
+                        </td>
+                        <td>
+                          <span class="mini">
+                            <%= request.notes || '-' %><br>
+                            Admin: <%= request.adminNotes || '-' %>
+                          </span>
+                        </td>
+                        <td>
+                          <% if (request.canApprove || request.canReject || request.canMarkPaid) { %>
+                            <form method="post" action="/simple-lms/admin/withdrawals/<%= request._id %>/status" class="inline-form">
+                              <select class="input" name="status">
+                                <% if (request.canApprove) { %><option value="approved">approved</option><% } %>
+                                <% if (request.canMarkPaid) { %><option value="paid">paid</option><% } %>
+                                <% if (request.canReject) { %><option value="rejected">rejected</option><% } %>
+                              </select>
+                              <input class="input" type="text" name="transactionRef" placeholder="Transaction ref">
+                              <input class="input" type="text" name="adminNotes" placeholder="Admin note">
+                              <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
+                              <button class="btn btn-primary btn-sm" type="submit">Update</button>
+                            </form>
+                          <% } else { %>
+                            <span class="mini">Finalized</span>
+                          <% } %>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
+          </article>
         </section>
       <% } %>
 

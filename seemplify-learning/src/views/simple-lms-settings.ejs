@@ -503,7 +503,77 @@
             <span class="workspace-overview-chip">Conversion: <%= numberOrZero(creatorStats?.conversionRatePercent) %>%</span>
             <span class="workspace-overview-chip">Completion: <%= numberOrZero(creatorStats?.completionRatePercent) %>%</span>
           </div>
+          <h3 style="margin-top:10px;">Creator Wallet</h3>
+          <div class="workspace-overview-chip-row">
+            <span class="workspace-overview-chip">Sold: <%= creatorWalletSummary?.soldDisplay || 'NGN 0.00' %></span>
+            <span class="workspace-overview-chip">Earnings: <%= creatorWalletSummary?.earningsDisplay || 'NGN 0.00' %></span>
+            <span class="workspace-overview-chip">Pending: <%= creatorWalletSummary?.pendingWithdrawalDisplay || 'NGN 0.00' %></span>
+            <span class="workspace-overview-chip">Paid Out: <%= creatorWalletSummary?.paidOutDisplay || 'NGN 0.00' %></span>
+            <span class="workspace-overview-chip">Available: <%= creatorWalletSummary?.availableBalanceDisplay || 'NGN 0.00' %></span>
+          </div>
+          <% if (canCreateCourses) { %>
+            <h3 style="margin-top:10px;">Request Withdrawal</h3>
+            <form method="post" action="/simple-lms/withdrawals/request" class="input-grid">
+              <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
+              <label>Amount (major units)
+                <input class="input" type="number" name="amount" min="0.01" step="0.01" required>
+              </label>
+              <label>Currency
+                <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
+              </label>
+              <label>Note for admin
+                <textarea class="input" name="notes" rows="3" maxlength="1200" placeholder="Optional context for this withdrawal request"></textarea>
+              </label>
+              <button class="btn-primary-soft" type="submit">Submit Withdrawal Request</button>
+            </form>
+          <% } %>
         </aside>
+      </section>
+
+      <section class="settings-card">
+        <h3>Withdrawal Requests</h3>
+        <% if (!creatorWithdrawalRequests || creatorWithdrawalRequests.length === 0) { %>
+          <p class="settings-note">No withdrawal requests yet.</p>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Note</th>
+                  <th>Admin Update</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% creatorWithdrawalRequests.forEach((request) => { %>
+                  <tr>
+                    <td><%= dateText(request.requestedAt || request.createdAt) %></td>
+                    <td><%= request.amountDisplay %></td>
+                    <td><span class="pill"><%= request.statusLabel %></span></td>
+                    <td><%= request.notes || '-' %></td>
+                    <td>
+                      <%= request.adminNotes || '-' %>
+                      <% if (request.reviewerName) { %><br><span class="mini">by <%= request.reviewerName %></span><% } %>
+                    </td>
+                    <td>
+                      <% if (request.canCancel) { %>
+                        <form method="post" action="/simple-lms/withdrawals/<%= request._id %>/cancel" style="display:inline-flex;">
+                          <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
+                          <button class="btn btn-secondary" type="submit">Cancel</button>
+                        </form>
+                      <% } else { %>
+                        <span class="mini">No action</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
       </section>
     <% } %>
 

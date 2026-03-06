@@ -7,6 +7,7 @@ import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
+import { SimpleLmsWithdrawal } from '../models/SimpleLmsWithdrawal.js'
 import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting.js'
 import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
@@ -30,6 +31,7 @@ const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
 const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
+const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
 const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
 
@@ -241,6 +243,92 @@ const splitCommission = ({ amountMinor = 0, ratePercent = 70 }) => {
   return {
     creatorCommissionMinor,
     platformShareMinor
+  }
+}
+
+const parseAmountToMinor = (value) => {
+  const normalized = String(value || '').trim().replace(/,/g, '')
+  if (!normalized) return 0
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.round(parsed * 100))
+}
+
+const normalizeWithdrawalStatus = (value, fallback = 'pending') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return WITHDRAWAL_STATUSES.includes(normalized) ? normalized : fallback
+}
+
+const formatWithdrawalStatusLabel = (value) => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, ' ')
+)
+
+const hasValidPayoutProfile = (profile = {}) => {
+  const accountName = String(profile.accountName || '').trim()
+  const accountNumber = String(profile.accountNumber || '').trim()
+  const bankName = String(profile.bankName || '').trim()
+  const paymentEmail = String(profile.paymentEmail || '').trim()
+  if (paymentEmail) return true
+  return Boolean(accountName && accountNumber && bankName)
+}
+
+const getCreatorWalletSnapshot = async (creatorId) => {
+  const normalizedCreatorId = String(creatorId || '').trim()
+  if (!mongoose.Types.ObjectId.isValid(normalizedCreatorId)) {
+    return {
+      soldMinor: 0,
+      soldCount: 0,
+      earningsMinor: 0,
+      paidOutMinor: 0,
+      outstandingWithdrawalMinor: 0,
+      availableBalanceMinor: 0
+    }
+  }
+
+  const creatorObjectId = new mongoose.Types.ObjectId(normalizedCreatorId)
+  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      { $match: { status: 'successful', creatorAccount: creatorObjectId } },
+      {
+        $group: {
+          _id: null,
+          soldMinor: { $sum: '$amountMinor' },
+          soldCount: { $sum: 1 },
+          earningsMinor: { $sum: '$creatorCommissionMinor' }
+        }
+      }
+    ]),
+    SimpleLmsWithdrawal.aggregate([
+      { $match: { creatorAccount: creatorObjectId } },
+      {
+        $group: {
+          _id: null,
+          paidOutMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+          outstandingWithdrawalMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } }
+        }
+      }
+    ])
+  ])
+
+  const earnings = earningsRaw[0] || { soldMinor: 0, soldCount: 0, earningsMinor: 0 }
+  const withdrawals = withdrawalsRaw[0] || { paidOutMinor: 0, outstandingWithdrawalMinor: 0 }
+  const soldMinor = Math.max(0, Number(earnings.soldMinor || 0))
+  const soldCount = Math.max(0, Number(earnings.soldCount || 0))
+  const earningsMinor = Math.max(0, Number(earnings.earningsMinor || 0))
+  const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
+  const outstandingWithdrawalMinor = Math.max(0, Number(withdrawals.outstandingWithdrawalMinor || 0))
+  const availableBalanceMinor = Math.max(0, earningsMinor - paidOutMinor - outstandingWithdrawalMinor)
+
+  return {
+    soldMinor,
+    soldCount,
+    earningsMinor,
+    paidOutMinor,
+    outstandingWithdrawalMinor,
+    availableBalanceMinor
   }
 }
 
@@ -4103,7 +4191,7 @@ const renderWorkspacePage = async (
       ? {}
       : { createdBy: req.user._id }
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -4131,7 +4219,7 @@ const renderWorkspacePage = async (
       SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
       canManagePlatform(role)
         ? Account.find({})
-          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt')
+          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile')
           .sort({ createdAt: -1 })
           .limit(500)
           .lean()
@@ -4189,7 +4277,64 @@ const renderWorkspacePage = async (
           .lean()
         : Promise.resolve([]),
       getCommissionSettings(),
-      getPlatformSettings()
+      getPlatformSettings(),
+      canCreateCourses(role)
+        ? SimpleLmsPayment.aggregate([
+          {
+            $match: canManagePlatform(role)
+              ? { status: 'successful', creatorAccount: { $ne: null } }
+              : { status: 'successful', creatorAccount: req.user._id }
+          },
+          {
+            $group: {
+              _id: '$creatorAccount',
+              soldMinor: { $sum: '$amountMinor' },
+              saleCount: { $sum: 1 },
+              earningsMinor: { $sum: '$creatorCommissionMinor' },
+              platformShareMinor: { $sum: '$platformShareMinor' }
+            }
+          }
+        ])
+        : Promise.resolve([]),
+      canCreateCourses(role)
+        ? SimpleLmsWithdrawal.aggregate([
+          {
+            $match: canManagePlatform(role)
+              ? {}
+              : { creatorAccount: req.user._id }
+          },
+          {
+            $group: {
+              _id: '$creatorAccount',
+              requestCount: { $sum: 1 },
+              requestedMinor: { $sum: '$amountMinor' },
+              pendingMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } },
+              approvedMinor: { $sum: { $cond: [{ $eq: ['$status', 'approved'] }, '$amountMinor', 0] } },
+              paidMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+              rejectedMinor: { $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, '$amountMinor', 0] } },
+              cancelledMinor: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, '$amountMinor', 0] } },
+              latestRequestedAt: { $max: '$requestedAt' }
+            }
+          }
+        ])
+        : Promise.resolve([]),
+      canCreateCourses(role)
+        ? SimpleLmsWithdrawal.find({ creatorAccount: req.user._id })
+          .populate('reviewedBy', 'email profile.name')
+          .populate('paidBy', 'email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(120)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? SimpleLmsWithdrawal.find({})
+          .populate('creatorAccount', 'email profile.name payoutProfile')
+          .populate('reviewedBy', 'email profile.name')
+          .populate('paidBy', 'email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(400)
+          .lean()
+        : Promise.resolve([])
     ])
 
     const myEnrollments = myEnrollmentsRaw
@@ -4579,6 +4724,99 @@ const renderWorkspacePage = async (
       ? Math.round((creatorStats.completionCount / Math.max(1, creatorStats.enrollmentCount)) * 100)
       : 0
 
+    const creatorEarningsById = new Map(
+      (creatorEarningsAggregateRaw || [])
+        .map((entry) => {
+          const creatorId = toIdString(entry?._id)
+          if (!creatorId) return null
+          return [creatorId, {
+            saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+            soldMinor: Math.max(0, Number(entry?.soldMinor || 0)),
+            earningsMinor: Math.max(0, Number(entry?.earningsMinor || 0)),
+            platformShareMinor: Math.max(0, Number(entry?.platformShareMinor || 0))
+          }]
+        })
+        .filter(Boolean)
+    )
+    const creatorWithdrawalsById = new Map(
+      (creatorWithdrawalAggregateRaw || [])
+        .map((entry) => {
+          const creatorId = toIdString(entry?._id)
+          if (!creatorId) return null
+          return [creatorId, {
+            requestCount: Math.max(0, Number(entry?.requestCount || 0)),
+            requestedMinor: Math.max(0, Number(entry?.requestedMinor || 0)),
+            pendingMinor: Math.max(0, Number(entry?.pendingMinor || 0)),
+            approvedMinor: Math.max(0, Number(entry?.approvedMinor || 0)),
+            paidMinor: Math.max(0, Number(entry?.paidMinor || 0)),
+            rejectedMinor: Math.max(0, Number(entry?.rejectedMinor || 0)),
+            cancelledMinor: Math.max(0, Number(entry?.cancelledMinor || 0)),
+            latestRequestedAt: entry?.latestRequestedAt || null
+          }]
+        })
+        .filter(Boolean)
+    )
+
+    const myCreatorId = toIdString(req.user._id)
+    const myCreatorEarnings = creatorEarningsById.get(myCreatorId) || {
+      saleCount: creatorStats.saleCount,
+      soldMinor: creatorStats.grossMinor,
+      earningsMinor: creatorStats.commissionMinor,
+      platformShareMinor: creatorStats.platformShareMinor
+    }
+    const myCreatorWithdrawals = creatorWithdrawalsById.get(myCreatorId) || {
+      requestCount: 0,
+      requestedMinor: 0,
+      pendingMinor: 0,
+      approvedMinor: 0,
+      paidMinor: 0,
+      rejectedMinor: 0,
+      cancelledMinor: 0,
+      latestRequestedAt: null
+    }
+    const creatorWalletSummary = {
+      soldMinor: myCreatorEarnings.soldMinor,
+      soldCount: myCreatorEarnings.saleCount,
+      earningsMinor: myCreatorEarnings.earningsMinor,
+      pendingWithdrawalMinor: myCreatorWithdrawals.pendingMinor,
+      paidOutMinor: myCreatorWithdrawals.paidMinor,
+      availableBalanceMinor: Math.max(0, myCreatorEarnings.earningsMinor - myCreatorWithdrawals.paidMinor - myCreatorWithdrawals.pendingMinor),
+      requestCount: myCreatorWithdrawals.requestCount,
+      latestRequestedAt: myCreatorWithdrawals.latestRequestedAt || null
+    }
+    creatorWalletSummary.soldDisplay = formatCurrencyAmount(creatorWalletSummary.soldMinor, req.user?.payoutProfile?.currency || 'NGN')
+    creatorWalletSummary.earningsDisplay = formatCurrencyAmount(creatorWalletSummary.earningsMinor, req.user?.payoutProfile?.currency || 'NGN')
+    creatorWalletSummary.pendingWithdrawalDisplay = formatCurrencyAmount(creatorWalletSummary.pendingWithdrawalMinor, req.user?.payoutProfile?.currency || 'NGN')
+    creatorWalletSummary.paidOutDisplay = formatCurrencyAmount(creatorWalletSummary.paidOutMinor, req.user?.payoutProfile?.currency || 'NGN')
+    creatorWalletSummary.availableBalanceDisplay = formatCurrencyAmount(creatorWalletSummary.availableBalanceMinor, req.user?.payoutProfile?.currency || 'NGN')
+    creatorStats.availableBalanceMinor = creatorWalletSummary.availableBalanceMinor
+    creatorStats.availableBalanceDisplay = creatorWalletSummary.availableBalanceDisplay
+    creatorStats.pendingWithdrawalDisplay = creatorWalletSummary.pendingWithdrawalDisplay
+    creatorStats.paidOutDisplay = creatorWalletSummary.paidOutDisplay
+
+    const creatorWithdrawalRequests = (creatorWithdrawalRequestsRaw || []).map((request) => ({
+      ...request,
+      creatorId: toIdString(request.creatorAccount),
+      amountDisplay: formatCurrencyAmount(request.amountMinor, request.currency),
+      statusLabel: formatWithdrawalStatusLabel(request.status),
+      reviewerName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || '',
+      paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
+      canCancel: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
+    }))
+    const adminWithdrawalRequests = (adminWithdrawalRequestsRaw || []).map((request) => ({
+      ...request,
+      creatorId: toIdString(request.creatorAccount?._id || request.creatorAccount),
+      creatorName: request.creatorAccount?.profile?.name || request.creatorAccount?.email || 'Creator',
+      creatorEmail: request.creatorAccount?.email || '',
+      amountDisplay: formatCurrencyAmount(request.amountMinor, request.currency),
+      statusLabel: formatWithdrawalStatusLabel(request.status),
+      reviewerName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || '',
+      paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
+      canApprove: String(request.status || '').trim().toLowerCase() === 'pending',
+      canReject: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase()),
+      canMarkPaid: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
+    }))
+
     let adminPayments = (adminPaymentsRaw || []).map((payment) => ({
       ...payment,
       learnerName: payment.account?.profile?.name || payment.account?.email || 'Learner',
@@ -4895,6 +5133,8 @@ const renderWorkspacePage = async (
     })
     for (const creatorId of creatorCoursesById.keys()) creatorCandidateIds.add(creatorId)
     for (const creatorId of creatorSalesById.keys()) creatorCandidateIds.add(creatorId)
+    for (const creatorId of creatorEarningsById.keys()) creatorCandidateIds.add(creatorId)
+    for (const creatorId of creatorWithdrawalsById.keys()) creatorCandidateIds.add(creatorId)
     for (const creatorId of commissionOverrideByAccountId.keys()) creatorCandidateIds.add(creatorId)
 
     const creatorAdminRows = Array.from(creatorCandidateIds)
@@ -4921,6 +5161,38 @@ const renderWorkspacePage = async (
           platformShareMinor: 0,
           uniqueLearnerIds: new Set()
         }
+        const hasAggregateEarnings = creatorEarningsById.has(creatorId)
+        const aggregateEarnings = creatorEarningsById.get(creatorId) || {
+          saleCount: 0,
+          soldMinor: 0,
+          earningsMinor: 0,
+          platformShareMinor: 0
+        }
+        const aggregateWithdrawals = creatorWithdrawalsById.get(creatorId) || {
+          requestCount: 0,
+          requestedMinor: 0,
+          pendingMinor: 0,
+          approvedMinor: 0,
+          paidMinor: 0,
+          rejectedMinor: 0,
+          cancelledMinor: 0,
+          latestRequestedAt: null
+        }
+        const saleCount = hasAggregateEarnings
+          ? aggregateEarnings.saleCount
+          : Math.max(0, Number(salesStats.saleCount || 0))
+        const grossMinor = hasAggregateEarnings
+          ? aggregateEarnings.soldMinor
+          : Math.max(0, Number(salesStats.grossMinor || 0))
+        const creatorCommissionMinor = hasAggregateEarnings
+          ? aggregateEarnings.earningsMinor
+          : Math.max(0, Number(salesStats.creatorCommissionMinor || 0))
+        const platformShareMinor = hasAggregateEarnings
+          ? aggregateEarnings.platformShareMinor
+          : Math.max(0, Number(salesStats.platformShareMinor || 0))
+        const availableBalanceMinor = Math.max(0, creatorCommissionMinor - aggregateWithdrawals.paidMinor - aggregateWithdrawals.pendingMinor)
+        const payoutProfile = account?.payoutProfile || {}
+        const payoutAccountNumber = String(payoutProfile.accountNumber || '').trim()
         const hasCommissionOverride = commissionOverrideByAccountId.has(creatorId)
         const commissionRatePercent = hasCommissionOverride
           ? normalizeCommissionRate(commissionOverrideByAccountId.get(creatorId), commissionSettings.globalRatePercent)
@@ -4948,14 +5220,28 @@ const renderWorkspacePage = async (
           completionRatePercent: enrollmentCount > 0
             ? Math.round((completionCount / Math.max(1, enrollmentCount)) * 100)
             : 0,
-          saleCount: Math.max(0, Number(salesStats.saleCount || 0)),
+          saleCount,
           uniqueLearnerCount: salesStats.uniqueLearnerIds instanceof Set ? salesStats.uniqueLearnerIds.size : 0,
-          grossMinor: Math.max(0, Number(salesStats.grossMinor || 0)),
-          grossDisplay: formatCurrencyAmount(salesStats.grossMinor || 0, 'NGN'),
-          creatorCommissionMinor: Math.max(0, Number(salesStats.creatorCommissionMinor || 0)),
-          creatorCommissionDisplay: formatCurrencyAmount(salesStats.creatorCommissionMinor || 0, 'NGN'),
-          platformShareMinor: Math.max(0, Number(salesStats.platformShareMinor || 0)),
-          platformShareDisplay: formatCurrencyAmount(salesStats.platformShareMinor || 0, 'NGN'),
+          grossMinor,
+          grossDisplay: formatCurrencyAmount(grossMinor, payoutProfile.currency || 'NGN'),
+          creatorCommissionMinor,
+          creatorCommissionDisplay: formatCurrencyAmount(creatorCommissionMinor, payoutProfile.currency || 'NGN'),
+          platformShareMinor,
+          platformShareDisplay: formatCurrencyAmount(platformShareMinor, payoutProfile.currency || 'NGN'),
+          withdrawalRequestCount: aggregateWithdrawals.requestCount,
+          pendingWithdrawalMinor: aggregateWithdrawals.pendingMinor,
+          pendingWithdrawalDisplay: formatCurrencyAmount(aggregateWithdrawals.pendingMinor, payoutProfile.currency || 'NGN'),
+          paidWithdrawalMinor: aggregateWithdrawals.paidMinor,
+          paidWithdrawalDisplay: formatCurrencyAmount(aggregateWithdrawals.paidMinor, payoutProfile.currency || 'NGN'),
+          availableBalanceMinor,
+          availableBalanceDisplay: formatCurrencyAmount(availableBalanceMinor, payoutProfile.currency || 'NGN'),
+          latestWithdrawalAt: aggregateWithdrawals.latestRequestedAt || null,
+          payoutCurrency: payoutProfile.currency || 'NGN',
+          payoutBankName: String(payoutProfile.bankName || '').trim(),
+          payoutAccountName: String(payoutProfile.accountName || '').trim(),
+          payoutAccountMasked: payoutAccountNumber ? `****${payoutAccountNumber.slice(-4)}` : '',
+          payoutPaymentEmail: String(payoutProfile.paymentEmail || '').trim(),
+          hasPayoutProfile: hasValidPayoutProfile(payoutProfile),
           commissionRatePercent,
           hasCommissionOverride,
           commissionOverrideRatePercent: hasCommissionOverride
@@ -4975,6 +5261,9 @@ const renderWorkspacePage = async (
     const visibleCreatorAdminRows = adminCreatorFilterId
       ? creatorAdminRows.filter((creator) => creator.creatorId === adminCreatorFilterId)
       : creatorAdminRows
+    const visibleAdminWithdrawalRequests = adminCreatorFilterId
+      ? adminWithdrawalRequests.filter((request) => request.creatorId === adminCreatorFilterId)
+      : adminWithdrawalRequests
     let filteredManagedCourses = adminCreatorFilterId
       ? managedCourses.filter((course) => toIdString(course.createdById || course.createdBy) === adminCreatorFilterId)
       : managedCourses
@@ -5093,9 +5382,12 @@ const renderWorkspacePage = async (
       adminAccounts,
       creatorAdminRows,
       visibleCreatorAdminRows,
+      adminWithdrawalRequests: visibleAdminWithdrawalRequests,
       myPayments,
       myCreatorSales,
       creatorStats,
+      creatorWalletSummary,
+      creatorWithdrawalRequests,
       creatorCourseInsights,
       creatorSettings,
       payoutProfile: req.user.payoutProfile || {},
@@ -5294,6 +5586,240 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
   } catch (error) {
     console.error('Flutterwave webhook error:', error)
     return res.status(500).json({ error: 'Webhook processing failed.' })
+  }
+})
+
+pageRouter.post('/withdrawals/request', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=creator',
+    '/simple-lms?view=settings&settingsTab=creator'
+  )
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only creators can request withdrawals.'
+      })
+    }
+
+    const amountMinor = parseAmountToMinor(req.body.amount)
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Enter a valid withdrawal amount.'
+      })
+    }
+
+    if (!hasValidPayoutProfile(req.user.payoutProfile || {})) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Please complete your payout profile first.'
+      })
+    }
+
+    const walletSnapshot = await getCreatorWalletSnapshot(req.user._id)
+    if (amountMinor > walletSnapshot.availableBalanceMinor) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: `Withdrawal exceeds available balance (${formatCurrencyAmount(walletSnapshot.availableBalanceMinor, req.user?.payoutProfile?.currency || 'NGN')}).`
+      })
+    }
+
+    const payoutProfile = req.user.payoutProfile || {}
+    const currency = normalizeCurrencyCode(req.body.currency, payoutProfile.currency || 'NGN')
+    await SimpleLmsWithdrawal.create({
+      creatorAccount: req.user._id,
+      amountMinor,
+      currency,
+      status: 'pending',
+      requestedAt: new Date(),
+      notes: String(req.body.notes || '').trim().slice(0, 1200),
+      payoutProfileSnapshot: {
+        accountName: String(payoutProfile.accountName || '').trim().slice(0, 200),
+        accountNumber: String(payoutProfile.accountNumber || '').trim().slice(0, 64),
+        bankName: String(payoutProfile.bankName || '').trim().slice(0, 200),
+        bankCode: String(payoutProfile.bankCode || '').trim().slice(0, 80),
+        swiftCode: String(payoutProfile.swiftCode || '').trim().slice(0, 80),
+        paymentEmail: String(payoutProfile.paymentEmail || '').trim().toLowerCase().slice(0, 320),
+        country: String(payoutProfile.country || '').trim().slice(0, 80),
+        notes: String(payoutProfile.notes || '').trim().slice(0, 1200)
+      }
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Withdrawal request submitted for admin review.'
+    })
+  } catch (error) {
+    console.error('Create withdrawal request error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to submit withdrawal request.'
+    })
+  }
+})
+
+pageRouter.post('/withdrawals/:withdrawalId/cancel', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=creator',
+    '/simple-lms?view=settings&settingsTab=creator'
+  )
+  try {
+    const withdrawalId = String(req.params.withdrawalId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid withdrawal request selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    const withdrawal = await SimpleLmsWithdrawal.findById(withdrawalId)
+    if (!withdrawal) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Withdrawal request not found.'
+      })
+    }
+
+    const isOwner = toIdString(withdrawal.creatorAccount) === toIdString(req.user._id)
+    if (!isOwner && !canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have permission to cancel this withdrawal request.'
+      })
+    }
+
+    const status = normalizeWithdrawalStatus(withdrawal.status, 'pending')
+    if (!['pending', 'approved'].includes(status)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only pending or approved withdrawal requests can be cancelled.'
+      })
+    }
+
+    withdrawal.status = 'cancelled'
+    withdrawal.reviewedBy = req.user._id
+    withdrawal.reviewedAt = new Date()
+    const cancelNote = String(req.body.cancelNote || '').trim().slice(0, 300)
+    if (cancelNote) {
+      withdrawal.adminNotes = [withdrawal.adminNotes, `Cancelled: ${cancelNote}`]
+        .filter(Boolean)
+        .join(' | ')
+        .slice(0, 3000)
+    }
+    await withdrawal.save()
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Withdrawal request cancelled.'
+    })
+  } catch (error) {
+    console.error('Cancel withdrawal request error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to cancel withdrawal request.'
+    })
+  }
+})
+
+pageRouter.post('/admin/withdrawals/:withdrawalId/status', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req, '/admin/creators')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can update withdrawal requests.'
+      })
+    }
+
+    const withdrawalId = String(req.params.withdrawalId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid withdrawal request selected.'
+      })
+    }
+
+    const nextStatus = normalizeWithdrawalStatus(req.body.status, '')
+    if (!['approved', 'rejected', 'paid', 'cancelled'].includes(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid withdrawal status.'
+      })
+    }
+
+    const withdrawal = await SimpleLmsWithdrawal.findById(withdrawalId)
+    if (!withdrawal) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Withdrawal request not found.'
+      })
+    }
+
+    const currentStatus = normalizeWithdrawalStatus(withdrawal.status, 'pending')
+    const allowedTransitions = {
+      pending: new Set(['approved', 'rejected', 'paid', 'cancelled']),
+      approved: new Set(['paid', 'rejected', 'cancelled']),
+      paid: new Set(),
+      rejected: new Set(),
+      cancelled: new Set()
+    }
+    if (currentStatus !== nextStatus && !allowedTransitions[currentStatus]?.has(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: `Cannot move withdrawal from ${formatWithdrawalStatusLabel(currentStatus)} to ${formatWithdrawalStatusLabel(nextStatus)}.`
+      })
+    }
+
+    withdrawal.status = nextStatus
+    withdrawal.reviewedBy = req.user._id
+    withdrawal.reviewedAt = new Date()
+    withdrawal.adminNotes = String(req.body.adminNotes || '').trim().slice(0, 3000)
+
+    if (nextStatus === 'paid') {
+      withdrawal.paidAt = new Date()
+      withdrawal.paidBy = req.user._id
+      withdrawal.transactionRef = String(req.body.transactionRef || '').trim().slice(0, 120)
+    } else if (currentStatus !== 'paid') {
+      withdrawal.paidAt = null
+      withdrawal.paidBy = null
+      withdrawal.transactionRef = ''
+    }
+
+    await withdrawal.save()
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: `Withdrawal request marked as ${formatWithdrawalStatusLabel(nextStatus)}.`
+    })
+  } catch (error) {
+    console.error('Update admin withdrawal status error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to update withdrawal request.'
+    })
   }
 })
 
