@@ -19,6 +19,7 @@
     const leadCourse = highlightCourses[0] || null
     const learnerImage = 'https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=1300&q=80'
     const creatorImage = 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1300&q=80'
+    const heroGraphicImage = '/images/aiin-learning-hero-graphic.jpg?v=20260306'
     const fallbackCourseVisuals = [
       'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80',
       'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
@@ -52,47 +53,46 @@
   <main class="lmsv-shell">
     <section class="lmsv-home-hero">
       <article class="lmsv-surface-card lmsv-home-hero-main">
-        <p class="lmsv-kicker"><%= `${brandLearningName || 'Seemplify Learning'} Home` %></p>
-        <h1 class="lmsv-display">Learn with clarity.<br>Build with confidence.</h1>
-        <p class="lmsv-copy">
-          Start with curated highlights, learning lanes, and high-signal previews.
-          When you're ready to enroll or teach, move into the catalog and workspace in one click.
-        </p>
-
-        <div class="lmsv-actions">
-          <a href="/courses" class="btn btn-primary">Explore Course Catalog &rarr;</a>
-          <% if (user) { %>
-            <a href="/simple-lms" class="btn btn-secondary">Open Workspace</a>
-          <% } else { %>
-            <a href="<%= learnRegisterHref %>" class="btn btn-secondary">Create Account</a>
-          <% } %>
-        </div>
-
-        <div class="lmsv-mini-grid">
-          <article class="lmsv-mini-card lmsv-mini-card-launch">
-            <p class="lmsv-mini-kicker">Launch</p>
-            <p>Learn practical skills with real-world context and outcomes.</p>
-          </article>
-          <article class="lmsv-mini-card lmsv-mini-card-career">
-            <p class="lmsv-mini-kicker">Career</p>
-            <p>Move from curiosity to capability with clear learning paths.</p>
-          </article>
-          <article class="lmsv-mini-card lmsv-mini-card-creator">
-            <p class="lmsv-mini-kicker">Creator</p>
-            <p>Teach at scale and build your brand with premium course presence.</p>
-          </article>
-        </div>
-
-        <% if (topCategories && topCategories.length > 0) { %>
-          <div class="lmsv-chip-row" aria-label="Popular learning lanes">
-            <% topCategories.slice(0, 8).forEach((category) => { %>
-              <a href="/courses?category=<%= encodeURIComponent(category.name) %>" class="lmsv-chip">
-                <span><%= category.name %></span>
-                <strong><%= category.count %></strong>
-              </a>
-            <% }) %>
+        <div class="lmsv-home-hero-visual-frame">
+          <img src="<%= heroGraphicImage %>" alt="African learners collaborating with a laptop and digital learning overlays" class="lmsv-home-hero-visual-image">
+          <div class="lmsv-home-hero-overlay lmsv-home-hero-overlay-growth">
+            <span class="lmsv-home-hero-overlay-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="20" x2="4" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="20" y1="20" x2="20" y2="13"></line>
+              </svg>
+            </span>
+            <strong>Progress +24%</strong>
+            <small>Learning growth this month</small>
           </div>
-        <% } %>
+          <div class="lmsv-home-hero-overlay lmsv-home-hero-overlay-cert">
+            <span class="lmsv-home-hero-overlay-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l8 4-8 4-8-4 8-4z"></path>
+                <path d="M4 11l8 4 8-4"></path>
+                <path d="M10 15v4l2 2 2-2v-4"></path>
+              </svg>
+            </span>
+            <strong>Certificates Ready</strong>
+            <small>Career credentials in view</small>
+          </div>
+          <div class="lmsv-home-hero-overlay lmsv-home-hero-overlay-focus">
+            <span class="lmsv-home-hero-overlay-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"></circle>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </span>
+            <strong>AIIN Skill Paths</strong>
+            <small>Focused practical outcomes</small>
+          </div>
+          <div class="lmsv-home-hero-badge-row" aria-hidden="true">
+            <span>Launch</span>
+            <span>Career</span>
+            <span>Creator</span>
+          </div>
+        </div>
       </article>
 
       <aside class="lmsv-home-hero-side">
