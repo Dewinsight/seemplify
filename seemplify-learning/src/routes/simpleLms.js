@@ -5252,6 +5252,7 @@ const renderWorkspacePage = async (
           payoutCurrency: payoutProfile.currency || 'NGN',
           payoutBankName: String(payoutProfile.bankName || '').trim(),
           payoutAccountName: String(payoutProfile.accountName || '').trim(),
+          payoutAccountNumber,
           payoutAccountMasked: payoutAccountNumber ? `****${payoutAccountNumber.slice(-4)}` : '',
           payoutPaymentEmail: String(payoutProfile.paymentEmail || '').trim(),
           hasPayoutProfile: hasValidPayoutProfile(payoutProfile),

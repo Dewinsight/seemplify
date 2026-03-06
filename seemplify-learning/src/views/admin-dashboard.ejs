@@ -1358,7 +1358,7 @@
                   <h3>Payout Profile</h3>
                   <% if (selectedCreator.hasPayoutProfile) { %>
                     <p><strong>Bank:</strong> <%= selectedCreator.payoutBankName || '-' %></p>
-                    <p><strong>Account:</strong> <%= selectedCreator.payoutAccountName || '-' %> <%= selectedCreator.payoutAccountMasked || '' %></p>
+                    <p><strong>Account:</strong> <%= selectedCreator.payoutAccountName || '-' %> <%= selectedCreator.payoutAccountNumber || selectedCreator.payoutAccountMasked || '' %></p>
                     <p><strong>Email:</strong> <%= selectedCreator.payoutPaymentEmail || '-' %></p>
                   <% } else { %>
                     <p>Payout details are not yet configured by this creator.</p>
@@ -1441,7 +1441,7 @@
                         <span class="mini">
                           <% if (creator.hasPayoutProfile) { %>
                             <%= creator.payoutBankName || 'Bank details saved' %><br>
-                            <%= creator.payoutAccountName || '-' %> <%= creator.payoutAccountMasked || '' %><br>
+                            <%= creator.payoutAccountName || '-' %> <%= creator.payoutAccountNumber || creator.payoutAccountMasked || '' %><br>
                             <%= creator.payoutPaymentEmail || '-' %>
                           <% } else { %>
                             Payout details missing
