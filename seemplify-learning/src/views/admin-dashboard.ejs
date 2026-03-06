@@ -596,6 +596,147 @@
       border-radius: 10px;
       white-space: nowrap;
     }
+    .creator-management-card {
+      gap: 12px;
+    }
+    .creator-filter-grid {
+      padding: 10px;
+      border: 1px solid #dbe5f2;
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.85);
+    }
+    .creator-detail-card {
+      border-color: #d3e2f5;
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(241, 248, 255, 0.88));
+      box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.45);
+    }
+    .creator-detail-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .creator-detail-name {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+      line-height: 1.12;
+    }
+    .creator-detail-email {
+      margin: 4px 0 0;
+      color: #475569;
+      font-size: 13px;
+    }
+    .creator-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .creator-kpi-tile {
+      border: 1px solid #d7e3f3;
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: #ffffff;
+      display: grid;
+      gap: 2px;
+    }
+    .creator-kpi-tile span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .creator-kpi-tile strong {
+      font-size: 18px;
+      line-height: 1.2;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .creator-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 8px;
+    }
+    .creator-detail-grid article {
+      border: 1px solid #dbe5f2;
+      border-radius: 11px;
+      padding: 10px;
+      background: #ffffff;
+      display: grid;
+      gap: 4px;
+    }
+    .creator-detail-grid h3 {
+      margin: 0;
+      font-size: 13px;
+      color: #0f172a;
+      letter-spacing: 0;
+    }
+    .creator-detail-grid p {
+      margin: 0;
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.45;
+    }
+    .creator-name-link {
+      color: #0f172a;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .creator-name-link:hover {
+      color: #0b57d0;
+      text-decoration: underline;
+    }
+    .creator-actions {
+      display: grid;
+      gap: 6px;
+      align-content: start;
+    }
+    .creator-actions .inline-form {
+      margin: 0;
+    }
+    .withdrawal-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .withdrawal-summary .kpi {
+      min-height: auto;
+    }
+    .withdrawal-table table {
+      min-width: 760px;
+    }
+    .withdrawal-row-main td {
+      border-bottom: 0;
+      background: #ffffff;
+    }
+    .withdrawal-row-actions td {
+      border-top: 1px dashed #dbe7f5;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fbff;
+      padding-top: 8px;
+      padding-bottom: 10px;
+    }
+    .withdrawal-status-form {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(180px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin: 0;
+    }
+    .withdrawal-status-form .withdrawal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-start;
+    }
+    .withdrawal-meta {
+      display: grid;
+      gap: 2px;
+      font-size: 12px;
+      color: #475569;
+    }
     @media (max-width: 1240px) {
       .layout {
         grid-template-columns: 294px minmax(0, 1fr);
@@ -645,6 +786,12 @@
       }
       .course-actions .btn {
         width: 100%;
+      }
+      .creator-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .withdrawal-status-form {
+        grid-template-columns: minmax(0, 1fr);
       }
     }
   </style>
@@ -994,9 +1141,15 @@
       <% } %>
 
       <% if (currentSection === 'creators') { %>
-        <section class="card">
-          <div class="head"><div><h2>Creator Management</h2><p class="mini">Manage creator sales, balances, withdrawal requests, commissions, and payout details.</p></div></div>
-          <form method="get" action="/admin/creators" class="form-grid">
+        <section class="card creator-management-card">
+          <div class="head">
+            <div>
+              <h2>Creator Management</h2>
+              <p class="mini">Manage creator sales, balances, withdrawal approvals, commissions, and payout details from one place.</p>
+            </div>
+          </div>
+
+          <form method="get" action="/admin/creators" class="form-grid creator-filter-grid">
             <select class="input" name="creatorId">
               <option value="">All creators</option>
               <% (creatorAdminRows || []).forEach((creator) => { %>
@@ -1005,11 +1158,73 @@
                 </option>
               <% }) %>
             </select>
-            <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
+            <button class="btn btn-primary btn-sm" type="submit">Open Creator</button>
             <% if (selectedCreatorId) { %>
               <a class="btn btn-secondary btn-sm" href="/admin/creators">Clear</a>
             <% } %>
           </form>
+
+          <% if (selectedCreator) { %>
+            <article id="creator-detail" class="card creator-detail-card">
+              <div class="creator-detail-top">
+                <div>
+                  <h3 class="creator-detail-name"><%= selectedCreator.creatorName %></h3>
+                  <p class="creator-detail-email"><%= selectedCreator.creatorEmail || '-' %> - Role: <%= selectedCreator.resolvedRole %></p>
+                </div>
+                <div class="actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= selectedCreator.coursesPath %>">Manage Creator Courses</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?creatorId=<%= encodeURIComponent(selectedCreator.creatorId) %>">Open Admin Course Studio</a>
+                </div>
+              </div>
+
+              <div class="creator-kpi-grid">
+                <article class="creator-kpi-tile"><span>Total Courses</span><strong><%= selectedCreator.totalCourses %></strong></article>
+                <article class="creator-kpi-tile"><span>Published</span><strong><%= selectedCreator.publishedCourses %></strong></article>
+                <article class="creator-kpi-tile"><span>Gross Sales</span><strong><%= selectedCreator.grossDisplay %></strong></article>
+                <article class="creator-kpi-tile"><span>Creator Earnings</span><strong><%= selectedCreator.creatorCommissionDisplay %></strong></article>
+                <article class="creator-kpi-tile"><span>Available Balance</span><strong><%= selectedCreator.availableBalanceDisplay %></strong></article>
+                <article class="creator-kpi-tile"><span>Withdrawal Requests</span><strong><%= selectedCreator.withdrawalRequestCount %></strong></article>
+              </div>
+
+              <div class="creator-detail-grid">
+                <article>
+                  <h3>Payout Profile</h3>
+                  <% if (selectedCreator.hasPayoutProfile) { %>
+                    <p><strong>Bank:</strong> <%= selectedCreator.payoutBankName || '-' %></p>
+                    <p><strong>Account:</strong> <%= selectedCreator.payoutAccountName || '-' %> <%= selectedCreator.payoutAccountMasked || '' %></p>
+                    <p><strong>Email:</strong> <%= selectedCreator.payoutPaymentEmail || '-' %></p>
+                  <% } else { %>
+                    <p>Payout details are not yet configured by this creator.</p>
+                  <% } %>
+                </article>
+                <article>
+                  <h3>Commission</h3>
+                  <p><strong>Effective Rate:</strong> <%= selectedCreator.commissionRatePercent %>%</p>
+                  <p><strong>Mode:</strong> <%= selectedCreator.hasCommissionOverride ? 'Account override is active' : `Using global rate (${commissionSettings.globalRatePercent}%)` %></p>
+                  <form method="post" action="/simple-lms/commission/account" class="inline-form">
+                    <input type="hidden" name="accountId" value="<%= selectedCreator.creatorId %>">
+                    <input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" value="<%= selectedCreator.commissionRatePercent %>" style="width:110px;">
+                    <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
+                    <button class="btn btn-primary btn-sm" type="submit"><%= selectedCreator.hasCommissionOverride ? 'Update Rate' : 'Set Rate' %></button>
+                  </form>
+                </article>
+                <article>
+                  <h3>Course Snapshot</h3>
+                  <p>Pending: <strong><%= selectedCreator.pendingCourses %></strong> | Draft: <strong><%= selectedCreator.draftCourses %></strong></p>
+                  <p>Archived: <strong><%= selectedCreator.archivedCourses %></strong> | Learners: <strong><%= selectedCreator.enrollmentCount %></strong></p>
+                  <% if (selectedCreator.topCourses && selectedCreator.topCourses.length > 0) { %>
+                    <p><strong>Latest:</strong></p>
+                    <% selectedCreator.topCourses.forEach((course) => { %>
+                      <p><a href="/admin/course-studio?editCourse=<%= encodeURIComponent(course.courseId) %>#edit-course"><%= course.title %></a> (<%= course.status %>)</p>
+                    <% }) %>
+                  <% } else { %>
+                    <p>No courses available for this creator yet.</p>
+                  <% } %>
+                </article>
+              </div>
+            </article>
+          <% } %>
+
           <% if (!creatorRows || creatorRows.length === 0) { %>
             <p class="mini">No creators found.</p>
           <% } else { %>
@@ -1018,11 +1233,10 @@
                 <thead>
                   <tr>
                     <th>Creator</th>
-                    <th>Courses</th>
-                    <th>Learners</th>
-                    <th>Sales & Earnings</th>
-                    <th>Balance</th>
-                    <th>Payout Profile</th>
+                    <th>Portfolio</th>
+                    <th>Sales</th>
+                    <th>Wallet</th>
+                    <th>Payout</th>
                     <th>Commission</th>
                     <th>Actions</th>
                   </tr>
@@ -1031,30 +1245,15 @@
                   <% creatorRows.forEach((creator) => { %>
                     <tr>
                       <td>
-                        <strong><%= creator.creatorName %></strong><br>
+                        <a class="creator-name-link" href="<%= creator.creatorPath %>"><%= creator.creatorName %></a><br>
                         <span class="mini"><%= creator.creatorEmail || '-' %></span><br>
                         <span class="mini">Role: <%= creator.resolvedRole %></span>
                       </td>
                       <td>
                         <span class="mini">
-                          <strong><%= creator.totalCourses %></strong> total |
-                          <%= creator.publishedCourses %> published |
-                          <%= creator.pendingCourses %> pending |
-                          <%= creator.draftCourses %> draft |
-                          <%= creator.archivedCourses %> archived
-                        </span>
-                        <% if (creator.topCourses && creator.topCourses.length > 0) { %>
-                          <div class="mini" style="margin-top:4px;">
-                            <% creator.topCourses.forEach((course, index) => { %>
-                              <%= index > 0 ? ' | ' : '' %><%= course.title %> (<%= course.status %>)
-                            <% }) %>
-                          </div>
-                        <% } %>
-                      </td>
-                      <td>
-                        <span class="mini">
-                          Enrollments: <strong><%= creator.enrollmentCount %></strong><br>
-                          Completions: <strong><%= creator.completionCount %></strong> (<%= creator.completionRatePercent %>%)
+                          Total: <strong><%= creator.totalCourses %></strong><br>
+                          Published: <strong><%= creator.publishedCourses %></strong> | Pending: <strong><%= creator.pendingCourses %></strong><br>
+                          Draft: <strong><%= creator.draftCourses %></strong> | Archived: <strong><%= creator.archivedCourses %></strong>
                         </span>
                       </td>
                       <td>
@@ -1068,8 +1267,7 @@
                         <span class="mini">
                           Available: <strong><%= creator.availableBalanceDisplay %></strong><br>
                           Pending: <strong><%= creator.pendingWithdrawalDisplay %></strong><br>
-                          Paid Out: <strong><%= creator.paidWithdrawalDisplay %></strong><br>
-                          Requests: <strong><%= creator.withdrawalRequestCount %></strong>
+                          Paid Out: <strong><%= creator.paidWithdrawalDisplay %></strong>
                         </span>
                       </td>
                       <td>
@@ -1086,16 +1284,13 @@
                       <td>
                         <span class="mini">
                           Effective: <strong><%= creator.commissionRatePercent %>%</strong><br>
-                          <% if (creator.hasCommissionOverride) { %>
-                            Override active
-                          <% } else { %>
-                            Using global rate (<%= commissionSettings.globalRatePercent %>%)
-                          <% } %>
+                          <%= creator.hasCommissionOverride ? 'Override active' : `Global rate (${commissionSettings.globalRatePercent}%)` %>
                         </span>
                       </td>
                       <td>
-                        <div class="actions">
-                          <a class="btn btn-secondary btn-sm" href="/admin/courses?creatorId=<%= encodeURIComponent(creator.creatorId) %>">Manage Courses</a>
+                        <div class="creator-actions">
+                          <a class="btn btn-secondary btn-sm" href="<%= creator.creatorPath %>">View Creator</a>
+                          <a class="btn btn-secondary btn-sm" href="<%= creator.coursesPath %>">Manage Courses</a>
                           <form method="post" action="/simple-lms/commission/account" class="inline-form">
                             <input type="hidden" name="accountId" value="<%= creator.creatorId %>">
                             <input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" value="<%= creator.commissionRatePercent %>" style="width:88px;">
@@ -1119,11 +1314,26 @@
           <% } %>
 
           <article class="card">
-            <strong>Withdrawal Requests</strong>
+            <div class="head">
+              <div>
+                <h2 style="font-size:24px;">Withdrawal Requests</h2>
+                <p class="mini">Approve, reject, or mark payouts as paid directly from this queue.</p>
+              </div>
+            </div>
+
+            <div class="withdrawal-summary">
+              <% const pendingWithdrawalCount = (adminWithdrawalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'pending').length %>
+              <% const approvedWithdrawalCount = (adminWithdrawalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'approved').length %>
+              <% const paidWithdrawalCount = (adminWithdrawalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'paid').length %>
+              <article class="kpi"><small>Pending</small><strong><%= pendingWithdrawalCount %></strong></article>
+              <article class="kpi"><small>Approved</small><strong><%= approvedWithdrawalCount %></strong></article>
+              <article class="kpi"><small>Paid</small><strong><%= paidWithdrawalCount %></strong></article>
+            </div>
+
             <% if (!adminWithdrawalRequests || adminWithdrawalRequests.length === 0) { %>
               <p class="mini">No withdrawal requests found.</p>
             <% } else { %>
-              <div class="table">
+              <div class="table withdrawal-table">
                 <table>
                   <thead>
                     <tr>
@@ -1133,14 +1343,19 @@
                       <th>Status</th>
                       <th>Payout Snapshot</th>
                       <th>Notes</th>
-                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     <% adminWithdrawalRequests.forEach((request) => { %>
-                      <tr>
+                      <tr class="withdrawal-row-main">
                         <td><%= dateText(request.requestedAt || request.createdAt) %></td>
-                        <td><strong><%= request.creatorName %></strong><br><span class="mini"><%= request.creatorEmail || '-' %></span></td>
+                        <td>
+                          <strong><%= request.creatorName %></strong><br>
+                          <span class="mini"><%= request.creatorEmail || '-' %></span><br>
+                          <% if (request.creatorId) { %>
+                            <a class="btn btn-secondary btn-sm" href="/admin/creators/<%= encodeURIComponent(request.creatorId) %>">Open Creator</a>
+                          <% } %>
+                        </td>
                         <td><%= request.amountDisplay %></td>
                         <td><span class="pill"><%= request.statusLabel %></span></td>
                         <td>
@@ -1151,26 +1366,36 @@
                           </span>
                         </td>
                         <td>
-                          <span class="mini">
-                            <%= request.notes || '-' %><br>
-                            Admin: <%= request.adminNotes || '-' %>
-                          </span>
+                          <span class="mini"><%= request.notes || '-' %></span>
                         </td>
-                        <td>
+                      </tr>
+                      <tr class="withdrawal-row-actions">
+                        <td colspan="6">
                           <% if (request.canApprove || request.canReject || request.canMarkPaid) { %>
-                            <form method="post" action="/simple-lms/admin/withdrawals/<%= request._id %>/status" class="inline-form">
-                              <select class="input" name="status">
-                                <% if (request.canApprove) { %><option value="approved">approved</option><% } %>
-                                <% if (request.canMarkPaid) { %><option value="paid">paid</option><% } %>
-                                <% if (request.canReject) { %><option value="rejected">rejected</option><% } %>
-                              </select>
-                              <input class="input" type="text" name="transactionRef" placeholder="Transaction ref">
-                              <input class="input" type="text" name="adminNotes" placeholder="Admin note">
+                            <form method="post" action="/simple-lms/admin/withdrawals/<%= request._id %>/status" class="withdrawal-status-form">
+                              <input class="input" type="text" name="transactionRef" placeholder="Transaction ref (for paid)">
+                              <input class="input" type="text" name="adminNotes" placeholder="Admin note (optional)">
+                              <div class="withdrawal-actions">
+                                <% if (request.canApprove) { %>
+                                  <button class="btn btn-primary btn-sm" type="submit" name="status" value="approved">Approve</button>
+                                <% } %>
+                                <% if (request.canMarkPaid) { %>
+                                  <button class="btn btn-secondary btn-sm" type="submit" name="status" value="paid">Mark Paid</button>
+                                <% } %>
+                                <% if (request.canReject) { %>
+                                  <button class="btn btn-danger btn-sm" type="submit" name="status" value="rejected">Reject</button>
+                                <% } %>
+                              </div>
                               <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
-                              <button class="btn btn-primary btn-sm" type="submit">Update</button>
                             </form>
                           <% } else { %>
-                            <span class="mini">Finalized</span>
+                            <div class="withdrawal-meta">
+                              <span><strong>Finalized:</strong> <%= request.statusLabel %></span>
+                              <span>Reviewer: <%= request.reviewerName || '-' %></span>
+                              <span>Paid By: <%= request.paidByName || '-' %></span>
+                              <span>Transaction Ref: <%= request.transactionRef || '-' %></span>
+                              <span>Admin Note: <%= request.adminNotes || '-' %></span>
+                            </div>
                           <% } %>
                         </td>
                       </tr>

@@ -5258,7 +5258,7 @@ const renderWorkspacePage = async (
             : null,
           topCourses,
           coursesPath: `/admin/courses?creatorId=${encodeURIComponent(creatorId)}`,
-          creatorPath: `/admin/creators?creatorId=${encodeURIComponent(creatorId)}`
+          creatorPath: `/admin/creators/${encodeURIComponent(creatorId)}`
         }
       })
       .sort((a, b) => {
@@ -5500,6 +5500,18 @@ adminPageRouter.get('/', requireAdminPageAuth, renderAdminPortalSection('overvie
 adminPageRouter.get('/courses', requireAdminPageAuth, renderAdminPortalSection('courses'))
 adminPageRouter.get('/approvals', requireAdminPageAuth, renderAdminPortalSection('approvals'))
 adminPageRouter.get('/creators', requireAdminPageAuth, renderAdminPortalSection('creators'))
+adminPageRouter.get('/creators/:creatorId', requireAdminPageAuth, (req, res) => {
+  const creatorId = String(req.params.creatorId || '').trim()
+  if (!mongoose.Types.ObjectId.isValid(creatorId)) {
+    return redirectWithMessage({
+      res,
+      path: '/admin/creators',
+      error: 'Invalid creator selected.'
+    })
+  }
+
+  return res.redirect(`/admin/creators?creatorId=${encodeURIComponent(creatorId)}`)
+})
 adminPageRouter.get('/users', requireAdminPageAuth, renderAdminPortalSection('users'))
 adminPageRouter.get('/commission', requireAdminPageAuth, renderAdminPortalSection('commission'))
 adminPageRouter.get('/payments', requireAdminPageAuth, renderAdminPortalSection('payments'))
