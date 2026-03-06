@@ -18,6 +18,9 @@
   <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
   <% const learnLoginHref = `/login?return_to=${encodeURIComponent(takePath)}` %>
   <% const registerToLearnHref = `/register?return_to=${encodeURIComponent(takePath)}&intent=learn&source=course_detail` %>
+  <% const isPreviewMode = Boolean(previewMode) %>
+  <% const backHref = isPreviewMode ? (previewReturnTo || '/simple-lms/studio/courses') : '/courses' %>
+  <% const backLabel = isPreviewMode ? 'Back to Workspace' : 'Back to Catalog' %>
   <%
     const formatDuration = (minutes) => {
       const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
@@ -50,12 +53,19 @@
 
   <main class="lmsv-shell">
     <section class="lmsv-surface-card" style="padding:10px 16px;">
-      <a href="/courses" class="btn btn-secondary btn-sm" style="width:fit-content;">Back to Catalog</a>
+      <a href="<%= backHref %>" class="btn btn-secondary btn-sm" style="width:fit-content;"><%= backLabel %></a>
     </section>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
     <% if (info) { %><div class="alert"><%= info %></div><% } %>
+    <% if (isPreviewMode) { %>
+      <div class="alert">
+        Preview mode: this course is not fully public yet.
+        Status: <strong><%= previewStatusLabel || course.status || 'draft' %></strong>.
+        Visibility: <strong><%= previewVisibilityLabel || course.visibilityDisplay || 'private' %></strong>.
+      </div>
+    <% } %>
 
     <section class="lmsv-detail-hero">
       <p class="lmsv-kicker">Course Detail</p>
@@ -157,7 +167,13 @@
             <strong>Duration:</strong> <%= formatDuration(course.estimatedDurationMinutes) %>
           </p>
 
-          <% if (user) { %>
+          <% if (isPreviewMode) { %>
+            <% if (previewEditUrl) { %>
+              <a href="<%= previewEditUrl %>" class="btn btn-primary" style="width:100%;text-align:center;">Edit Course</a>
+            <% } %>
+            <a href="<%= backHref %>" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">Return</a>
+            <p class="lmsv-detail-note">Preview mode disables checkout/cart actions until the course is published.</p>
+          <% } else if (user) { %>
             <% if (canStartNow) { %>
               <a href="<%= takePath %>" class="btn btn-primary" style="width:100%;text-align:center;">
                 <%= isEnrolled ? 'Continue Learning' : 'Start Learning' %>

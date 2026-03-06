@@ -31,6 +31,7 @@ const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
+const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'users', 'commission', 'payments', 'settings', 'analytics']
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -438,6 +439,11 @@ const parseSettingsTab = (value) => {
   return SETTINGS_TABS.includes(normalized) ? normalized : 'profile'
 }
 
+const parseAdminSection = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ADMIN_SECTIONS.includes(normalized) ? normalized : 'overview'
+}
+
 const parseCourseStatus = (value, fallback = 'draft') => {
   const normalized = String(value || '').trim().toLowerCase()
   return ['draft', 'published', 'archived', 'pending_public_review'].includes(normalized) ? normalized : fallback
@@ -740,6 +746,13 @@ const decorateCourse = (course) => {
   const amount = Number.isFinite(Number(course?.pricing?.amount)) ? Math.max(0, Number(course.pricing.amount)) : 0
   const currency = normalizeCurrencyCode(course?.pricing?.currency)
   const displayPrice = paymentMode === 'paid' && amount > 0 ? formatCurrencyAmount(amount, currency) : 'Free'
+  const publicCourseUrl = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+  const previewCourseUrl = `/simple-lms/courses/${course._id}/preview`
+  const isPubliclyAvailable = (
+    course?.isActive !== false
+    && String(course?.status || '').trim().toLowerCase() === 'published'
+    && PUBLIC_VISIBILITY_VALUES.includes(String(course?.visibility || '').trim().toLowerCase())
+  )
 
   return {
     ...course,
@@ -749,10 +762,41 @@ const decorateCourse = (course) => {
     visibilityDisplay: visibilityToDisplay(course?.visibility),
     lessonCount: Number.isFinite(Number(course?.lessonCount)) ? Number(course.lessonCount) : 0,
     estimatedDurationMinutes: Number.isFinite(Number(course?.estimatedDurationMinutes)) ? Number(course.estimatedDurationMinutes) : 0,
-    courseUrl: `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`,
+    publicCourseUrl,
+    previewCourseUrl,
+    isPubliclyAvailable,
+    courseUrl: isPubliclyAvailable ? publicCourseUrl : previewCourseUrl,
     authorName: String(course?.createdByName || '').trim() || 'Learning Team'
   }
 }
+
+const buildCourseDetailViewModel = (course) => {
+  const decorated = decorateCourse(course)
+  return {
+    ...decorated,
+    previewSummary: decorated.summaryText,
+    requiresPayment: isCoursePaidContent(course)
+  }
+}
+
+const mapCourseChaptersForDetail = (course) => (
+  Array.isArray(course?.chapters)
+    ? course.chapters.map((chapter, chapterIndex) => ({
+      key: String(chapter?.key || `chapter-${chapterIndex + 1}`),
+      title: String(chapter?.title || `Chapter ${chapterIndex + 1}`),
+      description: String(chapter?.description || ''),
+      lessons: Array.isArray(chapter?.lessons)
+        ? chapter.lessons.map((lesson, lessonIndex) => ({
+          key: String(lesson?.key || `lesson-${lessonIndex + 1}`),
+          title: String(lesson?.title || `Lesson ${lessonIndex + 1}`),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Number(lesson.durationMinutes))
+            : 0
+        }))
+        : []
+    }))
+    : []
+)
 
 const refreshCourseMetrics = async (courseId) => {
   const [enrollmentCount, completionCount] = await Promise.all([
@@ -1570,6 +1614,104 @@ const handleCoursePayRequest = async (req, res) => {
 
 pageRouter.get('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
 pageRouter.post('/courses/:courseId/pay', requirePageAuth, handleCoursePayRequest)
+
+pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    const role = resolveRole(req.user)
+    const defaultReturnTo = canManagePlatform(role) ? '/admin/courses' : '/simple-lms/studio/courses'
+    const returnTo = sanitizeInternalPath(req.query.returnTo || req.query.return_to || defaultReturnTo, defaultReturnTo)
+
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected for preview.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+      .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdBy createdByName createdByEmail chapters updatedAt status visibility isActive')
+      .lean()
+
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const managesCourse = canManageCourse({
+      role,
+      accountId: req.user._id,
+      course
+    })
+
+    const enrollmentExists = managesCourse
+      ? true
+      : await SimpleLmsEnrollment.exists({
+        course: course._id,
+        enrolledMember: req.user._id
+      })
+
+    if (!managesCourse && !enrollmentExists) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have access to preview this course.'
+      })
+    }
+
+    const requiresPayment = isCoursePaidContent(course)
+    const hasSuccessfulPayment = requiresPayment
+      ? Boolean(await SimpleLmsPayment.exists({
+        account: req.user._id,
+        course: course._id,
+        status: 'successful'
+      }))
+      : false
+    const isEnrolled = Boolean(enrollmentExists)
+    const courseIsPublished = String(course.status || '').trim().toLowerCase() === 'published'
+    const canStartNow = courseIsPublished && (!requiresPayment || hasSuccessfulPayment || isEnrolled)
+    const previewCourse = buildCourseDetailViewModel(course)
+
+    const previewEditUrl = managesCourse
+      ? (canManagePlatform(role)
+          ? `/admin/course-studio?editCourse=${course._id}`
+          : `/simple-lms/studio/courses?editCourse=${course._id}`)
+      : ''
+
+    return res.render('public-course-detail', {
+      title: `${previewCourse.title} - Preview`,
+      user: req.user,
+      activePage: 'simple-lms',
+      course: previewCourse,
+      chapters: mapCourseChaptersForDetail(course),
+      relatedCourses: [],
+      inCart: false,
+      cartCount: getSessionCartCourseIds(req).length,
+      canStartNow,
+      isEnrolled,
+      hasSuccessfulPayment,
+      previewMode: true,
+      previewStatusLabel: String(course.status || 'draft').replace(/_/g, ' '),
+      previewVisibilityLabel: previewCourse.visibilityDisplay,
+      previewReturnTo: returnTo,
+      previewEditUrl,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
+    })
+  } catch (error) {
+    console.error('Course preview load error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms/studio/courses',
+      error: 'Failed to open course preview.'
+    })
+  }
+})
 
 pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
   try {
@@ -3630,7 +3772,7 @@ pageRouter.get('/cart', requirePageAuth, async (req, res) => {
 const renderWorkspacePage = async (
   req,
   res,
-  { forcedViewMode = '', adminPortal = false, studioPortal = false, studioContext = '' } = {}
+  { forcedViewMode = '', adminPortal = false, studioPortal = false, studioContext = '', adminSection = '' } = {}
 ) => {
   try {
     const role = resolveRole(req.user)
@@ -3640,6 +3782,12 @@ const renderWorkspacePage = async (
     ).trim().toLowerCase() === 'admin'
       ? 'admin'
       : 'creator'
+    const selectedAdminSection = adminPortal
+      ? parseAdminSection(adminSection || req.query.section || req.path.split('/').filter(Boolean).pop())
+      : 'overview'
+    const adminBasePath = adminPortal
+      ? (selectedAdminSection === 'overview' ? '/admin' : `/admin/${selectedAdminSection}`)
+      : '/simple-lms?view=admin'
 
     if (!adminPortal && viewMode === 'admin') {
       const params = new URLSearchParams(req.query || {})
@@ -3703,7 +3851,7 @@ const renderWorkspacePage = async (
       dateFrom: paymentFromFilter,
       dateTo: paymentToFilter,
       search: paymentSearchFilter,
-      basePath: adminPortal ? '/admin' : '/simple-lms?view=admin'
+      basePath: adminBasePath
     })
 
     const catalogFilter = {
@@ -4454,6 +4602,24 @@ const renderWorkspacePage = async (
       creatorEmail: course.createdBy?.email || course.createdByEmail || '',
       submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt
     }))
+    const approvalQueueCourses = canManagePlatform(role)
+      ? managedCourses
+        .filter((course) => {
+          const status = String(course.status || '').trim().toLowerCase()
+          return course.isActive !== false && (status === 'pending_public_review' || status === 'draft')
+        })
+        .map((course) => ({
+          ...course,
+          creatorName: course.createdByName || course.authorName || 'Author',
+          creatorEmail: course.createdByEmail || '',
+          submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt
+        }))
+        .sort((a, b) => {
+          const bTime = new Date(b.submittedAt || 0).getTime()
+          const aTime = new Date(a.submittedAt || 0).getTime()
+          return bTime - aTime
+        })
+      : []
 
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
     const templateName = studioPortal
@@ -4474,6 +4640,8 @@ const renderWorkspacePage = async (
       activePage: adminPortal ? 'admin' : 'simple-lms',
       role,
       viewMode,
+      adminSection: selectedAdminSection,
+      adminReturnTo: adminBasePath,
       adminPortal,
       studioPortal,
       studioContext: resolvedStudioContext,
@@ -4536,6 +4704,7 @@ const renderWorkspacePage = async (
         publicKey: getFlutterwavePublicKey()
       },
       pendingReviewCourses,
+      approvalQueueCourses,
       commissionSettings: {
         globalRatePercent: commissionSettings.globalRatePercent,
         accountOverrides: commissionAccountOverrides,
@@ -4586,9 +4755,22 @@ pageRouter.get('/studio/courses', requirePageAuth, async (req, res) => (
 
 pageRouter.get('/', requirePageAuth, async (req, res) => renderWorkspacePage(req, res))
 
-adminPageRouter.get('/', requireAdminPageAuth, async (req, res) => (
-  renderWorkspacePage(req, res, { forcedViewMode: 'admin', adminPortal: true })
-))
+const renderAdminPortalSection = (section = 'overview') => async (req, res) => (
+  renderWorkspacePage(req, res, {
+    forcedViewMode: 'admin',
+    adminPortal: true,
+    adminSection: section
+  })
+)
+
+adminPageRouter.get('/', requireAdminPageAuth, renderAdminPortalSection('overview'))
+adminPageRouter.get('/courses', requireAdminPageAuth, renderAdminPortalSection('courses'))
+adminPageRouter.get('/approvals', requireAdminPageAuth, renderAdminPortalSection('approvals'))
+adminPageRouter.get('/users', requireAdminPageAuth, renderAdminPortalSection('users'))
+adminPageRouter.get('/commission', requireAdminPageAuth, renderAdminPortalSection('commission'))
+adminPageRouter.get('/payments', requireAdminPageAuth, renderAdminPortalSection('payments'))
+adminPageRouter.get('/settings', requireAdminPageAuth, renderAdminPortalSection('settings'))
+adminPageRouter.get('/analytics', requireAdminPageAuth, renderAdminPortalSection('analytics'))
 
 adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => (
   renderWorkspacePage(req, res, {

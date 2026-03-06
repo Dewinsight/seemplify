@@ -9,12 +9,13 @@
   <script src="/js/theme.js?v=2"></script>
   <style>
     body { margin:0; background:#f8fafc; color:#0f172a; font-family:Segoe UI,Tahoma,sans-serif; }
-    .layout { min-height:100vh; display:grid; grid-template-columns:240px minmax(0,1fr); }
+    .layout { min-height:100vh; display:grid; grid-template-columns:250px minmax(0,1fr); }
     .side { background:#0f172a; color:#cbd5e1; padding:16px; position:sticky; top:0; height:100vh; overflow:auto; }
     .side h1 { margin:0 0 12px; font-size:18px; }
     .side nav { display:grid; gap:6px; }
-    .side nav a { color:#cbd5e1; text-decoration:none; padding:8px 10px; border:1px solid rgba(148,163,184,.2); border-radius:8px; font-size:12px; }
-    .main { padding:14px; display:grid; gap:12px; }
+    .side nav a { color:#cbd5e1; text-decoration:none; padding:8px 10px; border:1px solid rgba(148,163,184,.2); border-radius:8px; font-size:12px; display:flex; align-items:center; justify-content:space-between; }
+    .side nav a.active { background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.45); color:#ffffff; }
+    .main { padding:14px; display:grid; gap:12px; align-content:start; }
     .card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:12px; display:grid; gap:10px; }
     .head { display:flex; justify-content:space-between; gap:8px; align-items:end; flex-wrap:wrap; }
     h2 { margin:0; font-size:22px; letter-spacing:-.02em; }
@@ -23,40 +24,66 @@
     .kpi { border:1px solid #e2e8f0; border-radius:10px; padding:8px; background:#f8fafc; }
     .kpi small { display:block; color:#64748b; text-transform:uppercase; letter-spacing:.06em; font-size:10px; }
     .kpi strong { font-size:20px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:8px; }
     .table { overflow:auto; border:1px solid #e2e8f0; border-radius:10px; }
-    table { width:100%; border-collapse:collapse; min-width:860px; font-size:12px; }
+    table { width:100%; border-collapse:collapse; min-width:900px; font-size:12px; }
     th,td { border-bottom:1px solid #e2e8f0; padding:8px; text-align:left; vertical-align:top; }
     th { color:#64748b; text-transform:uppercase; letter-spacing:.06em; font-size:10px; background:#f8fafc; }
     .pill { border:1px solid #cbd5e1; border-radius:999px; padding:2px 6px; font-size:10px; text-transform:uppercase; }
-    .actions { display:flex; flex-wrap:wrap; gap:6px; }
-    .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+    .actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .inline-form { display:inline-flex; gap:6px; align-items:center; margin:0; }
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; align-items:end; }
+    .quick-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+    .quick-link { border:1px solid #e2e8f0; border-radius:10px; padding:10px; text-decoration:none; color:#0f172a; background:#f8fafc; display:grid; gap:3px; }
+    .quick-link:hover { border-color:#cbd5e1; background:#fff; }
+    .quick-link strong { font-size:14px; }
+    .quick-link span { font-size:12px; color:#64748b; }
     @media (max-width: 980px) { .layout { grid-template-columns:minmax(0,1fr);} .side { position:static; height:auto; } }
   </style>
 </head>
 <body>
 <%
-  const adminReturnTo = '/admin'
+  const sectionPath = (section) => section === 'overview' ? '/admin' : `/admin/${section}`
+  const navItems = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'courses', label: 'Course Management' },
+    { key: 'approvals', label: 'Approval Queue' },
+    { key: 'users', label: 'Users & Roles' },
+    { key: 'commission', label: 'Commissions' },
+    { key: 'payments', label: 'Payments' },
+    { key: 'settings', label: 'Platform Settings' },
+    { key: 'analytics', label: 'Analytics' }
+  ]
+  const sectionLabel = {
+    overview: 'Admin Overview',
+    courses: 'Course Management',
+    approvals: 'Course Approval Queue',
+    users: 'Users & Roles',
+    commission: 'Commission Management',
+    payments: 'Payment Monitoring',
+    settings: 'Platform Settings',
+    analytics: 'Analytics'
+  }
+  const currentSection = navItems.some((item) => item.key === adminSection) ? adminSection : 'overview'
+  const adminReturnToPath = adminReturnTo || sectionPath(currentSection)
   const dateText = (value) => {
     if (!value) return '-'
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
   }
-  const courses = (managedCourses || []).slice().sort((a,b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const courses = (managedCourses || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const pendingOnly = pendingReviewCourses || []
+  const approvalCourses = (approvalQueueCourses || pendingOnly || []).slice().sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0))
 %>
   <div class="layout">
     <aside class="side">
       <h1>Admin Console</h1>
       <nav>
-        <a href="#overview">Overview</a>
-        <a href="/admin/course-studio">Course Studio</a>
-        <a href="#courses">Course Management</a>
-        <a href="#approvals">Approval Queue</a>
-        <a href="#users">Users & Roles</a>
-        <a href="#commission">Commissions</a>
-        <a href="#payments">Payments</a>
-        <a href="#settings">Platform Settings</a>
-        <a href="#analytics">Analytics</a>
+        <% navItems.forEach((item) => { %>
+          <a href="<%= sectionPath(item.key) %>" class="<%= currentSection === item.key ? 'active' : '' %>">
+            <span><%= item.label %></span>
+          </a>
+        <% }) %>
       </nav>
       <div class="actions" style="margin-top:10px;">
         <a class="btn btn-primary btn-sm" href="/admin/course-studio">Create Course</a>
@@ -64,109 +91,354 @@
         <a class="btn btn-secondary btn-sm" href="/logout">Sign Out</a>
       </div>
     </aside>
+
     <main class="main">
-      <section class="card" id="overview">
+      <section class="card">
         <div class="head">
-          <div><h2>LMS Admin Dashboard</h2><p class="mini">Separate admin surface for full LMS operations.</p></div>
+          <div>
+            <h2><%= sectionLabel[currentSection] || 'Admin' %></h2>
+            <p class="mini">Dedicated admin pages for approvals, users, payments, and platform control.</p>
+          </div>
           <p class="mini"><strong><%= user?.profile?.name || user?.email %></strong><br><%= user?.email || '' %></p>
         </div>
         <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
         <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
         <% if (info) { %><div class="alert alert-info"><%= info %></div><% } %>
-        <div class="kpis">
-          <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
-          <article class="kpi"><small>Admins</small><strong><%= roleBreakdown.admin %></strong></article>
-          <article class="kpi"><small>Learners</small><strong><%= stats.learnerCount %></strong></article>
-          <article class="kpi"><small>Pending Reviews</small><strong><%= pendingReviewCourses.length %></strong></article>
-          <article class="kpi"><small>Revenue</small><strong><%= paymentStats.revenueDisplay %></strong></article>
-          <article class="kpi"><small>Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
-        </div>
       </section>
 
-      <section class="card" id="courses">
-        <div class="head"><div><h2>Course Management</h2><p class="mini">See creator ownership and system courses across the entire LMS.</p></div></div>
-        <div class="table"><table><thead><tr><th>Course</th><th>Creator</th><th>Type</th><th>Status</th><th>Visibility</th><th>Price</th><th>Enrollments</th><th>Actions</th></tr></thead><tbody>
-        <% courses.forEach((course) => { %><tr><td><strong><%= course.title %></strong><br><span class="mini"><%= course.summaryText %></span></td><td><%= course.createdByName || course.authorName || 'Unknown' %><br><span class="mini"><%= course.createdByEmail || '-' %></span></td><td><span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span></td><td><span class="pill"><%= course.status || 'draft' %></span></td><td><span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span></td><td><%= course.displayPrice %></td><td><%= Number(course.enrollmentCount || 0) %></td><td><div class="actions"><a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a><a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>" target="_blank" rel="noreferrer">View</a></div></td></tr><% }) %>
-        </tbody></table></div>
-      </section>
+      <% if (currentSection === 'overview') { %>
+        <section class="card">
+          <div class="head">
+            <div><h2>LMS Admin Dashboard</h2><p class="mini">System health and approval workload at a glance.</p></div>
+          </div>
+          <div class="kpis">
+            <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
+            <article class="kpi"><small>Admins</small><strong><%= roleBreakdown.admin %></strong></article>
+            <article class="kpi"><small>Learners</small><strong><%= stats.learnerCount %></strong></article>
+            <article class="kpi"><small>Pending Reviews</small><strong><%= pendingOnly.length %></strong></article>
+            <article class="kpi"><small>Draft Queue</small><strong><%= approvalCourses.filter((course) => String(course.status || '') === 'draft').length %></strong></article>
+            <article class="kpi"><small>Revenue</small><strong><%= paymentStats.revenueDisplay %></strong></article>
+            <article class="kpi"><small>Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
+            <article class="kpi"><small>Success Rate</small><strong><%= paymentStats.successRatePercent %>%</strong></article>
+          </div>
+          <div class="quick-links">
+            <a class="quick-link" href="/admin/courses"><strong>Manage Courses</strong><span>Edit, preview, approve, archive.</span></a>
+            <a class="quick-link" href="/admin/approvals"><strong>Open Approval Queue</strong><span>Publish draft/pending creator courses.</span></a>
+            <a class="quick-link" href="/admin/users"><strong>Manage Roles</strong><span>Control admin and super admin access.</span></a>
+            <a class="quick-link" href="/admin/payments"><strong>Review Payments</strong><span>Filter and re-verify transactions.</span></a>
+          </div>
+        </section>
+      <% } %>
 
-      <section class="card" id="approvals">
-        <div class="head"><div><h2>Course Approval Queue</h2><p class="mini">Approve pending public submissions.</p></div></div>
-        <% if (!pendingReviewCourses || pendingReviewCourses.length === 0) { %><p class="mini">No pending approvals.</p><% } %>
-        <div class="grid">
-          <% (pendingReviewCourses || []).forEach((course) => { %>
-            <article class="card"><strong><%= course.title %></strong><p class="mini"><%= course.creatorName %> - <%= dateText(course.submittedAt) %></p><div class="actions"><form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public"><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Approve</button></form><form method="post" action="/simple-lms/courses/<%= course._id %>/reject-public"><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-danger btn-sm" type="submit">Reject</button></form></div></article>
-          <% }) %>
-        </div>
-      </section>
+      <% if (currentSection === 'courses') { %>
+        <section class="card">
+          <div class="head"><div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, and restore any course.</p></div></div>
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Course</th>
+                  <th>Creator</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Visibility</th>
+                  <th>Price</th>
+                  <th>Enrollments</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% courses.forEach((course) => { %>
+                  <tr>
+                    <td><strong><%= course.title %></strong><br><span class="mini"><%= course.summaryText %></span></td>
+                    <td><%= course.createdByName || course.authorName || 'Unknown' %><br><span class="mini"><%= course.createdByEmail || '-' %></span></td>
+                    <td><span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span></td>
+                    <td><span class="pill"><%= course.status || 'draft' %></span></td>
+                    <td><span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span></td>
+                    <td><%= course.displayPrice %></td>
+                    <td><%= Number(course.enrollmentCount || 0) %></td>
+                    <td>
+                      <div class="actions">
+                        <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a>
+                        <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/courses') %>" target="_blank" rel="noreferrer">View</a>
+                        <% if (['draft', 'pending_public_review'].includes(String(course.status || ''))) { %>
+                          <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
+                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
+                          </form>
+                        <% } %>
+                        <% if (course.isActive) { %>
+                          <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
+                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <button class="btn btn-danger btn-sm" type="submit">Archive</button>
+                          </form>
+                        <% } else { %>
+                          <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
+                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <button class="btn btn-primary btn-sm" type="submit">Restore</button>
+                          </form>
+                        <% } %>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
 
-      <section class="card" id="users">
-        <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage admin access.</p></div></div>
-        <div class="grid">
-          <% (adminAccounts || []).forEach((account) => { %>
-            <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="card"><strong><%= account.displayName %></strong><span class="mini"><%= account.email %></span><select class="input" name="role"><option value="learner" <%= (account.resolvedRole === 'learner' || account.resolvedRole === 'creator') ? 'selected' : '' %>>learner</option><option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option><option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option></select><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Update Role</button></form>
-          <% }) %>
-        </div>
-      </section>
+      <% if (currentSection === 'approvals') { %>
+        <section class="card">
+          <div class="head"><div><h2>Course Approval Queue</h2><p class="mini">Approve creator courses from draft or pending review into live/published.</p></div></div>
+          <% if (!approvalCourses || approvalCourses.length === 0) { %>
+            <p class="mini">No draft or pending courses available for approval.</p>
+          <% } %>
+          <div class="grid">
+            <% (approvalCourses || []).forEach((course) => { %>
+              <article class="card">
+                <strong><%= course.title %></strong>
+                <p class="mini"><%= course.creatorName %> <%= course.creatorEmail ? `(${course.creatorEmail})` : '' %></p>
+                <p class="mini">Status: <span class="pill"><%= course.status || 'draft' %></span> · Submitted/Updated: <%= dateText(course.submittedAt) %></p>
+                <div class="actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a>
+                  <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
+                    <input class="input" type="text" name="reviewNotes" placeholder="Optional review notes">
+                    <input type="hidden" name="returnTo" value="/admin/approvals">
+                    <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
+                  </form>
+                  <% if (String(course.status || '') !== 'draft') { %>
+                    <form method="post" action="/simple-lms/courses/<%= course._id %>/reject-public" class="inline-form">
+                      <input class="input" type="text" name="reviewNotes" placeholder="Reason for returning to draft">
+                      <input type="hidden" name="returnTo" value="/admin/approvals">
+                      <button class="btn btn-danger btn-sm" type="submit">Return to Draft</button>
+                    </form>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
 
-      <section class="card" id="commission">
-        <div class="head"><div><h2>Commissions</h2><p class="mini">Global, account, and course overrides.</p></div></div>
-        <div class="form-grid">
-          <form method="post" action="/simple-lms/commission/global" class="card"><label>Global Rate (%)</label><input class="input" type="number" name="globalRatePercent" min="0" max="100" step="0.01" value="<%= commissionSettings.globalRatePercent %>"><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Save</button></form>
-          <form method="post" action="/simple-lms/commission/account" class="card"><label>Account Override</label><select class="input" name="accountId"><option value="">Select account</option><% (adminAccounts || []).forEach((a) => { %><option value="<%= a._id %>"><%= a.displayName %> - <%= a.email %></option><% }) %></select><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" placeholder="Rate %"><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Save</button></form>
-          <form method="post" action="/simple-lms/commission/course" class="card"><label>Course Override</label><select class="input" name="courseId"><option value="">Select course</option><% courses.forEach((c) => { %><option value="<%= c._id %>"><%= c.title %></option><% }) %></select><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" placeholder="Rate %"><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Save</button></form>
-        </div>
-        <div class="grid">
-          <article class="card">
-            <strong>Account Overrides</strong>
-            <% if (!commissionSettings.accountOverrides || commissionSettings.accountOverrides.length === 0) { %>
-              <p class="mini">No account overrides.</p>
-            <% } else { %>
-              <% commissionSettings.accountOverrides.forEach((item) => { %>
-                <form method="post" action="/simple-lms/commission/account/remove" class="actions">
-                  <span class="mini"><%= item.accountName %> (<%= item.ratePercent %>%)</span>
-                  <input type="hidden" name="accountId" value="<%= item.accountId %>">
-                  <input type="hidden" name="returnTo" value="<%= adminReturnTo %>">
-                  <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                </form>
+      <% if (currentSection === 'users') { %>
+        <section class="card">
+          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage administrative access controls.</p></div></div>
+          <div class="grid">
+            <% (adminAccounts || []).forEach((account) => { %>
+              <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="card">
+                <strong><%= account.displayName %></strong>
+                <span class="mini"><%= account.email %></span>
+                <select class="input" name="role">
+                  <option value="learner" <%= (account.resolvedRole === 'learner' || account.resolvedRole === 'creator') ? 'selected' : '' %>>learner</option>
+                  <option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option>
+                  <option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option>
+                </select>
+                <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                <button class="btn btn-primary btn-sm" type="submit">Update Role</button>
+              </form>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'commission') { %>
+        <section class="card">
+          <div class="head"><div><h2>Commissions</h2><p class="mini">Global, account, and course-level overrides.</p></div></div>
+          <div class="form-grid">
+            <form method="post" action="/simple-lms/commission/global" class="card">
+              <label>Global Rate (%)</label>
+              <input class="input" type="number" name="globalRatePercent" min="0" max="100" step="0.01" value="<%= commissionSettings.globalRatePercent %>">
+              <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+              <button class="btn btn-primary btn-sm" type="submit">Save</button>
+            </form>
+            <form method="post" action="/simple-lms/commission/account" class="card">
+              <label>Account Override</label>
+              <select class="input" name="accountId">
+                <option value="">Select account</option>
+                <% (adminAccounts || []).forEach((account) => { %>
+                  <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                <% }) %>
+              </select>
+              <input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" placeholder="Rate %">
+              <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+              <button class="btn btn-primary btn-sm" type="submit">Save</button>
+            </form>
+            <form method="post" action="/simple-lms/commission/course" class="card">
+              <label>Course Override</label>
+              <select class="input" name="courseId">
+                <option value="">Select course</option>
+                <% courses.forEach((course) => { %>
+                  <option value="<%= course._id %>"><%= course.title %></option>
+                <% }) %>
+              </select>
+              <input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" placeholder="Rate %">
+              <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+              <button class="btn btn-primary btn-sm" type="submit">Save</button>
+            </form>
+          </div>
+          <div class="grid">
+            <article class="card">
+              <strong>Account Overrides</strong>
+              <% if (!commissionSettings.accountOverrides || commissionSettings.accountOverrides.length === 0) { %>
+                <p class="mini">No account overrides.</p>
+              <% } else { %>
+                <% commissionSettings.accountOverrides.forEach((item) => { %>
+                  <form method="post" action="/simple-lms/commission/account/remove" class="actions">
+                    <span class="mini"><%= item.accountName %> (<%= item.ratePercent %>%)</span>
+                    <input type="hidden" name="accountId" value="<%= item.accountId %>">
+                    <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                  </form>
+                <% }) %>
+              <% } %>
+            </article>
+            <article class="card">
+              <strong>Course Overrides</strong>
+              <% if (!commissionSettings.courseOverrides || commissionSettings.courseOverrides.length === 0) { %>
+                <p class="mini">No course overrides.</p>
+              <% } else { %>
+                <% commissionSettings.courseOverrides.forEach((item) => { %>
+                  <form method="post" action="/simple-lms/commission/course/remove" class="actions">
+                    <span class="mini"><%= item.courseTitle %> (<%= item.ratePercent %>%)</span>
+                    <input type="hidden" name="courseId" value="<%= item.courseId %>">
+                    <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                  </form>
+                <% }) %>
+              <% } %>
+            </article>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'payments') { %>
+        <section class="card">
+          <div class="head"><div><h2>Payments</h2><p class="mini">Filter transactions and re-verify unresolved payments.</p></div></div>
+          <form method="get" action="/admin/payments" class="form-grid">
+            <select class="input" name="paymentStatus">
+              <option value="all" <%= adminPaymentFilters.status === 'all' ? 'selected' : '' %>>all statuses</option>
+              <% paymentStatuses.forEach((status) => { %>
+                <option value="<%= status %>" <%= adminPaymentFilters.status === status ? 'selected' : '' %>><%= status %></option>
               <% }) %>
-            <% } %>
-          </article>
-          <article class="card">
-            <strong>Course Overrides</strong>
-            <% if (!commissionSettings.courseOverrides || commissionSettings.courseOverrides.length === 0) { %>
-              <p class="mini">No course overrides.</p>
-            <% } else { %>
-              <% commissionSettings.courseOverrides.forEach((item) => { %>
-                <form method="post" action="/simple-lms/commission/course/remove" class="actions">
-                  <span class="mini"><%= item.courseTitle %> (<%= item.ratePercent %>%)</span>
-                  <input type="hidden" name="courseId" value="<%= item.courseId %>">
-                  <input type="hidden" name="returnTo" value="<%= adminReturnTo %>">
-                  <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                </form>
+            </select>
+            <select class="input" name="paymentCurrency">
+              <option value="all" <%= adminPaymentFilters.currency === 'all' ? 'selected' : '' %>>all currencies</option>
+              <% paymentCurrencies.forEach((currency) => { %>
+                <option value="<%= currency %>" <%= adminPaymentFilters.currency === currency ? 'selected' : '' %>><%= currency %></option>
               <% }) %>
-            <% } %>
-          </article>
-        </div>
-      </section>
+            </select>
+            <input class="input" type="date" name="paymentFrom" value="<%= adminPaymentFilters.dateFrom || '' %>">
+            <input class="input" type="date" name="paymentTo" value="<%= adminPaymentFilters.dateTo || '' %>">
+            <input class="input" type="text" name="paymentSearch" value="<%= adminPaymentFilters.search || '' %>" placeholder="search">
+            <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+          </form>
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Learner</th>
+                  <th>Course</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% (adminPayments || []).forEach((payment) => { %>
+                  <tr>
+                    <td><%= dateText(payment.createdAt) %></td>
+                    <td><%= payment.learnerName %></td>
+                    <td><%= payment.courseTitle %></td>
+                    <td><%= payment.amountDisplay %></td>
+                    <td><span class="pill"><%= payment.statusLabel %></span></td>
+                    <td>
+                      <% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %>
+                        <form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" class="inline-form">
+                          <input class="input" type="text" name="transactionId" value="<%= payment.flutterwaveTxId || '' %>" placeholder="tx id">
+                          <input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/admin/payments' %>">
+                          <button class="btn btn-secondary btn-sm" type="submit">Re-verify</button>
+                        </form>
+                      <% } else { %>
+                        <span class="mini">No action</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
 
-      <section class="card" id="payments">
-        <div class="head"><div><h2>Payments</h2><p class="mini">Search and re-verify transactions.</p></div></div>
-        <form method="get" action="/admin" class="form-grid"><select class="input" name="paymentStatus"><option value="all" <%= adminPaymentFilters.status === 'all' ? 'selected' : '' %>>all statuses</option><% paymentStatuses.forEach((s) => { %><option value="<%= s %>" <%= adminPaymentFilters.status === s ? 'selected' : '' %>><%= s %></option><% }) %></select><select class="input" name="paymentCurrency"><option value="all" <%= adminPaymentFilters.currency === 'all' ? 'selected' : '' %>>all currencies</option><% paymentCurrencies.forEach((c) => { %><option value="<%= c %>" <%= adminPaymentFilters.currency === c ? 'selected' : '' %>><%= c %></option><% }) %></select><input class="input" type="date" name="paymentFrom" value="<%= adminPaymentFilters.dateFrom || '' %>"><input class="input" type="date" name="paymentTo" value="<%= adminPaymentFilters.dateTo || '' %>"><input class="input" type="text" name="paymentSearch" value="<%= adminPaymentFilters.search || '' %>" placeholder="search"><button class="btn btn-primary btn-sm" type="submit">Apply</button></form>
-        <div class="table"><table><thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-        <% (adminPayments || []).forEach((payment) => { %><tr><td><%= dateText(payment.createdAt) %></td><td><%= payment.learnerName %></td><td><%= payment.courseTitle %></td><td><%= payment.amountDisplay %></td><td><span class="pill"><%= payment.statusLabel %></span></td><td><% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %><form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" class="actions"><input class="input" type="text" name="transactionId" value="<%= payment.flutterwaveTxId || '' %>" placeholder="tx id"><input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/admin' %>"><button class="btn btn-secondary btn-sm" type="submit">Re-verify</button></form><% } else { %><span class="mini">No action</span><% } %></td></tr><% }) %>
-        </tbody></table></div>
-      </section>
+      <% if (currentSection === 'settings') { %>
+        <section class="card">
+          <div class="head"><div><h2>Platform Settings</h2><p class="mini">Admin-level defaults and lifecycle controls.</p></div></div>
+          <form method="post" action="/simple-lms/settings/platform" class="form-grid">
+            <input type="hidden" name="platformFormComplete" value="1">
+            <input class="input" name="defaultCurrency" value="<%= platformSettings.defaultCurrency || 'NGN' %>" placeholder="Currency">
+            <select class="input" name="defaultPaymentMode">
+              <option value="free" <%= platformSettings.defaultPaymentMode === 'free' ? 'selected' : '' %>>free</option>
+              <option value="paid" <%= platformSettings.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option>
+            </select>
+            <input class="input" type="number" name="minCoursePriceMinor" value="<%= platformSettings.minCoursePriceMinor || 0 %>" placeholder="Min price">
+            <input class="input" type="number" name="maxCoursePriceMinor" value="<%= platformSettings.maxCoursePriceMinor || 50000000 %>" placeholder="Max price">
+            <input type="hidden" name="requirePublicReviewForCreators" value="off">
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformSettings.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require review before publish</label>
+            <input type="hidden" name="maintenanceMode" value="off">
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformSettings.maintenanceMode ? 'checked' : '' %>> Maintenance mode</label>
+            <textarea class="input" name="maintenanceMessage" rows="2" style="grid-column:1 / -1;" placeholder="Maintenance message"><%= platformSettings.maintenanceMessage || '' %></textarea>
+            <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+            <button class="btn btn-primary btn-sm" type="submit">Save Settings</button>
+          </form>
+        </section>
+      <% } %>
 
-      <section class="card" id="settings">
-        <div class="head"><div><h2>Platform Settings</h2><p class="mini">Admin-level LMS defaults and controls.</p></div></div>
-        <form method="post" action="/simple-lms/settings/platform" class="form-grid"><input type="hidden" name="platformFormComplete" value="1"><input class="input" name="defaultCurrency" value="<%= platformSettings.defaultCurrency || 'NGN' %>" placeholder="Currency"><select class="input" name="defaultPaymentMode"><option value="free" <%= platformSettings.defaultPaymentMode === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= platformSettings.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select><input class="input" type="number" name="minCoursePriceMinor" value="<%= platformSettings.minCoursePriceMinor || 0 %>" placeholder="Min price"><input class="input" type="number" name="maxCoursePriceMinor" value="<%= platformSettings.maxCoursePriceMinor || 50000000 %>" placeholder="Max price"><input type="hidden" name="requirePublicReviewForCreators" value="off"><label><input type="checkbox" name="requirePublicReviewForCreators" <%= platformSettings.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require review before public publish</label><input type="hidden" name="maintenanceMode" value="off"><label><input type="checkbox" name="maintenanceMode" <%= platformSettings.maintenanceMode ? 'checked' : '' %>> Maintenance mode</label><textarea class="input" name="maintenanceMessage" rows="2" style="grid-column:1 / -1;" placeholder="Maintenance message"><%= platformSettings.maintenanceMessage || '' %></textarea><input type="hidden" name="returnTo" value="<%= adminReturnTo %>"><button class="btn btn-primary btn-sm" type="submit">Save Settings</button></form>
-      </section>
-
-      <section class="card" id="analytics">
-        <div class="head"><div><h2>Analytics</h2><p class="mini">Performance for last <%= analytics.lookbackDays %> days.</p></div></div>
-        <div class="kpis"><article class="kpi"><small>Enrollments</small><strong><%= analytics.enrollmentTrend.current %></strong></article><article class="kpi"><small>Completions</small><strong><%= analytics.completionTrend.current %></strong></article><article class="kpi"><small>Payments</small><strong><%= analytics.paymentTrend.currentCount %></strong></article><article class="kpi"><small>Revenue</small><strong><%= analytics.paymentTrend.grossDisplay %></strong></article></div>
-      </section>
+      <% if (currentSection === 'analytics') { %>
+        <section class="card">
+          <div class="head"><div><h2>Analytics</h2><p class="mini">Performance for last <%= analytics.lookbackDays %> days.</p></div></div>
+          <div class="kpis">
+            <article class="kpi"><small>Enrollments</small><strong><%= analytics.enrollmentTrend.current %></strong></article>
+            <article class="kpi"><small>Completions</small><strong><%= analytics.completionTrend.current %></strong></article>
+            <article class="kpi"><small>Payments</small><strong><%= analytics.paymentTrend.currentCount %></strong></article>
+            <article class="kpi"><small>Revenue</small><strong><%= analytics.paymentTrend.grossDisplay %></strong></article>
+          </div>
+          <div class="grid">
+            <article class="card">
+              <strong>Top Courses by Enrollments</strong>
+              <% if (!analytics.topCoursesByEnrollments || analytics.topCoursesByEnrollments.length === 0) { %>
+                <p class="mini">No enrollment trend data.</p>
+              <% } else { %>
+                <% analytics.topCoursesByEnrollments.forEach((item) => { %>
+                  <div class="actions"><span><%= item.title %></span><span class="pill"><%= item.enrollmentCount %> enrollments</span></div>
+                <% }) %>
+              <% } %>
+            </article>
+            <article class="card">
+              <strong>Top Courses by Revenue</strong>
+              <% if (!analytics.topCoursesByRevenue || analytics.topCoursesByRevenue.length === 0) { %>
+                <p class="mini">No revenue trend data.</p>
+              <% } else { %>
+                <% analytics.topCoursesByRevenue.forEach((item) => { %>
+                  <div class="actions"><span><%= item.title %></span><span class="pill"><%= item.revenueDisplay %></span></div>
+                <% }) %>
+              <% } %>
+            </article>
+            <article class="card">
+              <strong>Top Creators by Revenue</strong>
+              <% if (!analytics.topCreatorsByRevenue || analytics.topCreatorsByRevenue.length === 0) { %>
+                <p class="mini">No creator revenue data.</p>
+              <% } else { %>
+                <% analytics.topCreatorsByRevenue.forEach((item) => { %>
+                  <div class="actions"><span><%= item.creatorName %></span><span class="pill"><%= item.revenueDisplay %></span></div>
+                <% }) %>
+              <% } %>
+            </article>
+          </div>
+        </section>
+      <% } %>
     </main>
   </div>
 </body>

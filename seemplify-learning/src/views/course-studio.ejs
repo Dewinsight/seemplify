@@ -617,6 +617,181 @@
       padding: 16px;
       text-align: center;
     }
+    .wizard-shell {
+      display: grid;
+      gap: 14px;
+      border: 1px solid #d5e0ed;
+      border-radius: 20px;
+      padding: 12px;
+      background:
+        radial-gradient(130% 120% at 100% 0%, rgba(14, 116, 144, 0.08), transparent 70%),
+        #f8fbff;
+    }
+    .wizard-progress-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+    .wizard-progress-track span {
+      display: block;
+      height: 100%;
+      width: 20%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0e7490, #0284c7, #ea580c);
+      transition: width 0.35s ease;
+    }
+    .wizard-steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .wizard-step {
+      border: 1px solid #d5e0ed;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px 10px;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: left;
+      display: grid;
+      gap: 3px;
+      cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .wizard-step:hover {
+      border-color: #9ec0db;
+      transform: translateY(-1px);
+    }
+    .wizard-step span {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .wizard-step small {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .wizard-step.active,
+    .wizard-step.complete {
+      border-color: rgba(14, 116, 144, 0.4);
+      box-shadow: 0 10px 20px -16px rgba(14, 116, 144, 0.75);
+    }
+    .wizard-step.active span,
+    .wizard-step.complete span {
+      background: linear-gradient(135deg, #0e7490, #0284c7);
+      color: #ffffff;
+    }
+    .wizard-inline-message {
+      margin: 0;
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      border-radius: 10px;
+      background: rgba(254, 226, 226, 0.7);
+      color: #b91c1c;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .wizard-pane {
+      display: none;
+      gap: 12px;
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    .wizard-pane.active {
+      display: grid;
+      animation: wizard-step-enter 0.26s ease forwards;
+    }
+    .wizard-pane-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #d7e1eb;
+      padding-bottom: 8px;
+    }
+    .wizard-pane-head h4 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+      color: #0b1224;
+    }
+    .wizard-pane-head p {
+      margin: 4px 0 0;
+      color: #5b6b7f;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .wizard-review-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+    }
+    .wizard-review-card {
+      border: 1px solid #d8e2ed;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .wizard-review-card small {
+      color: #64748b;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .wizard-review-card strong {
+      font-size: 16px;
+      color: #0f172a;
+      line-height: 1.25;
+    }
+    .wizard-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      border-top: 1px solid #d7e1eb;
+      padding-top: 10px;
+    }
+    .wizard-footer-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    [data-wizard-submit] {
+      display: none;
+    }
+    .wizard-shell.is-final [data-wizard-next] {
+      display: none;
+    }
+    .wizard-shell.is-final [data-wizard-submit] {
+      display: inline-flex;
+    }
+    @keyframes wizard-step-enter {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
     @media (max-width: 1240px) {
       .studio-shell {
         grid-template-columns: 272px minmax(0, 1fr);
@@ -629,6 +804,9 @@
       }
       .form-grid > .banner-upload-section {
         grid-column: span 2;
+      }
+      .wizard-steps {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
     @media (max-width: 980px) {
@@ -671,6 +849,17 @@
       }
       .course-item-title {
         font-size: 20px;
+      }
+      .wizard-steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .wizard-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .wizard-footer-actions .btn {
+        width: 100%;
+        justify-content: center;
       }
     }
   </style>
@@ -725,8 +914,8 @@
             <a class="rail-link" href="/admin"><span>Open Admin Portal</span></a>
           <% } %>
         <% } else { %>
-          <a class="rail-link" href="/admin#courses"><span>Manage Courses</span></a>
-          <a class="rail-link" href="/admin#payments"><span>Payment Tracking</span></a>
+          <a class="rail-link" href="/admin/courses"><span>Manage Courses</span></a>
+          <a class="rail-link" href="/admin/payments"><span>Payment Tracking</span></a>
           <a class="rail-link" href="/courses"><span>Public Catalog</span></a>
         <% } %>
       </nav>
@@ -894,85 +1083,154 @@
           </div>
           <span class="pill <%= isAdminStudio ? 'system' : 'creator' %>"><%= isAdminStudio ? 'System Course Flow' : 'Creator Course Flow' %></span>
         </div>
-        <form method="post" action="/simple-lms/courses/create" class="studio-form">
+        <form method="post" action="/simple-lms/courses/create" class="studio-form" id="createCourseWizardForm" data-wizard-flow="course-create">
           <input type="hidden" name="returnTo" value="<%= studioPath %>">
           <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
           <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
-          <div class="form-grid">
-            <label>Course Title<input class="input" name="title" required></label>
-            <label>Slug<input class="input" name="slug" placeholder="course-slug"></label>
-            <label>Category<input class="input" name="category" value="<%= creatorSettings.defaultCategory || '' %>"></label>
-            <label>Level
-              <select class="input" name="level">
-                <% levels.forEach((levelOption) => { %>
-                  <option value="<%= levelOption %>" <%= (creatorSettings.defaultLevel || 'mixed') === levelOption ? 'selected' : '' %>><%= levelOption %></option>
-                <% }) %>
-              </select>
-            </label>
-            <label>Status
-              <select class="input" name="status">
-                <option value="draft" <%= (platformSettings.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option>
-                <option value="published" <%= platformSettings.defaultCourseStatus === 'published' ? 'selected' : '' %>>published</option>
-              </select>
-            </label>
-            <label>Visibility
-              <select class="input" name="visibility">
-                <option value="private" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option>
-                <option value="public" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option>
-                <% if (canManagePlatform) { %><option value="marketplace" <%= platformSettings.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
-              </select>
-            </label>
-            <label>Payment Mode
-              <select class="input" name="paymentMode">
-                <option value="free" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option>
-                <option value="paid" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode) === 'paid' ? 'selected' : '' %>>paid</option>
-              </select>
-            </label>
-            <label>Amount (minor)<input class="input" type="number" name="amount" min="<%= platformSettings.minCoursePriceMinor || 0 %>" max="<%= platformSettings.maxCoursePriceMinor || 50000000 %>" value="<%= platformSettings.minCoursePriceMinor || 0 %>"></label>
-            <label>Currency<input class="input" name="currency" maxlength="3" value="<%= creatorSettings.defaultCurrency || platformSettings.defaultCurrency || 'NGN' %>"></label>
-            <label>Tags (comma-separated)<input class="input" name="tags" placeholder="productivity, agile"></label>
-            <div class="banner-upload-section">
-              <label>Course Banner</label>
-              <div class="banner-upload-area" id="create-banner-upload-area">
-                <div class="banner-upload-placeholder">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg>
-                  <p>Click or drag to upload banner image</p>
-                  <span>Recommended: 1200x630px, max 5MB</span>
-                </div>
-                <input type="file" id="create-banner-file-input" accept="image/*" style="display:none;">
-              </div>
-              <div class="banner-progress" id="create-banner-progress" style="display:none;">
-                <div class="banner-progress-bar"></div>
-                <span class="banner-progress-text">Uploading...</span>
-              </div>
-              <input type="hidden" name="bannerUrl" id="create-banner-url-input" value="">
-              <input type="hidden" name="bannerPublicId" id="create-banner-public-id-input" value="">
-              <input type="hidden" name="bannerWidth" id="create-banner-width-input" value="">
-              <input type="hidden" name="bannerHeight" id="create-banner-height-input" value="">
-            </div>
-          </div>
-          <label>Summary<textarea class="input" name="summary" rows="2"></textarea></label>
-          <label>Description<textarea class="input" name="description" rows="5"></textarea></label>
 
-          <div class="section-head">
-            <div>
-              <h3 class="subsection-title">Curriculum Builder</h3>
-              <p>Add chapters and lessons with media links and notes.</p>
+          <div class="wizard-shell" data-wizard-shell>
+            <div class="wizard-progress-track"><span data-wizard-progress></span></div>
+            <div class="wizard-steps">
+              <button class="wizard-step active" type="button" data-wizard-goto="0"><span>1</span><small>Blueprint</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="1"><span>2</span><small>Access</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="2"><span>3</span><small>Story</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="3"><span>4</span><small>Lessons</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="4"><span>5</span><small>Review</small></button>
             </div>
-            <div class="actions">
-              <button class="btn btn-secondary btn-sm" type="button" id="addCreateChapter">Add Chapter</button>
-              <button class="btn btn-secondary btn-sm" type="button" id="createBuilderLoadJson">Load From JSON</button>
-            </div>
-          </div>
-          <div id="createCurriculumBuilder" class="builder"></div>
-          <label>Chapters JSON<textarea class="input" name="chaptersJson" id="createChaptersJson" rows="9">[]</textarea></label>
-          <div class="actions">
-            <button class="btn btn-secondary btn-sm" type="button" id="fillCourseTemplate">Load Sample Curriculum</button>
-            <button class="btn btn-primary" type="submit">Create Course</button>
+            <p class="wizard-inline-message" data-wizard-message hidden></p>
+
+            <section class="wizard-pane active" data-wizard-pane="0">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Define the course blueprint</h4>
+                  <p>Start with the essentials learners will see first.</p>
+                </div>
+              </header>
+              <div class="form-grid">
+                <label>Course Title<input class="input" name="title" required></label>
+                <label>Slug<input class="input" name="slug" placeholder="course-slug"></label>
+                <label>Category<input class="input" name="category" value="<%= creatorSettings.defaultCategory || '' %>"></label>
+                <label>Level
+                  <select class="input" name="level">
+                    <% levels.forEach((levelOption) => { %>
+                      <option value="<%= levelOption %>" <%= (creatorSettings.defaultLevel || 'mixed') === levelOption ? 'selected' : '' %>><%= levelOption %></option>
+                    <% }) %>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="1">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Set publishing and pricing rules</h4>
+                  <p>Choose visibility, payment mode, and upload a strong banner.</p>
+                </div>
+              </header>
+              <div class="form-grid">
+                <label>Status
+                  <select class="input" name="status">
+                    <option value="draft" <%= (platformSettings.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option>
+                    <option value="published" <%= platformSettings.defaultCourseStatus === 'published' ? 'selected' : '' %>>published</option>
+                  </select>
+                </label>
+                <label>Visibility
+                  <select class="input" name="visibility">
+                    <option value="private" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option>
+                    <option value="public" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option>
+                    <% if (canManagePlatform) { %><option value="marketplace" <%= platformSettings.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
+                  </select>
+                </label>
+                <label>Payment Mode
+                  <select class="input" name="paymentMode">
+                    <option value="free" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option>
+                    <option value="paid" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode) === 'paid' ? 'selected' : '' %>>paid</option>
+                  </select>
+                </label>
+                <label>Amount (minor)<input class="input" type="number" name="amount" min="<%= platformSettings.minCoursePriceMinor || 0 %>" max="<%= platformSettings.maxCoursePriceMinor || 50000000 %>" value="<%= platformSettings.minCoursePriceMinor || 0 %>"></label>
+                <label>Currency<input class="input" name="currency" maxlength="3" value="<%= creatorSettings.defaultCurrency || platformSettings.defaultCurrency || 'NGN' %>"></label>
+                <label>Tags (comma-separated)<input class="input" name="tags" placeholder="productivity, agile"></label>
+                <div class="banner-upload-section">
+                  <label>Course Banner</label>
+                  <div class="banner-upload-area" id="create-banner-upload-area">
+                    <div class="banner-upload-placeholder">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <p>Click or drag to upload banner image</p>
+                      <span>Recommended: 1200x630px, max 5MB</span>
+                    </div>
+                    <input type="file" id="create-banner-file-input" accept="image/*" style="display:none;">
+                  </div>
+                  <div class="banner-progress" id="create-banner-progress" style="display:none;">
+                    <div class="banner-progress-bar"></div>
+                    <span class="banner-progress-text">Uploading...</span>
+                  </div>
+                  <input type="hidden" name="bannerUrl" id="create-banner-url-input" value="">
+                  <input type="hidden" name="bannerPublicId" id="create-banner-public-id-input" value="">
+                  <input type="hidden" name="bannerWidth" id="create-banner-width-input" value="">
+                  <input type="hidden" name="bannerHeight" id="create-banner-height-input" value="">
+                </div>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="2">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Write the course story</h4>
+                  <p>Give learners a concise summary and a richer description.</p>
+                </div>
+              </header>
+              <label>Summary<textarea class="input" name="summary" rows="2"></textarea></label>
+              <label>Description<textarea class="input" name="description" rows="5"></textarea></label>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="3">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Build your curriculum</h4>
+                  <p>Add chapters and lessons. This is where the course truly comes alive.</p>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button" id="addCreateChapter">Add Chapter</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="createBuilderLoadJson">Load From JSON</button>
+                </div>
+              </header>
+              <div id="createCurriculumBuilder" class="builder"></div>
+              <label>Chapters JSON<textarea class="input" name="chaptersJson" id="createChaptersJson" rows="9">[]</textarea></label>
+              <div class="actions">
+                <button class="btn btn-secondary btn-sm" type="button" id="fillCourseTemplate">Load Sample Curriculum</button>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="4">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Review and launch</h4>
+                  <p>Quick final pass before creating your course.</p>
+                </div>
+              </header>
+              <div class="wizard-review-grid">
+                <article class="wizard-review-card"><small>Title</small><strong id="courseWizardReviewTitle">-</strong></article>
+                <article class="wizard-review-card"><small>Category</small><strong id="courseWizardReviewCategory">-</strong></article>
+                <article class="wizard-review-card"><small>Status</small><strong id="courseWizardReviewStatus">draft</strong></article>
+                <article class="wizard-review-card"><small>Visibility</small><strong id="courseWizardReviewVisibility">private</strong></article>
+                <article class="wizard-review-card"><small>Pricing</small><strong id="courseWizardReviewPricing">free</strong></article>
+                <article class="wizard-review-card"><small>Curriculum</small><strong id="courseWizardReviewCurriculum">0 chapters / 0 lessons</strong></article>
+              </div>
+              <p class="subtle-note">When you choose <strong>published</strong>, the platform may still send the course for admin approval based on current settings.</p>
+            </section>
+
+            <footer class="wizard-footer">
+              <p class="mini">Step-by-step creation keeps the flow focused and fast.</p>
+              <div class="wizard-footer-actions">
+                <button class="btn btn-secondary btn-sm" type="button" data-wizard-prev>Back</button>
+                <button class="btn btn-primary btn-sm" type="button" data-wizard-next>Continue</button>
+                <button class="btn btn-primary" type="submit" data-wizard-submit>Create Course</button>
+              </div>
+            </footer>
           </div>
         </form>
       </section>
@@ -1012,7 +1270,7 @@
 
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
-                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>" target="_blank" rel="noreferrer">View Course</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
                   <% if (course.isActive) { %>
                     <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
                       <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
@@ -1649,6 +1907,222 @@
         `
         createBannerUploadArea.style.display = 'block'
       }
+
+      const initCourseCreateWizard = () => {
+        const form = document.getElementById('createCourseWizardForm')
+        if (!form) return
+
+        const shell = form.querySelector('[data-wizard-shell]')
+        const panes = Array.from(form.querySelectorAll('[data-wizard-pane]'))
+        const steps = Array.from(form.querySelectorAll('[data-wizard-goto]'))
+        const progressBar = form.querySelector('[data-wizard-progress]')
+        const messageNode = form.querySelector('[data-wizard-message]')
+        const prevButton = form.querySelector('[data-wizard-prev]')
+        const nextButton = form.querySelector('[data-wizard-next]')
+        const submitButton = form.querySelector('[data-wizard-submit]')
+        if (!shell || panes.length === 0 || !prevButton || !nextButton || !submitButton) return
+
+        const reviewNodes = {
+          title: document.getElementById('courseWizardReviewTitle'),
+          category: document.getElementById('courseWizardReviewCategory'),
+          status: document.getElementById('courseWizardReviewStatus'),
+          visibility: document.getElementById('courseWizardReviewVisibility'),
+          pricing: document.getElementById('courseWizardReviewPricing'),
+          curriculum: document.getElementById('courseWizardReviewCurriculum')
+        }
+
+        const totalSteps = panes.length
+        const lastStepIndex = totalSteps - 1
+        let currentStep = 0
+
+        const getFieldValue = (name) => {
+          const field = form.elements.namedItem(name)
+          if (!field) return ''
+          if (Array.isArray(field)) return String(field[0]?.value || '').trim()
+          return String(field.value || '').trim()
+        }
+
+        const setMessage = (text = '') => {
+          if (!messageNode) return
+          if (!text) {
+            messageNode.hidden = true
+            messageNode.textContent = ''
+            return
+          }
+          messageNode.hidden = false
+          messageNode.textContent = text
+        }
+
+        const getCurriculumStats = () => {
+          const raw = getFieldValue('chaptersJson')
+          const chapters = safeParseJson(raw, [])
+          const chapterCount = Array.isArray(chapters) ? chapters.length : 0
+          const lessonCount = Array.isArray(chapters)
+            ? chapters.reduce((sum, chapter) => sum + (Array.isArray(chapter?.lessons) ? chapter.lessons.length : 0), 0)
+            : 0
+          return {
+            chapterCount,
+            lessonCount
+          }
+        }
+
+        const refreshReview = () => {
+          const title = getFieldValue('title')
+          const category = getFieldValue('category')
+          const status = getFieldValue('status')
+          const visibility = getFieldValue('visibility')
+          const paymentMode = getFieldValue('paymentMode')
+          const amount = Number(getFieldValue('amount') || 0)
+          const currency = getFieldValue('currency') || 'NGN'
+          const curriculum = getCurriculumStats()
+
+          if (reviewNodes.title) reviewNodes.title.textContent = title || 'Untitled course'
+          if (reviewNodes.category) reviewNodes.category.textContent = category || 'No category yet'
+          if (reviewNodes.status) reviewNodes.status.textContent = status || 'draft'
+          if (reviewNodes.visibility) reviewNodes.visibility.textContent = visibility || 'private'
+          if (reviewNodes.pricing) {
+            reviewNodes.pricing.textContent = paymentMode === 'paid'
+              ? `${currency.toUpperCase()} ${Math.max(0, Math.round(amount))} (minor)`
+              : 'Free course'
+          }
+          if (reviewNodes.curriculum) {
+            reviewNodes.curriculum.textContent = `${curriculum.chapterCount} chapters / ${curriculum.lessonCount} lessons`
+          }
+        }
+
+        const validateStep = (stepIndex) => {
+          if (stepIndex === 0) {
+            if (!getFieldValue('title')) return 'Add a course title before continuing.'
+            return ''
+          }
+
+          if (stepIndex === 1) {
+            const paymentMode = getFieldValue('paymentMode')
+            const amount = Number(getFieldValue('amount') || 0)
+            if (paymentMode === 'paid' && (!Number.isFinite(amount) || amount <= 0)) {
+              return 'Paid courses need an amount greater than 0.'
+            }
+            return ''
+          }
+
+          if (stepIndex === 2) {
+            return ''
+          }
+
+          if (stepIndex === 3) {
+            const status = getFieldValue('status')
+            if (status !== 'published') return ''
+            const raw = getFieldValue('chaptersJson')
+            const chapters = safeParseJson(raw, [])
+            if (!Array.isArray(chapters) || chapters.length === 0) {
+              return 'Published courses need at least one chapter.'
+            }
+            const lessonTitles = chapters
+              .flatMap((chapter) => Array.isArray(chapter?.lessons) ? chapter.lessons : [])
+              .map((lesson) => String(lesson?.title || '').trim())
+              .filter(Boolean)
+            if (lessonTitles.length === 0) {
+              return 'Published courses need at least one lesson title.'
+            }
+            return ''
+          }
+
+          return ''
+        }
+
+        const updateUI = () => {
+          panes.forEach((pane, index) => {
+            pane.classList.toggle('active', index === currentStep)
+          })
+
+          steps.forEach((step, index) => {
+            step.classList.toggle('active', index === currentStep)
+            step.classList.toggle('complete', index < currentStep)
+          })
+
+          const progressPercent = ((currentStep + 1) / totalSteps) * 100
+          if (progressBar) progressBar.style.width = `${progressPercent}%`
+          prevButton.disabled = currentStep <= 0
+          shell.classList.toggle('is-final', currentStep === lastStepIndex)
+          refreshReview()
+        }
+
+        const goToStep = (nextStep, { skipValidation = false } = {}) => {
+          const targetStep = Math.max(0, Math.min(lastStepIndex, nextStep))
+          if (!skipValidation && targetStep > currentStep) {
+            for (let step = currentStep; step < targetStep; step += 1) {
+              const error = validateStep(step)
+              if (error) {
+                setMessage(error)
+                return false
+              }
+            }
+          }
+          currentStep = targetStep
+          setMessage('')
+          updateUI()
+          return true
+        }
+
+        prevButton.addEventListener('click', () => {
+          goToStep(currentStep - 1, { skipValidation: true })
+        })
+
+        nextButton.addEventListener('click', () => {
+          const error = validateStep(currentStep)
+          if (error) {
+            setMessage(error)
+            return
+          }
+          goToStep(currentStep + 1, { skipValidation: true })
+        })
+
+        steps.forEach((stepButton, stepIndex) => {
+          stepButton.addEventListener('click', () => {
+            if (stepIndex <= currentStep) {
+              goToStep(stepIndex, { skipValidation: true })
+              return
+            }
+            goToStep(stepIndex, { skipValidation: false })
+          })
+        })
+
+        form.addEventListener('input', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const watchedNames = new Set([
+            'title',
+            'category',
+            'status',
+            'visibility',
+            'paymentMode',
+            'amount',
+            'currency',
+            'summary',
+            'description',
+            'chaptersJson'
+          ])
+          const fieldName = target.getAttribute('name') || ''
+          if (watchedNames.has(fieldName)) refreshReview()
+        })
+
+        form.addEventListener('submit', (event) => {
+          for (let step = 0; step < lastStepIndex; step += 1) {
+            const error = validateStep(step)
+            if (error) {
+              event.preventDefault()
+              goToStep(step, { skipValidation: true })
+              setMessage(error)
+              return
+            }
+          }
+          setMessage('')
+        })
+
+        updateUI()
+      }
+
+      initCourseCreateWizard()
 
       async function parseBannerUploadResponse(response) {
         const contentType = String(response.headers.get('content-type') || '').toLowerCase()

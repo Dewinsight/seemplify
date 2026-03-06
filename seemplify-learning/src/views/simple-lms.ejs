@@ -483,6 +483,199 @@
       color: var(--muted);
       font-size: 12px;
     }
+    .program-wizard-shell {
+      display: grid;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background:
+        radial-gradient(120% 120% at 100% 0%, rgba(8, 145, 178, 0.08), transparent 72%),
+        #f8fafc;
+    }
+    .program-wizard-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+    .program-wizard-progress > span {
+      display: block;
+      height: 100%;
+      width: 25%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0891b2, #0ea5e9, #f59e0b);
+      transition: width 0.32s ease;
+    }
+    .program-wizard-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .program-wizard-step {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px 10px;
+      text-align: left;
+      display: grid;
+      gap: 2px;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .program-wizard-step:hover {
+      border-color: rgba(8, 145, 178, 0.4);
+      transform: translateY(-1px);
+    }
+    .program-wizard-step span {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .program-wizard-step small {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .program-wizard-step.active,
+    .program-wizard-step.complete {
+      border-color: rgba(8, 145, 178, 0.42);
+      box-shadow: 0 10px 20px -16px rgba(8, 145, 178, 0.82);
+    }
+    .program-wizard-step.active span,
+    .program-wizard-step.complete span {
+      background: linear-gradient(135deg, #0891b2, #0ea5e9);
+      color: #ffffff;
+    }
+    .program-wizard-message {
+      margin: 0;
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      border-radius: 10px;
+      background: rgba(254, 226, 226, 0.7);
+      color: #b91c1c;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .program-step-pane {
+      display: none;
+      gap: 10px;
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    .program-step-pane.active {
+      display: grid;
+      animation: program-step-enter 0.24s ease forwards;
+    }
+    .program-step-head {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 7px;
+      display: grid;
+      gap: 3px;
+    }
+    .program-step-head h3 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.03em;
+    }
+    .program-step-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .program-path-builder {
+      display: grid;
+      gap: 8px;
+    }
+    .program-path-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .program-path-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .program-path-head strong {
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+    .program-path-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      align-items: end;
+    }
+    .program-review-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .program-review-card {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .program-review-card small {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .program-review-card strong {
+      font-size: 15px;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .program-wizard-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+    .program-wizard-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    [data-program-submit] {
+      display: none;
+    }
+    .program-wizard-shell.is-final [data-program-next] {
+      display: none;
+    }
+    .program-wizard-shell.is-final [data-program-submit] {
+      display: inline-flex;
+    }
+    @keyframes program-step-enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
     @media (max-width: 1080px) {
       .hero-layout { grid-template-columns: 1fr; }
     }
@@ -517,6 +710,9 @@
       .actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
       .body h3 { font-size: 17px; }
       table { min-width: 620px; }
+      .program-wizard-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .program-wizard-footer { flex-direction: column; align-items: stretch; }
+      .program-wizard-actions .btn { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -888,6 +1084,7 @@
                 <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span></div>
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/simple-lms?view=course-studio') %>" target="_blank" rel="noreferrer">View</a>
                   <% if (course.isActive) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/archive" style="display:inline-flex;"><button class="btn btn-danger btn-sm" type="submit">Archive</button></form><% } else { %><form method="post" action="/simple-lms/courses/<%= course._id %>/restore" style="display:inline-flex;"><button class="btn btn-primary btn-sm" type="submit">Restore</button></form><% } %>
                 </div>
               </div></article>
@@ -1007,17 +1204,84 @@
       <section class="panel studio">
         <div class="stack">
           <div class="head"><div><h2>Create Program</h2><p class="mini">Build pathways using course IDs in steps JSON.</p></div></div>
-          <form method="post" action="/simple-lms/programs/create" class="stack">
-            <div class="form-grid">
-              <div><label>Name</label><input class="input" name="name" required></div>
-              <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">published</option></select></div>
-              <div><label>Visibility</label><select class="input" name="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+          <form method="post" action="/simple-lms/programs/create" class="stack" id="createProgramWizardForm" data-program-wizard>
+            <div class="program-wizard-shell" data-program-shell>
+              <div class="program-wizard-progress"><span data-program-progress></span></div>
+              <div class="program-wizard-steps">
+                <button class="program-wizard-step active" type="button" data-program-goto="0"><span>1</span><small>Blueprint</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="1"><span>2</span><small>Access</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="2"><span>3</span><small>Pathway</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="3"><span>4</span><small>Review</small></button>
+              </div>
+              <p class="program-wizard-message" data-program-message hidden></p>
+
+              <section class="program-step-pane active" data-program-pane="0">
+                <header class="program-step-head">
+                  <h3>Create your pathway blueprint</h3>
+                  <p>Define the purpose and story for this program.</p>
+                </header>
+                <div class="form-grid">
+                  <div><label>Name</label><input class="input" name="name" required></div>
+                  <div><label>Tags</label><input class="input" name="tags" placeholder="pathway, leadership"></div>
+                </div>
+                <div><label>Objective</label><textarea class="input" name="objective" rows="2"></textarea></div>
+                <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="1">
+                <header class="program-step-head">
+                  <h3>Choose release settings</h3>
+                  <p>Control whether this program launches as draft or public.</p>
+                </header>
+                <div class="form-grid">
+                  <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">published</option></select></div>
+                  <div><label>Visibility</label><select class="input" name="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+                </div>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="2">
+                <header class="program-step-head">
+                  <h3>Build the step-by-step pathway</h3>
+                  <p>Select courses in sequence. You can still edit raw JSON if needed.</p>
+                </header>
+                <div class="program-path-builder" id="programPathBuilder"></div>
+                <div class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button" id="addProgramStep">Add Path Step</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="fillProgramTemplate">Load Sample Pathway</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="programLoadFromJson">Load From JSON</button>
+                </div>
+                <details>
+                  <summary style="cursor:pointer;color:var(--muted);font-size:12px;">Advanced: Raw Steps JSON</summary>
+                  <div style="margin-top:8px;">
+                    <textarea class="input" name="stepsJson" rows="8" id="createStepsJson">[]</textarea>
+                  </div>
+                </details>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="3">
+                <header class="program-step-head">
+                  <h3>Review and create</h3>
+                  <p>Quick final checks before publishing this learning journey.</p>
+                </header>
+                <div class="program-review-grid">
+                  <article class="program-review-card"><small>Name</small><strong id="programReviewName">-</strong></article>
+                  <article class="program-review-card"><small>Status</small><strong id="programReviewStatus">draft</strong></article>
+                  <article class="program-review-card"><small>Visibility</small><strong id="programReviewVisibility">private</strong></article>
+                  <article class="program-review-card"><small>Path Steps</small><strong id="programReviewStepCount">0 steps</strong></article>
+                  <article class="program-review-card"><small>Required Steps</small><strong id="programReviewRequiredCount">0 required</strong></article>
+                </div>
+                <p class="mini">Tip: Keep the first step practical and easy so learners gain momentum quickly.</p>
+              </section>
+
+              <footer class="program-wizard-footer">
+                <p class="mini">Wizard mode keeps program setup smooth and intuitive.</p>
+                <div class="program-wizard-actions">
+                  <button class="btn btn-secondary btn-sm" type="button" data-program-prev>Back</button>
+                  <button class="btn btn-primary btn-sm" type="button" data-program-next>Continue</button>
+                  <button class="btn btn-primary" type="submit" data-program-submit>Create Program</button>
+                </div>
+              </footer>
             </div>
-            <div><label>Objective</label><textarea class="input" name="objective" rows="2"></textarea></div>
-            <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
-            <div><label>Tags</label><input class="input" name="tags" placeholder="pathway, leadership"></div>
-            <div><label>Steps JSON</label><textarea class="input" name="stepsJson" rows="8" id="createStepsJson">[]</textarea></div>
-            <div class="actions"><button class="btn btn-secondary btn-sm" type="button" id="fillProgramTemplate">Load Sample Pathway</button><button class="btn btn-primary" type="submit">Create Program</button></div>
           </form>
         </div>
         <aside class="stack">
@@ -1749,14 +2013,275 @@
         })
       }
 
-      const fillProgramTemplate = document.getElementById('fillProgramTemplate')
-      const createStepsJson = document.getElementById('createStepsJson')
-      if (fillProgramTemplate && createStepsJson) {
-        fillProgramTemplate.addEventListener('click', () => {
-          createStepsJson.value = JSON.stringify([
-            { courseId: '', required: true }
-          ], null, 2)
+      const createProgramWizardForm = document.getElementById('createProgramWizardForm')
+      if (createProgramWizardForm) {
+        const programCourseOptionsRaw = <%- JSON.stringify((studioCourses || []).map((course) => ({ id: String(course._id || ''), title: String(course.title || 'Untitled Course') }))) %>
+        const courseMap = new Map()
+        ;(Array.isArray(programCourseOptionsRaw) ? programCourseOptionsRaw : []).forEach((entry) => {
+          const id = String(entry?.id || '').trim()
+          const title = String(entry?.title || 'Untitled Course').trim() || 'Untitled Course'
+          if (!id || courseMap.has(id)) return
+          courseMap.set(id, title)
         })
+        const availableCourses = Array.from(courseMap.entries()).map(([id, title]) => ({ id, title }))
+
+        const shell = createProgramWizardForm.querySelector('[data-program-shell]')
+        const panes = Array.from(createProgramWizardForm.querySelectorAll('[data-program-pane]'))
+        const stepButtons = Array.from(createProgramWizardForm.querySelectorAll('[data-program-goto]'))
+        const progressBar = createProgramWizardForm.querySelector('[data-program-progress]')
+        const messageNode = createProgramWizardForm.querySelector('[data-program-message]')
+        const prevButton = createProgramWizardForm.querySelector('[data-program-prev]')
+        const nextButton = createProgramWizardForm.querySelector('[data-program-next]')
+        const submitButton = createProgramWizardForm.querySelector('[data-program-submit]')
+        const stepsJsonField = document.getElementById('createStepsJson')
+        const builderRoot = document.getElementById('programPathBuilder')
+        const addProgramStep = document.getElementById('addProgramStep')
+        const fillProgramTemplate = document.getElementById('fillProgramTemplate')
+        const loadFromJsonButton = document.getElementById('programLoadFromJson')
+
+        if (shell && panes.length > 0 && prevButton && nextButton && submitButton && stepsJsonField && builderRoot) {
+          const reviewNodes = {
+            name: document.getElementById('programReviewName'),
+            status: document.getElementById('programReviewStatus'),
+            visibility: document.getElementById('programReviewVisibility'),
+            stepCount: document.getElementById('programReviewStepCount'),
+            requiredCount: document.getElementById('programReviewRequiredCount')
+          }
+
+          const totalSteps = panes.length
+          const lastStepIndex = totalSteps - 1
+          let currentStep = 0
+
+          const normalizePathSteps = (input) => {
+            const list = Array.isArray(input) ? input : []
+            const normalized = list.map((entry) => ({
+              courseId: String(entry?.courseId || entry?.course || '').trim(),
+              required: entry?.required !== false && entry?.required !== 'false'
+            }))
+            if (normalized.length === 0) {
+              normalized.push({ courseId: '', required: true })
+            }
+            return normalized
+          }
+
+          let pathSteps = normalizePathSteps(safeParseJson(stepsJsonField.value, []))
+
+          const setProgramMessage = (message = '') => {
+            if (!messageNode) return
+            if (!message) {
+              messageNode.hidden = true
+              messageNode.textContent = ''
+              return
+            }
+            messageNode.hidden = false
+            messageNode.textContent = message
+          }
+
+          const syncStepsJson = () => {
+            stepsJsonField.value = JSON.stringify(pathSteps.map((step) => ({
+              courseId: String(step.courseId || '').trim(),
+              required: step.required !== false
+            })), null, 2)
+          }
+
+          const renderPathBuilder = () => {
+            builderRoot.innerHTML = pathSteps.map((step, index) => `
+              <article class="program-path-item" data-path-index="${index}">
+                <div class="program-path-head">
+                  <strong>Step ${index + 1}</strong>
+                  <button class="btn btn-danger btn-sm" type="button" data-path-action="remove" data-path-index="${index}" ${pathSteps.length <= 1 ? 'disabled' : ''}>Remove</button>
+                </div>
+                <div class="program-path-grid">
+                  <label>Course
+                    <select class="input" data-path-field="courseId" data-path-index="${index}">
+                      <option value="">Select course</option>
+                      ${availableCourses.map((course) => `<option value="${escapeHtml(course.id)}" ${course.id === step.courseId ? 'selected' : ''}>${escapeHtml(course.title)}</option>`).join('')}
+                    </select>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" data-path-field="required" data-path-index="${index}" ${step.required ? 'checked' : ''}>
+                    Required step
+                  </label>
+                </div>
+              </article>
+            `).join('')
+          }
+
+          const refreshProgramReview = () => {
+            const name = String(createProgramWizardForm.elements.namedItem('name')?.value || '').trim()
+            const status = String(createProgramWizardForm.elements.namedItem('status')?.value || 'draft').trim()
+            const visibility = String(createProgramWizardForm.elements.namedItem('visibility')?.value || 'private').trim()
+            const selectedSteps = pathSteps.filter((step) => step.courseId)
+            const requiredCount = selectedSteps.filter((step) => step.required).length
+
+            if (reviewNodes.name) reviewNodes.name.textContent = name || 'Untitled program'
+            if (reviewNodes.status) reviewNodes.status.textContent = status
+            if (reviewNodes.visibility) reviewNodes.visibility.textContent = visibility
+            if (reviewNodes.stepCount) reviewNodes.stepCount.textContent = `${selectedSteps.length} steps`
+            if (reviewNodes.requiredCount) reviewNodes.requiredCount.textContent = `${requiredCount} required`
+          }
+
+          const validateProgramStep = (stepIndex) => {
+            if (stepIndex === 0) {
+              const name = String(createProgramWizardForm.elements.namedItem('name')?.value || '').trim()
+              if (!name) return 'Program name is required before continuing.'
+              return ''
+            }
+            if (stepIndex === 2) {
+              const selected = pathSteps
+                .map((step) => String(step.courseId || '').trim())
+                .filter(Boolean)
+              if (selected.length === 0) {
+                return 'Add at least one course step to build a valid pathway.'
+              }
+              if (new Set(selected).size !== selected.length) {
+                return 'Each pathway step must use a different course.'
+              }
+              return ''
+            }
+            return ''
+          }
+
+          const updateProgramUI = () => {
+            panes.forEach((pane, index) => {
+              pane.classList.toggle('active', index === currentStep)
+            })
+            stepButtons.forEach((button, index) => {
+              button.classList.toggle('active', index === currentStep)
+              button.classList.toggle('complete', index < currentStep)
+            })
+            if (progressBar) progressBar.style.width = `${((currentStep + 1) / totalSteps) * 100}%`
+            prevButton.disabled = currentStep <= 0
+            shell.classList.toggle('is-final', currentStep === lastStepIndex)
+            refreshProgramReview()
+          }
+
+          const goToProgramStep = (nextStep, { skipValidation = false } = {}) => {
+            const target = Math.max(0, Math.min(lastStepIndex, nextStep))
+            if (!skipValidation && target > currentStep) {
+              for (let step = currentStep; step < target; step += 1) {
+                const error = validateProgramStep(step)
+                if (error) {
+                  setProgramMessage(error)
+                  return false
+                }
+              }
+            }
+            currentStep = target
+            setProgramMessage('')
+            updateProgramUI()
+            return true
+          }
+
+          builderRoot.addEventListener('change', (event) => {
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            const field = target.dataset.pathField
+            const index = Number.parseInt(target.dataset.pathIndex || '', 10)
+            if (!Number.isInteger(index) || index < 0 || index >= pathSteps.length) return
+
+            if (field === 'courseId' && target instanceof HTMLSelectElement) {
+              pathSteps[index].courseId = String(target.value || '').trim()
+            }
+            if (field === 'required' && target instanceof HTMLInputElement) {
+              pathSteps[index].required = target.checked
+            }
+            syncStepsJson()
+            refreshProgramReview()
+          })
+
+          builderRoot.addEventListener('click', (event) => {
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            const button = target.closest('button[data-path-action]')
+            if (!button) return
+            const action = button.dataset.pathAction
+            const index = Number.parseInt(button.dataset.pathIndex || '', 10)
+            if (action === 'remove' && Number.isInteger(index) && pathSteps.length > 1) {
+              pathSteps.splice(index, 1)
+              syncStepsJson()
+              renderPathBuilder()
+              refreshProgramReview()
+            }
+          })
+
+          if (addProgramStep) {
+            addProgramStep.addEventListener('click', () => {
+              pathSteps.push({ courseId: '', required: true })
+              syncStepsJson()
+              renderPathBuilder()
+            })
+          }
+
+          if (fillProgramTemplate) {
+            fillProgramTemplate.addEventListener('click', () => {
+              const firstCourse = availableCourses[0]?.id || ''
+              const secondCourse = availableCourses[1]?.id || firstCourse
+              pathSteps = normalizePathSteps([
+                { courseId: firstCourse, required: true },
+                { courseId: secondCourse, required: false }
+              ])
+              syncStepsJson()
+              renderPathBuilder()
+              refreshProgramReview()
+            })
+          }
+
+          const loadStepsFromJson = () => {
+            pathSteps = normalizePathSteps(safeParseJson(stepsJsonField.value, []))
+            syncStepsJson()
+            renderPathBuilder()
+            refreshProgramReview()
+          }
+
+          if (loadFromJsonButton) loadFromJsonButton.addEventListener('click', loadStepsFromJson)
+          stepsJsonField.addEventListener('blur', loadStepsFromJson)
+
+          prevButton.addEventListener('click', () => {
+            goToProgramStep(currentStep - 1, { skipValidation: true })
+          })
+
+          nextButton.addEventListener('click', () => {
+            const error = validateProgramStep(currentStep)
+            if (error) {
+              setProgramMessage(error)
+              return
+            }
+            goToProgramStep(currentStep + 1, { skipValidation: true })
+          })
+
+          stepButtons.forEach((button, index) => {
+            button.addEventListener('click', () => {
+              if (index <= currentStep) {
+                goToProgramStep(index, { skipValidation: true })
+                return
+              }
+              goToProgramStep(index, { skipValidation: false })
+            })
+          })
+
+          createProgramWizardForm.addEventListener('input', () => {
+            refreshProgramReview()
+          })
+
+          createProgramWizardForm.addEventListener('submit', (event) => {
+            for (let step = 0; step < lastStepIndex; step += 1) {
+              const error = validateProgramStep(step)
+              if (error) {
+                event.preventDefault()
+                goToProgramStep(step, { skipValidation: true })
+                setProgramMessage(error)
+                return
+              }
+            }
+            syncStepsJson()
+            setProgramMessage('')
+          })
+
+          syncStepsJson()
+          renderPathBuilder()
+          updateProgramUI()
+        }
       }
     })()
   </script>
