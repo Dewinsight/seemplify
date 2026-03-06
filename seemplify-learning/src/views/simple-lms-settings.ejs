@@ -310,10 +310,98 @@
       font-size: 13px;
       font-weight: 700;
     }
+    .creator-tools-layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 290px minmax(0, 1fr);
+      align-items: start;
+    }
+    .creator-menu-card {
+      position: sticky;
+      top: 18px;
+      gap: 10px;
+      padding: 16px;
+    }
+    .creator-menu-card h3 {
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+    }
+    .creator-menu-nav {
+      display: grid;
+      gap: 8px;
+    }
+    .creator-menu-link {
+      text-decoration: none;
+      border: 1px solid #dbe4ef;
+      border-radius: 12px;
+      background: #f8fafd;
+      padding: 10px 12px;
+      display: grid;
+      gap: 3px;
+      transition: border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease;
+    }
+    .creator-menu-link:hover {
+      border-color: #b8cdf1;
+      background: #f1f6ff;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px -22px rgba(15, 23, 42, 0.6);
+    }
+    .creator-menu-link strong {
+      font-size: 13px;
+      color: #0f172a;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .creator-menu-link span {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.4;
+    }
+    .creator-menu-link.active {
+      border-color: #0f172a;
+      background: #0f172a;
+      box-shadow: 0 14px 26px -24px rgba(15, 23, 42, 0.7);
+    }
+    .creator-menu-link.active strong,
+    .creator-menu-link.active span {
+      color: #e2e8f0;
+    }
+    .creator-tools-content {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .creator-section-card {
+      border: 1px solid #e5eaf3;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px -24px rgba(15, 23, 42, 0.3);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+    .creator-section-card h2 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .creator-section-note {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.5;
+    }
     @media (max-width: 1120px) {
       .settings-layout,
-      .settings-two-col {
+      .settings-two-col,
+      .creator-tools-layout {
         grid-template-columns: 1fr;
+      }
+      .creator-menu-card {
+        position: static;
       }
     }
     @media (max-width: 760px) {
@@ -342,6 +430,20 @@
     const userRoleLabel = String(role || 'learner').replace(/_/g, ' ')
     const activeTab = settingsTab || 'profile'
     const tabLink = (tab) => `/simple-lms?view=settings&settingsTab=${tab}`
+    const creatorSections = [
+      { key: 'defaults', label: 'Creator Defaults', description: 'Course and publishing defaults' },
+      { key: 'actions', label: 'Quick Actions', description: 'Open creator studio surfaces' },
+      { key: 'payout', label: 'Payout Profile', description: 'Bank details and payout account' },
+      { key: 'performance', label: 'Performance Snapshot', description: 'Sales and conversion metrics' },
+      { key: 'wallet', label: 'Creator Wallet', description: 'Earnings, balance, and withdrawal request' },
+      { key: 'withdrawals', label: 'Withdrawal Requests', description: 'Track admin review and payouts' }
+    ]
+    const activeCreatorSection = creatorSections.some((section) => section.key === creatorSection) ? creatorSection : 'defaults'
+    const creatorSectionLink = (section) => `/simple-lms?view=settings&settingsTab=creator&creatorSection=${encodeURIComponent(section)}`
+    const creatorDefaultsReturnTo = creatorSectionLink('defaults')
+    const creatorPayoutReturnTo = creatorSectionLink('payout')
+    const creatorWalletReturnTo = creatorSectionLink('wallet')
+    const creatorWithdrawalsReturnTo = creatorSectionLink('withdrawals')
     const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } }
     const numberOrZero = (value) => Number.isFinite(Number(value)) ? Number(value) : 0
   %>
@@ -413,167 +515,208 @@
     <% } %>
 
     <% if (activeTab === 'creator') { %>
-      <section class="settings-two-col">
-        <article class="settings-card">
-          <h2>Creator Defaults</h2>
-          <p>Control your course creation defaults and publishing workflow.</p>
-          <form method="post" action="/simple-lms/settings/creator" class="input-grid">
-            <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
-            <label>Default Category
-              <input class="input" name="defaultCategory" value="<%= creatorSettings.defaultCategory || '' %>">
-            </label>
-            <label>Default Level
-              <select class="input" name="defaultLevel">
-                <% levels.forEach((level) => { %>
-                  <option value="<%= level %>" <%= creatorSettings.defaultLevel === level ? 'selected' : '' %>><%= String(level).replace(/_/g, ' ') %></option>
-                <% }) %>
-              </select>
-            </label>
-            <label>Default Visibility
-              <select class="input" name="defaultVisibility">
-                <option value="private" <%= creatorSettings.defaultVisibility === 'private' ? 'selected' : '' %>>private</option>
-                <option value="public" <%= creatorSettings.defaultVisibility === 'public' ? 'selected' : '' %>>public</option>
-              </select>
-            </label>
-            <label>Default Payment Mode
-              <select class="input" name="defaultPaymentMode">
-                <option value="free" <%= creatorSettings.defaultPaymentMode === 'free' ? 'selected' : '' %>>free</option>
-                <option value="paid" <%= creatorSettings.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option>
-              </select>
-            </label>
-            <label>Default Currency
-              <input class="input" name="defaultCurrency" maxlength="3" value="<%= creatorSettings.defaultCurrency || 'NGN' %>">
-            </label>
-            <label>Preferred Lesson Duration (minutes)
-              <input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorSettings.preferredLessonDurationMinutes || 12 %>">
-            </label>
-            <label>Default Lesson Media Type
-              <select class="input" name="defaultLessonMediaType">
-                <option value="video" <%= (creatorSettings.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option>
-                <option value="audio" <%= creatorSettings.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option>
-                <option value="document" <%= creatorSettings.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option>
-              </select>
-            </label>
-            <label>Auto-save Draft Interval (minutes)
-              <input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorSettings.autoSaveDraftMinutes || 5 %>">
-            </label>
-            <label><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorSettings.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum</label>
-            <label><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorSettings.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate course slugs from title</label>
-            <label><input type="checkbox" name="publishNotifyByEmail" <%= creatorSettings.publishNotifyByEmail !== false ? 'checked' : '' %>> Send email when course status changes</label>
-            <label><input type="checkbox" name="showSalesDashboard" <%= creatorSettings.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
-            <label><input type="checkbox" name="showCreatorTips" <%= creatorSettings.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips</label>
-            <button class="btn-primary-soft" type="submit">Save Creator Settings</button>
-          </form>
-        </article>
-
-        <aside class="settings-card">
-          <h3>Creator Quick Actions</h3>
-          <p>Open dedicated creation surfaces from here.</p>
-          <div class="quick-actions">
-            <a class="btn btn-secondary" href="/simple-lms/studio/courses">Open Course Studio</a>
-            <a class="btn btn-secondary" href="/simple-lms?view=program-studio">Open Program Studio</a>
-            <% if (canManagePlatform) { %>
-              <a class="btn btn-secondary" href="/admin">Open Admin</a>
-            <% } %>
-          </div>
-          <h3 style="margin-top:10px;">Payout Profile</h3>
-          <form method="post" action="/simple-lms/profile/payout" class="input-grid">
-            <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
-            <label>Account Name
-              <input class="input" name="accountName" value="<%= payoutProfile.accountName || '' %>">
-            </label>
-            <label>Account Number
-              <input class="input" name="accountNumber" value="<%= payoutProfile.accountNumber || '' %>">
-            </label>
-            <label>Bank Name
-              <input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>">
-            </label>
-            <label>Currency
-              <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
-            </label>
-            <label>Payment Email
-              <input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>">
-            </label>
-            <button class="btn-primary-soft" type="submit">Save Payout Details</button>
-          </form>
-          <h3 style="margin-top:10px;">Creator Performance Snapshot</h3>
-          <div class="workspace-overview-chip-row">
-            <span class="workspace-overview-chip">Sales: <%= numberOrZero(creatorStats?.saleCount) %></span>
-            <span class="workspace-overview-chip">Avg Order: <%= creatorStats?.avgOrderDisplay || 'NGN 0.00' %></span>
-            <span class="workspace-overview-chip">Conversion: <%= numberOrZero(creatorStats?.conversionRatePercent) %>%</span>
-            <span class="workspace-overview-chip">Completion: <%= numberOrZero(creatorStats?.completionRatePercent) %>%</span>
-          </div>
-          <h3 style="margin-top:10px;">Creator Wallet</h3>
-          <div class="workspace-overview-chip-row">
-            <span class="workspace-overview-chip">Sold: <%= creatorWalletSummary?.soldDisplay || 'NGN 0.00' %></span>
-            <span class="workspace-overview-chip">Earnings: <%= creatorWalletSummary?.earningsDisplay || 'NGN 0.00' %></span>
-            <span class="workspace-overview-chip">Pending: <%= creatorWalletSummary?.pendingWithdrawalDisplay || 'NGN 0.00' %></span>
-            <span class="workspace-overview-chip">Paid Out: <%= creatorWalletSummary?.paidOutDisplay || 'NGN 0.00' %></span>
-            <span class="workspace-overview-chip">Available: <%= creatorWalletSummary?.availableBalanceDisplay || 'NGN 0.00' %></span>
-          </div>
-          <% if (canCreateCourses) { %>
-            <h3 style="margin-top:10px;">Request Withdrawal</h3>
-            <form method="post" action="/simple-lms/withdrawals/request" class="input-grid">
-              <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
-              <label>Amount (major units)
-                <input class="input" type="number" name="amount" min="0.01" step="0.01" required>
-              </label>
-              <label>Currency
-                <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
-              </label>
-              <label>Note for admin
-                <textarea class="input" name="notes" rows="3" maxlength="1200" placeholder="Optional context for this withdrawal request"></textarea>
-              </label>
-              <button class="btn-primary-soft" type="submit">Submit Withdrawal Request</button>
-            </form>
-          <% } %>
+      <section class="creator-tools-layout">
+        <aside class="settings-card creator-menu-card">
+          <h3>Creator Tools</h3>
+          <p>Use this menu to move between grouped creator settings instead of one long page.</p>
+          <nav class="creator-menu-nav" aria-label="Creator tool sections">
+            <% creatorSections.forEach((section) => { %>
+              <a class="creator-menu-link <%= activeCreatorSection === section.key ? 'active' : '' %>" href="<%= creatorSectionLink(section.key) %>">
+                <strong><%= section.label %></strong>
+                <span><%= section.description %></span>
+              </a>
+            <% }) %>
+          </nav>
         </aside>
-      </section>
 
-      <section class="settings-card">
-        <h3>Withdrawal Requests</h3>
-        <% if (!creatorWithdrawalRequests || creatorWithdrawalRequests.length === 0) { %>
-          <p class="settings-note">No withdrawal requests yet.</p>
-        <% } else { %>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Note</th>
-                  <th>Admin Update</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% creatorWithdrawalRequests.forEach((request) => { %>
-                  <tr>
-                    <td><%= dateText(request.requestedAt || request.createdAt) %></td>
-                    <td><%= request.amountDisplay %></td>
-                    <td><span class="pill"><%= request.statusLabel %></span></td>
-                    <td><%= request.notes || '-' %></td>
-                    <td>
-                      <%= request.adminNotes || '-' %>
-                      <% if (request.reviewerName) { %><br><span class="mini">by <%= request.reviewerName %></span><% } %>
-                    </td>
-                    <td>
-                      <% if (request.canCancel) { %>
-                        <form method="post" action="/simple-lms/withdrawals/<%= request._id %>/cancel" style="display:inline-flex;">
-                          <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator">
-                          <button class="btn btn-secondary" type="submit">Cancel</button>
-                        </form>
-                      <% } else { %>
-                        <span class="mini">No action</span>
-                      <% } %>
-                    </td>
-                  </tr>
-                <% }) %>
-              </tbody>
-            </table>
-          </div>
-        <% } %>
+        <div class="creator-tools-content">
+          <% if (activeCreatorSection === 'defaults') { %>
+            <article class="creator-section-card">
+              <h2>Creator Defaults</h2>
+              <p class="creator-section-note">Control your course creation defaults and publishing workflow.</p>
+              <form method="post" action="/simple-lms/settings/creator" class="input-grid">
+                <input type="hidden" name="returnTo" value="<%= creatorDefaultsReturnTo %>">
+                <label>Default Category
+                  <input class="input" name="defaultCategory" value="<%= creatorSettings.defaultCategory || '' %>">
+                </label>
+                <label>Default Level
+                  <select class="input" name="defaultLevel">
+                    <% levels.forEach((level) => { %>
+                      <option value="<%= level %>" <%= creatorSettings.defaultLevel === level ? 'selected' : '' %>><%= String(level).replace(/_/g, ' ') %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label>Default Visibility
+                  <select class="input" name="defaultVisibility">
+                    <option value="private" <%= creatorSettings.defaultVisibility === 'private' ? 'selected' : '' %>>private</option>
+                    <option value="public" <%= creatorSettings.defaultVisibility === 'public' ? 'selected' : '' %>>public</option>
+                  </select>
+                </label>
+                <label>Default Payment Mode
+                  <select class="input" name="defaultPaymentMode">
+                    <option value="free" <%= creatorSettings.defaultPaymentMode === 'free' ? 'selected' : '' %>>free</option>
+                    <option value="paid" <%= creatorSettings.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option>
+                  </select>
+                </label>
+                <label>Default Currency
+                  <input class="input" name="defaultCurrency" maxlength="3" value="<%= creatorSettings.defaultCurrency || 'NGN' %>">
+                </label>
+                <label>Preferred Lesson Duration (minutes)
+                  <input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorSettings.preferredLessonDurationMinutes || 12 %>">
+                </label>
+                <label>Default Lesson Media Type
+                  <select class="input" name="defaultLessonMediaType">
+                    <option value="video" <%= (creatorSettings.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option>
+                    <option value="audio" <%= creatorSettings.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option>
+                    <option value="document" <%= creatorSettings.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option>
+                  </select>
+                </label>
+                <label>Auto-save Draft Interval (minutes)
+                  <input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorSettings.autoSaveDraftMinutes || 5 %>">
+                </label>
+                <label><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorSettings.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum</label>
+                <label><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorSettings.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate course slugs from title</label>
+                <label><input type="checkbox" name="publishNotifyByEmail" <%= creatorSettings.publishNotifyByEmail !== false ? 'checked' : '' %>> Send email when course status changes</label>
+                <label><input type="checkbox" name="showSalesDashboard" <%= creatorSettings.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
+                <label><input type="checkbox" name="showCreatorTips" <%= creatorSettings.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips</label>
+                <button class="btn-primary-soft" type="submit">Save Creator Settings</button>
+              </form>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'actions') { %>
+            <article class="creator-section-card">
+              <h2>Creator Quick Actions</h2>
+              <p class="creator-section-note">Open your creation surfaces from one place.</p>
+              <div class="quick-actions">
+                <a class="btn btn-secondary" href="/simple-lms/studio/courses">Open Course Studio</a>
+                <a class="btn btn-secondary" href="/simple-lms?view=program-studio">Open Program Studio</a>
+                <% if (canManagePlatform) { %>
+                  <a class="btn btn-secondary" href="/admin">Open Admin</a>
+                <% } %>
+              </div>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'payout') { %>
+            <article class="creator-section-card">
+              <h2>Payout Profile</h2>
+              <p class="creator-section-note">Set the destination where payouts should be sent.</p>
+              <form method="post" action="/simple-lms/profile/payout" class="input-grid">
+                <input type="hidden" name="returnTo" value="<%= creatorPayoutReturnTo %>">
+                <label>Account Name
+                  <input class="input" name="accountName" value="<%= payoutProfile.accountName || '' %>">
+                </label>
+                <label>Account Number
+                  <input class="input" name="accountNumber" value="<%= payoutProfile.accountNumber || '' %>">
+                </label>
+                <label>Bank Name
+                  <input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>">
+                </label>
+                <label>Currency
+                  <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
+                </label>
+                <label>Payment Email
+                  <input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>">
+                </label>
+                <button class="btn-primary-soft" type="submit">Save Payout Details</button>
+              </form>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'performance') { %>
+            <article class="creator-section-card">
+              <h2>Creator Performance Snapshot</h2>
+              <p class="creator-section-note">A quick summary of sales and completion performance.</p>
+              <div class="workspace-overview-chip-row">
+                <span class="workspace-overview-chip">Sales: <%= numberOrZero(creatorStats?.saleCount) %></span>
+                <span class="workspace-overview-chip">Avg Order: <%= creatorStats?.avgOrderDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Conversion: <%= numberOrZero(creatorStats?.conversionRatePercent) %>%</span>
+                <span class="workspace-overview-chip">Completion: <%= numberOrZero(creatorStats?.completionRatePercent) %>%</span>
+                <span class="workspace-overview-chip">Enrollments: <%= numberOrZero(creatorStats?.enrollmentCount) %></span>
+                <span class="workspace-overview-chip">Completions: <%= numberOrZero(creatorStats?.completionCount) %></span>
+              </div>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'wallet') { %>
+            <article class="creator-section-card">
+              <h2>Creator Wallet</h2>
+              <p class="creator-section-note">Track creator earnings and request payout withdrawals.</p>
+              <div class="workspace-overview-chip-row">
+                <span class="workspace-overview-chip">Sold: <%= creatorWalletSummary?.soldDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Earnings: <%= creatorWalletSummary?.earningsDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Pending: <%= creatorWalletSummary?.pendingWithdrawalDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Paid Out: <%= creatorWalletSummary?.paidOutDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Available: <%= creatorWalletSummary?.availableBalanceDisplay || 'NGN 0.00' %></span>
+              </div>
+              <% if (canCreateCourses) { %>
+                <form method="post" action="/simple-lms/withdrawals/request" class="input-grid">
+                  <input type="hidden" name="returnTo" value="<%= creatorWalletReturnTo %>">
+                  <label>Amount (major units)
+                    <input class="input" type="number" name="amount" min="0.01" step="0.01" required>
+                  </label>
+                  <label>Currency
+                    <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
+                  </label>
+                  <label>Note for admin
+                    <textarea class="input" name="notes" rows="3" maxlength="1200" placeholder="Optional context for this withdrawal request"></textarea>
+                  </label>
+                  <button class="btn-primary-soft" type="submit">Submit Withdrawal Request</button>
+                </form>
+              <% } %>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'withdrawals') { %>
+            <article class="creator-section-card">
+              <h2>Withdrawal Requests</h2>
+              <p class="creator-section-note">Follow request status and cancel pending requests when needed.</p>
+              <% if (!creatorWithdrawalRequests || creatorWithdrawalRequests.length === 0) { %>
+                <p class="settings-note">No withdrawal requests yet.</p>
+              <% } else { %>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Note</th>
+                        <th>Admin Update</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% creatorWithdrawalRequests.forEach((request) => { %>
+                        <tr>
+                          <td><%= dateText(request.requestedAt || request.createdAt) %></td>
+                          <td><%= request.amountDisplay %></td>
+                          <td><span class="pill"><%= request.statusLabel %></span></td>
+                          <td><%= request.notes || '-' %></td>
+                          <td>
+                            <%= request.adminNotes || '-' %>
+                            <% if (request.reviewerName) { %><br><span class="mini">by <%= request.reviewerName %></span><% } %>
+                          </td>
+                          <td>
+                            <% if (request.canCancel) { %>
+                              <form method="post" action="/simple-lms/withdrawals/<%= request._id %>/cancel" style="display:inline-flex;">
+                                <input type="hidden" name="returnTo" value="<%= creatorWithdrawalsReturnTo %>">
+                                <button class="btn btn-secondary" type="submit">Cancel</button>
+                              </form>
+                            <% } else { %>
+                              <span class="mini">No action</span>
+                            <% } %>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </article>
+          <% } %>
+        </div>
       </section>
     <% } %>
 

@@ -33,6 +33,7 @@ const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
+const CREATOR_SETTINGS_SECTIONS = ['defaults', 'actions', 'payout', 'performance', 'wallet', 'withdrawals']
 const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
 
 const LEVEL_LABELS = Object.freeze({
@@ -566,6 +567,11 @@ const parseViewMode = (value) => {
 const parseSettingsTab = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
   return SETTINGS_TABS.includes(normalized) ? normalized : 'profile'
+}
+
+const parseCreatorSettingsSection = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return CREATOR_SETTINGS_SECTIONS.includes(normalized) ? normalized : 'defaults'
 }
 
 const parseAdminSection = (value) => {
@@ -4074,6 +4080,9 @@ const renderWorkspacePage = async (
       return res.redirect(queryString ? `/simple-lms/cart?${queryString}` : '/simple-lms/cart')
     }
     const settingsTab = parseSettingsTab(req.query.settingsTab || req.query.tab)
+    const creatorSection = settingsTab === 'creator'
+      ? parseCreatorSettingsSection(req.query.creatorSection || req.query.creatorTab || req.query.creatorView)
+      : 'defaults'
     const query = String(req.query.q || '').trim()
     const categoryFilter = String(req.query.category || '').trim()
     const levelFilter = String(req.query.level || '').trim().toLowerCase()
@@ -5353,6 +5362,7 @@ const renderWorkspacePage = async (
       adminStudioPath: '/admin/course-studio',
       courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/course-studio' : '/simple-lms/studio/courses',
       settingsTab,
+      creatorSection,
       canCreateCourses: canCreateCourses(role),
       canManagePlatform: canManagePlatform(role),
       filters: {
