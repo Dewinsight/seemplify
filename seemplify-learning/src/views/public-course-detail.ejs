@@ -18,8 +18,12 @@
   <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
   <% const learnLoginHref = `/login?return_to=${encodeURIComponent(takePath)}` %>
   <% const registerToLearnHref = `/register?return_to=${encodeURIComponent(takePath)}&intent=learn&source=course_detail` %>
-  <% const isPreviewMode = Boolean(previewMode) %>
-  <% const backHref = isPreviewMode ? (previewReturnTo || '/simple-lms/studio/courses') : '/courses' %>
+  <% const isPreviewMode = typeof previewMode !== 'undefined' && Boolean(previewMode) %>
+  <% const resolvedPreviewReturnTo = typeof previewReturnTo === 'string' ? previewReturnTo : '' %>
+  <% const resolvedPreviewStatusLabel = typeof previewStatusLabel === 'string' ? previewStatusLabel : '' %>
+  <% const resolvedPreviewVisibilityLabel = typeof previewVisibilityLabel === 'string' ? previewVisibilityLabel : '' %>
+  <% const resolvedPreviewEditUrl = typeof previewEditUrl === 'string' ? previewEditUrl : '' %>
+  <% const backHref = isPreviewMode ? (resolvedPreviewReturnTo || '/simple-lms/studio/courses') : '/courses' %>
   <% const backLabel = isPreviewMode ? 'Back to Workspace' : 'Back to Catalog' %>
   <%
     const formatDuration = (minutes) => {
@@ -62,8 +66,8 @@
     <% if (isPreviewMode) { %>
       <div class="alert">
         Preview mode: this course is not fully public yet.
-        Status: <strong><%= previewStatusLabel || course.status || 'draft' %></strong>.
-        Visibility: <strong><%= previewVisibilityLabel || course.visibilityDisplay || 'private' %></strong>.
+        Status: <strong><%= resolvedPreviewStatusLabel || course.status || 'draft' %></strong>.
+        Visibility: <strong><%= resolvedPreviewVisibilityLabel || course.visibilityDisplay || 'private' %></strong>.
       </div>
     <% } %>
 
@@ -168,8 +172,8 @@
           </p>
 
           <% if (isPreviewMode) { %>
-            <% if (previewEditUrl) { %>
-              <a href="<%= previewEditUrl %>" class="btn btn-primary" style="width:100%;text-align:center;">Edit Course</a>
+            <% if (resolvedPreviewEditUrl) { %>
+              <a href="<%= resolvedPreviewEditUrl %>" class="btn btn-primary" style="width:100%;text-align:center;">Edit Course</a>
             <% } %>
             <a href="<%= backHref %>" class="btn btn-secondary" style="width:100%;text-align:center;margin-top:8px;">Return</a>
             <p class="lmsv-detail-note">Preview mode disables checkout/cart actions until the course is published.</p>
