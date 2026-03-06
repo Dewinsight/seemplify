@@ -48,6 +48,7 @@
     { key: 'overview', label: 'Overview' },
     { key: 'courses', label: 'Course Management' },
     { key: 'approvals', label: 'Approval Queue' },
+    { key: 'creators', label: 'Creators' },
     { key: 'users', label: 'Users & Roles' },
     { key: 'commission', label: 'Commissions' },
     { key: 'payments', label: 'Payments' },
@@ -58,6 +59,7 @@
     overview: 'Admin Overview',
     courses: 'Course Management',
     approvals: 'Course Approval Queue',
+    creators: 'Creator Management',
     users: 'Users & Roles',
     commission: 'Commission Management',
     payments: 'Payment Monitoring',
@@ -71,9 +73,14 @@
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
   }
-  const courses = (managedCourses || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const courses = ((adminCourses || managedCourses) || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
   const pendingOnly = pendingReviewCourses || []
   const approvalCourses = (approvalQueueCourses || pendingOnly || []).slice().sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0))
+  const creatorRows = visibleCreatorAdminRows || creatorAdminRows || []
+  const selectedCreatorId = String((adminCourseFilters && adminCourseFilters.creatorId) || (adminCreatorFilters && adminCreatorFilters.creatorId) || '')
+  const selectedCreator = (creatorAdminRows || []).find((creator) => creator.creatorId === selectedCreatorId) || null
+  const coursesReturnTo = (adminCourseFilters && adminCourseFilters.returnTo) || '/admin/courses'
+  const creatorsReturnTo = (adminCreatorFilters && adminCreatorFilters.returnTo) || '/admin/creators'
 %>
   <div class="layout">
     <aside class="side">
@@ -123,6 +130,7 @@
           </div>
           <div class="quick-links">
             <a class="quick-link" href="/admin/courses"><strong>Manage Courses</strong><span>Edit, preview, approve, archive.</span></a>
+            <a class="quick-link" href="/admin/creators"><strong>Manage Creators</strong><span>Control creator commissions and course catalogs.</span></a>
             <a class="quick-link" href="/admin/approvals"><strong>Open Approval Queue</strong><span>Publish draft/pending creator courses.</span></a>
             <a class="quick-link" href="/admin/users"><strong>Manage Roles</strong><span>Control admin and super admin access.</span></a>
             <a class="quick-link" href="/admin/payments"><strong>Review Payments</strong><span>Filter and re-verify transactions.</span></a>
@@ -133,6 +141,27 @@
       <% if (currentSection === 'courses') { %>
         <section class="card">
           <div class="head"><div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, and restore any course.</p></div></div>
+          <form method="get" action="/admin/courses" class="form-grid">
+            <select class="input" name="creatorId">
+              <option value="">All creators</option>
+              <% (creatorAdminRows || []).forEach((creator) => { %>
+                <option value="<%= creator.creatorId %>" <%= selectedCreatorId === String(creator.creatorId) ? 'selected' : '' %>>
+                  <%= creator.creatorName %><%= creator.creatorEmail ? ` (${creator.creatorEmail})` : '' %>
+                </option>
+              <% }) %>
+            </select>
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
+            <% if (selectedCreatorId) { %>
+              <a class="btn btn-secondary btn-sm" href="/admin/courses">Clear</a>
+            <% } %>
+          </form>
+          <% if (selectedCreator) { %>
+            <p class="mini">
+              Showing <strong><%= courses.length %></strong> courses for
+              <strong><%= selectedCreator.creatorName %></strong>.
+              Commission rate: <strong><%= selectedCreator.commissionRatePercent %>%</strong>.
+            </p>
+          <% } %>
           <div class="table">
             <table>
               <thead>
@@ -148,10 +177,16 @@
                 </tr>
               </thead>
               <tbody>
+                <% if (!courses || courses.length === 0) { %>
+                  <tr><td colspan="8" class="mini">No courses found for this filter.</td></tr>
+                <% } %>
                 <% courses.forEach((course) => { %>
                   <tr>
                     <td><strong><%= course.title %></strong><br><span class="mini"><%= course.summaryText %></span></td>
-                    <td><%= course.createdByName || course.authorName || 'Unknown' %><br><span class="mini"><%= course.createdByEmail || '-' %></span></td>
+                    <td>
+                      <a href="/admin/creators?creatorId=<%= encodeURIComponent(course.createdById || '') %>"><%= course.createdByName || course.authorName || 'Unknown' %></a>
+                      <br><span class="mini"><%= course.createdByEmail || '-' %></span>
+                    </td>
                     <td><span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span></td>
                     <td><span class="pill"><%= course.status || 'draft' %></span></td>
                     <td><span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span></td>
@@ -160,21 +195,21 @@
                     <td>
                       <div class="actions">
                         <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a>
-                        <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/courses') %>" target="_blank" rel="noreferrer">View</a>
+                        <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View</a>
                         <% if (['draft', 'pending_public_review'].includes(String(course.status || ''))) { %>
                           <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
-                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
                             <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
                           </form>
                         <% } %>
                         <% if (course.isActive) { %>
                           <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
-                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
                             <button class="btn btn-danger btn-sm" type="submit">Archive</button>
                           </form>
                         <% } else { %>
                           <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
-                            <input type="hidden" name="returnTo" value="/admin/courses">
+                            <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
                             <button class="btn btn-primary btn-sm" type="submit">Restore</button>
                           </form>
                         <% } %>
@@ -219,6 +254,112 @@
               </article>
             <% }) %>
           </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'creators') { %>
+        <section class="card">
+          <div class="head"><div><h2>Creator Management</h2><p class="mini">Manage creator course inventory, commission rates, and handoff to course management.</p></div></div>
+          <form method="get" action="/admin/creators" class="form-grid">
+            <select class="input" name="creatorId">
+              <option value="">All creators</option>
+              <% (creatorAdminRows || []).forEach((creator) => { %>
+                <option value="<%= creator.creatorId %>" <%= selectedCreatorId === String(creator.creatorId) ? 'selected' : '' %>>
+                  <%= creator.creatorName %><%= creator.creatorEmail ? ` (${creator.creatorEmail})` : '' %>
+                </option>
+              <% }) %>
+            </select>
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
+            <% if (selectedCreatorId) { %>
+              <a class="btn btn-secondary btn-sm" href="/admin/creators">Clear</a>
+            <% } %>
+          </form>
+          <% if (!creatorRows || creatorRows.length === 0) { %>
+            <p class="mini">No creators found.</p>
+          <% } else { %>
+            <div class="table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Creator</th>
+                    <th>Courses</th>
+                    <th>Learners</th>
+                    <th>Sales</th>
+                    <th>Commission</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% creatorRows.forEach((creator) => { %>
+                    <tr>
+                      <td>
+                        <strong><%= creator.creatorName %></strong><br>
+                        <span class="mini"><%= creator.creatorEmail || '-' %></span><br>
+                        <span class="mini">Role: <%= creator.resolvedRole %></span>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          <strong><%= creator.totalCourses %></strong> total |
+                          <%= creator.publishedCourses %> published |
+                          <%= creator.pendingCourses %> pending |
+                          <%= creator.draftCourses %> draft |
+                          <%= creator.archivedCourses %> archived
+                        </span>
+                        <% if (creator.topCourses && creator.topCourses.length > 0) { %>
+                          <div class="mini" style="margin-top:4px;">
+                            <% creator.topCourses.forEach((course, index) => { %>
+                              <%= index > 0 ? ' | ' : '' %><%= course.title %> (<%= course.status %>)
+                            <% }) %>
+                          </div>
+                        <% } %>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          Enrollments: <strong><%= creator.enrollmentCount %></strong><br>
+                          Completions: <strong><%= creator.completionCount %></strong> (<%= creator.completionRatePercent %>%)
+                        </span>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          Sales: <strong><%= creator.saleCount %></strong><br>
+                          Gross: <strong><%= creator.grossDisplay %></strong><br>
+                          Payout: <strong><%= creator.creatorCommissionDisplay %></strong>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="mini">
+                          Effective: <strong><%= creator.commissionRatePercent %>%</strong><br>
+                          <% if (creator.hasCommissionOverride) { %>
+                            Override active
+                          <% } else { %>
+                            Using global rate (<%= commissionSettings.globalRatePercent %>%)
+                          <% } %>
+                        </span>
+                      </td>
+                      <td>
+                        <div class="actions">
+                          <a class="btn btn-secondary btn-sm" href="/admin/courses?creatorId=<%= encodeURIComponent(creator.creatorId) %>">Manage Courses</a>
+                          <form method="post" action="/simple-lms/commission/account" class="inline-form">
+                            <input type="hidden" name="accountId" value="<%= creator.creatorId %>">
+                            <input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" value="<%= creator.commissionRatePercent %>" style="width:88px;">
+                            <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
+                            <button class="btn btn-primary btn-sm" type="submit"><%= creator.hasCommissionOverride ? 'Update' : 'Set' %></button>
+                          </form>
+                          <% if (creator.hasCommissionOverride) { %>
+                            <form method="post" action="/simple-lms/commission/account/remove" class="inline-form">
+                              <input type="hidden" name="accountId" value="<%= creator.creatorId %>">
+                              <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
+                              <button class="btn btn-danger btn-sm" type="submit">Remove Override</button>
+                            </form>
+                          <% } %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
         </section>
       <% } %>
 

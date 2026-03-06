@@ -31,7 +31,7 @@ const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
-const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'users', 'commission', 'payments', 'settings', 'analytics']
+const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -420,6 +420,19 @@ const buildAdminPaymentsReturnTo = ({
   return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
 }
 
+const buildAdminCreatorReturnTo = ({
+  creatorId = '',
+  basePath = '/admin/courses'
+} = {}) => {
+  const params = new URLSearchParams()
+  const normalizedCreatorId = String(creatorId || '').trim()
+  if (normalizedCreatorId && mongoose.Types.ObjectId.isValid(normalizedCreatorId)) {
+    params.set('creatorId', normalizedCreatorId)
+  }
+  const queryString = params.toString()
+  return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
+}
+
 const canManageProgram = ({ role, accountId, program }) => {
   if (!program) return false
   if (canManagePlatform(role)) return true
@@ -756,6 +769,7 @@ const decorateCourse = (course) => {
 
   return {
     ...course,
+    createdById: toIdString(course?.createdBy),
     levelLabel: LEVEL_LABELS[course?.level] || 'Mixed',
     summaryText: String(course?.summary || '').trim() || String(course?.description || '').trim() || 'No summary yet.',
     displayPrice,
@@ -3835,6 +3849,10 @@ const renderWorkspacePage = async (
     const paymentSearchFilter = String(req.query.paymentSearch || '').trim().slice(0, 200)
     const parsedPaymentFrom = parseDateBoundary(paymentFromFilter, 'start')
     const parsedPaymentTo = parseDateBoundary(paymentToFilter, 'end')
+    const creatorFilterCandidate = String(req.query.creatorId || '').trim()
+    const adminCreatorFilterId = canManagePlatform(role) && mongoose.Types.ObjectId.isValid(creatorFilterCandidate)
+      ? creatorFilterCandidate
+      : ''
     const adminPaymentFilter = {}
     if (canManagePlatform(role)) {
       if (paymentStatusFilter !== 'all') adminPaymentFilter.status = paymentStatusFilter
@@ -3852,6 +3870,14 @@ const renderWorkspacePage = async (
       dateTo: paymentToFilter,
       search: paymentSearchFilter,
       basePath: adminBasePath
+    })
+    const adminCoursesReturnTo = buildAdminCreatorReturnTo({
+      creatorId: adminCreatorFilterId,
+      basePath: '/admin/courses'
+    })
+    const adminCreatorsReturnTo = buildAdminCreatorReturnTo({
+      creatorId: adminCreatorFilterId,
+      basePath: '/admin/creators'
     })
 
     const catalogFilter = {
@@ -4492,6 +4518,7 @@ const renderWorkspacePage = async (
     const currentPayments = currentPaymentsRaw[0] || { grossMinor: 0, creatorMinor: 0, platformMinor: 0, count: 0 }
     const previousPayments = previousPaymentsRaw[0] || { grossMinor: 0, creatorMinor: 0, platformMinor: 0, count: 0 }
 
+    const accountById = new Map(adminAccounts.map((account) => [toIdString(account._id), account]))
     const accountNameById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.displayName]))
     const accountEmailById = new Map(adminAccounts.map((account) => [toIdString(account._id), account.email || '']))
     const courseNameById = new Map([...managedCourses, ...catalogCourses, ...(pendingReviewCoursesRaw || []).map(decorateCourse)]
@@ -4596,6 +4623,177 @@ const renderWorkspacePage = async (
       }
     })
 
+    const commissionOverrideByAccountId = new Map(
+      commissionAccountOverrides.map((entry) => [entry.accountId, entry.ratePercent])
+    )
+    const creatorIdentityById = new Map()
+    managedCourses.forEach((course) => {
+      const creatorId = toIdString(course.createdById || course.createdBy)
+      if (!creatorId) return
+      creatorIdentityById.set(creatorId, {
+        creatorName: course.createdByName || course.authorName || accountNameById.get(creatorId) || '',
+        creatorEmail: course.createdByEmail || accountEmailById.get(creatorId) || ''
+      })
+    })
+
+    const creatorCoursesById = new Map()
+    managedCourses.forEach((course) => {
+      const creatorId = toIdString(course.createdById || course.createdBy)
+      if (!creatorId) return
+      const normalizedStatus = String(course.status || 'draft').trim().toLowerCase()
+      const existing = creatorCoursesById.get(creatorId) || {
+        totalCourses: 0,
+        publishedCourses: 0,
+        draftCourses: 0,
+        pendingCourses: 0,
+        archivedCourses: 0,
+        activeCourses: 0,
+        inactiveCourses: 0,
+        enrollmentCount: 0,
+        completionCount: 0,
+        courses: []
+      }
+      existing.totalCourses += 1
+      if (normalizedStatus === 'published') {
+        existing.publishedCourses += 1
+      } else if (normalizedStatus === 'pending_public_review') {
+        existing.pendingCourses += 1
+      } else if (normalizedStatus === 'archived') {
+        existing.archivedCourses += 1
+      } else {
+        existing.draftCourses += 1
+      }
+      if (course.isActive !== false) {
+        existing.activeCourses += 1
+      } else {
+        existing.inactiveCourses += 1
+      }
+      existing.enrollmentCount += Math.max(0, Number(course.enrollmentCount || 0))
+      existing.completionCount += Math.max(0, Number(course.completionCount || 0))
+      existing.courses.push({
+        courseId: toIdString(course._id),
+        title: course.title || 'Untitled Course',
+        status: normalizedStatus || 'draft',
+        enrollmentCount: Math.max(0, Number(course.enrollmentCount || 0)),
+        completionCount: Math.max(0, Number(course.completionCount || 0)),
+        updatedAt: course.updatedAt || course.createdAt || null
+      })
+      creatorCoursesById.set(creatorId, existing)
+    })
+
+    const creatorSalesById = new Map()
+    creatorSales.forEach((sale) => {
+      const creatorId = toIdString(sale.creatorId || sale.creatorAccount || sale.course?.createdBy)
+      if (!creatorId) return
+      const existing = creatorSalesById.get(creatorId) || {
+        saleCount: 0,
+        grossMinor: 0,
+        creatorCommissionMinor: 0,
+        platformShareMinor: 0,
+        uniqueLearnerIds: new Set()
+      }
+      existing.saleCount += 1
+      existing.grossMinor += Math.max(0, Number(sale.amountMinor || 0))
+      existing.creatorCommissionMinor += Math.max(0, Number(sale.creatorCommissionMinor || 0))
+      existing.platformShareMinor += Math.max(0, Number(sale.platformShareMinor || 0))
+      const learnerId = toIdString(sale.account?._id || sale.account)
+      if (learnerId) existing.uniqueLearnerIds.add(learnerId)
+      creatorSalesById.set(creatorId, existing)
+    })
+
+    const creatorCandidateIds = new Set()
+    adminAccounts.forEach((account) => {
+      if (account.resolvedRole === 'creator') {
+        const accountId = toIdString(account._id)
+        if (accountId) creatorCandidateIds.add(accountId)
+      }
+    })
+    for (const creatorId of creatorCoursesById.keys()) creatorCandidateIds.add(creatorId)
+    for (const creatorId of creatorSalesById.keys()) creatorCandidateIds.add(creatorId)
+    for (const creatorId of commissionOverrideByAccountId.keys()) creatorCandidateIds.add(creatorId)
+
+    const creatorAdminRows = Array.from(creatorCandidateIds)
+      .filter(Boolean)
+      .map((creatorId) => {
+        const account = accountById.get(creatorId)
+        const identity = creatorIdentityById.get(creatorId) || {}
+        const courseStats = creatorCoursesById.get(creatorId) || {
+          totalCourses: 0,
+          publishedCourses: 0,
+          draftCourses: 0,
+          pendingCourses: 0,
+          archivedCourses: 0,
+          activeCourses: 0,
+          inactiveCourses: 0,
+          enrollmentCount: 0,
+          completionCount: 0,
+          courses: []
+        }
+        const salesStats = creatorSalesById.get(creatorId) || {
+          saleCount: 0,
+          grossMinor: 0,
+          creatorCommissionMinor: 0,
+          platformShareMinor: 0,
+          uniqueLearnerIds: new Set()
+        }
+        const hasCommissionOverride = commissionOverrideByAccountId.has(creatorId)
+        const commissionRatePercent = hasCommissionOverride
+          ? normalizeCommissionRate(commissionOverrideByAccountId.get(creatorId), commissionSettings.globalRatePercent)
+          : commissionSettings.globalRatePercent
+        const topCourses = (courseStats.courses || [])
+          .slice()
+          .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+          .slice(0, 3)
+        const enrollmentCount = Math.max(0, Number(courseStats.enrollmentCount || 0))
+        const completionCount = Math.max(0, Number(courseStats.completionCount || 0))
+        return {
+          creatorId,
+          creatorName: account?.displayName || identity.creatorName || accountNameById.get(creatorId) || accountEmailById.get(creatorId) || 'Creator',
+          creatorEmail: account?.email || identity.creatorEmail || accountEmailById.get(creatorId) || '',
+          resolvedRole: account?.resolvedRole || 'creator',
+          totalCourses: Math.max(0, Number(courseStats.totalCourses || 0)),
+          publishedCourses: Math.max(0, Number(courseStats.publishedCourses || 0)),
+          draftCourses: Math.max(0, Number(courseStats.draftCourses || 0)),
+          pendingCourses: Math.max(0, Number(courseStats.pendingCourses || 0)),
+          archivedCourses: Math.max(0, Number(courseStats.archivedCourses || 0)),
+          activeCourses: Math.max(0, Number(courseStats.activeCourses || 0)),
+          inactiveCourses: Math.max(0, Number(courseStats.inactiveCourses || 0)),
+          enrollmentCount,
+          completionCount,
+          completionRatePercent: enrollmentCount > 0
+            ? Math.round((completionCount / Math.max(1, enrollmentCount)) * 100)
+            : 0,
+          saleCount: Math.max(0, Number(salesStats.saleCount || 0)),
+          uniqueLearnerCount: salesStats.uniqueLearnerIds instanceof Set ? salesStats.uniqueLearnerIds.size : 0,
+          grossMinor: Math.max(0, Number(salesStats.grossMinor || 0)),
+          grossDisplay: formatCurrencyAmount(salesStats.grossMinor || 0, 'NGN'),
+          creatorCommissionMinor: Math.max(0, Number(salesStats.creatorCommissionMinor || 0)),
+          creatorCommissionDisplay: formatCurrencyAmount(salesStats.creatorCommissionMinor || 0, 'NGN'),
+          platformShareMinor: Math.max(0, Number(salesStats.platformShareMinor || 0)),
+          platformShareDisplay: formatCurrencyAmount(salesStats.platformShareMinor || 0, 'NGN'),
+          commissionRatePercent,
+          hasCommissionOverride,
+          commissionOverrideRatePercent: hasCommissionOverride
+            ? normalizeCommissionRate(commissionOverrideByAccountId.get(creatorId), commissionSettings.globalRatePercent)
+            : null,
+          topCourses,
+          coursesPath: `/admin/courses?creatorId=${encodeURIComponent(creatorId)}`,
+          creatorPath: `/admin/creators?creatorId=${encodeURIComponent(creatorId)}`
+        }
+      })
+      .sort((a, b) => {
+        if (b.totalCourses !== a.totalCourses) return b.totalCourses - a.totalCourses
+        if (b.grossMinor !== a.grossMinor) return b.grossMinor - a.grossMinor
+        return String(a.creatorName || '').localeCompare(String(b.creatorName || ''))
+      })
+
+    const visibleCreatorAdminRows = adminCreatorFilterId
+      ? creatorAdminRows.filter((creator) => creator.creatorId === adminCreatorFilterId)
+      : creatorAdminRows
+    const filteredManagedCourses = adminCreatorFilterId
+      ? managedCourses.filter((course) => toIdString(course.createdById || course.createdBy) === adminCreatorFilterId)
+      : managedCourses
+
     const pendingReviewCourses = (pendingReviewCoursesRaw || []).map((course) => ({
       ...decorateCourse(course),
       creatorName: course.createdBy?.profile?.name || course.createdByName || course.createdByEmail || 'Author',
@@ -4667,6 +4865,7 @@ const renderWorkspacePage = async (
       catalogPrograms,
       recommendedPrograms,
       managedCourses,
+      adminCourses: filteredManagedCourses,
       managedPrograms,
       myEnrollments,
       myPrograms,
@@ -4675,6 +4874,8 @@ const renderWorkspacePage = async (
       studioCourses,
       assignableAccounts,
       adminAccounts,
+      creatorAdminRows,
+      visibleCreatorAdminRows,
       myPayments,
       myCreatorSales,
       creatorStats,
@@ -4689,6 +4890,14 @@ const renderWorkspacePage = async (
         dateTo: paymentToFilter,
         search: paymentSearchFilter,
         returnTo: adminPaymentsReturnTo
+      },
+      adminCourseFilters: {
+        creatorId: adminCreatorFilterId,
+        returnTo: adminCoursesReturnTo
+      },
+      adminCreatorFilters: {
+        creatorId: adminCreatorFilterId,
+        returnTo: adminCreatorsReturnTo
       },
       paymentStatuses: PAYMENT_STATUSES,
       paymentCurrencies: CURRENCY_CODES,
@@ -4766,6 +4975,7 @@ const renderAdminPortalSection = (section = 'overview') => async (req, res) => (
 adminPageRouter.get('/', requireAdminPageAuth, renderAdminPortalSection('overview'))
 adminPageRouter.get('/courses', requireAdminPageAuth, renderAdminPortalSection('courses'))
 adminPageRouter.get('/approvals', requireAdminPageAuth, renderAdminPortalSection('approvals'))
+adminPageRouter.get('/creators', requireAdminPageAuth, renderAdminPortalSection('creators'))
 adminPageRouter.get('/users', requireAdminPageAuth, renderAdminPortalSection('users'))
 adminPageRouter.get('/commission', requireAdminPageAuth, renderAdminPortalSection('commission'))
 adminPageRouter.get('/payments', requireAdminPageAuth, renderAdminPortalSection('payments'))
