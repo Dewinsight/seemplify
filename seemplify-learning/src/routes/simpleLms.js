@@ -1823,7 +1823,7 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
 
     const previewEditUrl = managesCourse
       ? (canManagePlatform(role)
-          ? `/admin/course-studio?editCourse=${course._id}`
+          ? `/admin/courses?editCourse=${course._id}#edit-course`
           : `/simple-lms/studio/courses?editCourse=${course._id}`)
       : ''
 
@@ -4130,6 +4130,10 @@ const renderWorkspacePage = async (
       return ['free', 'paid'].includes(normalized) ? normalized : 'all'
     })()
     const adminCourseSearchFilter = String(req.query.courseSearch || '').trim().slice(0, 200)
+    const adminCourseComposeMode = (() => {
+      const normalized = String(req.query.compose || req.query.courseCompose || '').trim().toLowerCase()
+      return ['1', 'true', 'yes', 'new', 'create'].includes(normalized) ? 'create' : 'manage'
+    })()
     const adminPaymentFilter = {}
     if (canManagePlatform(role)) {
       if (paymentStatusFilter !== 'all') adminPaymentFilter.status = paymentStatusFilter
@@ -5359,8 +5363,8 @@ const renderWorkspacePage = async (
       studioPortal,
       studioContext: resolvedStudioContext,
       creatorStudioPath: '/simple-lms/studio/courses',
-      adminStudioPath: '/admin/course-studio',
-      courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/course-studio' : '/simple-lms/studio/courses',
+      adminStudioPath: '/admin/courses?compose=create',
+      courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/courses' : '/simple-lms/studio/courses',
       settingsTab,
       creatorSection,
       canCreateCourses: canCreateCourses(role),
@@ -5417,6 +5421,7 @@ const renderWorkspacePage = async (
         type: adminCourseTypeFilter,
         paymentMode: adminCoursePaymentFilter,
         search: adminCourseSearchFilter,
+        composeMode: adminCourseComposeMode,
         returnTo: adminCoursesReturnTo
       },
       adminCreatorFilters: {
@@ -5469,7 +5474,7 @@ const renderWorkspacePage = async (
     return redirectWithMessage({
       res,
       path: studioPortal
-        ? (studioContext === 'admin' ? '/admin/course-studio' : '/simple-lms/studio/courses')
+        ? (studioContext === 'admin' ? '/admin/courses' : '/simple-lms/studio/courses')
         : (adminPortal ? '/admin' : '/simple-lms'),
       error: studioPortal
         ? 'Failed to load course studio.'
@@ -5518,14 +5523,15 @@ adminPageRouter.get('/payments', requireAdminPageAuth, renderAdminPortalSection(
 adminPageRouter.get('/settings', requireAdminPageAuth, renderAdminPortalSection('settings'))
 adminPageRouter.get('/analytics', requireAdminPageAuth, renderAdminPortalSection('analytics'))
 
-adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => (
-  renderWorkspacePage(req, res, {
-    forcedViewMode: 'course-studio',
-    adminPortal: true,
-    studioPortal: true,
-    studioContext: 'admin'
-  })
-))
+adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => {
+  const params = new URLSearchParams(req.query || {})
+  if (!params.has('compose') && !params.has('editCourse')) {
+    params.set('compose', 'create')
+  }
+  const queryString = params.toString()
+  const targetHash = params.has('editCourse') ? '#edit-course' : '#create-course'
+  return res.redirect(queryString ? `/admin/courses?${queryString}${targetHash}` : `/admin/courses${targetHash}`)
+})
 
 apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
   try {

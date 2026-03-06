@@ -596,6 +596,55 @@
       border-radius: 10px;
       white-space: nowrap;
     }
+    .course-page-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .course-studio-note {
+      padding: 9px 10px;
+      border: 1px dashed #c8d7ea;
+      border-radius: 10px;
+      background: rgba(239, 246, 255, 0.64);
+    }
+    .course-compose-shell {
+      border: 1px solid #d4e1f1;
+      border-radius: 14px;
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.28);
+      overflow: hidden;
+    }
+    .course-compose-shell > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #0f172a;
+      background: linear-gradient(180deg, #f8fbff 0%, #f0f6ff 100%);
+      border-bottom: 1px solid transparent;
+    }
+    .course-compose-shell[open] > summary {
+      border-bottom-color: #dbe7f5;
+    }
+    .course-compose-shell > summary::-webkit-details-marker {
+      display: none;
+    }
+    .course-compose-body {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .course-compose-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    .course-compose-full {
+      grid-column: 1 / -1;
+    }
     .creator-management-card {
       gap: 12px;
     }
@@ -787,6 +836,9 @@
       .course-actions .btn {
         width: 100%;
       }
+      .course-compose-form {
+        grid-template-columns: minmax(0, 1fr);
+      }
       .creator-kpi-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -860,6 +912,8 @@
   const courseTypeFilter = String((adminCourseFilters && adminCourseFilters.type) || 'all')
   const coursePaymentFilter = String((adminCourseFilters && adminCourseFilters.paymentMode) || 'all')
   const courseSearchFilter = String((adminCourseFilters && adminCourseFilters.search) || '')
+  const courseComposeMode = String((adminCourseFilters && adminCourseFilters.composeMode) || 'manage')
+  const showCreateCoursePanel = courseComposeMode === 'create'
   const hasActiveCourseFilters = Boolean(
     selectedCreatorId
     || (courseStatusFilter && courseStatusFilter !== 'all')
@@ -913,7 +967,7 @@
         <% }) %>
       </nav>
       <div class="actions">
-        <a class="btn btn-primary btn-sm" href="/admin/course-studio">Create Course</a>
+        <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create Course</a>
         <a class="btn btn-secondary btn-sm" href="/simple-lms">Workspace</a>
         <a class="btn btn-secondary btn-sm" href="/logout">Sign Out</a>
       </div>
@@ -961,10 +1015,10 @@
       <% if (currentSection === 'courses') { %>
         <section class="card course-management-card">
           <div class="head">
-            <div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, restore, and duplicate courses into Admin Studio.</p></div>
-            <div class="actions">
-              <a class="btn btn-primary btn-sm" href="/admin/course-studio#create-course">New in Studio</a>
-              <a class="btn btn-secondary btn-sm" href="/admin/course-studio#manage-courses">Studio Course Board</a>
+            <div><h2>Course Management</h2><p class="mini">Admin can filter, edit, preview, approve, archive, restore, and create courses directly from this page.</p></div>
+            <div class="actions course-page-actions">
+              <a class="btn btn-secondary btn-sm" href="/admin/courses">Manage Courses</a>
+              <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create New Course</a>
             </div>
           </div>
           <div class="course-mgmt-stats">
@@ -1069,13 +1123,13 @@
                       <div class="course-actions-wrap">
                         <p class="course-actions-label">Actions</p>
                         <div class="actions course-actions">
-                        <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Studio Edit</a>
+                        <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Edit Course</a>
                         <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
                           <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                          <input type="hidden" name="studioPath" value="/admin/course-studio">
+                          <input type="hidden" name="studioPath" value="/admin/courses?compose=create">
                           <input type="hidden" name="studioContext" value="admin">
                           <input type="hidden" name="isSystemCourse" value="on">
-                          <button class="btn btn-secondary btn-sm" type="submit">Duplicate to Studio</button>
+                          <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
                         </form>
                         <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View</a>
                         <% if (['draft', 'pending_public_review'].includes(String(course.status || ''))) { %>
@@ -1103,6 +1157,119 @@
               </tbody>
             </table>
           </div>
+
+
+          <p class="mini course-studio-note">Admin Course Studio is now integrated here. Manage first, then open quick create or edit without leaving this admin page.</p>
+
+          <details class="course-compose-shell" id="create-course" <%= showCreateCoursePanel ? 'open' : '' %>>
+            <summary>Create New Course</summary>
+            <div class="course-compose-body">
+              <form method="post" action="/simple-lms/courses/create" class="form-grid course-compose-form">
+                <label>Title<input class="input" name="title" required maxlength="200" placeholder="Course title"></label>
+                <label>Category<input class="input" name="category" maxlength="120" placeholder="Category"></label>
+                <label>Level
+                  <select class="input" name="level">
+                    <% levels.forEach((level) => { %>
+                      <option value="<%= level %>"><%= level %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label>Status
+                  <select class="input" name="status">
+                    <option value="draft" selected>draft</option>
+                    <option value="published">published</option>
+                    <option value="archived">archived</option>
+                  </select>
+                </label>
+                <label>Visibility
+                  <select class="input" name="visibility">
+                    <option value="private" selected>private</option>
+                    <option value="public">public</option>
+                    <option value="marketplace">marketplace</option>
+                  </select>
+                </label>
+                <label>Payment Mode
+                  <select class="input" name="paymentMode">
+                    <option value="free" selected>free</option>
+                    <option value="paid">paid</option>
+                  </select>
+                </label>
+                <label>Amount (minor)<input class="input" type="number" name="amount" min="0" value="0"></label>
+                <label>Currency<input class="input" name="currency" maxlength="3" value="NGN"></label>
+                <label>Tags<input class="input" name="tags" placeholder="ai, leadership, design"></label>
+                <label class="course-compose-full">Summary<input class="input" name="summary" maxlength="600" placeholder="Short summary"></label>
+                <label class="course-compose-full">Description<textarea class="input" name="description" rows="4" placeholder="Course description"></textarea></label>
+                <label class="course-compose-full">Banner URL (optional)<input class="input" name="bannerUrl" placeholder="https://..."></label>
+                <label style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" name="isSystemCourse" checked>
+                  Save as system course
+                </label>
+                <input type="hidden" name="studioContext" value="admin">
+                <input type="hidden" name="chaptersJson" value="[]">
+                <input type="hidden" name="returnTo" value="/admin/courses">
+                <button class="btn btn-primary btn-sm" type="submit">Create Course</button>
+              </form>
+            </div>
+          </details>
+
+          <% if (editingCourse) { %>
+            <details class="course-compose-shell" id="edit-course" open>
+              <summary>Edit Course: <%= editingCourse.title %></summary>
+              <div class="course-compose-body">
+                <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/update" class="form-grid course-compose-form">
+                  <label>Title<input class="input" name="title" required maxlength="200" value="<%= editingCourse.title || '' %>"></label>
+                  <label>Category<input class="input" name="category" maxlength="120" value="<%= editingCourse.category || '' %>"></label>
+                  <label>Level
+                    <select class="input" name="level">
+                      <% levels.forEach((level) => { %>
+                        <option value="<%= level %>" <%= String(editingCourse.level || '') === String(level) ? 'selected' : '' %>><%= level %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label>Status
+                    <select class="input" name="status">
+                      <option value="draft" <%= String(editingCourse.status || '') === 'draft' ? 'selected' : '' %>>draft</option>
+                      <option value="pending_public_review" <%= String(editingCourse.status || '') === 'pending_public_review' ? 'selected' : '' %>>pending_public_review</option>
+                      <option value="published" <%= String(editingCourse.status || '') === 'published' ? 'selected' : '' %>>published</option>
+                      <option value="archived" <%= String(editingCourse.status || '') === 'archived' ? 'selected' : '' %>>archived</option>
+                    </select>
+                  </label>
+                  <label>Visibility
+                    <select class="input" name="visibility">
+                      <option value="private" <%= ['organization_private', 'private'].includes(String(editingCourse.visibility || '')) ? 'selected' : '' %>>private</option>
+                      <option value="public" <%= ['organization_public', 'public'].includes(String(editingCourse.visibility || '')) ? 'selected' : '' %>>public</option>
+                      <option value="marketplace" <%= ['system_public', 'marketplace'].includes(String(editingCourse.visibility || '')) ? 'selected' : '' %>>marketplace</option>
+                    </select>
+                  </label>
+                  <label>Payment Mode
+                    <select class="input" name="paymentMode">
+                      <option value="free" <%= String(editingCourse.pricing?.paymentMode || '') === 'paid' ? '' : 'selected' %>>free</option>
+                      <option value="paid" <%= String(editingCourse.pricing?.paymentMode || '') === 'paid' ? 'selected' : '' %>>paid</option>
+                    </select>
+                  </label>
+                  <label>Amount (minor)<input class="input" type="number" name="amount" min="0" value="<%= Number(editingCourse.pricing?.amount || 0) %>"></label>
+                  <label>Currency<input class="input" name="currency" maxlength="3" value="<%= editingCourse.pricing?.currency || 'NGN' %>"></label>
+                  <label>Tags<input class="input" name="tags" value="<%= Array.isArray(editingCourse.tags) ? editingCourse.tags.join(', ') : '' %>"></label>
+                  <label class="course-compose-full">Summary<input class="input" name="summary" maxlength="600" value="<%= editingCourse.summary || '' %>"></label>
+                  <label class="course-compose-full">Description<textarea class="input" name="description" rows="4"><%= editingCourse.description || '' %></textarea></label>
+                  <label class="course-compose-full">Banner URL (optional)<input class="input" name="bannerUrl" value="<%= editingCourse.banner?.url || '' %>"></label>
+                  <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" name="isSystemCourse" <%= editingCourse.isSystemCourse ? 'checked' : '' %>>
+                    Save as system course
+                  </label>
+                  <input type="hidden" name="studioContext" value="admin">
+                  <input type="hidden" name="chaptersJson" value='<%= JSON.stringify(editingCourse.chapters || []) %>'>
+                  <input type="hidden" name="bannerPayload" value='<%= JSON.stringify(editingCourse.banner || {}) %>'>
+                  <input type="hidden" name="returnTo" value="/admin/courses?editCourse=<%= encodeURIComponent(editingCourse._id) %>#edit-course">
+                  <div class="actions course-compose-full">
+                    <button class="btn btn-primary btn-sm" type="submit">Save Course</button>
+                    <a class="btn btn-secondary btn-sm" href="<%= editingCourse.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/courses') %>" target="_blank" rel="noreferrer">Preview</a>
+                    <a class="btn btn-secondary btn-sm" href="/admin/courses">Close Editor</a>
+                  </div>
+                </form>
+              </div>
+            </details>
+          <% } %>
         </section>
       <% } %>
 
@@ -1120,7 +1287,7 @@
                 <p class="mini">Status: <span class="pill"><%= course.status || 'draft' %></span> · Submitted/Updated: <%= dateText(course.submittedAt) %></p>
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
-                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Edit</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Edit</a>
                   <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
                     <input class="input" type="text" name="reviewNotes" placeholder="Optional review notes">
                     <input type="hidden" name="returnTo" value="/admin/approvals">
@@ -1173,7 +1340,7 @@
                 </div>
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= selectedCreator.coursesPath %>">Manage Creator Courses</a>
-                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?creatorId=<%= encodeURIComponent(selectedCreator.creatorId) %>">Open Admin Course Studio</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/courses?creatorId=<%= encodeURIComponent(selectedCreator.creatorId) %>">Open Admin Course Studio</a>
                 </div>
               </div>
 
@@ -1215,7 +1382,7 @@
                   <% if (selectedCreator.topCourses && selectedCreator.topCourses.length > 0) { %>
                     <p><strong>Latest:</strong></p>
                     <% selectedCreator.topCourses.forEach((course) => { %>
-                      <p><a href="/admin/course-studio?editCourse=<%= encodeURIComponent(course.courseId) %>#edit-course"><%= course.title %></a> (<%= course.status %>)</p>
+                      <p><a href="/admin/courses?editCourse=<%= encodeURIComponent(course.courseId) %>#edit-course"><%= course.title %></a> (<%= course.status %>)</p>
                     <% }) %>
                   <% } else { %>
                     <p>No courses available for this creator yet.</p>
