@@ -500,11 +500,17 @@
       box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.35);
     }
     .course-management-table {
-      min-width: 1180px;
+      width: 100%;
+      min-width: 780px;
+      table-layout: auto;
     }
-    .course-management-table th:nth-child(1) { min-width: 270px; }
-    .course-management-table th:nth-child(2) { min-width: 180px; }
-    .course-management-table th:nth-child(8) { min-width: 360px; }
+    .course-management-table th:nth-child(1) { min-width: 250px; }
+    .course-management-table th:nth-child(2) { min-width: 170px; }
+    .course-management-table th:nth-child(3),
+    .course-management-table th:nth-child(4),
+    .course-management-table th:nth-child(5),
+    .course-management-table th:nth-child(6),
+    .course-management-table th:nth-child(7) { min-width: 98px; }
     .course-title-cell strong {
       display: block;
       font-size: 13px;
@@ -541,30 +547,54 @@
     .course-creator-cell a:hover {
       text-decoration: underline;
     }
-    .course-actions-cell {
-      min-width: 340px;
+    .course-management-table .course-row-main td {
+      border-bottom: 0;
+      background: #ffffff;
+    }
+    .course-management-table .course-action-row td {
+      padding-top: 8px;
+      padding-bottom: 11px;
+      border-top: 1px dashed #dbe7f5;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fbff;
+    }
+    .course-actions-wrap {
+      display: grid;
+      gap: 8px;
+    }
+    .course-actions-label {
+      margin: 0;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
     }
     .course-actions {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: 6px;
-      align-items: stretch;
+      align-items: center;
       width: 100%;
     }
     .course-actions > a,
     .course-actions > form {
       margin: 0;
     }
+    .course-actions > a.btn {
+      display: inline-flex;
+    }
     .course-actions .inline-form {
-      display: flex;
-      width: 100%;
+      display: inline-flex;
+      width: auto;
       margin: 0;
     }
     .course-actions .btn {
-      width: 100%;
+      width: auto;
       justify-content: center;
       min-height: 34px;
       border-radius: 10px;
+      white-space: nowrap;
     }
     @media (max-width: 1240px) {
       .layout {
@@ -573,9 +603,7 @@
       h2 {
         font-size: 27px;
       }
-      .course-management-table {
-        min-width: 1080px;
-      }
+      .course-management-table { min-width: 740px; }
     }
     @media (max-width: 980px) {
       .layout {
@@ -605,8 +633,18 @@
       .course-mgmt-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .course-management-table { min-width: 640px; }
       .course-actions {
+        display: grid;
         grid-template-columns: repeat(2, minmax(140px, 1fr));
+      }
+      .course-actions > a,
+      .course-actions > form,
+      .course-actions .inline-form {
+        width: 100%;
+      }
+      .course-actions .btn {
+        width: 100%;
       }
     }
   </style>
@@ -846,15 +884,14 @@
                   <th>Visibility</th>
                   <th>Price</th>
                   <th>Enrollments</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <% if (!courses || courses.length === 0) { %>
-                  <tr><td colspan="8" class="mini">No courses found for this filter.</td></tr>
+                  <tr><td colspan="7" class="mini">No courses found for this filter.</td></tr>
                 <% } %>
                 <% courses.forEach((course) => { %>
-                  <tr>
+                  <tr class="course-row-main">
                     <td class="course-title-cell">
                       <strong><%= course.title %></strong>
                       <span class="course-summary"><%= course.summaryText %></span>
@@ -879,8 +916,12 @@
                       <strong><%= Number(course.enrollmentCount || 0) %></strong><br>
                       <span class="mini"><%= Number(course.completionCount || 0) %> completed</span>
                     </td>
-                    <td class="course-actions-cell">
-                      <div class="actions course-actions">
+                  </tr>
+                  <tr class="course-action-row">
+                    <td colspan="7">
+                      <div class="course-actions-wrap">
+                        <p class="course-actions-label">Actions</p>
+                        <div class="actions course-actions">
                         <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Studio Edit</a>
                         <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
                           <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
@@ -907,6 +948,7 @@
                             <button class="btn btn-primary btn-sm" type="submit">Restore</button>
                           </form>
                         <% } %>
+                        </div>
                       </div>
                     </td>
                   </tr>
