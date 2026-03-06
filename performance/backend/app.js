@@ -415,6 +415,7 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     if (user) {
       // Update profile, current org preference, AND idpTeams on every login
       user.lastGrantRefresh = new Date();
+      user.idpSub = userinfo.sub;
       if (userinfo.currentOrganization?.id) {
         user.currentOrganizationId = userinfo.currentOrganization.id;
       }
@@ -431,6 +432,7 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     } else {
       user = new User({
         email: userinfo.email,
+        idpSub: userinfo.sub,
         profile: {
           firstName: userinfo.given_name || userinfo.name?.split(' ')[0] || 'Performance',
           lastName: userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || 'User',

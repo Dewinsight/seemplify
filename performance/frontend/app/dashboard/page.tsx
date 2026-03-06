@@ -154,13 +154,18 @@ export default function DashboardPage() {
     loadManagerNotifications();
   }, [isManager]);
 
-  const handleOpenManagerNotification = async (notification: ManagerPortalNotification) => {
-    try {
-      await api.post(`/appraisals/${notification.appraisalId}/notifications/read`, {
-        types: ['self_assessment_submitted']
-      });
-    } catch (error) {
-      console.error('Failed to mark manager notification as read', error);
+const handleOpenManagerNotification = async (notification: ManagerPortalNotification) => {
+  try {
+      await api.post(`/appraisals/${notification.appraisalId}/manager-review/start`);
+    } catch (startError) {
+      console.error('Failed to start manager review from dashboard', startError);
+      try {
+        await api.post(`/appraisals/${notification.appraisalId}/notifications/read`, {
+          types: ['self_assessment_submitted', 'manager_review_requested']
+        });
+      } catch (readError) {
+        console.error('Failed to mark manager notification as read', readError);
+      }
     } finally {
       router.push(`/appraisals/${notification.appraisalId}/manager-review`);
     }
@@ -251,6 +256,31 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+        {isManager && managerNotifications.length > 0 && (
+          <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-red-500/10 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-amber-500/20 p-2 text-amber-700 dark:text-amber-300">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Manager action required</p>
+                  <p className="text-sm text-muted-foreground">
+                    It&apos;s your turn to review {managerNotifications[0]?.employee?.name || 'an employee'}&apos;s appraisal.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenManagerNotification(managerNotifications[0])}
+                className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
+                Start review
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Welcome Header */}
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl opacity-50 dark:opacity-100"></div>

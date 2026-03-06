@@ -205,15 +205,41 @@ export default function AppraisalCyclesAdminPage() {
       });
 
       const result = response.data?.data || response.data;
+      const launchedCount = typeof result?.launched === 'number'
+        ? result.launched
+        : employeeData.length;
+      const failedCount = typeof result?.errors === 'number'
+        ? result.errors
+        : 0;
+      const firstFailure = Array.isArray(result?.errorDetails) && result.errorDetails.length > 0
+        ? result.errorDetails[0]?.error
+        : null;
+      const hasFailures = failedCount > 0;
+
+      if (launchedCount <= 0) {
+        setSnackbar({
+          open: true,
+          message: firstFailure
+            ? `Cycle launch failed: ${firstFailure}`
+            : 'Cycle launch failed. No appraisals were created.',
+          severity: 'error'
+        });
+        return;
+      }
+
       setSnackbar({
         open: true,
-        message: `Cycle launched successfully! ${result?.launched || employeeData.length} appraisals created.`,
-        severity: 'success'
+        message: hasFailures
+          ? `Cycle launched with issues: ${launchedCount} created, ${failedCount} failed.`
+          : `Cycle launched successfully! ${launchedCount} appraisals created.`,
+        severity: hasFailures ? 'info' : 'success'
       });
 
       mutate();
-      setLaunchDialogOpen(false);
-      setSelectedEmployees([]);
+      if (!hasFailures) {
+        setLaunchDialogOpen(false);
+        setSelectedEmployees([]);
+      }
     } catch (error: any) {
       console.error('Launch cycle error:', error);
       setSnackbar({

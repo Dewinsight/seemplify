@@ -118,6 +118,8 @@ export default function AppraisalsPage() {
 
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
+  const submittedFlow = searchParams.get('submitted');
+  const submittedAppraisalId = searchParams.get('appraisalId');
 
   const loadManagerNotifications = useCallback(async () => {
     if (!isManager) {
@@ -231,16 +233,24 @@ export default function AppraisalsPage() {
   };
 
   const unreadManagerNotificationCount = managerNotifications.filter((notification) => !notification.readAt).length;
+  const submittedAppraisal = submittedFlow === 'self'
+    ? myAppraisals.find((item: Appraisal) => item._id === submittedAppraisalId)
+    : null;
 
   const handleOpenReviewFromNotification = async (appraisalId: string) => {
     try {
-      await api.post(`/appraisals/${appraisalId}/notifications/read`, {
-        types: ['self_assessment_submitted']
-      });
-      await Promise.all([mutateTeamAppraisals(), loadManagerNotifications()]);
-    } catch (error) {
-      console.error('Failed to mark notification as read', error);
+      await api.post(`/appraisals/${appraisalId}/manager-review/start`);
+    } catch (startError) {
+      console.error('Failed to start manager review from notification', startError);
+      try {
+        await api.post(`/appraisals/${appraisalId}/notifications/read`, {
+          types: ['self_assessment_submitted', 'manager_review_requested']
+        });
+      } catch (readError) {
+        console.error('Failed to mark notification as read', readError);
+      }
     } finally {
+      await Promise.all([mutateTeamAppraisals(), loadManagerNotifications()]);
       router.push(`/appraisals/${appraisalId}/manager-review`);
     }
   };
@@ -647,6 +657,26 @@ export default function AppraisalsPage() {
         </Box>
       </Box>
 
+      {submittedFlow === 'self' && (
+        <Alert
+          severity="success"
+          sx={{
+            mb: 3,
+            borderRadius: 3,
+            border: `1px solid ${alpha(theme.palette.success.main, 0.35)}`
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight={700}>
+            Self-assessment submitted successfully
+          </Typography>
+          <Typography variant="body2">
+            {submittedAppraisal?.manager?.name
+              ? `Your manager (${submittedAppraisal.manager.name}) has been notified to start review.`
+              : 'Your manager has been notified to start review.'}
+          </Typography>
+        </Alert>
+      )}
+
       {isManager && unreadManagerNotificationCount > 0 && (
         <Paper
           sx={{
@@ -689,7 +719,7 @@ export default function AppraisalsPage() {
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
-                  primary={notification.message || `${notification.employee?.name || 'An employee'} submitted a self-assessment.`}
+                  primary={notification.message || `Time to review ${notification.employee?.name || 'this employee'} appraisal.`}
                   secondary={notification.sentAt ? new Date(notification.sentAt).toLocaleString() : 'Just now'}
                   primaryTypographyProps={{ variant: 'body2', fontWeight: 600 }}
                   secondaryTypographyProps={{ variant: 'caption' }}

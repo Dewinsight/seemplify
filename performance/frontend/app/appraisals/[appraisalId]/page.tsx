@@ -30,6 +30,11 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+function normalizeIdentityEmail(value?: string | null) {
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().toLowerCase();
+}
+
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
   'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
@@ -96,8 +101,28 @@ export default function AppraisalDetailPage() {
     );
   }
 
-  const isEmployee = appraisal.employee?.userId === user?.id || appraisal.employee?.email === user?.email;
-  const isAssignedManager = appraisal.manager?.userId === user?.id || appraisal.manager?.email === user?.email;
+  const identityUser = user as { id?: string; sub?: string; email?: string } | null;
+  const requesterIds = Array.from(
+    new Set(
+      [identityUser?.id, identityUser?.sub]
+        .filter(Boolean)
+        .map((value) => String(value))
+    )
+  );
+  const requesterEmail = normalizeIdentityEmail(identityUser?.email);
+  const employeeUserId = appraisal.employee?.userId ? String(appraisal.employee.userId) : null;
+  const employeeEmail = normalizeIdentityEmail(appraisal.employee?.email);
+  const managerUserId = appraisal.manager?.userId ? String(appraisal.manager.userId) : null;
+  const managerEmail = normalizeIdentityEmail(appraisal.manager?.email);
+
+  const isEmployee = Boolean(
+    (employeeUserId && requesterIds.includes(employeeUserId)) ||
+    (employeeEmail && requesterEmail && employeeEmail === requesterEmail)
+  );
+  const isAssignedManager = Boolean(
+    (managerUserId && requesterIds.includes(managerUserId)) ||
+    (managerEmail && requesterEmail && managerEmail === requesterEmail)
+  );
   const hasManagerAccess = isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
   const config = statusConfig[appraisal.status] || statusConfig['not_started'];
 
@@ -222,6 +247,24 @@ export default function AppraisalDetailPage() {
           </Box>
         </Box>
       </Box>
+
+      {isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" fontWeight={700}>Self-assessment completed</Typography>
+          <Typography variant="body2">
+            Your part is complete. Your manager is now handling the review stage.
+          </Typography>
+        </Alert>
+      )}
+
+      {hasManagerAccess && !isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'self_assessment_submitted') && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" fontWeight={700}>Manager action required</Typography>
+          <Typography variant="body2">
+            Self-assessment is submitted. Start manager review to continue the workflow.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Workflow Progress */}
       <Paper sx={{ p: 3, mb: 3 }}>

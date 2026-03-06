@@ -100,6 +100,8 @@ export default function ManagerReviewPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAssist, setAiAssist] = useState<any>(null);
   const [biasCheck, setBiasCheck] = useState<any>(null);
+  const [biasAcknowledged, setBiasAcknowledged] = useState(false);
+  const [managerReviewStarted, setManagerReviewStarted] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
 
   // Form data
@@ -177,22 +179,30 @@ export default function ManagerReviewPage() {
   }, [appraisal]);
 
   useEffect(() => {
-    if (!appraisal || !isManager) return;
-    if (!appraisal.selfAssessment?.submittedAt) return;
-    if (appraisal.managerReview?.submittedAt) return;
+    if (!appraisalId) {
+      setManagerReviewStarted(false);
+    }
+  }, [appraisalId]);
 
-    const markNotificationsRead = async () => {
+  useEffect(() => {
+    if (!appraisal || !isManager || managerReviewStarted) return;
+    if (!appraisal.selfAssessment?.submittedAt || appraisal.managerReview?.submittedAt) return;
+
+    const startableStatuses = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'];
+    if (!startableStatuses.includes(appraisal.status)) return;
+
+    const startManagerReview = async () => {
       try {
-        await api.post(`/appraisals/${appraisalId}/notifications/read`, {
-          types: ['self_assessment_submitted']
-        });
+        await api.post(`/appraisals/${appraisalId}/manager-review/start`);
+        setManagerReviewStarted(true);
+        mutate();
       } catch (e) {
-        console.error('Failed to mark manager notifications as read', e);
+        console.error('Failed to mark manager review as started', e);
       }
     };
 
-    markNotificationsRead();
-  }, [appraisal, appraisalId, isManager]);
+    startManagerReview();
+  }, [appraisal, appraisalId, isManager, managerReviewStarted, mutate]);
 
   const fetchFeedback = async () => {
     try {
@@ -278,12 +288,13 @@ export default function ManagerReviewPage() {
       hasPotentialBias = await checkForBias();
     }
 
-    if (aiAssistEnabled && hasPotentialBias) {
+    if (aiAssistEnabled && hasPotentialBias && !biasAcknowledged) {
       setSnackbar({
         open: true,
-        message: 'Please review the bias detection alerts before submitting',
+        message: 'Potential bias detected. Review it, then click submit again to confirm.',
         severity: 'warning'
       });
+      setBiasAcknowledged(true);
       return;
     }
 
@@ -336,6 +347,7 @@ export default function ManagerReviewPage() {
       });
       setBiasCheck(response.data);
       const hasPotentialBias = Boolean(response.data?.hasPotentialBias);
+      setBiasAcknowledged(false);
       if (hasPotentialBias) {
         setSnackbar({
           open: true,
@@ -353,6 +365,7 @@ export default function ManagerReviewPage() {
   };
 
   const updateSummaryField = (field: string, value: string) => {
+    setBiasAcknowledged(false);
     setFormData(prev => ({
       ...prev,
       overallSummary: { ...prev.overallSummary, [field]: value }
@@ -360,6 +373,7 @@ export default function ManagerReviewPage() {
   };
 
   const updateCompetencyRating = (competencyId: string, field: string, value: any) => {
+    setBiasAcknowledged(false);
     setFormData(prev => ({
       ...prev,
       competencyRatings: prev.competencyRatings.map(c =>
@@ -744,6 +758,7 @@ export default function ManagerReviewPage() {
               <Slider
                 value={okr.managerVerifiedCompletion}
                 onChange={(_, value) => {
+                  setBiasAcknowledged(false);
                   setFormData(prev => ({
                     ...prev,
                     okrAssessment: prev.okrAssessment.map((o, i) =>
@@ -766,6 +781,7 @@ export default function ManagerReviewPage() {
                 <Rating
                   value={okr.qualityRating}
                   onChange={(_, value) => {
+                    setBiasAcknowledged(false);
                     setFormData(prev => ({
                       ...prev,
                       okrAssessment: prev.okrAssessment.map((o, i) =>
@@ -784,6 +800,7 @@ export default function ManagerReviewPage() {
                 placeholder="Note any adjustments or observations..."
                 value={okr.managerComments}
                 onChange={(e) => {
+                  setBiasAcknowledged(false);
                   setFormData(prev => ({
                     ...prev,
                     okrAssessment: prev.okrAssessment.map((o, i) =>
@@ -1062,7 +1079,10 @@ export default function ManagerReviewPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           <Rating
             value={formData.overallManagerRating}
-            onChange={(_, value) => setFormData(prev => ({ ...prev, overallManagerRating: value || 3 }))}
+            onChange={(_, value) => {
+              setBiasAcknowledged(false);
+              setFormData(prev => ({ ...prev, overallManagerRating: value || 3 }));
+            }}
             size="large"
           />
           <Chip

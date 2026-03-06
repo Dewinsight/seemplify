@@ -22,15 +22,85 @@ const {
 } = require('../services/appraisalAccessService');
 
 function getRequesterIdentity(req) {
+  const userIds = Array.from(
+    new Set(
+      [req.session?.user?.id, req.session?.user?.sub]
+        .filter(Boolean)
+        .map((value) => String(value))
+    )
+  );
+
   return {
-    userId: req.session?.user?.id || req.session?.user?.sub,
-    userEmail: req.session?.user?.email
+    userId: userIds[0] || null,
+    userIds,
+    userEmail: normalizeIdentityEmail(req.session?.user?.email)
   };
 }
 
+function normalizeIdentityEmail(value) {
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().toLowerCase();
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function looksLikeObjectId(value) {
+  return typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value);
+}
+
+function buildManagerIdentityFilters(identity = {}) {
+  const filters = [];
+  const userIds = Array.isArray(identity.userIds)
+    ? identity.userIds
+    : (identity.userId ? [identity.userId] : []);
+
+  userIds.forEach((id) => {
+    filters.push({ 'manager.userId': String(id) });
+  });
+
+  const userEmail = normalizeIdentityEmail(identity.userEmail);
+  if (userEmail) {
+    filters.push(
+      { 'manager.email': userEmail },
+      { 'manager.email': { $regex: `^${escapeRegex(userEmail)}$`, $options: 'i' } }
+    );
+  }
+
+  return filters;
+}
+
+function buildEmployeeIdentityMatch(employee = {}) {
+  const filters = [];
+  const userId = employee?.userId ? String(employee.userId) : null;
+  const email = normalizeIdentityEmail(employee?.email);
+
+  if (userId) {
+    filters.push({ 'employee.userId': userId });
+  }
+
+  if (email) {
+    filters.push(
+      { 'employee.email': email },
+      { 'employee.email': { $regex: `^${escapeRegex(email)}$`, $options: 'i' } }
+    );
+  }
+
+  if (filters.length === 0) return null;
+  if (filters.length === 1) return filters[0];
+  return { $or: filters };
+}
+
 function isAppraisalEmployee(req, appraisal) {
-  const { userId, userEmail } = getRequesterIdentity(req);
-  return appraisal?.employee?.userId === userId || appraisal?.employee?.email === userEmail;
+  const { userIds, userEmail } = getRequesterIdentity(req);
+  const appraisalUserId = appraisal?.employee?.userId ? String(appraisal.employee.userId) : null;
+  if (appraisalUserId && userIds.includes(appraisalUserId)) {
+    return true;
+  }
+
+  const appraisalEmail = normalizeIdentityEmail(appraisal?.employee?.email);
+  return Boolean(appraisalEmail && userEmail && appraisalEmail === userEmail);
 }
 
 function normalizeConversationText(value) {
@@ -534,7 +604,7 @@ router.get('/cycles', requireAuth, async (req, res) => {
     const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
     const { status, year } = req.query;
     const userRole = req.userRole;
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
 
     const query = { organizationId: orgId };
     if (status) query.status = status;
@@ -573,7 +643,7 @@ router.get('/cycles', requireAuth, async (req, res) => {
 router.post('/cycles', requireAuth, requireManager, async (req, res) => {
   try {
     const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
     const userRole = req.userRole;
 
@@ -653,7 +723,8 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
     }
 
     // Permission Check
-    const isOwner = cycle.createdBy?.userId === req.session.user.id;
+    const requesterIds = getRequesterIdentity(req).userIds;
+    const isOwner = requesterIds.includes(String(cycle.createdBy?.userId || ''));
     if (req.userRole !== 'hr_admin' && !isOwner) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -712,7 +783,7 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
     }
 
     cycle.updatedBy = {
-      userId: req.session.user.id,
+      userId: req.session.user.id || req.session.user.sub,
       name: req.session.user.name,
       email: req.session.user.email
     };
@@ -796,10 +867,15 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
     for (const emp of employees) {
       try {
         // Check if appraisal already exists for this employee in this cycle
-        const existing = await Appraisal.findOne({
-          cycleId: cycle._id,
-          'employee.userId': emp.userId
-        });
+        const existingQuery = { cycleId: cycle._id };
+        const employeeIdentityMatch = buildEmployeeIdentityMatch(emp);
+        if (employeeIdentityMatch?.$or) {
+          existingQuery.$or = employeeIdentityMatch.$or;
+        } else if (employeeIdentityMatch) {
+          Object.assign(existingQuery, employeeIdentityMatch);
+        }
+
+        const existing = await Appraisal.findOne(existingQuery);
 
         if (existing) {
           errors.push({ userId: emp.userId, error: 'Appraisal already exists' });
@@ -817,8 +893,12 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
 
         if (!managerUserId) {
           // First, try to find manager from the employee's own user record
+          const employeeLookupOr = [{ idpSub: String(emp.userId) }, { email: emp.email }];
+          if (looksLikeObjectId(String(emp.userId))) {
+            employeeLookupOr.unshift({ _id: emp.userId });
+          }
           const employeeUser = await User.findOne({
-            $or: [{ _id: emp.userId }, { email: emp.email }]
+            $or: employeeLookupOr
           });
 
           if (employeeUser?.idpTeams?.length > 0) {
@@ -846,22 +926,32 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
 
           // Try to find manager email if we have userId but no email
           if (managerUserId && !managerEmail) {
+            const managerLookupOr = [{ email: String(managerUserId) }];
+            if (looksLikeObjectId(String(managerUserId))) {
+              managerLookupOr.unshift({ _id: managerUserId });
+            }
+            managerLookupOr.unshift({ idpSub: String(managerUserId) });
             const managerUser = await User.findOne({
-              $or: [{ _id: managerUserId }, { 'userinfo.sub': managerUserId }]
-            });
-            if (managerUser) managerEmail = managerUser.email;
+              $or: managerLookupOr
+            }).select('email');
+            if (managerUser?.email) managerEmail = managerUser.email;
           }
         }
 
-        // Fallback to HR Admin if still missing
-        if (!managerUserId) {
-          managerUserId = req.session?.user?.id;
-          managerName = req.session?.user?.name || 'HR Admin';
-          managerEmail = req.session?.user?.email;
-          console.log(`Using HR Admin as fallback manager for ${emp.name}`);
+        if (managerUserId && !managerName && managerEmail) {
+          managerName = managerEmail.split('@')[0];
         }
 
-        if (!managerUserId || !managerEmail) {
+        // Fallback to requester if any required manager identity field is still missing.
+        // This keeps launch resilient when upstream manager email claims are incomplete.
+        if (!managerUserId || !managerEmail || !managerName) {
+          managerUserId = managerUserId || req.session?.user?.id || req.session?.user?.sub;
+          managerName = managerName || req.session?.user?.name || req.session?.user?.email || 'HR Admin';
+          managerEmail = managerEmail || req.session?.user?.email;
+          console.log(`Using requester fallback manager identity for ${emp.name}`);
+        }
+
+        if (!managerUserId || !managerEmail || !managerName) {
           errors.push({ userId: emp.userId, error: 'Manager information missing and no fallback available' });
           continue;
         }
@@ -949,7 +1039,7 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
       return res.status(400).json({ success: false, error: 'Cycle is not active' });
     }
 
-    const managerId = req.session?.user?.id;
+    const managerId = req.session?.user?.id || req.session?.user?.sub;
     const managerName = req.session?.user?.name;
     const managerEmail = req.session?.user?.email;
 
@@ -976,7 +1066,7 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
 
         const existing = await Appraisal.findOne({
           cycleId: cycle._id,
-          'employee.userId': emp.userId
+          ...(buildEmployeeIdentityMatch(emp) || { 'employee.userId': emp.userId })
         });
 
         if (existing) {
@@ -1501,17 +1591,30 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
 // Get my appraisals (as employee)
 router.get('/my', requireAuth, async (req, res) => {
   try {
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
+    const userIds = Array.from(
+      new Set(
+        [req.session?.user?.id, req.session?.user?.sub]
+          .filter(Boolean)
+          .map((value) => String(value))
+      )
+    );
+    const userEmail = normalizeIdentityEmail(req.session?.user?.email);
     const { cycleId, status } = req.query;
 
-    // Query by userId OR email to handle ID system mismatches
-    const query = {
-      $or: [
-        { 'employee.userId': userId },
-        { 'employee.email': userEmail }
-      ]
-    };
+    const identityFilters = userIds.map((id) => ({ 'employee.userId': id }));
+    if (userEmail) {
+      identityFilters.push(
+        { 'employee.email': userEmail },
+        { 'employee.email': { $regex: `^${escapeRegex(userEmail)}$`, $options: 'i' } }
+      );
+    }
+
+    if (identityFilters.length === 0) {
+      return res.status(401).json({ success: false, error: 'Unable to resolve user identity' });
+    }
+
+    // Query by user IDs and a case-insensitive email fallback to handle ID/email mismatches.
+    const query = { $or: identityFilters };
     if (cycleId) query.cycleId = cycleId;
     if (status) query.status = status;
 
@@ -1529,23 +1632,28 @@ router.get('/my', requireAuth, async (req, res) => {
 // Get team appraisals (as manager) - filtered by currentTeam if set
 router.get('/team', requireAuth, requireManager, async (req, res) => {
   try {
-    const { userId, userEmail } = getRequesterIdentity(req);
+    const { userIds, userEmail } = getRequesterIdentity(req);
     const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
     const { cycleId, status } = req.query;
 
     const query = orgId ? { organizationId: orgId } : {};
     if (req.userRole !== 'hr_admin') {
-      const orFilters = [
-        { 'manager.userId': userId },
-        { 'manager.email': userEmail }
-      ];
-
       const scope = await resolveAppraisalAccessScope(req);
+      const orFilters = buildManagerIdentityFilters({ userIds, userEmail });
       if (scope.directReportIds.length > 0) {
         orFilters.push({ 'employee.userId': { $in: scope.directReportIds } });
       }
       if (scope.directReportEmails.length > 0) {
-        orFilters.push({ 'employee.email': { $in: scope.directReportEmails } });
+        scope.directReportEmails
+          .map((email) => normalizeIdentityEmail(email))
+          .filter(Boolean)
+          .forEach((email) => {
+            orFilters.push({ 'employee.email': { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+          });
+      }
+
+      if (orFilters.length === 0) {
+        return res.json({ success: true, data: [] });
       }
 
       query.$or = orFilters;
@@ -1568,7 +1676,7 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
 // Get in-portal notifications for managers
 router.get('/notifications/manager', requireAuth, requireManager, async (req, res) => {
   try {
-    const { userId, userEmail } = getRequesterIdentity(req);
+    const { userIds, userEmail } = getRequesterIdentity(req);
     const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
     const unreadOnly = req.query.unreadOnly !== 'false';
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
@@ -1576,10 +1684,32 @@ router.get('/notifications/manager', requireAuth, requireManager, async (req, re
     const query = orgId ? { organizationId: orgId } : {};
 
     if (req.userRole !== 'hr_admin') {
-      query.$or = [
-        { 'manager.userId': userId },
-        { 'manager.email': userEmail }
-      ];
+      const scope = await resolveAppraisalAccessScope(req);
+      const orFilters = buildManagerIdentityFilters({ userIds, userEmail });
+
+      if (scope.directReportIds.length > 0) {
+        orFilters.push({ 'employee.userId': { $in: scope.directReportIds } });
+      }
+      if (scope.directReportEmails.length > 0) {
+        scope.directReportEmails
+          .map((email) => normalizeIdentityEmail(email))
+          .filter(Boolean)
+          .forEach((email) => {
+            orFilters.push({ 'employee.email': { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+          });
+      }
+
+      if (orFilters.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            notifications: [],
+            unreadCount: 0
+          }
+        });
+      }
+
+      query.$or = orFilters;
     }
 
     query['notifications.0'] = { $exists: true };
@@ -1840,10 +1970,7 @@ router.post('/:appraisalId/submit-goals', requireAuth, async (req, res) => {
     if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
 
     // Verify employee
-    // Handle ID mismatch if needed
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    if (appraisal.employee.userId !== userId && appraisal.employee.email !== userEmail) {
+    if (!isAppraisalEmployee(req, appraisal)) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -1953,10 +2080,8 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
 
-    // Verify employee - compare by userId OR email to handle ID system mismatches
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    // Verify employee - compare by user IDs and normalized email to handle ID system mismatches.
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can submit self-assessment' });
     }
@@ -2034,6 +2159,50 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 // =============================================
 // MANAGER REVIEW
 // =============================================
+
+// Mark manager review as started and consume pending notification
+router.post('/:appraisalId/manager-review/start', requireAuth, requireManager, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
+    if (!appraisal) {
+      return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    }
+
+    const canManage = await canManageAppraisal(req, appraisal);
+    if (!canManage) {
+      return res.status(403).json({ success: false, error: 'Only an authorized manager can start review' });
+    }
+
+    if (!appraisal.selfAssessment?.submittedAt) {
+      return res.status(400).json({ success: false, error: 'Self-assessment must be submitted before manager review' });
+    }
+
+    if (!MANAGER_REVIEW_EDITABLE_STATUSES.includes(appraisal.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Manager review cannot be started in '${appraisal.status}' status`
+      });
+    }
+
+    const previousStatus = appraisal.status;
+    if (appraisal.status !== 'manager_review_in_progress') {
+      appraisal.status = 'manager_review_in_progress';
+      appraisal.addAuditLog('manager_review_started', req.session.user, {
+        previousStatus
+      });
+    }
+
+    markManagerNotificationsRead(appraisal, { types: ['self_assessment_submitted', 'manager_review_requested'] });
+
+    await appraisal.save();
+    await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId);
+
+    res.json({ success: true, data: appraisal });
+  } catch (error) {
+    console.error('Start manager review error:', error);
+    res.status(500).json({ success: false, error: 'Failed to start manager review' });
+  }
+});
 
 // Save manager review (draft or submit)
 router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (req, res) => {
@@ -2215,7 +2384,7 @@ router.post('/:appraisalId/chat', requireAuth, async (req, res) => {
     }
 
     // Check access
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
     const isEmployee = isAppraisalEmployee(req, appraisal);
     const canManage = await canManageAppraisal(req, appraisal);
@@ -2293,7 +2462,7 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
     }
 
     // Check access
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
     const isEmployee = isAppraisalEmployee(req, appraisal);
     const canManage = await canManageAppraisal(req, appraisal);
 
@@ -2497,7 +2666,7 @@ router.post('/:appraisalId/calibration', requireAuth, requireManager, async (req
       originalRating: Number(appraisal.managerReview?.overallManagerRating ?? numericRating),
       calibratedRating: numericRating,
       calibratedBy: {
-        userId: req.session.user.id,
+        userId: req.session.user.id || req.session.user.sub,
         name: req.session.user.name
       },
       justification: normalizedJustification || undefined
@@ -2595,7 +2764,7 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
       breakdown: scores?.breakdown,
       finalizedAt: new Date(),
       finalizedBy: {
-        userId: req.session.user.id,
+        userId: req.session.user.id || req.session.user.sub,
         name: req.session.user.name
       }
     };
@@ -2604,7 +2773,7 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
       appraisal.calibration = {
         originalRating: Number(finalRating ?? appraisal.managerReview?.overallManagerRating),
         calibratedRating: Number(calibratedRating),
-        calibratedBy: { userId: req.session.user.id, name: req.session.user.name },
+        calibratedBy: { userId: req.session.user.id || req.session.user.sub, name: req.session.user.name },
         calibratedAt: new Date(),
         justification
       };
@@ -2645,10 +2814,8 @@ router.post('/:appraisalId/acknowledge', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
 
-    // Verify employee - compare by userId OR email to handle ID system mismatches
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    // Verify employee
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can acknowledge' });
     }
@@ -2751,9 +2918,7 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can start the conversation' });
     }
@@ -2877,10 +3042,9 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can participate in the conversation' });
     }
@@ -3044,9 +3208,8 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -3204,9 +3367,7 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -3350,9 +3511,7 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can generate the report' });
     }
@@ -3450,9 +3609,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     }
 
     // Verify employee access
-    const userId = req.session?.user?.id;
-    const userEmail = req.session?.user?.email;
-    const isEmployee = appraisal.employee.userId === userId || appraisal.employee.email === userEmail;
+    const isEmployee = isAppraisalEmployee(req, appraisal);
     if (!isEmployee) {
       return res.status(403).json({ success: false, error: 'Only the employee can finalize the report' });
     }

@@ -14,6 +14,15 @@ const {
   isAppraisalManagerRole
 } = require('../services/appraisalAccessService');
 
+function normalizeEmail(value) {
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().toLowerCase();
+}
+
+function getPreferredUserId(userDoc) {
+  return userDoc?.idpSub || userDoc?._id?.toString();
+}
+
 /**
  * GET /api/user/context - Get comprehensive user context
  * Returns all necessary info for frontend role-based rendering
@@ -309,6 +318,9 @@ router.get('/all-employees', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
     const currentOrganization = req.currentOrganization;
+    const currentOrgId = currentOrganization?.id ||
+      currentOrganization?._id?.toString?.() ||
+      req.session?.currentOrganizationId;
 
     // Only HR Admin and Recruiters can access all employees
     if (role !== 'hr_admin' && role !== 'recruiter') {
@@ -318,21 +330,28 @@ router.get('/all-employees', requireAuth, async (req, res) => {
       });
     }
 
+    if (!currentOrgId) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active organization selected'
+      });
+    }
+
     // Get all users in the organization (using cached idpTeams for org membership)
     const users = await User.find({
       $or: [
         { currentOrganizationId: currentOrgId },
         { 'idpTeams.organizationId': currentOrgId }
       ]
-    }).select('email profile idpTeams currentOrganizationId');
+    }).select('idpSub email profile idpTeams currentOrganizationId');
 
     // Map users with their manager info from teams
     const employees = users.map(u => {
       // Find user's team info to get manager
-      const primaryTeam = u.idpTeams?.find(t => t.organizationId === currentOrganization?.id) || u.idpTeams?.[0];
+      const primaryTeam = u.idpTeams?.find(t => t.organizationId === currentOrgId) || u.idpTeams?.[0];
 
       return {
-        userId: u._id?.toString(),
+        userId: getPreferredUserId(u),
         name: u.profile?.displayName ||
           `${u.profile?.firstName || ''} ${u.profile?.lastName || ''}`.trim() ||
           u.email?.split('@')[0] ||
@@ -575,7 +594,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
         { currentOrganizationId: effectiveOrgId },
         { 'idpTeams.organizationId': effectiveOrgId }
       ]
-    }).select('email profile idpTeams currentOrganizationId');
+    }).select('idpSub email profile idpTeams currentOrganizationId');
 
     // Build team hierarchy map
     const teamsMap = new Map();
@@ -608,7 +627,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
 
         // Add user to team
         const memberInfo = {
-          userId: user._id?.toString(),
+          userId: getPreferredUserId(user),
           email: user.email,
           name: user.profile?.displayName ||
             `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() ||
@@ -628,7 +647,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
         // Build employee-manager relationship
         if (team.managerId) {
           employeesWithManagers.push({
-            userId: user._id?.toString(),
+            userId: getPreferredUserId(user),
             name: memberInfo.name,
             email: user.email,
             jobTitle: memberInfo.jobTitle,
@@ -700,6 +719,7 @@ router.get('/team-hierarchy', requireAuth, async (req, res) => {
 router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
+    const sessionUser = req.session.user;
     // HR/Admin sees all org employees; line managers/team leads see hierarchy-scoped reports.
     if (!isAppraisalManagerRole(role)) {
       return res.status(403).json({
@@ -725,7 +745,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       managerEmail: member.managerEmail || null
     }));
 
-    const uniqueEmployees = Array.from(
+    let uniqueEmployees = Array.from(
       new Map(
         employees
           .map((employee) => {
@@ -735,6 +755,68 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
           .filter(Boolean)
       ).values()
     );
+
+    // Fallback for managers: if scope mapping is empty, try resolving direct reports from
+    // current IDP claims + locally synced users (matched by idpSub).
+    if (!scope.isHrPlus && uniqueEmployees.length === 0) {
+      const effectiveOrgId = scope.organizationId || req.currentOrganization?.id || req.session?.currentOrganizationId;
+      const claimDirectReportIds = new Set((req.directReports || []).filter(Boolean).map(String));
+      const teams = sessionUser?.idpTeams || sessionUser?.teams || sessionUser?.userinfo?.teams || [];
+      const teamPermissionRows = sessionUser?.idpTeamPermissions || sessionUser?.userinfo?.team_permissions || [];
+
+      teams.forEach((team) => {
+        (team?.directReports || []).forEach((id) => claimDirectReportIds.add(String(id)));
+        (team?.directReportAccountIds || []).forEach((id) => claimDirectReportIds.add(String(id)));
+      });
+      teamPermissionRows.forEach((row) => {
+        (row?.direct_reports || []).forEach((id) => claimDirectReportIds.add(String(id)));
+      });
+
+      const fallbackIds = Array.from(claimDirectReportIds).filter(Boolean);
+      if (effectiveOrgId && fallbackIds.length > 0) {
+        const fallbackUsers = await User.find({
+          idpSub: { $in: fallbackIds },
+          $or: [
+            { currentOrganizationId: effectiveOrgId },
+            { 'idpTeams.organizationId': effectiveOrgId }
+          ]
+        }).select('idpSub email profile idpTeams').lean();
+
+        const fallbackEmployees = fallbackUsers.map((userDoc) => {
+          const teamInOrg = (userDoc.idpTeams || []).find((team) => team.organizationId === effectiveOrgId) || userDoc.idpTeams?.[0];
+          const name = userDoc.profile?.displayName ||
+            `${userDoc.profile?.firstName || ''} ${userDoc.profile?.lastName || ''}`.trim() ||
+            userDoc.email?.split('@')?.[0] ||
+            'Unknown';
+
+          return {
+            userId: userDoc.idpSub || userDoc._id?.toString(),
+            name,
+            email: userDoc.email,
+            jobTitle: userDoc.profile?.title || teamInOrg?.role || 'Employee',
+            department: teamInOrg?.name || userDoc.profile?.department || '',
+            teamId: teamInOrg?.id,
+            teamName: teamInOrg?.name,
+            teamRole: teamInOrg?.role,
+            isManager: teamInOrg?.isManager || teamInOrg?.role === 'line_manager' || teamInOrg?.role === 'team_lead',
+            managerId: teamInOrg?.managerId || null,
+            managerName: teamInOrg?.managerName || null,
+            managerEmail: teamInOrg?.managerEmail || null
+          };
+        });
+
+        uniqueEmployees = Array.from(
+          new Map(
+            fallbackEmployees
+              .map((employee) => {
+                const key = employee.userId || normalizeEmail(employee.email);
+                return key ? [key, employee] : null;
+              })
+              .filter(Boolean)
+          ).values()
+        );
+      }
+    }
 
     const managersMap = new Map();
     uniqueEmployees.forEach((employee) => {
@@ -810,7 +892,7 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
     }
 
     const scope = await resolveAppraisalAccessScope(req);
-    const directReports = (scope.directReports || []).map((member) => ({
+    let directReports = (scope.directReports || []).map((member) => ({
       userId: member.userId,
       email: member.email,
       name: member.name,
@@ -823,6 +905,42 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
       directReportCount: 0,
       source: 'organization-cache'
     }));
+
+    if (directReports.length === 0) {
+      const effectiveOrgId = scope.organizationId || req.currentOrganization?.id || req.session?.currentOrganizationId;
+      const fallbackIds = Array.from(new Set((req.directReports || []).filter(Boolean).map(String)));
+
+      if (effectiveOrgId && fallbackIds.length > 0) {
+        const fallbackUsers = await User.find({
+          idpSub: { $in: fallbackIds },
+          $or: [
+            { currentOrganizationId: effectiveOrgId },
+            { 'idpTeams.organizationId': effectiveOrgId }
+          ]
+        }).select('idpSub email profile idpTeams').lean();
+
+        directReports = fallbackUsers.map((userDoc) => {
+          const teamInOrg = (userDoc.idpTeams || []).find((team) => team.organizationId === effectiveOrgId) || userDoc.idpTeams?.[0];
+          const name = userDoc.profile?.displayName ||
+            `${userDoc.profile?.firstName || ''} ${userDoc.profile?.lastName || ''}`.trim() ||
+            userDoc.email?.split('@')?.[0] ||
+            'Unknown';
+          return {
+            userId: userDoc.idpSub || userDoc._id?.toString(),
+            email: userDoc.email,
+            name,
+            jobTitle: userDoc.profile?.title || 'Team Member',
+            avatar: null,
+            teamId: teamInOrg?.id,
+            teamName: teamInOrg?.name,
+            teamRole: teamInOrg?.role || 'member',
+            isAlsoManager: !!(teamInOrg?.isManager || teamInOrg?.role === 'line_manager' || teamInOrg?.role === 'team_lead'),
+            directReportCount: 0,
+            source: 'idp-claim-fallback'
+          };
+        });
+      }
+    }
 
     const responseData = {
       isManager: true,

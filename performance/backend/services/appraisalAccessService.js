@@ -141,6 +141,10 @@ function getDisplayName(userDoc) {
     'Unknown';
 }
 
+function getPrimaryUserIdentity(userDoc) {
+  return normalizeId(userDoc?.idpSub) || normalizeId(userDoc?._id);
+}
+
 function pickPrimaryTeam(userTeams, accessibleTeamIdsSet, isHrPlus) {
   if (!Array.isArray(userTeams) || userTeams.length === 0) return null;
   if (isHrPlus) return userTeams[0];
@@ -189,7 +193,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
       { 'idpTeams.organizationId': organizationId }
     ]
   })
-    .select('email profile idpTeams')
+    .select('idpSub email profile idpTeams')
     .lean();
 
   if (!orgUsers.length) {
@@ -243,7 +247,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
     if (!isInScope) return;
 
     const primaryTeam = pickPrimaryTeam(userTeams, accessibleTeamIdsSet, isHrPlus);
-    const userId = normalizeId(userDoc._id);
+    const userId = getPrimaryUserIdentity(userDoc);
 
     if (userId) directReportIdSet.add(userId);
     if (email) directReportEmailSet.add(email);

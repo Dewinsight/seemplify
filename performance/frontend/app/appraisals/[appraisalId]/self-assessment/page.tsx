@@ -128,7 +128,7 @@ export default function SelfAssessmentPage() {
 
   const handleConversationComplete = () => {
     mutate();
-    router.push(`/appraisals/${appraisalId}`);
+    router.push(`/appraisals?submitted=self&appraisalId=${encodeURIComponent(appraisalId)}`);
   };
 
   if (isLoading) {
@@ -236,7 +236,7 @@ export default function SelfAssessmentPage() {
       });
 
       if (submit) {
-        setTimeout(() => router.push(`/appraisals/${appraisalId}`), 600);
+        setTimeout(() => router.push(`/appraisals?submitted=self&appraisalId=${encodeURIComponent(appraisalId)}`), 700);
       }
     } catch (error: unknown) {
       const axiosError = error as { response?: { data?: { error?: string } } };

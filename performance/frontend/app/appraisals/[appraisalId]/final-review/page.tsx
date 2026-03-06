@@ -25,6 +25,11 @@ interface AIRatingSuggestion {
     ratingJustification: string;
 }
 
+function normalizeIdentityEmail(value?: string | null) {
+    if (!value || typeof value !== 'string') return null;
+    return value.trim().toLowerCase();
+}
+
 export default function FinalReviewPage() {
     const params = useParams();
     const router = useRouter();
@@ -44,7 +49,22 @@ export default function FinalReviewPage() {
 
     const isAssignedManager = useMemo(() => {
         if (!appraisal || !user) return false;
-        return appraisal.manager?.userId === user?.id || appraisal.manager?.email === user?.email;
+        const identityUser = user as { id?: string; sub?: string; email?: string };
+        const requesterIds = Array.from(
+            new Set(
+                [identityUser?.id, identityUser?.sub]
+                    .filter(Boolean)
+                    .map((value) => String(value))
+            )
+        );
+        const requesterEmail = normalizeIdentityEmail(identityUser?.email);
+        const managerUserId = appraisal.manager?.userId ? String(appraisal.manager.userId) : null;
+        const managerEmail = normalizeIdentityEmail(appraisal.manager?.email);
+
+        return Boolean(
+            (managerUserId && requesterIds.includes(managerUserId)) ||
+            (managerEmail && requesterEmail && managerEmail === requesterEmail)
+        );
     }, [appraisal, user]);
     const hasManagerAccess = isAssignedManager || (!!isManager && !isHRAdmin);
 
