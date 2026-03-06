@@ -12,6 +12,7 @@ import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting
 import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
+import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 
 const pageRouter = express.Router()
@@ -28,7 +29,7 @@ const VIEW_MODES = ['overview', 'settings', 'catalog', 'cart', 'my-learning', 'c
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
-const CURRENCY_CODES = ['NGN', 'USD', 'EUR', 'GBP', 'KES', 'GHS', 'ZAR']
+const DEFAULT_SIMPLE_LMS_CURRENCY_CODE = 'NGN'
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
@@ -84,6 +85,39 @@ const CREATOR_SETTING_DEFAULTS = Object.freeze({
   showCreatorTips: true
 })
 
+let activeSimpleLmsCurrencyCodes = [DEFAULT_SIMPLE_LMS_CURRENCY_CODE]
+let activeSimpleLmsDefaultCurrencyCode = DEFAULT_SIMPLE_LMS_CURRENCY_CODE
+
+const getActiveCurrencyCatalog = async ({ forceRefresh = false } = {}) => {
+  const catalog = await getSimpleLmsCurrencyCatalog({ forceRefresh })
+  const codes = Array.isArray(catalog?.codes) && catalog.codes.length > 0
+    ? catalog.codes
+    : [DEFAULT_SIMPLE_LMS_CURRENCY_CODE]
+  activeSimpleLmsCurrencyCodes = codes
+  activeSimpleLmsDefaultCurrencyCode = normalizeSimpleLmsCurrencyCode(
+    catalog?.defaultCurrencyCode || DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+    DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+    codes
+  )
+  const currencies = Array.isArray(catalog?.currencies) && catalog.currencies.length > 0
+    ? catalog.currencies
+    : [
+      {
+        code: DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+        name: 'Nigerian Naira',
+        symbol: 'NGN',
+        decimals: 2,
+        isDefault: true,
+        isActive: true
+      }
+    ]
+  return {
+    currencies,
+    codes: activeSimpleLmsCurrencyCodes,
+    defaultCurrencyCode: activeSimpleLmsDefaultCurrencyCode
+  }
+}
+
 const toIdString = (value) => {
   if (!value) return ''
   if (typeof value === 'string') return value
@@ -124,15 +158,11 @@ const slugifyValue = (value, fallback = 'item') => {
   return normalized || fallback
 }
 
-const normalizeCurrencyCode = (value, fallback = 'NGN') => {
-  const normalized = String(value || '').trim().toUpperCase().slice(0, 3)
-  if (CURRENCY_CODES.includes(normalized)) return normalized
-  const fallbackCurrency = String(fallback || 'NGN').trim().toUpperCase().slice(0, 3)
-  if (CURRENCY_CODES.includes(fallbackCurrency)) return fallbackCurrency
-  return 'NGN'
+const normalizeCurrencyCode = (value, fallback = DEFAULT_SIMPLE_LMS_CURRENCY_CODE, allowedCodes = activeSimpleLmsCurrencyCodes) => {
+  return normalizeSimpleLmsCurrencyCode(value, fallback, allowedCodes)
 }
 
-const normalizeCreatorSettings = (raw = {}) => {
+const normalizeCreatorSettings = (raw = {}, currencyCodes = activeSimpleLmsCurrencyCodes) => {
   const defaultLevel = LEVELS.includes(String(raw?.defaultLevel || '').trim().toLowerCase())
     ? String(raw.defaultLevel).trim().toLowerCase()
     : CREATOR_SETTING_DEFAULTS.defaultLevel
@@ -154,7 +184,7 @@ const normalizeCreatorSettings = (raw = {}) => {
     defaultLevel,
     defaultVisibility,
     defaultPaymentMode,
-    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, CREATOR_SETTING_DEFAULTS.defaultCurrency),
+    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, CREATOR_SETTING_DEFAULTS.defaultCurrency, currencyCodes),
     preferredLessonDurationMinutes: Math.min(600, Math.max(1, Math.round(Number(raw?.preferredLessonDurationMinutes || CREATOR_SETTING_DEFAULTS.preferredLessonDurationMinutes)))),
     autoLoadSampleCurriculum: Boolean(raw?.autoLoadSampleCurriculum),
     autoGenerateCourseSlug: raw?.autoGenerateCourseSlug !== false,
@@ -166,7 +196,7 @@ const normalizeCreatorSettings = (raw = {}) => {
   }
 }
 
-const normalizePlatformSettings = (raw = {}) => {
+const normalizePlatformSettings = (raw = {}, currencyCodes = activeSimpleLmsCurrencyCodes) => {
   const defaultPaymentMode = ['free', 'paid'].includes(String(raw?.defaultPaymentMode || '').trim().toLowerCase())
     ? String(raw.defaultPaymentMode).trim().toLowerCase()
     : PLATFORM_SETTING_DEFAULTS.defaultPaymentMode
@@ -186,7 +216,7 @@ const normalizePlatformSettings = (raw = {}) => {
   }
 
   return {
-    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, PLATFORM_SETTING_DEFAULTS.defaultCurrency),
+    defaultCurrency: normalizeCurrencyCode(raw?.defaultCurrency, PLATFORM_SETTING_DEFAULTS.defaultCurrency, currencyCodes),
     defaultPaymentMode,
     defaultCourseVisibility,
     defaultCourseStatus,
@@ -247,13 +277,7 @@ const splitCommission = ({ amountMinor = 0, ratePercent = 70 }) => {
   }
 }
 
-const parseAmountToMinor = (value) => {
-  const normalized = String(value || '').trim().replace(/,/g, '')
-  if (!normalized) return 0
-  const parsed = Number(normalized)
-  if (!Number.isFinite(parsed)) return 0
-  return Math.max(0, Math.round(parsed * 100))
-}
+const parseAmountToMinor = (value) => parseMajorAmountToMinor(value)
 
 const normalizeWithdrawalStatus = (value, fallback = 'pending') => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -349,10 +373,10 @@ const getCommissionSettings = async () => {
   }
 }
 
-const getPlatformSettings = async () => {
+const getPlatformSettings = async (currencyCodes = activeSimpleLmsCurrencyCodes) => {
   const raw = await SimpleLmsPlatformSetting.findOne({}).lean()
-  if (!raw) return normalizePlatformSettings(PLATFORM_SETTING_DEFAULTS)
-  return normalizePlatformSettings(raw)
+  if (!raw) return normalizePlatformSettings(PLATFORM_SETTING_DEFAULTS, currencyCodes)
+  return normalizePlatformSettings(raw, currencyCodes)
 }
 
 const resolveCommissionRate = ({ settings, creatorId, courseId }) => {
@@ -1119,15 +1143,16 @@ const parseCoursePayload = ({
   existingCourse = null,
   studioContext = '',
   creatorSettings = CREATOR_SETTING_DEFAULTS,
-  platformSettings = PLATFORM_SETTING_DEFAULTS
+  platformSettings = PLATFORM_SETTING_DEFAULTS,
+  currencyCodes = activeSimpleLmsCurrencyCodes
 }) => {
   const title = String(body.title || '').trim()
   if (!title) {
     throw new Error('Course title is required.')
   }
 
-  const normalizedCreatorSettings = normalizeCreatorSettings(creatorSettings)
-  const normalizedPlatformSettings = normalizePlatformSettings(platformSettings)
+  const normalizedCreatorSettings = normalizeCreatorSettings(creatorSettings, currencyCodes)
+  const normalizedPlatformSettings = normalizePlatformSettings(platformSettings, currencyCodes)
   const level = LEVELS.includes(String(body.level || '').trim())
     ? String(body.level).trim()
     : (existingCourse?.level || normalizedCreatorSettings.defaultLevel || 'mixed')
@@ -1179,11 +1204,37 @@ const parseCoursePayload = ({
     || normalizedPlatformSettings.defaultPaymentMode
   ).trim().toLowerCase()
   const paymentMode = paymentModeInput === 'paid' ? 'paid' : 'free'
-  let amount = paymentMode === 'paid' ? Math.max(0, Math.round(Number(body.amount || existingCourse?.pricing?.amount || 0))) : 0
+  const existingAmountMajor = Number(existingCourse?.pricing?.amount || 0) / 100
+  const amountInputValue = (
+    body.amount !== undefined
+    && body.amount !== null
+    && String(body.amount).trim() !== ''
+  )
+    ? body.amount
+    : existingAmountMajor
+  const legacyAmountMinorValue = (
+    body.amountMinor !== undefined
+    && body.amountMinor !== null
+    && String(body.amountMinor).trim() !== ''
+  )
+    ? body.amountMinor
+    : null
+  let amount = paymentMode === 'paid'
+    ? (
+      legacyAmountMinorValue !== null
+        ? Math.max(0, Math.round(Number(legacyAmountMinorValue)))
+        : parseAmountToMinor(amountInputValue)
+    )
+    : 0
   amount = Math.max(normalizedPlatformSettings.minCoursePriceMinor, Math.min(amount, normalizedPlatformSettings.maxCoursePriceMinor))
   const currency = normalizeCurrencyCode(
     body.currency,
-    existingCourse?.pricing?.currency || normalizedCreatorSettings.defaultCurrency || normalizedPlatformSettings.defaultCurrency || 'NGN'
+    existingCourse?.pricing?.currency
+      || normalizedCreatorSettings.defaultCurrency
+      || normalizedPlatformSettings.defaultCurrency
+      || activeSimpleLmsDefaultCurrencyCode
+      || DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+    currencyCodes
   )
   const category = String(body.category || '').trim().slice(0, 120)
   const slugSource = String(body.slug || existingCourse?.slug || title).trim()
@@ -2535,13 +2586,15 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       })
     }
 
-    const platformSettings = await getPlatformSettings()
+    const currencyCatalog = await getActiveCurrencyCatalog()
+    const platformSettings = await getPlatformSettings(currencyCatalog.codes)
     const payload = parseCoursePayload({
       body: req.body,
       role,
       studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
-      platformSettings
+      platformSettings,
+      currencyCodes: currencyCatalog.codes
     })
     const createdCourse = await SimpleLmsCourse.create({
       ...payload,
@@ -2612,14 +2665,16 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       })
     }
 
-    const platformSettings = await getPlatformSettings()
+    const currencyCatalog = await getActiveCurrencyCatalog()
+    const platformSettings = await getPlatformSettings(currencyCatalog.codes)
     const payload = parseCoursePayload({
       body: req.body,
       role,
       existingCourse: course,
       studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
-      platformSettings
+      platformSettings,
+      currencyCodes: currencyCatalog.codes
     })
 
     Object.assign(course, payload)
@@ -3782,6 +3837,7 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
       })
     }
 
+    const currencyCatalog = await getActiveCurrencyCatalog()
     const payload = normalizeCreatorSettings({
       defaultCategory: req.body.defaultCategory,
       defaultLevel: req.body.defaultLevel,
@@ -3796,7 +3852,7 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
       publishNotifyByEmail: req.body.publishNotifyByEmail === 'on',
       showSalesDashboard: req.body.showSalesDashboard === 'on',
       showCreatorTips: req.body.showCreatorTips === 'on'
-    })
+    }, currencyCatalog.codes)
 
     req.user.creatorSettings = {
       ...(req.user.creatorSettings || {}),
@@ -3832,7 +3888,8 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
       })
     }
 
-    const currentPlatformSettings = await getPlatformSettings()
+    const currencyCatalog = await getActiveCurrencyCatalog()
+    const currentPlatformSettings = await getPlatformSettings(currencyCatalog.codes)
     const parseCheckboxValue = (value) => (
       Array.isArray(value)
         ? value.includes('on')
@@ -3872,7 +3929,7 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
       maintenanceMode: pickBoolean('maintenanceMode'),
       maintenanceMessage: pickValue('maintenanceMessage'),
       creatorSubmissionGuidelines: pickValue('creatorSubmissionGuidelines')
-    })
+    }, currencyCatalog.codes)
 
     const settings = await SimpleLmsPlatformSetting.findOne({}) || new SimpleLmsPlatformSetting({})
     Object.assign(settings, normalized, { updatedBy: req.user._id })
@@ -4039,6 +4096,7 @@ const renderWorkspacePage = async (
 ) => {
   try {
     const role = resolveRole(req.user)
+    const currencyCatalog = await getActiveCurrencyCatalog()
     const viewMode = forcedViewMode || parseViewMode(req.query.view)
     const resolvedStudioContext = String(
       studioContext || (adminPortal ? 'admin' : 'creator')
@@ -4094,7 +4152,7 @@ const renderWorkspacePage = async (
     const paymentCurrencyFilter = (() => {
       const normalized = String(req.query.paymentCurrency || '').trim().toUpperCase()
       if (!normalized || normalized === 'ALL') return 'all'
-      return CURRENCY_CODES.includes(normalized) ? normalized : 'all'
+      return currencyCatalog.codes.includes(normalized) ? normalized : 'all'
     })()
     const paymentFromFilter = String(req.query.paymentFrom || '').trim().slice(0, 32)
     const paymentToFilter = String(req.query.paymentTo || '').trim().slice(0, 32)
@@ -4290,7 +4348,7 @@ const renderWorkspacePage = async (
           .lean()
         : Promise.resolve([]),
       getCommissionSettings(),
-      getPlatformSettings(),
+      getPlatformSettings(currencyCatalog.codes),
       canCreateCourses(role)
         ? SimpleLmsPayment.aggregate([
           {
@@ -4659,8 +4717,8 @@ const renderWorkspacePage = async (
       accountOverrides: Array.isArray(commissionSettingsRaw?.accountOverrides) ? commissionSettingsRaw.accountOverrides : [],
       courseOverrides: Array.isArray(commissionSettingsRaw?.courseOverrides) ? commissionSettingsRaw.courseOverrides : []
     }
-    const platformSettings = normalizePlatformSettings(platformSettingsRaw || PLATFORM_SETTING_DEFAULTS)
-    const creatorSettings = normalizeCreatorSettings(req.user.creatorSettings || CREATOR_SETTING_DEFAULTS)
+    const platformSettings = normalizePlatformSettings(platformSettingsRaw || PLATFORM_SETTING_DEFAULTS, currencyCatalog.codes)
+    const creatorSettings = normalizeCreatorSettings(req.user.creatorSettings || CREATOR_SETTING_DEFAULTS, currencyCatalog.codes)
 
     const creatorSales = creatorSalesRaw.map((payment) => {
       const creatorId = toIdString(payment.creatorAccount || payment.course?.createdBy || '')
@@ -5430,7 +5488,9 @@ const renderWorkspacePage = async (
         returnTo: adminCreatorsReturnTo
       },
       paymentStatuses: PAYMENT_STATUSES,
-      paymentCurrencies: CURRENCY_CODES,
+      paymentCurrencies: currencyCatalog.codes,
+      supportedCurrencies: currencyCatalog.currencies,
+      defaultCurrencyCode: currencyCatalog.defaultCurrencyCode,
       paymentStats: {
         ...paymentStats,
         revenueDisplay: formatCurrencyAmount(paymentStats.revenueMinor, 'NGN'),
@@ -5660,7 +5720,12 @@ pageRouter.post('/withdrawals/request', requirePageAuth, async (req, res) => {
     }
 
     const payoutProfile = req.user.payoutProfile || {}
-    const currency = normalizeCurrencyCode(req.body.currency, payoutProfile.currency || 'NGN')
+    const currencyCatalog = await getActiveCurrencyCatalog()
+    const currency = normalizeCurrencyCode(
+      req.body.currency,
+      payoutProfile.currency || currencyCatalog.defaultCurrencyCode || DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+      currencyCatalog.codes
+    )
     await SimpleLmsWithdrawal.create({
       creatorAccount: req.user._id,
       amountMinor,
@@ -5858,13 +5923,18 @@ pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
     '/simple-lms?view=settings&settingsTab=payments'
   )
   try {
+    const currencyCatalog = await getActiveCurrencyCatalog()
     req.user.payoutProfile = req.user.payoutProfile || {}
     req.user.payoutProfile.accountName = String(req.body.accountName || '').trim().slice(0, 200)
     req.user.payoutProfile.accountNumber = String(req.body.accountNumber || '').trim().slice(0, 64)
     req.user.payoutProfile.bankName = String(req.body.bankName || '').trim().slice(0, 200)
     req.user.payoutProfile.bankCode = String(req.body.bankCode || '').trim().slice(0, 80)
     req.user.payoutProfile.swiftCode = String(req.body.swiftCode || '').trim().slice(0, 80)
-    req.user.payoutProfile.currency = normalizeCurrencyCode(req.body.currency, req.user.payoutProfile.currency || 'NGN')
+    req.user.payoutProfile.currency = normalizeCurrencyCode(
+      req.body.currency,
+      req.user.payoutProfile.currency || currencyCatalog.defaultCurrencyCode || DEFAULT_SIMPLE_LMS_CURRENCY_CODE,
+      currencyCatalog.codes
+    )
     req.user.payoutProfile.paymentEmail = String(req.body.paymentEmail || '').trim().toLowerCase().slice(0, 320)
     req.user.payoutProfile.country = String(req.body.country || '').trim().slice(0, 80)
     req.user.payoutProfile.notes = String(req.body.notes || '').trim().slice(0, 1200)

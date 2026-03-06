@@ -432,6 +432,18 @@
       (typeof canManagePlatform !== 'undefined' && canManagePlatform)
       || ['admin', 'super_admin'].includes(String(role || '').trim().toLowerCase())
     )
+    const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0
+      ? supportedCurrencies
+      : [{ code: 'NGN', name: 'Nigerian Naira', symbol: 'NGN' }]
+    const currencyCodes = currencyOptions.map((option) => String(option?.code || '').trim().toUpperCase()).filter(Boolean)
+    const selectCurrency = (value, fallback = 'NGN') => {
+      const normalized = String(value || '').trim().toUpperCase()
+      if (currencyCodes.includes(normalized)) return normalized
+      const fallbackCode = String(fallback || '').trim().toUpperCase()
+      if (currencyCodes.includes(fallbackCode)) return fallbackCode
+      return currencyCodes[0] || 'NGN'
+    }
+    const defaultCurrency = selectCurrency(defaultCurrencyCode || 'NGN', 'NGN')
     const activeTab = settingsTab || 'profile'
     const tabLink = (tab) => `/simple-lms?view=settings&settingsTab=${tab}`
     const creatorSections = [
@@ -576,7 +588,14 @@
                   </select>
                 </label>
                 <label>Default Currency
-                  <input class="input" name="defaultCurrency" maxlength="3" value="<%= creatorSettings.defaultCurrency || 'NGN' %>">
+                  <select class="input" name="defaultCurrency">
+                    <% const creatorDefaultCurrency = selectCurrency(creatorSettings.defaultCurrency || defaultCurrency, defaultCurrency) %>
+                    <% currencyOptions.forEach((currencyOption) => { %>
+                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                      <option value="<%= optionCode %>" <%= creatorDefaultCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                    <% }) %>
+                  </select>
                 </label>
                 <label>Preferred Lesson Duration (minutes)
                   <input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorSettings.preferredLessonDurationMinutes || 12 %>">
@@ -631,7 +650,14 @@
                   <input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>">
                 </label>
                 <label>Currency
-                  <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
+                  <select class="input" name="currency">
+                    <% const payoutCurrency = selectCurrency(payoutProfile.currency || defaultCurrency, defaultCurrency) %>
+                    <% currencyOptions.forEach((currencyOption) => { %>
+                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                      <option value="<%= optionCode %>" <%= payoutCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                    <% }) %>
+                  </select>
                 </label>
                 <label>Payment Email
                   <input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>">
@@ -674,7 +700,14 @@
                     <input class="input" type="number" name="amount" min="0.01" step="0.01" required>
                   </label>
                   <label>Currency
-                    <input class="input" name="currency" maxlength="3" value="<%= payoutProfile.currency || 'NGN' %>">
+                    <select class="input" name="currency">
+                      <% const withdrawalCurrency = selectCurrency(payoutProfile.currency || defaultCurrency, defaultCurrency) %>
+                      <% currencyOptions.forEach((currencyOption) => { %>
+                        <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                        <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                        <option value="<%= optionCode %>" <%= withdrawalCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                      <% }) %>
+                    </select>
                   </label>
                   <label>Note for admin
                     <textarea class="input" name="notes" rows="3" maxlength="1200" placeholder="Optional context for this withdrawal request"></textarea>

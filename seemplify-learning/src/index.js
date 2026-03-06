@@ -12,6 +12,7 @@ import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
 import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
+import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from './services/simpleLmsCurrencyService.js'
 import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
 import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
 
@@ -96,12 +97,6 @@ const slugifyValue = (value, fallback = 'item') => {
   return normalized || fallback
 }
 
-const normalizeMinorAmount = (value) => {
-  const parsed = Number.parseInt(String(value || '0'), 10)
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return parsed
-}
-
 const appendQuery = (path, entries = {}) => {
   const params = new URLSearchParams()
   Object.entries(entries).forEach(([key, rawValue]) => {
@@ -169,9 +164,7 @@ const buildStarterChapters = ({ courseTitle, topic }) => {
 }
 
 const normalizeCurrencyCode = (value, fallback = 'NGN') => {
-  const normalized = String(value || '').trim().toUpperCase().slice(0, 3)
-  if (normalized.length === 3) return normalized
-  return String(fallback || 'NGN').trim().toUpperCase().slice(0, 3) || 'NGN'
+  return normalizeSimpleLmsCurrencyCode(value, fallback)
 }
 
 const formatCurrencyAmount = (amountMinor, currencyCode) => {
@@ -534,12 +527,13 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
     req.user.learningProfile.instructorActivatedAt = req.user.learningProfile.instructorActivatedAt || new Date()
     await req.user.save()
 
-    const [courseCount, latestCourse] = await Promise.all([
+    const [courseCount, latestCourse, currencyCatalog] = await Promise.all([
       SimpleLmsCourse.countDocuments({ createdBy: req.user._id, isActive: true }),
       SimpleLmsCourse.findOne({ createdBy: req.user._id })
         .select('title status updatedAt _id')
         .sort({ updatedAt: -1 })
-        .lean()
+        .lean(),
+      getSimpleLmsCurrencyCatalog()
     ])
 
     res.render('teach-onboarding', {
@@ -551,6 +545,8 @@ app.get('/teach/get-started', requireAuth, async (req, res) => {
       roleWasUpgraded: false,
       courseCount,
       latestCourse,
+      supportedCurrencies: currencyCatalog.currencies,
+      defaultCourseCurrency: currencyCatalog.defaultCurrencyCode || 'NGN',
       success: String(req.query.success || ''),
       error: String(req.query.error || ''),
       info: String(req.query.info || '')
@@ -572,12 +568,22 @@ app.post('/teach/get-started/create-first-course', requireAuth, async (req, res)
     const paymentMode = String(req.body.paymentMode || '').trim().toLowerCase() === 'paid'
       ? 'paid'
       : 'free'
-    const amount = paymentMode === 'paid' ? normalizeMinorAmount(req.body.amount) : 0
-    const currency = normalizeCurrencyCode(req.body.currency, 'NGN')
+    const currencyCatalog = await getSimpleLmsCurrencyCatalog()
+    const amount = paymentMode === 'paid' ? parseMajorAmountToMinor(req.body.amount) : 0
+    const currency = normalizeSimpleLmsCurrencyCode(
+      req.body.currency,
+      currencyCatalog.defaultCurrencyCode || 'NGN',
+      currencyCatalog.codes
+    )
 
     if (!title) {
       return res.redirect(appendQuery('/teach/get-started', {
         error: 'Course title is required.'
+      }))
+    }
+    if (paymentMode === 'paid' && amount <= 0) {
+      return res.redirect(appendQuery('/teach/get-started', {
+        error: 'Paid courses need a valid price greater than 0.'
       }))
     }
 
@@ -666,8 +672,14 @@ const port = Number(process.env.PORT || 5012)
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/seemplify'
 
 mongoose.connect(mongoUri)
-  .then(() => {
+  .then(async () => {
     console.log(`Seemplify Learning connected to MongoDB`) // eslint-disable-line no-console
+    try {
+      await getSimpleLmsCurrencyCatalog({ forceRefresh: true })
+      console.log('Simple LMS currencies ready') // eslint-disable-line no-console
+    } catch (currencyError) {
+      console.error('Simple LMS currency seed failed:', currencyError) // eslint-disable-line no-console
+    }
     app.listen(port, () => {
       console.log(`Seemplify Learning running on port ${port}`) // eslint-disable-line no-console
     })
