@@ -8,6 +8,18 @@
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
   <style>
+    :root {
+      --admin-surface: rgba(255, 255, 255, 0.9);
+      --admin-surface-strong: #ffffff;
+      --admin-border: #dbe5f2;
+      --admin-border-strong: #c6d4ea;
+      --admin-text: #0f172a;
+      --admin-muted: #60748f;
+      --admin-nav-bg: #0a1221;
+      --admin-nav-border: rgba(130, 150, 182, 0.24);
+      --admin-accent: #38bdf8;
+      --admin-accent-strong: #0ea5e9;
+    }
     html, body {
       width: 100%;
       min-height: 100%;
@@ -19,126 +31,583 @@
       padding: 0 !important;
       max-width: none !important;
       min-height: 100vh;
-      background:#f1f5f9;
-      color:#0f172a;
-      font-family:Segoe UI,Tahoma,sans-serif;
+      color: var(--admin-text);
+      font-family: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(circle at 90% 8%, rgba(56, 189, 248, 0.08), transparent 34%),
+        radial-gradient(circle at 8% 22%, rgba(59, 130, 246, 0.07), transparent 28%),
+        #ecf2f9;
       overflow-x: hidden;
+      letter-spacing: -0.01em;
+    }
+    body.admin-page::before,
+    body.admin-page::after {
+      content: none;
+      display: none;
     }
     .layout {
       width: 100%;
       max-width: none;
       margin: 0;
-      min-height:100vh;
-      display:grid;
-      grid-template-columns:280px minmax(0,1fr);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 0;
     }
     .side {
-      background:linear-gradient(180deg,#0b172a 0%,#0f172a 45%,#111c31 100%);
-      color:#cbd5e1;
-      padding:16px;
-      position:sticky;
-      top:0;
-      height:100vh;
-      overflow:auto;
-      border-right:1px solid rgba(148,163,184,.16);
-      display:grid;
-      grid-template-rows:auto 1fr auto;
-      gap:14px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 14px;
+      padding: 18px 16px 16px;
+      color: #cbd5e1;
+      background:
+        radial-gradient(circle at 14% 8%, rgba(14, 165, 233, 0.22), transparent 34%),
+        radial-gradient(circle at 94% 86%, rgba(30, 64, 175, 0.16), transparent 40%),
+        linear-gradient(180deg, #091225 0%, #0b172d 52%, #111f36 100%);
+      border-right: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 12px 0 28px -30px rgba(2, 6, 23, 0.96);
+      z-index: 5;
+    }
+    .side::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 1px;
+      height: 100%;
+      background: linear-gradient(to bottom, rgba(148, 163, 184, 0.02), rgba(148, 163, 184, 0.4), rgba(148, 163, 184, 0.02));
+      pointer-events: none;
     }
     .side-head {
-      border:1px solid rgba(148,163,184,.22);
-      border-radius:14px;
-      padding:12px;
-      background:linear-gradient(145deg,rgba(30,41,59,.55),rgba(15,23,42,.24));
-      display:grid;
-      gap:6px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 16px;
+      padding: 14px 13px;
+      background: linear-gradient(150deg, rgba(30, 41, 59, 0.58), rgba(15, 23, 42, 0.32));
+      display: grid;
+      gap: 6px;
+      box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.05);
     }
     .side-kicker {
-      margin:0;
-      font-size:10px;
-      font-weight:700;
-      text-transform:uppercase;
-      letter-spacing:.1em;
-      color:#93c5fd;
+      margin: 0;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #93c5fd;
     }
-    .side h1 { margin:0; font-size:20px; letter-spacing:-.02em; color:#f8fafc; }
-    .side-head p { margin:0; font-size:12px; color:#94a3b8; line-height:1.5; }
-    .side nav { display:grid; gap:12px; align-content:start; }
-    .side-nav-group { display:grid; gap:6px; }
+    .side h1 {
+      margin: 0;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+      line-height: 1.1;
+    }
+    .side-head p {
+      margin: 0;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+    .side-profile {
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 11px 12px;
+      background: rgba(2, 6, 23, 0.26);
+      display: grid;
+      gap: 4px;
+    }
+    .side-profile-label {
+      margin: 0;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+    .side-profile strong {
+      font-size: 13px;
+      color: #f8fafc;
+      font-weight: 700;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+    .side-profile span {
+      color: #cbd5e1;
+      font-size: 11px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .side-profile .side-role {
+      width: fit-content;
+      margin-top: 2px;
+      border: 1px solid rgba(56, 189, 248, 0.32);
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: #bae6fd;
+      background: rgba(14, 116, 144, 0.25);
+      text-transform: capitalize;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .side nav {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .side-nav-group {
+      display: grid;
+      gap: 7px;
+      padding: 8px;
+      border: 1px solid var(--admin-nav-border);
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.28);
+    }
     .side-nav-group-title {
-      margin:0 0 2px;
-      font-size:10px;
-      text-transform:uppercase;
-      letter-spacing:.1em;
-      color:#64748b;
-      font-weight:700;
-      padding:0 4px;
+      margin: 0 0 2px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      color: #64748b;
+      font-weight: 700;
+      padding: 0 4px;
     }
     .side nav a {
-      color:#cbd5e1;
-      text-decoration:none;
-      padding:9px 10px;
-      border:1px solid rgba(148,163,184,.18);
-      border-radius:10px;
-      font-size:12px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:8px;
-      background:rgba(15,23,42,.34);
-      transition:border-color .18s ease, background .18s ease, transform .18s ease, color .18s ease;
+      color: #cbd5e1;
+      text-decoration: none;
+      padding: 11px 10px 11px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 11px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.38);
+      transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
     }
-    .side nav a:hover { border-color:rgba(148,163,184,.38); background:rgba(30,41,59,.48); transform:translateY(-1px); color:#f8fafc; }
-    .side nav a .label { font-weight:600; letter-spacing:.01em; }
+    .side nav a::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.5);
+      box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.8);
+      flex: 0 0 auto;
+      transition: background 0.18s ease, box-shadow 0.18s ease;
+    }
+    .side nav a:hover {
+      border-color: rgba(125, 211, 252, 0.5);
+      background: rgba(30, 41, 59, 0.56);
+      transform: translateX(2px);
+      color: #f8fafc;
+      box-shadow: 0 10px 24px -20px rgba(59, 130, 246, 0.75);
+    }
+    .side nav a:hover::before {
+      background: rgba(56, 189, 248, 0.9);
+      box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.36);
+    }
+    .side nav a .label {
+      font-weight: 650;
+      letter-spacing: 0.01em;
+      margin-right: auto;
+      line-height: 1.2;
+    }
     .side nav a .meta {
-      border:1px solid rgba(148,163,184,.28);
-      border-radius:999px;
-      padding:2px 7px;
-      font-size:10px;
-      color:#94a3b8;
-      background:rgba(15,23,42,.55);
-      white-space:nowrap;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 10px;
+      color: #94a3b8;
+      background: rgba(15, 23, 42, 0.58);
+      white-space: nowrap;
+      font-weight: 700;
+      letter-spacing: 0.03em;
     }
     .side nav a.active {
-      background:linear-gradient(135deg,rgba(14,165,233,.22),rgba(15,23,42,.84));
-      border-color:rgba(125,211,252,.52);
-      color:#ffffff;
-      box-shadow:0 10px 24px -20px rgba(56,189,248,.62);
+      border-color: rgba(125, 211, 252, 0.6);
+      color: #ffffff;
+      background: linear-gradient(130deg, rgba(14, 165, 233, 0.28), rgba(15, 23, 42, 0.9));
+      box-shadow: 0 14px 30px -24px rgba(56, 189, 248, 0.82);
     }
-    .side nav a.active .meta { border-color:rgba(125,211,252,.58); color:#dbeafe; background:rgba(14,116,144,.34); }
+    .side nav a.active::before {
+      background: rgba(186, 230, 253, 1);
+      box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.48);
+    }
+    .side nav a.active .meta {
+      border-color: rgba(125, 211, 252, 0.62);
+      color: #dbeafe;
+      background: rgba(14, 116, 144, 0.34);
+    }
     .side .actions {
-      border-top:1px solid rgba(148,163,184,.2);
-      padding-top:10px;
-      display:grid;
-      gap:6px;
+      border-top: 1px solid rgba(148, 163, 184, 0.24);
+      padding-top: 12px;
+      display: grid;
+      gap: 8px;
     }
-    .side .actions .btn { width:100%; justify-content:center; }
-    .main { padding:14px; display:grid; gap:12px; align-content:start; }
-    .card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:12px; display:grid; gap:10px; }
-    .head { display:flex; justify-content:space-between; gap:8px; align-items:end; flex-wrap:wrap; }
-    h2 { margin:0; font-size:22px; letter-spacing:-.02em; }
-    .mini { margin:0; color:#64748b; font-size:12px; }
-    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; }
-    .kpi { border:1px solid #e2e8f0; border-radius:10px; padding:8px; background:#f8fafc; }
-    .kpi small { display:block; color:#64748b; text-transform:uppercase; letter-spacing:.06em; font-size:10px; }
-    .kpi strong { font-size:20px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:8px; }
-    .table { overflow:auto; border:1px solid #e2e8f0; border-radius:10px; }
-    table { width:100%; border-collapse:collapse; min-width:900px; font-size:12px; }
-    th,td { border-bottom:1px solid #e2e8f0; padding:8px; text-align:left; vertical-align:top; }
-    th { color:#64748b; text-transform:uppercase; letter-spacing:.06em; font-size:10px; background:#f8fafc; }
-    .pill { border:1px solid #cbd5e1; border-radius:999px; padding:2px 6px; font-size:10px; text-transform:uppercase; }
-    .actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-    .inline-form { display:inline-flex; gap:6px; align-items:center; margin:0; }
-    .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; align-items:end; }
-    .quick-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
-    .quick-link { border:1px solid #e2e8f0; border-radius:10px; padding:10px; text-decoration:none; color:#0f172a; background:#f8fafc; display:grid; gap:3px; }
-    .quick-link:hover { border-color:#cbd5e1; background:#fff; }
-    .quick-link strong { font-size:14px; }
-    .quick-link span { font-size:12px; color:#64748b; }
+    .side .actions .btn {
+      width: 100%;
+      justify-content: center;
+      border-radius: 11px;
+      min-height: 38px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .main {
+      min-width: 0;
+      padding: 18px 20px 24px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .card {
+      background: var(--admin-surface);
+      border: 1px solid var(--admin-border);
+      border-radius: 16px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 14px 32px -30px rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(8px);
+    }
+    .page-header {
+      background: linear-gradient(130deg, rgba(255, 255, 255, 0.95), rgba(244, 249, 255, 0.84));
+      border-color: var(--admin-border-strong);
+      position: relative;
+    }
+    .page-header::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      border-radius: 16px 16px 0 0;
+      background: linear-gradient(90deg, var(--admin-accent-strong), #60a5fa, #93c5fd);
+      opacity: 0.95;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    h2 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: var(--admin-text);
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .mini {
+      margin: 0;
+      color: var(--admin-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+      gap: 9px;
+    }
+    .kpi {
+      border: 1px solid var(--admin-border);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--admin-surface-strong);
+      box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.35);
+    }
+    .kpi small {
+      display: block;
+      color: var(--admin-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .kpi strong {
+      font-size: 22px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .table {
+      overflow: auto;
+      border: 1px solid var(--admin-border);
+      border-radius: 12px;
+      background: #ffffff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+      font-size: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+      color: #0f172a;
+    }
+    th {
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 10px;
+      background: #f5f9ff;
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    tbody tr:nth-child(2n) td {
+      background: rgba(248, 250, 252, 0.52);
+    }
+    tbody tr:hover td {
+      background: rgba(219, 234, 254, 0.22);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    .pill {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 10px;
+      text-transform: uppercase;
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 700;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .inline-form {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      margin: 0;
+      flex-wrap: wrap;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    .admin-page .input {
+      border: 1px solid #cfd9e8;
+      border-radius: 10px;
+      background: #ffffff;
+      min-height: 38px;
+      color: #0f172a;
+      padding: 8px 10px;
+    }
+    .quick-links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+    }
+    .quick-link {
+      border: 1px solid var(--admin-border);
+      border-radius: 12px;
+      padding: 11px;
+      text-decoration: none;
+      color: #0f172a;
+      background: #f8fbff;
+      display: grid;
+      gap: 4px;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+    .quick-link:hover {
+      border-color: #bfdbfe;
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px -24px rgba(2, 6, 23, 0.6);
+      background: #ffffff;
+    }
+    .quick-link strong {
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    .quick-link span {
+      font-size: 12px;
+      color: var(--admin-muted);
+      line-height: 1.45;
+    }
+    .course-management-card {
+      gap: 12px;
+    }
+    .course-mgmt-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .course-mgmt-chip {
+      border: 1px solid #d7e3f3;
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+      display: grid;
+      gap: 2px;
+    }
+    .course-mgmt-chip span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .course-mgmt-chip strong {
+      font-size: 18px;
+      line-height: 1.2;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .course-filter-grid {
+      padding: 10px;
+      border: 1px solid #dbe5f2;
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.8);
+    }
+    .course-context-note {
+      padding: 8px 10px;
+      border: 1px dashed #c6d4ea;
+      border-radius: 10px;
+      background: rgba(239, 246, 255, 0.58);
+      width: fit-content;
+      max-width: 100%;
+    }
+    .course-table-wrap {
+      border-color: #d4e1f1;
+      border-radius: 14px;
+      box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.35);
+    }
+    .course-management-table {
+      min-width: 1180px;
+    }
+    .course-management-table th:nth-child(1) { min-width: 270px; }
+    .course-management-table th:nth-child(2) { min-width: 180px; }
+    .course-management-table th:nth-child(8) { min-width: 360px; }
+    .course-title-cell strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.28;
+      margin-bottom: 2px;
+    }
+    .course-summary {
+      display: block;
+      color: #60748f;
+      font-size: 12px;
+      line-height: 1.42;
+      max-width: 56ch;
+      margin-bottom: 2px;
+    }
+    .course-cell-meta {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .course-cell-meta .pill {
+      font-size: 9px;
+      padding: 2px 7px;
+      text-transform: none;
+      background: #f8fbff;
+      border-color: #dbe7f5;
+      color: #475569;
+    }
+    .course-creator-cell a {
+      font-weight: 700;
+      color: #1e3a8a;
+      text-decoration: none;
+    }
+    .course-creator-cell a:hover {
+      text-decoration: underline;
+    }
+    .course-actions-cell {
+      min-width: 340px;
+    }
+    .course-actions {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      gap: 6px;
+      align-items: stretch;
+      width: 100%;
+    }
+    .course-actions > a,
+    .course-actions > form {
+      margin: 0;
+    }
+    .course-actions .inline-form {
+      display: flex;
+      width: 100%;
+      margin: 0;
+    }
+    .course-actions .btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 34px;
+      border-radius: 10px;
+    }
+    @media (max-width: 1240px) {
+      .layout {
+        grid-template-columns: 294px minmax(0, 1fr);
+      }
+      h2 {
+        font-size: 27px;
+      }
+      .course-management-table {
+        min-width: 1080px;
+      }
+    }
     @media (max-width: 980px) {
-      .layout { grid-template-columns:minmax(0,1fr); }
-      .side { position:static; height:auto; grid-template-rows:auto; }
+      .layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .side {
+        position: static;
+        height: auto;
+        grid-template-rows: auto auto auto auto;
+        border-right: 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+        box-shadow: none;
+      }
+      .side::after {
+        content: none;
+      }
+      .side nav {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .main {
+        padding: 14px 12px 18px;
+      }
+      .card {
+        border-radius: 14px;
+        padding: 12px;
+      }
+      .course-mgmt-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .course-actions {
+        grid-template-columns: repeat(2, minmax(140px, 1fr));
+      }
     }
   </style>
 </head>
@@ -174,12 +643,28 @@
   }
   const currentSection = navItems.some((item) => item.key === adminSection) ? adminSection : 'overview'
   const adminReturnToPath = adminReturnTo || sectionPath(currentSection)
+  const roleLabel = String(role || 'admin').replace(/_/g, ' ')
   const dateText = (value) => {
     if (!value) return '-'
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
   }
   const courses = ((adminCourses || managedCourses) || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const isPaidCourse = (course) => {
+    const pricingMode = String(course?.pricingMode || '').trim().toLowerCase()
+    if (pricingMode === 'paid') return true
+    const pricingAmount = Number(course?.pricing?.amount || course?.amountMinor || 0)
+    return Number.isFinite(pricingAmount) && pricingAmount > 0
+  }
+  const courseMetrics = {
+    total: courses.length,
+    published: courses.filter((course) => String(course.status || '').trim().toLowerCase() === 'published').length,
+    draft: courses.filter((course) => String(course.status || '').trim().toLowerCase() === 'draft').length,
+    pending: courses.filter((course) => String(course.status || '').trim().toLowerCase() === 'pending_public_review').length,
+    archived: courses.filter((course) => String(course.status || '').trim().toLowerCase() === 'archived').length
+  }
+  courseMetrics.paid = courses.filter((course) => isPaidCourse(course)).length
+  courseMetrics.free = Math.max(0, courseMetrics.total - courseMetrics.paid)
   const pendingOnly = pendingReviewCourses || []
   const approvalCourses = (approvalQueueCourses || pendingOnly || []).slice().sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0))
   const creatorRows = visibleCreatorAdminRows || creatorAdminRows || []
@@ -220,6 +705,12 @@
         <h1>Admin Console</h1>
         <p>Control courses, creators, approvals, and payouts from one admin rail.</p>
       </div>
+      <div class="side-profile">
+        <p class="side-profile-label">Signed In</p>
+        <strong><%= user?.profile?.name || user?.email || 'Admin' %></strong>
+        <span><%= user?.email || '' %></span>
+        <span class="side-role"><%= roleLabel %></span>
+      </div>
       <nav>
         <% navGroups.forEach((group) => { %>
           <section class="side-nav-group">
@@ -244,7 +735,7 @@
     </aside>
 
     <main class="main">
-      <section class="card">
+      <section class="card page-header">
         <div class="head">
           <div>
             <h2><%= sectionLabel[currentSection] || 'Admin' %></h2>
@@ -283,7 +774,7 @@
       <% } %>
 
       <% if (currentSection === 'courses') { %>
-        <section class="card">
+        <section class="card course-management-card">
           <div class="head">
             <div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, restore, and duplicate courses into Admin Studio.</p></div>
             <div class="actions">
@@ -291,7 +782,15 @@
               <a class="btn btn-secondary btn-sm" href="/admin/course-studio#manage-courses">Studio Course Board</a>
             </div>
           </div>
-          <form method="get" action="/admin/courses" class="form-grid">
+          <div class="course-mgmt-stats">
+            <article class="course-mgmt-chip"><span>Total</span><strong><%= courseMetrics.total %></strong></article>
+            <article class="course-mgmt-chip"><span>Published</span><strong><%= courseMetrics.published %></strong></article>
+            <article class="course-mgmt-chip"><span>Pending Review</span><strong><%= courseMetrics.pending %></strong></article>
+            <article class="course-mgmt-chip"><span>Draft</span><strong><%= courseMetrics.draft %></strong></article>
+            <article class="course-mgmt-chip"><span>Paid</span><strong><%= courseMetrics.paid %></strong></article>
+            <article class="course-mgmt-chip"><span>Free</span><strong><%= courseMetrics.free %></strong></article>
+          </div>
+          <form method="get" action="/admin/courses" class="form-grid course-filter-grid">
             <select class="input" name="creatorId">
               <option value="">All creators</option>
               <% (creatorAdminRows || []).forEach((creator) => { %>
@@ -330,14 +829,14 @@
             <% } %>
           </form>
           <% if (selectedCreator) { %>
-            <p class="mini">
+            <p class="mini course-context-note">
               Showing <strong><%= courses.length %></strong> courses for
               <strong><%= selectedCreator.creatorName %></strong>.
               Commission rate: <strong><%= selectedCreator.commissionRatePercent %>%</strong>.
             </p>
           <% } %>
-          <div class="table">
-            <table>
+          <div class="table course-table-wrap">
+            <table class="course-management-table">
               <thead>
                 <tr>
                   <th>Course</th>
@@ -356,18 +855,32 @@
                 <% } %>
                 <% courses.forEach((course) => { %>
                   <tr>
-                    <td><strong><%= course.title %></strong><br><span class="mini"><%= course.summaryText %></span></td>
-                    <td>
+                    <td class="course-title-cell">
+                      <strong><%= course.title %></strong>
+                      <span class="course-summary"><%= course.summaryText %></span>
+                      <div class="course-cell-meta">
+                        <span class="pill"><%= course.levelLabel || 'Mixed' %></span>
+                        <span class="pill"><%= Number(course.lessonCount || 0) %> lessons</span>
+                        <span class="pill">Updated <%= dateText(course.updatedAt) %></span>
+                      </div>
+                    </td>
+                    <td class="course-creator-cell">
                       <a href="/admin/creators?creatorId=<%= encodeURIComponent(course.createdById || '') %>"><%= course.createdByName || course.authorName || 'Unknown' %></a>
                       <br><span class="mini"><%= course.createdByEmail || '-' %></span>
                     </td>
                     <td><span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span></td>
                     <td><span class="pill"><%= course.status || 'draft' %></span></td>
                     <td><span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span></td>
-                    <td><%= course.displayPrice %></td>
-                    <td><%= Number(course.enrollmentCount || 0) %></td>
                     <td>
-                      <div class="actions">
+                      <strong><%= course.displayPrice %></strong><br>
+                      <span class="mini"><%= isPaidCourse(course) ? 'paid' : 'free' %></span>
+                    </td>
+                    <td>
+                      <strong><%= Number(course.enrollmentCount || 0) %></strong><br>
+                      <span class="mini"><%= Number(course.completionCount || 0) %> completed</span>
+                    </td>
+                    <td class="course-actions-cell">
+                      <div class="actions course-actions">
                         <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Studio Edit</a>
                         <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
                           <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
