@@ -619,6 +619,8 @@
     (() => {
       const mediaType = <%- JSON.stringify((lessonMedia && lessonMedia.kind) ? String(lessonMedia.kind) : '') %>
       const mediaEmbedUrl = <%- JSON.stringify((lessonMedia && lessonMedia.embedUrl) ? String(lessonMedia.embedUrl) : '') %>
+      const mediaSourceLabel = <%- JSON.stringify((lessonMedia && lessonMedia.sourceLabel) ? String(lessonMedia.sourceLabel) : '') %>
+      const currentLessonDurationMinutes = Number(<%- JSON.stringify(Number((currentLesson && currentLesson.durationMinutes) || 0)) %>) || 0
       const chapterQuizData = <%- JSON.stringify((chapterSections || []).map((chapter) => ({
         key: chapter.key,
         chapterNumber: chapter.chapterNumber,
@@ -649,6 +651,7 @@
       let activeChapter = null
       let submitting = false
       let autoAdvanceSubmitting = false
+      let driveWatchInterval = null
 
       const escapeHtml = (value) => String(value || '')
         .replace(/&/g, '&amp;')
@@ -843,6 +846,24 @@
         }
       }
 
+      const isYouTubeEmbedUrl = (urlValue) => {
+        const value = String(urlValue || '').toLowerCase()
+        return (
+          value.includes('youtube.com/embed/')
+          || value.includes('youtube-nocookie.com/embed/')
+        )
+      }
+
+      const isVimeoEmbedUrl = (urlValue) => String(urlValue || '').toLowerCase().includes('player.vimeo.com/video/')
+
+      const isGoogleDriveEmbedUrl = (urlValue) => {
+        const value = String(urlValue || '').toLowerCase()
+        return (
+          value.includes('drive.google.com/file/d/')
+          || value.includes('docs.google.com')
+        )
+      }
+
       const configureYouTubeAutoAdvance = async (iframe, embedUrl) => {
         if (!iframe || !embedUrl) return
 
@@ -889,6 +910,46 @@
             iframe.id = `lesson-media-youtube-${Date.now()}`
           }
 
+          const registerStateListener = () => {
+            try {
+              iframe.contentWindow?.postMessage(
+                JSON.stringify({
+                  event: 'command',
+                  func: 'addEventListener',
+                  args: ['onStateChange']
+                }),
+                '*'
+              )
+            } catch (_) {
+              // Ignore postMessage failures.
+            }
+          }
+
+          iframe.addEventListener('load', registerStateListener)
+          if (iframe.contentWindow) registerStateListener()
+
+          window.addEventListener('message', (event) => {
+            if (!event || typeof event.origin !== 'string') return
+            const origin = event.origin.toLowerCase()
+            if (!origin.includes('youtube.com') && !origin.includes('youtube-nocookie.com')) return
+
+            let payload = event.data
+            if (typeof payload === 'string') {
+              try {
+                payload = JSON.parse(payload)
+              } catch (_) {
+                return
+              }
+            }
+            if (!payload || typeof payload !== 'object') return
+
+            const info = Number(payload.info)
+            const eventName = String(payload.event || '').toLowerCase()
+            if (eventName === 'onstatechange' && info === 0) {
+              submitAutoAdvance()
+            }
+          })
+
           // eslint-disable-next-line no-new
           new youtubeApi.Player(iframe.id, {
             events: {
@@ -902,6 +963,70 @@
         } catch (_) {
           // Ignore API load failures and keep manual controls available.
         }
+      }
+
+      const configureGoogleDriveAutoAdvance = (iframe, durationMinutes) => {
+        if (!iframe) return
+
+        const mediaContainer = iframe.closest('.player-media')
+        const expectedSeconds = durationMinutes > 0
+          ? Math.max(30, Math.round(durationMinutes * 60 * 0.9))
+          : 240
+        let interactionStarted = false
+        let watchedSeconds = 0
+
+        const cleanup = () => {
+          if (driveWatchInterval) {
+            window.clearInterval(driveWatchInterval)
+            driveWatchInterval = null
+          }
+        }
+
+        const startWatching = () => {
+          interactionStarted = true
+        }
+
+        mediaContainer?.addEventListener('click', startWatching)
+        mediaContainer?.addEventListener('pointerdown', startWatching)
+        iframe.addEventListener('load', startWatching)
+
+        window.addEventListener('message', (event) => {
+          if (!event || typeof event.origin !== 'string') return
+          if (!event.origin.toLowerCase().includes('google.com')) return
+          interactionStarted = true
+
+          const serialized = (() => {
+            if (typeof event.data === 'string') return event.data
+            try {
+              return JSON.stringify(event.data || {})
+            } catch {
+              return ''
+            }
+          })().toLowerCase()
+
+          if (
+            serialized.includes('ended')
+            || serialized.includes('completed')
+            || serialized.includes('finished')
+          ) {
+            cleanup()
+            submitAutoAdvance()
+          }
+        })
+
+        driveWatchInterval = window.setInterval(() => {
+          if (!interactionStarted) return
+          if (document.hidden) return
+          if (!document.hasFocus()) return
+
+          watchedSeconds += 1
+          if (watchedSeconds >= expectedSeconds) {
+            cleanup()
+            submitAutoAdvance()
+          }
+        }, 1000)
+
+        window.addEventListener('beforeunload', cleanup, { once: true })
       }
 
       const configureVimeoAutoAdvance = (iframe, embedUrl) => {
@@ -957,11 +1082,12 @@
       }
 
       if (lessonIframe && mediaType === 'embed' && mediaEmbedUrl) {
-        const embedLower = mediaEmbedUrl.toLowerCase()
-        if (embedLower.includes('youtube.com/embed/')) {
+        if (isYouTubeEmbedUrl(mediaEmbedUrl)) {
           configureYouTubeAutoAdvance(lessonIframe, mediaEmbedUrl)
-        } else if (embedLower.includes('player.vimeo.com/video/')) {
+        } else if (isVimeoEmbedUrl(mediaEmbedUrl)) {
           configureVimeoAutoAdvance(lessonIframe, mediaEmbedUrl)
+        } else if (isGoogleDriveEmbedUrl(mediaEmbedUrl) || String(mediaSourceLabel || '').toLowerCase().includes('google drive')) {
+          configureGoogleDriveAutoAdvance(lessonIframe, currentLessonDurationMinutes)
         }
       }
     })()
