@@ -79,6 +79,19 @@
   const creatorRows = visibleCreatorAdminRows || creatorAdminRows || []
   const selectedCreatorId = String((adminCourseFilters && adminCourseFilters.creatorId) || (adminCreatorFilters && adminCreatorFilters.creatorId) || '')
   const selectedCreator = (creatorAdminRows || []).find((creator) => creator.creatorId === selectedCreatorId) || null
+  const courseStatusFilter = String((adminCourseFilters && adminCourseFilters.status) || 'all')
+  const courseVisibilityFilter = String((adminCourseFilters && adminCourseFilters.visibility) || 'all')
+  const courseTypeFilter = String((adminCourseFilters && adminCourseFilters.type) || 'all')
+  const coursePaymentFilter = String((adminCourseFilters && adminCourseFilters.paymentMode) || 'all')
+  const courseSearchFilter = String((adminCourseFilters && adminCourseFilters.search) || '')
+  const hasActiveCourseFilters = Boolean(
+    selectedCreatorId
+    || (courseStatusFilter && courseStatusFilter !== 'all')
+    || (courseVisibilityFilter && courseVisibilityFilter !== 'all')
+    || (courseTypeFilter && courseTypeFilter !== 'all')
+    || (coursePaymentFilter && coursePaymentFilter !== 'all')
+    || courseSearchFilter
+  )
   const coursesReturnTo = (adminCourseFilters && adminCourseFilters.returnTo) || '/admin/courses'
   const creatorsReturnTo = (adminCreatorFilters && adminCreatorFilters.returnTo) || '/admin/creators'
 %>
@@ -140,7 +153,13 @@
 
       <% if (currentSection === 'courses') { %>
         <section class="card">
-          <div class="head"><div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, and restore any course.</p></div></div>
+          <div class="head">
+            <div><h2>Course Management</h2><p class="mini">Admin can edit, preview, approve, archive, restore, and duplicate courses into Admin Studio.</p></div>
+            <div class="actions">
+              <a class="btn btn-primary btn-sm" href="/admin/course-studio#create-course">New in Studio</a>
+              <a class="btn btn-secondary btn-sm" href="/admin/course-studio#manage-courses">Studio Course Board</a>
+            </div>
+          </div>
           <form method="get" action="/admin/courses" class="form-grid">
             <select class="input" name="creatorId">
               <option value="">All creators</option>
@@ -150,8 +169,32 @@
                 </option>
               <% }) %>
             </select>
+            <select class="input" name="courseStatus">
+              <option value="all" <%= courseStatusFilter === 'all' ? 'selected' : '' %>>all statuses</option>
+              <option value="draft" <%= courseStatusFilter === 'draft' ? 'selected' : '' %>>draft</option>
+              <option value="pending_public_review" <%= courseStatusFilter === 'pending_public_review' ? 'selected' : '' %>>pending review</option>
+              <option value="published" <%= courseStatusFilter === 'published' ? 'selected' : '' %>>published</option>
+              <option value="archived" <%= courseStatusFilter === 'archived' ? 'selected' : '' %>>archived</option>
+            </select>
+            <select class="input" name="courseVisibility">
+              <option value="all" <%= courseVisibilityFilter === 'all' ? 'selected' : '' %>>all visibility</option>
+              <option value="organization_private" <%= courseVisibilityFilter === 'organization_private' ? 'selected' : '' %>>private</option>
+              <option value="organization_public" <%= courseVisibilityFilter === 'organization_public' ? 'selected' : '' %>>public</option>
+              <option value="system_public" <%= courseVisibilityFilter === 'system_public' ? 'selected' : '' %>>marketplace</option>
+            </select>
+            <select class="input" name="courseType">
+              <option value="all" <%= courseTypeFilter === 'all' ? 'selected' : '' %>>all types</option>
+              <option value="system" <%= courseTypeFilter === 'system' ? 'selected' : '' %>>system</option>
+              <option value="creator" <%= courseTypeFilter === 'creator' ? 'selected' : '' %>>creator</option>
+            </select>
+            <select class="input" name="coursePayment">
+              <option value="all" <%= coursePaymentFilter === 'all' ? 'selected' : '' %>>all pricing</option>
+              <option value="free" <%= coursePaymentFilter === 'free' ? 'selected' : '' %>>free</option>
+              <option value="paid" <%= coursePaymentFilter === 'paid' ? 'selected' : '' %>>paid</option>
+            </select>
+            <input class="input" type="text" name="courseSearch" value="<%= courseSearchFilter %>" placeholder="Search title, summary, creator...">
             <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
-            <% if (selectedCreatorId) { %>
+            <% if (hasActiveCourseFilters) { %>
               <a class="btn btn-secondary btn-sm" href="/admin/courses">Clear</a>
             <% } %>
           </form>
@@ -194,7 +237,14 @@
                     <td><%= Number(course.enrollmentCount || 0) %></td>
                     <td>
                       <div class="actions">
-                        <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a>
+                        <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Studio Edit</a>
+                        <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
+                          <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                          <input type="hidden" name="studioPath" value="/admin/course-studio">
+                          <input type="hidden" name="studioContext" value="admin">
+                          <input type="hidden" name="isSystemCourse" value="on">
+                          <button class="btn btn-secondary btn-sm" type="submit">Duplicate to Studio</button>
+                        </form>
                         <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View</a>
                         <% if (['draft', 'pending_public_review'].includes(String(course.status || ''))) { %>
                           <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
@@ -237,7 +287,7 @@
                 <p class="mini">Status: <span class="pill"><%= course.status || 'draft' %></span> · Submitted/Updated: <%= dateText(course.submittedAt) %></p>
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
-                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>">Edit</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/course-studio?editCourse=<%= course._id %>#edit-course">Edit</a>
                   <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
                     <input class="input" type="text" name="reviewNotes" placeholder="Optional review notes">
                     <input type="hidden" name="returnTo" value="/admin/approvals">

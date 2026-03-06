@@ -433,6 +433,34 @@ const buildAdminCreatorReturnTo = ({
   return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
 }
 
+const buildAdminCoursesReturnTo = ({
+  creatorId = '',
+  status = 'all',
+  visibility = 'all',
+  courseType = 'all',
+  paymentMode = 'all',
+  search = '',
+  basePath = '/admin/courses'
+} = {}) => {
+  const params = new URLSearchParams()
+  const normalizedCreatorId = String(creatorId || '').trim()
+  if (normalizedCreatorId && mongoose.Types.ObjectId.isValid(normalizedCreatorId)) {
+    params.set('creatorId', normalizedCreatorId)
+  }
+  const normalizedStatus = String(status || '').trim().toLowerCase()
+  if (normalizedStatus && normalizedStatus !== 'all') params.set('courseStatus', normalizedStatus)
+  const normalizedVisibility = String(visibility || '').trim().toLowerCase()
+  if (normalizedVisibility && normalizedVisibility !== 'all') params.set('courseVisibility', normalizedVisibility)
+  const normalizedType = String(courseType || '').trim().toLowerCase()
+  if (normalizedType && normalizedType !== 'all') params.set('courseType', normalizedType)
+  const normalizedPaymentMode = String(paymentMode || '').trim().toLowerCase()
+  if (normalizedPaymentMode && normalizedPaymentMode !== 'all') params.set('coursePayment', normalizedPaymentMode)
+  const normalizedSearch = String(search || '').trim()
+  if (normalizedSearch) params.set('courseSearch', normalizedSearch)
+  const queryString = params.toString()
+  return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
+}
+
 const canManageProgram = ({ role, accountId, program }) => {
   if (!program) return false
   if (canManagePlatform(role)) return true
@@ -883,7 +911,9 @@ const redirectWithMessage = ({ res, path = '/simple-lms', success = '', error = 
   if (error) params.set('error', error)
   if (info) params.set('info', info)
   const query = params.toString()
-  return res.redirect(query ? `${path}${path.includes('?') ? '&' : '?'}${query}` : path)
+  const [basePath, hashSuffixRaw = ''] = String(path || '/simple-lms').split('#')
+  const hashSuffix = hashSuffixRaw ? `#${hashSuffixRaw}` : ''
+  return res.redirect(query ? `${basePath}${basePath.includes('?') ? '&' : '?'}${query}${hashSuffix}` : `${basePath}${hashSuffix}`)
 }
 const sanitizeQuizChoices = (choicesInput = [], correctIndexInput = -1) => {
   const choices = Array.isArray(choicesInput)
@@ -1248,6 +1278,13 @@ const resolveAdminReturnPath = (req, fallback = '/simple-lms?view=admin') => (
 const resolveCourseStudioReturnPath = (req, fallback = '/simple-lms/studio/courses') => (
   sanitizeInternalPath(req.body?.returnTo || req.query?.returnTo || fallback, fallback)
 )
+
+const buildStudioEditCoursePath = (value, courseId, fallback = '/simple-lms/studio/courses') => {
+  const basePath = sanitizeInternalPath(value || fallback, fallback)
+  const [pathWithoutHash] = String(basePath).split('#')
+  const separator = pathWithoutHash.includes('?') ? '&' : '?'
+  return `${pathWithoutHash}${separator}editCourse=${encodeURIComponent(String(courseId || '').trim())}#edit-course`
+}
 
 const findPublicCourseForLearning = async (courseId) => {
   if (!mongoose.Types.ObjectId.isValid(courseId)) return null
@@ -2507,6 +2544,124 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       res,
       path: returnTo,
       error: error.message || 'Failed to update course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req)
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have permission to duplicate courses.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const sourceCourse = await SimpleLmsCourse.findById(courseId).lean()
+    if (!sourceCourse) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    if (!canManageCourse({ role, accountId: req.user._id, course: sourceCourse })) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have permission to duplicate this course.'
+      })
+    }
+
+    const titleSuffixRaw = String(req.body?.titleSuffix || 'Copy').trim().slice(0, 40)
+    const titleSuffix = titleSuffixRaw || 'Copy'
+    const sourceTitle = String(sourceCourse.title || 'Untitled Course').trim() || 'Untitled Course'
+    const duplicateTitle = `${sourceTitle} (${titleSuffix})`.slice(0, 200)
+    const studioContext = String(req.body?.studioContext || '').trim().toLowerCase()
+    const duplicateAsSystemCourse = canManagePlatform(role)
+      && (studioContext === 'admin' || req.body?.isSystemCourse === 'on')
+    const sourceVisibility = String(sourceCourse.visibility || '').trim().toLowerCase()
+    const duplicateVisibility = (() => {
+      if (['organization_private', 'organization_public', 'system_public'].includes(sourceVisibility)) {
+        if (sourceVisibility === 'system_public' && !canManagePlatform(role)) {
+          return 'organization_public'
+        }
+        return sourceVisibility
+      }
+      return normalizeVisibility(sourceCourse.visibility, role)
+    })()
+    const duplicatePayload = {
+      organization: null,
+      createdBy: req.user._id,
+      createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
+      createdByEmail: req.user.email || '',
+      title: duplicateTitle,
+      summary: String(sourceCourse.summary || '').trim().slice(0, 600),
+      description: String(sourceCourse.description || '').trim().slice(0, 16000),
+      category: String(sourceCourse.category || '').trim().slice(0, 120),
+      level: LEVELS.includes(String(sourceCourse.level || '').trim()) ? String(sourceCourse.level).trim() : 'mixed',
+      tags: parseTags(Array.isArray(sourceCourse.tags) ? sourceCourse.tags.join(',') : ''),
+      banner: sourceCourse?.banner?.url
+        ? {
+          url: String(sourceCourse.banner.url || '').trim().slice(0, 2000),
+          publicId: String(sourceCourse.banner.publicId || '').trim().slice(0, 400),
+          width: Number.isFinite(Number(sourceCourse.banner.width)) ? Number(sourceCourse.banner.width) : undefined,
+          height: Number.isFinite(Number(sourceCourse.banner.height)) ? Number(sourceCourse.banner.height) : undefined
+        }
+        : {},
+      pricing: {
+        paymentMode: sourceCourse?.pricing?.paymentMode === 'paid' ? 'paid' : 'free',
+        amount: sourceCourse?.pricing?.paymentMode === 'paid'
+          ? Math.max(0, Math.round(Number(sourceCourse?.pricing?.amount || 0)))
+          : 0,
+        currency: normalizeCurrencyCode(sourceCourse?.pricing?.currency || 'NGN')
+      },
+      visibility: duplicateVisibility,
+      status: 'draft',
+      isSystemCourse: duplicateAsSystemCourse,
+      requiresPublicReview: sourceCourse.requiresPublicReview !== false,
+      publishedWithoutReview: false,
+      publishedAt: null,
+      submittedForPublicReviewAt: null,
+      approvedPublicAt: null,
+      approvedPublicBy: null,
+      reviewedAt: null,
+      reviewedBy: null,
+      reviewNotes: '',
+      archivedAt: null,
+      chapters: sanitizeChaptersInput(Array.isArray(sourceCourse.chapters) ? sourceCourse.chapters : []),
+      enrollmentCount: 0,
+      completionCount: 0,
+      isActive: true
+    }
+    const duplicatedCourse = await SimpleLmsCourse.create(duplicatePayload)
+    const studioPath = sanitizeInternalPath(String(req.body?.studioPath || '').trim(), returnTo)
+    const destinationPath = buildStudioEditCoursePath(studioPath, duplicatedCourse._id, returnTo)
+
+    return redirectWithMessage({
+      res,
+      path: destinationPath,
+      success: `Course duplicated into studio: ${duplicatedCourse.title}.`
+    })
+  } catch (error) {
+    console.error('Duplicate course error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to duplicate course.'
     })
   }
 })
@@ -3853,6 +4008,31 @@ const renderWorkspacePage = async (
     const adminCreatorFilterId = canManagePlatform(role) && mongoose.Types.ObjectId.isValid(creatorFilterCandidate)
       ? creatorFilterCandidate
       : ''
+    const adminCourseStatusFilter = (() => {
+      const normalized = String(req.query.courseStatus || '').trim().toLowerCase()
+      if (!normalized || normalized === 'all') return 'all'
+      return ['draft', 'published', 'archived', 'pending_public_review'].includes(normalized)
+        ? normalized
+        : 'all'
+    })()
+    const adminCourseVisibilityFilter = (() => {
+      const normalized = String(req.query.courseVisibility || '').trim().toLowerCase()
+      if (!normalized || normalized === 'all') return 'all'
+      return ['organization_private', 'organization_public', 'system_public'].includes(normalized)
+        ? normalized
+        : 'all'
+    })()
+    const adminCourseTypeFilter = (() => {
+      const normalized = String(req.query.courseType || '').trim().toLowerCase()
+      if (!normalized || normalized === 'all') return 'all'
+      return ['system', 'creator'].includes(normalized) ? normalized : 'all'
+    })()
+    const adminCoursePaymentFilter = (() => {
+      const normalized = String(req.query.coursePayment || '').trim().toLowerCase()
+      if (!normalized || normalized === 'all') return 'all'
+      return ['free', 'paid'].includes(normalized) ? normalized : 'all'
+    })()
+    const adminCourseSearchFilter = String(req.query.courseSearch || '').trim().slice(0, 200)
     const adminPaymentFilter = {}
     if (canManagePlatform(role)) {
       if (paymentStatusFilter !== 'all') adminPaymentFilter.status = paymentStatusFilter
@@ -3871,8 +4051,13 @@ const renderWorkspacePage = async (
       search: paymentSearchFilter,
       basePath: adminBasePath
     })
-    const adminCoursesReturnTo = buildAdminCreatorReturnTo({
+    const adminCoursesReturnTo = buildAdminCoursesReturnTo({
       creatorId: adminCreatorFilterId,
+      status: adminCourseStatusFilter,
+      visibility: adminCourseVisibilityFilter,
+      courseType: adminCourseTypeFilter,
+      paymentMode: adminCoursePaymentFilter,
+      search: adminCourseSearchFilter,
       basePath: '/admin/courses'
     })
     const adminCreatorsReturnTo = buildAdminCreatorReturnTo({
@@ -4790,9 +4975,41 @@ const renderWorkspacePage = async (
     const visibleCreatorAdminRows = adminCreatorFilterId
       ? creatorAdminRows.filter((creator) => creator.creatorId === adminCreatorFilterId)
       : creatorAdminRows
-    const filteredManagedCourses = adminCreatorFilterId
+    let filteredManagedCourses = adminCreatorFilterId
       ? managedCourses.filter((course) => toIdString(course.createdById || course.createdBy) === adminCreatorFilterId)
       : managedCourses
+    if (adminCourseStatusFilter !== 'all') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => String(course.status || '').trim().toLowerCase() === adminCourseStatusFilter)
+    }
+    if (adminCourseVisibilityFilter !== 'all') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => String(course.visibility || '').trim().toLowerCase() === adminCourseVisibilityFilter)
+    }
+    if (adminCourseTypeFilter === 'system') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => Boolean(course.isSystemCourse))
+    } else if (adminCourseTypeFilter === 'creator') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => !Boolean(course.isSystemCourse))
+    }
+    if (adminCoursePaymentFilter === 'paid') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => isCoursePaidContent(course))
+    } else if (adminCoursePaymentFilter === 'free') {
+      filteredManagedCourses = filteredManagedCourses.filter((course) => !isCoursePaidContent(course))
+    }
+    if (adminCourseSearchFilter) {
+      const needle = adminCourseSearchFilter.toLowerCase()
+      filteredManagedCourses = filteredManagedCourses.filter((course) => (
+        [
+          course.title,
+          course.summary,
+          course.description,
+          course.category,
+          course.createdByName,
+          course.createdByEmail
+        ]
+          .map((value) => String(value || '').toLowerCase())
+          .join(' ')
+          .includes(needle)
+      ))
+    }
 
     const pendingReviewCourses = (pendingReviewCoursesRaw || []).map((course) => ({
       ...decorateCourse(course),
@@ -4893,6 +5110,11 @@ const renderWorkspacePage = async (
       },
       adminCourseFilters: {
         creatorId: adminCreatorFilterId,
+        status: adminCourseStatusFilter,
+        visibility: adminCourseVisibilityFilter,
+        type: adminCourseTypeFilter,
+        paymentMode: adminCoursePaymentFilter,
+        search: adminCourseSearchFilter,
         returnTo: adminCoursesReturnTo
       },
       adminCreatorFilters: {
