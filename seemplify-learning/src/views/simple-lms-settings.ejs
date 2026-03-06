@@ -428,6 +428,10 @@
     const learningName = brandLearningName || 'Seemplify Learning'
     const userName = user?.profile?.name || user?.email || 'Learner'
     const userRoleLabel = String(role || 'learner').replace(/_/g, ' ')
+    const canAccessAdminFromSettings = Boolean(
+      (typeof canManagePlatform !== 'undefined' && canManagePlatform)
+      || ['admin', 'super_admin'].includes(String(role || '').trim().toLowerCase())
+    )
     const activeTab = settingsTab || 'profile'
     const tabLink = (tab) => `/simple-lms?view=settings&settingsTab=${tab}`
     const creatorSections = [
@@ -462,6 +466,9 @@
       <a class="settings-tab <%= activeTab === 'profile' ? 'active' : '' %>" href="<%= tabLink('profile') %>">Profile & Workspace</a>
       <a class="settings-tab <%= activeTab === 'creator' ? 'active' : '' %>" href="<%= tabLink('creator') %>">Creator Tools</a>
       <a class="settings-tab <%= activeTab === 'payments' ? 'active' : '' %>" href="<%= tabLink('payments') %>">Payments & Cart</a>
+      <% if (canAccessAdminFromSettings) { %>
+        <a class="settings-tab" href="/admin">Admin Console</a>
+      <% } %>
     </nav>
 
     <% if (activeTab === 'profile') { %>
@@ -512,6 +519,16 @@
           <span class="workspace-overview-chip">Cart: <%= stats.cartItemCount %></span>
         </div>
       </section>
+
+      <% if (canAccessAdminFromSettings) { %>
+        <section class="settings-card">
+          <h3>Admin Access</h3>
+          <p class="settings-note">Open the admin console to manage creators, approvals, payments, and platform settings.</p>
+          <div class="quick-actions">
+            <a class="btn btn-secondary" href="/admin">Go to Admin Console</a>
+          </div>
+        </section>
+      <% } %>
     <% } %>
 
     <% if (activeTab === 'creator') { %>

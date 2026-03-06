@@ -2,6 +2,15 @@
   const safeUser = typeof user !== 'undefined' ? user : null
   const safeActivePage = typeof activePage === 'string' ? activePage : ''
   const safeActiveLmsView = typeof activeLmsView === 'string' ? activeLmsView : ''
+  const safeUserRole = String(safeUser?.learningRole || safeUser?.role || '').trim().toLowerCase()
+  const canAccessAdmin = Boolean(
+    safeUser
+    && (
+      safeUser.isSuperAdmin
+      || safeUser.isSystemAdmin
+      || ['super_admin', 'admin'].includes(safeUserRole)
+    )
+  )
   const currentBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
   const brandDisplayName = typeof brandLearningName === 'string' && brandLearningName.trim()
     ? brandLearningName.trim()
@@ -29,6 +38,9 @@
     <% if (safeUser) { %>
       <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
       <a href="/simple-lms?view=settings" class="top-nav-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>">Settings</a>
+      <% if (canAccessAdmin) { %>
+        <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+      <% } %>
     <% } %>
   </div>
 
@@ -90,6 +102,9 @@
         <a href="/teach" class="top-nav-link<%= safeActivePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
         <% if (safeUser) { %>
           <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
+          <% if (canAccessAdmin) { %>
+            <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+          <% } %>
         <% } %>
       </div>
     </div>
