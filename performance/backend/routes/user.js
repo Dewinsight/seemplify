@@ -23,6 +23,21 @@ function getPreferredUserId(userDoc) {
   return userDoc?.idpSub || userDoc?._id?.toString();
 }
 
+function resolveOrganizationId(req) {
+  return (
+    req.currentOrganization?.id ||
+    req.currentOrganization?._id?.toString?.() ||
+    req.session?.currentOrganizationId ||
+    req.session?.user?.currentOrganization?.id ||
+    req.session?.user?.currentOrganization?._id?.toString?.() ||
+    req.session?.user?.userinfo?.current_organization?.id ||
+    req.session?.user?.userinfo?.currentOrganization?.id ||
+    req.session?.user?.organizations?.[0]?.id ||
+    req.session?.user?.userinfo?.organizations?.[0]?.id ||
+    null
+  );
+}
+
 /**
  * GET /api/user/context - Get comprehensive user context
  * Returns all necessary info for frontend role-based rendering
@@ -317,10 +332,7 @@ router.get('/direct-reports', requireAuth, async (req, res) => {
 router.get('/all-employees', requireAuth, async (req, res) => {
   try {
     const role = req.userRole;
-    const currentOrganization = req.currentOrganization;
-    const currentOrgId = currentOrganization?.id ||
-      currentOrganization?._id?.toString?.() ||
-      req.session?.currentOrganizationId;
+    const currentOrgId = resolveOrganizationId(req);
 
     // Only HR Admin and Recruiters can access all employees
     if (role !== 'hr_admin' && role !== 'recruiter') {
@@ -348,7 +360,8 @@ router.get('/all-employees', requireAuth, async (req, res) => {
     // Map users with their manager info from teams
     const employees = users.map(u => {
       // Find user's team info to get manager
-      const primaryTeam = u.idpTeams?.find(t => t.organizationId === currentOrgId) || u.idpTeams?.[0];
+      const userTeams = Array.isArray(u.idpTeams) ? u.idpTeams : [];
+      const primaryTeam = userTeams.find((t) => t?.organizationId === currentOrgId) || userTeams[0];
 
       return {
         userId: getPreferredUserId(u),

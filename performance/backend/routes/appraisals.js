@@ -37,6 +37,21 @@ function getRequesterIdentity(req) {
   };
 }
 
+function resolveOrganizationId(req) {
+  return (
+    req.currentOrganization?.id ||
+    req.currentOrganization?._id?.toString?.() ||
+    req.session?.currentOrganizationId ||
+    req.session?.user?.currentOrganization?.id ||
+    req.session?.user?.currentOrganization?._id?.toString?.() ||
+    req.session?.user?.userinfo?.current_organization?.id ||
+    req.session?.user?.userinfo?.currentOrganization?.id ||
+    req.session?.user?.organizations?.[0]?.id ||
+    req.session?.user?.userinfo?.organizations?.[0]?.id ||
+    null
+  );
+}
+
 function normalizeIdentityEmail(value) {
   if (!value || typeof value !== 'string') return null;
   return value.trim().toLowerCase();
@@ -601,10 +616,14 @@ const upload = multer({
 // Get all cycles for organization (Filtered for Managers)
 router.get('/cycles', requireAuth, async (req, res) => {
   try {
-    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const orgId = resolveOrganizationId(req);
     const { status, year } = req.query;
     const userRole = req.userRole;
     const userId = req.session?.user?.id || req.session?.user?.sub;
+
+    if (!orgId) {
+      return res.status(400).json({ success: false, error: 'No active organization selected' });
+    }
 
     const query = { organizationId: orgId };
     if (status) query.status = status;
@@ -642,10 +661,14 @@ router.get('/cycles', requireAuth, async (req, res) => {
 // Create new cycle (HR Admin or Manager)
 router.post('/cycles', requireAuth, requireManager, async (req, res) => {
   try {
-    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const orgId = resolveOrganizationId(req);
     const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
     const userRole = req.userRole;
+
+    if (!orgId) {
+      return res.status(400).json({ success: false, error: 'No active organization selected' });
+    }
 
     // SCOPE VALIDATION
     // If not HR Admin, enforce team scope
@@ -694,7 +717,7 @@ router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
     if (req.params.cycleId === 'new') {
       return res.status(400).json({ success: false, error: 'Invalid cycle ID' });
     }
-    const orgId = req.currentOrganization?.id || req.session?.currentOrganizationId;
+    const orgId = resolveOrganizationId(req);
     const cycle = await AppraisalCycle.findById(req.params.cycleId).lean();
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });

@@ -11,6 +11,18 @@ import {
 } from '@mui/material';
 import { Save, ArrowBack } from '@mui/icons-material';
 
+interface AssignableEmployee {
+    userId: string;
+    name: string;
+    email: string;
+    department?: string;
+    jobTitle?: string;
+    teamId?: string;
+    managerId?: string;
+    managerName?: string;
+    managerEmail?: string;
+}
+
 const cycleTypeLabels: Record<string, string> = {
     'annual': 'Annual Review',
     'semi-annual': 'Semi-Annual Review',
@@ -30,11 +42,13 @@ const phaseLabels: Record<string, string> = {
 export default function EditAppraisalCyclePage() {
     const router = useRouter();
     const params = useParams();
-    const { isHRAdmin, user } = useUserContext();
+    const { isHRAdmin } = useUserContext();
     const { managedTeams } = useDirectReports(); // Fetch teams managed by the user
+    const cycleId = params.id as string;
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [saveError, setSaveError] = useState('');
 
     // Helper to format date for input
     const formatDateForInput = (dateString: string) => {
@@ -73,23 +87,23 @@ export default function EditAppraisalCyclePage() {
 
     useEffect(() => {
         // Initialize scope based on role for new cycles
-        if (params.id === 'new' && !isHRAdmin && managedTeams.length > 0) {
+        if (cycleId === 'new' && !isHRAdmin && managedTeams.length > 0) {
             setFormData(prev => ({
                 ...prev,
                 scope: { type: 'team', targetIds: [] }
             }));
         }
-    }, [isHRAdmin, managedTeams.length, params.id]);
+    }, [isHRAdmin, managedTeams.length, cycleId]);
 
     useEffect(() => {
         const fetchCycle = async () => {
-            if (params.id === 'new') {
+            if (cycleId === 'new') {
                 setLoading(false);
                 return;
             }
 
             try {
-                const response = await api.get(`/appraisals/cycles/${params.id}`);
+                const response = await api.get(`/appraisals/cycles/${cycleId}`);
                 const cycle = response.data.data;
 
                 setFormData({
@@ -129,20 +143,79 @@ export default function EditAppraisalCyclePage() {
         };
 
         fetchCycle();
-    }, [params.id]);
+    }, [cycleId]);
 
     const handleSave = async () => {
         setSaving(true);
+        setSaveError('');
         try {
-            if (params.id === 'new') {
-                await api.post('/appraisals/cycles', formData);
+            if (cycleId === 'new') {
+                const createResponse = await api.post('/appraisals/cycles', formData);
+                const createdCycle = createResponse.data?.data || createResponse.data;
+                const createdCycleId = createdCycle?._id;
+
+                if (!createdCycleId) {
+                    throw new Error('Cycle was created but no cycle ID was returned');
+                }
+
+                // End-to-end create flow: immediately launch appraisals after cycle creation.
+                let assignableEmployees: AssignableEmployee[] = [];
+                try {
+                    const employeesResponse = await api.get('/user/employees-for-appraisal');
+                    const employeesData = employeesResponse.data?.data;
+                    assignableEmployees = Array.isArray(employeesData?.employees)
+                        ? employeesData.employees
+                        : (Array.isArray(employeesData) ? employeesData : []);
+                } catch (primaryFetchError) {
+                    console.warn('Primary assignable employee fetch failed, trying fallback...', primaryFetchError);
+                    const fallbackResponse = await api.get('/user/all-employees');
+                    const fallbackData = fallbackResponse.data?.data;
+                    assignableEmployees = Array.isArray(fallbackData) ? fallbackData : [];
+                }
+
+                const targetTeamIds = formData.scope?.type === 'team'
+                    ? (formData.scope?.targetIds || [])
+                    : [];
+
+                const employeesInScope = targetTeamIds.length > 0
+                    ? assignableEmployees.filter((employee) => employee.teamId && targetTeamIds.includes(employee.teamId))
+                    : assignableEmployees;
+
+                if (employeesInScope.length === 0) {
+                    throw new Error('Cycle created, but no team members were found to auto-launch appraisals for.');
+                }
+
+                const launchPayload = employeesInScope.map((employee) => ({
+                    userId: employee.userId,
+                    name: employee.name,
+                    email: employee.email,
+                    department: employee.department,
+                    jobTitle: employee.jobTitle,
+                    managerId: employee.managerId,
+                    managerName: employee.managerName,
+                    managerEmail: employee.managerEmail
+                }));
+
+                const launchResponse = await api.post(`/appraisals/cycles/${createdCycleId}/launch`, {
+                    employees: launchPayload
+                });
+
+                const launchResult = launchResponse.data?.data || launchResponse.data;
+                const launchedCount = typeof launchResult?.launched === 'number' ? launchResult.launched : 0;
+                const firstLaunchError = Array.isArray(launchResult?.errorDetails) && launchResult.errorDetails.length > 0
+                    ? launchResult.errorDetails[0]?.error
+                    : null;
+
+                if (launchedCount <= 0) {
+                    throw new Error(firstLaunchError || 'Cycle created, but auto-launch failed. Open the cycle list and launch manually.');
+                }
             } else {
-                await api.put(`/appraisals/cycles/${params.id}`, formData);
+                await api.put(`/appraisals/cycles/${cycleId}`, formData);
             }
             router.push('/admin/appraisal-cycles'); // Go back to list
         } catch (err: any) {
             console.error('Save cycle error:', err);
-            setError(err.response?.data?.error || 'Failed to save cycle');
+            setSaveError(err.response?.data?.error || err.message || 'Failed to save cycle');
         } finally {
             setSaving(false);
         }
@@ -173,12 +246,12 @@ export default function EditAppraisalCyclePage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Button
                         startIcon={<ArrowBack />}
-                        onClick={() => router.push(`/admin/appraisal-cycles/${params.id}`)}
+                        onClick={() => router.push(cycleId === 'new' ? '/admin/appraisal-cycles' : `/admin/appraisal-cycles/${cycleId}`)}
                     >
                         Back
                     </Button>
                     <Typography variant="h4" fontWeight={700}>
-                        Edit Cycle
+                        {cycleId === 'new' ? 'Create & Launch Cycle' : 'Edit Cycle'}
                     </Typography>
                 </Box>
                 <Button
@@ -187,9 +260,21 @@ export default function EditAppraisalCyclePage() {
                     onClick={handleSave}
                     disabled={saving}
                 >
-                    Save Changes
+                    {cycleId === 'new' ? 'Create & Launch' : 'Save Changes'}
                 </Button>
             </Box>
+
+            {cycleId === 'new' && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                    Saving this form will immediately launch appraisals for employees in the selected scope.
+                </Alert>
+            )}
+
+            {saveError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    {saveError}
+                </Alert>
+            )}
 
             <Grid container spacing={3}>
                 <Grid size={{ xs: 12, md: 8 }}>
