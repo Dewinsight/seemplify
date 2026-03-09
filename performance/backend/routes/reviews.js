@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { PerformanceReview } = require('../models/PerformanceReview');
 const ReviewCycle = require('../models/ReviewCycle');
+const User = require('../models/User');
 const { 
   requireAuth, 
   requirePermission, 
@@ -23,6 +24,109 @@ const resolveRole = (req) => {
 const resolveDirectReports = (req) => {
   return req.directReports || getDirectReports(req.session?.user || {});
 };
+
+const resolveOrganizationId = (req) => {
+  return (
+    req.currentOrganization?.id ||
+    req.currentOrganization?._id?.toString?.() ||
+    req.session?.currentOrganizationId ||
+    req.session?.user?.currentOrganization?.id ||
+    req.session?.user?.currentOrganization?._id?.toString?.() ||
+    req.session?.user?.userinfo?.current_organization?.id ||
+    req.session?.user?.userinfo?.currentOrganization?.id ||
+    req.session?.user?.organizations?.[0]?.id ||
+    req.session?.user?.userinfo?.organizations?.[0]?.id ||
+    null
+  );
+};
+
+const toStringId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    if (value.userId) return String(value.userId);
+    if (value.id) return String(value.id);
+    if (value._id) return String(value._id);
+    if (value.sub) return String(value.sub);
+    if (typeof value.toString === 'function') return String(value.toString());
+  }
+  return null;
+};
+
+async function ensureReviewsForCycle(cycle) {
+  const orgId = cycle?.organizationId;
+  if (!orgId) {
+    return { created: 0, existing: 0, skipped: 0, total: 0 };
+  }
+
+  const orgUsers = await User.find({
+    $or: [
+      { currentOrganizationId: orgId },
+      { 'idpTeams.organizationId': orgId }
+    ]
+  })
+    .select('idpSub email idpTeams')
+    .lean();
+
+  if (!orgUsers.length) {
+    return { created: 0, existing: 0, skipped: 0, total: 0 };
+  }
+
+  const knownUserIds = new Set();
+  const participantRows = [];
+
+  orgUsers.forEach((userDoc) => {
+    const userId = toStringId(userDoc?.idpSub || userDoc?._id);
+    if (!userId) return;
+    knownUserIds.add(userId);
+    participantRows.push({
+      userId,
+      teams: Array.isArray(userDoc.idpTeams) ? userDoc.idpTeams : []
+    });
+  });
+
+  const existingReviews = await PerformanceReview.find({ cycleId: cycle._id }).select('userId').lean();
+  const existingByUserId = new Set(existingReviews.map((review) => String(review.userId)));
+
+  const rowsToCreate = [];
+  let skipped = 0;
+
+  participantRows.forEach((participant) => {
+    if (existingByUserId.has(participant.userId)) return;
+
+    const teamInOrg = participant.teams.find((team) => team?.organizationId === orgId) || participant.teams[0];
+    const managerFromTeam = toStringId(teamInOrg?.managerId);
+    let managerId = managerFromTeam && knownUserIds.has(managerFromTeam) ? managerFromTeam : null;
+
+    if (!managerId) {
+      managerId = toStringId(cycle.createdBy);
+    }
+
+    if (!managerId) {
+      skipped += 1;
+      return;
+    }
+
+    rowsToCreate.push({
+      cycleId: cycle._id,
+      userId: participant.userId,
+      managerId,
+      status: 'draft'
+    });
+  });
+
+  if (rowsToCreate.length > 0) {
+    await PerformanceReview.insertMany(rowsToCreate);
+  }
+
+  return {
+    created: rowsToCreate.length,
+    existing: existingByUserId.size,
+    skipped,
+    total: participantRows.length
+  };
+}
 
 const canAccessReview = (review, req) => {
   const userId = resolveUserId(req.session?.user || {});
@@ -546,9 +650,10 @@ router.post('/:id/request-peer-review', requireAuth, async (req, res) => {
 router.get('/cycles', requireAuth, async (req, res) => {
   try {
     let query = {};
-    
-    if (req.currentOrganization?.id) {
-      query.organizationId = req.currentOrganization.id;
+    const organizationId = resolveOrganizationId(req);
+
+    if (organizationId) {
+      query.organizationId = organizationId;
     }
     
     const cycles = await ReviewCycle.find(query)
@@ -573,12 +678,27 @@ router.get('/cycles', requireAuth, async (req, res) => {
 router.post('/cycles', requireHRAdmin, async (req, res) => {
   try {
     const userId = resolveUserId(req.session?.user || {});
-    const { title, description, type, startDate, endDate, phases, settings, questions } = req.body;
+    const organizationId = resolveOrganizationId(req);
+    const {
+      title,
+      description,
+      type,
+      startDate,
+      endDate,
+      phases,
+      settings,
+      questions,
+      autoActivate
+    } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: 'No active organization selected' });
+    }
     
     const cycle = new ReviewCycle({
       title,
       description,
-      organizationId: req.currentOrganization?.id,
+      organizationId,
       type: type || 'manager-only',
       startDate,
       endDate,
@@ -590,11 +710,21 @@ router.post('/cycles', requireHRAdmin, async (req, res) => {
     });
     
     await cycle.save();
+
+    let reviewCreation = null;
+    if (autoActivate === true) {
+      cycle.status = 'active';
+      await cycle.save();
+      reviewCreation = await ensureReviewsForCycle(cycle);
+    }
     
     res.status(201).json({ 
       success: true, 
       data: cycle,
-      message: 'Review cycle created successfully'
+      reviewCreation,
+      message: autoActivate === true
+        ? `Review cycle created and activated (${reviewCreation?.created || 0} reviews created)`
+        : 'Review cycle created successfully'
     });
   } catch (error) {
     console.error('Error creating review cycle:', error);
@@ -642,23 +772,25 @@ router.post('/cycles/:id/activate', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review cycle not found' });
     }
     
-    if (cycle.status !== 'draft' && cycle.status !== 'planning') {
+    if (cycle.status !== 'draft' && cycle.status !== 'planning' && cycle.status !== 'active') {
       return res.status(400).json({ 
         success: false, 
-        error: 'Can only activate draft or planning cycles' 
+        error: 'Can only activate draft, planning, or active cycles'
       });
     }
     
-    cycle.status = 'active';
-    await cycle.save();
-    
-    // Note: In production, you would create individual reviews for each employee
-    // This would be done via a background job or by fetching all employees from IdP
+    if (cycle.status !== 'active') {
+      cycle.status = 'active';
+      await cycle.save();
+    }
+
+    const reviewCreation = await ensureReviewsForCycle(cycle);
     
     res.json({ 
       success: true, 
       data: cycle,
-      message: 'Review cycle activated successfully'
+      reviewCreation,
+      message: `Review cycle activated successfully (${reviewCreation.created} reviews created, ${reviewCreation.existing} existing)`
     });
   } catch (error) {
     console.error('Error activating review cycle:', error);

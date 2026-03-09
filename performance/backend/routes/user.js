@@ -23,6 +23,10 @@ function getPreferredUserId(userDoc) {
   return userDoc?.idpSub || userDoc?._id?.toString();
 }
 
+function looksLikeObjectId(value) {
+  return typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value);
+}
+
 function resolveOrganizationId(req) {
   return (
     req.currentOrganization?.id ||
@@ -750,6 +754,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       jobTitle: member.jobTitle,
       department: member.department,
       teamId: member.teamId,
+      teamIds: Array.isArray(member.teamIds)
+        ? member.teamIds.filter(Boolean).map(String)
+        : (member.teamId ? [String(member.teamId)] : []),
       teamName: member.teamName,
       teamRole: member.teamRole,
       isManager: member.isManager,
@@ -801,6 +808,12 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
             `${userDoc.profile?.firstName || ''} ${userDoc.profile?.lastName || ''}`.trim() ||
             userDoc.email?.split('@')?.[0] ||
             'Unknown';
+          const normalizedTeamIds = Array.isArray(userDoc.idpTeams)
+            ? userDoc.idpTeams
+              .filter((team) => !effectiveOrgId || team.organizationId === effectiveOrgId)
+              .map((team) => team?.id)
+              .filter(Boolean)
+            : [];
 
           return {
             userId: userDoc.idpSub || userDoc._id?.toString(),
@@ -809,6 +822,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
             jobTitle: userDoc.profile?.title || teamInOrg?.role || 'Employee',
             department: teamInOrg?.name || userDoc.profile?.department || '',
             teamId: teamInOrg?.id,
+            teamIds: normalizedTeamIds,
             teamName: teamInOrg?.name,
             teamRole: teamInOrg?.role,
             isManager: teamInOrg?.isManager || teamInOrg?.role === 'line_manager' || teamInOrg?.role === 'team_lead',
@@ -833,18 +847,19 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
 
     const managersMap = new Map();
     uniqueEmployees.forEach((employee) => {
-      if (!employee.managerId) return;
+      const managerKey = employee.managerId || normalizeEmail(employee.managerEmail) || null;
+      if (!managerKey) return;
 
-      if (!managersMap.has(employee.managerId)) {
-        managersMap.set(employee.managerId, {
-          managerId: employee.managerId,
+      if (!managersMap.has(managerKey)) {
+        managersMap.set(managerKey, {
+          managerId: employee.managerId || managerKey,
           managerName: employee.managerName || 'Manager',
           managerEmail: employee.managerEmail || null,
           directReports: []
         });
       }
 
-      const manager = managersMap.get(employee.managerId);
+      const manager = managersMap.get(managerKey);
       manager.directReports.push({
         userId: employee.userId,
         name: employee.name,
@@ -860,7 +875,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
     );
 
     // Find employees without managers
-    const withoutManager = uniqueEmployees.filter(e => !e.managerId);
+    const withoutManager = uniqueEmployees.filter((employee) => {
+      return !employee.managerId && !normalizeEmail(employee.managerEmail);
+    });
 
     res.json({
       success: true,
@@ -906,6 +923,7 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
 
     const scope = await resolveAppraisalAccessScope(req);
     let directReports = (scope.directReports || []).map((member) => ({
+      id: member.userId,
       userId: member.userId,
       email: member.email,
       name: member.name,
@@ -921,14 +939,36 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
 
     if (directReports.length === 0) {
       const effectiveOrgId = scope.organizationId || req.currentOrganization?.id || req.session?.currentOrganizationId;
-      const fallbackIds = Array.from(new Set((req.directReports || []).filter(Boolean).map(String)));
+      const claimDirectReportIds = new Set((req.directReports || []).filter(Boolean).map(String));
+      const teams = sessionUser?.idpTeams || sessionUser?.teams || sessionUser?.userinfo?.teams || [];
+      const teamPermissionRows = sessionUser?.idpTeamPermissions || sessionUser?.userinfo?.team_permissions || [];
+
+      teams.forEach((team) => {
+        (team?.directReports || []).forEach((id) => claimDirectReportIds.add(String(id)));
+        (team?.directReportAccountIds || []).forEach((id) => claimDirectReportIds.add(String(id)));
+      });
+      teamPermissionRows.forEach((row) => {
+        (row?.direct_reports || []).forEach((id) => claimDirectReportIds.add(String(id)));
+      });
+
+      const fallbackIds = Array.from(claimDirectReportIds).filter(Boolean);
+      const objectIdFallbacks = fallbackIds.filter((id) => looksLikeObjectId(id));
 
       if (effectiveOrgId && fallbackIds.length > 0) {
+        const identityFilters = [
+          { idpSub: { $in: fallbackIds } },
+          ...(objectIdFallbacks.length > 0 ? [{ _id: { $in: objectIdFallbacks } }] : [])
+        ];
+
         const fallbackUsers = await User.find({
-          idpSub: { $in: fallbackIds },
-          $or: [
-            { currentOrganizationId: effectiveOrgId },
-            { 'idpTeams.organizationId': effectiveOrgId }
+          $and: [
+            { $or: identityFilters },
+            {
+              $or: [
+                { currentOrganizationId: effectiveOrgId },
+                { 'idpTeams.organizationId': effectiveOrgId }
+              ]
+            }
           ]
         }).select('idpSub email profile idpTeams').lean();
 
@@ -939,6 +979,7 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
             userDoc.email?.split('@')?.[0] ||
             'Unknown';
           return {
+            id: userDoc.idpSub || userDoc._id?.toString(),
             userId: userDoc.idpSub || userDoc._id?.toString(),
             email: userDoc.email,
             name,

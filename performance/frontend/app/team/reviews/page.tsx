@@ -188,8 +188,9 @@ export default function TeamReviewsPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {directReports.map((member: any) => {
-                    const memberReviews = reviewsByUser[member.id] || [];
+                  {directReports.map((member: any, index: number) => {
+                    const memberId = member.userId || member.id || member.email || `member-${index}`;
+                    const memberReviews = reviewsByUser[memberId] || [];
                     const latestReview = memberReviews[0];
                     const reviewId = latestReview?._id;
                     const selfDone = latestReview?.selfDone || false;
@@ -207,7 +208,7 @@ export default function TeamReviewsPage() {
                         : 'default';
                     
                     return (
-                      <TableRow key={member.id}>
+                      <TableRow key={memberId}>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>

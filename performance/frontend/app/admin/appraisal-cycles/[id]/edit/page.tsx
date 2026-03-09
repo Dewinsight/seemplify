@@ -18,6 +18,7 @@ interface AssignableEmployee {
     department?: string;
     jobTitle?: string;
     teamId?: string;
+    teamIds?: string[];
     managerId?: string;
     managerName?: string;
     managerEmail?: string;
@@ -178,7 +179,21 @@ export default function EditAppraisalCyclePage() {
                     : [];
 
                 const employeesInScope = targetTeamIds.length > 0
-                    ? assignableEmployees.filter((employee) => employee.teamId && targetTeamIds.includes(employee.teamId))
+                    ? assignableEmployees.filter((employee) => {
+                        const employeeTeamIds = Array.from(
+                            new Set(
+                                [
+                                    ...(Array.isArray(employee.teamIds) ? employee.teamIds : []),
+                                    employee.teamId
+                                ]
+                                    .filter(Boolean)
+                                    .map((value) => String(value))
+                            )
+                        );
+
+                        if (employeeTeamIds.length === 0) return false;
+                        return targetTeamIds.some((teamId) => employeeTeamIds.includes(String(teamId)));
+                    })
                     : assignableEmployees;
 
                 if (employeesInScope.length === 0) {

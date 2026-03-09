@@ -140,12 +140,13 @@ export default function TeamFeedbackPage() {
             </Alert>
           ) : (
             <Box>
-              {directReports.map((member: any) => {
-                const memberData = feedbackByUser[member.id];
+              {directReports.map((member: any, index: number) => {
+                const memberId = member.userId || member.id || member.email || `member-${index}`;
+                const memberData = feedbackByUser[memberId];
                 const memberFeedback = memberData?.feedback || [];
                 
                 return (
-                  <Accordion key={member.id} sx={{ mb: 1 }}>
+                  <Accordion key={memberId} sx={{ mb: 1 }}>
                     <AccordionSummary expandIcon={<ExpandMore />}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
                         <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
