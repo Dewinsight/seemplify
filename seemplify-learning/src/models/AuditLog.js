@@ -12,6 +12,7 @@ const AUDIT_ACTIONS = Object.freeze([
   'agent.invite',
   'agent.add',
   'agent.remove',
+  'agent.commission_rate_update',
   'course.partner_publish',
   'course.partner_approve',
   'course.partner_reject',
@@ -24,7 +25,13 @@ const AUDIT_ACTIONS = Object.freeze([
   'payment.gateway.default_changed',
   'payment.gateway.credential_updated',
   'payment.gateway.reauth_failed',
-  'payment.gateway.reauth_blocked'
+  'payment.gateway.reauth_blocked',
+  'partner.withdrawal.request',
+  'partner.withdrawal.cancel',
+  'partner.withdrawal.approve',
+  'partner.withdrawal.reject',
+  'partner.withdrawal.paid',
+  'reports.export'
 ])
 
 const AuditLogSchema = new mongoose.Schema({

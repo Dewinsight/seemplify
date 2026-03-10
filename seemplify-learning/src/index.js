@@ -7,12 +7,13 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import authRouter from './routes/auth.js'
 import setupRouter from './routes/setup.js'
-import { simpleLmsRouter, simpleLmsAdminRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
+import { simpleLmsRouter, simpleLmsAdminRouter, simpleLmsApiRouter, simpleLmsReportsApiRouter } from './routes/simpleLms.js'
 import partnerRouter from './routes/partner.js'
 import agentRouter from './routes/agent.js'
 import superUserApiRouter from './routes/superUser.js'
 import partnerApiRouter from './routes/partnerApi.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
+import { csrfGuard } from './middleware/csrf.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
 import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
@@ -52,6 +53,7 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }))
+app.use(csrfGuard())
 
 app.use('/css', express.static(join(__dirname, 'public/css')))
 app.use('/js', express.static(join(__dirname, 'public/js')))
@@ -678,6 +680,7 @@ app.use('/setup', setupRouter)
 app.use('/simple-lms', simpleLmsRouter)
 app.use('/admin', simpleLmsAdminRouter)
 app.use('/api/simple-lms', simpleLmsApiRouter)
+app.use('/api/reports', simpleLmsReportsApiRouter)
 app.use('/partner-dashboard', requireAuth, partnerRouter)
 app.use('/agent-dashboard', requireAuth, agentRouter)
 app.use('/api/super-users', requireAuth, superUserApiRouter)

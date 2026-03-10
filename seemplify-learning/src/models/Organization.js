@@ -66,6 +66,12 @@ const OrganizationSchema = new mongoose.Schema({
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AiinAccount'
+    },
+    agentCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null
     }
   }],
   settings: {

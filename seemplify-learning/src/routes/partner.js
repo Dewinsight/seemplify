@@ -5,9 +5,13 @@ import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { AgentInvite } from '../models/AgentInvite.js'
 import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
+import { PartnerWithdrawal } from '../models/PartnerWithdrawal.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
+import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
+import { AuditLog } from '../models/AuditLog.js'
 import { requirePartnerAccess, requireRole } from '../middleware/roles.js'
 import { emailService } from '../services/emailService.js'
+import { normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { resolveLearningRole } from '../utils/learningRoles.js'
 
@@ -43,10 +47,27 @@ const buildBaseUrl = (req) => {
   return host ? `${proto}://${host}` : ''
 }
 
-const normalizeSection = (value) => {
+const getSectionsForRole = (role) => {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  if (['super_admin', 'admin', 'channel_partner_super'].includes(normalizedRole)) {
+    return ['overview', 'agents', 'courses', 'reports', 'commissions', 'withdrawals', 'settings']
+  }
+  if (normalizedRole === 'channel_partner_user') {
+    return ['overview', 'agents', 'courses', 'reports', 'commissions']
+  }
+  if (normalizedRole === 'partner_super') {
+    return ['overview', 'courses', 'reports', 'commissions', 'withdrawals', 'settings']
+  }
+  if (normalizedRole === 'partner_user') {
+    return ['overview', 'courses', 'reports', 'commissions']
+  }
+  return ['overview']
+}
+
+const normalizeSection = (value, role) => {
   const normalized = String(value || '').trim().toLowerCase()
-  const sections = ['overview', 'agents', 'courses', 'reports', 'commissions', 'settings']
-  return sections.includes(normalized) ? normalized : 'overview'
+  const allowedSections = getSectionsForRole(role)
+  return allowedSections.includes(normalized) ? normalized : 'overview'
 }
 
 const canManageAgents = (role) => ['super_admin', 'admin', 'channel_partner_super', 'channel_partner_user'].includes(role)
@@ -56,6 +77,301 @@ const canRemoveAgents = (role) => ['super_admin', 'admin', 'channel_partner_supe
 const canApprovePartnerCourses = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
 
 const canRecommendAgentPayout = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+
+const canManageAgentCommissionRates = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+
+const canRequestPartnerWithdrawals = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+
+const normalizePartnerWithdrawalStatus = (value, fallback = 'pending') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['pending', 'approved', 'paid', 'rejected', 'cancelled'].includes(normalized) ? normalized : fallback
+}
+
+const formatPartnerWithdrawalStatus = (value) => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, ' ')
+)
+
+const buildPartnerRevenueExpression = () => ({
+  $max: [
+    0,
+    {
+      $subtract: [
+        { $ifNull: ['$metadata.platformShareMinor', 0] },
+        { $ifNull: ['$commissionAmountMinor', 0] }
+      ]
+    }
+  ]
+})
+
+const getPartnerWalletSnapshot = async (orgId) => {
+  if (!orgId || !mongoose.Types.ObjectId.isValid(String(orgId))) {
+    return {
+      totalSalesMinor: 0,
+      totalAgentCommissionMinor: 0,
+      partnerEarningsMinor: 0,
+      paidOutMinor: 0,
+      pendingWithdrawalMinor: 0,
+      availableBalanceMinor: 0
+    }
+  }
+
+  const partnerOrgObjectId = new mongoose.Types.ObjectId(String(orgId))
+  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+    AgentSaleAttribution.aggregate([
+      { $match: { partnerOrganization: partnerOrgObjectId } },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+        }
+      }
+    ]),
+    PartnerWithdrawal.aggregate([
+      { $match: { organization: partnerOrgObjectId } },
+      {
+        $group: {
+          _id: null,
+          paidOutMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+          pendingWithdrawalMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } }
+        }
+      }
+    ])
+  ])
+
+  const earnings = earningsRaw[0] || {
+    totalSalesMinor: 0,
+    totalAgentCommissionMinor: 0,
+    partnerEarningsMinor: 0
+  }
+  const withdrawals = withdrawalsRaw[0] || {
+    paidOutMinor: 0,
+    pendingWithdrawalMinor: 0
+  }
+  const partnerEarningsMinor = Math.max(0, Number(earnings.partnerEarningsMinor || 0))
+  const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
+  const pendingWithdrawalMinor = Math.max(0, Number(withdrawals.pendingWithdrawalMinor || 0))
+  const availableBalanceMinor = Math.max(0, partnerEarningsMinor - paidOutMinor - pendingWithdrawalMinor)
+
+  return {
+    totalSalesMinor: Math.max(0, Number(earnings.totalSalesMinor || 0)),
+    totalAgentCommissionMinor: Math.max(0, Number(earnings.totalAgentCommissionMinor || 0)),
+    partnerEarningsMinor,
+    paidOutMinor,
+    pendingWithdrawalMinor,
+    availableBalanceMinor
+  }
+}
+
+const parseDateBoundary = (value, boundary = 'start') => {
+  const candidate = String(value || '').trim()
+  if (!candidate) return null
+  const parsed = new Date(candidate)
+  if (Number.isNaN(parsed.getTime())) return null
+  if (boundary === 'end') {
+    parsed.setHours(23, 59, 59, 999)
+  } else {
+    parsed.setHours(0, 0, 0, 0)
+  }
+  return parsed
+}
+
+const resolveReportWindow = (query = {}, fallbackLookbackDays = 30) => {
+  const fallback = Number.isFinite(Number(fallbackLookbackDays))
+    ? Math.min(365, Math.max(1, Math.round(Number(fallbackLookbackDays))))
+    : 30
+  const lookbackCandidate = Number(query.reportLookbackDays || query.lookbackDays || query.lookback || fallback)
+  const lookbackDays = Number.isFinite(lookbackCandidate)
+    ? Math.min(365, Math.max(1, Math.round(lookbackCandidate)))
+    : fallback
+  const to = parseDateBoundary(query.reportTo || query.to || query.endDate || '', 'end') || new Date()
+  const from = parseDateBoundary(query.reportFrom || query.from || query.startDate || '', 'start')
+    || new Date(to.getTime() - (lookbackDays * 24 * 60 * 60 * 1000))
+  if (from.getTime() <= to.getTime()) {
+    return { from, to, lookbackDays }
+  }
+  return { from: to, to: from, lookbackDays }
+}
+
+const toIsoDateInput = (value) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
+const parseObjectIdFilter = (value) => {
+  const normalized = String(value || '').trim()
+  return mongoose.Types.ObjectId.isValid(normalized) ? normalized : ''
+}
+
+const buildPartnerSalesReportData = async ({
+  orgId,
+  from,
+  to,
+  agentId = '',
+  courseId = ''
+}) => {
+  const match = {
+    partnerOrganization: new mongoose.Types.ObjectId(String(orgId))
+  }
+  const dateRange = {}
+  if (from || to) {
+    dateRange.$gte = from || undefined
+    dateRange.$lte = to || undefined
+    match.createdAt = dateRange
+  }
+  if (mongoose.Types.ObjectId.isValid(String(agentId || ''))) {
+    match.agent = new mongoose.Types.ObjectId(String(agentId))
+  }
+  if (mongoose.Types.ObjectId.isValid(String(courseId || ''))) {
+    match.course = new mongoose.Types.ObjectId(String(courseId))
+  }
+
+  const rowsRaw = await AgentSaleAttribution.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt'
+          }
+        },
+        saleCount: { $sum: 1 },
+        grossSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+        agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+        partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ])
+
+  const rows = (rowsRaw || []).map((entry) => ({
+    date: String(entry?._id || ''),
+    saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+    grossSalesMinor: Math.max(0, Number(entry?.grossSalesMinor || 0)),
+    agentCommissionMinor: Math.max(0, Number(entry?.agentCommissionMinor || 0)),
+    partnerEarningsMinor: Math.max(0, Number(entry?.partnerEarningsMinor || 0))
+  }))
+  const summary = rows.reduce((acc, row) => ({
+    saleCount: acc.saleCount + row.saleCount,
+    grossSalesMinor: acc.grossSalesMinor + row.grossSalesMinor,
+    agentCommissionMinor: acc.agentCommissionMinor + row.agentCommissionMinor,
+    partnerEarningsMinor: acc.partnerEarningsMinor + row.partnerEarningsMinor
+  }), {
+    saleCount: 0,
+    grossSalesMinor: 0,
+    agentCommissionMinor: 0,
+    partnerEarningsMinor: 0
+  })
+  return { rows, summary, scope: 'partner' }
+}
+
+const buildPartnerChurnMetrics = async ({ orgId, from, to }) => {
+  const organizationId = new mongoose.Types.ObjectId(String(orgId))
+  const dateRange = {}
+  if (from || to) {
+    dateRange.$gte = from || undefined
+    dateRange.$lte = to || undefined
+  }
+
+  const [activeAgents, removedAgents, firstSaleRows, courseRows] = await Promise.all([
+    Account.countDocuments({
+      learningRole: 'channel_sales_agent',
+      partnerOrganization: organizationId
+    }),
+    AuditLog.countDocuments({
+      action: 'agent.remove',
+      targetOrganization: organizationId,
+      ...(Object.keys(dateRange).length > 0 ? { createdAt: dateRange } : {})
+    }),
+    AgentSaleAttribution.aggregate([
+      {
+        $match: {
+          partnerOrganization: organizationId,
+          ...(Object.keys(dateRange).length > 0 ? { createdAt: dateRange } : {})
+        }
+      },
+      {
+        $group: {
+          _id: '$agent',
+          firstSaleAt: { $min: '$createdAt' }
+        }
+      }
+    ]),
+    SimpleLmsCourse.find({ organization: organizationId }).select('_id').lean()
+  ])
+
+  const firstSaleAgentIds = (firstSaleRows || [])
+    .map((entry) => String(entry?._id || ''))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+  const firstSaleAgents = firstSaleAgentIds.length > 0
+    ? await Account.find({ _id: { $in: firstSaleAgentIds } }).select('_id createdAt').lean()
+    : []
+  const createdAtByAgentId = new Map(firstSaleAgents.map((entry) => [String(entry._id), entry.createdAt || null]))
+  const timeToFirstSaleDays = (firstSaleRows || [])
+    .map((entry) => {
+      const firstSaleAt = entry?.firstSaleAt ? new Date(entry.firstSaleAt) : null
+      const createdAt = createdAtByAgentId.get(String(entry?._id || ''))
+      if (!firstSaleAt || !createdAt) return null
+      const createdDate = new Date(createdAt)
+      if (Number.isNaN(firstSaleAt.getTime()) || Number.isNaN(createdDate.getTime())) return null
+      return Math.max(0, (firstSaleAt.getTime() - createdDate.getTime()) / (24 * 60 * 60 * 1000))
+    })
+    .filter((value) => Number.isFinite(value))
+  const averageTimeToFirstSaleDays = timeToFirstSaleDays.length > 0
+    ? Math.round((timeToFirstSaleDays.reduce((sum, value) => sum + value, 0) / timeToFirstSaleDays.length) * 10) / 10
+    : 0
+
+  const courseIds = (courseRows || [])
+    .map((course) => String(course?._id || ''))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id))
+  if (courseIds.length === 0) {
+    return {
+      activeAgents: Math.max(0, Number(activeAgents || 0)),
+      removedAgents: Math.max(0, Number(removedAgents || 0)),
+      agentAttritionRatePercent: 0,
+      averageTimeToFirstSaleDays,
+      activeEnrollments: 0,
+      atRiskEnrollments: 0,
+      learnerDropOffRatePercent: 0
+    }
+  }
+
+  const inactivityThreshold = new Date((to || new Date()).getTime() - (14 * 24 * 60 * 60 * 1000))
+  const [activeEnrollments, atRiskEnrollments] = await Promise.all([
+    SimpleLmsEnrollment.countDocuments({
+      course: { $in: courseIds },
+      status: 'active'
+    }),
+    SimpleLmsEnrollment.countDocuments({
+      course: { $in: courseIds },
+      status: 'active',
+      progressPercent: { $lt: 30 },
+      $or: [
+        { lastActivityAt: { $lte: inactivityThreshold } },
+        { lastActivityAt: { $exists: false } }
+      ]
+    })
+  ])
+
+  const agentBase = Math.max(1, Number(activeAgents || 0) + Number(removedAgents || 0))
+  const enrollmentBase = Math.max(1, Number(activeEnrollments || 0))
+  return {
+    activeAgents: Math.max(0, Number(activeAgents || 0)),
+    removedAgents: Math.max(0, Number(removedAgents || 0)),
+    agentAttritionRatePercent: Math.round((Math.max(0, Number(removedAgents || 0)) / agentBase) * 1000) / 10,
+    averageTimeToFirstSaleDays,
+    activeEnrollments: Math.max(0, Number(activeEnrollments || 0)),
+    atRiskEnrollments: Math.max(0, Number(atRiskEnrollments || 0)),
+    learnerDropOffRatePercent: Math.round((Math.max(0, Number(atRiskEnrollments || 0)) / enrollmentBase) * 1000) / 10
+  }
+}
 
 const loadPartnerDashboardData = async ({ orgId }) => {
   const since = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000))
@@ -193,13 +509,17 @@ router.use(requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_use
 
 router.get('/', async (req, res) => {
   try {
-    const section = normalizeSection(req.query.section)
     const role = resolveLearningRole(req.user)
+    const availableSections = getSectionsForRole(role)
+    const section = normalizeSection(req.query.section, role)
     const org = req.partnerOrg
+    const reportWindow = resolveReportWindow(req.query || {}, 30)
+    const reportAgentId = parseObjectIdFilter(req.query.reportAgentId || req.query.agentId || '')
+    const reportCourseId = parseObjectIdFilter(req.query.reportCourseId || req.query.courseId || '')
 
     const dashboardData = await loadPartnerDashboardData({ orgId: org._id })
 
-    const [agentRows, commissionRows, courseRows] = await Promise.all([
+    const [agentRows, commissionRows, courseRows, partnerWithdrawalRows, partnerWalletSummary, partnerSalesReportRaw, partnerChurnMetrics] = await Promise.all([
       Account.find({ partnerOrganization: org._id, learningRole: 'channel_sales_agent' })
         .select('_id email profile createdAt payoutProfile')
         .sort({ createdAt: -1 })
@@ -214,24 +534,112 @@ router.get('/', async (req, res) => {
         .sort({ updatedAt: -1 })
         .limit(120)
         .select('title summary status visibility pricing createdByName updatedAt createdBy')
-        .lean()
+        .lean(),
+      PartnerWithdrawal.find({ organization: org._id })
+        .sort({ createdAt: -1 })
+        .limit(120)
+        .populate('requestedBy', 'email profile')
+        .populate('reviewedBy', 'email profile')
+        .populate('paidBy', 'email profile')
+        .lean(),
+      getPartnerWalletSnapshot(org._id),
+      buildPartnerSalesReportData({
+        orgId: org._id,
+        from: reportWindow.from,
+        to: reportWindow.to,
+        agentId: reportAgentId,
+        courseId: reportCourseId
+      }),
+      buildPartnerChurnMetrics({
+        orgId: org._id,
+        from: reportWindow.from,
+        to: reportWindow.to
+      })
     ])
+
+    const agentRowsDecorated = (agentRows || []).map((agent) => {
+      const member = (org.members || []).find((entry) => String(entry.account) === String(agent._id))
+      const override = Number(member?.agentCommissionRate)
+      return {
+        ...agent,
+        agentCommissionRate: Number.isFinite(override) ? Math.min(100, Math.max(0, override)) : null
+      }
+    })
+
+    const payoutCurrency = normalizeSimpleLmsCurrencyCode(
+      org?.partnerSettings?.payoutProfile?.currency || 'NGN',
+      'NGN'
+    )
+    const partnerWallet = {
+      ...partnerWalletSummary,
+      totalSalesDisplay: formatCurrencyAmount(partnerWalletSummary.totalSalesMinor, payoutCurrency),
+      totalAgentCommissionDisplay: formatCurrencyAmount(partnerWalletSummary.totalAgentCommissionMinor, payoutCurrency),
+      partnerEarningsDisplay: formatCurrencyAmount(partnerWalletSummary.partnerEarningsMinor, payoutCurrency),
+      paidOutDisplay: formatCurrencyAmount(partnerWalletSummary.paidOutMinor, payoutCurrency),
+      pendingWithdrawalDisplay: formatCurrencyAmount(partnerWalletSummary.pendingWithdrawalMinor, payoutCurrency),
+      availableBalanceDisplay: formatCurrencyAmount(partnerWalletSummary.availableBalanceMinor, payoutCurrency)
+    }
+
+    const partnerSalesReport = {
+      ...partnerSalesReportRaw,
+      rows: (partnerSalesReportRaw.rows || []).map((entry) => ({
+        ...entry,
+        grossSalesDisplay: formatCurrencyAmount(entry.grossSalesMinor || 0, payoutCurrency),
+        agentCommissionDisplay: formatCurrencyAmount(entry.agentCommissionMinor || 0, payoutCurrency),
+        partnerEarningsDisplay: formatCurrencyAmount(entry.partnerEarningsMinor || 0, payoutCurrency)
+      })),
+      summary: {
+        ...partnerSalesReportRaw.summary,
+        grossSalesDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.grossSalesMinor || 0, payoutCurrency),
+        agentCommissionDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.agentCommissionMinor || 0, payoutCurrency),
+        partnerEarningsDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.partnerEarningsMinor || 0, payoutCurrency)
+      }
+    }
+    const reportFilters = {
+      from: toIsoDateInput(reportWindow.from),
+      to: toIsoDateInput(reportWindow.to),
+      lookbackDays: reportWindow.lookbackDays,
+      agentId: reportAgentId,
+      courseId: reportCourseId
+    }
+
+    const partnerWithdrawals = (partnerWithdrawalRows || []).map((entry) => {
+      const status = normalizePartnerWithdrawalStatus(entry.status, 'pending')
+      return {
+        ...entry,
+        status,
+        statusLabel: formatPartnerWithdrawalStatus(status),
+        requestedByName: entry.requestedBy?.profile?.name || entry.requestedBy?.email || 'Partner Admin',
+        reviewedByName: entry.reviewedBy?.profile?.name || entry.reviewedBy?.email || '',
+        paidByName: entry.paidBy?.profile?.name || entry.paidBy?.email || '',
+        amountDisplay: formatCurrencyAmount(entry.amountMinor, entry.currency || payoutCurrency),
+        canCancel: ['pending', 'approved'].includes(status)
+      }
+    })
 
     return res.render('partner-dashboard', {
       title: `${res.locals.brandLearningName || 'Seemplify Learning'} - Partner Dashboard`,
       activePage: 'partner-dashboard',
       activeSection: section,
+      availableSections,
       user: req.user,
       learningRole: role,
       organization: org,
       dashboardData,
-      agents: agentRows,
+      agents: agentRowsDecorated,
       commissions: commissionRows,
       courses: courseRows,
+      partnerWithdrawals,
+      partnerWallet,
+      reportFilters,
+      partnerSalesReport,
+      partnerChurnMetrics,
       canManageAgents: canManageAgents(role),
       canRemoveAgents: canRemoveAgents(role),
       canApprovePartnerCourses: canApprovePartnerCourses(role),
       canRecommendAgentPayout: canRecommendAgentPayout(role),
+      canManageAgentCommissionRates: canManageAgentCommissionRates(role),
+      canRequestPartnerWithdrawals: canRequestPartnerWithdrawals(role),
       formatCurrencyAmount,
       success: String(req.query.success || ''),
       error: String(req.query.error || ''),
@@ -409,6 +817,182 @@ router.post('/agents/:agentId/remove', async (req, res) => {
   } catch (error) {
     console.error('Partner remove agent error:', error)
     return res.redirect(`${redirectTo}&error=${encodeURIComponent(error.message || 'Failed to remove agent.')}`)
+  }
+})
+
+router.post('/agents/:agentId/commission-rate', async (req, res) => {
+  const redirectTo = '/partner-dashboard?section=agents'
+  try {
+    const role = resolveLearningRole(req.user)
+    if (!canManageAgentCommissionRates(role)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can update per-agent commission rates.')}`)
+    }
+
+    const agentId = String(req.params.agentId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(agentId)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Invalid agent selected.')}`)
+    }
+
+    const org = req.partnerOrg
+    const member = (org.members || []).find((entry) => (
+      String(entry.account) === agentId && entry.role === 'sales_agent' && entry.status === 'active'
+    ))
+    if (!member) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Agent is not active in this organization.')}`)
+    }
+
+    const rawRate = String(req.body.ratePercent || '').trim()
+    const previousRate = Number(member.agentCommissionRate)
+    let nextRate = null
+    if (rawRate) {
+      const parsed = Number(rawRate)
+      if (!Number.isFinite(parsed)) {
+        return res.redirect(`${redirectTo}&error=${encodeURIComponent('Enter a valid commission percentage.')}`)
+      }
+      nextRate = Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+    }
+
+    member.agentCommissionRate = nextRate
+    member.updatedAt = new Date()
+    member.updatedBy = req.user._id
+    await org.save()
+
+    await logAuditEvent({
+      action: 'agent.commission_rate_update',
+      performedBy: req.user._id,
+      targetAccount: member.account,
+      targetOrganization: org._id,
+      metadata: {
+        previousRate: Number.isFinite(previousRate) ? Math.min(100, Math.max(0, previousRate)) : null,
+        nextRate
+      },
+      req
+    })
+
+    return res.redirect(`${redirectTo}&success=${encodeURIComponent(nextRate === null ? 'Agent commission override cleared.' : 'Agent commission rate updated.')}`)
+  } catch (error) {
+    console.error('Partner agent commission-rate update error:', error)
+    return res.redirect(`${redirectTo}&error=${encodeURIComponent(error.message || 'Failed to update agent commission rate.')}`)
+  }
+})
+
+router.post('/withdrawals/request', async (req, res) => {
+  const redirectTo = '/partner-dashboard?section=withdrawals'
+  try {
+    const role = resolveLearningRole(req.user)
+    if (!canRequestPartnerWithdrawals(role)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can request organization withdrawals.')}`)
+    }
+
+    const org = req.partnerOrg
+    const amountMinor = parseMajorAmountToMinor(req.body.amount)
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Enter a valid withdrawal amount.')}`)
+    }
+
+    const currency = normalizeSimpleLmsCurrencyCode(
+      req.body.currency || org?.partnerSettings?.payoutProfile?.currency || 'NGN',
+      'NGN'
+    )
+    const walletSnapshot = await getPartnerWalletSnapshot(org._id)
+    if (amountMinor > walletSnapshot.availableBalanceMinor) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent(`Withdrawal exceeds available partner balance (${formatCurrencyAmount(walletSnapshot.availableBalanceMinor, currency)}).`)}`)
+    }
+
+    const payoutProfile = org?.partnerSettings?.payoutProfile || {}
+    await PartnerWithdrawal.create({
+      organization: org._id,
+      requestedBy: req.user._id,
+      amountMinor: Math.round(amountMinor),
+      currency,
+      status: 'pending',
+      requestedAt: new Date(),
+      notes: String(req.body.notes || '').trim().slice(0, 1200),
+      payoutProfileSnapshot: {
+        accountName: String(payoutProfile.accountName || '').trim().slice(0, 200),
+        accountNumber: String(payoutProfile.accountNumber || '').trim().slice(0, 64),
+        bankName: String(payoutProfile.bankName || '').trim().slice(0, 200),
+        bankCode: String(payoutProfile.bankCode || '').trim().slice(0, 80),
+        swiftCode: String(payoutProfile.swiftCode || '').trim().slice(0, 80),
+        paymentEmail: String(payoutProfile.paymentEmail || '').trim().toLowerCase().slice(0, 320),
+        country: String(payoutProfile.country || '').trim().slice(0, 80),
+        notes: String(payoutProfile.notes || '').trim().slice(0, 1200)
+      }
+    })
+
+    await logAuditEvent({
+      action: 'partner.withdrawal.request',
+      performedBy: req.user._id,
+      targetOrganization: org._id,
+      metadata: {
+        amountMinor: Math.round(amountMinor),
+        currency
+      },
+      req
+    })
+
+    return res.redirect(`${redirectTo}&success=${encodeURIComponent('Partner withdrawal request submitted for admin review.')}`)
+  } catch (error) {
+    console.error('Partner withdrawal request error:', error)
+    return res.redirect(`${redirectTo}&error=${encodeURIComponent(error.message || 'Failed to submit withdrawal request.')}`)
+  }
+})
+
+router.post('/withdrawals/:withdrawalId/cancel', async (req, res) => {
+  const redirectTo = '/partner-dashboard?section=withdrawals'
+  try {
+    const role = resolveLearningRole(req.user)
+    const org = req.partnerOrg
+    const withdrawalId = String(req.params.withdrawalId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Invalid withdrawal request selected.')}`)
+    }
+
+    const withdrawal = await PartnerWithdrawal.findOne({
+      _id: withdrawalId,
+      organization: org._id
+    })
+    if (!withdrawal) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Withdrawal request not found.')}`)
+    }
+
+    const currentStatus = normalizePartnerWithdrawalStatus(withdrawal.status, 'pending')
+    if (!['pending', 'approved'].includes(currentStatus)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only pending or approved requests can be cancelled.')}`)
+    }
+
+    const isRequester = String(withdrawal.requestedBy || '') === String(req.user._id)
+    if (!isRequester && !canRequestPartnerWithdrawals(role)) {
+      return res.redirect(`${redirectTo}&error=${encodeURIComponent('You do not have permission to cancel this withdrawal request.')}`)
+    }
+
+    const cancelNote = String(req.body.cancelNote || '').trim().slice(0, 3000)
+    withdrawal.status = 'cancelled'
+    withdrawal.reviewedBy = req.user._id
+    withdrawal.reviewedAt = new Date()
+    if (cancelNote) {
+      const previousAdminNotes = String(withdrawal.adminNotes || '').trim()
+      withdrawal.adminNotes = previousAdminNotes
+        ? `${previousAdminNotes}\nCancelled: ${cancelNote}`.slice(0, 3000)
+        : `Cancelled: ${cancelNote}`
+    }
+    await withdrawal.save()
+
+    await logAuditEvent({
+      action: 'partner.withdrawal.cancel',
+      performedBy: req.user._id,
+      targetOrganization: org._id,
+      metadata: {
+        withdrawalId: withdrawal._id,
+        status: withdrawal.status
+      },
+      req
+    })
+
+    return res.redirect(`${redirectTo}&success=${encodeURIComponent('Partner withdrawal request cancelled.')}`)
+  } catch (error) {
+    console.error('Partner withdrawal cancel error:', error)
+    return res.redirect(`${redirectTo}&error=${encodeURIComponent(error.message || 'Failed to cancel withdrawal request.')}`)
   }
 })
 

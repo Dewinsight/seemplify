@@ -252,8 +252,21 @@
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <% const section = activeSection || 'overview' %>
+  <% const sectionList = Array.isArray(availableSections) && availableSections.length > 0 ? availableSections : ['overview'] %>
+  <% const hasSection = (value) => sectionList.includes(value) %>
   <% const metrics = dashboardData?.metrics || {} %>
   <% const payout = organization?.partnerSettings?.payoutProfile || {} %>
+  <% const currentUserId = String(user?._id || '') %>
+  <% const reportState = reportFilters || {} %>
+  <% const reportQuery = [] %>
+  <% if (reportState.from) reportQuery.push(`from=${encodeURIComponent(reportState.from)}`) %>
+  <% if (reportState.to) reportQuery.push(`to=${encodeURIComponent(reportState.to)}`) %>
+  <% if (reportState.lookbackDays) reportQuery.push(`lookbackDays=${encodeURIComponent(reportState.lookbackDays)}`) %>
+  <% if (reportState.agentId) reportQuery.push(`agentId=${encodeURIComponent(reportState.agentId)}`) %>
+  <% if (reportState.courseId) reportQuery.push(`courseId=${encodeURIComponent(reportState.courseId)}`) %>
+  <% const reportQueryString = reportQuery.join('&') %>
+  <% const partnerSalesExportHref = `/api/reports/sales/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
+  <% const partnerCommissionExportHref = `/api/reports/commissions/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
 
   <main class="partner-shell">
     <aside class="partner-side">
@@ -264,12 +277,27 @@
       </article>
 
       <nav class="partner-nav">
-        <a href="/partner-dashboard?section=overview" class="<%= section === 'overview' ? 'active' : '' %>">Overview</a>
-        <a href="/partner-dashboard?section=agents" class="<%= section === 'agents' ? 'active' : '' %>">Agents</a>
-        <a href="/partner-dashboard?section=courses" class="<%= section === 'courses' ? 'active' : '' %>">Courses</a>
-        <a href="/partner-dashboard?section=reports" class="<%= section === 'reports' ? 'active' : '' %>">Reports</a>
-        <a href="/partner-dashboard?section=commissions" class="<%= section === 'commissions' ? 'active' : '' %>">Commissions</a>
-        <a href="/partner-dashboard?section=settings" class="<%= section === 'settings' ? 'active' : '' %>">Settings</a>
+        <% if (hasSection('overview')) { %>
+          <a href="/partner-dashboard?section=overview" class="<%= section === 'overview' ? 'active' : '' %>">Overview</a>
+        <% } %>
+        <% if (hasSection('agents')) { %>
+          <a href="/partner-dashboard?section=agents" class="<%= section === 'agents' ? 'active' : '' %>">Agents</a>
+        <% } %>
+        <% if (hasSection('courses')) { %>
+          <a href="/partner-dashboard?section=courses" class="<%= section === 'courses' ? 'active' : '' %>">Courses</a>
+        <% } %>
+        <% if (hasSection('reports')) { %>
+          <a href="/partner-dashboard?section=reports" class="<%= section === 'reports' ? 'active' : '' %>">Reports</a>
+        <% } %>
+        <% if (hasSection('commissions')) { %>
+          <a href="/partner-dashboard?section=commissions" class="<%= section === 'commissions' ? 'active' : '' %>">Commissions</a>
+        <% } %>
+        <% if (hasSection('withdrawals')) { %>
+          <a href="/partner-dashboard?section=withdrawals" class="<%= section === 'withdrawals' ? 'active' : '' %>">Withdrawals</a>
+        <% } %>
+        <% if (hasSection('settings') && canRecommendAgentPayout) { %>
+          <a href="/partner-dashboard?section=settings" class="<%= section === 'settings' ? 'active' : '' %>">Settings</a>
+        <% } %>
       </nav>
     </aside>
 
@@ -313,7 +341,7 @@
                   <% dashboardData.topAgents.forEach((row) => { %>
                     <tr>
                       <td><%= row.agent?.profile?.name || 'Agent' %></td>
-                      <td><%= row.agent?.email || '—' %></td>
+                      <td><%= row.agent?.email || '-' %></td>
                       <td><%= row.salesCount %></td>
                       <td><%= formatCurrencyAmount(row.totalSalesMinor, 'NGN') %></td>
                       <td><%= formatCurrencyAmount(row.totalCommissionMinor, 'NGN') %></td>
@@ -350,28 +378,48 @@
             <p>No agents are linked to this organization yet.</p>
           <% } else { %>
             <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Joined</th>
-                    <th>Payout Profile</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <% agents.forEach((agent) => { %>
+	              <table>
+	                <thead>
+	                  <tr>
+	                    <th>Name</th>
+	                    <th>Email</th>
+	                    <th>Joined</th>
+	                    <th>Payout Profile</th>
+	                    <th>Commission Override (%)</th>
+	                    <th>Actions</th>
+	                  </tr>
+	                </thead>
+	                <tbody>
+	                  <% agents.forEach((agent) => { %>
                     <tr>
                       <td><%= agent.profile?.name || 'Agent' %></td>
-                      <td><%= agent.email %></td>
-                      <td><%= new Date(agent.createdAt).toLocaleDateString() %></td>
-                      <td><%= agent.payoutProfile?.bankName && agent.payoutProfile?.accountNumber ? `${agent.payoutProfile.bankName} • ${agent.payoutProfile.accountNumber}` : 'Incomplete' %></td>
-                      <td>
-                        <div class="actions">
-                          <% if (canRemoveAgents) { %>
-                            <form method="post" action="/partner-dashboard/agents/<%= agent._id %>/remove">
-                              <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+	                      <td><%= agent.email %></td>
+	                      <td><%= new Date(agent.createdAt).toLocaleDateString() %></td>
+	                      <td><%= agent.payoutProfile?.bankName && agent.payoutProfile?.accountNumber ? `${agent.payoutProfile.bankName} - ${agent.payoutProfile.accountNumber}` : 'Incomplete' %></td>
+	                      <td>
+	                        <% if (canManageAgentCommissionRates) { %>
+	                          <form method="post" action="/partner-dashboard/agents/<%= agent._id %>/commission-rate" class="inline-form">
+	                            <input
+	                              class="input"
+	                              type="number"
+	                              name="ratePercent"
+	                              min="0"
+	                              max="100"
+	                              step="0.01"
+	                              value="<%= Number.isFinite(Number(agent.agentCommissionRate)) ? Number(agent.agentCommissionRate) : '' %>"
+	                              placeholder="default"
+	                            >
+	                            <button class="btn btn-secondary btn-sm" type="submit">Save</button>
+	                          </form>
+	                        <% } else { %>
+	                          <span class="tiny"><%= Number.isFinite(Number(agent.agentCommissionRate)) ? Number(agent.agentCommissionRate) : 'default' %></span>
+	                        <% } %>
+	                      </td>
+	                      <td>
+	                        <div class="actions">
+	                          <% if (canRemoveAgents) { %>
+	                            <form method="post" action="/partner-dashboard/agents/<%= agent._id %>/remove">
+	                              <button class="btn btn-danger btn-sm" type="submit">Remove</button>
                             </form>
                           <% } else { %>
                             <span class="tiny">Add-only role</span>
@@ -447,24 +495,89 @@
 
       <% if (section === 'reports') { %>
         <article class="panel">
-          <h2>Sales Reports (Last 30 Days)</h2>
-          <p>Daily deal count and attributed sales volume for your organization.</p>
-          <% if (!dashboardData?.salesTrend || dashboardData.salesTrend.length === 0) { %>
-            <p>No recent sales trend data.</p>
+          <h2>Sales & Churn Reports</h2>
+          <p>Daily sales tracking, commission flow, and churn analytics for your partner organization.</p>
+          <form method="get" action="/partner-dashboard" class="inline-form">
+            <input type="hidden" name="section" value="reports">
+            <div class="grid-two">
+              <div class="field">
+                <label>From</label>
+                <input type="date" name="reportFrom" value="<%= reportState.from || '' %>">
+              </div>
+              <div class="field">
+                <label>To</label>
+                <input type="date" name="reportTo" value="<%= reportState.to || '' %>">
+              </div>
+              <div class="field">
+                <label>Lookback (days)</label>
+                <input type="number" min="1" max="365" name="reportLookbackDays" value="<%= Number(reportState.lookbackDays || 30) %>">
+              </div>
+              <div class="field">
+                <label>Agent ID</label>
+                <input type="text" name="reportAgentId" value="<%= reportState.agentId || '' %>" placeholder="Optional">
+              </div>
+              <div class="field">
+                <label>Course ID</label>
+                <input type="text" name="reportCourseId" value="<%= reportState.courseId || '' %>" placeholder="Optional">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+              <a class="btn btn-secondary btn-sm" href="/partner-dashboard?section=reports">Reset</a>
+              <a class="btn btn-secondary btn-sm" href="<%= partnerSalesExportHref %>">Export Sales CSV</a>
+              <a class="btn btn-secondary btn-sm" href="<%= partnerCommissionExportHref %>">Export Commissions CSV</a>
+            </div>
+          </form>
+          <div class="stats-grid">
+            <div class="stat"><span>Sales</span><strong><%= Number(partnerSalesReport?.summary?.saleCount || 0) %></strong></div>
+            <div class="stat"><span>Gross Sales</span><strong><%= partnerSalesReport?.summary?.grossSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Agent Commission</span><strong><%= partnerSalesReport?.summary?.agentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Partner Earnings</span><strong><%= partnerSalesReport?.summary?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+          </div>
+          <% if (!partnerSalesReport?.rows || partnerSalesReport.rows.length === 0) { %>
+            <p class="tiny">No daily sales data for this report window.</p>
           <% } else { %>
-            <div class="trend">
-              <% dashboardData.salesTrend.forEach((point) => { %>
-                <div class="trend-row">
-                  <span><strong><%= point.date %></strong> • <%= point.deals %> deal(s)</span>
-                  <span><%= formatCurrencyAmount(point.salesMinor, 'NGN') %></span>
-                </div>
-              <% }) %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Sales</th>
+                    <th>Gross</th>
+                    <th>Agent Commission</th>
+                    <th>Partner Earnings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% partnerSalesReport.rows.forEach((entry) => { %>
+                    <tr>
+                      <td><%= entry.date %></td>
+                      <td><%= Number(entry.saleCount || 0) %></td>
+                      <td><%= entry.grossSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                      <td><%= entry.agentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                      <td><%= entry.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
             </div>
           <% } %>
         </article>
+        <article class="panel">
+          <h3>Churn Metrics</h3>
+          <p>Agent attrition, time-to-first-sale, and learner drop-off indicators.</p>
+          <div class="stats-grid">
+            <div class="stat"><span>Active Agents</span><strong><%= Number(partnerChurnMetrics?.activeAgents || 0) %></strong></div>
+            <div class="stat"><span>Removed Agents</span><strong><%= Number(partnerChurnMetrics?.removedAgents || 0) %></strong></div>
+            <div class="stat"><span>Attrition</span><strong><%= Number(partnerChurnMetrics?.agentAttritionRatePercent || 0) %>%</strong></div>
+            <div class="stat"><span>Time to First Sale</span><strong><%= Number(partnerChurnMetrics?.averageTimeToFirstSaleDays || 0) %>d</strong></div>
+            <div class="stat"><span>At-Risk Enrollments</span><strong><%= Number(partnerChurnMetrics?.atRiskEnrollments || 0) %></strong></div>
+            <div class="stat"><span>Learner Drop-Off</span><strong><%= Number(partnerChurnMetrics?.learnerDropOffRatePercent || 0) %>%</strong></div>
+          </div>
+        </article>
       <% } %>
 
-      <% if (section === 'commissions') { %>
+	      <% if (section === 'commissions') { %>
         <article class="panel">
           <h2>Agent Commissions</h2>
           <p>Trace every attributed sale, current payout status, and commission values.</p>
@@ -511,10 +624,100 @@
               </table>
             </div>
           <% } %>
-        </article>
-      <% } %>
+	        </article>
+	      <% } %>
 
-      <% if (section === 'settings') { %>
+	      <% if (section === 'withdrawals') { %>
+	        <article class="panel">
+	          <h2>Partner Wallet</h2>
+	          <p>Withdraw organization earnings from platform share after agent commissions.</p>
+	          <div class="stats-grid">
+	            <div class="stat"><span>Total Sales</span><strong><%= partnerWallet?.totalSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Agent Commissions</span><strong><%= partnerWallet?.totalAgentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Partner Earnings</span><strong><%= partnerWallet?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Pending Withdrawals</span><strong><%= partnerWallet?.pendingWithdrawalDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Paid Out</span><strong><%= partnerWallet?.paidOutDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Available Balance</span><strong><%= partnerWallet?.availableBalanceDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	          </div>
+	        </article>
+
+	        <article class="panel">
+	          <h3>Request Withdrawal</h3>
+	          <% if (canRequestPartnerWithdrawals) { %>
+	            <form method="post" action="/partner-dashboard/withdrawals/request" style="display:grid; gap:10px;">
+	              <div class="grid-two">
+	                <div class="field">
+	                  <label>Amount (<%= payout.currency || 'NGN' %>)</label>
+	                  <input type="number" name="amount" min="0" step="0.01" required placeholder="0.00">
+	                </div>
+	                <div class="field">
+	                  <label>Currency</label>
+	                  <input type="text" name="currency" maxlength="3" value="<%= payout.currency || 'NGN' %>">
+	                </div>
+	              </div>
+	              <div class="field">
+	                <label>Notes</label>
+	                <textarea name="notes" maxlength="1200" placeholder="Optional withdrawal context"></textarea>
+	              </div>
+	              <button class="btn btn-primary" type="submit" style="width:fit-content;">Submit Withdrawal Request</button>
+	            </form>
+	          <% } else { %>
+	            <p class="tiny">Your role cannot submit organization withdrawal requests.</p>
+	          <% } %>
+	        </article>
+
+	        <article class="panel">
+	          <h3>Withdrawal Requests</h3>
+	          <% if (!partnerWithdrawals || partnerWithdrawals.length === 0) { %>
+	            <p>No partner withdrawal requests yet.</p>
+	          <% } else { %>
+	            <div class="table-wrap">
+	              <table>
+	                <thead>
+	                  <tr>
+	                    <th>Date</th>
+	                    <th>Requested By</th>
+	                    <th>Amount</th>
+	                    <th>Status</th>
+	                    <th>Review</th>
+	                    <th>Actions</th>
+	                  </tr>
+	                </thead>
+	                <tbody>
+	                  <% partnerWithdrawals.forEach((request) => { %>
+	                    <% const requestOwnerId = String(request.requestedBy?._id || request.requestedBy || '') %>
+	                    <% const canCancelRequest = request.canCancel && (canRequestPartnerWithdrawals || requestOwnerId === currentUserId) %>
+	                    <tr>
+	                      <td><%= new Date(request.createdAt).toLocaleString() %></td>
+	                      <td>
+	                        <strong><%= request.requestedByName %></strong><br>
+	                        <span class="tiny"><%= request.requestedBy?.email || '' %></span>
+	                      </td>
+	                      <td><%= request.amountDisplay %></td>
+	                      <td><%= request.statusLabel %></td>
+	                      <td>
+	                        <span class="tiny">Reviewer: <%= request.reviewedByName || '-' %></span><br>
+	                        <span class="tiny">Paid By: <%= request.paidByName || '-' %></span>
+	                      </td>
+	                      <td>
+	                        <% if (canCancelRequest) { %>
+	                          <form method="post" action="/partner-dashboard/withdrawals/<%= request._id %>/cancel">
+	                            <button class="btn btn-danger btn-sm" type="submit">Cancel</button>
+	                          </form>
+	                        <% } else { %>
+	                          <span class="tiny">No action</span>
+	                        <% } %>
+	                      </td>
+	                    </tr>
+	                  <% }) %>
+	                </tbody>
+	              </table>
+	            </div>
+	          <% } %>
+	        </article>
+	      <% } %>
+
+	      <% if (section === 'settings') { %>
         <article class="panel">
           <h2>Partner Settings</h2>
           <form method="post" action="/partner-dashboard/settings" style="display:grid; gap:12px;">
@@ -596,3 +799,4 @@
   </main>
 </body>
 </html>
+

@@ -11,6 +11,7 @@ import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
 import { SimpleLmsWithdrawal } from '../models/SimpleLmsWithdrawal.js'
+import { PartnerWithdrawal } from '../models/PartnerWithdrawal.js'
 import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting.js'
 import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
@@ -52,6 +53,7 @@ import {
 const pageRouter = express.Router()
 const adminPageRouter = express.Router()
 const apiRouter = express.Router()
+const reportsApiRouter = express.Router()
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -274,6 +276,13 @@ const resolveAgentReferralForCheckout = async ({ req, course }) => {
   const agent = await resolveAgentForReferral({ course, referralCode })
   if (!agent?._id) return null
 
+  const buyerAccountId = toIdString(req.user?._id)
+  if (buyerAccountId && buyerAccountId === toIdString(agent._id)) {
+    // Block self-referrals so agents cannot earn commission on their own purchases.
+    clearReferralCodeForCourse(req, course._id)
+    return null
+  }
+
   setReferralCodeForCourse(req, course._id, referralCode)
 
   const organization = await Organization.findById(course.organization)
@@ -314,6 +323,7 @@ const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => 
     Organization.findById(partnerOrganizationId).select('_id partnerType partnerSettings members').lean()
   ])
   if (!agent || String(agent.learningRole || '').trim().toLowerCase() !== 'channel_sales_agent') return null
+  if (toIdString(payment.account) === toIdString(agent._id)) return null
   if (!organization || organization.partnerType === 'none') return null
   if (String(agent.partnerOrganization || '') !== String(partnerOrganizationId)) return null
   if (String(course.organization || '') !== String(partnerOrganizationId)) return null
@@ -544,6 +554,71 @@ const hasValidPayoutProfile = (profile = {}) => {
   const paymentEmail = String(profile.paymentEmail || '').trim()
   if (paymentEmail) return true
   return Boolean(accountName && accountNumber && bankName)
+}
+
+const buildPartnerRevenueExpression = () => ({
+  $max: [
+    0,
+    {
+      $subtract: [
+        { $ifNull: ['$metadata.platformShareMinor', 0] },
+        { $ifNull: ['$commissionAmountMinor', 0] }
+      ]
+    }
+  ]
+})
+
+const getPartnerWalletSnapshot = async (organizationId) => {
+  const normalizedOrgId = String(organizationId || '').trim()
+  if (!mongoose.Types.ObjectId.isValid(normalizedOrgId)) {
+    return {
+      totalSalesMinor: 0,
+      totalAgentCommissionMinor: 0,
+      partnerEarningsMinor: 0,
+      paidOutMinor: 0,
+      pendingWithdrawalMinor: 0,
+      availableBalanceMinor: 0
+    }
+  }
+
+  const organizationObjectId = new mongoose.Types.ObjectId(normalizedOrgId)
+  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+    AgentSaleAttribution.aggregate([
+      { $match: { partnerOrganization: organizationObjectId } },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+        }
+      }
+    ]),
+    PartnerWithdrawal.aggregate([
+      { $match: { organization: organizationObjectId } },
+      {
+        $group: {
+          _id: null,
+          paidOutMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+          pendingWithdrawalMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } }
+        }
+      }
+    ])
+  ])
+
+  const earnings = earningsRaw[0] || { totalSalesMinor: 0, totalAgentCommissionMinor: 0, partnerEarningsMinor: 0 }
+  const withdrawals = withdrawalsRaw[0] || { paidOutMinor: 0, pendingWithdrawalMinor: 0 }
+  const partnerEarningsMinor = Math.max(0, Number(earnings.partnerEarningsMinor || 0))
+  const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
+  const pendingWithdrawalMinor = Math.max(0, Number(withdrawals.pendingWithdrawalMinor || 0))
+  return {
+    totalSalesMinor: Math.max(0, Number(earnings.totalSalesMinor || 0)),
+    totalAgentCommissionMinor: Math.max(0, Number(earnings.totalAgentCommissionMinor || 0)),
+    partnerEarningsMinor,
+    paidOutMinor,
+    pendingWithdrawalMinor,
+    availableBalanceMinor: Math.max(0, partnerEarningsMinor - paidOutMinor - pendingWithdrawalMinor)
+  }
 }
 
 const getCreatorWalletSnapshot = async (creatorId) => {
@@ -1270,6 +1345,828 @@ const parseDateBoundary = (value, boundary = 'start') => {
     parsed.setHours(0, 0, 0, 0)
   }
   return parsed
+}
+
+const resolveReportWindow = (query = {}, fallbackLookbackDays = 30) => {
+  const fallback = Number.isFinite(Number(fallbackLookbackDays))
+    ? Math.min(365, Math.max(1, Math.round(Number(fallbackLookbackDays))))
+    : 30
+  const lookbackCandidate = Number(query.lookbackDays || query.lookback || fallback)
+  const lookbackDays = Number.isFinite(lookbackCandidate)
+    ? Math.min(365, Math.max(1, Math.round(lookbackCandidate)))
+    : fallback
+  const to = parseDateBoundary(query.to || query.endDate || '', 'end') || new Date()
+  const from = parseDateBoundary(query.from || query.startDate || '', 'start')
+    || new Date(to.getTime() - (lookbackDays * 24 * 60 * 60 * 1000))
+  if (from.getTime() <= to.getTime()) {
+    return { from, to, lookbackDays }
+  }
+  return { from: to, to: from, lookbackDays }
+}
+
+const parseObjectIdFilter = (value) => {
+  const normalized = String(value || '').trim()
+  return mongoose.Types.ObjectId.isValid(normalized)
+    ? normalized
+    : ''
+}
+
+const resolveReportPartnerOrganizationId = ({ role, user, query = {} }) => {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  if (canManagePlatform(normalizedRole)) {
+    return parseObjectIdFilter(query.partnerOrganization || query.organization || query.orgId || '')
+  }
+  if (isPartnerDashboardRole(normalizedRole) || normalizedRole === 'channel_sales_agent') {
+    return parseObjectIdFilter(user?.partnerOrganization || '')
+  }
+  return ''
+}
+
+const toIsoDateInput = (value) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
+const resolveReportsContext = ({ req, fallbackLookbackDays = 30 } = {}) => {
+  const role = resolveRole(req.user)
+  const partnerOrganizationId = resolveReportPartnerOrganizationId({
+    role,
+    user: req.user,
+    query: req.query || {}
+  })
+  const window = resolveReportWindow(req.query || {}, fallbackLookbackDays)
+  const agentId = parseObjectIdFilter(req.query?.agentId || '')
+  const courseId = parseObjectIdFilter(req.query?.courseId || '')
+  return {
+    role,
+    accountId: req.user?._id,
+    partnerOrganizationId,
+    from: window.from,
+    to: window.to,
+    lookbackDays: window.lookbackDays,
+    agentId,
+    courseId
+  }
+}
+
+const resolveCsvFilename = (prefix = 'report', from, to) => {
+  const start = toIsoDateInput(from).replace(/-/g, '')
+  const end = toIsoDateInput(to).replace(/-/g, '')
+  const safePrefix = String(prefix || 'report')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'report'
+  if (start && end) return `${safePrefix}-${start}-${end}.csv`
+  const today = toIsoDateInput(new Date()).replace(/-/g, '')
+  return `${safePrefix}-${today}.csv`
+}
+
+const shouldExportCsv = (req) => {
+  return String(req.query?.format || '').trim().toLowerCase() === 'csv'
+}
+
+const csvEscape = (value) => {
+  const normalized = value === null || value === undefined ? '' : String(value)
+  if (!/[",\r\n]/.test(normalized)) return normalized
+  return `"${normalized.replace(/"/g, '""')}"`
+}
+
+const toCsv = (headers = [], rows = []) => {
+  const headerRow = headers.map((header) => csvEscape(header)).join(',')
+  const dataRows = rows.map((row) => row.map((value) => csvEscape(value)).join(','))
+  return [headerRow, ...dataRows].join('\n')
+}
+
+const buildSalesReportData = async ({
+  role,
+  accountId,
+  partnerOrganizationId = '',
+  agentId = '',
+  courseId = '',
+  from,
+  to
+}) => {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  const accountObjectId = mongoose.Types.ObjectId.isValid(String(accountId || ''))
+    ? new mongoose.Types.ObjectId(String(accountId))
+    : null
+  const courseObjectId = mongoose.Types.ObjectId.isValid(String(courseId || ''))
+    ? new mongoose.Types.ObjectId(String(courseId))
+    : null
+  const agentObjectId = mongoose.Types.ObjectId.isValid(String(agentId || ''))
+    ? new mongoose.Types.ObjectId(String(agentId))
+    : null
+  const baseDateMatch = {}
+  if (from || to) {
+    baseDateMatch.$gte = from || undefined
+    baseDateMatch.$lte = to || undefined
+  }
+
+  if (normalizedRole === 'channel_sales_agent' || isPartnerDashboardRole(normalizedRole)) {
+    const match = {}
+    if (Object.keys(baseDateMatch).length > 0) {
+      match.createdAt = baseDateMatch
+    }
+    if (normalizedRole === 'channel_sales_agent') {
+      if (!accountObjectId) return { rows: [], summary: { saleCount: 0, grossSalesMinor: 0 }, scope: 'agent' }
+      match.agent = accountObjectId
+    } else {
+      const orgId = String(partnerOrganizationId || '').trim()
+      if (!mongoose.Types.ObjectId.isValid(orgId)) {
+        return { rows: [], summary: { saleCount: 0, grossSalesMinor: 0 }, scope: 'partner' }
+      }
+      match.partnerOrganization = new mongoose.Types.ObjectId(orgId)
+      if (agentObjectId) {
+        match.agent = agentObjectId
+      }
+    }
+    if (courseObjectId) {
+      match.course = courseObjectId
+    }
+
+    const rowsRaw = await AgentSaleAttribution.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          saleCount: { $sum: 1 },
+          grossSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+          agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ])
+
+    const rows = (rowsRaw || []).map((entry) => ({
+      date: String(entry?._id || ''),
+      saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+      grossSalesMinor: Math.max(0, Number(entry?.grossSalesMinor || 0)),
+      agentCommissionMinor: Math.max(0, Number(entry?.agentCommissionMinor || 0)),
+      partnerEarningsMinor: Math.max(0, Number(entry?.partnerEarningsMinor || 0))
+    }))
+    const summary = rows.reduce((acc, row) => ({
+      saleCount: acc.saleCount + row.saleCount,
+      grossSalesMinor: acc.grossSalesMinor + row.grossSalesMinor,
+      agentCommissionMinor: acc.agentCommissionMinor + row.agentCommissionMinor,
+      partnerEarningsMinor: acc.partnerEarningsMinor + row.partnerEarningsMinor
+    }), { saleCount: 0, grossSalesMinor: 0, agentCommissionMinor: 0, partnerEarningsMinor: 0 })
+
+    return {
+      rows,
+      summary,
+      scope: normalizedRole === 'channel_sales_agent' ? 'agent' : 'partner'
+    }
+  }
+
+  const paymentMatch = { status: 'successful' }
+  if (Object.keys(baseDateMatch).length > 0) {
+    paymentMatch.paidAt = baseDateMatch
+  }
+  if (courseObjectId) {
+    paymentMatch.course = courseObjectId
+  }
+  if (!canManagePlatform(normalizedRole)) {
+    if (normalizedRole === 'learner') {
+      if (!accountObjectId) return { rows: [], summary: { saleCount: 0, grossSalesMinor: 0 }, scope: 'learner' }
+      paymentMatch.account = accountObjectId
+    } else {
+      if (!accountObjectId) return { rows: [], summary: { saleCount: 0, grossSalesMinor: 0 }, scope: 'creator' }
+      paymentMatch.creatorAccount = accountObjectId
+    }
+  } else if (agentObjectId) {
+    const attributedPayments = await AgentSaleAttribution.find({ agent: agentObjectId })
+      .select('payment')
+      .lean()
+    const paymentIds = attributedPayments
+      .map((entry) => toIdString(entry.payment))
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id))
+    if (paymentIds.length === 0) {
+      return {
+        rows: [],
+        summary: { saleCount: 0, grossSalesMinor: 0, creatorCommissionMinor: 0, platformShareMinor: 0 },
+        scope: 'platform'
+      }
+    }
+    paymentMatch._id = { $in: paymentIds }
+  }
+
+  const rowsRaw = await SimpleLmsPayment.aggregate([
+    { $match: paymentMatch },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$paidAt'
+          }
+        },
+        saleCount: { $sum: 1 },
+        grossSalesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+        creatorCommissionMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+        platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ])
+
+  const rows = (rowsRaw || []).map((entry) => ({
+    date: String(entry?._id || ''),
+    saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+    grossSalesMinor: Math.max(0, Number(entry?.grossSalesMinor || 0)),
+    creatorCommissionMinor: Math.max(0, Number(entry?.creatorCommissionMinor || 0)),
+    platformShareMinor: Math.max(0, Number(entry?.platformShareMinor || 0))
+  }))
+  const summary = rows.reduce((acc, row) => ({
+    saleCount: acc.saleCount + row.saleCount,
+    grossSalesMinor: acc.grossSalesMinor + row.grossSalesMinor,
+    creatorCommissionMinor: acc.creatorCommissionMinor + row.creatorCommissionMinor,
+    platformShareMinor: acc.platformShareMinor + row.platformShareMinor
+  }), { saleCount: 0, grossSalesMinor: 0, creatorCommissionMinor: 0, platformShareMinor: 0 })
+
+  return {
+    rows,
+    summary,
+    scope: canManagePlatform(normalizedRole) ? 'platform' : (normalizedRole === 'learner' ? 'learner' : 'creator')
+  }
+}
+
+const buildCommissionReportData = async ({
+  role,
+  accountId,
+  partnerOrganizationId = '',
+  agentId = '',
+  courseId = '',
+  from,
+  to
+}) => {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  const accountObjectId = mongoose.Types.ObjectId.isValid(String(accountId || ''))
+    ? new mongoose.Types.ObjectId(String(accountId))
+    : null
+  const courseObjectId = mongoose.Types.ObjectId.isValid(String(courseId || ''))
+    ? new mongoose.Types.ObjectId(String(courseId))
+    : null
+  const agentObjectId = mongoose.Types.ObjectId.isValid(String(agentId || ''))
+    ? new mongoose.Types.ObjectId(String(agentId))
+    : null
+  const dateRange = {}
+  if (from || to) {
+    dateRange.$gte = from || undefined
+    dateRange.$lte = to || undefined
+  }
+
+  if (normalizedRole === 'channel_sales_agent' || isPartnerDashboardRole(normalizedRole)) {
+    const match = {}
+    if (Object.keys(dateRange).length > 0) {
+      match.createdAt = dateRange
+    }
+    if (normalizedRole === 'channel_sales_agent') {
+      if (!accountObjectId) return { rows: [], summary: { agentCommissionMinor: 0 }, scope: 'agent' }
+      match.agent = accountObjectId
+    } else {
+      const orgId = String(partnerOrganizationId || '').trim()
+      if (!mongoose.Types.ObjectId.isValid(orgId)) return { rows: [], summary: { agentCommissionMinor: 0 }, scope: 'partner' }
+      match.partnerOrganization = new mongoose.Types.ObjectId(orgId)
+      if (agentObjectId) {
+        match.agent = agentObjectId
+      }
+    }
+    if (courseObjectId) {
+      match.course = courseObjectId
+    }
+
+    const rowsRaw = await AgentSaleAttribution.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          saleCount: { $sum: 1 },
+          agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ])
+
+    const rows = (rowsRaw || []).map((entry) => ({
+      date: String(entry?._id || ''),
+      saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+      agentCommissionMinor: Math.max(0, Number(entry?.agentCommissionMinor || 0)),
+      partnerEarningsMinor: Math.max(0, Number(entry?.partnerEarningsMinor || 0))
+    }))
+    const summary = rows.reduce((acc, row) => ({
+      saleCount: acc.saleCount + row.saleCount,
+      agentCommissionMinor: acc.agentCommissionMinor + row.agentCommissionMinor,
+      partnerEarningsMinor: acc.partnerEarningsMinor + row.partnerEarningsMinor
+    }), { saleCount: 0, agentCommissionMinor: 0, partnerEarningsMinor: 0 })
+
+    return {
+      rows,
+      summary,
+      scope: normalizedRole === 'channel_sales_agent' ? 'agent' : 'partner'
+    }
+  }
+
+  const paymentMatch = { status: 'successful' }
+  if (Object.keys(dateRange).length > 0) {
+    paymentMatch.paidAt = dateRange
+  }
+  if (courseObjectId) {
+    paymentMatch.course = courseObjectId
+  }
+  if (!canManagePlatform(normalizedRole)) {
+    if (!accountObjectId) return { rows: [], summary: { creatorCommissionMinor: 0, platformShareMinor: 0 }, scope: 'creator' }
+    paymentMatch.creatorAccount = accountObjectId
+  } else if (agentObjectId) {
+    const attributedPayments = await AgentSaleAttribution.find({ agent: agentObjectId })
+      .select('payment')
+      .lean()
+    const paymentIds = attributedPayments
+      .map((entry) => toIdString(entry.payment))
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id))
+    if (paymentIds.length === 0) {
+      return {
+        rows: [],
+        summary: {
+          saleCount: 0,
+          creatorCommissionMinor: 0,
+          platformShareMinor: 0,
+          agentCommissionMinor: 0,
+          partnerEarningsMinor: 0
+        },
+        scope: 'platform'
+      }
+    }
+    paymentMatch._id = { $in: paymentIds }
+  }
+
+  const [creatorRowsRaw, agentRowsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      { $match: paymentMatch },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$paidAt'
+            }
+          },
+          saleCount: { $sum: 1 },
+          creatorCommissionMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    canManagePlatform(normalizedRole)
+      ? AgentSaleAttribution.aggregate([
+        {
+          $match: Object.keys(dateRange).length > 0
+            ? { createdAt: dateRange }
+            : {}
+        },
+        ...(agentObjectId || courseObjectId
+          ? [{
+              $match: {
+                ...(agentObjectId ? { agent: agentObjectId } : {}),
+                ...(courseObjectId ? { course: courseObjectId } : {})
+              }
+            }]
+          : []),
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt'
+              }
+            },
+            agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+            partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ])
+      : Promise.resolve([])
+  ])
+
+  const agentByDate = new Map(
+    (agentRowsRaw || []).map((entry) => ([
+      String(entry?._id || ''),
+      {
+        agentCommissionMinor: Math.max(0, Number(entry?.agentCommissionMinor || 0)),
+        partnerEarningsMinor: Math.max(0, Number(entry?.partnerEarningsMinor || 0))
+      }
+    ]))
+  )
+
+  const rows = (creatorRowsRaw || []).map((entry) => {
+    const date = String(entry?._id || '')
+    const agentMetrics = agentByDate.get(date) || { agentCommissionMinor: 0, partnerEarningsMinor: 0 }
+    return {
+      date,
+      saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+      creatorCommissionMinor: Math.max(0, Number(entry?.creatorCommissionMinor || 0)),
+      platformShareMinor: Math.max(0, Number(entry?.platformShareMinor || 0)),
+      agentCommissionMinor: agentMetrics.agentCommissionMinor,
+      partnerEarningsMinor: agentMetrics.partnerEarningsMinor
+    }
+  })
+
+  const summary = rows.reduce((acc, row) => ({
+    saleCount: acc.saleCount + row.saleCount,
+    creatorCommissionMinor: acc.creatorCommissionMinor + row.creatorCommissionMinor,
+    platformShareMinor: acc.platformShareMinor + row.platformShareMinor,
+    agentCommissionMinor: acc.agentCommissionMinor + row.agentCommissionMinor,
+    partnerEarningsMinor: acc.partnerEarningsMinor + row.partnerEarningsMinor
+  }), {
+    saleCount: 0,
+    creatorCommissionMinor: 0,
+    platformShareMinor: 0,
+    agentCommissionMinor: 0,
+    partnerEarningsMinor: 0
+  })
+
+  return {
+    rows,
+    summary,
+    scope: canManagePlatform(normalizedRole) ? 'platform' : 'creator'
+  }
+}
+
+const buildChurnMetrics = async ({ from, to, partnerOrganizationId = '' } = {}) => {
+  const dateRange = {}
+  if (from || to) {
+    dateRange.$gte = from || undefined
+    dateRange.$lte = to || undefined
+  }
+  const orgFilter = mongoose.Types.ObjectId.isValid(String(partnerOrganizationId || ''))
+    ? { partnerOrganization: new mongoose.Types.ObjectId(String(partnerOrganizationId)) }
+    : {}
+
+  const [activeAgents, removedAgents, firstSaleRows, courseIds] = await Promise.all([
+    Account.countDocuments({
+      learningRole: 'channel_sales_agent',
+      ...orgFilter
+    }),
+    AuditLog.countDocuments({
+      action: 'agent.remove',
+      ...(Object.keys(dateRange).length > 0 ? { createdAt: dateRange } : {}),
+      ...(orgFilter.partnerOrganization ? { targetOrganization: orgFilter.partnerOrganization } : {})
+    }),
+    AgentSaleAttribution.aggregate([
+      {
+        $match: {
+          ...(Object.keys(dateRange).length > 0 ? { createdAt: dateRange } : {}),
+          ...(orgFilter.partnerOrganization ? { partnerOrganization: orgFilter.partnerOrganization } : {})
+        }
+      },
+      {
+        $group: {
+          _id: '$agent',
+          firstSaleAt: { $min: '$createdAt' }
+        }
+      }
+    ]),
+    orgFilter.partnerOrganization
+      ? SimpleLmsCourse.find({ organization: orgFilter.partnerOrganization }).select('_id').lean()
+      : Promise.resolve([])
+  ])
+
+  const firstSaleAgentIds = (firstSaleRows || [])
+    .map((entry) => toIdString(entry?._id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+  const firstSaleAgents = firstSaleAgentIds.length > 0
+    ? await Account.find({ _id: { $in: firstSaleAgentIds } }).select('_id createdAt').lean()
+    : []
+  const createdAtByAgentId = new Map(firstSaleAgents.map((entry) => [toIdString(entry._id), entry.createdAt || null]))
+
+  const timeToFirstSaleDays = (firstSaleRows || [])
+    .map((entry) => {
+      const firstSaleAt = entry?.firstSaleAt ? new Date(entry.firstSaleAt) : null
+      const createdAt = createdAtByAgentId.get(toIdString(entry?._id))
+      if (!firstSaleAt || !createdAt) return null
+      const start = new Date(createdAt)
+      if (Number.isNaN(start.getTime()) || Number.isNaN(firstSaleAt.getTime())) return null
+      const diffMs = Math.max(0, firstSaleAt.getTime() - start.getTime())
+      return diffMs / (24 * 60 * 60 * 1000)
+    })
+    .filter((value) => Number.isFinite(value))
+
+  const averageTimeToFirstSaleDays = timeToFirstSaleDays.length > 0
+    ? Math.round((timeToFirstSaleDays.reduce((sum, value) => sum + value, 0) / timeToFirstSaleDays.length) * 10) / 10
+    : 0
+
+  const enrollmentMatch = {}
+  if (orgFilter.partnerOrganization) {
+    const scopedCourseIds = (courseIds || [])
+      .map((course) => toIdString(course?._id))
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id))
+    if (scopedCourseIds.length === 0) {
+      return {
+        activeAgents,
+        removedAgents,
+        agentAttritionRatePercent: 0,
+        averageTimeToFirstSaleDays,
+        activeEnrollments: 0,
+        atRiskEnrollments: 0,
+        learnerDropOffRatePercent: 0
+      }
+    }
+    enrollmentMatch.course = { $in: scopedCourseIds }
+  }
+
+  const inactivityThreshold = new Date((to || new Date()).getTime() - (14 * 24 * 60 * 60 * 1000))
+  const [activeEnrollments, atRiskEnrollments] = await Promise.all([
+    SimpleLmsEnrollment.countDocuments({
+      ...enrollmentMatch,
+      status: 'active'
+    }),
+    SimpleLmsEnrollment.countDocuments({
+      ...enrollmentMatch,
+      status: 'active',
+      progressPercent: { $lt: 30 },
+      $or: [
+        { lastActivityAt: { $lte: inactivityThreshold } },
+        { lastActivityAt: { $exists: false } }
+      ]
+    })
+  ])
+
+  const agentBase = Math.max(1, Number(activeAgents || 0) + Number(removedAgents || 0))
+  const enrollmentBase = Math.max(1, Number(activeEnrollments || 0))
+  return {
+    activeAgents: Math.max(0, Number(activeAgents || 0)),
+    removedAgents: Math.max(0, Number(removedAgents || 0)),
+    agentAttritionRatePercent: Math.round((Math.max(0, Number(removedAgents || 0)) / agentBase) * 1000) / 10,
+    averageTimeToFirstSaleDays,
+    activeEnrollments: Math.max(0, Number(activeEnrollments || 0)),
+    atRiskEnrollments: Math.max(0, Number(atRiskEnrollments || 0)),
+    learnerDropOffRatePercent: Math.round((Math.max(0, Number(atRiskEnrollments || 0)) / enrollmentBase) * 1000) / 10
+  }
+}
+
+const decorateSalesReportRows = (rows = [], currency = 'NGN') => {
+  return (rows || []).map((entry) => ({
+    ...entry,
+    grossSalesDisplay: formatCurrencyAmount(entry.grossSalesMinor || 0, currency),
+    creatorCommissionDisplay: formatCurrencyAmount(entry.creatorCommissionMinor || 0, currency),
+    platformShareDisplay: formatCurrencyAmount(entry.platformShareMinor || 0, currency),
+    agentCommissionDisplay: formatCurrencyAmount(entry.agentCommissionMinor || 0, currency),
+    partnerEarningsDisplay: formatCurrencyAmount(entry.partnerEarningsMinor || 0, currency)
+  }))
+}
+
+const decorateCommissionReportRows = (rows = [], currency = 'NGN') => {
+  return (rows || []).map((entry) => ({
+    ...entry,
+    creatorCommissionDisplay: formatCurrencyAmount(entry.creatorCommissionMinor || 0, currency),
+    platformShareDisplay: formatCurrencyAmount(entry.platformShareMinor || 0, currency),
+    agentCommissionDisplay: formatCurrencyAmount(entry.agentCommissionMinor || 0, currency),
+    partnerEarningsDisplay: formatCurrencyAmount(entry.partnerEarningsMinor || 0, currency)
+  }))
+}
+
+const buildSalesCsvRows = (rows = [], currency = 'NGN') => {
+  const decoratedRows = decorateSalesReportRows(rows, currency)
+  return toCsv(
+    [
+      'Date',
+      'Sale Count',
+      'Gross Sales (minor)',
+      'Gross Sales',
+      'Creator Commission (minor)',
+      'Creator Commission',
+      'Platform Share (minor)',
+      'Platform Share',
+      'Agent Commission (minor)',
+      'Agent Commission',
+      'Partner Earnings (minor)',
+      'Partner Earnings'
+    ],
+    decoratedRows.map((entry) => ([
+      entry.date || '',
+      Number(entry.saleCount || 0),
+      Number(entry.grossSalesMinor || 0),
+      entry.grossSalesDisplay || '',
+      Number(entry.creatorCommissionMinor || 0),
+      entry.creatorCommissionDisplay || '',
+      Number(entry.platformShareMinor || 0),
+      entry.platformShareDisplay || '',
+      Number(entry.agentCommissionMinor || 0),
+      entry.agentCommissionDisplay || '',
+      Number(entry.partnerEarningsMinor || 0),
+      entry.partnerEarningsDisplay || ''
+    ]))
+  )
+}
+
+const buildCommissionCsvRows = (rows = [], currency = 'NGN') => {
+  const decoratedRows = decorateCommissionReportRows(rows, currency)
+  return toCsv(
+    [
+      'Date',
+      'Sale Count',
+      'Creator Commission (minor)',
+      'Creator Commission',
+      'Platform Share (minor)',
+      'Platform Share',
+      'Agent Commission (minor)',
+      'Agent Commission',
+      'Partner Earnings (minor)',
+      'Partner Earnings'
+    ],
+    decoratedRows.map((entry) => ([
+      entry.date || '',
+      Number(entry.saleCount || 0),
+      Number(entry.creatorCommissionMinor || 0),
+      entry.creatorCommissionDisplay || '',
+      Number(entry.platformShareMinor || 0),
+      entry.platformShareDisplay || '',
+      Number(entry.agentCommissionMinor || 0),
+      entry.agentCommissionDisplay || '',
+      Number(entry.partnerEarningsMinor || 0),
+      entry.partnerEarningsDisplay || ''
+    ]))
+  )
+}
+
+const buildReportWindowPayload = ({ from, to, lookbackDays }) => ({
+  from: toIsoDateInput(from),
+  to: toIsoDateInput(to),
+  lookbackDays: Math.max(1, Number(lookbackDays || 30))
+})
+
+const handleSalesReportRequest = async (req, res, { forceCsv = false } = {}) => {
+  try {
+    const context = resolveReportsContext({ req, fallbackLookbackDays: 30 })
+    const currency = normalizeSimpleLmsCurrencyCode(req.query.currency || 'NGN', 'NGN')
+    const report = await buildSalesReportData(context)
+    const rows = decorateSalesReportRows(report.rows, currency)
+    const summary = {
+      ...report.summary,
+      grossSalesDisplay: formatCurrencyAmount(report.summary?.grossSalesMinor || 0, currency),
+      creatorCommissionDisplay: formatCurrencyAmount(report.summary?.creatorCommissionMinor || 0, currency),
+      platformShareDisplay: formatCurrencyAmount(report.summary?.platformShareMinor || 0, currency),
+      agentCommissionDisplay: formatCurrencyAmount(report.summary?.agentCommissionMinor || 0, currency),
+      partnerEarningsDisplay: formatCurrencyAmount(report.summary?.partnerEarningsMinor || 0, currency)
+    }
+    const window = buildReportWindowPayload(context)
+
+    if (forceCsv || shouldExportCsv(req)) {
+      const csv = buildSalesCsvRows(report.rows, currency)
+      await logAuditEvent({
+        action: 'reports.export',
+        performedBy: req.user?._id,
+        targetOrganization: context.partnerOrganizationId || null,
+        metadata: {
+          reportType: 'sales',
+          format: 'csv',
+          scope: report.scope,
+          window,
+          filters: {
+            agentId: context.agentId,
+            courseId: context.courseId,
+            partnerOrganizationId: context.partnerOrganizationId
+          }
+        },
+        req
+      })
+      return res
+        .set('Content-Type', 'text/csv; charset=utf-8')
+        .set('Content-Disposition', `attachment; filename="${resolveCsvFilename('sales-report', context.from, context.to)}"`)
+        .send(csv)
+    }
+
+    return res.json({
+      reportType: 'sales',
+      scope: report.scope,
+      window,
+      filters: {
+        agentId: context.agentId,
+        courseId: context.courseId,
+        partnerOrganizationId: context.partnerOrganizationId
+      },
+      currency,
+      rows,
+      summary
+    })
+  } catch (error) {
+    console.error('Sales report API error:', error)
+    return res.status(500).json({ error: 'Failed to load sales report.', code: 'REPORT_SALES_FAILED' })
+  }
+}
+
+const handleCommissionReportRequest = async (req, res, { forceCsv = false } = {}) => {
+  try {
+    const context = resolveReportsContext({ req, fallbackLookbackDays: 30 })
+    const currency = normalizeSimpleLmsCurrencyCode(req.query.currency || 'NGN', 'NGN')
+    const report = await buildCommissionReportData(context)
+    const rows = decorateCommissionReportRows(report.rows, currency)
+    const summary = {
+      ...report.summary,
+      creatorCommissionDisplay: formatCurrencyAmount(report.summary?.creatorCommissionMinor || 0, currency),
+      platformShareDisplay: formatCurrencyAmount(report.summary?.platformShareMinor || 0, currency),
+      agentCommissionDisplay: formatCurrencyAmount(report.summary?.agentCommissionMinor || 0, currency),
+      partnerEarningsDisplay: formatCurrencyAmount(report.summary?.partnerEarningsMinor || 0, currency)
+    }
+    const window = buildReportWindowPayload(context)
+
+    if (forceCsv || shouldExportCsv(req)) {
+      const csv = buildCommissionCsvRows(report.rows, currency)
+      await logAuditEvent({
+        action: 'reports.export',
+        performedBy: req.user?._id,
+        targetOrganization: context.partnerOrganizationId || null,
+        metadata: {
+          reportType: 'commissions',
+          format: 'csv',
+          scope: report.scope,
+          window,
+          filters: {
+            agentId: context.agentId,
+            courseId: context.courseId,
+            partnerOrganizationId: context.partnerOrganizationId
+          }
+        },
+        req
+      })
+      return res
+        .set('Content-Type', 'text/csv; charset=utf-8')
+        .set('Content-Disposition', `attachment; filename="${resolveCsvFilename('commission-report', context.from, context.to)}"`)
+        .send(csv)
+    }
+
+    return res.json({
+      reportType: 'commissions',
+      scope: report.scope,
+      window,
+      filters: {
+        agentId: context.agentId,
+        courseId: context.courseId,
+        partnerOrganizationId: context.partnerOrganizationId
+      },
+      currency,
+      rows,
+      summary
+    })
+  } catch (error) {
+    console.error('Commission report API error:', error)
+    return res.status(500).json({ error: 'Failed to load commission report.', code: 'REPORT_COMMISSIONS_FAILED' })
+  }
+}
+
+const handleChurnReportRequest = async (req, res) => {
+  try {
+    const context = resolveReportsContext({ req, fallbackLookbackDays: 30 })
+    const normalizedRole = String(context.role || '').trim().toLowerCase()
+    const churnMetrics = await buildChurnMetrics({
+      from: context.from,
+      to: context.to,
+      partnerOrganizationId: canManagePlatform(normalizedRole) ? context.partnerOrganizationId : context.partnerOrganizationId
+    })
+    return res.json({
+      reportType: 'churn',
+      scope: canManagePlatform(normalizedRole)
+        ? (context.partnerOrganizationId ? 'partner' : 'platform')
+        : (isPartnerDashboardRole(normalizedRole) ? 'partner' : normalizedRole),
+      window: buildReportWindowPayload(context),
+      filters: {
+        partnerOrganizationId: context.partnerOrganizationId
+      },
+      metrics: churnMetrics
+    })
+  } catch (error) {
+    console.error('Churn report API error:', error)
+    return res.status(500).json({ error: 'Failed to load churn report.', code: 'REPORT_CHURN_FAILED' })
+  }
+}
+
+const mountReportRoutes = (router, prefix = '/reports') => {
+  const pathFor = (path) => `${prefix}${path}`
+  router.get(pathFor('/sales'), (req, res) => handleSalesReportRequest(req, res))
+  router.get(pathFor('/daily-sales'), (req, res) => handleSalesReportRequest(req, res))
+  router.get(pathFor('/sales/export'), (req, res) => handleSalesReportRequest(req, res, { forceCsv: true }))
+  router.get(pathFor('/commissions'), (req, res) => handleCommissionReportRequest(req, res))
+  router.get(pathFor('/commissions/export'), (req, res) => handleCommissionReportRequest(req, res, { forceCsv: true }))
+  router.get(pathFor('/churn'), handleChurnReportRequest)
 }
 
 const normalizePaymentStatusFilter = (value) => {
@@ -6270,6 +7167,40 @@ const renderWorkspacePage = async (
         : Promise.resolve([])
     ])
 
+    const [partnerWithdrawalRequestsRaw, partnerWithdrawalAggregateRaw, partnerRevenueAggregateRaw] = canManagePlatform(role)
+      ? await Promise.all([
+        PartnerWithdrawal.find({})
+          .populate('organization', 'name partnerType partnerSettings')
+          .populate('requestedBy', 'email profile.name')
+          .populate('reviewedBy', 'email profile.name')
+          .populate('paidBy', 'email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(400)
+          .lean(),
+        PartnerWithdrawal.aggregate([
+          {
+            $group: {
+              _id: '$organization',
+              requestCount: { $sum: 1 },
+              pendingMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } },
+              paidMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+              latestRequestedAt: { $max: '$createdAt' }
+            }
+          }
+        ]),
+        AgentSaleAttribution.aggregate([
+          {
+            $group: {
+              _id: '$partnerOrganization',
+              totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+              totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+              partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+            }
+          }
+        ])
+      ])
+      : [[], [], []]
+
     const myEnrollments = myEnrollmentsRaw
       .filter(entry => entry.course && entry.course.isActive)
       .map((entry) => {
@@ -6759,6 +7690,27 @@ const renderWorkspacePage = async (
       canReject: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase()),
       canMarkPaid: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
     }))
+    const partnerWithdrawalRequests = (partnerWithdrawalRequestsRaw || []).map((request) => {
+      const status = normalizeWithdrawalStatus(request.status, 'pending')
+      return {
+        ...request,
+        organizationId: toIdString(request.organization?._id || request.organization),
+        organizationName: request.organization?.name || 'Partner Organization',
+        partnerType: request.organization?.partnerType || 'partner',
+        requestedByName: request.requestedBy?.profile?.name || request.requestedBy?.email || 'Partner User',
+        requestedByEmail: request.requestedBy?.email || '',
+        amountDisplay: formatCurrencyAmount(
+          request.amountMinor,
+          request.currency || request.organization?.partnerSettings?.payoutProfile?.currency || 'NGN'
+        ),
+        statusLabel: formatWithdrawalStatusLabel(status),
+        reviewerName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || '',
+        paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
+        canApprove: status === 'pending',
+        canReject: ['pending', 'approved'].includes(status),
+        canMarkPaid: ['approved'].includes(status)
+      }
+    })
     const orgCourseStatsMap = new Map()
     managedCourses.forEach((course) => {
       const orgId = toIdString(course.organization)
@@ -6802,6 +7754,33 @@ const renderWorkspacePage = async (
       if (status === 'approved') existing.approvedCommissionMinor += amount
       orgAttributionStatsMap.set(orgId, existing)
     })
+    const partnerWithdrawalStatsMap = new Map(
+      (partnerWithdrawalAggregateRaw || [])
+        .map((entry) => {
+          const orgId = toIdString(entry?._id)
+          if (!orgId) return null
+          return [orgId, {
+            requestCount: Math.max(0, Number(entry.requestCount || 0)),
+            pendingMinor: Math.max(0, Number(entry.pendingMinor || 0)),
+            paidMinor: Math.max(0, Number(entry.paidMinor || 0)),
+            latestRequestedAt: entry.latestRequestedAt || null
+          }]
+        })
+        .filter(Boolean)
+    )
+    const partnerRevenueStatsMap = new Map(
+      (partnerRevenueAggregateRaw || [])
+        .map((entry) => {
+          const orgId = toIdString(entry?._id)
+          if (!orgId) return null
+          return [orgId, {
+            totalSalesMinor: Math.max(0, Number(entry.totalSalesMinor || 0)),
+            totalAgentCommissionMinor: Math.max(0, Number(entry.totalAgentCommissionMinor || 0)),
+            partnerEarningsMinor: Math.max(0, Number(entry.partnerEarningsMinor || 0))
+          }]
+        })
+        .filter(Boolean)
+    )
     const partnerOrganizations = (partnerOrganizationsRaw || []).map((organization) => {
       const orgId = toIdString(organization._id)
       const courseStats = orgCourseStatsMap.get(orgId) || { totalCourses: 0, publishedCourses: 0, draftCourses: 0 }
@@ -6810,6 +7789,24 @@ const renderWorkspacePage = async (
         recommendedCommissionMinor: 0,
         approvedCommissionMinor: 0
       }
+      const withdrawalStats = partnerWithdrawalStatsMap.get(orgId) || {
+        requestCount: 0,
+        pendingMinor: 0,
+        paidMinor: 0,
+        latestRequestedAt: null
+      }
+      const partnerRevenueStats = partnerRevenueStatsMap.get(orgId) || {
+        totalSalesMinor: 0,
+        totalAgentCommissionMinor: 0,
+        partnerEarningsMinor: 0
+      }
+      const availableWithdrawalMinor = Math.max(
+        0,
+        Number(partnerRevenueStats.partnerEarningsMinor || 0)
+          - Number(withdrawalStats.pendingMinor || 0)
+          - Number(withdrawalStats.paidMinor || 0)
+      )
+      const payoutCurrency = normalizeCurrencyCode(organization?.partnerSettings?.payoutProfile?.currency || 'NGN')
       const status = String(organization?.partnerSettings?.partnerStatus || 'pending').trim().toLowerCase()
       return {
         ...organization,
@@ -6823,7 +7820,19 @@ const renderWorkspacePage = async (
         approvedCommissionMinor: Number(attributionStats.approvedCommissionMinor || 0),
         pendingCommissionDisplay: formatCurrencyAmount(attributionStats.pendingCommissionMinor || 0, 'NGN'),
         recommendedCommissionDisplay: formatCurrencyAmount(attributionStats.recommendedCommissionMinor || 0, 'NGN'),
-        approvedCommissionDisplay: formatCurrencyAmount(attributionStats.approvedCommissionMinor || 0, 'NGN')
+        approvedCommissionDisplay: formatCurrencyAmount(attributionStats.approvedCommissionMinor || 0, 'NGN'),
+        partnerRevenueMinor: partnerRevenueStats.partnerEarningsMinor,
+        partnerRevenueDisplay: formatCurrencyAmount(partnerRevenueStats.partnerEarningsMinor || 0, payoutCurrency),
+        partnerSalesDisplay: formatCurrencyAmount(partnerRevenueStats.totalSalesMinor || 0, payoutCurrency),
+        partnerAgentCommissionDisplay: formatCurrencyAmount(partnerRevenueStats.totalAgentCommissionMinor || 0, payoutCurrency),
+        partnerWithdrawalPendingMinor: withdrawalStats.pendingMinor,
+        partnerWithdrawalPendingDisplay: formatCurrencyAmount(withdrawalStats.pendingMinor || 0, payoutCurrency),
+        partnerWithdrawalPaidMinor: withdrawalStats.paidMinor,
+        partnerWithdrawalPaidDisplay: formatCurrencyAmount(withdrawalStats.paidMinor || 0, payoutCurrency),
+        partnerWithdrawalRequestCount: withdrawalStats.requestCount,
+        partnerWithdrawalAvailableMinor: availableWithdrawalMinor,
+        partnerWithdrawalAvailableDisplay: formatCurrencyAmount(availableWithdrawalMinor, payoutCurrency),
+        partnerWithdrawalLatestRequestedAt: withdrawalStats.latestRequestedAt || null
       }
     })
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
@@ -7107,6 +8116,111 @@ const renderWorkspacePage = async (
         }
       }),
       categoryInsights
+    }
+
+    const reportWindow = resolveReportWindow({
+      from: req.query.reportFrom || req.query.from || '',
+      to: req.query.reportTo || req.query.to || '',
+      lookbackDays: req.query.reportLookbackDays || req.query.lookbackDays || analyticsLookbackDays
+    }, analyticsLookbackDays)
+    const reportPartnerOrganizationId = canManagePlatform(role)
+      ? parseObjectIdFilter(req.query.reportPartnerOrganization || req.query.partnerOrganization || '')
+      : ''
+    const reportAgentId = canManagePlatform(role)
+      ? parseObjectIdFilter(req.query.reportAgentId || req.query.agentId || '')
+      : ''
+    const reportCourseId = parseObjectIdFilter(req.query.reportCourseId || req.query.courseId || '')
+
+    const defaultDailySalesReport = {
+      scope: 'platform',
+      rows: [],
+      summary: {
+        saleCount: 0,
+        grossSalesMinor: 0,
+        creatorCommissionMinor: 0,
+        platformShareMinor: 0,
+        agentCommissionMinor: 0,
+        partnerEarningsMinor: 0
+      }
+    }
+    const defaultCommissionReport = {
+      scope: 'platform',
+      rows: [],
+      summary: {
+        saleCount: 0,
+        creatorCommissionMinor: 0,
+        platformShareMinor: 0,
+        agentCommissionMinor: 0,
+        partnerEarningsMinor: 0
+      }
+    }
+    const defaultChurnMetrics = {
+      activeAgents: 0,
+      removedAgents: 0,
+      agentAttritionRatePercent: 0,
+      averageTimeToFirstSaleDays: 0,
+      activeEnrollments: 0,
+      atRiskEnrollments: 0,
+      learnerDropOffRatePercent: 0
+    }
+    const [dailySalesReportRaw, commissionReportRaw, churnMetrics] = canManagePlatform(role)
+      ? await Promise.all([
+          buildSalesReportData({
+            role,
+            accountId: req.user?._id,
+            partnerOrganizationId: reportPartnerOrganizationId,
+            agentId: reportAgentId,
+            courseId: reportCourseId,
+            from: reportWindow.from,
+            to: reportWindow.to
+          }),
+          buildCommissionReportData({
+            role,
+            accountId: req.user?._id,
+            partnerOrganizationId: reportPartnerOrganizationId,
+            agentId: reportAgentId,
+            courseId: reportCourseId,
+            from: reportWindow.from,
+            to: reportWindow.to
+          }),
+          buildChurnMetrics({
+            from: reportWindow.from,
+            to: reportWindow.to,
+            partnerOrganizationId: reportPartnerOrganizationId
+          })
+        ])
+      : [defaultDailySalesReport, defaultCommissionReport, defaultChurnMetrics]
+    const reportCurrency = 'NGN'
+    const dailySalesReport = {
+      ...dailySalesReportRaw,
+      rows: decorateSalesReportRows(dailySalesReportRaw.rows, reportCurrency),
+      summary: {
+        ...dailySalesReportRaw.summary,
+        grossSalesDisplay: formatCurrencyAmount(dailySalesReportRaw.summary?.grossSalesMinor || 0, reportCurrency),
+        creatorCommissionDisplay: formatCurrencyAmount(dailySalesReportRaw.summary?.creatorCommissionMinor || 0, reportCurrency),
+        platformShareDisplay: formatCurrencyAmount(dailySalesReportRaw.summary?.platformShareMinor || 0, reportCurrency),
+        agentCommissionDisplay: formatCurrencyAmount(dailySalesReportRaw.summary?.agentCommissionMinor || 0, reportCurrency),
+        partnerEarningsDisplay: formatCurrencyAmount(dailySalesReportRaw.summary?.partnerEarningsMinor || 0, reportCurrency)
+      }
+    }
+    const commissionReport = {
+      ...commissionReportRaw,
+      rows: decorateCommissionReportRows(commissionReportRaw.rows, reportCurrency),
+      summary: {
+        ...commissionReportRaw.summary,
+        creatorCommissionDisplay: formatCurrencyAmount(commissionReportRaw.summary?.creatorCommissionMinor || 0, reportCurrency),
+        platformShareDisplay: formatCurrencyAmount(commissionReportRaw.summary?.platformShareMinor || 0, reportCurrency),
+        agentCommissionDisplay: formatCurrencyAmount(commissionReportRaw.summary?.agentCommissionMinor || 0, reportCurrency),
+        partnerEarningsDisplay: formatCurrencyAmount(commissionReportRaw.summary?.partnerEarningsMinor || 0, reportCurrency)
+      }
+    }
+    const reportFilters = {
+      from: toIsoDateInput(reportWindow.from),
+      to: toIsoDateInput(reportWindow.to),
+      lookbackDays: reportWindow.lookbackDays,
+      partnerOrganizationId: reportPartnerOrganizationId,
+      agentId: reportAgentId,
+      courseId: reportCourseId
     }
 
     const commissionAccountOverrides = (commissionSettings.accountOverrides || []).map((entry) => {
@@ -7507,6 +8621,10 @@ const renderWorkspacePage = async (
         creatorPayoutDisplay: formatCurrencyAmount(paymentStats.creatorPayoutMinor, 'NGN')
       },
       analytics,
+      reportFilters,
+      dailySalesReport,
+      commissionReport,
+      churnMetrics,
       platformSettings,
       paymentGatewaySettings,
       canManagePaymentGateways,
@@ -7518,6 +8636,7 @@ const renderWorkspacePage = async (
       pendingReviewCourses,
       approvalQueueCourses,
       partnerOrganizations,
+      partnerWithdrawalRequests,
       roleApprovalRequests,
       superUserAccounts,
       auditLogEntries,
@@ -8006,6 +9125,110 @@ pageRouter.post('/admin/withdrawals/:withdrawalId/status', requirePageAuth, asyn
   }
 })
 
+pageRouter.post('/admin/partner-withdrawals/:withdrawalId/status', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req, '/admin/partners')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can update partner withdrawal requests.'
+      })
+    }
+
+    const withdrawalId = String(req.params.withdrawalId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid partner withdrawal selected.'
+      })
+    }
+
+    const nextStatus = normalizeWithdrawalStatus(req.body.status, '')
+    if (!['approved', 'rejected', 'paid', 'cancelled'].includes(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid partner withdrawal status.'
+      })
+    }
+
+    const withdrawal = await PartnerWithdrawal.findById(withdrawalId)
+    if (!withdrawal) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner withdrawal request not found.'
+      })
+    }
+
+    const currentStatus = normalizeWithdrawalStatus(withdrawal.status, 'pending')
+    const allowedTransitions = {
+      pending: new Set(['approved', 'rejected', 'paid', 'cancelled']),
+      approved: new Set(['paid', 'rejected', 'cancelled']),
+      paid: new Set(),
+      rejected: new Set(),
+      cancelled: new Set()
+    }
+    if (currentStatus !== nextStatus && !allowedTransitions[currentStatus]?.has(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: `Cannot move partner withdrawal from ${formatWithdrawalStatusLabel(currentStatus)} to ${formatWithdrawalStatusLabel(nextStatus)}.`
+      })
+    }
+
+    withdrawal.status = nextStatus
+    withdrawal.reviewedBy = req.user._id
+    withdrawal.reviewedAt = new Date()
+    withdrawal.adminNotes = String(req.body.adminNotes || '').trim().slice(0, 3000)
+
+    if (nextStatus === 'paid') {
+      withdrawal.paidAt = new Date()
+      withdrawal.paidBy = req.user._id
+      withdrawal.transactionRef = String(req.body.transactionRef || '').trim().slice(0, 120)
+    } else if (currentStatus !== 'paid') {
+      withdrawal.paidAt = null
+      withdrawal.paidBy = null
+      withdrawal.transactionRef = ''
+    }
+
+    await withdrawal.save()
+
+    await logAuditEvent({
+      action: nextStatus === 'approved'
+        ? 'partner.withdrawal.approve'
+        : (nextStatus === 'paid'
+            ? 'partner.withdrawal.paid'
+            : 'partner.withdrawal.reject'),
+      performedBy: req.user._id,
+      targetOrganization: withdrawal.organization || null,
+      metadata: {
+        withdrawalId: withdrawal._id,
+        previousStatus: currentStatus,
+        nextStatus,
+        transactionRef: withdrawal.transactionRef || ''
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: `Partner withdrawal request marked as ${formatWithdrawalStatusLabel(nextStatus)}.`
+    })
+  } catch (error) {
+    console.error('Update partner withdrawal status error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: 'Failed to update partner withdrawal request.'
+    })
+  }
+})
+
 pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(
     req.body?.returnTo || '/simple-lms?view=settings&settingsTab=payments',
@@ -8046,6 +9269,10 @@ pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
 })
 
 apiRouter.use(requireApiAuth)
+reportsApiRouter.use(requireApiAuth)
+
+mountReportRoutes(apiRouter, '/reports')
+mountReportRoutes(reportsApiRouter, '')
 
 apiRouter.get('/workspace', async (_req, res) => res.redirect('/simple-lms'))
 
@@ -8208,6 +9435,11 @@ apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
   }
 })
 
-export { pageRouter as simpleLmsRouter, adminPageRouter as simpleLmsAdminRouter, apiRouter as simpleLmsApiRouter }
+export {
+  pageRouter as simpleLmsRouter,
+  adminPageRouter as simpleLmsAdminRouter,
+  apiRouter as simpleLmsApiRouter,
+  reportsApiRouter as simpleLmsReportsApiRouter
+}
 export default pageRouter
 

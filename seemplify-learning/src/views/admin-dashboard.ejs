@@ -1330,7 +1330,7 @@
               <article class="card">
                 <strong><%= course.title %></strong>
                 <p class="mini"><%= course.creatorName %> <%= course.creatorEmail ? `(${course.creatorEmail})` : '' %></p>
-                <p class="mini">Status: <span class="pill"><%= course.status || 'draft' %></span> · Submitted/Updated: <%= dateText(course.submittedAt) %></p>
+                <p class="mini">Status: <span class="pill"><%= course.status || 'draft' %></span> | Submitted/Updated: <%= dateText(course.submittedAt) %></p>
                 <div class="actions">
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
                   <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Edit</a>
@@ -1362,20 +1362,24 @@
             </div>
           </div>
 
-          <div class="kpis">
-            <article class="kpi">
-              <small>Partner Orgs</small>
-              <strong><%= (partnerOrganizations || []).length %></strong>
-            </article>
-            <article class="kpi">
-              <small>Pending Requests</small>
-              <strong><%= (roleApprovalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'pending').length %></strong>
-            </article>
-            <article class="kpi">
-              <small>Agent Payout Queue</small>
-              <strong><%= (agentPayoutRows || []).length %></strong>
-            </article>
-          </div>
+	          <div class="kpis">
+	            <article class="kpi">
+	              <small>Partner Orgs</small>
+	              <strong><%= (partnerOrganizations || []).length %></strong>
+	            </article>
+	            <article class="kpi">
+	              <small>Pending Requests</small>
+	              <strong><%= (roleApprovalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'pending').length %></strong>
+	            </article>
+	            <article class="kpi">
+	              <small>Agent Payout Queue</small>
+	              <strong><%= (agentPayoutRows || []).length %></strong>
+	            </article>
+	            <article class="kpi">
+	              <small>Partner Withdrawals</small>
+	              <strong><%= (partnerWithdrawalRequests || []).filter((request) => ['pending', 'approved'].includes(String(request.status || '').toLowerCase())).length %></strong>
+	            </article>
+	          </div>
 
           <div class="table">
             <table>
@@ -1383,18 +1387,19 @@
                 <tr>
                   <th>Organization</th>
                   <th>Type</th>
-                  <th>Status</th>
-                  <th>Agents</th>
-                  <th>Courses</th>
-                  <th>Commissions Due</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
-                  <tr><td colspan="7" class="mini">No partner organizations found.</td></tr>
-                <% } else { %>
-                  <% partnerOrganizations.forEach((organization) => { %>
+	                  <th>Status</th>
+	                  <th>Agents</th>
+	                  <th>Courses</th>
+	                  <th>Commissions Due</th>
+	                  <th>Partner Wallet</th>
+	                  <th>Actions</th>
+	                </tr>
+	              </thead>
+	              <tbody>
+	                <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
+	                  <tr><td colspan="8" class="mini">No partner organizations found.</td></tr>
+	                <% } else { %>
+	                  <% partnerOrganizations.forEach((organization) => { %>
                     <tr>
                       <td>
                         <strong><%= organization.name || 'Partner Organization' %></strong><br>
@@ -1404,14 +1409,19 @@
                       <td><span class="pill"><%= organization.partnerStatus || 'pending' %></span></td>
                       <td><%= Number(organization.agentCount || 0) %></td>
                       <td><%= Number(organization.totalCourses || 0) %> total / <%= Number(organization.publishedCourses || 0) %> published</td>
-                      <td>
-                        <span class="mini">Pending: <%= organization.pendingCommissionDisplay %></span><br>
-                        <span class="mini">Recommended: <%= organization.recommendedCommissionDisplay %></span><br>
-                        <span class="mini">Approved: <%= organization.approvedCommissionDisplay %></span>
-                      </td>
-                      <td>
-                        <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="inline-form">
-                          <select class="input" name="partnerStatus">
+	                      <td>
+	                        <span class="mini">Pending: <%= organization.pendingCommissionDisplay %></span><br>
+	                        <span class="mini">Recommended: <%= organization.recommendedCommissionDisplay %></span><br>
+	                        <span class="mini">Approved: <%= organization.approvedCommissionDisplay %></span>
+	                      </td>
+	                      <td>
+	                        <span class="mini">Revenue: <%= organization.partnerRevenueDisplay %></span><br>
+	                        <span class="mini">Pending W/D: <%= organization.partnerWithdrawalPendingDisplay %></span><br>
+	                        <span class="mini">Available: <%= organization.partnerWithdrawalAvailableDisplay %></span>
+	                      </td>
+	                      <td>
+	                        <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="inline-form">
+	                          <select class="input" name="partnerStatus">
                             <option value="pending" <%= String(organization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
                             <option value="active" <%= String(organization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
                             <option value="suspended" <%= String(organization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
@@ -1425,10 +1435,73 @@
                 <% } %>
               </tbody>
             </table>
-          </div>
-        </section>
+	          </div>
+	        </section>
 
-        <section class="card">
+	        <section class="card">
+	          <div class="head">
+	            <div>
+	              <h2>Partner Withdrawal Queue</h2>
+	              <p class="mini">Review partner organization withdrawal requests and mark payouts when settled.</p>
+	            </div>
+	          </div>
+	          <div class="table">
+	            <table>
+	              <thead>
+	                <tr>
+	                  <th>Date</th>
+	                  <th>Organization</th>
+	                  <th>Requested By</th>
+	                  <th>Amount</th>
+	                  <th>Status</th>
+	                  <th>Actions</th>
+	                </tr>
+	              </thead>
+	              <tbody>
+	                <% if (!partnerWithdrawalRequests || partnerWithdrawalRequests.length === 0) { %>
+	                  <tr><td colspan="6" class="mini">No partner withdrawal requests found.</td></tr>
+	                <% } else { %>
+	                  <% partnerWithdrawalRequests.forEach((request) => { %>
+	                    <tr>
+	                      <td><%= dateText(request.createdAt) %></td>
+	                      <td>
+	                        <strong><%= request.organizationName || 'Partner Organization' %></strong><br>
+	                        <span class="mini"><%= request.partnerType || 'partner' %></span>
+	                      </td>
+	                      <td>
+	                        <strong><%= request.requestedByName %></strong><br>
+	                        <span class="mini"><%= request.requestedByEmail || '-' %></span>
+	                      </td>
+	                      <td><%= request.amountDisplay %></td>
+	                      <td><span class="pill"><%= request.statusLabel %></span></td>
+	                      <td>
+	                        <% if (request.canApprove || request.canMarkPaid || request.canReject) { %>
+	                          <form method="post" action="/simple-lms/admin/partner-withdrawals/<%= request._id %>/status" class="inline-form">
+	                            <select class="input" name="status">
+	                              <% if (request.canApprove) { %><option value="approved">approved</option><% } %>
+	                              <% if (request.canMarkPaid) { %><option value="paid">paid</option><% } %>
+	                              <% if (request.canReject) { %><option value="rejected">rejected</option><% } %>
+	                            </select>
+	                            <input class="input" type="text" name="transactionRef" placeholder="Tx ref (for paid)">
+	                            <input class="input" type="text" name="adminNotes" placeholder="Admin note">
+	                            <input type="hidden" name="returnTo" value="/admin/partners">
+	                            <button class="btn btn-primary btn-sm" type="submit">Update</button>
+	                          </form>
+	                        <% } else { %>
+	                          <span class="mini">Reviewer: <%= request.reviewerName || '-' %></span><br>
+	                          <span class="mini">Paid By: <%= request.paidByName || '-' %></span><br>
+	                          <span class="mini">Tx Ref: <%= request.transactionRef || '-' %></span>
+	                        <% } %>
+	                      </td>
+	                    </tr>
+	                  <% }) %>
+	                <% } %>
+	              </tbody>
+	            </table>
+	          </div>
+	        </section>
+
+	        <section class="card">
           <div class="head">
             <div>
               <h2>Partner Role Requests</h2>
@@ -2201,7 +2274,55 @@
 
       <% if (currentSection === 'analytics') { %>
         <section class="card">
-          <div class="head"><div><h2>Analytics</h2><p class="mini">Performance for last <%= analytics.lookbackDays %> days.</p></div></div>
+          <% const reportState = reportFilters || {} %>
+          <% const reportQueryParts = [] %>
+          <% if (reportState.from) reportQueryParts.push(`from=${encodeURIComponent(reportState.from)}`) %>
+          <% if (reportState.to) reportQueryParts.push(`to=${encodeURIComponent(reportState.to)}`) %>
+          <% if (reportState.lookbackDays) reportQueryParts.push(`lookbackDays=${encodeURIComponent(reportState.lookbackDays)}`) %>
+          <% if (reportState.partnerOrganizationId) reportQueryParts.push(`partnerOrganization=${encodeURIComponent(reportState.partnerOrganizationId)}`) %>
+          <% if (reportState.agentId) reportQueryParts.push(`agentId=${encodeURIComponent(reportState.agentId)}`) %>
+          <% if (reportState.courseId) reportQueryParts.push(`courseId=${encodeURIComponent(reportState.courseId)}`) %>
+          <% const reportQueryString = reportQueryParts.join('&') %>
+          <% const salesExportHref = `/api/reports/sales/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
+          <% const commissionExportHref = `/api/reports/commissions/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
+          <div class="head"><div><h2>Analytics</h2><p class="mini">Performance for last <%= analytics.lookbackDays %> days plus dedicated daily sales and churn reporting.</p></div></div>
+          <form method="get" action="/admin/analytics" class="inline-form" style="grid-template-columns: repeat(6, minmax(0, 1fr)); gap:10px;">
+            <div>
+              <label>From</label>
+              <input class="input" type="date" name="reportFrom" value="<%= reportState.from || '' %>">
+            </div>
+            <div>
+              <label>To</label>
+              <input class="input" type="date" name="reportTo" value="<%= reportState.to || '' %>">
+            </div>
+            <div>
+              <label>Lookback (days)</label>
+              <input class="input" type="number" name="reportLookbackDays" min="1" max="365" value="<%= Number(reportState.lookbackDays || analytics.lookbackDays || 30) %>">
+            </div>
+            <div>
+              <label>Partner Scope</label>
+              <select class="input" name="reportPartnerOrganization">
+                <option value="">All partners</option>
+                <% (partnerOrganizations || []).forEach((organization) => { %>
+                  <option value="<%= organization._id %>" <%= String(reportState.partnerOrganizationId || '') === String(organization._id || '') ? 'selected' : '' %>><%= organization.name || 'Partner Organization' %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div>
+              <label>Agent ID</label>
+              <input class="input" type="text" name="reportAgentId" value="<%= reportState.agentId || '' %>" placeholder="Optional">
+            </div>
+            <div>
+              <label>Course ID</label>
+              <input class="input" type="text" name="reportCourseId" value="<%= reportState.courseId || '' %>" placeholder="Optional">
+            </div>
+            <div class="actions" style="grid-column: 1 / -1;">
+              <button class="btn btn-primary btn-sm" type="submit">Apply Report Filters</button>
+              <a class="btn btn-secondary btn-sm" href="/admin/analytics">Reset</a>
+              <a class="btn btn-secondary btn-sm" href="<%= salesExportHref %>">Export Sales CSV</a>
+              <a class="btn btn-secondary btn-sm" href="<%= commissionExportHref %>">Export Commissions CSV</a>
+            </div>
+          </form>
           <div class="kpis">
             <article class="kpi"><small>Enrollments</small><strong><%= analytics.enrollmentTrend.current %></strong></article>
             <article class="kpi"><small>Completions</small><strong><%= analytics.completionTrend.current %></strong></article>
@@ -2240,9 +2361,66 @@
               <% } %>
             </article>
           </div>
+          <div class="grid">
+            <article class="card">
+              <strong>Daily Sales Report</strong>
+              <p class="mini">Date-indexed sales, commission, and partner revenue flow.</p>
+              <div class="kpis">
+                <article class="kpi"><small>Sales</small><strong><%= Number(dailySalesReport?.summary?.saleCount || 0) %></strong></article>
+                <article class="kpi"><small>Gross</small><strong><%= dailySalesReport?.summary?.grossSalesDisplay || 'NGN 0.00' %></strong></article>
+                <article class="kpi"><small>Creator Share</small><strong><%= dailySalesReport?.summary?.creatorCommissionDisplay || 'NGN 0.00' %></strong></article>
+                <article class="kpi"><small>Platform Share</small><strong><%= dailySalesReport?.summary?.platformShareDisplay || 'NGN 0.00' %></strong></article>
+              </div>
+              <% if (!dailySalesReport || !dailySalesReport.rows || dailySalesReport.rows.length === 0) { %>
+                <p class="mini">No daily sales data for this filter window.</p>
+              <% } else { %>
+                <div class="table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Sales</th>
+                        <th>Gross</th>
+                        <th>Creator</th>
+                        <th>Platform</th>
+                        <th>Agent</th>
+                        <th>Partner</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% dailySalesReport.rows.forEach((entry) => { %>
+                        <tr>
+                          <td><%= entry.date %></td>
+                          <td><%= Number(entry.saleCount || 0) %></td>
+                          <td><%= entry.grossSalesDisplay || 'NGN 0.00' %></td>
+                          <td><%= entry.creatorCommissionDisplay || 'NGN 0.00' %></td>
+                          <td><%= entry.platformShareDisplay || 'NGN 0.00' %></td>
+                          <td><%= entry.agentCommissionDisplay || 'NGN 0.00' %></td>
+                          <td><%= entry.partnerEarningsDisplay || 'NGN 0.00' %></td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </article>
+            <article class="card">
+              <strong>Churn Metrics</strong>
+              <p class="mini">Tracks agent attrition, time-to-first-sale, and learner drop-off.</p>
+              <div class="kpis">
+                <article class="kpi"><small>Active Agents</small><strong><%= Number(churnMetrics?.activeAgents || 0) %></strong></article>
+                <article class="kpi"><small>Removed Agents</small><strong><%= Number(churnMetrics?.removedAgents || 0) %></strong></article>
+                <article class="kpi"><small>Attrition</small><strong><%= Number(churnMetrics?.agentAttritionRatePercent || 0) %>%</strong></article>
+                <article class="kpi"><small>First Sale</small><strong><%= Number(churnMetrics?.averageTimeToFirstSaleDays || 0) %>d</strong></article>
+                <article class="kpi"><small>At-Risk Learners</small><strong><%= Number(churnMetrics?.atRiskEnrollments || 0) %></strong></article>
+                <article class="kpi"><small>Drop-Off</small><strong><%= Number(churnMetrics?.learnerDropOffRatePercent || 0) %>%</strong></article>
+              </div>
+            </article>
+          </div>
         </section>
       <% } %>
     </main>
   </div>
 </body>
 </html>
+

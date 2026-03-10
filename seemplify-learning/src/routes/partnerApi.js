@@ -5,9 +5,11 @@ import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { AgentInvite } from '../models/AgentInvite.js'
 import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
+import { PartnerWithdrawal } from '../models/PartnerWithdrawal.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { requirePartnerAccess, requireRole } from '../middleware/roles.js'
 import { emailService } from '../services/emailService.js'
+import { normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { resolveLearningRole } from '../utils/learningRoles.js'
 
@@ -37,6 +39,85 @@ const canRemoveAgent = (learningRole) => {
   return ['super_admin', 'admin', 'channel_partner_super'].includes(role)
 }
 
+const canManageAgentCommissionRate = (learningRole) => {
+  const role = String(learningRole || '').trim().toLowerCase()
+  return ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+}
+
+const canRequestPartnerWithdrawal = (learningRole) => {
+  const role = String(learningRole || '').trim().toLowerCase()
+  return ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+}
+
+const normalizePartnerWithdrawalStatus = (value, fallback = 'pending') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['pending', 'approved', 'paid', 'rejected', 'cancelled'].includes(normalized) ? normalized : fallback
+}
+
+const buildPartnerRevenueExpression = () => ({
+  $max: [
+    0,
+    {
+      $subtract: [
+        { $ifNull: ['$metadata.platformShareMinor', 0] },
+        { $ifNull: ['$commissionAmountMinor', 0] }
+      ]
+    }
+  ]
+})
+
+const getPartnerWalletSnapshot = async (orgId) => {
+  if (!orgId || !mongoose.Types.ObjectId.isValid(String(orgId))) {
+    return {
+      totalSalesMinor: 0,
+      totalAgentCommissionMinor: 0,
+      partnerEarningsMinor: 0,
+      paidOutMinor: 0,
+      pendingWithdrawalMinor: 0,
+      availableBalanceMinor: 0
+    }
+  }
+
+  const partnerOrgObjectId = new mongoose.Types.ObjectId(String(orgId))
+  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+    AgentSaleAttribution.aggregate([
+      { $match: { partnerOrganization: partnerOrgObjectId } },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+        }
+      }
+    ]),
+    PartnerWithdrawal.aggregate([
+      { $match: { organization: partnerOrgObjectId } },
+      {
+        $group: {
+          _id: null,
+          paidOutMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+          pendingWithdrawalMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } }
+        }
+      }
+    ])
+  ])
+
+  const earnings = earningsRaw[0] || { totalSalesMinor: 0, totalAgentCommissionMinor: 0, partnerEarningsMinor: 0 }
+  const withdrawals = withdrawalsRaw[0] || { paidOutMinor: 0, pendingWithdrawalMinor: 0 }
+  const partnerEarningsMinor = Math.max(0, Number(earnings.partnerEarningsMinor || 0))
+  const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
+  const pendingWithdrawalMinor = Math.max(0, Number(withdrawals.pendingWithdrawalMinor || 0))
+  return {
+    totalSalesMinor: Math.max(0, Number(earnings.totalSalesMinor || 0)),
+    totalAgentCommissionMinor: Math.max(0, Number(earnings.totalAgentCommissionMinor || 0)),
+    partnerEarningsMinor,
+    paidOutMinor,
+    pendingWithdrawalMinor,
+    availableBalanceMinor: Math.max(0, partnerEarningsMinor - paidOutMinor - pendingWithdrawalMinor)
+  }
+}
+
 const ensureAgentCap = (organization) => {
   const cap = Number(organization?.partnerSettings?.maxAgents)
   if (!Number.isFinite(cap) || cap <= 0) return
@@ -55,7 +136,7 @@ router.use(requireRole(PARTNER_API_ROLES))
 router.get('/:orgId', requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_user', 'sales_agent'], { allowPlatformAdmin: true }), async (req, res) => {
   try {
     const org = req.partnerOrg
-    const [agentCount, courseCount, attributionSummary] = await Promise.all([
+    const [agentCount, courseCount, attributionSummary, walletSummary] = await Promise.all([
       Account.countDocuments({ partnerOrganization: org._id, learningRole: 'channel_sales_agent' }),
       SimpleLmsCourse.countDocuments({ organization: org._id, isActive: true }),
       AgentSaleAttribution.aggregate([
@@ -72,7 +153,8 @@ router.get('/:orgId', requirePartnerAccess(['owner', 'admin', 'partner_admin', '
             }
           }
         }
-      ])
+      ]),
+      getPartnerWalletSnapshot(org._id)
     ])
 
     const summary = attributionSummary[0] || {
@@ -94,7 +176,10 @@ router.get('/:orgId', requirePartnerAccess(['owner', 'admin', 'partner_admin', '
         courseCount,
         totalSalesMinor: Number(summary.totalSales || 0),
         totalAgentCommissionsMinor: Number(summary.totalAgentCommissions || 0),
-        pendingAgentCommissionsMinor: Number(summary.pendingAgentCommissions || 0)
+        pendingAgentCommissionsMinor: Number(summary.pendingAgentCommissions || 0),
+        partnerEarningsMinor: Number(walletSummary.partnerEarningsMinor || 0),
+        partnerAvailableBalanceMinor: Number(walletSummary.availableBalanceMinor || 0),
+        partnerPendingWithdrawalMinor: Number(walletSummary.pendingWithdrawalMinor || 0)
       }
     })
   } catch (error) {
@@ -144,6 +229,11 @@ router.get('/:orgId/agents', requirePartnerAccess(['owner', 'admin', 'partner_ad
       }
     ])
     const statsByAgentId = new Map(salesByAgent.map((entry) => [String(entry._id), entry]))
+    const commissionOverrideByAgentId = new Map(
+      (org.members || [])
+        .filter((member) => member.role === 'sales_agent' && member.status === 'active')
+        .map((member) => [String(member.account), Number(member.agentCommissionRate)])
+    )
 
     const rows = agents.map((agent) => {
       const stats = statsByAgentId.get(String(agent._id)) || {
@@ -151,11 +241,13 @@ router.get('/:orgId/agents', requirePartnerAccess(['owner', 'admin', 'partner_ad
         totalSalesMinor: 0,
         totalCommissionMinor: 0
       }
+      const override = commissionOverrideByAgentId.get(String(agent._id))
       return {
         ...agent,
         salesCount: Number(stats.salesCount || 0),
         totalSalesMinor: Number(stats.totalSalesMinor || 0),
-        totalCommissionMinor: Number(stats.totalCommissionMinor || 0)
+        totalCommissionMinor: Number(stats.totalCommissionMinor || 0),
+        agentCommissionRate: Number.isFinite(override) ? Math.min(100, Math.max(0, override)) : null
       }
     })
 
@@ -314,6 +406,214 @@ router.post('/:orgId/agents', requirePartnerAccess(['owner', 'admin', 'partner_a
   } catch (error) {
     console.error('Partner add/invite agent API error:', error)
     return res.status(400).json({ error: error.message || 'Failed to add or invite agent.', code: 'AGENT_ADD_FAILED' })
+  }
+})
+
+router.put('/:orgId/agents/:agentId/commission-rate', requirePartnerAccess(['owner', 'admin', 'partner_admin'], { allowPlatformAdmin: true }), async (req, res) => {
+  try {
+    const org = req.partnerOrg
+    const learningRole = resolveLearningRole(req.user)
+    if (!canManageAgentCommissionRate(learningRole)) {
+      return res.status(403).json({ error: 'Only partner super users or platform admins can update agent commission rates.', code: 'AGENT_RATE_FORBIDDEN' })
+    }
+
+    const agentId = String(req.params.agentId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(agentId)) {
+      return res.status(400).json({ error: 'Invalid agent selected.', code: 'INVALID_AGENT_ID' })
+    }
+
+    const member = (org.members || []).find((entry) => (
+      String(entry.account) === agentId && entry.role === 'sales_agent' && entry.status === 'active'
+    ))
+    if (!member) {
+      return res.status(404).json({ error: 'Agent is not active in this organization.', code: 'AGENT_NOT_FOUND' })
+    }
+
+    const rawRate = String(req.body.ratePercent || '').trim()
+    let nextRate = null
+    if (rawRate) {
+      const parsed = Number(rawRate)
+      if (!Number.isFinite(parsed)) {
+        return res.status(400).json({ error: 'Enter a valid commission percentage.', code: 'INVALID_RATE' })
+      }
+      nextRate = Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+    }
+
+    const previousRate = Number(member.agentCommissionRate)
+    member.agentCommissionRate = nextRate
+    member.updatedAt = new Date()
+    member.updatedBy = req.user._id
+    await org.save()
+
+    await logAuditEvent({
+      action: 'agent.commission_rate_update',
+      performedBy: req.user._id,
+      targetAccount: member.account,
+      targetOrganization: org._id,
+      metadata: {
+        previousRate: Number.isFinite(previousRate) ? Math.min(100, Math.max(0, previousRate)) : null,
+        nextRate
+      },
+      req
+    })
+
+    return res.json({
+      success: true,
+      agentId,
+      commissionRatePercent: nextRate
+    })
+  } catch (error) {
+    console.error('Partner update agent commission-rate API error:', error)
+    return res.status(400).json({ error: error.message || 'Failed to update agent commission rate.', code: 'AGENT_RATE_UPDATE_FAILED' })
+  }
+})
+
+router.get('/:orgId/withdrawals', requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_user'], { allowPlatformAdmin: true }), async (req, res) => {
+  try {
+    const org = req.partnerOrg
+    const rows = await PartnerWithdrawal.find({ organization: org._id })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate('requestedBy', 'email profile')
+      .populate('reviewedBy', 'email profile')
+      .populate('paidBy', 'email profile')
+      .lean()
+    const wallet = await getPartnerWalletSnapshot(org._id)
+    return res.json({
+      wallet,
+      withdrawals: rows.map((entry) => ({
+        ...entry,
+        status: normalizePartnerWithdrawalStatus(entry.status, 'pending')
+      }))
+    })
+  } catch (error) {
+    console.error('Partner withdrawals API list error:', error)
+    return res.status(500).json({ error: 'Failed to load partner withdrawals.', code: 'PARTNER_WITHDRAWAL_LIST_FAILED' })
+  }
+})
+
+router.post('/:orgId/withdrawals', requirePartnerAccess(['owner', 'admin', 'partner_admin'], { allowPlatformAdmin: true }), async (req, res) => {
+  try {
+    const org = req.partnerOrg
+    const learningRole = resolveLearningRole(req.user)
+    if (!canRequestPartnerWithdrawal(learningRole)) {
+      return res.status(403).json({ error: 'Only partner super users or platform admins can request withdrawals.', code: 'PARTNER_WITHDRAWAL_FORBIDDEN' })
+    }
+
+    const amountMinor = parseMajorAmountToMinor(req.body.amount)
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+      return res.status(400).json({ error: 'Enter a valid withdrawal amount.', code: 'INVALID_AMOUNT' })
+    }
+
+    const currency = normalizeSimpleLmsCurrencyCode(
+      req.body.currency || org?.partnerSettings?.payoutProfile?.currency || 'NGN',
+      'NGN'
+    )
+    const wallet = await getPartnerWalletSnapshot(org._id)
+    if (amountMinor > wallet.availableBalanceMinor) {
+      return res.status(400).json({
+        error: 'Withdrawal exceeds available partner balance.',
+        code: 'INSUFFICIENT_BALANCE',
+        availableBalanceMinor: wallet.availableBalanceMinor
+      })
+    }
+
+    const payoutProfile = org?.partnerSettings?.payoutProfile || {}
+    const withdrawal = await PartnerWithdrawal.create({
+      organization: org._id,
+      requestedBy: req.user._id,
+      amountMinor: Math.round(amountMinor),
+      currency,
+      status: 'pending',
+      requestedAt: new Date(),
+      notes: String(req.body.notes || '').trim().slice(0, 1200),
+      payoutProfileSnapshot: {
+        accountName: String(payoutProfile.accountName || '').trim().slice(0, 200),
+        accountNumber: String(payoutProfile.accountNumber || '').trim().slice(0, 64),
+        bankName: String(payoutProfile.bankName || '').trim().slice(0, 200),
+        bankCode: String(payoutProfile.bankCode || '').trim().slice(0, 80),
+        swiftCode: String(payoutProfile.swiftCode || '').trim().slice(0, 80),
+        paymentEmail: String(payoutProfile.paymentEmail || '').trim().toLowerCase().slice(0, 320),
+        country: String(payoutProfile.country || '').trim().slice(0, 80),
+        notes: String(payoutProfile.notes || '').trim().slice(0, 1200)
+      }
+    })
+
+    await logAuditEvent({
+      action: 'partner.withdrawal.request',
+      performedBy: req.user._id,
+      targetOrganization: org._id,
+      metadata: {
+        withdrawalId: withdrawal._id,
+        amountMinor: withdrawal.amountMinor,
+        currency
+      },
+      req
+    })
+
+    return res.status(201).json({
+      success: true,
+      withdrawal
+    })
+  } catch (error) {
+    console.error('Partner withdrawal create API error:', error)
+    return res.status(400).json({ error: error.message || 'Failed to create partner withdrawal request.', code: 'PARTNER_WITHDRAWAL_CREATE_FAILED' })
+  }
+})
+
+router.post('/:orgId/withdrawals/:withdrawalId/cancel', requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_user'], { allowPlatformAdmin: true }), async (req, res) => {
+  try {
+    const org = req.partnerOrg
+    const learningRole = resolveLearningRole(req.user)
+    const withdrawalId = String(req.params.withdrawalId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
+      return res.status(400).json({ error: 'Invalid withdrawal selected.', code: 'INVALID_WITHDRAWAL_ID' })
+    }
+
+    const withdrawal = await PartnerWithdrawal.findOne({
+      _id: withdrawalId,
+      organization: org._id
+    })
+    if (!withdrawal) {
+      return res.status(404).json({ error: 'Withdrawal request not found.', code: 'WITHDRAWAL_NOT_FOUND' })
+    }
+
+    const status = normalizePartnerWithdrawalStatus(withdrawal.status, 'pending')
+    if (!['pending', 'approved'].includes(status)) {
+      return res.status(400).json({ error: 'Only pending or approved withdrawals can be cancelled.', code: 'WITHDRAWAL_CANCEL_FORBIDDEN' })
+    }
+
+    const isRequester = String(withdrawal.requestedBy || '') === String(req.user._id)
+    if (!isRequester && !canRequestPartnerWithdrawal(learningRole)) {
+      return res.status(403).json({ error: 'You do not have permission to cancel this withdrawal.', code: 'WITHDRAWAL_CANCEL_FORBIDDEN' })
+    }
+
+    withdrawal.status = 'cancelled'
+    withdrawal.reviewedBy = req.user._id
+    withdrawal.reviewedAt = new Date()
+    const cancelNote = String(req.body.cancelNote || '').trim().slice(0, 3000)
+    if (cancelNote) {
+      const existingNotes = String(withdrawal.adminNotes || '').trim()
+      withdrawal.adminNotes = existingNotes
+        ? `${existingNotes}\nCancelled: ${cancelNote}`.slice(0, 3000)
+        : `Cancelled: ${cancelNote}`
+    }
+    await withdrawal.save()
+
+    await logAuditEvent({
+      action: 'partner.withdrawal.cancel',
+      performedBy: req.user._id,
+      targetOrganization: org._id,
+      metadata: {
+        withdrawalId: withdrawal._id
+      },
+      req
+    })
+
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Partner withdrawal cancel API error:', error)
+    return res.status(400).json({ error: error.message || 'Failed to cancel partner withdrawal request.', code: 'PARTNER_WITHDRAWAL_CANCEL_FAILED' })
   }
 })
 
