@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    body.public-site.checkout-page {
+      background: #f4f7fb;
+      color: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .checkout-shell {
+      width: min(840px, 100%);
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+      display: grid;
+      gap: 16px;
+      flex: 1 0 auto;
+    }
+    .checkout-card {
+      border: 1px solid #d8e2ef;
+      border-radius: 18px;
+      background: #fff;
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+      box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.4);
+    }
+    .checkout-card h1 {
+      margin: 0;
+      font-size: clamp(30px, 4.5vw, 44px);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+    .checkout-sub {
+      margin: 0;
+      color: #5b708d;
+      font-size: 15px;
+    }
+    .checkout-summary {
+      border: 1px solid #d8e2ef;
+      border-radius: 14px;
+      background: #f8fbff;
+      padding: 12px;
+      display: grid;
+      gap: 6px;
+    }
+    .checkout-summary strong {
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+    .provider-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .provider-option {
+      border: 1px solid #d8e2ef;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .provider-option input {
+      margin-right: 8px;
+    }
+    .provider-option.disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      background: #f8fafc;
+    }
+    .provider-option p {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .provider-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      border: 1px solid #c5d7ef;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-weight: 700;
+      color: #3f5f8a;
+      background: #edf4ff;
+    }
+    .checkout-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body class="public-site checkout-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView }) %>
+
+  <main class="checkout-shell">
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+    <section class="checkout-card">
+      <h1>Complete Purchase</h1>
+      <p class="checkout-sub">Choose your payment gateway for this checkout.</p>
+
+      <article class="checkout-summary">
+        <strong><%= course.title %></strong>
+        <span><%= course.displayPrice %></span>
+        <span class="checkout-sub"><%= course.summaryText %></span>
+      </article>
+
+      <% const availableCheckoutProviders = (checkoutProviders || []).filter((provider) => provider.canCheckout) %>
+      <form method="post" action="/simple-lms/courses/<%= course._id %>/pay">
+        <input type="hidden" name="next" value="<%= nextPath %>">
+        <input type="hidden" name="fallback" value="<%= fallbackPath %>">
+        <input type="hidden" name="checkoutContext" value="<%= checkoutContext %>">
+
+        <div class="provider-grid">
+          <% (checkoutProviders || []).forEach((provider) => { %>
+            <% const checked = provider.key === selectedProvider ? 'checked' : '' %>
+            <% const disabled = provider.canCheckout ? '' : 'disabled' %>
+            <label class="provider-option <%= provider.canCheckout ? '' : 'disabled' %>">
+              <div>
+                <input type="radio" name="provider" value="<%= provider.key %>" <%= checked %> <%= disabled %>>
+                <strong><%= provider.label %></strong>
+              </div>
+              <p><%= provider.description %></p>
+              <% if (provider.canCheckout) { %>
+                <span class="provider-tag">Configured</span>
+              <% } else { %>
+                <span class="provider-tag"><%= provider.reason || 'Unavailable' %></span>
+              <% } %>
+            </label>
+          <% }) %>
+        </div>
+
+        <div class="checkout-actions">
+          <a class="btn btn-secondary" href="<%= fallbackPath %>">Back</a>
+          <button class="btn btn-primary" type="submit" <%= availableCheckoutProviders.length === 0 ? 'disabled' : '' %>>Continue to Payment</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <%- include('./partials/public-footer') %>
+</body>
+</html>

@@ -3,6 +3,7 @@ import express from 'express'
 import bcrypt from 'bcrypt'
 import mongoose from 'mongoose'
 import multer from 'multer'
+import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
@@ -17,7 +18,27 @@ import { RoleApprovalRequest } from '../models/RoleApprovalRequest.js'
 import { AuditLog } from '../models/AuditLog.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
-import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
+import {
+  createFlutterwavePaymentLink,
+  getFlutterwavePublicKey,
+  getFlutterwaveWebhookHash,
+  isFlutterwaveConfigured,
+  verifyFlutterwaveTransaction
+} from '../services/flutterwaveService.js'
+import {
+  getPaystackPublicKey,
+  getPaystackSecretKey,
+  initializePaystackTransaction,
+  isPaystackConfigured,
+  verifyPaystackTransaction
+} from '../services/paystackService.js'
+import {
+  encryptCredentialValue,
+  getLastFour,
+  hasEncryptedCredential,
+  isCredentialEncryptionConfigured,
+  maskKey
+} from '../services/credentialEncryptionService.js'
 import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
@@ -44,11 +65,25 @@ const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
 const DEFAULT_SIMPLE_LMS_CURRENCY_CODE = 'NGN'
 const PROGRAM_VISIBILITY_VALUES = ['organization_public']
+const PAYMENT_PROVIDERS = ['flutterwave', 'paystack']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
 const CREATOR_SETTINGS_SECTIONS = ['defaults', 'actions', 'payout', 'performance', 'wallet', 'withdrawals']
 const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'partners', 'super-users', 'audit-log', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
+const PAYMENT_PROVIDER_SESSION_KEY = 'simpleLmsPreferredPaymentProvider'
+const REAUTH_MAX_ATTEMPTS_PER_HOUR = 5
+const CREDENTIAL_UPDATE_MAX_PER_HOUR = 5
+const PAYMENT_PROVIDER_COPY = Object.freeze({
+  flutterwave: {
+    label: 'Flutterwave',
+    description: 'Card, bank transfer, and USSD'
+  },
+  paystack: {
+    label: 'Paystack',
+    description: 'Card, bank transfer, and USSD'
+  }
+})
 
 const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
 const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
@@ -84,6 +119,16 @@ const PLATFORM_SETTING_DEFAULTS = Object.freeze({
   maintenanceMode: false,
   maintenanceMessage: '',
   creatorSubmissionGuidelines: ''
+})
+
+const PAYMENT_GATEWAY_DEFAULTS = Object.freeze({
+  flutterwave: {
+    enabled: true
+  },
+  paystack: {
+    enabled: false
+  },
+  defaultProvider: 'flutterwave'
 })
 
 const CREATOR_SETTING_DEFAULTS = Object.freeze({
@@ -147,6 +192,7 @@ const resolveRole = (account) => {
 }
 
 const canManagePlatform = (role) => isPlatformAdminRole(role)
+const isSuperAdminRole = (role) => String(role || '').trim().toLowerCase() === 'super_admin'
 const canCreateCourses = (role) => canRoleCreateCourses(role)
 const isPartnerDashboardRole = (role) => PARTNER_DASHBOARD_ROLES.includes(String(role || '').trim().toLowerCase())
 const isPartnerSuperRole = (role) => PARTNER_SUPER_ROLES.includes(String(role || '').trim().toLowerCase())
@@ -293,6 +339,8 @@ const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => 
     attributedAt: new Date(),
     metadata: {
       txRef: payment.txRef || '',
+      provider: payment.provider || 'flutterwave',
+      providerTxId: payment.providerTxId || '',
       flutterwaveTxId: payment.flutterwaveTxId || '',
       platformShareMinor
     }
@@ -577,6 +625,400 @@ const getPlatformSettings = async (currencyCodes = activeSimpleLmsCurrencyCodes)
   return normalizePlatformSettings(raw, currencyCodes)
 }
 
+const normalizePaymentProvider = (value, fallback = PAYMENT_GATEWAY_DEFAULTS.defaultProvider) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return PAYMENT_PROVIDERS.includes(normalized) ? normalized : fallback
+}
+
+const normalizePaymentGatewaySettings = (raw = {}) => {
+  const flutterwaveEnabled = raw?.flutterwave?.enabled !== false
+  const paystackEnabled = Boolean(raw?.paystack?.enabled)
+  let safeFlutterwaveEnabled = flutterwaveEnabled
+  let safePaystackEnabled = paystackEnabled
+
+  if (!safeFlutterwaveEnabled && !safePaystackEnabled) {
+    safeFlutterwaveEnabled = true
+  }
+
+  let defaultProvider = normalizePaymentProvider(raw?.defaultProvider, PAYMENT_GATEWAY_DEFAULTS.defaultProvider)
+  if ((defaultProvider === 'flutterwave' && !safeFlutterwaveEnabled)
+    || (defaultProvider === 'paystack' && !safePaystackEnabled)) {
+    defaultProvider = safePaystackEnabled ? 'paystack' : 'flutterwave'
+  }
+
+  return {
+    flutterwave: {
+      enabled: safeFlutterwaveEnabled,
+      secretKey: raw?.flutterwave?.secretKey || {},
+      publicKey: raw?.flutterwave?.publicKey || {},
+      webhookHash: raw?.flutterwave?.webhookHash || {}
+    },
+    paystack: {
+      enabled: safePaystackEnabled,
+      secretKey: raw?.paystack?.secretKey || {},
+      publicKey: raw?.paystack?.publicKey || {}
+    },
+    defaultProvider
+  }
+}
+
+const getPaymentGatewaySettings = async () => {
+  const raw = await SimpleLmsPlatformSetting.findOne({})
+    .select('paymentGateways')
+    .lean()
+  return normalizePaymentGatewaySettings(raw?.paymentGateways || PAYMENT_GATEWAY_DEFAULTS)
+}
+
+const getCredentialMetaForDisplay = ({ storedCredential, envValue = '' }) => {
+  const fromEnv = String(envValue || '').trim()
+  const stored = hasEncryptedCredential(storedCredential)
+  const resolvedLastFour = stored
+    ? String(storedCredential?.lastFour || '').trim().slice(-4) || getLastFour(fromEnv)
+    : getLastFour(fromEnv)
+  const configured = stored || Boolean(fromEnv)
+  return {
+    configured,
+    source: stored ? 'database' : (fromEnv ? 'env' : 'missing'),
+    lastFour: resolvedLastFour,
+    masked: configured ? maskKey(resolvedLastFour) : 'Not set',
+    updatedAt: storedCredential?.updatedAt || null,
+    updatedBy: storedCredential?.updatedBy || null
+  }
+}
+
+const resolveSelectedPaymentProvider = ({ req, checkoutState }) => {
+  const requestedProvider = normalizePaymentProvider(
+    req.body?.provider || req.query?.provider || req.body?.paymentProvider || req.query?.paymentProvider,
+    ''
+  )
+  const sessionPreferredProvider = normalizePaymentProvider(req.session?.[PAYMENT_PROVIDER_SESSION_KEY] || '', '')
+
+  const selectableProviders = checkoutState.providerOptions
+    .filter((provider) => provider.canCheckout)
+    .map((provider) => provider.key)
+
+  const preferredCandidates = [
+    requestedProvider,
+    sessionPreferredProvider,
+    checkoutState.defaultProvider
+  ].filter(Boolean)
+
+  const selectedProvider = preferredCandidates.find((provider) => selectableProviders.includes(provider))
+    || selectableProviders[0]
+    || ''
+
+  if (selectedProvider && req.session) {
+    req.session[PAYMENT_PROVIDER_SESSION_KEY] = selectedProvider
+  }
+
+  return selectedProvider
+}
+
+const buildPaymentGatewayCheckoutState = async ({ req }) => {
+  const [settings, flutterwavePublicKey, paystackPublicKey, flutterwaveConfigured, paystackConfigured] = await Promise.all([
+    getPaymentGatewaySettings(),
+    getFlutterwavePublicKey(),
+    getPaystackPublicKey(),
+    isFlutterwaveConfigured(),
+    isPaystackConfigured()
+  ])
+
+  const flutterwaveCredentials = {
+    secretKey: getCredentialMetaForDisplay({
+      storedCredential: settings.flutterwave.secretKey,
+      envValue: process.env.FLUTTERWAVE_SECRET_KEY
+    }),
+    publicKey: getCredentialMetaForDisplay({
+      storedCredential: settings.flutterwave.publicKey,
+      envValue: process.env.FLUTTERWAVE_PUBLIC_KEY
+    }),
+    webhookHash: getCredentialMetaForDisplay({
+      storedCredential: settings.flutterwave.webhookHash,
+      envValue: process.env.FLUTTERWAVE_WEBHOOK_HASH
+    })
+  }
+  const paystackCredentials = {
+    secretKey: getCredentialMetaForDisplay({
+      storedCredential: settings.paystack.secretKey,
+      envValue: process.env.PAYSTACK_SECRET_KEY
+    }),
+    publicKey: getCredentialMetaForDisplay({
+      storedCredential: settings.paystack.publicKey,
+      envValue: process.env.PAYSTACK_PUBLIC_KEY
+    })
+  }
+
+  const providerOptions = PAYMENT_PROVIDERS.map((providerKey) => {
+    const isFlutterwaveProvider = providerKey === 'flutterwave'
+    const configured = isFlutterwaveProvider ? flutterwaveConfigured : paystackConfigured
+    const enabled = isFlutterwaveProvider ? settings.flutterwave.enabled : settings.paystack.enabled
+    const label = PAYMENT_PROVIDER_COPY[providerKey]?.label || providerKey
+    const description = PAYMENT_PROVIDER_COPY[providerKey]?.description || ''
+    const keyMeta = isFlutterwaveProvider ? flutterwaveCredentials : paystackCredentials
+    const canCheckout = enabled && configured
+    return {
+      key: providerKey,
+      label,
+      description,
+      enabled,
+      configured,
+      canCheckout,
+      reason: !enabled
+        ? 'Disabled by admin'
+        : (!configured ? 'Missing API credentials' : ''),
+      publicKey: isFlutterwaveProvider ? flutterwavePublicKey : paystackPublicKey,
+      credentials: keyMeta
+    }
+  })
+
+  const enabledProviders = providerOptions.filter((provider) => provider.enabled).map((provider) => provider.key)
+  const availableProviders = providerOptions.filter((provider) => provider.canCheckout).map((provider) => provider.key)
+  const defaultProvider = normalizePaymentProvider(settings.defaultProvider, PAYMENT_GATEWAY_DEFAULTS.defaultProvider)
+
+  const selectedProvider = resolveSelectedPaymentProvider({
+    req,
+    checkoutState: {
+      providerOptions,
+      defaultProvider
+    }
+  })
+
+  return {
+    defaultProvider,
+    selectedProvider,
+    providerOptions,
+    enabledProviders,
+    availableProviders,
+    hasAvailableProvider: availableProviders.length > 0,
+    requiresSelection: availableProviders.length > 1
+  }
+}
+
+const buildPaymentGatewaySettingsResponse = async ({ req, includeCredentialMeta = true } = {}) => {
+  const checkoutState = await buildPaymentGatewayCheckoutState({ req })
+  const flutterwaveProvider = checkoutState.providerOptions.find((entry) => entry.key === 'flutterwave') || {}
+  const paystackProvider = checkoutState.providerOptions.find((entry) => entry.key === 'paystack') || {}
+
+  const result = {
+    defaultProvider: checkoutState.defaultProvider,
+    selectedProvider: checkoutState.selectedProvider,
+    requiresSelection: checkoutState.requiresSelection,
+    hasAvailableProvider: checkoutState.hasAvailableProvider,
+    providers: {
+      flutterwave: {
+        enabled: flutterwaveProvider.enabled === true,
+        configured: flutterwaveProvider.configured === true,
+        statusLabel: flutterwaveProvider.configured ? 'Configured' : 'Missing keys',
+        reason: flutterwaveProvider.reason || '',
+        label: flutterwaveProvider.label || PAYMENT_PROVIDER_COPY.flutterwave.label
+      },
+      paystack: {
+        enabled: paystackProvider.enabled === true,
+        configured: paystackProvider.configured === true,
+        statusLabel: paystackProvider.configured ? 'Configured' : 'Missing keys',
+        reason: paystackProvider.reason || '',
+        label: paystackProvider.label || PAYMENT_PROVIDER_COPY.paystack.label,
+        webhookPath: '/api/simple-lms/payments/paystack/webhook'
+      }
+    }
+  }
+
+  if (includeCredentialMeta) {
+    result.providers.flutterwave.credentials = {
+      secretKey: flutterwaveProvider?.credentials?.secretKey || getCredentialMetaForDisplay({}),
+      publicKey: flutterwaveProvider?.credentials?.publicKey || getCredentialMetaForDisplay({}),
+      webhookHash: flutterwaveProvider?.credentials?.webhookHash || getCredentialMetaForDisplay({})
+    }
+    result.providers.paystack.credentials = {
+      secretKey: paystackProvider?.credentials?.secretKey || getCredentialMetaForDisplay({}),
+      publicKey: paystackProvider?.credentials?.publicKey || getCredentialMetaForDisplay({})
+    }
+  }
+
+  return result
+}
+
+const parseBooleanFlag = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', '1', 'on', 'yes', 'enabled'].includes(normalized)) return true
+  if (['false', '0', 'off', 'no', 'disabled'].includes(normalized)) return false
+  return fallback
+}
+
+const parseCredentialInput = (value) => {
+  if (value === undefined || value === null) return null
+  const normalized = String(value).trim()
+  return normalized || null
+}
+
+const signaturesMatch = (left, right) => {
+  const normalizedLeft = String(left || '').trim()
+  const normalizedRight = String(right || '').trim()
+  if (!normalizedLeft || !normalizedRight) return false
+  const leftBuffer = Buffer.from(normalizedLeft, 'utf8')
+  const rightBuffer = Buffer.from(normalizedRight, 'utf8')
+  if (leftBuffer.length !== rightBuffer.length) return false
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+const applyPaymentGatewaySettingsUpdate = async ({ req, payload = {} }) => {
+  const role = resolveRole(req.user)
+  ensureSuperAdminForPaymentSettings(role)
+
+  const settingsDoc = await SimpleLmsPlatformSetting.findOne({}) || new SimpleLmsPlatformSetting({})
+  const currentSettings = normalizePaymentGatewaySettings(settingsDoc.paymentGateways || PAYMENT_GATEWAY_DEFAULTS)
+
+  const nextFlutterwaveEnabled = parseBooleanFlag(payload.flutterwaveEnabled, currentSettings.flutterwave.enabled)
+  const nextPaystackEnabled = parseBooleanFlag(payload.paystackEnabled, currentSettings.paystack.enabled)
+  if (!nextFlutterwaveEnabled && !nextPaystackEnabled) {
+    const error = new Error('At least one payment provider must remain enabled.')
+    error.statusCode = 400
+    throw error
+  }
+
+  let nextDefaultProvider = normalizePaymentProvider(payload.defaultProvider, currentSettings.defaultProvider)
+  if (nextDefaultProvider === 'flutterwave' && !nextFlutterwaveEnabled) {
+    nextDefaultProvider = 'paystack'
+  }
+  if (nextDefaultProvider === 'paystack' && !nextPaystackEnabled) {
+    nextDefaultProvider = 'flutterwave'
+  }
+
+  settingsDoc.paymentGateways = settingsDoc.paymentGateways || {}
+  settingsDoc.paymentGateways.flutterwave = settingsDoc.paymentGateways.flutterwave || {}
+  settingsDoc.paymentGateways.paystack = settingsDoc.paymentGateways.paystack || {}
+
+  const providerToggleChanges = []
+  if (currentSettings.flutterwave.enabled !== nextFlutterwaveEnabled) {
+    providerToggleChanges.push({
+      provider: 'flutterwave',
+      from: currentSettings.flutterwave.enabled,
+      to: nextFlutterwaveEnabled
+    })
+  }
+  if (currentSettings.paystack.enabled !== nextPaystackEnabled) {
+    providerToggleChanges.push({
+      provider: 'paystack',
+      from: currentSettings.paystack.enabled,
+      to: nextPaystackEnabled
+    })
+  }
+
+  const defaultProviderChanged = currentSettings.defaultProvider !== nextDefaultProvider
+
+  settingsDoc.paymentGateways.flutterwave.enabled = nextFlutterwaveEnabled
+  settingsDoc.paymentGateways.paystack.enabled = nextPaystackEnabled
+  settingsDoc.paymentGateways.defaultProvider = nextDefaultProvider
+
+  const credentialChanges = []
+  const credentialInputMap = [
+    {
+      provider: 'flutterwave',
+      keyType: 'secretKey',
+      input: parseCredentialInput(payload.flutterwaveSecretKey ?? payload.credentials?.flutterwave?.secretKey)
+    },
+    {
+      provider: 'flutterwave',
+      keyType: 'publicKey',
+      input: parseCredentialInput(payload.flutterwavePublicKey ?? payload.credentials?.flutterwave?.publicKey)
+    },
+    {
+      provider: 'flutterwave',
+      keyType: 'webhookHash',
+      input: parseCredentialInput(payload.flutterwaveWebhookHash ?? payload.credentials?.flutterwave?.webhookHash)
+    },
+    {
+      provider: 'paystack',
+      keyType: 'secretKey',
+      input: parseCredentialInput(payload.paystackSecretKey ?? payload.credentials?.paystack?.secretKey)
+    },
+    {
+      provider: 'paystack',
+      keyType: 'publicKey',
+      input: parseCredentialInput(payload.paystackPublicKey ?? payload.credentials?.paystack?.publicKey)
+    }
+  ]
+
+  const hasCredentialInput = credentialInputMap.some((entry) => Boolean(entry.input))
+  if (hasCredentialInput) {
+    if (!isCredentialEncryptionConfigured()) {
+      const error = new Error('CREDENTIALS_ENCRYPTION_KEY must be configured before saving API keys.')
+      error.statusCode = 400
+      throw error
+    }
+    await assertPaymentCredentialUpdateRateLimit({ accountId: req.user?._id })
+    await verifyPaymentSettingsReauth({
+      req,
+      password: payload.password || payload.currentPassword
+    })
+  }
+
+  for (const entry of credentialInputMap) {
+    if (!entry.input) continue
+    const gatewayNode = settingsDoc.paymentGateways[entry.provider] || {}
+    const currentCredential = gatewayNode[entry.keyType] || {}
+    const oldLastFour = getCredentialMetaForDisplay({ storedCredential: currentCredential }).lastFour
+
+    const encryptedCredential = encryptCredentialValue(entry.input)
+    encryptedCredential.updatedBy = req.user._id
+    encryptedCredential.updatedAt = new Date()
+    settingsDoc.paymentGateways[entry.provider][entry.keyType] = encryptedCredential
+
+    credentialChanges.push({
+      provider: entry.provider,
+      keyType: entry.keyType,
+      oldLastFour,
+      newLastFour: encryptedCredential.lastFour
+    })
+  }
+
+  settingsDoc.updatedBy = req.user._id
+  settingsDoc.updatedAt = new Date()
+  await settingsDoc.save()
+
+  for (const toggleChange of providerToggleChanges) {
+    await logAuditEvent({
+      action: 'payment.gateway.provider_toggled',
+      performedBy: req.user._id,
+      metadata: {
+        provider: toggleChange.provider,
+        enabled: toggleChange.to,
+        previousEnabled: toggleChange.from
+      },
+      req
+    })
+  }
+
+  if (defaultProviderChanged) {
+    await logAuditEvent({
+      action: 'payment.gateway.default_changed',
+      performedBy: req.user._id,
+      metadata: {
+        previousDefault: currentSettings.defaultProvider,
+        defaultProvider: nextDefaultProvider
+      },
+      req
+    })
+  }
+
+  for (const credentialChange of credentialChanges) {
+    await logAuditEvent({
+      action: 'payment.gateway.credential_updated',
+      performedBy: req.user._id,
+      metadata: {
+        provider: credentialChange.provider,
+        keyType: credentialChange.keyType,
+        change: `${maskKey(credentialChange.oldLastFour)} -> ${maskKey(credentialChange.newLastFour)}`
+      },
+      req
+    })
+  }
+
+  return buildPaymentGatewaySettingsResponse({ req })
+}
+
 const resolveCommissionRate = ({ settings, creatorId, courseId }) => {
   const globalRate = normalizeCommissionRate(settings?.globalRatePercent, 70)
   const normalizedCreatorId = toIdString(creatorId)
@@ -705,6 +1147,92 @@ const assertCurrentPassword = async ({ accountId, password }) => {
   if (!isMatch) {
     throw new Error('Current password is incorrect.')
   }
+}
+
+const ensureSuperAdminForPaymentSettings = (role) => {
+  if (!isSuperAdminRole(role)) {
+    const error = new Error('Only super admins can manage payment gateway settings.')
+    error.statusCode = 403
+    throw error
+  }
+}
+
+const countRecentAuditEvents = async ({ accountId, action, lookbackMs = 60 * 60 * 1000 }) => {
+  if (!accountId || !action) return 0
+  return AuditLog.countDocuments({
+    performedBy: accountId,
+    action,
+    createdAt: { $gte: new Date(Date.now() - lookbackMs) }
+  })
+}
+
+const assertPaymentCredentialUpdateRateLimit = async ({ accountId }) => {
+  const changesInWindow = await countRecentAuditEvents({
+    accountId,
+    action: 'payment.gateway.credential_updated'
+  })
+  if (changesInWindow >= CREDENTIAL_UPDATE_MAX_PER_HOUR) {
+    const error = new Error('Credential update limit reached. Try again in one hour.')
+    error.statusCode = 429
+    throw error
+  }
+}
+
+const assertPaymentReauthAllowed = async ({ accountId }) => {
+  const failedAttempts = await countRecentAuditEvents({
+    accountId,
+    action: 'payment.gateway.reauth_failed'
+  })
+  if (failedAttempts >= REAUTH_MAX_ATTEMPTS_PER_HOUR) {
+    const error = new Error('Too many failed confirmations. Payment settings are locked for one hour.')
+    error.statusCode = 429
+    throw error
+  }
+}
+
+const verifyPaymentSettingsReauth = async ({ req, password }) => {
+  await assertPaymentReauthAllowed({ accountId: req.user?._id })
+  const candidatePassword = String(password || '').trim()
+  if (!candidatePassword) {
+    const error = new Error('Password confirmation is required.')
+    error.statusCode = 401
+    throw error
+  }
+
+  const account = await Account.findById(req.user?._id).select('_id passwordHash')
+  const isMatch = Boolean(account?.passwordHash) && await bcrypt.compare(candidatePassword, account.passwordHash)
+  if (isMatch) return true
+
+  const failedAttempts = await countRecentAuditEvents({
+    accountId: req.user?._id,
+    action: 'payment.gateway.reauth_failed'
+  })
+  const nextFailedCount = failedAttempts + 1
+
+  await logAuditEvent({
+    action: 'payment.gateway.reauth_failed',
+    performedBy: req.user?._id,
+    metadata: {
+      failedAttemptCount: nextFailedCount
+    },
+    req
+  })
+
+  if (nextFailedCount >= REAUTH_MAX_ATTEMPTS_PER_HOUR) {
+    await logAuditEvent({
+      action: 'payment.gateway.reauth_blocked',
+      performedBy: req.user?._id,
+      metadata: {
+        failedAttemptCount: nextFailedCount,
+        lockoutMinutes: 60
+      },
+      req
+    })
+  }
+
+  const error = new Error('Password confirmation failed.')
+  error.statusCode = 401
+  throw error
 }
 
 const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
@@ -1824,21 +2352,14 @@ const initiateCoursePaymentCheckout = async ({
   course,
   fallbackPath = '/simple-lms?view=catalog',
   nextPath = null,
-  checkoutContext = 'direct'
+  checkoutContext = 'direct',
+  allowProviderPrompt = true
 }) => {
   if (!course || !course._id) {
     return redirectWithMessage({
       res,
       path: fallbackPath,
       error: 'Course not found or unavailable.'
-    })
-  }
-
-  if (!isFlutterwaveConfigured()) {
-    return redirectWithMessage({
-      res,
-      path: fallbackPath,
-      error: 'Flutterwave is not configured yet. Contact an admin.'
     })
   }
 
@@ -1864,16 +2385,64 @@ const initiateCoursePaymentCheckout = async ({
     })
   }
 
+  const checkoutState = await buildPaymentGatewayCheckoutState({ req })
+  if (!checkoutState.hasAvailableProvider) {
+    return redirectWithMessage({
+      res,
+      path: fallbackPath,
+      error: 'No payment gateway is currently available. Contact an admin.'
+    })
+  }
+
   const normalizedCheckoutContext = String(checkoutContext || '').trim().toLowerCase() === 'cart'
     ? 'cart'
     : 'direct'
   const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
   const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
+
+  const requestedProvider = normalizePaymentProvider(
+    req.body?.provider || req.query?.provider || req.body?.paymentProvider || req.query?.paymentProvider,
+    ''
+  )
+  const hasRequestedProvider = Boolean(requestedProvider)
+  if (allowProviderPrompt && checkoutState.requiresSelection && !hasRequestedProvider) {
+    return res.render('simple-lms-payment-checkout', {
+      title: 'Complete Purchase',
+      user: req.user,
+      activePage: 'simple-lms',
+      activeLmsView: 'workspace',
+      course: decorateCourse(course),
+      checkoutContext: normalizedCheckoutContext,
+      checkoutProviders: checkoutState.providerOptions,
+      selectedProvider: checkoutState.selectedProvider || checkoutState.defaultProvider,
+      fallbackPath: finalFallbackPath,
+      nextPath: finalNextPath,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || ''),
+      info: String(req.query.info || '')
+    })
+  }
+
+  const selectedProvider = hasRequestedProvider
+    ? requestedProvider
+    : checkoutState.selectedProvider
+  if (!checkoutState.availableProviders.includes(selectedProvider)) {
+    return redirectWithMessage({
+      res,
+      path: finalFallbackPath,
+      error: 'Selected payment gateway is unavailable.'
+    })
+  }
+  if (req.session) {
+    req.session[PAYMENT_PROVIDER_SESSION_KEY] = selectedProvider
+  }
+
   const agentReferral = await resolveAgentReferralForCheckout({ req, course })
 
   const recentPendingPayment = await SimpleLmsPayment.findOne({
     account: req.user._id,
     course: course._id,
+    provider: selectedProvider,
     status: { $in: ['initiated', 'pending'] },
     checkoutUrl: { $exists: true, $nin: ['', null] },
     createdAt: { $gte: new Date(Date.now() - (30 * 60 * 1000)) }
@@ -1914,7 +2483,8 @@ const initiateCoursePaymentCheckout = async ({
   const paymentMetadata = {
     nextPath: finalNextPath,
     fallbackPath: finalFallbackPath,
-    checkoutContext: normalizedCheckoutContext
+    checkoutContext: normalizedCheckoutContext,
+    provider: selectedProvider
   }
   if (agentReferral) {
     paymentMetadata.agentReferral = {
@@ -1932,7 +2502,7 @@ const initiateCoursePaymentCheckout = async ({
     txRef,
     amountMinor,
     currency,
-    provider: 'flutterwave',
+    provider: selectedProvider,
     status: 'initiated',
     customerEmail: req.user.email || '',
     customerName: req.user.profile?.name || req.user.email || 'Learner',
@@ -1940,39 +2510,70 @@ const initiateCoursePaymentCheckout = async ({
   })
 
   try {
-    const redirectUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/flutterwave/callback`
-    const checkout = await createFlutterwavePaymentLink({
-      txRef,
-      amountMinor,
-      currency,
-      redirectUrl,
-      customerEmail: req.user.email || '',
-      customerName: req.user.profile?.name || req.user.email || 'Learner',
-      title: `Course Payment - ${course.title}`,
-      description: `Payment for ${course.title}`
-    })
+    let checkoutUrl = ''
+    let initResponse = null
+    if (selectedProvider === 'paystack') {
+      const callbackUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/paystack/callback`
+      const checkout = await initializePaystackTransaction({
+        reference: txRef,
+        amountMinor,
+        currency,
+        callbackUrl,
+        customerEmail: req.user.email || '',
+        metadata: {
+          courseId: toIdString(course._id),
+          accountId: toIdString(req.user._id),
+          txRef
+        }
+      })
+      checkoutUrl = checkout.authorizationUrl
+      initResponse = checkout.raw
+      payment.paystackReference = checkout.reference || txRef
+      payment.paystackStatus = 'pending'
+      payment.providerTxId = payment.providerTxId || checkout.accessCode || ''
+    } else {
+      const redirectUrl = `${buildAppBaseUrl(req)}/simple-lms/payments/flutterwave/callback`
+      const checkout = await createFlutterwavePaymentLink({
+        txRef,
+        amountMinor,
+        currency,
+        redirectUrl,
+        customerEmail: req.user.email || '',
+        customerName: req.user.profile?.name || req.user.email || 'Learner',
+        title: `Course Payment - ${course.title}`,
+        description: `Payment for ${course.title}`
+      })
+      checkoutUrl = checkout.link
+      initResponse = checkout.raw
+      payment.flutterwaveStatus = 'pending'
+    }
 
-    payment.checkoutUrl = checkout.link
+    payment.checkoutUrl = checkoutUrl
     payment.status = 'pending'
-    payment.flutterwaveStatus = 'pending'
     payment.metadata = {
       ...(payment.metadata || {}),
       nextPath: finalNextPath,
       fallbackPath: finalFallbackPath,
       checkoutContext: normalizedCheckoutContext,
-      initResponse: checkout.raw
+      provider: selectedProvider,
+      initResponse
     }
     await payment.save()
 
-    return res.redirect(checkout.link)
+    return res.redirect(checkoutUrl)
   } catch (error) {
     payment.status = 'failed'
-    payment.flutterwaveStatus = 'init_error'
+    if (selectedProvider === 'paystack') {
+      payment.paystackStatus = 'init_error'
+    } else {
+      payment.flutterwaveStatus = 'init_error'
+    }
     payment.metadata = {
       ...(payment.metadata || {}),
       nextPath: finalNextPath,
       fallbackPath: finalFallbackPath,
       checkoutContext: normalizedCheckoutContext,
+      provider: selectedProvider,
       initError: String(error?.message || 'Failed to initialize payment')
     }
     await payment.save()
@@ -2203,7 +2804,7 @@ pageRouter.post('/cart/checkout', requirePageAuth, async (req, res) => {
       status: 'published',
       visibility: { $in: PUBLIC_VISIBILITY_VALUES }
     })
-      .select('_id pricing')
+      .select('_id title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail')
       .lean()
 
     const successfulPayments = await SimpleLmsPayment.find({
@@ -2350,6 +2951,95 @@ pageRouter.post('/cart/clear', requirePageAuth, async (req, res) => {
   })
 })
 
+const buildPaymentCallbackContext = ({ payment }) => {
+  const courseId = toIdString(payment?.course?._id || payment?.course)
+  const nextPath = sanitizeInternalPath(payment?.metadata?.nextPath, `/simple-lms/take/${courseId}`)
+  const fallbackPath = sanitizeInternalPath(payment?.metadata?.fallbackPath, '/simple-lms?view=catalog')
+  const checkoutContext = String(payment?.metadata?.checkoutContext || '').trim().toLowerCase() === 'cart'
+    ? 'cart'
+    : 'direct'
+  return {
+    nextPath,
+    fallbackPath,
+    checkoutContext
+  }
+}
+
+const redirectAfterPaymentCallback = async ({ req, res, payment, defaultMessage }) => {
+  const callbackContext = buildPaymentCallbackContext({ payment })
+  if (callbackContext.checkoutContext !== 'cart') {
+    return redirectWithMessage({
+      res,
+      path: callbackContext.nextPath,
+      success: defaultMessage
+    })
+  }
+
+  const remainingPayableCount = await getRemainingPayableCartCount({ req, accountId: req.user._id })
+  if (remainingPayableCount > 0) {
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms/cart',
+      success: `${defaultMessage} ${remainingPayableCount} item(s) remaining in your cart.`
+    })
+  }
+  return redirectWithMessage({
+    res,
+    path: '/simple-lms?view=my-learning',
+    success: `${defaultMessage} Your cart is clear.`
+  })
+}
+
+const verifyFlutterwavePaymentRecord = async ({ payment, transactionId, callbackStatus = '' }) => {
+  const verification = await verifyFlutterwaveTransaction(transactionId)
+  const verifiedData = verification?.data || {}
+  const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
+  const verifiedTxRef = String(verifiedData?.tx_ref || '').trim()
+  const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
+  const verifiedAmountMajor = Number(verifiedData?.amount || 0)
+  const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
+  const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
+  const txRefMatches = verifiedTxRef === payment.txRef
+  const statusMatches = verifiedStatus === 'successful'
+  const currencyMatches = verifiedCurrency === payment.currency
+
+  payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
+  payment.providerTxId = payment.flutterwaveTxId
+  payment.flutterwaveStatus = verifiedStatus || callbackStatus || 'unknown'
+  payment.verificationPayload = verification
+  payment.verifiedAt = new Date()
+
+  return {
+    success: statusMatches && txRefMatches && amountMatches && currencyMatches,
+    paidAt: verifiedData?.created_at ? new Date(verifiedData.created_at) : new Date()
+  }
+}
+
+const verifyPaystackPaymentRecord = async ({ payment, reference }) => {
+  const verification = await verifyPaystackTransaction(reference)
+  const verifiedData = verification?.data || {}
+  const verifiedStatus = String(verifiedData?.status || '').trim().toLowerCase()
+  const verifiedReference = String(verifiedData?.reference || reference || '').trim()
+  const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
+  const verifiedAmountMinor = Math.max(0, Math.round(Number(verifiedData?.amount || 0)))
+  const expectedAmountMinor = Math.max(0, Math.round(Number(payment.amountMinor || 0)))
+  const amountMatches = verifiedAmountMinor === expectedAmountMinor
+  const referenceMatches = verifiedReference === payment.txRef || verifiedReference === payment.paystackReference
+  const statusMatches = verifiedStatus === 'success'
+  const currencyMatches = verifiedCurrency === payment.currency
+
+  payment.paystackReference = verifiedReference || payment.paystackReference || payment.txRef
+  payment.paystackStatus = verifiedStatus || 'unknown'
+  payment.providerTxId = String(verifiedData?.id || payment.providerTxId || verifiedReference)
+  payment.verificationPayload = verification
+  payment.verifiedAt = new Date()
+
+  return {
+    success: statusMatches && referenceMatches && amountMatches && currencyMatches,
+    paidAt: verifiedData?.paid_at ? new Date(verifiedData.paid_at) : new Date()
+  }
+}
+
 pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, res) => {
   try {
     const txRef = String(req.query.tx_ref || '').trim()
@@ -2366,7 +3056,8 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
 
     const payment = await SimpleLmsPayment.findOne({
       txRef,
-      account: req.user._id
+      account: req.user._id,
+      provider: 'flutterwave'
     })
       .populate('course')
 
@@ -2377,33 +3068,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
         error: 'Payment record not found.'
       })
     }
-    const nextPath = sanitizeInternalPath(payment.metadata?.nextPath, `/simple-lms/take/${payment.course._id}`)
-    const fallbackPath = sanitizeInternalPath(payment.metadata?.fallbackPath, '/simple-lms?view=catalog')
-    const checkoutContext = String(payment.metadata?.checkoutContext || '').trim().toLowerCase() === 'cart'
-      ? 'cart'
-      : 'direct'
-    const cartSuccessRedirect = async ({ defaultMessage }) => {
-      if (checkoutContext !== 'cart') {
-        return redirectWithMessage({
-          res,
-          path: nextPath,
-          success: defaultMessage
-        })
-      }
-      const remainingPayableCount = await getRemainingPayableCartCount({ req, accountId: req.user._id })
-      if (remainingPayableCount > 0) {
-        return redirectWithMessage({
-          res,
-          path: '/simple-lms/cart',
-          success: `${defaultMessage} ${remainingPayableCount} item(s) remaining in your cart.`
-        })
-      }
-      return redirectWithMessage({
-        res,
-        path: '/simple-lms?view=my-learning',
-        success: `${defaultMessage} Your cart is clear.`
-      })
-    }
+    const { fallbackPath } = buildPaymentCallbackContext({ payment })
 
     if (payment.status === 'successful') {
       await createOrUpdateAgentAttributionForPayment({
@@ -2412,12 +3077,18 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       })
       removeSessionCartCourseId(req, payment.course._id)
       clearReferralCodeForCourse(req, payment.course._id)
-      return cartSuccessRedirect({ defaultMessage: 'Payment already verified.' })
+      return redirectAfterPaymentCallback({
+        req,
+        res,
+        payment,
+        defaultMessage: 'Payment already verified.'
+      })
     }
 
     if (!transactionId || (status && !['successful', 'completed'].includes(status))) {
       payment.status = status === 'cancelled' ? 'cancelled' : 'failed'
       payment.flutterwaveStatus = status || 'failed'
+      payment.providerTxId = payment.providerTxId || payment.flutterwaveTxId || ''
       payment.verifiedAt = new Date()
       await payment.save()
       return redirectWithMessage({
@@ -2427,23 +3098,13 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       })
     }
 
-    const verification = await verifyFlutterwaveTransaction(transactionId)
-    const verifiedData = verification?.data || {}
-    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
-    const verifiedTxRef = String(verifiedData?.tx_ref || '').trim()
-    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
-    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
-    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
-    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
-    const txRefMatches = verifiedTxRef === payment.txRef
-    const statusMatches = verifiedStatus === 'successful'
+    const verificationResult = await verifyFlutterwavePaymentRecord({
+      payment,
+      transactionId,
+      callbackStatus: status
+    })
 
-    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
-    payment.flutterwaveStatus = verifiedStatus || status || 'unknown'
-    payment.verificationPayload = verification
-    payment.verifiedAt = new Date()
-
-    if (!statusMatches || !txRefMatches || !amountMatches || verifiedCurrency !== payment.currency) {
+    if (!verificationResult.success) {
       payment.status = 'failed'
       await payment.save()
       return redirectWithMessage({
@@ -2456,12 +3117,17 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
     await markPaymentSuccessful({
       payment,
       course: payment.course,
-      paidAt: new Date()
+      paidAt: verificationResult.paidAt || new Date()
     })
     removeSessionCartCourseId(req, payment.course._id)
     clearReferralCodeForCourse(req, payment.course._id)
 
-    return cartSuccessRedirect({ defaultMessage: 'Payment verified. Course unlocked.' })
+    return redirectAfterPaymentCallback({
+      req,
+      res,
+      payment,
+      defaultMessage: 'Payment verified. Course unlocked.'
+    })
   } catch (error) {
     console.error('Flutterwave callback error:', error)
     return redirectWithMessage({
@@ -3942,6 +4608,103 @@ pageRouter.post('/admin/super-users/promote', requirePageAuth, async (req, res) 
   }
 })
 
+pageRouter.get('/payments/paystack/callback', requirePageAuth, async (req, res) => {
+  try {
+    const reference = String(req.query.reference || req.query.trxref || '').trim()
+    const status = String(req.query.status || '').trim().toLowerCase()
+    if (!reference) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment callback is missing transaction reference.'
+      })
+    }
+
+    const payment = await SimpleLmsPayment.findOne({
+      account: req.user._id,
+      provider: 'paystack',
+      $or: [
+        { txRef: reference },
+        { paystackReference: reference }
+      ]
+    }).populate('course')
+
+    if (!payment || !payment.course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Payment record not found.'
+      })
+    }
+
+    const { fallbackPath } = buildPaymentCallbackContext({ payment })
+    if (payment.status === 'successful') {
+      await createOrUpdateAgentAttributionForPayment({
+        payment,
+        course: payment.course
+      })
+      removeSessionCartCourseId(req, payment.course._id)
+      clearReferralCodeForCourse(req, payment.course._id)
+      return redirectAfterPaymentCallback({
+        req,
+        res,
+        payment,
+        defaultMessage: 'Payment already verified.'
+      })
+    }
+
+    if (status && ['failed', 'abandoned', 'cancelled'].includes(status)) {
+      payment.status = status === 'cancelled' ? 'cancelled' : 'failed'
+      payment.paystackStatus = status
+      payment.paystackReference = payment.paystackReference || reference
+      payment.verifiedAt = new Date()
+      await payment.save()
+      return redirectWithMessage({
+        res,
+        path: fallbackPath,
+        error: 'Payment was not completed.'
+      })
+    }
+
+    const verificationResult = await verifyPaystackPaymentRecord({
+      payment,
+      reference
+    })
+
+    if (!verificationResult.success) {
+      payment.status = 'failed'
+      await payment.save()
+      return redirectWithMessage({
+        res,
+        path: fallbackPath,
+        error: 'Payment verification failed.'
+      })
+    }
+
+    await markPaymentSuccessful({
+      payment,
+      course: payment.course,
+      paidAt: verificationResult.paidAt || new Date()
+    })
+    removeSessionCartCourseId(req, payment.course._id)
+    clearReferralCodeForCourse(req, payment.course._id)
+
+    return redirectAfterPaymentCallback({
+      req,
+      res,
+      payment,
+      defaultMessage: 'Payment verified. Course unlocked.'
+    })
+  } catch (error) {
+    console.error('Paystack callback error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/courses',
+      error: 'Failed to verify payment.'
+    })
+  }
+})
+
 pageRouter.post('/admin/super-users/:accountId/promote', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
   try {
@@ -4932,6 +5695,31 @@ pageRouter.post('/settings/platform', requirePageAuth, async (req, res) => {
   }
 })
 
+pageRouter.post('/settings/payment-gateways', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
+  try {
+    await applyPaymentGatewaySettingsUpdate({
+      req,
+      payload: req.body || {}
+    })
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Payment gateway settings updated.'
+    })
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || 500)
+    const errorMessage = error?.message || 'Failed to update payment gateway settings.'
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: statusCode === 403
+        ? 'Only super admins can manage payment gateway settings.'
+        : errorMessage
+    })
+  }
+})
+
 pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin', '/admin')
   try {
@@ -4974,32 +5762,39 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
       })
     }
 
-    const transactionId = String(req.body?.transactionId || payment.flutterwaveTxId || '').trim()
-    if (!transactionId) {
-      return redirectWithMessage({
-        res,
-        path: returnTo,
-        error: 'Provider transaction ID is required for re-verification.'
+    const provider = normalizePaymentProvider(payment.provider, 'flutterwave')
+    const manualReference = String(req.body?.reference || req.body?.transactionId || '').trim()
+    let verificationResult = { success: false, paidAt: new Date() }
+
+    if (provider === 'paystack') {
+      const reference = manualReference || payment.paystackReference || payment.txRef
+      if (!reference) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Paystack reference is required for re-verification.'
+        })
+      }
+      verificationResult = await verifyPaystackPaymentRecord({
+        payment,
+        reference
+      })
+    } else {
+      const transactionId = manualReference || payment.providerTxId || payment.flutterwaveTxId || ''
+      if (!transactionId) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Provider transaction ID is required for re-verification.'
+        })
+      }
+      verificationResult = await verifyFlutterwavePaymentRecord({
+        payment,
+        transactionId
       })
     }
 
-    const verification = await verifyFlutterwaveTransaction(transactionId)
-    const verifiedData = verification?.data || {}
-    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
-    const verifiedTxRef = String(verifiedData?.tx_ref || '').trim()
-    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
-    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
-    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
-    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
-    const txRefMatches = verifiedTxRef === payment.txRef
-    const statusMatches = verifiedStatus === 'successful'
-
-    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
-    payment.flutterwaveStatus = verifiedStatus || payment.flutterwaveStatus || 'unknown'
-    payment.verificationPayload = verification
-    payment.verifiedAt = new Date()
-
-    if (!statusMatches || !txRefMatches || !amountMatches || verifiedCurrency !== payment.currency) {
+    if (!verificationResult.success) {
       payment.status = 'failed'
       await payment.save()
       return redirectWithMessage({
@@ -5012,7 +5807,7 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
     await markPaymentSuccessful({
       payment,
       course: payment.course,
-      paidAt: payment.paidAt || new Date()
+      paidAt: payment.paidAt || verificationResult.paidAt || new Date()
     })
 
     return redirectWithMessage({
@@ -5032,10 +5827,14 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
 
 pageRouter.get('/cart', requirePageAuth, async (req, res) => {
   try {
-    const { cartCourses, cartSummary } = await resolveCartWorkspaceState({
-      req,
-      accountId: req.user._id
-    })
+    const [cartState, paymentCheckout] = await Promise.all([
+      resolveCartWorkspaceState({
+        req,
+        accountId: req.user._id
+      }),
+      buildPaymentGatewayCheckoutState({ req })
+    ])
+    const { cartCourses, cartSummary } = cartState
     res.locals.simpleLmsCartCount = cartSummary.itemCount
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
 
@@ -5046,6 +5845,7 @@ pageRouter.get('/cart', requirePageAuth, async (req, res) => {
       activeLmsView: 'workspace',
       cartCourses,
       cartSummary,
+      paymentCheckout,
       success: String(req.query.success || ''),
       error: String(req.query.error || ''),
       info: String(req.query.info || '')
@@ -5056,6 +5856,43 @@ pageRouter.get('/cart', requirePageAuth, async (req, res) => {
       res,
       path: '/simple-lms',
       error: 'Failed to load cart.'
+    })
+  }
+})
+
+pageRouter.get('/checkout/course/:courseId', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    const course = await findPublicCourseForLearning(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: '/simple-lms?view=catalog',
+        error: 'Course not available for checkout.'
+      })
+    }
+
+    const fallbackPath = sanitizeInternalPath(req.query?.fallback || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+    const nextPath = sanitizeInternalPath(req.query?.next || `/simple-lms/take/${courseId}`, `/simple-lms/take/${courseId}`)
+    const checkoutContext = String(req.query?.checkoutContext || '').trim().toLowerCase() === 'cart'
+      ? 'cart'
+      : 'direct'
+
+    return initiateCoursePaymentCheckout({
+      req,
+      res,
+      course,
+      fallbackPath,
+      nextPath,
+      checkoutContext,
+      allowProviderPrompt: true
+    })
+  } catch (error) {
+    console.error('Course checkout page error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=catalog',
+      error: 'Failed to start checkout.'
     })
   }
 })
@@ -5241,7 +6078,7 @@ const renderWorkspacePage = async (
       ? {}
       : partnerScopedFilter({})
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, paymentGatewaySettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -5304,7 +6141,7 @@ const renderWorkspacePage = async (
         account: req.user._id,
         status: 'successful'
       })
-        .select('course amountMinor currency paidAt txRef flutterwaveTxId')
+        .select('course amountMinor currency paidAt txRef provider providerTxId flutterwaveTxId paystackReference')
         .populate('course', 'title')
         .sort({ paidAt: -1, createdAt: -1 })
         .lean(),
@@ -5328,6 +6165,7 @@ const renderWorkspacePage = async (
         : Promise.resolve([]),
       getCommissionSettings(),
       getPlatformSettings(currencyCatalog.codes),
+      buildPaymentGatewaySettingsResponse({ req, includeCredentialMeta: isSuperAdminRole(role) }),
       canCreateCourses(role)
         ? SimpleLmsPayment.aggregate([
           {
@@ -5725,7 +6563,10 @@ const renderWorkspacePage = async (
     const myPayments = (myPaymentsRaw || []).map((payment) => ({
       ...payment,
       courseTitle: payment.course?.title || toIdString(payment.course),
-      amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency)
+      amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency),
+      provider: normalizePaymentProvider(payment.provider, 'flutterwave'),
+      providerLabel: PAYMENT_PROVIDER_COPY[normalizePaymentProvider(payment.provider, 'flutterwave')]?.label || 'Flutterwave',
+      providerReference: payment.providerTxId || payment.flutterwaveTxId || payment.paystackReference || ''
     }))
 
     const managedCourseIdList = managedRaw.map((course) => course._id)
@@ -5747,6 +6588,8 @@ const renderWorkspacePage = async (
       courseOverrides: Array.isArray(commissionSettingsRaw?.courseOverrides) ? commissionSettingsRaw.courseOverrides : []
     }
     const platformSettings = normalizePlatformSettings(platformSettingsRaw || PLATFORM_SETTING_DEFAULTS, currencyCatalog.codes)
+    const paymentGatewaySettings = paymentGatewaySettingsRaw || await buildPaymentGatewaySettingsResponse({ req })
+    const canManagePaymentGateways = isSuperAdminRole(role)
     const creatorSettings = normalizeCreatorSettings(req.user.creatorSettings || CREATOR_SETTING_DEFAULTS, currencyCatalog.codes)
 
     const creatorSales = creatorSalesRaw.map((payment) => {
@@ -6056,7 +6899,10 @@ const renderWorkspacePage = async (
       amountDisplay: formatCurrencyAmount(payment.amountMinor, payment.currency),
       creatorCommissionDisplay: formatCurrencyAmount(payment.creatorCommissionMinor || 0, payment.currency),
       platformShareDisplay: formatCurrencyAmount(payment.platformShareMinor || 0, payment.currency),
-      statusLabel: String(payment.status || '').replace(/_/g, ' ')
+      statusLabel: String(payment.status || '').replace(/_/g, ' '),
+      provider: normalizePaymentProvider(payment.provider, 'flutterwave'),
+      providerLabel: PAYMENT_PROVIDER_COPY[normalizePaymentProvider(payment.provider, 'flutterwave')]?.label || 'Flutterwave',
+      providerReference: payment.providerTxId || payment.flutterwaveTxId || payment.paystackReference || ''
     }))
 
     if (paymentSearchFilter) {
@@ -6064,7 +6910,11 @@ const renderWorkspacePage = async (
       adminPayments = adminPayments.filter((payment) => {
         const haystack = [
           payment.txRef,
+          payment.provider,
+          payment.providerLabel,
+          payment.providerReference,
           payment.flutterwaveTxId,
+          payment.paystackReference,
           payment.learnerName,
           payment.learnerEmail,
           payment.courseTitle,
@@ -6658,9 +7508,12 @@ const renderWorkspacePage = async (
       },
       analytics,
       platformSettings,
+      paymentGatewaySettings,
+      canManagePaymentGateways,
+      credentialsEncryptionConfigured: isCredentialEncryptionConfigured(),
       flutterwave: {
-        enabled: isFlutterwaveConfigured(),
-        publicKey: getFlutterwavePublicKey()
+        enabled: Boolean(paymentGatewaySettings?.providers?.flutterwave?.configured),
+        publicKey: ''
       },
       pendingReviewCourses,
       approvalQueueCourses,
@@ -6764,10 +7617,10 @@ adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => 
 
 apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
   try {
-    const configuredHash = String(process.env.FLUTTERWAVE_WEBHOOK_HASH || '').trim()
+    const configuredHash = await getFlutterwaveWebhookHash()
     if (configuredHash) {
       const receivedHash = String(req.headers['verif-hash'] || '').trim()
-      if (!receivedHash || receivedHash !== configuredHash) {
+      if (!signaturesMatch(receivedHash, configuredHash)) {
         return res.status(401).json({ error: 'Invalid webhook signature.' })
       }
     }
@@ -6784,7 +7637,10 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
       return res.json({ ok: true })
     }
 
-    const payment = await SimpleLmsPayment.findOne({ txRef })
+    const payment = await SimpleLmsPayment.findOne({
+      txRef,
+      provider: 'flutterwave'
+    })
     if (!payment) {
       return res.json({ ok: true })
     }
@@ -6801,42 +7657,112 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
       return res.json({ ok: true })
     }
 
-    const verification = await verifyFlutterwaveTransaction(transactionId)
-    const verifiedData = verification?.data || {}
-    const verifiedStatus = String(verifiedData?.status || '').toLowerCase()
-    const verifiedCurrency = normalizeCurrencyCode(verifiedData?.currency || payment.currency)
-    const verifiedAmountMajor = Number(verifiedData?.amount || 0)
-    const expectedAmountMajor = Number(payment.amountMinor || 0) / 100
-    const amountMatches = Math.abs(verifiedAmountMajor - expectedAmountMajor) < 0.01
-    const txRefMatches = String(verifiedData?.tx_ref || '').trim() === payment.txRef
-    const statusMatches = verifiedStatus === 'successful'
-
-    payment.flutterwaveTxId = String(verifiedData?.id || transactionId)
-    payment.flutterwaveStatus = verifiedStatus || 'unknown'
-    payment.verificationPayload = verification
-    payment.verifiedAt = new Date()
-
-    if (statusMatches && amountMatches && txRefMatches && verifiedCurrency === payment.currency) {
-      const courseForCommission = await SimpleLmsCourse.findById(payment.course)
-        .select('_id organization createdBy')
-      if (!courseForCommission?._id) {
-        payment.status = 'failed'
-        await payment.save()
-      } else {
-        await markPaymentSuccessful({
-          payment,
-          course: courseForCommission,
-          paidAt: new Date()
-        })
-      }
-    } else {
+    const verificationResult = await verifyFlutterwavePaymentRecord({
+      payment,
+      transactionId
+    })
+    if (!verificationResult.success) {
       payment.status = 'failed'
       await payment.save()
+      return res.json({ ok: true })
     }
 
+    const courseForCommission = await SimpleLmsCourse.findById(payment.course)
+      .select('_id organization createdBy')
+    if (!courseForCommission?._id) {
+      payment.status = 'failed'
+      await payment.save()
+      return res.json({ ok: true })
+    }
+
+    await markPaymentSuccessful({
+      payment,
+      course: courseForCommission,
+      paidAt: verificationResult.paidAt || new Date()
+    })
     return res.json({ ok: true })
   } catch (error) {
     console.error('Flutterwave webhook error:', error)
+    return res.status(500).json({ error: 'Webhook processing failed.' })
+  }
+})
+
+apiRouter.post('/payments/paystack/webhook', async (req, res) => {
+  try {
+    const secretKey = await getPaystackSecretKey()
+    if (!secretKey) {
+      return res.status(401).json({ error: 'Paystack webhook secret is not configured.' })
+    }
+    const payloadString = req.rawBody || JSON.stringify(req.body || {})
+    const expectedSignature = crypto
+      .createHmac('sha512', secretKey)
+      .update(payloadString)
+      .digest('hex')
+    const receivedSignature = String(req.headers['x-paystack-signature'] || '').trim()
+    if (!signaturesMatch(receivedSignature, expectedSignature)) {
+      return res.status(401).json({ error: 'Invalid webhook signature.' })
+    }
+
+    const event = String(req.body?.event || '').trim()
+    const payload = req.body?.data || {}
+    if (event !== 'charge.success' || !payload) {
+      return res.json({ ok: true })
+    }
+
+    const reference = String(payload.reference || '').trim()
+    if (!reference) {
+      return res.json({ ok: true })
+    }
+
+    const payment = await SimpleLmsPayment.findOne({
+      provider: 'paystack',
+      $or: [
+        { txRef: reference },
+        { paystackReference: reference }
+      ]
+    })
+    if (!payment) {
+      return res.json({ ok: true })
+    }
+    if (String(payment.status || '').trim().toLowerCase() === 'successful') {
+      const courseForAttribution = await SimpleLmsCourse.findById(payment.course)
+        .select('_id organization createdBy')
+        .lean()
+      if (courseForAttribution?._id) {
+        await createOrUpdateAgentAttributionForPayment({
+          payment,
+          course: courseForAttribution
+        })
+      }
+      return res.json({ ok: true })
+    }
+
+    const verificationResult = await verifyPaystackPaymentRecord({
+      payment,
+      reference
+    })
+    if (!verificationResult.success) {
+      payment.status = 'failed'
+      await payment.save()
+      return res.json({ ok: true })
+    }
+
+    const courseForCommission = await SimpleLmsCourse.findById(payment.course)
+      .select('_id organization createdBy')
+    if (!courseForCommission?._id) {
+      payment.status = 'failed'
+      await payment.save()
+      return res.json({ ok: true })
+    }
+
+    await markPaymentSuccessful({
+      payment,
+      course: courseForCommission,
+      paidAt: verificationResult.paidAt || new Date()
+    })
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('Paystack webhook error:', error)
     return res.status(500).json({ error: 'Webhook processing failed.' })
   }
 })
@@ -7122,6 +8048,47 @@ pageRouter.post('/profile/payout', requirePageAuth, async (req, res) => {
 apiRouter.use(requireApiAuth)
 
 apiRouter.get('/workspace', async (_req, res) => res.redirect('/simple-lms'))
+
+apiRouter.get('/admin/payment-settings', async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    ensureSuperAdminForPaymentSettings(role)
+    const settings = await buildPaymentGatewaySettingsResponse({ req })
+    return res.json({
+      settings,
+      encryptionConfigured: isCredentialEncryptionConfigured()
+    })
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || 500)
+    return res.status(statusCode).json({
+      error: statusCode === 403
+        ? 'Only super admins can access payment gateway settings.'
+        : (error?.message || 'Failed to load payment gateway settings.')
+    })
+  }
+})
+
+apiRouter.put('/admin/payment-settings', async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    ensureSuperAdminForPaymentSettings(role)
+    const settings = await applyPaymentGatewaySettingsUpdate({
+      req,
+      payload: req.body || {}
+    })
+    return res.json({
+      message: 'Payment gateway settings updated.',
+      settings
+    })
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || 500)
+    return res.status(statusCode).json({
+      error: statusCode === 403
+        ? 'Only super admins can manage payment gateway settings.'
+        : (error?.message || 'Failed to update payment gateway settings.')
+    })
+  }
+})
 
 apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
   try {

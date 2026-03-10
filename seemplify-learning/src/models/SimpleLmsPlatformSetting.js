@@ -1,5 +1,38 @@
 import mongoose from 'mongoose'
 
+const EncryptedCredentialSchema = new mongoose.Schema({
+  ciphertext: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  iv: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  authTag: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  lastFour: {
+    type: String,
+    trim: true,
+    maxlength: 4,
+    default: ''
+  },
+  updatedAt: {
+    type: Date,
+    default: null
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinAccount',
+    default: null
+  }
+}, { _id: false })
+
 const SimpleLmsPlatformSettingSchema = new mongoose.Schema({
   defaultCurrency: {
     type: String,
@@ -112,6 +145,45 @@ const SimpleLmsPlatformSettingSchema = new mongoose.Schema({
     trim: true,
     maxlength: 3000,
     default: ''
+  },
+  paymentGateways: {
+    flutterwave: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      secretKey: {
+        type: EncryptedCredentialSchema,
+        default: () => ({})
+      },
+      publicKey: {
+        type: EncryptedCredentialSchema,
+        default: () => ({})
+      },
+      webhookHash: {
+        type: EncryptedCredentialSchema,
+        default: () => ({})
+      }
+    },
+    paystack: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      secretKey: {
+        type: EncryptedCredentialSchema,
+        default: () => ({})
+      },
+      publicKey: {
+        type: EncryptedCredentialSchema,
+        default: () => ({})
+      }
+    },
+    defaultProvider: {
+      type: String,
+      enum: ['flutterwave', 'paystack'],
+      default: 'flutterwave'
+    }
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

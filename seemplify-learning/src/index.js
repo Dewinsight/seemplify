@@ -33,7 +33,12 @@ app.set('view engine', 'ejs')
 app.set('views', join(__dirname, 'views'))
 
 app.use(express.urlencoded({ extended: true }))
-app.use(express.json({ limit: '4mb' }))
+app.use(express.json({
+  limit: '4mb',
+  verify: (req, _res, buffer) => {
+    req.rawBody = buffer?.toString('utf8') || ''
+  }
+}))
 app.use(cookieParser())
 app.use(session({
   name: 'seemplify_learning_session',

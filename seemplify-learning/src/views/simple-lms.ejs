@@ -937,7 +937,7 @@
         </div>
 
         <div class="cart-header" style="margin-top: 4px;">
-          <p class="mini">Checkout processes one payable item at a time through Flutterwave and automatically keeps the remaining items in cart.</p>
+          <p class="mini">Checkout processes one payable item at a time and automatically keeps remaining items in cart.</p>
           <div class="actions">
             <% if (cartSummary && cartSummary.hasItems) { %>
               <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
@@ -1014,15 +1014,16 @@
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
+              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
               <tbody>
                 <% myPayments.forEach((payment) => { %>
                   <tr>
                     <td><%= dateText(payment.paidAt || payment.createdAt) %></td>
                     <td><%= payment.courseTitle %></td>
                     <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.providerLabel || 'Gateway' %></td>
                     <td><%= payment.txRef %></td>
-                    <td><%= payment.flutterwaveTxId || '-' %></td>
+                    <td><%= payment.providerReference || '-' %></td>
                   </tr>
                 <% }) %>
               </tbody>
@@ -1562,7 +1563,7 @@
       </section>
 
       <section class="panel">
-        <div class="head"><div><h2>Payment Tracking</h2><p>Recent Flutterwave transactions across all learners.</p></div></div>
+        <div class="head"><div><h2>Payment Tracking</h2><p>Recent transactions across all learners.</p></div></div>
         <div class="kpis">
           <article class="kpi"><small>Total Records</small><strong><%= paymentStats.totalCount %></strong></article>
           <article class="kpi"><small>Pending</small><strong><%= paymentStats.pendingCount %></strong></article>
@@ -1602,7 +1603,7 @@
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Tx Ref</th><th>Provider Tx</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx</th><th>Actions</th></tr></thead>
               <tbody>
                 <% adminPayments.forEach((payment) => { %>
                   <tr>
@@ -1613,12 +1614,13 @@
                     <td><%= payment.creatorCommissionDisplay %></td>
                     <td><%= payment.platformShareDisplay %></td>
                     <td><span class="pill"><%= payment.statusLabel %></span></td>
+                    <td><%= payment.providerLabel || '-' %></td>
                     <td><%= payment.txRef %></td>
-                    <td><%= payment.flutterwaveTxId || '-' %></td>
+                    <td><%= payment.providerReference || '-' %></td>
                     <td>
                       <% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %>
                         <form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" style="display:grid;gap:6px;min-width:180px;">
-                          <input class="input" type="text" name="transactionId" value="<%= payment.flutterwaveTxId || '' %>" placeholder="Provider tx id">
+                          <input class="input" type="text" name="transactionId" value="<%= payment.providerReference || '' %>" placeholder="<%= payment.provider === 'paystack' ? 'Paystack reference' : 'Provider tx id' %>">
                           <input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/simple-lms?view=admin' %>">
                           <button class="btn btn-secondary btn-sm" type="submit">Re-verify</button>
                         </form>

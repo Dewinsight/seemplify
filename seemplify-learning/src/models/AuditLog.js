@@ -19,7 +19,12 @@ const AUDIT_ACTIONS = Object.freeze([
   'approval.request.approve',
   'approval.request.reject',
   'security.password_reset_requested',
-  'security.password_reset_completed'
+  'security.password_reset_completed',
+  'payment.gateway.provider_toggled',
+  'payment.gateway.default_changed',
+  'payment.gateway.credential_updated',
+  'payment.gateway.reauth_failed',
+  'payment.gateway.reauth_blocked'
 ])
 
 const AuditLogSchema = new mongoose.Schema({

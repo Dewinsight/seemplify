@@ -21,8 +21,8 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
   },
   provider: {
     type: String,
-    enum: ['flutterwave'],
-    default: 'flutterwave'
+    enum: ['flutterwave', 'paystack'],
+    required: true
   },
   txRef: {
     type: String,
@@ -32,6 +32,16 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
     maxlength: 120
   },
   flutterwaveTxId: {
+    type: String,
+    trim: true,
+    maxlength: 120
+  },
+  providerTxId: {
+    type: String,
+    trim: true,
+    maxlength: 120
+  },
+  paystackReference: {
     type: String,
     trim: true,
     maxlength: 120
@@ -79,6 +89,11 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
     trim: true,
     maxlength: 120
   },
+  paystackStatus: {
+    type: String,
+    trim: true,
+    maxlength: 60
+  },
   customerEmail: {
     type: String,
     trim: true,
@@ -108,6 +123,8 @@ SimpleLmsPaymentSchema.index({ account: 1, course: 1, status: 1, createdAt: -1 }
 SimpleLmsPaymentSchema.index({ course: 1, status: 1, createdAt: -1 })
 SimpleLmsPaymentSchema.index({ creatorAccount: 1, status: 1, createdAt: -1 })
 SimpleLmsPaymentSchema.index({ provider: 1, flutterwaveTxId: 1 })
+SimpleLmsPaymentSchema.index({ provider: 1, providerTxId: 1 })
+SimpleLmsPaymentSchema.index({ provider: 1, paystackReference: 1 })
 
 const SimpleLmsPayment =
   mongoose.models.AiinSimpleLmsPayment ||

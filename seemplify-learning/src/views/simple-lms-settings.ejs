@@ -832,15 +832,16 @@
         <% } else { %>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
+              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
               <tbody>
                 <% myPayments.forEach((payment) => { %>
                   <tr>
                     <td><%= dateText(payment.paidAt || payment.createdAt) %></td>
                     <td><%= payment.courseTitle %></td>
                     <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.providerLabel || 'Gateway' %></td>
                     <td><%= payment.txRef %></td>
-                    <td><%= payment.flutterwaveTxId || '-' %></td>
+                    <td><%= payment.providerReference || '-' %></td>
                   </tr>
                 <% }) %>
               </tbody>

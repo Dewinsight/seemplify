@@ -1,18 +1,60 @@
+import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
+import { decryptCredentialValue, hasEncryptedCredential } from './credentialEncryptionService.js'
+
 const FLUTTERWAVE_BASE_URL = String(process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.com/v3').replace(/\/+$/, '')
 
-const getSecretKey = () => String(process.env.FLUTTERWAVE_SECRET_KEY || '').trim()
-const getPublicKey = () => String(process.env.FLUTTERWAVE_PUBLIC_KEY || '').trim()
+const readStoredFlutterwaveSettings = async () => {
+  const settings = await SimpleLmsPlatformSetting.findOne({})
+    .select('paymentGateways.flutterwave')
+    .lean()
+  return settings?.paymentGateways?.flutterwave || {}
+}
+
+const resolveStoredCredentialValue = ({ storedCredential, envValue = '' }) => {
+  if (hasEncryptedCredential(storedCredential)) {
+    try {
+      const decrypted = decryptCredentialValue(storedCredential)
+      if (decrypted) return String(decrypted).trim()
+    } catch (error) {
+      console.error('Failed to decrypt Flutterwave credential:', error)
+    }
+  }
+  return String(envValue || '').trim()
+}
+
+const getFlutterwaveRuntimeConfig = async () => {
+  const flutterwaveSettings = await readStoredFlutterwaveSettings()
+  const secretKey = resolveStoredCredentialValue({
+    storedCredential: flutterwaveSettings?.secretKey,
+    envValue: process.env.FLUTTERWAVE_SECRET_KEY
+  })
+  const publicKey = resolveStoredCredentialValue({
+    storedCredential: flutterwaveSettings?.publicKey,
+    envValue: process.env.FLUTTERWAVE_PUBLIC_KEY
+  })
+  const webhookHash = resolveStoredCredentialValue({
+    storedCredential: flutterwaveSettings?.webhookHash,
+    envValue: process.env.FLUTTERWAVE_WEBHOOK_HASH
+  })
+
+  return {
+    baseUrl: FLUTTERWAVE_BASE_URL,
+    secretKey,
+    publicKey,
+    webhookHash
+  }
+}
 
 const requestFlutterwave = async ({ method = 'GET', path, body }) => {
-  const secretKey = getSecretKey()
-  if (!secretKey) {
+  const config = await getFlutterwaveRuntimeConfig()
+  if (!config.secretKey) {
     throw new Error('Flutterwave secret key is not configured.')
   }
 
-  const response = await fetch(`${FLUTTERWAVE_BASE_URL}${path}`, {
+  const response = await fetch(`${config.baseUrl}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${secretKey}`,
+      Authorization: `Bearer ${config.secretKey}`,
       'Content-Type': 'application/json'
     },
     body: body ? JSON.stringify(body) : undefined
@@ -84,13 +126,26 @@ const verifyFlutterwaveTransaction = async (transactionId) => {
   return result
 }
 
-const isFlutterwaveConfigured = () => Boolean(getPublicKey() && getSecretKey())
+const isFlutterwaveConfigured = async () => {
+  const config = await getFlutterwaveRuntimeConfig()
+  return Boolean(config.publicKey && config.secretKey)
+}
 
-const getFlutterwavePublicKey = () => getPublicKey()
+const getFlutterwavePublicKey = async () => {
+  const config = await getFlutterwaveRuntimeConfig()
+  return config.publicKey
+}
+
+const getFlutterwaveWebhookHash = async () => {
+  const config = await getFlutterwaveRuntimeConfig()
+  return config.webhookHash
+}
 
 export {
   createFlutterwavePaymentLink,
-  verifyFlutterwaveTransaction,
+  getFlutterwavePublicKey,
+  getFlutterwaveRuntimeConfig,
+  getFlutterwaveWebhookHash,
   isFlutterwaveConfigured,
-  getFlutterwavePublicKey
+  verifyFlutterwaveTransaction
 }

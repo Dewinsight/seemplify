@@ -210,9 +210,13 @@
   <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
 
   <main class="cart-shell">
+    <% const availableProviderCount = Array.isArray(paymentCheckout?.availableProviders) ? paymentCheckout.availableProviders.length : 0 %>
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
     <% if (info) { %><div class="alert"><%= info %></div><% } %>
+    <% if (availableProviderCount === 0) { %>
+      <div class="alert alert-error">No payment gateway is currently available. Please contact support.</div>
+    <% } %>
 
     <section class="cart-panel">
       <header class="cart-head">
@@ -250,12 +254,15 @@
       </div>
 
       <div class="cart-toolbar">
-        <p>Checkout processes one payable item at a time via Flutterwave and keeps remaining items in cart.</p>
+        <p>
+          Checkout processes one payable item at a time and keeps remaining items in cart.
+          <%= availableProviderCount > 1 ? 'You will choose between available gateways during checkout.' : '' %>
+        </p>
         <% if (cartSummary && cartSummary.hasItems) { %>
           <div class="cart-actions">
             <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
               <input type="hidden" name="returnTo" value="/simple-lms/cart">
-              <button class="btn btn-primary btn-sm" type="submit">Checkout Now</button>
+              <button class="btn btn-primary btn-sm" type="submit" <%= availableProviderCount === 0 ? 'disabled' : '' %>>Checkout Now</button>
             </form>
             <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
               <input type="hidden" name="returnTo" value="/simple-lms/cart">

@@ -2055,8 +2055,11 @@
                   <th>Date</th>
                   <th>Learner</th>
                   <th>Course</th>
+                  <th>Provider</th>
                   <th>Amount</th>
                   <th>Status</th>
+                  <th>Tx Ref</th>
+                  <th>Provider Tx</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -2066,12 +2069,15 @@
                     <td><%= dateText(payment.createdAt) %></td>
                     <td><%= payment.learnerName %></td>
                     <td><%= payment.courseTitle %></td>
+                    <td><%= payment.providerLabel || '-' %></td>
                     <td><%= payment.amountDisplay %></td>
                     <td><span class="pill"><%= payment.statusLabel %></span></td>
+                    <td><%= payment.txRef %></td>
+                    <td><%= payment.providerReference || '-' %></td>
                     <td>
                       <% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %>
                         <form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" class="inline-form">
-                          <input class="input" type="text" name="transactionId" value="<%= payment.flutterwaveTxId || '' %>" placeholder="tx id">
+                          <input class="input" type="text" name="transactionId" value="<%= payment.providerReference || '' %>" placeholder="<%= payment.provider === 'paystack' ? 'paystack reference' : 'provider tx id' %>">
                           <input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/admin/payments' %>">
                           <button class="btn btn-secondary btn-sm" type="submit">Re-verify</button>
                         </form>
@@ -2114,6 +2120,82 @@
             <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
             <button class="btn btn-primary btn-sm" type="submit">Save Settings</button>
           </form>
+        </section>
+
+        <section class="card">
+          <% const gatewaySettings = paymentGatewaySettings || {} %>
+          <% const flutterwaveSettings = gatewaySettings.providers?.flutterwave || {} %>
+          <% const paystackSettings = gatewaySettings.providers?.paystack || {} %>
+          <% const gatewayDefaultProvider = gatewaySettings.defaultProvider || 'flutterwave' %>
+          <div class="head"><div><h2>Payment Gateways</h2><p class="mini">Gateway toggles, default provider, and encrypted API key management.</p></div></div>
+          <% if (!canManagePaymentGateways) { %>
+            <p class="mini">Only <strong>super admin</strong> accounts can view and update gateway credentials.</p>
+          <% } else { %>
+            <% if (!credentialsEncryptionConfigured) { %>
+              <div class="alert alert-error">CREDENTIALS_ENCRYPTION_KEY is not configured. Credential updates are blocked until encryption is configured.</div>
+            <% } %>
+            <form method="post" action="/simple-lms/settings/payment-gateways" class="form-grid">
+              <input type="hidden" name="flutterwaveEnabled" value="off">
+              <label style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="flutterwaveEnabled" value="on" <%= flutterwaveSettings.enabled ? 'checked' : '' %>>
+                Enable Flutterwave
+              </label>
+              <input type="hidden" name="paystackEnabled" value="off">
+              <label style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="paystackEnabled" value="on" <%= paystackSettings.enabled ? 'checked' : '' %>>
+                Enable Paystack
+              </label>
+              <div>
+                <label>Default Provider</label>
+                <select class="input" name="defaultProvider">
+                  <option value="flutterwave" <%= gatewayDefaultProvider === 'flutterwave' ? 'selected' : '' %>>Flutterwave</option>
+                  <option value="paystack" <%= gatewayDefaultProvider === 'paystack' ? 'selected' : '' %>>Paystack</option>
+                </select>
+              </div>
+              <div class="mini" style="display:flex;align-items:end;">At least one provider must remain enabled.</div>
+              <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+              <button class="btn btn-primary btn-sm" type="submit">Save Gateway Toggles</button>
+            </form>
+
+            <div class="grid">
+              <article class="card">
+                <strong>Flutterwave</strong>
+                <div class="actions">
+                  <span class="pill"><%= flutterwaveSettings.enabled ? 'Enabled' : 'Disabled' %></span>
+                  <span class="pill"><%= flutterwaveSettings.statusLabel || (flutterwaveSettings.configured ? 'Configured' : 'Missing keys') %></span>
+                </div>
+                <p class="mini">Secret: <%= flutterwaveSettings.credentials?.secretKey?.masked || 'Not set' %></p>
+                <p class="mini">Public: <%= flutterwaveSettings.credentials?.publicKey?.masked || 'Not set' %></p>
+                <p class="mini">Webhook Hash: <%= flutterwaveSettings.credentials?.webhookHash?.masked || 'Not set' %></p>
+                <form method="post" action="/simple-lms/settings/payment-gateways" class="stack">
+                  <input class="input" type="password" name="password" placeholder="Confirm password to update keys">
+                  <input class="input" type="text" name="flutterwaveSecretKey" placeholder="New Flutterwave secret key">
+                  <input class="input" type="text" name="flutterwavePublicKey" placeholder="New Flutterwave public key">
+                  <input class="input" type="text" name="flutterwaveWebhookHash" placeholder="New Flutterwave webhook hash">
+                  <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                  <button class="btn btn-secondary btn-sm" type="submit">Update Flutterwave Keys</button>
+                </form>
+              </article>
+
+              <article class="card">
+                <strong>Paystack</strong>
+                <div class="actions">
+                  <span class="pill"><%= paystackSettings.enabled ? 'Enabled' : 'Disabled' %></span>
+                  <span class="pill"><%= paystackSettings.statusLabel || (paystackSettings.configured ? 'Configured' : 'Missing keys') %></span>
+                </div>
+                <p class="mini">Secret: <%= paystackSettings.credentials?.secretKey?.masked || 'Not set' %></p>
+                <p class="mini">Public: <%= paystackSettings.credentials?.publicKey?.masked || 'Not set' %></p>
+                <p class="mini">Webhook URL: /api/simple-lms/payments/paystack/webhook</p>
+                <form method="post" action="/simple-lms/settings/payment-gateways" class="stack">
+                  <input class="input" type="password" name="password" placeholder="Confirm password to update keys">
+                  <input class="input" type="text" name="paystackSecretKey" placeholder="New Paystack secret key">
+                  <input class="input" type="text" name="paystackPublicKey" placeholder="New Paystack public key">
+                  <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                  <button class="btn btn-secondary btn-sm" type="submit">Update Paystack Keys</button>
+                </form>
+              </article>
+            </div>
+          <% } %>
         </section>
       <% } %>
 
