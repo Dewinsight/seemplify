@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .agent-shell {
+      max-width: 1160px;
+      margin: 24px auto 40px;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 16px;
+    }
+    .agent-side {
+      position: sticky;
+      top: 84px;
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: linear-gradient(160deg, rgba(16, 185, 129, .14), rgba(20, 184, 166, .06));
+      box-shadow: var(--card-shadow);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .agent-side h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      letter-spacing: -.02em;
+    }
+    .agent-side p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .agent-nav {
+      display: grid;
+      gap: 6px;
+    }
+    .agent-nav a {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .85);
+      padding: 10px 12px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 13px;
+      transition: border-color .2s ease;
+    }
+    .agent-nav a.active {
+      border-color: rgba(20, 184, 166, .65);
+      background: rgba(20, 184, 166, .12);
+      color: #0f766e;
+      font-weight: 700;
+    }
+    .agent-main {
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .panel h1,
+    .panel h2,
+    .panel h3 {
+      margin: 0;
+      color: var(--text);
+      letter-spacing: -.02em;
+    }
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: linear-gradient(160deg, rgba(255, 255, 255, .88), rgba(204, 251, 241, .55));
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .stat span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+    }
+    .stat strong {
+      color: var(--text);
+      font-size: 24px;
+      line-height: 1;
+    }
+    .course-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .course-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(255, 255, 255, .9);
+      display: grid;
+      gap: 8px;
+    }
+    .course-card h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 16px;
+      letter-spacing: -.01em;
+    }
+    .course-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .course-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .referral {
+      border: 1px dashed rgba(20, 184, 166, .5);
+      border-radius: 10px;
+      background: rgba(20, 184, 166, .08);
+      padding: 8px;
+      font-size: 12px;
+      color: #0f766e;
+      word-break: break-all;
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+      background: var(--card-bg);
+    }
+    th,
+    td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      vertical-align: top;
+    }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(148, 163, 184, .08);
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input,
+    .field textarea {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 9px 10px;
+      font-size: 13px;
+    }
+    .field textarea {
+      min-height: 70px;
+      resize: vertical;
+      grid-column: 1 / -1;
+    }
+    @media (max-width: 1024px) {
+      .agent-shell {
+        grid-template-columns: 1fr;
+      }
+      .agent-side {
+        position: static;
+      }
+    }
+    @media (max-width: 720px) {
+      .stats-grid,
+      .field-grid,
+      .course-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+
+  <% const section = activeSection || 'overview' %>
+
+  <main class="agent-shell">
+    <aside class="agent-side">
+      <h2>Agent Workspace</h2>
+      <p><strong><%= organization?.name || 'Partner Organization' %></strong></p>
+      <p>Referral code: <strong><%= referralCode %></strong></p>
+
+      <nav class="agent-nav">
+        <a href="/agent-dashboard?section=overview" class="<%= section === 'overview' ? 'active' : '' %>">Overview</a>
+        <a href="/agent-dashboard?section=courses" class="<%= section === 'courses' ? 'active' : '' %>">Course Catalog</a>
+        <a href="/agent-dashboard?section=sales" class="<%= section === 'sales' ? 'active' : '' %>">My Sales</a>
+        <a href="/agent-dashboard?section=commissions" class="<%= section === 'commissions' ? 'active' : '' %>">Commissions</a>
+        <a href="/agent-dashboard?section=earnings" class="<%= section === 'earnings' ? 'active' : '' %>">Earnings Trace</a>
+        <a href="/agent-dashboard?section=settings" class="<%= section === 'settings' ? 'active' : '' %>">Settings</a>
+      </nav>
+    </aside>
+
+    <section class="agent-main">
+      <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+      <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+      <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+      <% if (section === 'overview') { %>
+        <article class="panel">
+          <h1>Agent Dashboard</h1>
+          <p>Monitor your attributed sales, commissions, and payout readiness.</p>
+
+          <div class="stats-grid">
+            <div class="stat"><span>Total Earned</span><strong><%= formatCurrencyAmount(totals.totalCommissionMinor || 0, 'NGN') %></strong></div>
+            <div class="stat"><span>Pending Payout</span><strong><%= formatCurrencyAmount(totals.pendingCommissionMinor || 0, 'NGN') %></strong></div>
+            <div class="stat"><span>Paid Out</span><strong><%= formatCurrencyAmount(totals.paidCommissionMinor || 0, 'NGN') %></strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Recent Commissions</h2>
+          <% if (!attributions || attributions.length === 0) { %>
+            <p>No commissions have been attributed yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    <th>Sale</th>
+                    <th>Rate</th>
+                    <th>Commission</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% attributions.slice(0, 10).forEach((entry) => { %>
+                    <tr>
+                      <td><%= entry.course?.title || 'Course' %></td>
+                      <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
+                      <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.status %></td>
+                      <td><%= new Date(entry.createdAt).toLocaleDateString() %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'courses') { %>
+        <article class="panel">
+          <h2>Partner Course Catalog</h2>
+          <p>Use referral links to attribute sales to your agent account.</p>
+
+          <% if (!courses || courses.length === 0) { %>
+            <p>No courses available in your organization catalog yet.</p>
+          <% } else { %>
+            <div class="course-grid">
+              <% courses.forEach((course) => { %>
+                <article class="course-card">
+                  <h3><%= course.title %></h3>
+                  <p><%= course.summary || 'No summary yet.' %></p>
+                  <div class="course-meta">
+                    <span><%= Number(course?.pricing?.amount || 0) > 0 ? formatCurrencyAmount(course.pricing.amount, course?.pricing?.currency || 'NGN') : 'Free' %></span>
+                    <span><%= String(course.level || 'mixed') %></span>
+                  </div>
+                  <div class="referral"><%= course.referralUrl %></div>
+                  <a class="btn btn-secondary btn-sm" href="<%= course.referralUrl %>" target="_blank" rel="noopener">Open Referral Link</a>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'sales' || section === 'commissions' || section === 'earnings') { %>
+        <article class="panel">
+          <h2><%= section === 'sales' ? 'My Sales' : (section === 'commissions' ? 'My Commissions' : 'Earnings Trace') %></h2>
+          <p>Detailed sale-by-sale trace including platform share and your commission split.</p>
+
+          <% if (!attributions || attributions.length === 0) { %>
+            <p>No attributed sales yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    <th>Sale</th>
+                    <th>Platform Share</th>
+                    <th>Rate</th>
+                    <th>Your Commission</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% attributions.forEach((entry) => { %>
+                    <% const paymentPlatformShare = Number(entry.payment?.platformShareMinor || 0) %>
+                    <tr>
+                      <td><%= entry.course?.title || 'Course' %></td>
+                      <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= formatCurrencyAmount(paymentPlatformShare, entry.currency || 'NGN') %></td>
+                      <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
+                      <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.status %></td>
+                      <td><%= new Date(entry.createdAt).toLocaleDateString() %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'settings') { %>
+        <article class="panel">
+          <h2>Payout Profile</h2>
+          <p>Set your bank details to receive approved commission payouts.</p>
+
+          <form method="post" action="/agent-dashboard/settings/payout" style="display:grid; gap:12px;">
+            <div class="field-grid">
+              <div class="field">
+                <label>Account Name</label>
+                <input type="text" name="accountName" value="<%= user?.payoutProfile?.accountName || '' %>">
+              </div>
+              <div class="field">
+                <label>Account Number</label>
+                <input type="text" name="accountNumber" value="<%= user?.payoutProfile?.accountNumber || '' %>">
+              </div>
+              <div class="field">
+                <label>Bank Name</label>
+                <input type="text" name="bankName" value="<%= user?.payoutProfile?.bankName || '' %>">
+              </div>
+              <div class="field">
+                <label>Bank Code</label>
+                <input type="text" name="bankCode" value="<%= user?.payoutProfile?.bankCode || '' %>">
+              </div>
+              <div class="field">
+                <label>SWIFT Code</label>
+                <input type="text" name="swiftCode" value="<%= user?.payoutProfile?.swiftCode || '' %>">
+              </div>
+              <div class="field">
+                <label>Currency</label>
+                <input type="text" name="currency" maxlength="3" value="<%= user?.payoutProfile?.currency || 'NGN' %>">
+              </div>
+              <div class="field">
+                <label>Payment Email</label>
+                <input type="email" name="paymentEmail" value="<%= user?.payoutProfile?.paymentEmail || '' %>">
+              </div>
+              <div class="field">
+                <label>Country</label>
+                <input type="text" name="country" value="<%= user?.payoutProfile?.country || '' %>">
+              </div>
+              <div class="field">
+                <label>Notes</label>
+                <textarea name="notes"><%= user?.payoutProfile?.notes || '' %></textarea>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" type="submit" style="width:fit-content;">Save Payout Profile</button>
+          </form>
+        </article>
+      <% } %>
+    </section>
+  </main>
+</body>
+</html>

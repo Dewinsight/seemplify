@@ -14,7 +14,9 @@
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <% const takePath = `/simple-lms/take/${course._id}` %>
-  <% const detailPath = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}` %>
+  <% const persistedReferralCode = typeof referralCode === 'string' ? referralCode : '' %>
+  <% const serverDetailPath = (typeof detailPath === 'string' && detailPath) ? detailPath : '' %>
+  <% const resolvedDetailPath = serverDetailPath || `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}${persistedReferralCode ? `?ref=${encodeURIComponent(persistedReferralCode)}` : ''}` %>
   <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
   <% const learnLoginHref = `/login?return_to=${encodeURIComponent(takePath)}` %>
   <% const registerToLearnHref = `/register?return_to=${encodeURIComponent(takePath)}&intent=learn&source=course_detail` %>
@@ -188,18 +190,20 @@
             <% } else { %>
               <form method="post" action="/simple-lms/courses/<%= course._id %>/pay">
                 <input type="hidden" name="next" value="<%= takePath %>">
-                <input type="hidden" name="fallback" value="<%= detailPath %>">
+                <input type="hidden" name="fallback" value="<%= resolvedDetailPath %>">
+                <% if (persistedReferralCode) { %><input type="hidden" name="ref" value="<%= persistedReferralCode %>"><% } %>
                 <button type="submit" class="btn btn-primary" style="width:100%;">Purchase Now</button>
               </form>
               <% if (inCart) { %>
                 <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="margin-top:8px;">
-                  <input type="hidden" name="returnTo" value="<%= detailPath %>">
+                  <input type="hidden" name="returnTo" value="<%= resolvedDetailPath %>">
                   <button type="submit" class="btn btn-danger" style="width:100%;">Remove From Cart</button>
                 </form>
               <% } else { %>
                 <form method="post" action="/simple-lms/cart/add" style="margin-top:8px;">
                   <input type="hidden" name="courseId" value="<%= course._id %>">
-                  <input type="hidden" name="returnTo" value="<%= detailPath %>">
+                  <input type="hidden" name="returnTo" value="<%= resolvedDetailPath %>">
+                  <% if (persistedReferralCode) { %><input type="hidden" name="ref" value="<%= persistedReferralCode %>"><% } %>
                   <button type="submit" class="btn btn-secondary" style="width:100%;">Add To Cart</button>
                 </form>
               <% } %>

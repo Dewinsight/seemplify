@@ -855,6 +855,9 @@
     { key: 'overview', label: 'Overview' },
     { key: 'courses', label: 'Course Management' },
     { key: 'approvals', label: 'Approval Queue' },
+    { key: 'partners', label: 'Partners' },
+    { key: 'super-users', label: 'Super Users' },
+    { key: 'audit-log', label: 'Audit Log' },
     { key: 'creators', label: 'Creators' },
     { key: 'users', label: 'Users & Roles' },
     { key: 'commission', label: 'Commissions' },
@@ -864,6 +867,7 @@
   ]
   const navGroups = [
     { title: 'Course Ops', keys: ['overview', 'courses', 'approvals', 'creators'] },
+    { title: 'Partner Ops', keys: ['partners', 'super-users', 'audit-log'] },
     { title: 'Commerce', keys: ['commission', 'payments'] },
     { title: 'Control', keys: ['users', 'settings', 'analytics'] }
   ]
@@ -871,6 +875,9 @@
     overview: 'Admin Overview',
     courses: 'Course Management',
     approvals: 'Course Approval Queue',
+    partners: 'Partner Operations',
+    'super-users': 'Super User Management',
+    'audit-log': 'Audit Log',
     creators: 'Creator Management',
     users: 'Users & Roles',
     commission: 'Commission Management',
@@ -946,6 +953,9 @@
     overview: `${Number(stats?.publishedCourseCount || 0)} live`,
     courses: `${Number(courses.length)} courses`,
     approvals: `${Number(approvalCourses.length)} queued`,
+    partners: `${Number((partnerOrganizations || []).length)} orgs`,
+    'super-users': `${Number((superUserAccounts || []).length)} users`,
+    'audit-log': `${Number((auditLogEntries || []).length)} events`,
     creators: `${Number((creatorAdminRows || []).length)} creators`,
     users: `${Number((adminAccounts || []).length)} users`,
     commission: `${Number((commissionSettings?.accountOverrides || []).length + (commissionSettings?.courseOverrides || []).length)} overrides`,
@@ -1339,6 +1349,321 @@
                 </div>
               </article>
             <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'partners') { %>
+        <section class="card">
+          <div class="head">
+            <div>
+              <h2>Partner Organizations</h2>
+              <p class="mini">Manage partner lifecycle, review pending role requests, and process agent commission payouts.</p>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <article class="kpi">
+              <small>Partner Orgs</small>
+              <strong><%= (partnerOrganizations || []).length %></strong>
+            </article>
+            <article class="kpi">
+              <small>Pending Requests</small>
+              <strong><%= (roleApprovalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'pending').length %></strong>
+            </article>
+            <article class="kpi">
+              <small>Agent Payout Queue</small>
+              <strong><%= (agentPayoutRows || []).length %></strong>
+            </article>
+          </div>
+
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Organization</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Agents</th>
+                  <th>Courses</th>
+                  <th>Commissions Due</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
+                  <tr><td colspan="7" class="mini">No partner organizations found.</td></tr>
+                <% } else { %>
+                  <% partnerOrganizations.forEach((organization) => { %>
+                    <tr>
+                      <td>
+                        <strong><%= organization.name || 'Partner Organization' %></strong><br>
+                        <span class="mini"><%= organization.description || '-' %></span>
+                      </td>
+                      <td><span class="pill"><%= organization.partnerType || 'partner' %></span></td>
+                      <td><span class="pill"><%= organization.partnerStatus || 'pending' %></span></td>
+                      <td><%= Number(organization.agentCount || 0) %></td>
+                      <td><%= Number(organization.totalCourses || 0) %> total / <%= Number(organization.publishedCourses || 0) %> published</td>
+                      <td>
+                        <span class="mini">Pending: <%= organization.pendingCommissionDisplay %></span><br>
+                        <span class="mini">Recommended: <%= organization.recommendedCommissionDisplay %></span><br>
+                        <span class="mini">Approved: <%= organization.approvedCommissionDisplay %></span>
+                      </td>
+                      <td>
+                        <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="inline-form">
+                          <select class="input" name="partnerStatus">
+                            <option value="pending" <%= String(organization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
+                            <option value="active" <%= String(organization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
+                            <option value="suspended" <%= String(organization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
+                          </select>
+                          <input type="hidden" name="returnTo" value="/admin/partners">
+                          <button class="btn btn-primary btn-sm" type="submit">Update</button>
+                        </form>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="head">
+            <div>
+              <h2>Partner Role Requests</h2>
+              <p class="mini">Approve or reject partner and channel-partner registration requests.</p>
+            </div>
+          </div>
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Applicant</th>
+                  <th>Requested Role</th>
+                  <th>Organization</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!roleApprovalRequests || roleApprovalRequests.length === 0) { %>
+                  <tr><td colspan="6" class="mini">No role requests found.</td></tr>
+                <% } else { %>
+                  <% roleApprovalRequests.forEach((request) => { %>
+                    <tr>
+                      <td><%= dateText(request.createdAt) %></td>
+                      <td>
+                        <strong><%= request.accountName %></strong><br>
+                        <span class="mini"><%= request.accountEmail || '-' %></span>
+                      </td>
+                      <td><span class="pill"><%= request.requestedRole %></span></td>
+                      <td><%= request.organizationName || '-' %></td>
+                      <td><span class="pill"><%= request.status %></span></td>
+                      <td>
+                        <% if (String(request.status || '').toLowerCase() === 'pending') { %>
+                          <div class="actions">
+                            <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/approve" class="inline-form">
+                              <select class="input" name="approvedRole">
+                                <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                                <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                                <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                                <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                              </select>
+                              <input class="input" type="text" name="notes" placeholder="Review notes (optional)">
+                              <input type="hidden" name="returnTo" value="/admin/partners">
+                              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+                            </form>
+                            <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/reject" class="inline-form">
+                              <input class="input" type="text" name="notes" placeholder="Reason">
+                              <input type="hidden" name="returnTo" value="/admin/partners">
+                              <button class="btn btn-danger btn-sm" type="submit">Reject</button>
+                            </form>
+                          </div>
+                        <% } else { %>
+                          <span class="mini">Reviewed by <%= request.reviewedByName || '-' %></span><br>
+                          <span class="mini"><%= request.reviewNotes || '-' %></span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="head">
+            <div>
+              <h2>Agent Commission Payout Queue</h2>
+              <p class="mini">Recommended and approved agent commissions awaiting platform payout processing.</p>
+            </div>
+          </div>
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Agent</th>
+                  <th>Organization</th>
+                  <th>Course</th>
+                  <th>Sale</th>
+                  <th>Commission</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!agentPayoutRows || agentPayoutRows.length === 0) { %>
+                  <tr><td colspan="8" class="mini">No agent commissions in the payout queue.</td></tr>
+                <% } else { %>
+                  <% agentPayoutRows.forEach((entry) => { %>
+                    <tr>
+                      <td><%= dateText(entry.createdAt) %></td>
+                      <td>
+                        <strong><%= entry.agentName %></strong><br>
+                        <span class="mini"><%= entry.agentEmail || '-' %></span>
+                      </td>
+                      <td><%= entry.organizationName || '-' %></td>
+                      <td><%= entry.courseTitle %></td>
+                      <td><%= entry.saleAmountDisplay %></td>
+                      <td><%= entry.amountDisplay %> (<%= Number(entry.commissionRatePercent || 0) %>%)</td>
+                      <td><span class="pill"><%= entry.statusLabel %></span></td>
+                      <td>
+                        <form method="post" action="/simple-lms/admin/agent-commissions/<%= entry._id %>/status" class="inline-form">
+                          <select class="input" name="status">
+                            <% if (entry.canApprove) { %><option value="approved">approved</option><% } %>
+                            <% if (entry.canMarkPaid) { %><option value="paid">paid</option><% } %>
+                            <% if (entry.canReject) { %><option value="rejected">rejected</option><% } %>
+                          </select>
+                          <input class="input" type="text" name="transactionRef" placeholder="Tx ref (for paid)">
+                          <input class="input" type="text" name="adminNotes" placeholder="Admin note">
+                          <input type="hidden" name="returnTo" value="/admin/partners">
+                          <button class="btn btn-primary btn-sm" type="submit">Update</button>
+                        </form>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'super-users') { %>
+        <section class="card">
+          <div class="head">
+            <div>
+              <h2>Super User Management</h2>
+              <p class="mini">Promote or demote super admins with password re-authentication and audit logging.</p>
+            </div>
+          </div>
+
+          <article class="card">
+            <strong>Promote Existing Account</strong>
+            <form method="post" action="/simple-lms/admin/super-users/promote" class="inline-form">
+              <select class="input" name="targetAccountId">
+                <option value="">Select account</option>
+                <% (adminAccounts || []).filter((account) => account.resolvedRole !== 'super_admin').forEach((account) => { %>
+                  <option value="<%= account._id %>"><%= account.displayName %> (<%= account.email %>)</option>
+                <% }) %>
+              </select>
+              <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+              <input type="hidden" name="returnTo" value="/admin/super-users">
+              <button class="btn btn-primary btn-sm" type="submit">Promote</button>
+            </form>
+            <p class="mini">Your password is required for every super-user elevation action.</p>
+          </article>
+
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Promoted At</th>
+                  <th>Promoted By</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!superUserAccounts || superUserAccounts.length === 0) { %>
+                  <tr><td colspan="5" class="mini">No super users found.</td></tr>
+                <% } else { %>
+                  <% superUserAccounts.forEach((superUser) => { %>
+                    <tr>
+                      <td><strong><%= superUser.displayName %></strong></td>
+                      <td><%= superUser.email %></td>
+                      <td><%= dateText(superUser.promotedAt) %></td>
+                      <td><%= superUser.promotedByName || '-' %></td>
+                      <td>
+                        <% if (String(user?._id || '') !== String(superUser._id || '')) { %>
+                          <form method="post" action="/simple-lms/admin/super-users/<%= superUser._id %>/demote" class="inline-form">
+                            <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                            <input type="hidden" name="returnTo" value="/admin/super-users">
+                            <button class="btn btn-danger btn-sm" type="submit">Demote</button>
+                          </form>
+                        <% } else { %>
+                          <span class="mini">Current account</span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (currentSection === 'audit-log') { %>
+        <section class="card">
+          <div class="head">
+            <div>
+              <h2>Audit Log</h2>
+              <p class="mini">Append-only trail of sensitive access, role, partner, and payout actions.</p>
+            </div>
+          </div>
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Action</th>
+                  <th>Performed By</th>
+                  <th>Target</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!auditLogEntries || auditLogEntries.length === 0) { %>
+                  <tr><td colspan="5" class="mini">No audit log events recorded yet.</td></tr>
+                <% } else { %>
+                  <% auditLogEntries.forEach((entry) => { %>
+                    <tr>
+                      <td><%= dateText(entry.createdAt) %></td>
+                      <td><span class="pill"><%= entry.action %></span></td>
+                      <td>
+                        <strong><%= entry.performedByName %></strong><br>
+                        <span class="mini"><%= entry.performedByEmail || '-' %></span>
+                      </td>
+                      <td>
+                        <% if (entry.targetAccountName) { %><span class="mini">Account: <%= entry.targetAccountName %></span><br><% } %>
+                        <% if (entry.targetOrganizationName) { %><span class="mini">Org: <%= entry.targetOrganizationName %></span><% } %>
+                        <% if (!entry.targetAccountName && !entry.targetOrganizationName) { %><span class="mini">-</span><% } %>
+                      </td>
+                      <td>
+                        <span class="mini"><%= entry.ipAddress || '-' %></span><br>
+                        <span class="mini"><%= entry.userAgent || '-' %></span>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
           </div>
         </section>
       <% } %>

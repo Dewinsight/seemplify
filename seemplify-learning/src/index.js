@@ -8,6 +8,10 @@ import { dirname, join } from 'path'
 import authRouter from './routes/auth.js'
 import setupRouter from './routes/setup.js'
 import { simpleLmsRouter, simpleLmsAdminRouter, simpleLmsApiRouter } from './routes/simpleLms.js'
+import partnerRouter from './routes/partner.js'
+import agentRouter from './routes/agent.js'
+import superUserApiRouter from './routes/superUser.js'
+import partnerApiRouter from './routes/partnerApi.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
@@ -15,6 +19,8 @@ import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
 import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from './services/simpleLmsCurrencyService.js'
 import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
 import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
+import { normalizeAgentReferralCode } from './utils/agentReferral.js'
+import { resolveLearningRole as resolveLearningRoleFromAccount } from './utils/learningRoles.js'
 
 dotenv.config()
 
@@ -37,7 +43,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }))
@@ -77,14 +83,7 @@ const COURSE_LEVEL_LABELS = Object.freeze({
 })
 
 const resolveLearningRole = (account) => {
-  if (!account) return 'learner'
-  if (typeof account.getLearningRole === 'function') {
-    return account.getLearningRole()
-  }
-  if (account.isSuperAdmin) return 'super_admin'
-  if (account.isSystemAdmin) return 'admin'
-  const normalized = String(account.learningRole || '').trim().toLowerCase()
-  return ['super_admin', 'admin', 'creator', 'learner'].includes(normalized) ? normalized : 'learner'
+  return resolveLearningRoleFromAccount(account)
 }
 
 const slugifyValue = (value, fallback = 'item') => {
@@ -385,8 +384,18 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
 
     const canonicalSlug = String(courseRaw.slug || '').trim()
     const requestedSlug = String(req.params.slug || '').trim()
+    const incomingReferralCode = normalizeAgentReferralCode(req.query.ref || '')
+    if (incomingReferralCode && req.session) {
+      req.session.simpleLmsAgentReferrals = req.session.simpleLmsAgentReferrals || {}
+      req.session.simpleLmsAgentReferrals[String(courseRaw._id)] = incomingReferralCode
+    }
+    const persistedReferralCode = normalizeAgentReferralCode(
+      req.session?.simpleLmsAgentReferrals?.[String(courseRaw._id)] || ''
+    )
+    const detailPath = `/courses/${courseRaw._id}${canonicalSlug ? `/${canonicalSlug}` : ''}${persistedReferralCode ? `?ref=${encodeURIComponent(persistedReferralCode)}` : ''}`
+
     if (canonicalSlug && requestedSlug !== canonicalSlug) {
-      return res.redirect(`/courses/${courseRaw._id}/${canonicalSlug}`)
+      return res.redirect(detailPath)
     }
 
     const relatedRaw = await SimpleLmsCourse.find({
@@ -449,6 +458,8 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       title: `${course.title} - ${branding.learningName}`,
       user: req.user || null,
       activePage: 'courses',
+      detailPath,
+      referralCode: persistedReferralCode,
       course,
       chapters,
       relatedCourses,
@@ -662,6 +673,10 @@ app.use('/setup', setupRouter)
 app.use('/simple-lms', simpleLmsRouter)
 app.use('/admin', simpleLmsAdminRouter)
 app.use('/api/simple-lms', simpleLmsApiRouter)
+app.use('/partner-dashboard', requireAuth, partnerRouter)
+app.use('/agent-dashboard', requireAuth, agentRouter)
+app.use('/api/super-users', requireAuth, superUserApiRouter)
+app.use('/api/partners', requireAuth, partnerApiRouter)
 
 app.use((error, _req, res, _next) => {
   console.error('Unhandled error:', error)

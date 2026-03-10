@@ -11,6 +11,14 @@
       || ['super_admin', 'admin'].includes(safeUserRole)
     )
   )
+  const canAccessPartnerDashboard = Boolean(
+    safeUser
+    && ['channel_partner_super', 'channel_partner_user', 'partner_super', 'partner_user'].includes(safeUserRole)
+  )
+  const canAccessAgentDashboard = Boolean(
+    safeUser
+    && safeUserRole === 'channel_sales_agent'
+  )
   const currentBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
   const brandDisplayName = typeof brandLearningName === 'string' && brandLearningName.trim()
     ? brandLearningName.trim()
@@ -40,6 +48,12 @@
       <a href="/simple-lms?view=settings" class="top-nav-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>">Settings</a>
       <% if (canAccessAdmin) { %>
         <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+      <% } %>
+      <% if (canAccessPartnerDashboard) { %>
+        <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
+      <% } %>
+      <% if (canAccessAgentDashboard) { %>
+        <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
       <% } %>
     <% } %>
   </div>
@@ -104,6 +118,12 @@
           <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
           <% if (canAccessAdmin) { %>
             <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+          <% } %>
+          <% if (canAccessPartnerDashboard) { %>
+            <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
+          <% } %>
+          <% if (canAccessAgentDashboard) { %>
+            <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
           <% } %>
         <% } %>
       </div>

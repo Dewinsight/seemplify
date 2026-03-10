@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { normalizeAppAccess } from '../utils/appAccess.js'
+import { ORGANIZATION_MEMBER_ROLES, PARTNER_STATUS_VALUES, PARTNER_TYPES, normalizePartnerType } from '../utils/learningRoles.js'
 
 const OrganizationSchema = new mongoose.Schema({
   name: {
@@ -12,6 +13,12 @@ const OrganizationSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxLength: 500
+  },
+  partnerType: {
+    type: String,
+    enum: PARTNER_TYPES,
+    default: 'none',
+    index: true
   },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
@@ -26,7 +33,7 @@ const OrganizationSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
+      enum: ORGANIZATION_MEMBER_ROLES,
       default: 'recruiter'
     },
     appAccess: {
@@ -81,6 +88,86 @@ const OrganizationSchema = new mongoose.Schema({
         type: [String],
         default: ['NGN']
       }
+    }
+  },
+  partnerSettings: {
+    maxAgents: {
+      type: Number,
+      default: null
+    },
+    defaultAgentCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 10
+    },
+    agentInviteApproval: {
+      type: Boolean,
+      default: true
+    },
+    partnerStatus: {
+      type: String,
+      enum: PARTNER_STATUS_VALUES,
+      default: 'pending'
+    },
+    payoutProfile: {
+      accountName: {
+        type: String,
+        trim: true,
+        maxlength: 200,
+        default: ''
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+        maxlength: 64,
+        default: ''
+      },
+      bankName: {
+        type: String,
+        trim: true,
+        maxlength: 200,
+        default: ''
+      },
+      bankCode: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      swiftCode: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      currency: {
+        type: String,
+        trim: true,
+        uppercase: true,
+        maxlength: 3,
+        default: 'NGN'
+      },
+      paymentEmail: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        maxlength: 320,
+        default: ''
+      },
+      country: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      notes: {
+        type: String,
+        trim: true,
+        maxlength: 1200,
+        default: ''
+      },
+      updatedAt: Date
     }
   },
   // For linking with SmartHR organization during migration
@@ -139,9 +226,19 @@ OrganizationSchema.index({ createdAt: -1 })
 OrganizationSchema.index({ activeSubscription: 1 })
 OrganizationSchema.index({ subscriptionStatus: 1 })
 OrganizationSchema.index({ subscriptionExpiresAt: 1 })
+OrganizationSchema.index({ partnerType: 1, 'partnerSettings.partnerStatus': 1 })
 
 // Pre-save middleware to update timestamp
 OrganizationSchema.pre('save', function(next) {
+  this.partnerType = normalizePartnerType(this.partnerType, 'none')
+  if (!this.partnerSettings) {
+    this.partnerSettings = {}
+  }
+
+  if (this.partnerType === 'none') {
+    this.partnerSettings.partnerStatus = 'active'
+  }
+
   if (this.settings?.simpleLms) {
     const defaultCurrency = String(this.settings.simpleLms.defaultCurrency || 'NGN')
       .trim()
@@ -160,6 +257,29 @@ OrganizationSchema.pre('save', function(next) {
 
     this.settings.simpleLms.defaultCurrency = defaultCurrency
     this.settings.simpleLms.allowedCurrencies = Array.from(new Set(normalizedAllowedCurrencies))
+  }
+
+  if (this.partnerSettings?.payoutProfile) {
+    this.partnerSettings.payoutProfile.currency = String(this.partnerSettings.payoutProfile.currency || 'NGN')
+      .trim()
+      .toUpperCase()
+      .slice(0, 3) || 'NGN'
+  }
+
+  if (Number.isFinite(Number(this.partnerSettings?.maxAgents))) {
+    const maxAgents = Math.round(Number(this.partnerSettings.maxAgents))
+    this.partnerSettings.maxAgents = maxAgents > 0 ? maxAgents : null
+  } else if (this.partnerSettings?.maxAgents !== null) {
+    this.partnerSettings.maxAgents = null
+  }
+
+  if (this.partnerSettings) {
+    const normalizedRate = Number(this.partnerSettings.defaultAgentCommissionRate)
+    if (!Number.isFinite(normalizedRate)) {
+      this.partnerSettings.defaultAgentCommissionRate = 10
+    } else {
+      this.partnerSettings.defaultAgentCommissionRate = Math.min(100, Math.max(0, normalizedRate))
+    }
   }
 
   this.updatedAt = Date.now()
@@ -428,6 +548,22 @@ OrganizationSchema.methods.hasPermission = function(accountId, permission) {
     interviewer: [
       'view_candidates',
       'view_jobs'
+    ],
+    partner_admin: [
+      'manage_agents',
+      'manage_partner_courses',
+      'view_partner_reports',
+      'manage_partner_settings'
+    ],
+    partner_user: [
+      'invite_agents',
+      'create_partner_course_drafts',
+      'view_partner_reports'
+    ],
+    sales_agent: [
+      'view_partner_catalog',
+      'view_own_sales',
+      'view_own_commissions'
     ],
     staff: [] // Staff role has no permissions by default
   }

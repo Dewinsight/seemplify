@@ -1,4 +1,10 @@
 import mongoose from 'mongoose'
+import {
+  LEARNING_ROLES,
+  ORGANIZATION_MEMBER_ROLES,
+  REGISTRATION_INTENTS,
+  resolveLearningRole as resolveLearningRoleFromAccount
+} from '../utils/learningRoles.js'
 
 const organizationMembershipSchema = new mongoose.Schema({
   organization: {
@@ -7,7 +13,7 @@ const organizationMembershipSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
+    enum: ORGANIZATION_MEMBER_ROLES,
     default: 'staff'
   },
   appAccess: {
@@ -66,14 +72,14 @@ const AccountSchema = new mongoose.Schema({
   },
   learningRole: {
     type: String,
-    enum: ['super_admin', 'admin', 'creator', 'learner'],
+    enum: LEARNING_ROLES,
     default: 'learner',
     index: true
   },
   learningProfile: {
     registrationIntent: {
       type: String,
-      enum: ['learn', 'teach', 'unknown'],
+      enum: REGISTRATION_INTENTS,
       default: 'learn'
     },
     intentSource: {
@@ -230,9 +236,28 @@ const AccountSchema = new mongoose.Schema({
     ref: 'AiinOrganization',
     default: null
   },
+  partnerOrganization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinOrganization',
+    default: null,
+    index: true
+  },
   teams: {
     type: [teamMembershipSchema],
     default: []
+  },
+  roleMetadata: {
+    previousLearningRole: {
+      type: String,
+      enum: LEARNING_ROLES,
+      default: 'learner'
+    },
+    lastUpdatedAt: Date,
+    lastUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      default: null
+    }
   },
   isSystemAdmin: {
     type: Boolean,
@@ -248,6 +273,14 @@ const AccountSchema = new mongoose.Schema({
       of: Date,
       default: {}
     }
+  },
+  passwordReset: {
+    tokenHash: {
+      type: String,
+      default: ''
+    },
+    expiresAt: Date,
+    requestedAt: Date
   }
 }, {
   timestamps: true,
@@ -257,6 +290,7 @@ const AccountSchema = new mongoose.Schema({
 AccountSchema.index({ 'organizations.organization': 1 })
 AccountSchema.index({ 'teams.team': 1 })
 AccountSchema.index({ 'teams.organization': 1 })
+AccountSchema.index({ partnerOrganization: 1 })
 
 AccountSchema.methods.setCurrentOrganization = async function (organizationId) {
   const isMember = this.organizations.some((membership) => (
@@ -282,14 +316,7 @@ AccountSchema.statics.findSuperAdmins = function () {
 }
 
 AccountSchema.methods.getLearningRole = function () {
-  if (this.isSuperAdmin) return 'super_admin'
-  if (this.isSystemAdmin) return 'admin'
-
-  const normalized = String(this.learningRole || '').trim().toLowerCase()
-  if (['super_admin', 'admin', 'creator', 'learner'].includes(normalized)) {
-    return normalized
-  }
-  return 'learner'
+  return resolveLearningRoleFromAccount(this)
 }
 
 export const Account =

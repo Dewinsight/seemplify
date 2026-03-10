@@ -1,8 +1,10 @@
 ﻿
 import express from 'express'
+import bcrypt from 'bcrypt'
 import mongoose from 'mongoose'
 import multer from 'multer'
 import { Account } from '../models/Account.js'
+import { Organization } from '../models/Organization.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
@@ -10,10 +12,21 @@ import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
 import { SimpleLmsWithdrawal } from '../models/SimpleLmsWithdrawal.js'
 import { SimpleLmsCommissionSetting } from '../models/SimpleLmsCommissionSetting.js'
 import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
+import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
+import { RoleApprovalRequest } from '../models/RoleApprovalRequest.js'
+import { AuditLog } from '../models/AuditLog.js'
+import { logAuditEvent } from '../utils/auditLog.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { createFlutterwavePaymentLink, verifyFlutterwaveTransaction, isFlutterwaveConfigured, getFlutterwavePublicKey } from '../services/flutterwaveService.js'
 import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
+import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
+import {
+  LEARNING_ROLES,
+  canRoleCreateCourses,
+  isPlatformAdminRole,
+  resolveLearningRole as resolveLearningRoleFromAccount
+} from '../utils/learningRoles.js'
 
 const pageRouter = express.Router()
 const adminPageRouter = express.Router()
@@ -24,7 +37,7 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 }
 })
 
-const ROLES = ['super_admin', 'admin', 'creator', 'learner']
+const ROLES = LEARNING_ROLES
 const VIEW_MODES = ['overview', 'settings', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
@@ -35,7 +48,11 @@ const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cance
 const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
 const CREATOR_SETTINGS_SECTIONS = ['defaults', 'actions', 'payout', 'performance', 'wallet', 'withdrawals']
-const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
+const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'partners', 'super-users', 'audit-log', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
+
+const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
+const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
+const PARTNER_DASHBOARD_ROLES = [...PARTNER_SUPER_ROLES, ...PARTNER_USER_ROLES]
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -126,15 +143,196 @@ const toIdString = (value) => {
 }
 
 const resolveRole = (account) => {
-  if (!account) return 'learner'
-  if (account.isSuperAdmin) return 'super_admin'
-  if (account.isSystemAdmin) return 'admin'
-  const normalized = String(account.learningRole || '').trim().toLowerCase()
-  return ROLES.includes(normalized) ? normalized : 'learner'
+  return resolveLearningRoleFromAccount(account)
 }
 
-const canManagePlatform = (role) => ['super_admin', 'admin'].includes(role)
-const canCreateCourses = (_role) => true
+const canManagePlatform = (role) => isPlatformAdminRole(role)
+const canCreateCourses = (role) => canRoleCreateCourses(role)
+const isPartnerDashboardRole = (role) => PARTNER_DASHBOARD_ROLES.includes(String(role || '').trim().toLowerCase())
+const isPartnerSuperRole = (role) => PARTNER_SUPER_ROLES.includes(String(role || '').trim().toLowerCase())
+const isPartnerUserRole = (role) => PARTNER_USER_ROLES.includes(String(role || '').trim().toLowerCase())
+
+const getReferralSessionStore = (req, { create = false } = {}) => {
+  if (!req.session) return {}
+  const current = req.session.simpleLmsAgentReferrals
+  if (current && typeof current === 'object') return current
+  if (!create) return {}
+  req.session.simpleLmsAgentReferrals = {}
+  return req.session.simpleLmsAgentReferrals
+}
+
+const setReferralCodeForCourse = (req, courseId, referralCode) => {
+  const normalizedCourseId = toIdString(courseId)
+  const normalizedCode = normalizeAgentReferralCode(referralCode)
+  if (!normalizedCourseId || !normalizedCode || !req.session) return
+  const store = getReferralSessionStore(req, { create: true })
+  store[normalizedCourseId] = normalizedCode
+}
+
+const getReferralCodeForCourse = (req, courseId) => {
+  const normalizedCourseId = toIdString(courseId)
+  if (!normalizedCourseId) return ''
+  const store = getReferralSessionStore(req)
+  return normalizeAgentReferralCode(store[normalizedCourseId] || '')
+}
+
+const clearReferralCodeForCourse = (req, courseId) => {
+  const normalizedCourseId = toIdString(courseId)
+  if (!normalizedCourseId || !req.session) return
+  const store = getReferralSessionStore(req)
+  if (!store[normalizedCourseId]) return
+  delete store[normalizedCourseId]
+  req.session.simpleLmsAgentReferrals = store
+}
+
+const resolveAgentForReferral = async ({ course, referralCode }) => {
+  const normalizedCode = normalizeAgentReferralCode(referralCode)
+  if (!normalizedCode) return null
+
+  const partnerOrgId = toIdString(course?.organization)
+  if (!partnerOrgId || !mongoose.Types.ObjectId.isValid(partnerOrgId)) return null
+
+  const candidates = await Account.find({
+    partnerOrganization: partnerOrgId,
+    learningRole: 'channel_sales_agent'
+  })
+    .select('_id sub email partnerOrganization')
+    .limit(1000)
+    .lean()
+
+  return candidates.find((candidate) => buildAgentReferralCode(candidate) === normalizedCode) || null
+}
+
+const resolveAgentCommissionRate = ({ organization, agentId }) => {
+  const defaultRate = Number(organization?.partnerSettings?.defaultAgentCommissionRate)
+  const normalizedDefaultRate = Number.isFinite(defaultRate) ? Math.min(100, Math.max(0, defaultRate)) : 10
+
+  const member = (organization?.members || []).find((entry) => (
+    String(entry.account) === String(agentId) && entry.role === 'sales_agent' && entry.status === 'active'
+  ))
+  if (!member) return normalizedDefaultRate
+
+  const override = Number(member.agentCommissionRate)
+  if (!Number.isFinite(override)) return normalizedDefaultRate
+  return Math.min(100, Math.max(0, override))
+}
+
+const resolveAgentReferralForCheckout = async ({ req, course }) => {
+  if (!course?._id) return null
+
+  const explicitRef = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
+  const sessionRef = getReferralCodeForCourse(req, course._id)
+  const referralCode = explicitRef || sessionRef
+  if (!referralCode) return null
+
+  const agent = await resolveAgentForReferral({ course, referralCode })
+  if (!agent?._id) return null
+
+  setReferralCodeForCourse(req, course._id, referralCode)
+
+  const organization = await Organization.findById(course.organization)
+    .select('_id partnerType partnerSettings members')
+    .lean()
+  if (!organization || organization.partnerType === 'none') return null
+
+  const rate = resolveAgentCommissionRate({
+    organization,
+    agentId: agent._id
+  })
+
+  return {
+    code: referralCode,
+    agentId: agent._id,
+    partnerOrganization: organization._id,
+    commissionRatePercent: rate
+  }
+}
+
+const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => {
+  if (!payment?._id || !course?._id) return null
+  if (String(payment.status || '').trim().toLowerCase() !== 'successful') return null
+
+  const existing = await AgentSaleAttribution.findOne({ payment: payment._id })
+  if (existing) return existing
+
+  const referral = payment.metadata?.agentReferral || {}
+  const agentId = toIdString(referral.agentId)
+  const partnerOrganizationId = toIdString(referral.partnerOrganization || course.organization)
+  const referralCode = normalizeAgentReferralCode(referral.code)
+
+  if (!agentId || !mongoose.Types.ObjectId.isValid(agentId)) return null
+  if (!partnerOrganizationId || !mongoose.Types.ObjectId.isValid(partnerOrganizationId)) return null
+
+  const [agent, organization] = await Promise.all([
+    Account.findById(agentId).select('_id learningRole partnerOrganization').lean(),
+    Organization.findById(partnerOrganizationId).select('_id partnerType partnerSettings members').lean()
+  ])
+  if (!agent || String(agent.learningRole || '').trim().toLowerCase() !== 'channel_sales_agent') return null
+  if (!organization || organization.partnerType === 'none') return null
+  if (String(agent.partnerOrganization || '') !== String(partnerOrganizationId)) return null
+  if (String(course.organization || '') !== String(partnerOrganizationId)) return null
+
+  const commissionRatePercent = Number.isFinite(Number(referral.commissionRatePercent))
+    ? Math.min(100, Math.max(0, Number(referral.commissionRatePercent)))
+    : resolveAgentCommissionRate({ organization, agentId: agent._id })
+
+  const platformShareMinor = Math.max(0, Number(payment.platformShareMinor || 0))
+  const commissionAmountMinor = Math.max(0, Math.round((platformShareMinor * commissionRatePercent) / 100))
+
+  return AgentSaleAttribution.create({
+    payment: payment._id,
+    agent: agent._id,
+    partnerOrganization: organization._id,
+    course: course._id,
+    commissionRatePercent,
+    commissionAmountMinor,
+    saleAmountMinor: Math.max(0, Number(payment.amountMinor || 0)),
+    currency: String(payment.currency || 'NGN').trim().toUpperCase().slice(0, 3) || 'NGN',
+    status: 'pending',
+    referralCode,
+    attributedAt: new Date(),
+    metadata: {
+      txRef: payment.txRef || '',
+      flutterwaveTxId: payment.flutterwaveTxId || '',
+      platformShareMinor
+    }
+  })
+}
+
+const markPaymentSuccessful = async ({ payment, course, paidAt = new Date() }) => {
+  const commissionSettings = await getCommissionSettings()
+  const creatorId = course?.createdBy || payment.creatorAccount
+  const commissionRate = resolveCommissionRate({
+    settings: commissionSettings,
+    creatorId,
+    courseId: course?._id || payment.course
+  })
+  const split = splitCommission({
+    amountMinor: payment.amountMinor,
+    ratePercent: commissionRate
+  })
+
+  payment.status = 'successful'
+  payment.paidAt = payment.paidAt || paidAt
+  payment.creatorAccount = creatorId || payment.creatorAccount || null
+  payment.creatorCommissionRate = commissionRate
+  payment.creatorCommissionMinor = split.creatorCommissionMinor
+  payment.platformShareMinor = split.platformShareMinor
+  await payment.save()
+
+  await createOrUpdateEnrollment({
+    courseId: course._id,
+    learnerId: payment.account,
+    actorId: payment.account,
+    assignmentType: 'self',
+    source: 'self_enroll'
+  })
+
+  await createOrUpdateAgentAttributionForPayment({
+    payment,
+    course
+  })
+}
 
 const parseJsonInput = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback
@@ -473,6 +671,10 @@ const requireAdminPageAuth = async (req, res, next) => {
   if (!account) {
     return res.redirect(`/admin/login?return_to=${encodeURIComponent(req.originalUrl || '/admin')}`)
   }
+  const role = resolveRole(account)
+  if (!canManagePlatform(role)) {
+    return res.redirect('/login?error=Admin%20access%20is%20required')
+  }
   req.user = account
   return next()
 }
@@ -490,9 +692,42 @@ const requireApiAuth = async (req, res, next) => {
   return next()
 }
 
-const canManageCourse = ({ role, accountId, course }) => {
+const assertCurrentPassword = async ({ accountId, password }) => {
+  const currentPassword = String(password || '').trim()
+  if (!currentPassword) {
+    throw new Error('Current password is required.')
+  }
+  const account = await Account.findById(accountId).select('_id passwordHash')
+  if (!account?.passwordHash) {
+    throw new Error('Unable to validate your current password.')
+  }
+  const isMatch = await bcrypt.compare(currentPassword, account.passwordHash)
+  if (!isMatch) {
+    throw new Error('Current password is incorrect.')
+  }
+}
+
+const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
+
+   const normalizedRole = String(role || '').trim().toLowerCase()
+   const normalizedPartnerOrg = toIdString(partnerOrganizationId)
+   const courseOrgId = toIdString(course.organization)
+
+   if (isPartnerSuperRole(normalizedRole)) {
+     return Boolean(normalizedPartnerOrg) && normalizedPartnerOrg === courseOrgId
+   }
+
+   if (isPartnerUserRole(normalizedRole)) {
+     const ownsCourse = toIdString(course.createdBy) === toIdString(accountId)
+     const isDraft = String(course.status || '').trim().toLowerCase() === 'draft'
+     return Boolean(normalizedPartnerOrg)
+       && normalizedPartnerOrg === courseOrgId
+       && ownsCourse
+       && isDraft
+   }
+
   return toIdString(course.createdBy) === toIdString(accountId)
 }
 
@@ -1156,14 +1391,27 @@ const parseCoursePayload = ({
   const level = LEVELS.includes(String(body.level || '').trim())
     ? String(body.level).trim()
     : (existingCourse?.level || normalizedCreatorSettings.defaultLevel || 'mixed')
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  const roleIsPartnerSuper = isPartnerSuperRole(normalizedRole)
+  const roleIsPartnerUser = isPartnerUserRole(normalizedRole)
+  const roleIsPartner = roleIsPartnerSuper || roleIsPartnerUser
+
   const requestedStatus = parseCourseStatus(
     body.status || existingCourse?.status || normalizedPlatformSettings.defaultCourseStatus || 'draft',
     'draft'
   )
-  const requiresApproval = !canManagePlatform(role) && normalizedPlatformSettings.requirePublicReviewForCreators
-  const status = (requestedStatus === 'published' && requiresApproval)
+  const requiresApproval = !canManagePlatform(role)
+    && !roleIsPartner
+    && normalizedPlatformSettings.requirePublicReviewForCreators
+
+  let status = (requestedStatus === 'published' && requiresApproval)
     ? 'pending_public_review'
     : requestedStatus
+
+  // Partner users can only submit draft courses for partner-super review.
+  if (roleIsPartnerUser) {
+    status = 'draft'
+  }
   const visibilityInput = body.visibility
     || existingCourse?.visibility
     || normalizedCreatorSettings.defaultVisibility
@@ -1621,6 +1869,7 @@ const initiateCoursePaymentCheckout = async ({
     : 'direct'
   const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
   const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
+  const agentReferral = await resolveAgentReferralForCheckout({ req, course })
 
   const recentPendingPayment = await SimpleLmsPayment.findOne({
     account: req.user._id,
@@ -1641,7 +1890,17 @@ const initiateCoursePaymentCheckout = async ({
             ...(recentPendingPayment.metadata || {}),
             nextPath: finalNextPath,
             fallbackPath: finalFallbackPath,
-            checkoutContext: normalizedCheckoutContext
+            checkoutContext: normalizedCheckoutContext,
+            ...(agentReferral
+              ? {
+                  agentReferral: {
+                    code: agentReferral.code,
+                    agentId: agentReferral.agentId,
+                    partnerOrganization: agentReferral.partnerOrganization,
+                    commissionRatePercent: agentReferral.commissionRatePercent
+                  }
+                }
+              : {})
           }
         }
       }
@@ -1652,6 +1911,19 @@ const initiateCoursePaymentCheckout = async ({
   const txRef = generateTxRef()
   const amountMinor = Math.max(0, Math.round(Number(course?.pricing?.amount || 0)))
   const currency = normalizeCurrencyCode(course?.pricing?.currency || 'NGN')
+  const paymentMetadata = {
+    nextPath: finalNextPath,
+    fallbackPath: finalFallbackPath,
+    checkoutContext: normalizedCheckoutContext
+  }
+  if (agentReferral) {
+    paymentMetadata.agentReferral = {
+      code: agentReferral.code,
+      agentId: agentReferral.agentId,
+      partnerOrganization: agentReferral.partnerOrganization,
+      commissionRatePercent: agentReferral.commissionRatePercent
+    }
+  }
 
   const payment = await SimpleLmsPayment.create({
     account: req.user._id,
@@ -1664,11 +1936,7 @@ const initiateCoursePaymentCheckout = async ({
     status: 'initiated',
     customerEmail: req.user.email || '',
     customerName: req.user.profile?.name || req.user.email || 'Learner',
-    metadata: {
-      nextPath: finalNextPath,
-      fallbackPath: finalFallbackPath,
-      checkoutContext: normalizedCheckoutContext
-    }
+    metadata: paymentMetadata
   })
 
   try {
@@ -1775,6 +2043,10 @@ const handleCoursePayRequest = async (req, res) => {
   try {
     const courseId = String(req.params.courseId || '').trim()
     const course = await findPublicCourseForLearning(courseId)
+    const referralCode = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
+    if (course?._id && referralCode) {
+      setReferralCodeForCourse(req, course._id, referralCode)
+    }
     const defaultFallback = '/simple-lms?view=catalog'
     const publicFallback = course
       ? `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
@@ -1841,7 +2113,8 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
     const managesCourse = canManageCourse({
       role,
       accountId: req.user._id,
-      course
+      course,
+      partnerOrganizationId: req.user.partnerOrganization
     })
 
     const enrollmentExists = managesCourse
@@ -1989,6 +2262,7 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
   try {
     const courseId = String(req.body?.courseId || req.body?.course || '').trim()
     const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
+    const referralCode = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
@@ -2036,6 +2310,9 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
       })
     }
 
+    if (referralCode) {
+      setReferralCodeForCourse(req, course._id, referralCode)
+    }
     addSessionCartCourseId(req, course._id)
     return redirectWithMessage({
       res,
@@ -2129,13 +2406,12 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
     }
 
     if (payment.status === 'successful') {
-      await createOrUpdateEnrollment({
-        courseId: payment.course._id,
-        learnerId: req.user._id,
-        actorId: req.user._id,
-        assignmentType: 'self',
-        source: 'self_enroll'
+      await createOrUpdateAgentAttributionForPayment({
+        payment,
+        course: payment.course
       })
+      removeSessionCartCourseId(req, payment.course._id)
+      clearReferralCodeForCourse(req, payment.course._id)
       return cartSuccessRedirect({ defaultMessage: 'Payment already verified.' })
     }
 
@@ -2177,33 +2453,13 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       })
     }
 
-    payment.status = 'successful'
-    payment.paidAt = new Date()
-    const commissionSettings = await getCommissionSettings()
-    const creatorId = payment.course?.createdBy || payment.creatorAccount
-    const commissionRate = resolveCommissionRate({
-      settings: commissionSettings,
-      creatorId,
-      courseId: payment.course?._id || payment.course
+    await markPaymentSuccessful({
+      payment,
+      course: payment.course,
+      paidAt: new Date()
     })
-    const split = splitCommission({
-      amountMinor: payment.amountMinor,
-      ratePercent: commissionRate
-    })
-    payment.creatorAccount = creatorId || payment.creatorAccount || null
-    payment.creatorCommissionRate = commissionRate
-    payment.creatorCommissionMinor = split.creatorCommissionMinor
-    payment.platformShareMinor = split.platformShareMinor
-    await payment.save()
     removeSessionCartCourseId(req, payment.course._id)
-
-    await createOrUpdateEnrollment({
-      courseId: payment.course._id,
-      learnerId: req.user._id,
-      actorId: req.user._id,
-      assignmentType: 'self',
-      source: 'self_enroll'
-    })
+    clearReferralCodeForCourse(req, payment.course._id)
 
     return cartSuccessRedirect({ defaultMessage: 'Payment verified. Course unlocked.' })
   } catch (error) {
@@ -2586,6 +2842,17 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       })
     }
 
+    const normalizedRole = String(role || '').trim().toLowerCase()
+    const partnerOwnedCourse = isPartnerDashboardRole(normalizedRole)
+    const partnerOrganizationId = toIdString(req.user?.partnerOrganization)
+    if (partnerOwnedCourse && !mongoose.Types.ObjectId.isValid(partnerOrganizationId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization context is required before creating courses.'
+      })
+    }
+
     const currencyCatalog = await getActiveCurrencyCatalog()
     const platformSettings = await getPlatformSettings(currencyCatalog.codes)
     const payload = parseCoursePayload({
@@ -2596,12 +2863,15 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       platformSettings,
       currencyCodes: currencyCatalog.codes
     })
+    const studioContext = String(req.body?.studioContext || '').trim().toLowerCase()
+    const createAsSystemCourse = canManagePlatform(role) && studioContext === 'admin'
     const createdCourse = await SimpleLmsCourse.create({
       ...payload,
-      organization: null,
+      organization: partnerOwnedCourse ? partnerOrganizationId : null,
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
-      createdByEmail: req.user.email || ''
+      createdByEmail: req.user.email || '',
+      isSystemCourse: createAsSystemCourse
     })
 
     req.user.learningProfile = req.user.learningProfile || {}
@@ -2657,7 +2927,12 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       })
     }
 
-    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+    if (!canManageCourse({
+      role,
+      accountId: req.user._id,
+      course,
+      partnerOrganizationId: req.user.partnerOrganization
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -2701,11 +2976,21 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
   const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const role = resolveRole(req.user)
+    const normalizedRole = String(role || '').trim().toLowerCase()
+    const partnerOwnedCourse = isPartnerDashboardRole(normalizedRole)
+    const partnerOrganizationId = toIdString(req.user?.partnerOrganization)
     if (!canCreateCourses(role)) {
       return redirectWithMessage({
         res,
         path: returnTo,
         error: 'You do not have permission to duplicate courses.'
+      })
+    }
+    if (partnerOwnedCourse && !mongoose.Types.ObjectId.isValid(partnerOrganizationId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization context is required before duplicating courses.'
       })
     }
 
@@ -2727,7 +3012,12 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
       })
     }
 
-    if (!canManageCourse({ role, accountId: req.user._id, course: sourceCourse })) {
+    if (!canManageCourse({
+      role,
+      accountId: req.user._id,
+      course: sourceCourse,
+      partnerOrganizationId: req.user.partnerOrganization
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -2753,7 +3043,7 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
       return normalizeVisibility(sourceCourse.visibility, role)
     })()
     const duplicatePayload = {
-      organization: null,
+      organization: partnerOwnedCourse ? partnerOrganizationId : null,
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
       createdByEmail: req.user.email || '',
@@ -2837,7 +3127,12 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
       })
     }
 
-    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+    if (!canManageCourse({
+      role,
+      accountId: req.user._id,
+      course,
+      partnerOrganizationId: req.user.partnerOrganization
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -2887,7 +3182,12 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
       })
     }
 
-    if (!canManageCourse({ role, accountId: req.user._id, course })) {
+    if (!canManageCourse({
+      role,
+      accountId: req.user._id,
+      course,
+      partnerOrganizationId: req.user.partnerOrganization
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -3043,7 +3343,12 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     }
 
     const course = await SimpleLmsCourse.findById(courseId).lean()
-    if (!course || !canManageCourse({ role, accountId: req.user._id, course })) {
+    if (!course || !canManageCourse({
+      role,
+      accountId: req.user._id,
+      course,
+      partnerOrganizationId: req.user.partnerOrganization
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -3551,6 +3856,683 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
   }
 })
 
+const mapLearningRoleToPartnerMemberRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (['channel_partner_super', 'partner_super'].includes(normalized)) return 'partner_admin'
+  if (normalized === 'channel_sales_agent') return 'sales_agent'
+  return 'partner_user'
+}
+
+pageRouter.post('/admin/super-users/promote', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can promote super users.'
+      })
+    }
+
+    await assertCurrentPassword({
+      accountId: req.user._id,
+      password: req.body?.currentPassword
+    })
+
+    const accountId = String(req.body?.targetAccountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select an account to promote.'
+      })
+    }
+
+    const target = await Account.findById(accountId)
+    if (!target) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Account not found.'
+      })
+    }
+    if (resolveRole(target) === 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Account is already a super admin.'
+      })
+    }
+
+    const previousRole = String(target.learningRole || 'learner').trim().toLowerCase()
+    target.learningRole = 'super_admin'
+    target.isSuperAdmin = true
+    target.isSystemAdmin = true
+    target.roleMetadata = {
+      previousLearningRole: LEARNING_ROLES.includes(previousRole) ? previousRole : 'learner',
+      lastUpdatedAt: new Date(),
+      lastUpdatedBy: req.user._id
+    }
+    await target.save()
+
+    await logAuditEvent({
+      action: 'super_user.promote',
+      performedBy: req.user._id,
+      targetAccount: target._id,
+      metadata: {
+        previousRole,
+        nextRole: 'super_admin'
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Super admin privileges granted.'
+    })
+  } catch (error) {
+    console.error('Promote super user (bulk route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to promote super user.'
+    })
+  }
+})
+
+pageRouter.post('/admin/super-users/:accountId/promote', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can promote super users.'
+      })
+    }
+
+    await assertCurrentPassword({
+      accountId: req.user._id,
+      password: req.body?.currentPassword
+    })
+
+    const accountId = String(req.params.accountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid account selected.'
+      })
+    }
+
+    const target = await Account.findById(accountId)
+    if (!target) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Account not found.'
+      })
+    }
+    if (resolveRole(target) === 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Account is already a super admin.'
+      })
+    }
+
+    const previousRole = String(target.learningRole || 'learner').trim().toLowerCase()
+    target.learningRole = 'super_admin'
+    target.isSuperAdmin = true
+    target.isSystemAdmin = true
+    target.roleMetadata = {
+      previousLearningRole: LEARNING_ROLES.includes(previousRole) ? previousRole : 'learner',
+      lastUpdatedAt: new Date(),
+      lastUpdatedBy: req.user._id
+    }
+    await target.save()
+
+    await logAuditEvent({
+      action: 'super_user.promote',
+      performedBy: req.user._id,
+      targetAccount: target._id,
+      metadata: {
+        previousRole,
+        nextRole: 'super_admin'
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Super admin privileges granted.'
+    })
+  } catch (error) {
+    console.error('Promote super user (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to promote super user.'
+    })
+  }
+})
+
+pageRouter.post('/admin/super-users/:accountId/demote', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can demote super users.'
+      })
+    }
+
+    await assertCurrentPassword({
+      accountId: req.user._id,
+      password: req.body?.currentPassword
+    })
+
+    const accountId = String(req.params.accountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid account selected.'
+      })
+    }
+
+    const target = await Account.findById(accountId)
+    if (!target) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Account not found.'
+      })
+    }
+    if (resolveRole(target) !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Account is not a super admin.'
+      })
+    }
+    if (toIdString(target._id) === toIdString(req.user._id)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You cannot demote yourself from this page.'
+      })
+    }
+
+    const superAdminCount = await Account.countDocuments({ isSuperAdmin: true })
+    if (superAdminCount <= 1) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Cannot demote the last remaining super admin.'
+      })
+    }
+
+    const fallbackRoleRaw = String(target.roleMetadata?.previousLearningRole || 'learner').trim().toLowerCase()
+    const fallbackRole = LEARNING_ROLES.includes(fallbackRoleRaw) && fallbackRoleRaw !== 'super_admin'
+      ? fallbackRoleRaw
+      : 'learner'
+    target.learningRole = fallbackRole
+    target.isSuperAdmin = false
+    target.isSystemAdmin = fallbackRole === 'admin'
+    target.roleMetadata = {
+      previousLearningRole: fallbackRole,
+      lastUpdatedAt: new Date(),
+      lastUpdatedBy: req.user._id
+    }
+    await target.save()
+
+    await logAuditEvent({
+      action: 'super_user.demote',
+      performedBy: req.user._id,
+      targetAccount: target._id,
+      metadata: {
+        restoredRole: fallbackRole
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Super admin privileges revoked.'
+    })
+  } catch (error) {
+    console.error('Demote super user (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to demote super user.'
+    })
+  }
+})
+
+pageRouter.post('/admin/role-requests/:requestId/approve', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can approve role requests.'
+      })
+    }
+
+    const requestId = String(req.params.requestId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid role request selected.'
+      })
+    }
+
+    const roleRequest = await RoleApprovalRequest.findById(requestId)
+    if (!roleRequest || String(roleRequest.status || '').trim().toLowerCase() !== 'pending') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Pending role request not found.'
+      })
+    }
+
+    const approvedRoleRaw = String(req.body?.approvedRole || roleRequest.requestedRole || '').trim().toLowerCase()
+    if (!['partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super'].includes(approvedRoleRaw)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid approved role selected.'
+      })
+    }
+
+    const targetAccount = await Account.findById(roleRequest.account)
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Target account was not found.'
+      })
+    }
+
+    let organization = null
+    const roleRequestOrgId = toIdString(roleRequest.organization)
+    if (roleRequestOrgId && mongoose.Types.ObjectId.isValid(roleRequestOrgId)) {
+      organization = await Organization.findById(roleRequestOrgId)
+    }
+    if (!organization) {
+      const organizationName = String(roleRequest.organizationName || '').trim()
+      if (organizationName) {
+        organization = await Organization.create({
+          name: organizationName,
+          description: `${roleRequest.partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} organization`,
+          owner: targetAccount._id,
+          partnerType: roleRequest.partnerType || 'partner',
+          members: [{
+            account: targetAccount._id,
+            role: mapLearningRoleToPartnerMemberRole(approvedRoleRaw),
+            appAccess: { mode: 'all', appIds: [] },
+            joinedAt: new Date(),
+            invitedBy: req.user._id,
+            status: 'active'
+          }],
+          partnerSettings: {
+            partnerStatus: 'active',
+            maxAgents: null,
+            defaultAgentCommissionRate: 10,
+            agentInviteApproval: true
+          }
+        })
+      }
+    }
+
+    if (organization) {
+      const partnerStatus = String(organization.partnerSettings?.partnerStatus || '').trim().toLowerCase()
+      if (!['active', 'suspended'].includes(partnerStatus)) {
+        organization.partnerSettings = organization.partnerSettings || {}
+        organization.partnerSettings.partnerStatus = 'active'
+      }
+
+      const orgRole = mapLearningRoleToPartnerMemberRole(approvedRoleRaw)
+      const member = (organization.members || []).find((entry) => (
+        toIdString(entry.account) === toIdString(targetAccount._id)
+      ))
+      if (member) {
+        member.role = orgRole
+        member.status = 'active'
+        member.updatedAt = new Date()
+        member.updatedBy = req.user._id
+      } else {
+        organization.members = Array.isArray(organization.members) ? organization.members : []
+        organization.members.push({
+          account: targetAccount._id,
+          role: orgRole,
+          appAccess: { mode: 'all', appIds: [] },
+          joinedAt: new Date(),
+          invitedBy: req.user._id,
+          status: 'active',
+          updatedAt: new Date(),
+          updatedBy: req.user._id
+        })
+      }
+      await organization.save()
+
+      const membership = Array.isArray(targetAccount.organizations)
+        ? targetAccount.organizations.find((entry) => toIdString(entry.organization) === toIdString(organization._id))
+        : null
+      if (membership) {
+        membership.role = orgRole
+        membership.isActive = true
+      } else {
+        targetAccount.organizations = Array.isArray(targetAccount.organizations) ? targetAccount.organizations : []
+        targetAccount.organizations.push({
+          organization: organization._id,
+          role: orgRole,
+          appAccess: { mode: 'all', appIds: [] },
+          joinedAt: new Date(),
+          isActive: true
+        })
+      }
+      targetAccount.partnerOrganization = organization._id
+      roleRequest.organization = organization._id
+    }
+
+    targetAccount.learningRole = approvedRoleRaw
+    targetAccount.isSuperAdmin = approvedRoleRaw === 'super_admin'
+    targetAccount.isSystemAdmin = ['super_admin', 'admin'].includes(approvedRoleRaw)
+    targetAccount.roleMetadata = {
+      previousLearningRole: approvedRoleRaw,
+      lastUpdatedAt: new Date(),
+      lastUpdatedBy: req.user._id
+    }
+    await targetAccount.save()
+
+    roleRequest.status = 'approved'
+    roleRequest.reviewedBy = req.user._id
+    roleRequest.reviewedAt = new Date()
+    roleRequest.reviewNotes = String(req.body?.notes || '').trim().slice(0, 3000)
+    await roleRequest.save()
+
+    await logAuditEvent({
+      action: 'approval.request.approve',
+      performedBy: req.user._id,
+      targetAccount: targetAccount._id,
+      targetOrganization: organization?._id || null,
+      metadata: {
+        requestId: roleRequest._id,
+        approvedRole: approvedRoleRaw
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Role request approved successfully.'
+    })
+  } catch (error) {
+    console.error('Approve role request (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to approve role request.'
+    })
+  }
+})
+
+pageRouter.post('/admin/role-requests/:requestId/reject', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can reject role requests.'
+      })
+    }
+
+    const requestId = String(req.params.requestId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid role request selected.'
+      })
+    }
+
+    const roleRequest = await RoleApprovalRequest.findById(requestId)
+    if (!roleRequest || String(roleRequest.status || '').trim().toLowerCase() !== 'pending') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Pending role request not found.'
+      })
+    }
+
+    roleRequest.status = 'rejected'
+    roleRequest.reviewedBy = req.user._id
+    roleRequest.reviewedAt = new Date()
+    roleRequest.reviewNotes = String(req.body?.notes || '').trim().slice(0, 3000)
+    await roleRequest.save()
+
+    await logAuditEvent({
+      action: 'approval.request.reject',
+      performedBy: req.user._id,
+      targetAccount: roleRequest.account || null,
+      targetOrganization: roleRequest.organization || null,
+      metadata: {
+        requestId: roleRequest._id,
+        notes: roleRequest.reviewNotes
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Role request rejected.'
+    })
+  } catch (error) {
+    console.error('Reject role request (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to reject role request.'
+    })
+  }
+})
+
+pageRouter.post('/admin/partners/:organizationId/status', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can update partner status.'
+      })
+    }
+
+    const organizationId = String(req.params.organizationId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(organizationId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid partner organization selected.'
+      })
+    }
+    const nextStatus = String(req.body?.partnerStatus || req.body?.status || '').trim().toLowerCase()
+    if (!['pending', 'active', 'suspended'].includes(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid partner status selected.'
+      })
+    }
+
+    const organization = await Organization.findById(organizationId)
+    if (!organization || organization.partnerType === 'none') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization not found.'
+      })
+    }
+
+    organization.partnerSettings = organization.partnerSettings || {}
+    organization.partnerSettings.partnerStatus = nextStatus
+    await organization.save()
+
+    await logAuditEvent({
+      action: nextStatus === 'active' ? 'partner.activate' : (nextStatus === 'suspended' ? 'partner.suspend' : 'partner.create'),
+      performedBy: req.user._id,
+      targetOrganization: organization._id,
+      metadata: {
+        partnerType: organization.partnerType,
+        status: nextStatus
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Partner status updated successfully.'
+    })
+  } catch (error) {
+    console.error('Update partner status (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to update partner status.'
+    })
+  }
+})
+
+pageRouter.post('/admin/agent-commissions/:attributionId/status', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can update agent payout statuses.'
+      })
+    }
+
+    const attributionId = String(req.params.attributionId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(attributionId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid agent commission record selected.'
+      })
+    }
+    const nextStatus = String(req.body?.status || '').trim().toLowerCase()
+    if (!['approved', 'paid', 'rejected'].includes(nextStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid commission status selected.'
+      })
+    }
+
+    const attribution = await AgentSaleAttribution.findById(attributionId)
+    if (!attribution) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Agent commission record not found.'
+      })
+    }
+    const currentStatus = String(attribution.status || '').trim().toLowerCase()
+
+    if (nextStatus === 'approved') {
+      if (!['recommended', 'pending'].includes(currentStatus)) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Only pending or recommended commissions can be approved.'
+        })
+      }
+      attribution.status = 'approved'
+      attribution.approvedBy = req.user._id
+      attribution.approvedAt = new Date()
+    } else if (nextStatus === 'paid') {
+      if (!['approved', 'recommended'].includes(currentStatus)) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Only approved commissions can be marked paid.'
+        })
+      }
+      attribution.status = 'paid'
+      attribution.approvedBy = attribution.approvedBy || req.user._id
+      attribution.approvedAt = attribution.approvedAt || new Date()
+      attribution.paidBy = req.user._id
+      attribution.paidAt = new Date()
+      attribution.transactionRef = String(req.body?.transactionRef || '').trim().slice(0, 160)
+    } else {
+      if (!['pending', 'recommended', 'approved'].includes(currentStatus)) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Only open commissions can be rejected.'
+        })
+      }
+      attribution.status = 'rejected'
+    }
+
+    attribution.metadata = {
+      ...(attribution.metadata || {}),
+      adminNote: String(req.body?.adminNotes || '').trim().slice(0, 3000)
+    }
+    await attribution.save()
+
+    await logAuditEvent({
+      action: 'role.change',
+      performedBy: req.user._id,
+      targetAccount: attribution.agent || null,
+      targetOrganization: attribution.partnerOrganization || null,
+      metadata: {
+        entity: 'agent_commission',
+        attributionId: attribution._id,
+        fromStatus: currentStatus,
+        toStatus: attribution.status,
+        transactionRef: attribution.transactionRef || ''
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Agent commission status updated.'
+    })
+  } catch (error) {
+    console.error('Update agent commission status (page route) error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to update agent commission status.'
+    })
+  }
+})
+
 pageRouter.post('/commission/global', requirePageAuth, async (req, res) => {
   const returnTo = resolveAdminReturnPath(req)
   try {
@@ -3980,6 +4962,17 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
         error: 'Payment record not found.'
       })
     }
+    if (String(payment.status || '').trim().toLowerCase() === 'successful') {
+      await createOrUpdateAgentAttributionForPayment({
+        payment,
+        course: payment.course
+      })
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        success: 'Payment is already verified.'
+      })
+    }
 
     const transactionId = String(req.body?.transactionId || payment.flutterwaveTxId || '').trim()
     if (!transactionId) {
@@ -4016,32 +5009,10 @@ pageRouter.post('/admin/payments/:paymentId/reverify', requirePageAuth, async (r
       })
     }
 
-    const commissionSettings = await getCommissionSettings()
-    const creatorId = payment.course?.createdBy || payment.creatorAccount
-    const commissionRate = resolveCommissionRate({
-      settings: commissionSettings,
-      creatorId,
-      courseId: payment.course?._id || payment.course
-    })
-    const split = splitCommission({
-      amountMinor: payment.amountMinor,
-      ratePercent: commissionRate
-    })
-
-    payment.status = 'successful'
-    payment.paidAt = payment.paidAt || new Date()
-    payment.creatorAccount = creatorId || payment.creatorAccount || null
-    payment.creatorCommissionRate = commissionRate
-    payment.creatorCommissionMinor = split.creatorCommissionMinor
-    payment.platformShareMinor = split.platformShareMinor
-    await payment.save()
-
-    await createOrUpdateEnrollment({
-      courseId: payment.course._id,
-      learnerId: payment.account,
-      actorId: payment.account,
-      assignmentType: 'self',
-      source: 'self_enroll'
+    await markPaymentSuccessful({
+      payment,
+      course: payment.course,
+      paidAt: payment.paidAt || new Date()
     })
 
     return redirectWithMessage({
@@ -4255,14 +5226,22 @@ const renderWorkspacePage = async (
     }
 
     const isCreatorStudioContext = studioPortal && resolvedStudioContext === 'creator'
+    const partnerOrgId = toIdString(req.user?.partnerOrganization)
+    const partnerScopedFilter = (baseFilter = {}) => {
+      if (!partnerOrgId) return { ...baseFilter, createdBy: req.user._id }
+      if (isPartnerSuperRole(role)) return { ...baseFilter, organization: partnerOrgId }
+      if (isPartnerUserRole(role)) return { ...baseFilter, organization: partnerOrgId, createdBy: req.user._id }
+      return { ...baseFilter, createdBy: req.user._id }
+    }
+
     const managedFilter = canManagePlatform(role) && !isCreatorStudioContext
       ? {}
-      : { createdBy: req.user._id }
+      : partnerScopedFilter({})
     const managedProgramFilter = canManagePlatform(role) && !isCreatorStudioContext
       ? {}
-      : { createdBy: req.user._id }
+      : partnerScopedFilter({})
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -4290,7 +5269,7 @@ const renderWorkspacePage = async (
       SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
       canManagePlatform(role)
         ? Account.find({})
-          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile')
+          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization')
           .sort({ createdAt: -1 })
           .limit(500)
           .lean()
@@ -4404,6 +5383,51 @@ const renderWorkspacePage = async (
           .populate('paidBy', 'email profile.name')
           .sort({ createdAt: -1 })
           .limit(400)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? Organization.find({
+          partnerType: { $in: ['channel_partner', 'partner'] }
+        })
+          .sort({ updatedAt: -1 })
+          .limit(300)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? RoleApprovalRequest.find({})
+          .populate('account', 'email profile.name')
+          .populate('organization', 'name partnerType partnerSettings.partnerStatus')
+          .populate('reviewedBy', 'email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(300)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? Account.find({ isSuperAdmin: true })
+          .select('_id email profile.name roleMetadata createdAt updatedAt')
+          .sort({ createdAt: 1 })
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? AuditLog.find({})
+          .populate('performedBy', 'email profile.name')
+          .populate('targetAccount', 'email profile.name')
+          .populate('targetOrganization', 'name partnerType')
+          .sort({ createdAt: -1 })
+          .limit(300)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? AgentSaleAttribution.find({
+          status: { $in: ['pending', 'recommended', 'approved'] }
+        })
+          .populate('agent', 'email profile.name payoutProfile')
+          .populate('course', 'title')
+          .populate('partnerOrganization', 'name partnerType')
+          .populate('recommendedBy', 'email profile.name')
+          .populate('approvedBy', 'email profile.name')
+          .sort({ createdAt: -1 })
+          .limit(500)
           .lean()
         : Promise.resolve([])
     ])
@@ -4678,7 +5702,12 @@ const renderWorkspacePage = async (
       super_admin: adminAccounts.filter(account => account.resolvedRole === 'super_admin').length,
       admin: adminAccounts.filter(account => account.resolvedRole === 'admin').length,
       creator: adminAccounts.filter(account => account.resolvedRole === 'creator').length,
-      learner: adminAccounts.filter(account => account.resolvedRole === 'learner').length
+      learner: adminAccounts.filter(account => account.resolvedRole === 'learner').length,
+      channel_partner_super: adminAccounts.filter(account => account.resolvedRole === 'channel_partner_super').length,
+      channel_partner_user: adminAccounts.filter(account => account.resolvedRole === 'channel_partner_user').length,
+      partner_super: adminAccounts.filter(account => account.resolvedRole === 'partner_super').length,
+      partner_user: adminAccounts.filter(account => account.resolvedRole === 'partner_user').length,
+      channel_sales_agent: adminAccounts.filter(account => account.resolvedRole === 'channel_sales_agent').length
     }
 
     const studioCourseMap = new Map()
@@ -4886,6 +5915,137 @@ const renderWorkspacePage = async (
       canApprove: String(request.status || '').trim().toLowerCase() === 'pending',
       canReject: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase()),
       canMarkPaid: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
+    }))
+    const orgCourseStatsMap = new Map()
+    managedCourses.forEach((course) => {
+      const orgId = toIdString(course.organization)
+      if (!orgId) return
+      const existing = orgCourseStatsMap.get(orgId) || {
+        totalCourses: 0,
+        publishedCourses: 0,
+        draftCourses: 0
+      }
+      const normalizedStatus = String(course.status || '').trim().toLowerCase()
+      existing.totalCourses += 1
+      if (normalizedStatus === 'published') {
+        existing.publishedCourses += 1
+      } else if (normalizedStatus === 'draft' || normalizedStatus === 'pending_public_review') {
+        existing.draftCourses += 1
+      }
+      orgCourseStatsMap.set(orgId, existing)
+    })
+    const orgAgentStatsMap = new Map()
+    adminAccounts
+      .filter((account) => account.resolvedRole === 'channel_sales_agent')
+      .forEach((account) => {
+        const orgId = toIdString(account.partnerOrganization)
+        if (!orgId) return
+        const existing = orgAgentStatsMap.get(orgId) || 0
+        orgAgentStatsMap.set(orgId, existing + 1)
+      })
+    const orgAttributionStatsMap = new Map()
+    ;(agentPayoutRowsRaw || []).forEach((entry) => {
+      const orgId = toIdString(entry.partnerOrganization?._id || entry.partnerOrganization)
+      if (!orgId) return
+      const existing = orgAttributionStatsMap.get(orgId) || {
+        pendingCommissionMinor: 0,
+        recommendedCommissionMinor: 0,
+        approvedCommissionMinor: 0
+      }
+      const status = String(entry.status || '').trim().toLowerCase()
+      const amount = Math.max(0, Number(entry.commissionAmountMinor || 0))
+      if (status === 'pending') existing.pendingCommissionMinor += amount
+      if (status === 'recommended') existing.recommendedCommissionMinor += amount
+      if (status === 'approved') existing.approvedCommissionMinor += amount
+      orgAttributionStatsMap.set(orgId, existing)
+    })
+    const partnerOrganizations = (partnerOrganizationsRaw || []).map((organization) => {
+      const orgId = toIdString(organization._id)
+      const courseStats = orgCourseStatsMap.get(orgId) || { totalCourses: 0, publishedCourses: 0, draftCourses: 0 }
+      const attributionStats = orgAttributionStatsMap.get(orgId) || {
+        pendingCommissionMinor: 0,
+        recommendedCommissionMinor: 0,
+        approvedCommissionMinor: 0
+      }
+      const status = String(organization?.partnerSettings?.partnerStatus || 'pending').trim().toLowerCase()
+      return {
+        ...organization,
+        partnerStatus: ['pending', 'active', 'suspended'].includes(status) ? status : 'pending',
+        agentCount: Number(orgAgentStatsMap.get(orgId) || 0),
+        totalCourses: Number(courseStats.totalCourses || 0),
+        publishedCourses: Number(courseStats.publishedCourses || 0),
+        draftCourses: Number(courseStats.draftCourses || 0),
+        pendingCommissionMinor: Number(attributionStats.pendingCommissionMinor || 0),
+        recommendedCommissionMinor: Number(attributionStats.recommendedCommissionMinor || 0),
+        approvedCommissionMinor: Number(attributionStats.approvedCommissionMinor || 0),
+        pendingCommissionDisplay: formatCurrencyAmount(attributionStats.pendingCommissionMinor || 0, 'NGN'),
+        recommendedCommissionDisplay: formatCurrencyAmount(attributionStats.recommendedCommissionMinor || 0, 'NGN'),
+        approvedCommissionDisplay: formatCurrencyAmount(attributionStats.approvedCommissionMinor || 0, 'NGN')
+      }
+    })
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+
+    const roleApprovalRequests = (roleApprovalRequestsRaw || []).map((request) => ({
+      ...request,
+      accountName: request.account?.profile?.name || request.account?.email || 'User',
+      accountEmail: request.account?.email || '',
+      organizationName: request.organization?.name || request.organizationName || '',
+      partnerType: request.partnerType || request.organization?.partnerType || 'partner',
+      reviewedByName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || ''
+    }))
+
+    const superAdminIdSet = new Set((superUsersRaw || []).map((entry) => toIdString(entry._id)).filter(Boolean))
+    const userIdByRoleMetadata = new Set(
+      (superUsersRaw || [])
+        .map((entry) => toIdString(entry.roleMetadata?.lastUpdatedBy))
+        .filter(Boolean)
+    )
+    const superUserActorIds = Array.from(userIdByRoleMetadata).filter((id) => !superAdminIdSet.has(id))
+    const superUserActors = superUserActorIds.length > 0
+      ? await Account.find({ _id: { $in: superUserActorIds } })
+        .select('_id email profile.name')
+        .lean()
+      : []
+    const superUserActorById = new Map(superUserActors.map((entry) => [toIdString(entry._id), entry]))
+    const superUserAccounts = (superUsersRaw || []).map((entry) => {
+      const actorId = toIdString(entry.roleMetadata?.lastUpdatedBy)
+      const promotedBy = actorId
+        ? (superUserActorById.get(actorId)
+            || (superUsersRaw || []).find((candidate) => toIdString(candidate._id) === actorId)
+            || null)
+        : null
+      return {
+        ...entry,
+        displayName: entry.profile?.name || entry.email || 'Super Admin',
+        promotedByName: promotedBy?.profile?.name || promotedBy?.email || '',
+        promotedAt: entry.roleMetadata?.lastUpdatedAt || entry.updatedAt || entry.createdAt
+      }
+    })
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+
+    const auditLogEntries = (auditLogEntriesRaw || []).map((entry) => ({
+      ...entry,
+      performedByName: entry.performedBy?.profile?.name || entry.performedBy?.email || 'System',
+      performedByEmail: entry.performedBy?.email || '',
+      targetAccountName: entry.targetAccount?.profile?.name || entry.targetAccount?.email || '',
+      targetOrganizationName: entry.targetOrganization?.name || '',
+      actionLabel: String(entry.action || '').replace(/\./g, ' ')
+    }))
+
+    const agentPayoutRows = (agentPayoutRowsRaw || []).map((entry) => ({
+      ...entry,
+      agentName: entry.agent?.profile?.name || entry.agent?.email || 'Agent',
+      agentEmail: entry.agent?.email || '',
+      courseTitle: entry.course?.title || 'Course',
+      organizationName: entry.partnerOrganization?.name || '',
+      amountDisplay: formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN'),
+      saleAmountDisplay: formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN'),
+      statusLabel: String(entry.status || '').replace(/_/g, ' '),
+      recommendedByName: entry.recommendedBy?.profile?.name || entry.recommendedBy?.email || '',
+      approvedByName: entry.approvedBy?.profile?.name || entry.approvedBy?.email || '',
+      canApprove: String(entry.status || '').trim().toLowerCase() === 'recommended',
+      canMarkPaid: ['recommended', 'approved'].includes(String(entry.status || '').trim().toLowerCase()),
+      canReject: ['pending', 'recommended', 'approved'].includes(String(entry.status || '').trim().toLowerCase())
     }))
 
     let adminPayments = (adminPaymentsRaw || []).map((payment) => ({
@@ -5504,6 +6664,11 @@ const renderWorkspacePage = async (
       },
       pendingReviewCourses,
       approvalQueueCourses,
+      partnerOrganizations,
+      roleApprovalRequests,
+      superUserAccounts,
+      auditLogEntries,
+      agentPayoutRows,
       commissionSettings: {
         globalRatePercent: commissionSettings.globalRatePercent,
         accountOverrides: commissionAccountOverrides,
@@ -5565,6 +6730,9 @@ const renderAdminPortalSection = (section = 'overview') => async (req, res) => (
 adminPageRouter.get('/', requireAdminPageAuth, renderAdminPortalSection('overview'))
 adminPageRouter.get('/courses', requireAdminPageAuth, renderAdminPortalSection('courses'))
 adminPageRouter.get('/approvals', requireAdminPageAuth, renderAdminPortalSection('approvals'))
+adminPageRouter.get('/partners', requireAdminPageAuth, renderAdminPortalSection('partners'))
+adminPageRouter.get('/super-users', requireAdminPageAuth, renderAdminPortalSection('super-users'))
+adminPageRouter.get('/audit-log', requireAdminPageAuth, renderAdminPortalSection('audit-log'))
 adminPageRouter.get('/creators', requireAdminPageAuth, renderAdminPortalSection('creators'))
 adminPageRouter.get('/creators/:creatorId', requireAdminPageAuth, (req, res) => {
   const creatorId = String(req.params.creatorId || '').trim()
@@ -5617,7 +6785,19 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
     }
 
     const payment = await SimpleLmsPayment.findOne({ txRef })
-    if (!payment || payment.status === 'successful') {
+    if (!payment) {
+      return res.json({ ok: true })
+    }
+    if (String(payment.status || '').trim().toLowerCase() === 'successful') {
+      const courseForAttribution = await SimpleLmsCourse.findById(payment.course)
+        .select('_id organization createdBy')
+        .lean()
+      if (courseForAttribution?._id) {
+        await createOrUpdateAgentAttributionForPayment({
+          payment,
+          course: courseForAttribution
+        })
+      }
       return res.json({ ok: true })
     }
 
@@ -5638,34 +6818,17 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
 
     if (statusMatches && amountMatches && txRefMatches && verifiedCurrency === payment.currency) {
       const courseForCommission = await SimpleLmsCourse.findById(payment.course)
-        .select('_id createdBy')
-        .lean()
-      const commissionSettings = await getCommissionSettings()
-      const creatorId = courseForCommission?.createdBy || payment.creatorAccount
-      const commissionRate = resolveCommissionRate({
-        settings: commissionSettings,
-        creatorId,
-        courseId: courseForCommission?._id || payment.course
-      })
-      const split = splitCommission({
-        amountMinor: payment.amountMinor,
-        ratePercent: commissionRate
-      })
-      payment.status = 'successful'
-      payment.paidAt = new Date()
-      payment.creatorAccount = creatorId || payment.creatorAccount || null
-      payment.creatorCommissionRate = commissionRate
-      payment.creatorCommissionMinor = split.creatorCommissionMinor
-      payment.platformShareMinor = split.platformShareMinor
-      await payment.save()
-
-      await createOrUpdateEnrollment({
-        courseId: payment.course,
-        learnerId: payment.account,
-        actorId: payment.account,
-        assignmentType: 'self',
-        source: 'self_enroll'
-      })
+        .select('_id organization createdBy')
+      if (!courseForCommission?._id) {
+        payment.status = 'failed'
+        await payment.save()
+      } else {
+        await markPaymentSuccessful({
+          payment,
+          course: courseForCommission,
+          paidAt: new Date()
+        })
+      }
     } else {
       payment.status = 'failed'
       await payment.save()

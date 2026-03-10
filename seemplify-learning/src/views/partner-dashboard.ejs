@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .partner-shell {
+      max-width: 1220px;
+      margin: 24px auto 40px;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 16px;
+    }
+    .partner-side {
+      position: sticky;
+      top: 84px;
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(160deg, rgba(14, 165, 233, .14), rgba(2, 132, 199, .05));
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .partner-org {
+      border: 1px solid rgba(56, 189, 248, .35);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .8);
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .partner-org h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+      letter-spacing: -.01em;
+    }
+    .partner-org p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .partner-pill {
+      width: fit-content;
+      border: 1px solid rgba(14, 165, 233, .45);
+      border-radius: 999px;
+      background: rgba(14, 165, 233, .12);
+      color: #0369a1;
+      padding: 3px 10px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+    }
+    .partner-nav {
+      display: grid;
+      gap: 6px;
+    }
+    .partner-nav a {
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, .8);
+      transition: border-color .2s ease, background .2s ease;
+    }
+    .partner-nav a.active {
+      border-color: rgba(56, 189, 248, .7);
+      background: rgba(56, 189, 248, .14);
+      color: #075985;
+      font-weight: 700;
+    }
+    .partner-main {
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .panel h1,
+    .panel h2,
+    .panel h3 {
+      margin: 0;
+      color: var(--text);
+      letter-spacing: -.02em;
+    }
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: linear-gradient(160deg, rgba(255, 255, 255, .86), rgba(224, 242, 254, .6));
+      padding: 12px;
+      display: grid;
+      gap: 5px;
+    }
+    .stat strong {
+      color: var(--text);
+      font-size: 24px;
+      letter-spacing: -.02em;
+      line-height: 1;
+    }
+    .stat span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+      background: var(--card-bg);
+    }
+    th,
+    td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      vertical-align: top;
+    }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      background: rgba(148, 163, 184, .08);
+      font-weight: 700;
+    }
+    .actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .actions form {
+      margin: 0;
+    }
+    .inline-form {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+    .grid-two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input,
+    .field select,
+    .field textarea {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 9px 10px;
+      font-size: 13px;
+    }
+    .field textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+    .tiny {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .trend {
+      display: grid;
+      gap: 4px;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px;
+    }
+    .trend-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid rgba(148, 163, 184, .3);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, .85);
+      font-size: 12px;
+      color: var(--text);
+    }
+    @media (max-width: 1024px) {
+      .partner-shell {
+        grid-template-columns: 1fr;
+      }
+      .partner-side {
+        position: static;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 640px) {
+      .stats-grid,
+      .grid-two,
+      .inline-form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+
+  <% const section = activeSection || 'overview' %>
+  <% const metrics = dashboardData?.metrics || {} %>
+  <% const payout = organization?.partnerSettings?.payoutProfile || {} %>
+
+  <main class="partner-shell">
+    <aside class="partner-side">
+      <article class="partner-org">
+        <h2><%= organization?.name || 'Partner Organization' %></h2>
+        <p><%= organization?.description || 'Manage agents, partner courses, and commission operations.' %></p>
+        <span class="partner-pill"><%= organization?.partnerType || 'partner' %></span>
+      </article>
+
+      <nav class="partner-nav">
+        <a href="/partner-dashboard?section=overview" class="<%= section === 'overview' ? 'active' : '' %>">Overview</a>
+        <a href="/partner-dashboard?section=agents" class="<%= section === 'agents' ? 'active' : '' %>">Agents</a>
+        <a href="/partner-dashboard?section=courses" class="<%= section === 'courses' ? 'active' : '' %>">Courses</a>
+        <a href="/partner-dashboard?section=reports" class="<%= section === 'reports' ? 'active' : '' %>">Reports</a>
+        <a href="/partner-dashboard?section=commissions" class="<%= section === 'commissions' ? 'active' : '' %>">Commissions</a>
+        <a href="/partner-dashboard?section=settings" class="<%= section === 'settings' ? 'active' : '' %>">Settings</a>
+      </nav>
+    </aside>
+
+    <section class="partner-main">
+      <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+      <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+      <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+      <% if (section === 'overview') { %>
+        <article class="panel">
+          <h1>Partner Dashboard</h1>
+          <p>Track organization performance, agent productivity, and payout obligations.</p>
+
+          <div class="stats-grid">
+            <div class="stat"><span>Agents</span><strong><%= metrics.agentCount || 0 %></strong></div>
+            <div class="stat"><span>Total Sales</span><strong><%= formatCurrencyAmount(metrics.totalSalesMinor || 0, 'NGN') %></strong></div>
+            <div class="stat"><span>Commissions Due</span><strong><%= formatCurrencyAmount(metrics.pendingCommissionMinor || 0, 'NGN') %></strong></div>
+            <div class="stat"><span>Total Courses</span><strong><%= metrics.courseCount || 0 %></strong></div>
+            <div class="stat"><span>Published</span><strong><%= metrics.publishedCourseCount || 0 %></strong></div>
+            <div class="stat"><span>Draft Queue</span><strong><%= metrics.pendingDraftCount || 0 %></strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Top Agents</h2>
+          <% if (!dashboardData?.topAgents || dashboardData.topAgents.length === 0) { %>
+            <p>No agent sales attributed yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Email</th>
+                    <th>Deals</th>
+                    <th>Sales</th>
+                    <th>Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% dashboardData.topAgents.forEach((row) => { %>
+                    <tr>
+                      <td><%= row.agent?.profile?.name || 'Agent' %></td>
+                      <td><%= row.agent?.email || '—' %></td>
+                      <td><%= row.salesCount %></td>
+                      <td><%= formatCurrencyAmount(row.totalSalesMinor, 'NGN') %></td>
+                      <td><%= formatCurrencyAmount(row.totalCommissionMinor, 'NGN') %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'agents') { %>
+        <article class="panel">
+          <h2>Agent Management</h2>
+          <p>Invite agents or assign existing accounts to your partner organization.</p>
+
+          <% if (canManageAgents) { %>
+            <form method="post" action="/partner-dashboard/agents/invite" class="inline-form">
+              <div class="field">
+                <label>Agent Email</label>
+                <input type="email" name="email" required placeholder="agent@example.com">
+              </div>
+              <button class="btn btn-primary" type="submit">Invite / Add Agent</button>
+            </form>
+          <% } else { %>
+            <p class="tiny">Your role cannot invite agents.</p>
+          <% } %>
+        </article>
+
+        <article class="panel">
+          <h3>Current Agents</h3>
+          <% if (!agents || agents.length === 0) { %>
+            <p>No agents are linked to this organization yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Joined</th>
+                    <th>Payout Profile</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% agents.forEach((agent) => { %>
+                    <tr>
+                      <td><%= agent.profile?.name || 'Agent' %></td>
+                      <td><%= agent.email %></td>
+                      <td><%= new Date(agent.createdAt).toLocaleDateString() %></td>
+                      <td><%= agent.payoutProfile?.bankName && agent.payoutProfile?.accountNumber ? `${agent.payoutProfile.bankName} • ${agent.payoutProfile.accountNumber}` : 'Incomplete' %></td>
+                      <td>
+                        <div class="actions">
+                          <% if (canRemoveAgents) { %>
+                            <form method="post" action="/partner-dashboard/agents/<%= agent._id %>/remove">
+                              <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                            </form>
+                          <% } else { %>
+                            <span class="tiny">Add-only role</span>
+                          <% } %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'courses') { %>
+        <article class="panel">
+          <h2>Partner Courses</h2>
+          <p>Courses are scoped to your organization. Drafts can be approved by partner super users.</p>
+          <a href="/simple-lms/studio/courses" class="btn btn-primary" style="width:fit-content;">Open Course Studio</a>
+        </article>
+
+        <article class="panel">
+          <% if (!courses || courses.length === 0) { %>
+            <p>No partner courses yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    <th>Status</th>
+                    <th>Visibility</th>
+                    <th>Price</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% courses.forEach((course) => { %>
+                    <tr>
+                      <td>
+                        <strong><%= course.title %></strong><br>
+                        <span class="tiny"><%= course.summary || 'No summary provided yet.' %></span>
+                      </td>
+                      <td><%= course.status %></td>
+                      <td><%= course.visibility %></td>
+                      <td><%= Number(course?.pricing?.amount || 0) > 0 ? formatCurrencyAmount(course.pricing.amount, course?.pricing?.currency || 'NGN') : 'Free' %></td>
+                      <td><%= new Date(course.updatedAt).toLocaleDateString() %></td>
+                      <td>
+                        <div class="actions">
+                          <% if (canApprovePartnerCourses && ['draft', 'pending_public_review'].includes(String(course.status || '').toLowerCase())) { %>
+                            <form method="post" action="/partner-dashboard/courses/<%= course._id %>/approve">
+                              <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
+                            </form>
+                            <form method="post" action="/partner-dashboard/courses/<%= course._id %>/reject">
+                              <input type="hidden" name="reviewNotes" value="Returned to draft by partner reviewer.">
+                              <button class="btn btn-danger btn-sm" type="submit">Return Draft</button>
+                            </form>
+                          <% } else { %>
+                            <span class="tiny">No approval action</span>
+                          <% } %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'reports') { %>
+        <article class="panel">
+          <h2>Sales Reports (Last 30 Days)</h2>
+          <p>Daily deal count and attributed sales volume for your organization.</p>
+          <% if (!dashboardData?.salesTrend || dashboardData.salesTrend.length === 0) { %>
+            <p>No recent sales trend data.</p>
+          <% } else { %>
+            <div class="trend">
+              <% dashboardData.salesTrend.forEach((point) => { %>
+                <div class="trend-row">
+                  <span><strong><%= point.date %></strong> • <%= point.deals %> deal(s)</span>
+                  <span><%= formatCurrencyAmount(point.salesMinor, 'NGN') %></span>
+                </div>
+              <% }) %>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'commissions') { %>
+        <article class="panel">
+          <h2>Agent Commissions</h2>
+          <p>Trace every attributed sale, current payout status, and commission values.</p>
+
+          <% if (!commissions || commissions.length === 0) { %>
+            <p>No commission entries yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Course</th>
+                    <th>Sale</th>
+                    <th>Rate</th>
+                    <th>Commission</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% commissions.forEach((entry) => { %>
+                    <tr>
+                      <td><%= entry.agent?.profile?.name || entry.agent?.email || 'Agent' %></td>
+                      <td><%= entry.course?.title || 'Course' %></td>
+                      <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
+                      <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.status %></td>
+                      <td><%= new Date(entry.createdAt).toLocaleDateString() %></td>
+                      <td>
+                        <% if (canRecommendAgentPayout && ['pending', 'rejected'].includes(String(entry.status || '').toLowerCase())) { %>
+                          <form method="post" action="/partner-dashboard/commissions/<%= entry._id %>/recommend">
+                            <button class="btn btn-primary btn-sm" type="submit">Recommend for Payout</button>
+                          </form>
+                        <% } else { %>
+                          <span class="tiny">No action</span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </article>
+      <% } %>
+
+      <% if (section === 'settings') { %>
+        <article class="panel">
+          <h2>Partner Settings</h2>
+          <form method="post" action="/partner-dashboard/settings" style="display:grid; gap:12px;">
+            <div class="grid-two">
+              <div class="field">
+                <label>Max Agents (blank for unlimited)</label>
+                <input type="number" min="1" name="maxAgents" value="<%= organization?.partnerSettings?.maxAgents || '' %>">
+              </div>
+              <div class="field">
+                <label>Default Agent Commission (%)</label>
+                <input type="number" min="0" max="100" step="0.01" name="defaultAgentCommissionRate" value="<%= organization?.partnerSettings?.defaultAgentCommissionRate ?? 10 %>">
+              </div>
+            </div>
+
+            <div class="grid-two">
+              <div class="field">
+                <label>Partner Status</label>
+                <select name="partnerStatus">
+                  <option value="pending" <%= organization?.partnerSettings?.partnerStatus === 'pending' ? 'selected' : '' %>>Pending</option>
+                  <option value="active" <%= organization?.partnerSettings?.partnerStatus === 'active' ? 'selected' : '' %>>Active</option>
+                  <option value="suspended" <%= organization?.partnerSettings?.partnerStatus === 'suspended' ? 'selected' : '' %>>Suspended</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Invite Approval</label>
+                <select name="agentInviteApproval">
+                  <option value="on" <%= organization?.partnerSettings?.agentInviteApproval ? 'selected' : '' %>>Enabled</option>
+                  <option value="off" <%= organization?.partnerSettings?.agentInviteApproval ? '' : 'selected' %>>Disabled</option>
+                </select>
+              </div>
+            </div>
+
+            <h3>Organization Payout Profile</h3>
+            <div class="grid-two">
+              <div class="field">
+                <label>Account Name</label>
+                <input type="text" name="payoutAccountName" value="<%= payout.accountName || '' %>">
+              </div>
+              <div class="field">
+                <label>Account Number</label>
+                <input type="text" name="payoutAccountNumber" value="<%= payout.accountNumber || '' %>">
+              </div>
+              <div class="field">
+                <label>Bank Name</label>
+                <input type="text" name="payoutBankName" value="<%= payout.bankName || '' %>">
+              </div>
+              <div class="field">
+                <label>Bank Code</label>
+                <input type="text" name="payoutBankCode" value="<%= payout.bankCode || '' %>">
+              </div>
+              <div class="field">
+                <label>SWIFT Code</label>
+                <input type="text" name="payoutSwiftCode" value="<%= payout.swiftCode || '' %>">
+              </div>
+              <div class="field">
+                <label>Currency</label>
+                <input type="text" name="payoutCurrency" maxlength="3" value="<%= payout.currency || 'NGN' %>">
+              </div>
+              <div class="field">
+                <label>Payment Email</label>
+                <input type="email" name="payoutEmail" value="<%= payout.paymentEmail || '' %>">
+              </div>
+              <div class="field">
+                <label>Country</label>
+                <input type="text" name="payoutCountry" value="<%= payout.country || '' %>">
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Notes</label>
+              <textarea name="payoutNotes"><%= payout.notes || '' %></textarea>
+            </div>
+
+            <button class="btn btn-primary" type="submit" style="width:fit-content;">Save Settings</button>
+          </form>
+        </article>
+      <% } %>
+    </section>
+  </main>
+</body>
+</html>
