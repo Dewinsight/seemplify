@@ -2,6 +2,7 @@ import dotenv from 'dotenv'
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import session from 'express-session'
+import MongoStore from 'connect-mongo'
 import mongoose from 'mongoose'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -26,6 +27,7 @@ dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/seemplify'
 
 const app = express()
 const rawTrustProxy = String(process.env.TRUST_PROXY || '').trim()
@@ -48,16 +50,32 @@ app.use(express.json({
   }
 }))
 app.use(cookieParser())
+let sessionStore = null
+try {
+  sessionStore = MongoStore.create({
+    mongoUrl: mongoUri,
+    collectionName: 'seemplify_sessions',
+    ttl: 60 * 60 * 24 * 14,
+    autoRemove: 'native'
+  })
+  sessionStore.on('error', (error) => {
+    console.error('Session store error:', error)
+  })
+} catch (error) {
+  console.error('Failed to initialize session store:', error)
+}
+
 app.use(session({
   name: 'seemplify_learning_session',
   secret: process.env.SESSION_SECRET || 'seemplify-learning-dev-secret',
   resave: false,
   saveUninitialized: false,
   proxy: process.env.NODE_ENV === 'production',
+  ...(sessionStore ? { store: sessionStore } : {}),
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' ? 'auto' : false,
     maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }))
@@ -699,7 +717,6 @@ app.use((error, _req, res, _next) => {
 })
 
 const port = Number(process.env.PORT || 5012)
-const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/seemplify'
 
 mongoose.connect(mongoUri)
   .then(async () => {
