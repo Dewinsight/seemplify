@@ -174,6 +174,69 @@ class EmailService {
             console.log(`[FALLBACK] Invite for ${email} to join "${orgName}"`);
         }
     }
+
+    async sendPasswordReset(email, otp) {
+        if (!this.apiKey) {
+            console.warn('BREVO_API_KEY is missing. Password reset will only be logged to console.');
+            console.log(`[DEV MODE] Password reset OTP for ${email}: ${otp}`);
+            return;
+        }
+
+        const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+        const resetUrl = `${baseUrl}/reset-password`;
+
+        const resetHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin: 0; padding: 0; background: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #f5f5f7; padding: 40px 20px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 480px; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
+<tr>
+<td style="background: linear-gradient(135deg, #9B51E0 0%, #7B3FC0 100%); padding: 32px 40px; text-align: center;">
+<div style="font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: 2px;">MOSAIC</div>
+<div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 4px;">Reset your password</div>
+</td>
+</tr>
+<tr>
+<td style="padding: 40px 40px 32px;">
+<p style="margin: 0 0 24px; font-size: 16px; color: #1a1a1a; line-height: 1.6;">We received a request to reset your password. Use the code below:</p>
+<div style="background: #f8f4ff; border: 2px dashed #9B51E0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+<span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #7B3FC0; font-family: 'Courier New', monospace;">${otp}</span>
+</div>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius: 10px; background: linear-gradient(135deg, #9B51E0 0%, #7B3FC0 100%);">
+<a href="${resetUrl}" style="display: inline-block; padding: 16px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600;">Or click here to reset password</a>
+</td></tr></table>
+<p style="margin: 24px 0 0; font-size: 14px; color: #6b7280;">This code expires in <strong>10 minutes</strong>. If you didn't request this, you can safely ignore this email.</p>
+</td>
+</tr>
+<tr>
+<td style="padding: 24px 40px; background: #fafafa; border-top: 1px solid #eee;">
+<p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">© Mosaic · AI initiative approval platform</p>
+</td>
+</tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+        try {
+            const data = {
+                sender: this.getSender(),
+                to: [{ email: email }],
+                subject: 'Reset your Mosaic password',
+                htmlContent: resetHtml
+            };
+
+            await this._sendWithRetry(data, `Password reset to ${email}`);
+            console.log(`Password reset email sent to ${email}`);
+        } catch (error) {
+            console.error('Failed to send password reset email:', error.response?.data || error.message);
+            console.log(`[FALLBACK] Password reset OTP for ${email}: ${otp}`);
+        }
+    }
 }
 
 module.exports = new EmailService();

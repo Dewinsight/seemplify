@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Dashboard, Rules, Analyze, ScoringPolicy, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage, Help } from './pages';
+import { Dashboard, Rules, Analyze, ScoringPolicy, AdminUsers, Login, Register, VerifyOtp, ForgotPassword, ResetPassword, ProjectDetail, Profile, OnboardingPage, InvitesPage, Help, PublicHelp } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -415,6 +415,9 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/verify" element={<VerifyOtp />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/help" element={<PublicHelp />} />
 
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>

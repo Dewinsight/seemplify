@@ -80,6 +80,9 @@ const Login: React.FC = () => {
                 <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>
                     Don't have an account? <Link to="/register" style={{ color: 'var(--accent)' }}>Register</Link>
                 </p>
+                <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Forgot your password? <Link to="/forgot-password" style={{ color: 'var(--accent)' }}>Reset it here</Link>
+                </p>
             </div>
         </div>
     );

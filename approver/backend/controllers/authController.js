@@ -419,3 +419,78 @@ exports.updateProfile = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// --- Forgot Password ---
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
+        
+        // Don't reveal whether the email exists or not
+        if (!user) {
+            return res.json({ message: 'If an account exists with this email, a password reset code has been sent' });
+        }
+
+        // Generate reset OTP
+        const resetOtp = generateOtp();
+        user.resetOtp = {
+            code: resetOtp,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+        };
+        
+        await user.save();
+
+        // Send reset email via Brevo
+        await emailService.sendPasswordReset(user.email, resetOtp);
+
+        res.json({ message: 'If an account exists with this email, a password reset code has been sent' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'An error occurred. Please try again.' });
+    }
+};
+
+// --- Reset Password ---
+exports.resetPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+        
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ error: 'Email, OTP, and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
+        
+        if (!user) {
+            return res.status(404).json({ error: 'Invalid or expired reset code' });
+        }
+
+        // Verify OTP
+        if (!user.resetOtp || 
+            user.resetOtp.code !== otp.trim() || 
+            user.resetOtp.expiresAt < new Date()) {
+            return res.status(400).json({ error: 'Invalid or expired reset code' });
+        }
+
+        // Update password
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.resetOtp = undefined; // Clear the reset OTP
+        user.passwordChangedAt = new Date();
+        
+        await user.save();
+
+        res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: 'An error occurred. Please try again.' });
+    }
+};
