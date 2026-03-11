@@ -786,6 +786,46 @@
       font-size: 12px;
       color: #475569;
     }
+    .withdrawal-review-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .withdrawal-trace {
+      border: 1px solid #d7e6f7;
+      border-radius: 16px;
+      background: #ffffff;
+      padding: 12px 14px;
+    }
+    .withdrawal-trace summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .withdrawal-trace-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .withdrawal-trace-summary span {
+      border: 1px solid #dbe7f5;
+      border-radius: 12px;
+      background: #f8fbff;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #475569;
+    }
+    .withdrawal-trace-table {
+      margin-top: 10px;
+    }
+    .withdrawal-trace-table table {
+      min-width: 860px;
+    }
+    .withdrawal-trace-table td,
+    .withdrawal-trace-table th {
+      font-size: 12px;
+    }
     @media (max-width: 1240px) {
       .layout {
         grid-template-columns: 294px minmax(0, 1fr);
@@ -1972,32 +2012,85 @@
                       </tr>
                       <tr class="withdrawal-row-actions">
                         <td colspan="6">
-                          <% if (request.canApprove || request.canReject || request.canMarkPaid) { %>
-                            <form method="post" action="/simple-lms/admin/withdrawals/<%= request._id %>/status" class="withdrawal-status-form">
-                              <input class="input" type="text" name="transactionRef" placeholder="Transaction ref (for paid)">
-                              <input class="input" type="text" name="adminNotes" placeholder="Admin note (optional)">
-                              <div class="withdrawal-actions">
-                                <% if (request.canApprove) { %>
-                                  <button class="btn btn-primary btn-sm" type="submit" name="status" value="approved">Approve</button>
-                                <% } %>
-                                <% if (request.canMarkPaid) { %>
-                                  <button class="btn btn-secondary btn-sm" type="submit" name="status" value="paid">Mark Paid</button>
-                                <% } %>
-                                <% if (request.canReject) { %>
-                                  <button class="btn btn-danger btn-sm" type="submit" name="status" value="rejected">Reject</button>
-                                <% } %>
+                          <div class="withdrawal-review-stack">
+                            <% if (request.canApprove || request.canReject || request.canMarkPaid) { %>
+                              <form method="post" action="/simple-lms/admin/withdrawals/<%= request._id %>/status" class="withdrawal-status-form">
+                                <input class="input" type="text" name="transactionRef" placeholder="Transaction ref (for paid)">
+                                <input class="input" type="text" name="adminNotes" placeholder="Admin note (optional)">
+                                <div class="withdrawal-actions">
+                                  <% if (request.canApprove) { %>
+                                    <button class="btn btn-primary btn-sm" type="submit" name="status" value="approved">Approve</button>
+                                  <% } %>
+                                  <% if (request.canMarkPaid) { %>
+                                    <button class="btn btn-secondary btn-sm" type="submit" name="status" value="paid">Mark Paid</button>
+                                  <% } %>
+                                  <% if (request.canReject) { %>
+                                    <button class="btn btn-danger btn-sm" type="submit" name="status" value="rejected">Reject</button>
+                                  <% } %>
+                                </div>
+                                <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
+                              </form>
+                            <% } else { %>
+                              <div class="withdrawal-meta">
+                                <span><strong>Finalized:</strong> <%= request.statusLabel %></span>
+                                <span>Reviewer: <%= request.reviewerName || '-' %></span>
+                                <span>Paid By: <%= request.paidByName || '-' %></span>
+                                <span>Transaction Ref: <%= request.transactionRef || '-' %></span>
+                                <span>Admin Note: <%= request.adminNotes || '-' %></span>
                               </div>
-                              <input type="hidden" name="returnTo" value="<%= creatorsReturnTo %>">
-                            </form>
-                          <% } else { %>
-                            <div class="withdrawal-meta">
-                              <span><strong>Finalized:</strong> <%= request.statusLabel %></span>
-                              <span>Reviewer: <%= request.reviewerName || '-' %></span>
-                              <span>Paid By: <%= request.paidByName || '-' %></span>
-                              <span>Transaction Ref: <%= request.transactionRef || '-' %></span>
-                              <span>Admin Note: <%= request.adminNotes || '-' %></span>
-                            </div>
-                          <% } %>
+                            <% } %>
+
+                            <details class="withdrawal-trace">
+                              <summary>Earnings trace for review (<%= request.salesTraceCount || 0 %> sales)</summary>
+                              <div class="withdrawal-trace-summary">
+                                <span><strong>Total Sold:</strong> <%= request.creatorSoldDisplay || 'NGN 0.00' %></span>
+                                <span><strong>Total Earnings:</strong> <%= request.creatorEarningsDisplay || 'NGN 0.00' %></span>
+                                <span><strong>Pending Reserved:</strong> <%= request.creatorPendingWithdrawalDisplay || 'NGN 0.00' %></span>
+                                <span><strong>Paid Out:</strong> <%= request.creatorPaidWithdrawalDisplay || 'NGN 0.00' %></span>
+                                <span><strong>Available Before Request:</strong> <%= request.availableBeforeCurrentRequestDisplay || 'NGN 0.00' %></span>
+                                <span><strong>Remaining After Request:</strong> <%= request.remainingAfterRequestDisplay || 'NGN 0.00' %></span>
+                              </div>
+                              <% if (request.salesTraceRows && request.salesTraceRows.length > 0) { %>
+                                <div class="table withdrawal-trace-table">
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Date</th>
+                                        <th>Course</th>
+                                        <th>Buyer</th>
+                                        <th>Sale</th>
+                                        <th>Creator Rate</th>
+                                        <th>Creator Share</th>
+                                        <th>Platform Share</th>
+                                        <th>Agent Share</th>
+                                        <th>Net Platform</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <% request.salesTraceRows.forEach((sale) => { %>
+                                        <tr>
+                                          <td><%= dateText(sale.paidAt) %></td>
+                                          <td><%= sale.courseTitle %></td>
+                                          <td>
+                                            <%= sale.buyerName %>
+                                            <% if (sale.agentName) { %><br><span class="mini">agent: <%= sale.agentName %></span><% } %>
+                                          </td>
+                                          <td><%= sale.amountDisplay %></td>
+                                          <td><%= sale.creatorCommissionRateDisplay %></td>
+                                          <td><%= sale.creatorCommissionDisplay %></td>
+                                          <td><%= sale.platformShareDisplay %></td>
+                                          <td><%= sale.agentCommissionDisplay %></td>
+                                          <td><%= sale.netPlatformDisplay %></td>
+                                        </tr>
+                                      <% }) %>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              <% } else { %>
+                                <p class="mini" style="margin-top:10px;">No successful sales trace found for this creator yet.</p>
+                              <% } %>
+                            </details>
+                          </div>
                         </td>
                       </tr>
                     <% }) %>
@@ -2011,17 +2104,27 @@
 
       <% if (currentSection === 'users') { %>
         <section class="card">
-          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage administrative access controls.</p></div></div>
+          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage platform access and direct partner role assignment. Agents stay managed through partner organizations.</p></div></div>
           <div class="grid">
-            <% (adminAccounts || []).forEach((account) => { %>
+            <% (adminAccounts || []).filter((account) => account.resolvedRole !== 'channel_sales_agent').forEach((account) => { %>
               <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="card">
                 <strong><%= account.displayName %></strong>
                 <span class="mini"><%= account.email %></span>
+                <% if (account.partnerOrganizationName) { %>
+                  <span class="mini">Partner org: <%= account.partnerOrganizationName %> <%= account.partnerOrganizationType ? `(${account.partnerOrganizationType})` : '' %><%= account.partnerOrganizationStatus ? ` - ${account.partnerOrganizationStatus}` : '' %></span>
+                <% } %>
                 <select class="input" name="role">
-                  <option value="learner" <%= (account.resolvedRole === 'learner' || account.resolvedRole === 'creator') ? 'selected' : '' %>>learner</option>
+                  <option value="learner" <%= account.resolvedRole === 'learner' ? 'selected' : '' %>>learner</option>
+                  <option value="creator" <%= account.resolvedRole === 'creator' ? 'selected' : '' %>>creator</option>
                   <option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option>
                   <option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option>
+                  <option value="partner_user" <%= account.resolvedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                  <option value="partner_super" <%= account.resolvedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                  <option value="channel_partner_user" <%= account.resolvedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                  <option value="channel_partner_super" <%= account.resolvedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
                 </select>
+                <input class="input" type="text" name="organizationName" maxlength="160" value="<%= account.partnerOrganizationName || '' %>" placeholder="Organization name for partner roles">
+                <span class="mini">Required only when assigning a partner role to a user without an existing partner organization.</span>
                 <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
                 <button class="btn btn-primary btn-sm" type="submit">Update Role</button>
               </form>

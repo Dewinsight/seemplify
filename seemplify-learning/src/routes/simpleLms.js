@@ -44,6 +44,10 @@ import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajor
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
 import {
+  createPartnerApprovalRequest,
+  sanitizePartnerOrganizationName
+} from '../utils/partnerRoleRequests.js'
+import {
   LEARNING_ROLES,
   canRoleCreateCourses,
   isPlatformAdminRole,
@@ -2271,6 +2275,32 @@ const parseCreatorSettingsSection = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
   return CREATOR_SETTINGS_SECTIONS.includes(normalized) ? normalized : 'defaults'
 }
+
+const parsePartnerApplicationIntent = (value, fallback = 'partner') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['partner', 'channel_partner'].includes(normalized)) return normalized
+  return fallback
+}
+
+const DIRECT_ROLE_UPDATE_VALUES = Object.freeze([
+  'learner',
+  'creator',
+  'admin',
+  'super_admin',
+  'partner_user',
+  'partner_super',
+  'channel_partner_user',
+  'channel_partner_super'
+])
+
+const resolvePartnerTypeForLearningRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (['channel_partner_user', 'channel_partner_super'].includes(normalized)) return 'channel_partner'
+  if (['partner_user', 'partner_super'].includes(normalized)) return 'partner'
+  return 'none'
+}
+
+const isDirectPartnerRoleUpdate = (role) => resolvePartnerTypeForLearningRole(role) !== 'none'
 
 const parseAdminSection = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -5373,8 +5403,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
 
     const accountId = String(req.params.accountId || '').trim()
     const nextRole = String(req.body.role || '').trim().toLowerCase()
-    const allowedRoleUpdates = ['learner', 'admin', 'super_admin']
-    if (!mongoose.Types.ObjectId.isValid(accountId) || !allowedRoleUpdates.includes(nextRole)) {
+    if (!mongoose.Types.ObjectId.isValid(accountId) || !DIRECT_ROLE_UPDATE_VALUES.includes(nextRole)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -5413,10 +5442,40 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
       }
     }
 
+    let targetOrganization = null
+    if (isDirectPartnerRoleUpdate(nextRole)) {
+      targetOrganization = await ensurePartnerOrganizationForRoleAssignment({
+        account: target,
+        nextRole,
+        organizationName: req.body.organizationName || '',
+        actorId: req.user._id
+      })
+    }
+
+    const previousRole = LEARNING_ROLES.includes(currentTargetRole) ? currentTargetRole : 'learner'
     target.learningRole = nextRole
     target.isSuperAdmin = nextRole === 'super_admin'
     target.isSystemAdmin = ['super_admin', 'admin'].includes(nextRole)
+    target.roleMetadata = {
+      ...(target.roleMetadata || {}),
+      previousLearningRole: previousRole,
+      lastUpdatedAt: new Date(),
+      lastUpdatedBy: req.user._id
+    }
     await target.save()
+
+    await logAuditEvent({
+      action: 'role.change',
+      performedBy: req.user._id,
+      targetAccount: target._id,
+      targetOrganization: targetOrganization?._id || target.partnerOrganization || null,
+      metadata: {
+        source: 'admin_users_page',
+        fromRole: previousRole,
+        toRole: nextRole
+      },
+      req
+    })
 
     return redirectWithMessage({
       res,
@@ -5428,7 +5487,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     return redirectWithMessage({
       res,
       path: returnTo,
-      error: 'Failed to update role.'
+      error: error?.message || 'Failed to update role.'
     })
   }
 })
@@ -5438,6 +5497,124 @@ const mapLearningRoleToPartnerMemberRole = (role) => {
   if (['channel_partner_super', 'partner_super'].includes(normalized)) return 'partner_admin'
   if (normalized === 'channel_sales_agent') return 'sales_agent'
   return 'partner_user'
+}
+
+const ensurePartnerOrganizationForRoleAssignment = async ({
+  account,
+  nextRole,
+  organizationName,
+  actorId
+}) => {
+  const partnerType = resolvePartnerTypeForLearningRole(nextRole)
+  if (partnerType === 'none') return null
+
+  const normalizedOrgName = sanitizePartnerOrganizationName(organizationName)
+  const orgRole = mapLearningRoleToPartnerMemberRole(nextRole)
+  let organization = null
+  const organizationId = toIdString(account?.partnerOrganization)
+
+  if (organizationId && mongoose.Types.ObjectId.isValid(organizationId)) {
+    organization = await Organization.findById(organizationId)
+  }
+
+  if (!organization) {
+    if (!normalizedOrgName) {
+      throw new Error('Organization name is required when assigning a partner role.')
+    }
+
+    organization = await Organization.create({
+      name: normalizedOrgName,
+      description: `${partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} organization`,
+      owner: account._id,
+      partnerType,
+      members: [{
+        account: account._id,
+        role: orgRole,
+        appAccess: {
+          mode: 'all',
+          appIds: []
+        },
+        joinedAt: new Date(),
+        invitedBy: actorId || account._id,
+        status: 'active',
+        updatedAt: new Date(),
+        updatedBy: actorId || account._id
+      }],
+      partnerSettings: {
+        partnerStatus: 'active',
+        maxAgents: null,
+        defaultAgentCommissionRate: 10,
+        agentInviteApproval: true
+      }
+    })
+  } else {
+    const currentPartnerType = String(organization.partnerType || 'partner').trim().toLowerCase()
+    const isOwnedByAccount = toIdString(organization.owner) === toIdString(account._id)
+    if (currentPartnerType && currentPartnerType !== partnerType && !isOwnedByAccount) {
+      throw new Error('This account is linked to a different partner organization type. Update the organization first or use a different account.')
+    }
+    if (normalizedOrgName) {
+      organization.name = normalizedOrgName
+    }
+    organization.description = `${partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} organization`
+    organization.partnerType = partnerType
+    organization.partnerSettings = {
+      ...(organization.partnerSettings || {}),
+      partnerStatus: 'active',
+      maxAgents: organization.partnerSettings?.maxAgents ?? null,
+      defaultAgentCommissionRate: organization.partnerSettings?.defaultAgentCommissionRate ?? 10,
+      agentInviteApproval: organization.partnerSettings?.agentInviteApproval ?? true
+    }
+
+    const existingMember = Array.isArray(organization.members)
+      ? organization.members.find((entry) => toIdString(entry.account) === toIdString(account._id))
+      : null
+
+    if (existingMember) {
+      existingMember.role = orgRole
+      existingMember.status = 'active'
+      existingMember.updatedAt = new Date()
+      existingMember.updatedBy = actorId || account._id
+    } else {
+      organization.members = Array.isArray(organization.members) ? organization.members : []
+      organization.members.push({
+        account: account._id,
+        role: orgRole,
+        appAccess: {
+          mode: 'all',
+          appIds: []
+        },
+        joinedAt: new Date(),
+        invitedBy: actorId || account._id,
+        status: 'active',
+        updatedAt: new Date(),
+        updatedBy: actorId || account._id
+      })
+    }
+
+    await organization.save()
+  }
+
+  const existingMembership = Array.isArray(account.organizations)
+    ? account.organizations.find((entry) => toIdString(entry.organization) === toIdString(organization._id))
+    : null
+
+  if (existingMembership) {
+    existingMembership.role = orgRole
+    existingMembership.isActive = true
+  } else {
+    account.organizations = Array.isArray(account.organizations) ? account.organizations : []
+    account.organizations.push({
+      organization: organization._id,
+      role: orgRole,
+      appAccess: { mode: 'all', appIds: [] },
+      joinedAt: new Date(),
+      isActive: true
+    })
+  }
+
+  account.partnerOrganization = organization._id
+  return organization
 }
 
 pageRouter.post('/admin/super-users/promote', requirePageAuth, async (req, res) => {
@@ -5839,6 +6016,7 @@ pageRouter.post('/admin/role-requests/:requestId/approve', requirePageAuth, asyn
         error: 'Target account was not found.'
       })
     }
+    const previousTargetRole = resolveRole(targetAccount)
 
     let organization = null
     const roleRequestOrgId = toIdString(roleRequest.organization)
@@ -5926,7 +6104,8 @@ pageRouter.post('/admin/role-requests/:requestId/approve', requirePageAuth, asyn
     targetAccount.isSuperAdmin = approvedRoleRaw === 'super_admin'
     targetAccount.isSystemAdmin = ['super_admin', 'admin'].includes(approvedRoleRaw)
     targetAccount.roleMetadata = {
-      previousLearningRole: approvedRoleRaw,
+      ...(targetAccount.roleMetadata || {}),
+      previousLearningRole: LEARNING_ROLES.includes(previousTargetRole) ? previousTargetRole : 'learner',
       lastUpdatedAt: new Date(),
       lastUpdatedBy: req.user._id
     }
@@ -6478,6 +6657,65 @@ pageRouter.post('/settings/profile', requirePageAuth, async (req, res) => {
   }
 })
 
+pageRouter.post('/settings/partner-application', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(
+    req.body?.returnTo || '/simple-lms?view=settings&settingsTab=profile',
+    '/simple-lms?view=settings&settingsTab=profile'
+  )
+  try {
+    const role = resolveRole(req.user)
+    if (canManagePlatform(role) || role === 'channel_sales_agent') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'This account cannot submit a partner application from settings.'
+      })
+    }
+
+    if (isPartnerDashboardRole(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'This account already has partner dashboard access.'
+      })
+    }
+
+    const intent = parsePartnerApplicationIntent(req.body.intent || req.body.partnerIntent || 'partner')
+    const organizationName = sanitizePartnerOrganizationName(
+      req.body.organizationName || req.body.organization_name || ''
+    )
+
+    if (!organizationName) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Organization name is required for partner applications.'
+      })
+    }
+
+    await createPartnerApprovalRequest({
+      account: req.user,
+      intent,
+      source: 'settings_partner_application',
+      organizationName,
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Your partner application has been submitted for admin approval.'
+    })
+  } catch (error) {
+    console.error('Create partner application from settings error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to submit partner application.'
+    })
+  }
+})
+
 pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(
     req.body?.returnTo || '/simple-lms?view=settings&settingsTab=creator',
@@ -7018,6 +7256,7 @@ const renderWorkspacePage = async (
       canManagePlatform(role)
         ? Account.find({})
           .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization')
+          .populate('partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
           .sort({ createdAt: -1 })
           .limit(500)
           .lean()
@@ -7214,6 +7453,22 @@ const renderWorkspacePage = async (
         ])
       ])
       : [[], [], []]
+
+    const [latestPartnerRoleRequestRaw, currentPartnerOrganizationRaw] = await Promise.all([
+      RoleApprovalRequest.findOne({
+        account: req.user._id,
+        requestType: 'partner_role_activation'
+      })
+        .populate('organization', 'name partnerType partnerSettings.partnerStatus')
+        .populate('reviewedBy', 'email profile.name')
+        .sort({ createdAt: -1 })
+        .lean(),
+      mongoose.Types.ObjectId.isValid(String(req.user?.partnerOrganization || ''))
+        ? Organization.findById(req.user.partnerOrganization)
+          .select('name partnerType partnerSettings.partnerStatus')
+          .lean()
+        : Promise.resolve(null)
+    ])
 
     const myEnrollments = myEnrollmentsRaw
       .filter(entry => entry.course && entry.course.isActive)
@@ -7478,7 +7733,10 @@ const renderWorkspacePage = async (
     const adminAccounts = adminAccountsRaw.map((account) => ({
       ...account,
       resolvedRole: resolveRole(account),
-      displayName: account.profile?.name || account.email || 'User'
+      displayName: account.profile?.name || account.email || 'User',
+      partnerOrganizationName: account.partnerOrganization?.name || '',
+      partnerOrganizationType: String(account.partnerOrganization?.partnerType || '').trim().toLowerCase(),
+      partnerOrganizationStatus: String(account.partnerOrganization?.partnerSettings?.partnerStatus || '').trim().toLowerCase()
     }))
 
     const roleBreakdown = {
@@ -7526,6 +7784,23 @@ const renderWorkspacePage = async (
         .limit(400)
         .lean()
       : []
+    const creatorSaleAttributionRaw = creatorSalesRaw.length > 0
+      ? await AgentSaleAttribution.find({
+        payment: { $in: creatorSalesRaw.map((payment) => payment._id) }
+      })
+        .select('payment commissionAmountMinor agent')
+        .populate('agent', 'email profile.name')
+        .lean()
+      : []
+    const creatorSaleAttributionByPaymentId = new Map(
+      creatorSaleAttributionRaw
+        .map((entry) => {
+          const paymentId = toIdString(entry.payment)
+          if (!paymentId) return null
+          return [paymentId, entry]
+        })
+        .filter(Boolean)
+    )
 
     const commissionSettings = {
       globalRatePercent: normalizeCommissionRate(commissionSettingsRaw?.globalRatePercent, 70),
@@ -7558,6 +7833,9 @@ const renderWorkspacePage = async (
       const platformShareMinor = hasStoredRate
         ? Math.max(0, Math.round(Number(payment.platformShareMinor || 0)))
         : split.platformShareMinor
+      const attribution = creatorSaleAttributionByPaymentId.get(toIdString(payment._id))
+      const agentCommissionMinor = Math.max(0, Math.round(Number(attribution?.commissionAmountMinor || 0)))
+      const netPlatformMinor = Math.max(0, platformShareMinor - agentCommissionMinor)
 
       return {
         ...payment,
@@ -7570,8 +7848,25 @@ const renderWorkspacePage = async (
         creatorCommissionMinor,
         creatorCommissionDisplay: formatCurrencyAmount(creatorCommissionMinor, payment.currency),
         platformShareMinor,
-        platformShareDisplay: formatCurrencyAmount(platformShareMinor, payment.currency)
+        platformShareDisplay: formatCurrencyAmount(platformShareMinor, payment.currency),
+        agentName: attribution?.agent?.profile?.name || attribution?.agent?.email || '',
+        agentCommissionMinor,
+        agentCommissionDisplay: formatCurrencyAmount(agentCommissionMinor, payment.currency),
+        netPlatformMinor,
+        netPlatformDisplay: formatCurrencyAmount(netPlatformMinor, payment.currency)
       }
+    })
+    const creatorSalesTraceById = new Map()
+    creatorSales.forEach((sale) => {
+      const creatorId = String(sale.creatorId || '').trim()
+      if (!creatorId) return
+      const existing = creatorSalesTraceById.get(creatorId) || []
+      existing.push(sale)
+      creatorSalesTraceById.set(creatorId, existing)
+    })
+    creatorSalesTraceById.forEach((entries, creatorId) => {
+      entries.sort((left, right) => new Date(right.paidAt || right.createdAt || 0).getTime() - new Date(left.paidAt || left.createdAt || 0).getTime())
+      creatorSalesTraceById.set(creatorId, entries)
     })
 
     const myManagedCourseIdSet = new Set(
@@ -7691,19 +7986,76 @@ const renderWorkspacePage = async (
       paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
       canCancel: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
     }))
-    const adminWithdrawalRequests = (adminWithdrawalRequestsRaw || []).map((request) => ({
-      ...request,
-      creatorId: toIdString(request.creatorAccount?._id || request.creatorAccount),
-      creatorName: request.creatorAccount?.profile?.name || request.creatorAccount?.email || 'Creator',
-      creatorEmail: request.creatorAccount?.email || '',
-      amountDisplay: formatCurrencyAmount(request.amountMinor, request.currency),
-      statusLabel: formatWithdrawalStatusLabel(request.status),
-      reviewerName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || '',
-      paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
-      canApprove: String(request.status || '').trim().toLowerCase() === 'pending',
-      canReject: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase()),
-      canMarkPaid: ['pending', 'approved'].includes(String(request.status || '').trim().toLowerCase())
-    }))
+    const adminWithdrawalRequests = (adminWithdrawalRequestsRaw || []).map((request) => {
+      const creatorId = toIdString(request.creatorAccount?._id || request.creatorAccount)
+      const creatorCurrency = request.currency || request.creatorAccount?.payoutProfile?.currency || 'NGN'
+      const withdrawalStats = creatorWithdrawalsById.get(creatorId) || {
+        requestCount: 0,
+        requestedMinor: 0,
+        pendingMinor: 0,
+        approvedMinor: 0,
+        paidMinor: 0,
+        rejectedMinor: 0,
+        cancelledMinor: 0,
+        latestRequestedAt: null
+      }
+      const earningsStats = creatorEarningsById.get(creatorId) || {
+        saleCount: 0,
+        soldMinor: 0,
+        earningsMinor: 0,
+        platformShareMinor: 0
+      }
+      const normalizedStatus = String(request.status || '').trim().toLowerCase()
+      const currentRequestReservedMinor = ['pending', 'approved'].includes(normalizedStatus)
+        ? Math.max(0, Number(request.amountMinor || 0))
+        : 0
+      const availableBeforeCurrentRequestMinor = Math.max(
+        0,
+        Number(earningsStats.earningsMinor || 0)
+          - Math.max(0, Number(withdrawalStats.pendingMinor || 0) - currentRequestReservedMinor)
+          - Math.max(0, Number(withdrawalStats.paidMinor || 0))
+      )
+      const remainingAfterRequestMinor = Math.max(
+        0,
+        availableBeforeCurrentRequestMinor - Math.max(0, Number(request.amountMinor || 0))
+      )
+      const traceRows = (creatorSalesTraceById.get(creatorId) || [])
+        .slice(0, 8)
+        .map((sale) => ({
+          paidAt: sale.paidAt || sale.createdAt || null,
+          courseTitle: sale.courseTitle || 'Course',
+          buyerName: sale.buyerName || sale.buyerEmail || 'Learner',
+          amountDisplay: sale.amountDisplay,
+          creatorCommissionRateDisplay: sale.creatorCommissionRateDisplay,
+          creatorCommissionDisplay: sale.creatorCommissionDisplay,
+          platformShareDisplay: sale.platformShareDisplay,
+          agentCommissionDisplay: sale.agentCommissionDisplay,
+          netPlatformDisplay: sale.netPlatformDisplay,
+          agentName: sale.agentName || ''
+        }))
+
+      return {
+        ...request,
+        creatorId,
+        creatorName: request.creatorAccount?.profile?.name || request.creatorAccount?.email || 'Creator',
+        creatorEmail: request.creatorAccount?.email || '',
+        amountDisplay: formatCurrencyAmount(request.amountMinor, creatorCurrency),
+        statusLabel: formatWithdrawalStatusLabel(request.status),
+        reviewerName: request.reviewedBy?.profile?.name || request.reviewedBy?.email || '',
+        paidByName: request.paidBy?.profile?.name || request.paidBy?.email || '',
+        canApprove: normalizedStatus === 'pending',
+        canReject: ['pending', 'approved'].includes(normalizedStatus),
+        canMarkPaid: ['pending', 'approved'].includes(normalizedStatus),
+        creatorEarningsDisplay: formatCurrencyAmount(earningsStats.earningsMinor || 0, creatorCurrency),
+        creatorSoldDisplay: formatCurrencyAmount(earningsStats.soldMinor || 0, creatorCurrency),
+        creatorPendingWithdrawalDisplay: formatCurrencyAmount(withdrawalStats.pendingMinor || 0, creatorCurrency),
+        creatorPaidWithdrawalDisplay: formatCurrencyAmount(withdrawalStats.paidMinor || 0, creatorCurrency),
+        availableBeforeCurrentRequestDisplay: formatCurrencyAmount(availableBeforeCurrentRequestMinor, creatorCurrency),
+        remainingAfterRequestDisplay: formatCurrencyAmount(remainingAfterRequestMinor, creatorCurrency),
+        salesTraceCount: (creatorSalesTraceById.get(creatorId) || []).length,
+        salesTraceRows: traceRows
+      }
+    })
     const partnerWithdrawalRequests = (partnerWithdrawalRequestsRaw || []).map((request) => {
       const status = normalizeWithdrawalStatus(request.status, 'pending')
       return {
@@ -7913,6 +8265,34 @@ const renderWorkspacePage = async (
       canMarkPaid: ['recommended', 'approved'].includes(String(entry.status || '').trim().toLowerCase()),
       canReject: ['pending', 'recommended', 'approved'].includes(String(entry.status || '').trim().toLowerCase())
     }))
+
+    const canSubmitPartnerApplication = !canManagePlatform(role)
+      && !isPartnerDashboardRole(role)
+      && String(role || '').trim().toLowerCase() !== 'channel_sales_agent'
+    const partnerApplicationState = {
+      canSubmit: canSubmitPartnerApplication,
+      currentOrganization: currentPartnerOrganizationRaw
+        ? {
+            name: currentPartnerOrganizationRaw.name || '',
+            partnerType: currentPartnerOrganizationRaw.partnerType || 'partner',
+            status: String(currentPartnerOrganizationRaw.partnerSettings?.partnerStatus || 'pending').trim().toLowerCase()
+          }
+        : null,
+      latestRequest: latestPartnerRoleRequestRaw
+        ? {
+            id: toIdString(latestPartnerRoleRequestRaw._id),
+            status: String(latestPartnerRoleRequestRaw.status || 'pending').trim().toLowerCase(),
+            statusLabel: String(latestPartnerRoleRequestRaw.status || 'pending').replace(/_/g, ' '),
+            registrationIntent: latestPartnerRoleRequestRaw.registrationIntent || 'partner',
+            organizationName: latestPartnerRoleRequestRaw.organization?.name || latestPartnerRoleRequestRaw.organizationName || '',
+            requestedRole: latestPartnerRoleRequestRaw.requestedRole || '',
+            reviewedByName: latestPartnerRoleRequestRaw.reviewedBy?.profile?.name || latestPartnerRoleRequestRaw.reviewedBy?.email || '',
+            reviewNotes: latestPartnerRoleRequestRaw.reviewNotes || '',
+            createdAt: latestPartnerRoleRequestRaw.createdAt || null,
+            reviewedAt: latestPartnerRoleRequestRaw.reviewedAt || null
+          }
+        : null
+    }
 
     let adminPayments = (adminPaymentsRaw || []).map((payment) => ({
       ...payment,
@@ -8601,6 +8981,7 @@ const renderWorkspacePage = async (
       creatorWithdrawalRequests,
       creatorCourseInsights,
       creatorSettings,
+      partnerApplicationState,
       payoutProfile: req.user.payoutProfile || {},
       adminPayments,
       adminPaymentFilters: {

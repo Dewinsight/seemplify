@@ -3,20 +3,21 @@ import bcrypt from 'bcrypt'
 import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
-import { RoleApprovalRequest } from '../models/RoleApprovalRequest.js'
 import { AgentInvite } from '../models/AgentInvite.js'
 import { optionalAuth } from '../middleware/auth.js'
 import { resolveBranding } from '../utils/branding.js'
 import { emailService } from '../services/emailService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import {
+  createPartnerApprovalRequest,
+  sanitizePartnerOrganizationName
+} from '../utils/partnerRoleRequests.js'
+import {
   ACTIVE_REGISTRATION_INTENTS,
   INTENT_DEFAULT_ROLE_MAP,
   getPostLoginRedirect,
   isPartnerRegistrationIntent,
   resolveLearningRole,
-  resolvePartnerTypeForIntent,
-  resolveRequestedRoleForIntent
 } from '../utils/learningRoles.js'
 
 const router = express.Router()
@@ -47,7 +48,7 @@ const sanitizeIntentSource = (value, fallback = 'direct') => {
   return normalized || fallback
 }
 
-const sanitizeOrgName = (value) => String(value || '').trim().slice(0, 160)
+const sanitizeOrgName = sanitizePartnerOrganizationName
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase()
 const sanitizeInviteToken = (value) => String(value || '').trim().slice(0, 200)
 
@@ -101,95 +102,6 @@ const resolveLoginDestination = (account, returnTo) => {
   }
   const role = resolveLearningRole(account)
   return getPostLoginRedirect(role, '/simple-lms')
-}
-
-const createPartnerOrganizationForRequest = async ({ account, intent, organizationName }) => {
-  const normalizedOrgName = sanitizeOrgName(organizationName)
-  if (!normalizedOrgName) return null
-
-  const partnerType = resolvePartnerTypeForIntent(intent)
-  const organization = await Organization.create({
-    name: normalizedOrgName,
-    description: `${partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} application`,
-    owner: account._id,
-    partnerType,
-    members: [{
-      account: account._id,
-      role: 'partner_admin',
-      appAccess: {
-        mode: 'all',
-        appIds: []
-      },
-      joinedAt: new Date(),
-      invitedBy: account._id,
-      status: 'active'
-    }],
-    partnerSettings: {
-      partnerStatus: 'pending',
-      maxAgents: null,
-      defaultAgentCommissionRate: 10,
-      agentInviteApproval: true
-    }
-  })
-
-  const hasMembership = Array.isArray(account.organizations)
-    && account.organizations.some((membership) => String(membership.organization) === String(organization._id))
-
-  if (!hasMembership) {
-    account.organizations = Array.isArray(account.organizations) ? account.organizations : []
-    account.organizations.push({
-      organization: organization._id,
-      role: 'partner_admin',
-      appAccess: {
-        mode: 'all',
-        appIds: []
-      },
-      joinedAt: new Date(),
-      isActive: true
-    })
-  }
-
-  account.partnerOrganization = organization._id
-  await account.save()
-
-  return organization
-}
-
-const createPartnerApprovalRequest = async ({ account, intent, source, organizationName }) => {
-  if (!isPartnerRegistrationIntent(intent)) return null
-
-  const requestedRole = resolveRequestedRoleForIntent(intent)
-  if (!requestedRole) return null
-
-  const organization = await createPartnerOrganizationForRequest({ account, intent, organizationName })
-
-  const request = await RoleApprovalRequest.create({
-    account: account._id,
-    requestType: 'partner_role_activation',
-    registrationIntent: intent,
-    requestedRole,
-    partnerType: resolvePartnerTypeForIntent(intent),
-    organizationName: sanitizeOrgName(organizationName),
-    organization: organization?._id || null,
-    status: 'pending',
-    metadata: {
-      source: String(source || 'direct').trim() || 'direct'
-    }
-  })
-
-  await logAuditEvent({
-    action: 'approval.request.create',
-    performedBy: account._id,
-    targetAccount: account._id,
-    targetOrganization: organization?._id || null,
-    metadata: {
-      requestId: request._id,
-      requestedRole,
-      registrationIntent: intent
-    }
-  })
-
-  return request
 }
 
 const activateAgentInviteForAccount = async ({ account, invite, req }) => {
@@ -334,7 +246,8 @@ const createAccountFromRegistration = async ({
       account,
       intent,
       source,
-      organizationName
+      organizationName,
+      req
     })
   }
 

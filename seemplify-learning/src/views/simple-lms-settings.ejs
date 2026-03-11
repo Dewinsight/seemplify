@@ -462,6 +462,11 @@
     const creatorWithdrawalsReturnTo = creatorSectionLink('withdrawals')
     const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } }
     const numberOrZero = (value) => Number.isFinite(Number(value)) ? Number(value) : 0
+    const partnerApplication = partnerApplicationState || {}
+    const partnerApplicationRequest = partnerApplication.latestRequest || null
+    const partnerApplicationOrg = partnerApplication.currentOrganization || null
+    const canSubmitPartnerApplication = Boolean(partnerApplication.canSubmit)
+    const partnerTypeLabel = (value) => String(value || 'partner').replace(/_/g, ' ')
   %>
 
   <main class="settings-shell">
@@ -531,6 +536,59 @@
           <span class="workspace-overview-chip">Cart: <%= stats.cartItemCount %></span>
         </div>
       </section>
+
+      <% if (canSubmitPartnerApplication || partnerApplicationRequest || partnerApplicationOrg) { %>
+        <section class="settings-card">
+          <h3>Partner Access</h3>
+          <% if (partnerApplicationOrg && ['active', 'pending', 'suspended'].includes(String(partnerApplicationOrg.status || ''))) { %>
+            <p class="settings-note">
+              Current organization: <strong><%= partnerApplicationOrg.name || 'Partner Organization' %></strong>
+              (<%= partnerTypeLabel(partnerApplicationOrg.partnerType) %>, <%= partnerApplicationOrg.status %>)
+            </p>
+          <% } else { %>
+            <p class="settings-note">Apply to become a Partner or Channel Partner from your existing account.</p>
+          <% } %>
+
+          <% if (partnerApplicationRequest) { %>
+            <div class="workspace-overview-chip-row">
+              <span class="workspace-overview-chip">Latest Request: <%= partnerApplicationRequest.statusLabel %></span>
+              <span class="workspace-overview-chip">Type: <%= partnerTypeLabel(partnerApplicationRequest.registrationIntent) %></span>
+              <span class="workspace-overview-chip">Org: <%= partnerApplicationRequest.organizationName || '-' %></span>
+            </div>
+            <p class="settings-note">
+              Submitted: <%= dateText(partnerApplicationRequest.createdAt) %>
+              <% if (partnerApplicationRequest.reviewedAt) { %>
+                <br>Reviewed: <%= dateText(partnerApplicationRequest.reviewedAt) %> by <%= partnerApplicationRequest.reviewedByName || 'Admin' %>
+              <% } %>
+              <% if (partnerApplicationRequest.reviewNotes) { %>
+                <br>Review notes: <%= partnerApplicationRequest.reviewNotes %>
+              <% } %>
+            </p>
+          <% } %>
+
+          <% if (canSubmitPartnerApplication && (!partnerApplicationRequest || ['rejected', 'cancelled'].includes(String(partnerApplicationRequest.status || '')))) { %>
+            <form method="post" action="/simple-lms/settings/partner-application" class="input-grid">
+              <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=profile">
+              <label>Application Type
+                <select class="input" name="intent">
+                  <option value="partner" <%= !partnerApplicationRequest || partnerApplicationRequest.registrationIntent === 'partner' ? 'selected' : '' %>>Partner</option>
+                  <option value="channel_partner" <%= partnerApplicationRequest && partnerApplicationRequest.registrationIntent === 'channel_partner' ? 'selected' : '' %>>Channel Partner</option>
+                </select>
+              </label>
+              <label>Organization Name
+                <input class="input" name="organizationName" maxlength="160" value="<%= partnerApplicationRequest?.organizationName || partnerApplicationOrg?.name || '' %>" required>
+              </label>
+              <button class="btn-primary-soft" type="submit">Submit Partner Application</button>
+            </form>
+          <% } else if (partnerApplicationRequest && partnerApplicationRequest.status === 'pending') { %>
+            <p class="settings-note">Your latest partner application is already pending admin review.</p>
+          <% } else if (partnerApplicationOrg && partnerApplicationOrg.status === 'active') { %>
+            <div class="quick-actions">
+              <a class="btn btn-secondary" href="/partner-dashboard">Open Partner Dashboard</a>
+            </div>
+          <% } %>
+        </section>
+      <% } %>
 
       <% if (canAccessAdminFromSettings) { %>
         <section class="settings-card">

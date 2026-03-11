@@ -1,126 +1,142 @@
-# PRD-user-roles.md — Implementation Gap Analysis
+# PRD-user-roles.md — Implementation Gap Analysis (Revised)
 
-**Date:** 2026-03-10  
-**Method:** Full codebase audit against every PRD requirement
-
----
-
-## Summary
+**Date:** 2026-03-11  
+**Method:** Deep code audit tracing actual UI flows, templates, routes, models, and middleware
 
 > [!IMPORTANT]
-> The PRD's Section 6.2 ("Not Yet Implemented") is **significantly outdated**. The vast majority of features listed as ❌ have since been implemented. Out of ~60 requirements, approximately **50+ are fully implemented**, ~5 are partially done, and ~5 remain unstarted.
+> **Correction:** The previous analysis was too generous in some areas and missed others. This revision traces every user journey end-to-end through the actual UI code. **The system is substantially more complete than initially apparent.** Most of the PRD's Section 6.2 ("Not Yet Implemented") has been built.
 
 ---
 
-## ✅ Fully Implemented (PRD Said "Not Implemented" But Now Done)
+## How Someone Becomes a Partner (End-to-End Flow)
 
-These were listed in Section 6.2 as ❌ but are **now fully built**:
+The user asked: *"I don't see how someone becomes a partner."* Here is the complete flow that exists:
 
-| PRD Item | Evidence |
-|----------|----------|
-| Extend `learningRole` enum with 5 new values (REQ-028) | `src/utils/learningRoles.js` — all 9 roles defined |
-| Extend `registrationIntent` enum (REQ-029) | `src/utils/learningRoles.js` — includes `partner`, `channel_partner` |
-| Role-based access middleware `requireRole()` (REQ-033a) | `src/middleware/roles.js` |
-| Partner access middleware `requirePartnerAccess()` (REQ-033b) | `src/middleware/roles.js` |
-| Role-based registration flow (REQ-003/004) | `src/routes/auth.js` — partner/channel_partner intents with role request approval |
-| Organization `partnerType` field (REQ-031) | `src/models/Organization.js:17` — `enum: ['none', 'channel_partner', 'partner']` |
-| Partner-specific org member roles (REQ-032) | `src/models/Organization.js` — `partner_admin`, `partner_user`, `sales_agent` added |
-| `partnerSettings` sub-schema (REQ-033) | `src/models/Organization.js:93` — `maxAgents`, `defaultAgentCommissionRate`, `payoutProfile`, `partnerStatus` |
-| `partnerOrganization` field on Account (REQ-028a) | `src/models/Account.js:239` — with index |
-| Agent roster management — add/remove (REQ-015/037/038/039) | `src/routes/partnerApi.js` — full CRUD (375 lines) |
-| Agent sales attribution tracking (REQ-041f/041g) | `src/models/AgentSaleAttribution.js` — 111 lines, full schema |
-| Agent commission model (REQ-041f) | `AgentSaleAttribution` with `status: ['pending','recommended','approved','paid','rejected','cancelled']` |
-| Agent commission rates (REQ-041h) | Per-partner default in `partnerSettings.defaultAgentCommissionRate`, per-agent override supported |
-| Referral code / tracking link system (REQ-041g) | `src/utils/agentReferral.js` + integrated into payment flow in `simpleLms.js` |
-| Agent commission into payment flow (REQ-027e) | `simpleLms.js` lines 2440-2494 — `resolveAgentReferralForCheckout()`, referral metadata stored on payment |
-| Agent commission payout with recommend flow (REQ-027p/027q) | `AgentSaleAttribution.status`: `pending → recommended → approved → paid` |
-| Partner dashboard view (REQ-043) | `src/views/partner-dashboard.ejs` |
-| Agent dashboard view (REQ-043) | `src/views/agent-dashboard.ejs` |
-| Super user management CRUD (REQ-014a-f, REQ-041a-e) | `src/routes/superUser.js` — 538 lines, create/promote/demote/delete with re-auth |
-| Audit logging model (REQ-041i) | `src/models/AuditLog.js` — 89 lines, append-only, 24 action types, TTL index |
-| Agent invitation system (REQ-053) | `src/models/AgentInvite.js` model exists |
-| Password reset flow (REQ-054-056) | `src/routes/auth.js` — forgot-password, reset-password routes with token expiry + audit logging |
-| Role-based login redirect (REQ-007) | `src/utils/learningRoles.js` — `getPostLoginRedirect()` maps roles to dashboard paths |
-| Agent payout profile settings (REQ-027n) | `src/routes/agent.js` — `POST /settings/payout` |
-| GET /api/users/me (REQ-035) | `src/routes/auth.js:674` — returns current user with role details |
-| Admin withdrawal review UI (REQ-027i-027l) | `src/views/admin-dashboard.ejs` — approve/reject/mark-paid buttons, pending/approved/paid counts, withdrawal queue with status forms |
-| Admin withdrawal status updates (REQ-027j-027k) | `src/routes/simpleLms.js:7922` — `POST /admin/withdrawals/:id/status` endpoint with approve/reject/paid transitions |
-| Agent commission recommend flow (REQ-027p) | `src/routes/partner.js:529` — Partner Super User sets `status: 'recommended'` with `recommendedBy` and `recommendedAt` |
-| Admin agent commission approve/pay (REQ-027p) | `src/routes/simpleLms.js:5228` — approve and mark-paid status transitions for agent commissions |
-| Agent commission payout UI in admin dashboard | `src/routes/simpleLms.js:6260` — `agentPayoutRows` fetched with `canApprove`/`canMarkPaid`/`canReject` flags passed to admin dashboard |
+### 1. Registration (`register.ejs`)
+- Registration form shows **4 intent options**: Learn, Teach, **Partner**, and **Channel Partner**
+- Selecting Partner/Channel Partner shows an **Organization Name** field and a note: *"Partner applications are reviewed by a platform admin before role activation."*
+- Submit button dynamically changes to **"Apply as Partner"** or **"Apply as Channel Partner"**
+- Agent invites also work: if a user arrives via invite link, they see the org name and are locked to agent role
+
+### 2. Backend Processing (`auth.js`)
+- `createPartnerApprovalRequest()` creates a `RoleApprovalRequest` with `requestType: 'partner_role_activation'`
+- `createPartnerOrganizationForRequest()` auto-creates an `Organization` with `partnerType`, `partnerSettings`, and the user as `partner_admin` member
+- Partner org starts with `partnerStatus: 'pending'`
+- Audit log entry created for the request
+
+### 3. Admin Approval (`admin-dashboard.ejs` → Partners section)
+- Admin sees **"Partner Role Requests"** with dropdown to assign: `partner_user`, `partner_super`, `channel_partner_user`, or `channel_partner_super`
+- Admin can approve/reject each request
+- On approval: user's `learningRole` is set, org status changed to `active`
+- Admin can also change partner org status (pending/active/suspended)
+
+### 4. Post-Approval
+- User is redirected to `/partner-dashboard` on login (via `getPostLoginRedirect()` in `learningRoles.js`)
+- Agents are redirected to `/agent-dashboard`
 
 ---
 
-## ⚠️ Partially Implemented
+## What Actually Exists in the UI
 
-| PRD Item | Gap |
-|----------|-----|
-| Partner course creation (REQ-014g-014l) | `SimpleLmsCourse` has `organization` field, but Course Studio doesn't enforce org-level ownership or partner draft approval workflow. No UI for "Partner Super User approves draft courses from Partner Users" |
-| Earnings trace breakdowns (REQ-027r-027v) | Agent `AgentSaleAttribution` has per-sale data, but **per-sale earnings trace UI** for creators/agents/admins may not be fully rendered in dashboards |
-| Agent performance metrics (REQ-018/021) | Sales count + totals per agent exist in `partnerApi.js`, but dedicated agent performance views (churn, trends, ranking) not implemented |
+### Registration Form (`register.ejs` — 277 lines) ✅
+- 4 intent options: Learn, Teach, Partner, Channel Partner
+- Org name input for partner intents
+- Agent invite flow with locked email and org display
+- Dynamic submit buttons per intent
 
----
+### Partner Dashboard (`partner-dashboard.ejs` — 803 lines) ✅
+7 sections, all fully built:
 
-## ❌ Not Implemented (Genuine Gaps)
+| Section | Features |
+|---------|----------|
+| **Overview** | Agent count, total sales, commissions due, course counts, top agents table |
+| **Agents** | Invite/add by email, agent list with name/email/join date/payout profile/commission rate override, remove agents |
+| **Courses** | Partner courses table, approve/reject draft courses (partner super users only) |
+| **Reports** | Daily sales with date range filters, agent/course filters, churn metrics (active agents, removed agents, attrition %, time to first sale, at-risk enrollments, learner drop-off %), **CSV export for sales and commissions** |
+| **Commissions** | Per-agent per-sale breakdown (agent, course, sale amount, rate, commission, status, date), **Recommend for Payout** button |
+| **Withdrawals** | Partner wallet (total sales, agent commissions, partner earnings, pending, paid out, available balance), withdrawal request form, withdrawal history with cancel |
+| **Settings** | Max agents, default agent commission %, partner status, invite approval toggle, full org payout profile (bank name, account, SWIFT, email, currency, country) |
 
-| PRD Item | Priority | Notes |
-|----------|----------|-------|
-| **CSRF protection** (REQ-053) | **High** | No CSRF middleware found anywhere (`csurf` or equivalent). All POST forms are unprotected against cross-site request forgery. |
-| **Secure cookie flag** (REQ-053) | **High** | Session cookie has `httpOnly: true` and `sameSite: 'lax'` but `secure` is NOT conditionally set for production. Should be `secure: process.env.NODE_ENV === 'production'` |
-| **Self-referral prevention** | **Medium** | No mechanism to prevent agents from earning commissions on their own purchases. Check `agentId !== buyerAccountId` needed in `resolveAgentReferralForCheckout()` |
-| **Partner org withdrawal flow** (REQ-027o) | **Medium** | No route for partner organizations to request withdrawal of their earnings. Only creator withdrawals (`SimpleLmsWithdrawal`) and agent commission payouts exist. Partner Super Users cannot submit withdrawal requests for org revenue. |
-| **Role-based navigation filtering** (REQ-014) | **Medium** | No role-based menu/nav filtering. All views show the same navigation — no hiding of menu items based on user role. |
-| **Dedicated reports API** (REQ-040/041) | **Medium** | No `GET /api/reports/sales` or `GET /api/reports/commissions` endpoints. Reporting data is embedded in the main dashboard render, not available as standalone APIs. |
-| **Churn metrics** (REQ-022) | Medium | No churn tracking or reporting exists. No agent attrition, time-to-first-sale, or learner drop-off metrics. |
-| **Commission reports export** (REQ-027) | Medium | No CSV/Excel export for financial, commission, or sales reports |
-| **Daily sales report** (REQ-019) | Medium | No dedicated daily sales report view — sales data is in the admin dashboard but not as a standalone report |
-| **Agent commission per-agent override** (REQ-041h) | Low | `defaultAgentCommissionRate` exists at org level, but per-agent commission rate override is not stored on the Account model |
-| **i18n / Multi-language** (REQ-045-047) | Low | Deferred to Phase 6 per PRD |
-| **PWA / Offline** (REQ-048-050) | Low | Deferred to Phase 6 per PRD |
+### Agent Dashboard (`agent-dashboard.ejs`) ✅
+- Own sales, own commissions, payout profile management
+- Referral code/link generation
 
----
+### Admin Dashboard — Partners Section (`admin-dashboard.ejs` lines 1356-1560) ✅
+- **Partner Organizations** table: name, type (channel_partner/partner), status, agent count, partner wallet (revenue, pending W/D, available), status change form
+- **Partner Withdrawal Queue**: org name, type, amount, status, approve/reject/mark-paid forms
+- **Partner Role Requests**: requester info, intent, requested role, approve with role dropdown (all 4 partner roles), reject, notes
 
-## New Files Since PRD Was Written
+### Admin Dashboard — Super Users Section ✅
+- Lists system-level super users (correct per PRD — `super_admin` is the platform-level role)
+- Create/promote/demote/delete super user controls
+- Re-authentication required for sensitive actions
 
-| File | Lines | Addresses |
-|------|-------|-----------|
-| `src/utils/learningRoles.js` | 174 | REQ-028, REQ-029, REQ-007 |
-| `src/middleware/roles.js` | 96 | REQ-033a, REQ-033b, REQ-051 |
-| `src/routes/superUser.js` | 538 | REQ-014a-f, REQ-041a-e, REQ-014e |
-| `src/routes/partnerApi.js` | 375 | REQ-015-018, REQ-037-039 |
-| `src/routes/partner.js` | ~200 | REQ-043 (partner dashboard) |
-| `src/routes/agent.js` | 218 | REQ-043 (agent dashboard), REQ-027n |
-| `src/models/AgentSaleAttribution.js` | 111 | REQ-041f, REQ-027p |
-| `src/models/AgentInvite.js` | ~50 | REQ-053 (agent invites) |
-| `src/models/AuditLog.js` | 89 | REQ-041i, REQ-014e |
-| `src/utils/agentReferral.js` | ~30 | REQ-041g |
-| `src/views/partner-dashboard.ejs` | — | REQ-043 |
-| `src/views/agent-dashboard.ejs` | — | REQ-043 |
+### Middleware (`middleware/roles.js`) ✅
+- `requireRole(allowedRoles)` — validates user's learning role
+- `requirePartnerAccess(allowedOrgRoles, options)` — validates user belongs to target partner org with correct org-level role
 
----
-
-## Recommended Priorities
-
-### 🔴 Must Do (Security)
-1. **Add CSRF protection** — Install and configure CSRF middleware for all state-changing POST routes
-2. **Fix secure cookie flag** — Set `secure: process.env.NODE_ENV === 'production'` in session config (currently only `httpOnly` and `sameSite: 'lax'`)
-3. **Add self-referral prevention** — Check `agentId !== buyerAccountId` during referral resolution
-
-### 🟡 Should Do (Functional Completeness)
-4. **Partner org withdrawal flow** — Allow Partner Super Users to request withdrawal of organization earnings
-5. **Partner course approval workflow** — Course Studio enforce org ownership + draft approval by partner super users
-6. **Earnings trace UI** — Add per-sale breakdowns to creator/agent/admin dashboards
-7. **Role-based navigation** — Show/hide menu items based on user role
-8. **Commission/financial report CSV export**
-9. **Standalone reports API** — `GET /api/reports/sales` and `GET /api/reports/commissions` endpoints
-
-### 🟢 Nice to Have (Low Priority)
-7. Churn metrics tracking
-8. Per-agent commission rate overrides
-9. i18n / PWA (Phase 6 per PRD)
+### Models ✅
+All new models exist:
+- `AgentSaleAttribution.js` (111 lines) — full commission tracking with `pending → recommended → approved → paid` lifecycle
+- `AgentInvite.js` — time-limited invite tokens
+- `AuditLog.js` (89 lines) — append-only, 24 action types, IP tracking
 
 ---
 
-## PRD Section 6.2 — Update Needed
+## Genuine Remaining Gaps
 
-The 21 items in Section 6.2 should be re-evaluated. At least 14 of them should be moved to Section 6.1 (Already Implemented) to reflect the current state of the codebase accurately.
+### 🔴 Security (Must Fix)
+
+| Gap | Details |
+|-----|---------|
+| **No CSRF protection** | No `csurf` or equivalent middleware. All POST forms are unprotected. |
+| **Secure cookie flag missing** | Cookie has `httpOnly: true` and `sameSite: 'lax'` but NOT `secure: true` for production. |
+| **No self-referral prevention** | Agents can potentially earn commission on their own purchases. Need `agentId !== buyerAccountId` check in `resolveAgentReferralForCheckout()`. |
+
+### 🟡 Functional Gaps (Medium Priority)
+
+| Gap | Details |
+|-----|---------|
+| **No role upgrade for existing users** | An already-registered learner or creator has **no way** to apply for a partner/channel partner role. The partner application flow only exists in the registration form (`register.ejs`). There is no "Apply to become a Partner" option in the user's dashboard or settings. The admin can promote to `super_admin` via the Super Users panel, but **cannot assign partner roles to existing accounts.** This means the only path to becoming a partner is to register a new account with the partner intent. |
+| **Course Studio org scoping** | Course Studio (`course-studio.ejs`) does not enforce organization-level ownership. Partner users can create courses but they may not be auto-scoped to their org. |
+| **Standalone reports API** | No `GET /api/reports/sales` or `GET /api/reports/commissions` endpoints. Report data is embedded in dashboard renders, not available as standalone APIs. |
+| **Role-based nav menu filtering** | Main nav bar doesn't hide/show items based on role. All logged-in users see the same navigation links. |
+| **Creator earnings trace UI** | Admin can review withdrawals, but the per-sale breakdown trace (REQ-027r) showing exactly which sales contributed to the balance may not be visible in the admin withdrawal review. |
+
+### 🟢 Low Priority / Deferred
+
+| Gap | Details |
+|-----|---------|
+| **i18n / Multi-language** (REQ-045-047) | Deferred to Phase 6 per PRD |
+| **PWA / Offline** (REQ-048-050) | Deferred to Phase 6 per PRD |
+
+---
+
+## Why It May Appear Incomplete
+
+The user reported: *"I don't see how someone becomes a partner."* Possible reasons:
+
+1. **No test data**: If no one has registered with `partner` or `channel_partner` intent, the Partners section in admin will show "No partner organizations found" and "No partner role requests found."
+2. **Approval required**: Partner registrations are NOT auto-activated. They sit in the role request approval queue until the super admin approves. If the queue is empty, nothing appears.
+3. **Separate dashboards**: Partners see `/partner-dashboard`, agents see `/agent-dashboard`. These are separate from the main `/simple-lms` and `/admin` dashboards.
+4. **Super Users ≠ Partner Super Users**: The admin "Super Users" panel manages platform-level `super_admin` accounts (correct per PRD). Channel Partner Super Users and Partner Super Users are partner organization roles, managed within the Partners section.
+
+---
+
+## Files Involved (New Since PRD)
+
+| File | Purpose |
+|------|---------|
+| `src/utils/learningRoles.js` (174 lines) | All 9 roles, intent maps, post-login redirect |
+| `src/middleware/roles.js` (96 lines) | `requireRole()`, `requirePartnerAccess()` |
+| `src/routes/superUser.js` (538 lines) | Super user CRUD with re-auth and audit logging |
+| `src/routes/partnerApi.js` (375 lines) | Agent roster CRUD, partner org API |
+| `src/routes/partner.js` (~560 lines) | Partner dashboard routes (all 7 sections) |
+| `src/routes/agent.js` (218 lines) | Agent dashboard, referral links, payout settings |
+| `src/models/AgentSaleAttribution.js` (111 lines) | Commission tracking model |
+| `src/models/AgentInvite.js` (~50 lines) | Time-limited agent invite tokens |
+| `src/models/AuditLog.js` (89 lines) | Append-only audit log |
+| `src/utils/agentReferral.js` (~30 lines) | Referral code builder/normalizer |
+| `src/views/register.ejs` (277 lines) | Registration with all 4 intents |
+| `src/views/partner-dashboard.ejs` (803 lines) | Full partner dashboard UI |
+| `src/views/agent-dashboard.ejs` | Agent dashboard UI |

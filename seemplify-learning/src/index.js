@@ -14,6 +14,7 @@ import agentRouter from './routes/agent.js'
 import superUserApiRouter from './routes/superUser.js'
 import partnerApiRouter from './routes/partnerApi.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
+import { csrfGuard } from './middleware/csrf.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
 import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
@@ -79,6 +80,7 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }))
+app.use(csrfGuard())
 
 app.use('/css', express.static(join(__dirname, 'public/css')))
 app.use('/js', express.static(join(__dirname, 'public/js')))
