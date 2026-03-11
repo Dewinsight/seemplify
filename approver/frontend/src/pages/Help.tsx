@@ -1053,7 +1053,7 @@ const HelpPage = () => {
       </div>
 
       {/* Content */}
-      {activeTab === 'faq' && renderContent()}
+      {renderContent()}
 
       {/* Contact Support */}
       {activeTab === 'faq' && (
