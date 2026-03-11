@@ -193,6 +193,20 @@ const resolveRole = (account) => {
   return resolveLearningRoleFromAccount(account)
 }
 
+const resolveAccountFromSessionIdentifier = async (identifier) => {
+  const normalized = String(identifier || '').trim()
+  if (!normalized) return null
+
+  const accountBySub = await Account.findOne({ sub: normalized })
+  if (accountBySub) return accountBySub
+
+  if (mongoose.Types.ObjectId.isValid(normalized)) {
+    return Account.findById(normalized)
+  }
+
+  return null
+}
+
 const canManagePlatform = (role) => isPlatformAdminRole(role)
 const isSuperAdminRole = (role) => String(role || '').trim().toLowerCase() === 'super_admin'
 const canCreateCourses = (role) => canRoleCreateCourses(role)
@@ -1171,7 +1185,7 @@ const requirePageAuth = async (req, res, next) => {
   if (!sub) {
     return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
   }
-  const account = await Account.findOne({ sub })
+  const account = await resolveAccountFromSessionIdentifier(sub)
   if (!account) {
     return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
   }
@@ -1184,7 +1198,7 @@ const requireAdminPageAuth = async (req, res, next) => {
   if (!sub) {
     return res.redirect(`/admin/login?return_to=${encodeURIComponent(req.originalUrl || '/admin')}`)
   }
-  const account = await Account.findOne({ sub })
+  const account = await resolveAccountFromSessionIdentifier(sub)
   if (!account) {
     return res.redirect(`/admin/login?return_to=${encodeURIComponent(req.originalUrl || '/admin')}`)
   }
@@ -1201,7 +1215,7 @@ const requireApiAuth = async (req, res, next) => {
   if (!sub) {
     return res.status(401).json({ error: 'Authentication required' })
   }
-  const account = await Account.findOne({ sub })
+  const account = await resolveAccountFromSessionIdentifier(sub)
   if (!account) {
     return res.status(401).json({ error: 'Authentication required' })
   }

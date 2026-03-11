@@ -28,6 +28,14 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const app = express()
+const rawTrustProxy = String(process.env.TRUST_PROXY || '').trim()
+if (rawTrustProxy) {
+  if (rawTrustProxy === 'true') app.set('trust proxy', true)
+  else if (rawTrustProxy === 'false') app.set('trust proxy', false)
+  else app.set('trust proxy', rawTrustProxy)
+} else if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
 
 app.set('view engine', 'ejs')
 app.set('views', join(__dirname, 'views'))
@@ -45,6 +53,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'seemplify-learning-dev-secret',
   resave: false,
   saveUninitialized: false,
+  proxy: process.env.NODE_ENV === 'production',
   cookie: {
     httpOnly: true,
     sameSite: 'lax',

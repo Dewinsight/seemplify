@@ -1,5 +1,20 @@
+import mongoose from 'mongoose'
 import { Account } from '../models/Account.js'
 import { resolveLearningRole } from '../utils/learningRoles.js'
+
+const findAccountBySessionIdentifier = async (identifier) => {
+  const normalized = String(identifier || '').trim()
+  if (!normalized) return null
+
+  const accountBySub = await Account.findOne({ sub: normalized })
+  if (accountBySub) return accountBySub
+
+  if (mongoose.Types.ObjectId.isValid(normalized)) {
+    return Account.findById(normalized)
+  }
+
+  return null
+}
 
 export async function resolveAuthenticatedAccount(req) {
   const sessionAccountId = String(req.session?.accountId || '').trim()
@@ -7,7 +22,7 @@ export async function resolveAuthenticatedAccount(req) {
     return null
   }
 
-  const account = await Account.findOne({ sub: sessionAccountId })
+  const account = await findAccountBySessionIdentifier(sessionAccountId)
   return account || null
 }
 

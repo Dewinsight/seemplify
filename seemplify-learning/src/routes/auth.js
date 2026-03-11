@@ -63,6 +63,7 @@ const appendQuery = (path, entries = {}) => {
 }
 
 const createSub = () => `sl_${crypto.randomUUID().replace(/-/g, '')}`
+const resolveSessionAccountIdentifier = (account) => String(account?.sub || account?._id || '').trim()
 
 const findValidAgentInvite = async (inviteToken) => {
   const token = sanitizeInviteToken(inviteToken)
@@ -437,9 +438,21 @@ router.post('/login', async (req, res) => {
       return res.redirect(`/login?error=${encodeURIComponent('Invalid credentials')}&return_to=${encodeURIComponent(returnTo)}`)
     }
 
-    req.session.accountId = account.sub
+    const sessionAccountId = resolveSessionAccountIdentifier(account)
+    if (!sessionAccountId) {
+      return res.redirect(`/login?error=${encodeURIComponent('Account session could not be established')}&return_to=${encodeURIComponent(returnTo)}`)
+    }
+
+    req.session.accountId = sessionAccountId
     const destination = resolveLoginDestination(account, returnTo)
-    return res.redirect(destination)
+
+    return req.session.save((sessionError) => {
+      if (sessionError) {
+        console.error('Session save error:', sessionError)
+        return res.redirect('/login?error=Failed%20to%20start%20session')
+      }
+      return res.redirect(destination)
+    })
   } catch (error) {
     console.error('Login error:', error)
     return res.redirect('/login?error=Failed%20to%20sign%20in')
