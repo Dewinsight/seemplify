@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-type TabType = 'faq' | 'understand' | 'workflow' | 'roles' | 'ai';
+type TabType = 'faq' | 'help' | 'understand' | 'workflow' | 'roles' | 'ai';
 
 interface FAQItem {
   question: string;
@@ -422,6 +422,7 @@ const aiContent = (
 
 const HelpPage = () => {
   const [activeTab, setActiveTab] = useState<TabType>('faq');
+  const [helpSubTab, setHelpSubTab] = useState<'understand' | 'workflow' | 'roles' | 'ai'>('understand');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<string | null>('Getting Started');
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
@@ -447,22 +448,84 @@ const HelpPage = () => {
 
   const tabs: { id: TabType; label: string }[] = [
     { id: 'faq', label: 'FAQ' },
-    { id: 'understand', label: 'Understanding Approver' },
-    { id: 'workflow', label: 'Workflows' },
-    { id: 'roles', label: 'Roles & Permissions' },
-    { id: 'ai', label: 'AI Analysis' }
+    { id: 'help', label: 'Help Guide' },
   ];
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'understand':
-        return understandContent;
-      case 'workflow':
-        return workflowContent;
-      case 'roles':
-        return rolesContent;
-      case 'ai':
-        return aiContent;
+      case 'help':
+        return (
+          <div>
+            {/* Help Guide Sub-tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setHelpSubTab('understand')}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: helpSubTab === 'understand' ? 'rgba(155, 81, 224, 0.2)' : 'transparent',
+                  color: helpSubTab === 'understand' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setHelpSubTab('workflow')}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: helpSubTab === 'workflow' ? 'rgba(155, 81, 224, 0.2)' : 'transparent',
+                  color: helpSubTab === 'workflow' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                Workflows
+              </button>
+              <button
+                onClick={() => setHelpSubTab('roles')}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: helpSubTab === 'roles' ? 'rgba(155, 81, 224, 0.2)' : 'transparent',
+                  color: helpSubTab === 'roles' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                Roles
+              </button>
+              <button
+                onClick={() => setHelpSubTab('ai')}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: helpSubTab === 'ai' ? 'rgba(155, 81, 224, 0.2)' : 'transparent',
+                  color: helpSubTab === 'ai' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                AI Analysis
+              </button>
+            </div>
+
+            {helpSubTab === 'understand' && understandContent}
+            {helpSubTab === 'workflow' && workflowContent}
+            {helpSubTab === 'roles' && rolesContent}
+            {helpSubTab === 'ai' && aiContent}
+          </div>
+        );
       default:
         return (
           <>
@@ -739,28 +802,8 @@ const HelpPage = () => {
 
       {/* Content */}
       {activeTab === 'faq' && renderContent()}
-      {activeTab === 'understand' && (
-        <div style={{ animation: 'fadeIn 0.3s ease' }}>
-          {understandContent}
-        </div>
-      )}
-      {activeTab === 'workflow' && (
-        <div style={{ animation: 'fadeIn 0.3s ease' }}>
-          {workflowContent}
-        </div>
-      )}
-      {activeTab === 'roles' && (
-        <div style={{ animation: 'fadeIn 0.3s ease' }}>
-          {rolesContent}
-        </div>
-      )}
-      {activeTab === 'ai' && (
-        <div style={{ animation: 'fadeIn 0.3s ease' }}>
-          {aiContent}
-        </div>
-      )}
 
-      {/* Contact Support (only on FAQ tab) */}
+      {/* Contact Support */}
       {activeTab === 'faq' && (
         <div style={{
           marginTop: '3rem',
