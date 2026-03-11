@@ -9,6 +9,30 @@ const DEFAULT_EXEMPT_PATH_PREFIXES = [
   '/api/simple-lms/payments/paystack/webhook'
 ]
 
+const normalizeHostValue = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!normalized) return ''
+  const first = normalized.split(',')[0]?.trim() || ''
+  return first.replace(/\.$/, '')
+}
+
+const extractHostVariants = (value, { isUrl = false } = {}) => {
+  const normalized = normalizeHostValue(value)
+  if (!normalized) return []
+
+  try {
+    const parsed = new URL(isUrl ? normalized : `http://${normalized}`)
+    const host = normalizeHostValue(parsed.host)
+    const hostname = normalizeHostValue(parsed.hostname)
+    const variants = [host, hostname].filter(Boolean)
+    return [...new Set(variants)]
+  } catch {
+    return [normalized]
+  }
+}
+
 const safeCompare = (a, b) => {
   if (!a || !b) return false
   const left = Buffer.from(String(a))
@@ -18,13 +42,7 @@ const safeCompare = (a, b) => {
 }
 
 const parseHostFromUrl = (value) => {
-  try {
-    if (!value) return ''
-    const parsed = new URL(String(value))
-    return String(parsed.host || '').trim().toLowerCase()
-  } catch {
-    return ''
-  }
+  return extractHostVariants(value, { isUrl: true })
 }
 
 const resolveCsrfTokenFromRequest = (req) => {
@@ -45,12 +63,19 @@ const isCsrfExemptRequest = (req, exemptPathPrefixes) => {
 }
 
 const hasSameOriginHeaders = (req) => {
-  const host = String(req.get('host') || '').trim().toLowerCase()
-  if (!host) return false
-  const originHost = parseHostFromUrl(req.get('origin'))
-  if (originHost && originHost === host) return true
-  const refererHost = parseHostFromUrl(req.get('referer'))
-  return Boolean(refererHost && refererHost === host)
+  const hostCandidates = [
+    ...extractHostVariants(req.get('host')),
+    ...extractHostVariants(req.get('x-forwarded-host'))
+  ]
+
+  if (!hostCandidates.length) return false
+  const hostSet = new Set(hostCandidates)
+
+  const originHosts = parseHostFromUrl(req.get('origin'))
+  if (originHosts.some((host) => hostSet.has(host))) return true
+
+  const refererHosts = parseHostFromUrl(req.get('referer'))
+  return refererHosts.some((host) => hostSet.has(host))
 }
 
 const ensureCsrfToken = (req, res) => {
