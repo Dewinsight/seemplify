@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-type TabType = 'faq' | 'help' | 'understand' | 'workflow' | 'roles' | 'ai';
+type TabType = 'faq' | 'help' | 'understand' | 'workflow' | 'roles' | 'ai' | 'steps';
 
 interface FAQItem {
   question: string;
@@ -338,6 +338,242 @@ const rolesContent = (
   </div>
 );
 
+const stepsContent = (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <section>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+        Step-by-Step Usage Guide
+      </h2>
+      <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '1rem' }}>
+        Follow this guide to get the most out of Approver for managing your initiatives.
+      </p>
+    </section>
+
+    {/* Step 1 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>1</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Set Up Your Organization
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            If you're an Admin, start by configuring your organization:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Go to the <strong style={{ color: 'var(--text-primary)' }}>Organization</strong> page from the sidebar</li>
+            <li>Upload your organization logo for branding</li>
+            <li>Configure organization settings (name, description)</li>
+            <li>Create departments that align with your organizational structure</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 2 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>2</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Invite Team Members
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            Build your team by inviting users:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Navigate to <strong style={{ color: 'var(--text-primary)' }}>Invites</strong> in the sidebar</li>
+            <li>Click <strong style={{ color: 'var(--text-primary)' }}>Send Invite</strong></li>
+            <li>Enter the user's email address</li>
+            <li>Assign them to a department</li>
+            <li>Set their role (Admin, Manager, or User)</li>
+            <li>Click Send - they'll receive an invitation email</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 3 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>3</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Configure Governance Rules
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            Define how initiatives should be evaluated:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Go to <strong style={{ color: 'var(--text-primary)' }}>Rules</strong> in the sidebar</li>
+            <li>Click <strong style={{ color: 'var(--text-primary)' }}>Add Rule</strong> to create custom rules</li>
+            <li>Set trigger conditions (department, budget, type, etc.)</li>
+            <li>Define required approvals and approvers</li>
+            <li>Set auto-approval thresholds if applicable</li>
+            <li>Save and activate the rule</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 4 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>4</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            (Optional) Configure AI Scoring
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            If AI features are enabled, customize how initiatives are evaluated:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Navigate to <strong style={{ color: 'var(--text-primary)' }}>Scoring Policy</strong> in the sidebar</li>
+            <li>Adjust weights for each evaluation criterion</li>
+            <li>Set minimum thresholds for auto-approval</li>
+            <li>Save your scoring configuration</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 5 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>5</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Submit Your First Initiative
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            Now you're ready to submit initiatives for approval:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Click <strong style={{ color: 'var(--text-primary)' }}>New Initiative</strong> from the Dashboard</li>
+            <li>Enter a clear, descriptive title</li>
+            <li>Provide a detailed description of the initiative</li>
+            <li>Select the appropriate department</li>
+            <li>Explain the expected impact and value</li>
+            <li>Detail resource requirements (budget, personnel, timeline)</li>
+            <li>Submit for AI analysis and approval workflow</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 6 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>6</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Review & Approve Initiatives
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            For Managers and Admins - review submitted initiatives:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>Go to <strong style={{ color: 'var(--text-primary)' }}>Initiatives</strong> to see all submissions</li>
+            <li>Click on an initiative to view details</li>
+            <li>Review the AI analysis and scoring</li>
+            <li>Check all submitted information and attachments</li>
+            <li>Approve, reject, or request changes</li>
+            <li>Add feedback comments for the submitter</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Step 7 */}
+    <section style={{ padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+        <div style={{ 
+          width: '40px', height: '40px', borderRadius: '50%', background: 'var(--brand-primary)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', 
+          fontWeight: 700, fontSize: '1.2rem', flexShrink: 0 
+        }}>7</div>
+        <div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+            Track & Monitor
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
+            Use the Dashboard to monitor all initiative activity:
+          </p>
+          <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.25rem' }}>
+            <li>View <strong style={{ color: 'var(--text-primary)' }}>Dashboard</strong> for overview statistics</li>
+            <li>Track initiative status and progress</li>
+            <li>Monitor approval times and bottlenecks</li>
+            <li>Review analytics and trends</li>
+            <li>Export reports as needed</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    {/* Quick Reference */}
+    <section>
+      <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+        Quick Reference: What Can I Do?
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+        <div style={{ padding: '1rem', background: 'var(--glass-bg)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+          <h4 style={{ fontWeight: 600, color: 'var(--brand-primary)', marginBottom: '0.5rem' }}>As an Admin</h4>
+          <ul style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', paddingLeft: '1rem', lineHeight: 1.6 }}>
+            <li>Manage organizations</li>
+            <li>Invite & manage users</li>
+            <li>Create departments</li>
+            <li>Configure rules</li>
+            <li>Set scoring policies</li>
+            <li>Override decisions</li>
+          </ul>
+        </div>
+        <div style={{ padding: '1rem', background: 'var(--glass-bg)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+          <h4 style={{ fontWeight: 600, color: 'var(--brand-primary)', marginBottom: '0.5rem' }}>As a Manager</h4>
+          <ul style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', paddingLeft: '1rem', lineHeight: 1.6 }}>
+            <li>Submit initiatives</li>
+            <li>Approve/reject in dept</li>
+            <li>View department reports</li>
+            <li>Request changes</li>
+          </ul>
+        </div>
+        <div style={{ padding: '1rem', background: 'var(--glass-bg)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+          <h4 style={{ fontWeight: 600, color: 'var(--brand-primary)', marginBottom: '0.5rem' }}>As a User</h4>
+          <ul style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', paddingLeft: '1rem', lineHeight: 1.6 }}>
+            <li>Submit initiatives</li>
+            <li>View own submissions</li>
+            <li>Track status</li>
+            <li>Resubmit if rejected</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+);
+
 const aiContent = (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
     <section>
@@ -422,7 +658,7 @@ const aiContent = (
 
 const HelpPage = () => {
   const [activeTab, setActiveTab] = useState<TabType>('faq');
-  const [helpSubTab, setHelpSubTab] = useState<'understand' | 'workflow' | 'roles' | 'ai'>('understand');
+  const [helpSubTab, setHelpSubTab] = useState<'understand' | 'workflow' | 'roles' | 'ai' | 'steps'>('understand');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<string | null>('Getting Started');
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
@@ -518,12 +754,28 @@ const HelpPage = () => {
               >
                 AI Analysis
               </button>
+              <button
+                onClick={() => setHelpSubTab('steps')}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: helpSubTab === 'steps' ? 'rgba(155, 81, 224, 0.2)' : 'transparent',
+                  color: helpSubTab === 'steps' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                Step-by-Step
+              </button>
             </div>
 
             {helpSubTab === 'understand' && understandContent}
             {helpSubTab === 'workflow' && workflowContent}
             {helpSubTab === 'roles' && rolesContent}
             {helpSubTab === 'ai' && aiContent}
+            {helpSubTab === 'steps' && stepsContent}
           </div>
         );
       default:
