@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Dashboard, Rules, Analyze, ScoringPolicy, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage } from './pages';
+import { Dashboard, Rules, Analyze, ScoringPolicy, AdminUsers, Login, Register, VerifyOtp, ProjectDetail, Profile, OnboardingPage, InvitesPage, Help } from './pages';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import InviteNotificationPopup from './components/InviteNotificationPopup';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -57,6 +57,14 @@ const InvitesIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
     <polyline points="22,6 12,13 2,6" />
+  </svg>
+);
+
+const HelpIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+    <path d="M12 17h.01" />
   </svg>
 );
 
@@ -128,6 +136,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
     { path: '/rules', label: 'Rules', icon: <RulesIcon /> },
     ...(canManageScoring ? [{ path: '/scoring-policy', label: 'Scoring Policy', icon: <ScoringIcon /> }] : []),
     { path: '/invites', label: 'Invites', icon: <InvitesIcon /> },
+    { path: '/help', label: 'Help', icon: <HelpIcon /> },
     ...(isAdmin ? [{ path: '/admin/organization', label: 'Organization', icon: <OrgIcon /> }] : []),
   ];
 
@@ -420,6 +429,7 @@ function App() {
                 <Route path="/rules/new" element={<Rules />} />
                 <Route path="/scoring-policy" element={<ScoringPolicy />} />
                 <Route path="/invites" element={<InvitesPage />} />
+                <Route path="/help" element={<Help />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/admin/organization" element={<AdminUsers />} />
