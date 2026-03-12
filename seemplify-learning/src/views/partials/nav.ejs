@@ -28,6 +28,16 @@
   const teachNavLabel = typeof teachLabel === 'string' && teachLabel.trim()
     ? teachLabel.trim()
     : `Teach on ${defaultTeachBrand}`
+  const safeUserDisplayName = safeUser?.profile?.name || safeUser?.email || ''
+  const safeUserInitials = safeUserDisplayName
+    ? safeUserDisplayName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2)
+    : 'U'
 %>
 
 <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
@@ -131,31 +141,32 @@
 
     <div class="top-nav-actions">
       <% if (safeUser) { %>
-        <a href="/simple-lms/cart" class="top-nav-icon-link<%= safeActiveLmsView === 'cart' ? ' active' : '' %>" aria-label="Shopping cart">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="9" cy="21" r="1"></circle>
-            <circle cx="20" cy="21" r="1"></circle>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-          </svg>
-          <% if (typeof simpleLmsCartCount === 'number' && simpleLmsCartCount > 0) { %>
-            <span class="top-nav-badge"><%= simpleLmsCartCount %></span>
-          <% } %>
-        </a>
-        <a href="/simple-lms?view=settings" class="top-nav-icon-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>" aria-label="Open settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-        </a>
-      <% } %>
+        <div class="top-nav-utility">
+          <a href="/simple-lms/cart" class="top-nav-icon-link<%= safeActiveLmsView === 'cart' ? ' active' : '' %>" aria-label="Shopping cart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"></circle>
+              <circle cx="20" cy="21" r="1"></circle>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+            </svg>
+            <% if (typeof simpleLmsCartCount === 'number' && simpleLmsCartCount > 0) { %>
+              <span class="top-nav-badge"><%= simpleLmsCartCount %></span>
+            <% } %>
+          </a>
+          <a href="/simple-lms?view=settings" class="top-nav-icon-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </a>
+        </div>
 
-      <% if (safeUser) { %>
-        <div class="top-nav-user">
+        <div class="top-nav-account">
+          <span class="top-nav-avatar" aria-hidden="true"><%= safeUserInitials %></span>
           <div class="top-nav-user-info">
-            <div class="top-nav-user-name"><%= safeUser.profile?.name || safeUser.email %></div>
+            <div class="top-nav-user-name"><%= safeUserDisplayName %></div>
             <div class="top-nav-user-email"><%= safeUser.email %></div>
           </div>
-          <a href="/logout" class="btn btn-secondary btn-sm">Sign out</a>
+          <a href="/logout" class="btn btn-secondary btn-sm top-nav-signout">Sign out</a>
         </div>
       <% } else { %>
         <div class="top-nav-user top-nav-user-guest">

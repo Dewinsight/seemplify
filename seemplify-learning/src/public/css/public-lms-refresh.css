@@ -116,6 +116,7 @@ body.public-site .top-nav {
   position: sticky;
   top: 0;
   z-index: 1000;
+  overflow: hidden;
 }
 
 body.public-site .top-nav-inner {
@@ -142,6 +143,7 @@ body.public-site .top-nav-center {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  overflow: hidden;
 }
 
 body.public-site .top-nav-brand {
@@ -172,6 +174,7 @@ body.public-site .top-nav-links {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -333,12 +336,53 @@ body.public-site .top-nav-actions {
   flex-shrink: 0;
 }
 
+body.public-site .top-nav-utility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(203, 213, 225, 0.78);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+body.public-site .top-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  max-width: min(100%, 340px);
+  padding: 6px 8px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(203, 213, 225, 0.78);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+body.public-site .top-nav-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0891b2, #0ea5e9);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+
 body.public-site .top-nav-user {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: nowrap;
   min-width: 0;
+}
+
+body.public-site .top-nav-account .top-nav-user-info {
+  text-align: left;
 }
 
 body.public-site .top-nav-user-info {
@@ -374,6 +418,11 @@ body.public-site .top-nav-user-name {
 body.public-site .top-nav-user-email {
   max-width: 220px;
   font-size: 12px;
+}
+
+body.public-site .top-nav-signout {
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 body.public-site .top-nav-user .btn-primary {
@@ -2167,6 +2216,10 @@ body.public-site.lmsv-auth-page .lmsv-shell {
     font-size: 13px;
   }
 
+  body.public-site .top-nav-account {
+    max-width: 240px;
+  }
+
   body.public-site .top-nav-brand span {
     font-size: 16px;
   }
@@ -2370,6 +2423,10 @@ body.public-site.lmsv-auth-page .lmsv-shell {
   }
 
   body.public-site .top-nav-center {
+    display: none;
+  }
+
+  body.public-site .top-nav-account {
     display: none;
   }
 
