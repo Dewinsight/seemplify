@@ -13,72 +13,156 @@
       margin: 24px auto 40px;
       padding: 0 16px;
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: 308px minmax(0, 1fr);
+      gap: 22px;
     }
     .partner-side {
+      --side-accent: #0369a1;
+      --side-accent-soft: rgba(14, 165, 233, .12);
+      --side-accent-line: rgba(14, 165, 233, .18);
       position: sticky;
       top: 84px;
       align-self: start;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: linear-gradient(160deg, rgba(14, 165, 233, .14), rgba(2, 132, 199, .05));
-      box-shadow: var(--card-shadow);
-      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, .18);
+      border-radius: 24px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(248, 250, 252, .92));
+      box-shadow: 0 28px 48px -40px rgba(15, 23, 42, .34);
+      padding: 18px;
       display: grid;
-      gap: 14px;
+      gap: 16px;
+    }
+    .partner-side-header {
+      display: grid;
+      gap: 8px;
+    }
+    .partner-side-kicker {
+      margin: 0;
+      color: var(--side-accent);
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-weight: 800;
     }
     .partner-org {
-      border: 1px solid rgba(56, 189, 248, .35);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, .8);
-      padding: 12px;
+      border: 1px solid var(--side-accent-line);
+      border-radius: 18px;
+      background:
+        linear-gradient(160deg, rgba(240, 249, 255, .96), rgba(255, 255, 255, .98));
+      padding: 14px;
       display: grid;
-      gap: 4px;
+      gap: 8px;
     }
     .partner-org h2 {
       margin: 0;
-      font-size: 18px;
+      font-size: 28px;
+      line-height: 1;
       color: var(--text);
-      letter-spacing: -.01em;
+      letter-spacing: -.04em;
     }
     .partner-org p {
       margin: 0;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: 13px;
+      line-height: 1.55;
     }
     .partner-pill {
       width: fit-content;
-      border: 1px solid rgba(14, 165, 233, .45);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(14, 165, 233, .24);
       border-radius: 999px;
-      background: rgba(14, 165, 233, .12);
+      background: rgba(255, 255, 255, .84);
       color: #0369a1;
-      padding: 3px 10px;
-      font-size: 11px;
+      padding: 7px 12px;
+      font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: .08em;
+      letter-spacing: .06em;
       font-weight: 700;
     }
     .partner-nav {
       display: grid;
-      gap: 6px;
+      gap: 8px;
     }
     .partner-nav a {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 12px;
+      align-items: center;
+      gap: 12px;
       text-decoration: none;
       color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
+      border: 1px solid transparent;
+      border-radius: 18px;
       padding: 10px 12px;
       font-size: 13px;
-      background: rgba(255, 255, 255, .8);
-      transition: border-color .2s ease, background .2s ease;
+      background: transparent;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    .partner-nav a:hover {
+      border-color: rgba(3, 105, 161, .12);
+      background: rgba(255, 255, 255, .78);
+      transform: translateX(2px);
+    }
+    .dashboard-nav-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--side-accent);
+      background: var(--side-accent-soft);
+      border: 1px solid rgba(14, 165, 233, .1);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5);
+      flex-shrink: 0;
+    }
+    .dashboard-nav-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+    .dashboard-nav-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .dashboard-nav-label {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+    .dashboard-nav-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dashboard-nav-arrow {
+      width: 12px;
+      height: 12px;
+      color: var(--side-accent);
+      opacity: 0;
+      transform: translateX(-4px);
+      transition: opacity .18s ease, transform .18s ease;
     }
     .partner-nav a.active {
-      border-color: rgba(56, 189, 248, .7);
-      background: rgba(56, 189, 248, .14);
+      border-color: rgba(14, 165, 233, .18);
+      background:
+        linear-gradient(135deg, rgba(240, 249, 255, .98), rgba(255, 255, 255, .98));
+      box-shadow: 0 16px 28px -24px rgba(3, 105, 161, .32);
+    }
+    .partner-nav a.active .dashboard-nav-label {
+      color: var(--side-accent);
+    }
+    .partner-nav a.active .dashboard-nav-note {
       color: #075985;
-      font-weight: 700;
+    }
+    .partner-nav a.active .dashboard-nav-arrow {
+      opacity: 1;
+      transform: translateX(0);
     }
     .partner-main {
       display: grid;
@@ -235,11 +319,25 @@
       .partner-side {
         position: static;
       }
+      .partner-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .stats-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
     @media (max-width: 640px) {
+      .partner-nav {
+        grid-template-columns: 1fr;
+      }
+      .partner-nav a {
+        grid-template-columns: 34px minmax(0, 1fr) 12px;
+        gap: 10px;
+      }
+      .dashboard-nav-icon {
+        width: 34px;
+        height: 34px;
+      }
       .stats-grid,
       .grid-two,
       .inline-form {
@@ -258,6 +356,84 @@
   <% const payout = organization?.partnerSettings?.payoutProfile || {} %>
   <% const currentUserId = String(user?._id || '') %>
   <% const reportState = reportFilters || {} %>
+  <% const partnerSections = [
+    {
+      key: 'overview',
+      href: '/partner-dashboard?section=overview',
+      label: 'Overview',
+      note: 'Performance, course health, and sales totals',
+      icon: 'overview',
+      available: hasSection('overview')
+    },
+    {
+      key: 'agents',
+      href: '/partner-dashboard?section=agents',
+      label: 'Agents',
+      note: 'Invite, update, and monitor your sales team',
+      icon: 'agents',
+      available: hasSection('agents')
+    },
+    {
+      key: 'courses',
+      href: '/partner-dashboard?section=courses',
+      label: 'Courses',
+      note: 'Review partner-owned courses and drafts',
+      icon: 'courses',
+      available: hasSection('courses')
+    },
+    {
+      key: 'reports',
+      href: '/partner-dashboard?section=reports',
+      label: 'Reports',
+      note: 'Sales exports, churn metrics, and daily rollups',
+      icon: 'reports',
+      available: hasSection('reports')
+    },
+    {
+      key: 'commissions',
+      href: '/partner-dashboard?section=commissions',
+      label: 'Commissions',
+      note: 'Approve or trace agent payout recommendations',
+      icon: 'commissions',
+      available: hasSection('commissions')
+    },
+    {
+      key: 'withdrawals',
+      href: '/partner-dashboard?section=withdrawals',
+      label: 'Withdrawals',
+      note: 'Wallet balance, requests, and payment status',
+      icon: 'wallet',
+      available: hasSection('withdrawals')
+    },
+    {
+      key: 'settings',
+      href: '/partner-dashboard?section=settings',
+      label: 'Settings',
+      note: 'Org limits, commission defaults, and payout profile',
+      icon: 'settings',
+      available: hasSection('settings') && canRecommendAgentPayout
+    }
+  ] %>
+  <% const renderPartnerNavIcon = (icon) => {
+    switch (icon) {
+      case 'overview':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h6V4H4z"></path><path d="M14 20h6v-9h-6z"></path><path d="M14 4h6v5h-6z"></path><path d="M4 20h6v-3H4z"></path></svg>'
+      case 'agents':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>'
+      case 'courses':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5C4 5.12 5.12 4 6.5 4H20v14.5c0 .83-.67 1.5-1.5 1.5H6.5A2.5 2.5 0 0 1 4 17.5z"></path><path d="M8 4v16"></path><path d="M12 8h5"></path><path d="M12 12h5"></path></svg>'
+      case 'reports':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-7"></path></svg>'
+      case 'commissions':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 7v10"></path><path d="M9 10.5c0-1.1 1.34-2 3-2s3 .9 3 2-1.34 2-3 2-3 .9-3 2 1.34 2 3 2 3-.9 3-2"></path></svg>'
+      case 'wallet':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path><path d="M16 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"></path><path d="M22 12h-4"></path></svg>'
+      case 'settings':
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15 1.65 1.65 0 0 0 3.09 14H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4h.16A1.65 1.65 0 0 0 10 2.49V2a2 2 0 1 1 4 0v.49A1.65 1.65 0 0 0 14.92 4h.16a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c0 .66.39 1.26 1 1.51.18.07.37.1.56.1H21a2 2 0 1 1 0 4h-.04a1.65 1.65 0 0 0-1.56 1.39z"></path></svg>'
+      default:
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>'
+    }
+  } %>
   <% const reportQuery = [] %>
   <% if (reportState.from) reportQuery.push(`from=${encodeURIComponent(reportState.from)}`) %>
   <% if (reportState.to) reportQuery.push(`to=${encodeURIComponent(reportState.to)}`) %>
@@ -270,6 +446,9 @@
 
   <main class="partner-shell">
     <aside class="partner-side">
+      <div class="partner-side-header">
+        <p class="partner-side-kicker">Partner Control</p>
+      </div>
       <article class="partner-org">
         <h2><%= organization?.name || 'Partner Organization' %></h2>
         <p><%= organization?.description || 'Manage agents, partner courses, and commission operations.' %></p>
@@ -277,27 +456,19 @@
       </article>
 
       <nav class="partner-nav">
-        <% if (hasSection('overview')) { %>
-          <a href="/partner-dashboard?section=overview" class="<%= section === 'overview' ? 'active' : '' %>">Overview</a>
-        <% } %>
-        <% if (hasSection('agents')) { %>
-          <a href="/partner-dashboard?section=agents" class="<%= section === 'agents' ? 'active' : '' %>">Agents</a>
-        <% } %>
-        <% if (hasSection('courses')) { %>
-          <a href="/partner-dashboard?section=courses" class="<%= section === 'courses' ? 'active' : '' %>">Courses</a>
-        <% } %>
-        <% if (hasSection('reports')) { %>
-          <a href="/partner-dashboard?section=reports" class="<%= section === 'reports' ? 'active' : '' %>">Reports</a>
-        <% } %>
-        <% if (hasSection('commissions')) { %>
-          <a href="/partner-dashboard?section=commissions" class="<%= section === 'commissions' ? 'active' : '' %>">Commissions</a>
-        <% } %>
-        <% if (hasSection('withdrawals')) { %>
-          <a href="/partner-dashboard?section=withdrawals" class="<%= section === 'withdrawals' ? 'active' : '' %>">Withdrawals</a>
-        <% } %>
-        <% if (hasSection('settings') && canRecommendAgentPayout) { %>
-          <a href="/partner-dashboard?section=settings" class="<%= section === 'settings' ? 'active' : '' %>">Settings</a>
-        <% } %>
+        <% partnerSections.filter((item) => item.available).forEach((item) => { %>
+          <a href="<%= item.href %>" class="<%= section === item.key ? 'active' : '' %>">
+            <span class="dashboard-nav-icon"><%- renderPartnerNavIcon(item.icon) %></span>
+            <span class="dashboard-nav-copy">
+              <span class="dashboard-nav-label"><%= item.label %></span>
+              <span class="dashboard-nav-note"><%= item.note %></span>
+            </span>
+            <svg class="dashboard-nav-arrow" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 6h8"></path>
+              <path d="M6 2l4 4-4 4"></path>
+            </svg>
+          </a>
+        <% }) %>
       </nav>
     </aside>
 
