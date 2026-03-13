@@ -826,6 +826,591 @@
     .withdrawal-trace-table th {
       font-size: 12px;
     }
+    .page-header-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+    }
+    .page-header-copy {
+      display: grid;
+      gap: 10px;
+    }
+    .page-header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .page-header-pulse {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .pulse-card {
+      border: 1px solid #d5e2f3;
+      border-radius: 12px;
+      padding: 10px 11px;
+      background: rgba(255, 255, 255, 0.86);
+      display: grid;
+      gap: 3px;
+    }
+    .pulse-card span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .pulse-card strong {
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .overview-hero {
+      gap: 14px;
+      background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 30%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(243, 248, 255, 0.92));
+      border-color: #d3e2f6;
+    }
+    .overview-hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.9fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+    .overview-copy {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .eyebrow {
+      width: fit-content;
+      border-radius: 999px;
+      border: 1px solid rgba(14, 165, 233, 0.26);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 5px 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #0369a1;
+    }
+    .overview-copy h3,
+    .command-card h3,
+    .analytics-hero h3,
+    .partner-panel h3,
+    .role-summary-card h3 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .overview-badges,
+    .meta-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .meta-list .pill,
+    .overview-badges .pill {
+      padding: 4px 9px;
+      background: rgba(255, 255, 255, 0.94);
+      border-color: #d2deef;
+      color: #42526b;
+    }
+    .hero-panel {
+      border: 1px solid #d3e3f4;
+      border-radius: 16px;
+      background: linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.8) 56%, rgba(30, 41, 59, 0.9));
+      color: #e2e8f0;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      box-shadow: 0 18px 30px -28px rgba(15, 23, 42, 0.88);
+    }
+    .hero-panel-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .hero-panel-top p,
+    .partner-panel p,
+    .command-card p,
+    .analytics-hero p {
+      margin: 0;
+      line-height: 1.5;
+    }
+    .hero-panel .mini,
+    .hero-panel p {
+      color: #cbd5e1;
+    }
+    .hero-panel-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .hero-panel-stat {
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 12px;
+      padding: 11px;
+      background: rgba(15, 23, 42, 0.34);
+      display: grid;
+      gap: 3px;
+    }
+    .hero-panel-stat span,
+    .stack-metric span,
+    .partner-metric span,
+    .role-summary-metric span,
+    .analytics-stat span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .hero-panel-stat strong {
+      font-size: 22px;
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+      color: #f8fafc;
+    }
+    .overview-command-grid,
+    .partner-command-grid,
+    .analytics-top-grid,
+    .role-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+    }
+    .command-card,
+    .partner-panel,
+    .role-summary-card,
+    .analytics-panel {
+      border: 1px solid #d7e3f3;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.92));
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .command-card ul,
+    .analytics-note-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #475569;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .command-card .actions,
+    .partner-panel .actions,
+    .analytics-panel .actions {
+      margin-top: auto;
+    }
+    .section-stat-strip,
+    .role-stat-strip,
+    .analytics-summary-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+    .stack-metric,
+    .partner-metric,
+    .role-summary-metric,
+    .analytics-stat {
+      border: 1px solid #d9e3f1;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 11px;
+      display: grid;
+      gap: 3px;
+    }
+    .stack-metric strong,
+    .partner-metric strong,
+    .role-summary-metric strong,
+    .analytics-stat strong {
+      font-size: 18px;
+      line-height: 1.1;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .partner-org-grid,
+    .request-grid,
+    .role-directory {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .partner-org-card,
+    .request-card,
+    .role-account-card {
+      border: 1px solid #d6e2f2;
+      border-radius: 15px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 255, 0.94));
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 14px 28px -28px rgba(15, 23, 42, 0.55);
+    }
+    .partner-org-head,
+    .role-account-head,
+    .request-card-head,
+    .analytics-panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-org-head h3,
+    .role-account-head h3,
+    .request-card-head h3,
+    .analytics-panel-head h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .partner-org-meta,
+    .request-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .partner-org-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .partner-finance-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .partner-status-form,
+    .request-actions,
+    .analytics-filter-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .partner-status-form {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+    .request-actions {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .request-actions .inline-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      align-items: stretch;
+    }
+    .request-note {
+      border-top: 1px dashed #d5e2f1;
+      padding-top: 10px;
+    }
+    .role-account-card {
+      gap: 12px;
+    }
+    .role-account-topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .role-account-form {
+      display: grid;
+      gap: 8px;
+    }
+    .role-account-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .analytics-hero {
+      gap: 12px;
+      background:
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 28%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.94));
+    }
+    .analytics-hero-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .analytics-filter-grid {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      padding: 12px;
+      border: 1px solid #d9e4f3;
+      border-radius: 14px;
+      background: rgba(248, 250, 252, 0.82);
+    }
+    .analytics-filter-grid .actions {
+      grid-column: 1 / -1;
+    }
+    .rank-list {
+      display: grid;
+      gap: 10px;
+    }
+    .rank-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .rank-meta {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .rank-meta strong {
+      font-size: 13px;
+      line-height: 1.3;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rank-meta span {
+      font-size: 11px;
+      color: #60748f;
+    }
+    .rank-bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #e7eef8;
+      overflow: hidden;
+      position: relative;
+    }
+    .rank-bar > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #38bdf8, #3b82f6);
+    }
+    .rank-value {
+      font-size: 11px;
+      font-weight: 700;
+      color: #334155;
+      white-space: nowrap;
+    }
+    .analytics-focus-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+      gap: 10px;
+    }
+    .analytics-table-shell {
+      border: 1px solid #d7e3f2;
+      border-radius: 14px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    .analytics-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .audit-log-card {
+      gap: 14px;
+      background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.1), transparent 26%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 255, 0.94));
+    }
+    .audit-log-shell {
+      display: grid;
+      gap: 12px;
+    }
+    .audit-log-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .audit-log-intro h3 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .audit-summary-strip {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .audit-summary-card {
+      border: 1px solid #d7e3f3;
+      border-radius: 14px;
+      padding: 11px 12px;
+      background: rgba(255, 255, 255, 0.9);
+      display: grid;
+      gap: 3px;
+      box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.32);
+    }
+    .audit-summary-card span,
+    .audit-card-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .audit-summary-card strong {
+      font-size: 20px;
+      line-height: 1.1;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .audit-stream {
+      display: grid;
+      gap: 10px;
+    }
+    .audit-entry {
+      border: 1px solid #d7e3f3;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.94);
+      overflow: hidden;
+      box-shadow: 0 14px 28px -30px rgba(15, 23, 42, 0.68);
+    }
+    .audit-entry[open] {
+      border-color: #bfdbfe;
+      box-shadow: 0 18px 34px -30px rgba(59, 130, 246, 0.42);
+    }
+    .audit-entry summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .audit-entry summary::-webkit-details-marker {
+      display: none;
+    }
+    .audit-entry-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      padding: 14px 16px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.92));
+    }
+    .audit-entry-main {
+      min-width: 0;
+      display: grid;
+      gap: 7px;
+    }
+    .audit-entry-topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .audit-entry-main h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .audit-entry-side {
+      min-width: 170px;
+      display: grid;
+      gap: 3px;
+      justify-items: end;
+      text-align: right;
+      color: #475569;
+      font-size: 12px;
+    }
+    .audit-entry-side strong {
+      font-size: 13px;
+      color: #0f172a;
+    }
+    .audit-entry-body {
+      border-top: 1px solid #e2e8f0;
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 12px;
+      background: rgba(248, 251, 255, 0.72);
+    }
+    .audit-identity-grid,
+    .audit-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .audit-identity-card,
+    .audit-detail-card {
+      border: 1px solid #dbe5f2;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 12px;
+      display: grid;
+      gap: 5px;
+    }
+    .audit-identity-card strong,
+    .audit-detail-card strong {
+      font-size: 14px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+    .audit-identity-card span,
+    .audit-detail-card span,
+    .audit-detail-card p {
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.45;
+      margin: 0;
+      word-break: break-word;
+    }
+    .audit-meta-grid {
+      margin: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+    }
+    .audit-meta-grid div {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 9px 10px;
+      background: #f8fbff;
+      display: grid;
+      gap: 3px;
+    }
+    .audit-meta-grid dt {
+      margin: 0;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .audit-meta-grid dd {
+      margin: 0;
+      font-size: 12px;
+      color: #0f172a;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .audit-log-empty {
+      border: 1px dashed #c6d4ea;
+      border-radius: 14px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.72);
+    }
     @media (max-width: 1240px) {
       .layout {
         grid-template-columns: 294px minmax(0, 1fr);
@@ -834,6 +1419,11 @@
         font-size: 27px;
       }
       .course-management-table { min-width: 740px; }
+      .overview-hero-grid,
+      .analytics-focus-grid,
+      .audit-log-intro {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
     @media (max-width: 980px) {
       .layout {
@@ -885,6 +1475,28 @@
       .withdrawal-status-form {
         grid-template-columns: minmax(0, 1fr);
       }
+      .page-header-grid,
+      .analytics-hero-top,
+      .partner-status-form,
+      .rank-row,
+      .audit-entry-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .page-header-actions {
+        justify-content: flex-start;
+      }
+      .hero-panel-grid,
+      .partner-org-metrics,
+      .partner-finance-grid,
+      .analytics-mini-grid,
+      .audit-summary-strip {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .audit-entry-side {
+        justify-items: start;
+        text-align: left;
+        min-width: 0;
+      }
     }
   </style>
 </head>
@@ -907,9 +1519,10 @@
   ]
   const navGroups = [
     { title: 'Course Ops', keys: ['overview', 'courses', 'approvals', 'creators'] },
-    { title: 'Partner Ops', keys: ['partners', 'super-users', 'audit-log'] },
+    { title: 'Partner Ops', keys: ['partners'] },
+    { title: 'Access Control', keys: ['super-users', 'audit-log', 'users'] },
     { title: 'Commerce', keys: ['commission', 'payments'] },
-    { title: 'Control', keys: ['users', 'settings', 'analytics'] }
+    { title: 'Control', keys: ['settings', 'analytics'] }
   ]
   const sectionLabel = {
     overview: 'Admin Overview',
@@ -917,7 +1530,7 @@
     approvals: 'Course Approval Queue',
     partners: 'Partner Operations',
     'super-users': 'Super User Management',
-    'audit-log': 'Audit Log',
+    'audit-log': 'Admin Activity Log',
     creators: 'Creator Management',
     users: 'Users & Roles',
     commission: 'Commission Management',
@@ -1005,6 +1618,41 @@
   }
   const coursesReturnTo = (adminCourseFilters && adminCourseFilters.returnTo) || '/admin/courses'
   const creatorsReturnTo = (adminCreatorFilters && adminCreatorFilters.returnTo) || '/admin/creators'
+  const toNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0
+  const toLower = (value) => String(value || '').trim().toLowerCase()
+  const calcBarWidth = (value, max) => {
+    const safeValue = Math.max(0, toNumber(value))
+    const safeMax = Math.max(0, toNumber(max))
+    if (!safeValue || !safeMax) return '0%'
+    return `${Math.max(12, Math.min(100, Math.round((safeValue / safeMax) * 100)))}%`
+  }
+  const websiteHref = '/'
+  const partnerOrgRows = Array.isArray(partnerOrganizations) ? partnerOrganizations : []
+  const partnerRequestRows = Array.isArray(roleApprovalRequests) ? roleApprovalRequests : []
+  const managedAccountRows = Array.isArray(adminAccounts)
+    ? adminAccounts.filter((account) => account.resolvedRole !== 'channel_sales_agent')
+    : []
+  const pendingPartnerRequestCount = partnerRequestRows.filter((request) => toLower(request.status) === 'pending').length
+  const activePartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'active').length
+  const suspendedPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'suspended').length
+  const pendingPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'pending').length
+  const channelPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerType) === 'channel_partner').length
+  const standardPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerType) === 'partner').length
+  const platformAdminAccountCount = managedAccountRows.filter((account) => ['super_admin', 'admin'].includes(toLower(account.resolvedRole))).length
+  const partnerManagedAccountCount = managedAccountRows.filter((account) => ['partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super'].includes(toLower(account.resolvedRole))).length
+  const totalPartnerAgents = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.agentCount), 0)
+  const partnerPublishedCourseCount = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.publishedCourses), 0)
+  const partnerDraftCourseCount = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.draftCourses), 0)
+  const partnerAvailableWalletMinor = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.partnerWithdrawalAvailableMinor), 0)
+  const partnerPendingCommissionMinor = partnerOrgRows.reduce((sum, organization) => (
+    sum
+    + toNumber(organization.pendingCommissionMinor)
+    + toNumber(organization.recommendedCommissionMinor)
+    + toNumber(organization.approvedCommissionMinor)
+  ), 0)
+  const topEnrollmentMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByEnrollments) ? analytics.topCoursesByEnrollments.map((item) => toNumber(item.enrollmentCount)) : [0]))
+  const topRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByRevenue) ? analytics.topCoursesByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
+  const topCreatorRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCreatorsByRevenue) ? analytics.topCreatorsByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
 %>
   <div class="layout">
     <aside class="side">
@@ -1044,12 +1692,36 @@
 
     <main class="main">
       <section class="card page-header">
-        <div class="head">
-          <div>
-            <h2><%= sectionLabel[currentSection] || 'Admin' %></h2>
-            <p class="mini">Dedicated admin pages for approvals, users, payments, and platform control.</p>
+        <div class="page-header-grid">
+          <div class="page-header-copy">
+            <div>
+              <h2><%= sectionLabel[currentSection] || 'Admin' %></h2>
+              <p class="mini">Dedicated admin pages for approvals, partner operations, payouts, and platform control.</p>
+            </div>
+            <div class="page-header-pulse">
+              <article class="pulse-card">
+                <span>Approval Queue</span>
+                <strong><%= pendingOnly.length %></strong>
+              </article>
+              <article class="pulse-card">
+                <span>Partner Requests</span>
+                <strong><%= pendingPartnerRequestCount %></strong>
+              </article>
+              <article class="pulse-card">
+                <span>Agent Payout Queue</span>
+                <strong><%= (agentPayoutRows || []).length %></strong>
+              </article>
+              <article class="pulse-card">
+                <span>Live Courses</span>
+                <strong><%= stats?.publishedCourseCount || 0 %></strong>
+              </article>
+            </div>
           </div>
-          <p class="mini"><strong><%= user?.profile?.name || user?.email %></strong><br><%= user?.email || '' %></p>
+          <div class="page-header-actions">
+            <a class="btn btn-secondary btn-sm" href="<%= websiteHref %>" target="_blank" rel="noreferrer">Visit Website</a>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms">Open Workspace</a>
+            <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create Course</a>
+          </div>
         </div>
         <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
         <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
@@ -1057,9 +1729,48 @@
       </section>
 
       <% if (currentSection === 'overview') { %>
-        <section class="card">
-          <div class="head">
-            <div><h2>LMS Admin Dashboard</h2><p class="mini">System health and approval workload at a glance.</p></div>
+        <section class="card overview-hero">
+          <div class="overview-hero-grid">
+            <div class="overview-copy">
+              <span class="eyebrow">Admin Command Center</span>
+              <div>
+                <h3>See platform demand, partner activity, and publishing pressure in one view.</h3>
+                <p class="mini">The overview should answer three questions immediately: what needs approval, what is generating revenue, and where partner operations are blocked.</p>
+              </div>
+              <div class="overview-badges">
+                <span class="pill"><%= roleBreakdown.super_admin %> super admins</span>
+                <span class="pill"><%= roleBreakdown.admin %> admins</span>
+                <span class="pill"><%= partnerOrgRows.length %> partner orgs</span>
+                <span class="pill"><%= pendingPartnerRequestCount %> role requests pending</span>
+              </div>
+            </div>
+            <aside class="hero-panel">
+              <div class="hero-panel-top">
+                <div>
+                  <strong style="display:block;font-size:18px;letter-spacing:-0.02em;">Platform pulse</strong>
+                  <p class="mini">Immediate numbers for the public site, internal operations, and partner network.</p>
+                </div>
+                <span class="pill" style="border-color:rgba(56,189,248,0.35);background:rgba(14,116,144,0.26);color:#dbeafe;">Admin live</span>
+              </div>
+              <div class="hero-panel-grid">
+                <article class="hero-panel-stat">
+                  <span>Revenue</span>
+                  <strong><%= paymentStats.revenueDisplay %></strong>
+                </article>
+                <article class="hero-panel-stat">
+                  <span>Payouts</span>
+                  <strong><%= paymentStats.creatorPayoutDisplay %></strong>
+                </article>
+                <article class="hero-panel-stat">
+                  <span>Partners Wallet</span>
+                  <strong><%= formatCurrencyAmount(partnerAvailableWalletMinor, 'NGN') %></strong>
+                </article>
+                <article class="hero-panel-stat">
+                  <span>Success Rate</span>
+                  <strong><%= paymentStats.successRatePercent %>%</strong>
+                </article>
+              </div>
+            </aside>
           </div>
           <div class="kpis">
             <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
@@ -1071,12 +1782,75 @@
             <article class="kpi"><small>Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
             <article class="kpi"><small>Success Rate</small><strong><%= paymentStats.successRatePercent %>%</strong></article>
           </div>
+          <div class="overview-command-grid">
+            <article class="command-card">
+              <div>
+                <h3>Publishing pressure</h3>
+                <p class="mini">What needs review before it can go live.</p>
+              </div>
+              <div class="section-stat-strip">
+                <div class="stack-metric"><span>Pending review</span><strong><%= pendingOnly.length %></strong></div>
+                <div class="stack-metric"><span>Partner drafts</span><strong><%= partnerDraftCourseCount %></strong></div>
+                <div class="stack-metric"><span>Pending partner requests</span><strong><%= pendingPartnerRequestCount %></strong></div>
+              </div>
+              <ul>
+                <li><%= approvalCourses.filter((course) => String(course.status || '') === 'draft').length %> courses are still in draft and waiting for a go-live decision.</li>
+                <li><%= pendingReviewCourses.length %> creator submissions are already in the public review lane.</li>
+                <li>Partner admins currently have <%= partnerPublishedCourseCount %> published partner-owned courses live.</li>
+              </ul>
+              <div class="actions">
+                <a class="btn btn-primary btn-sm" href="/admin/approvals">Open Approval Queue</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/courses">Review Courses</a>
+              </div>
+            </article>
+            <article class="command-card">
+              <div>
+                <h3>Partner operations</h3>
+                <p class="mini">Organization health, pending requests, and commission exposure.</p>
+              </div>
+              <div class="section-stat-strip">
+                <div class="stack-metric"><span>Active orgs</span><strong><%= activePartnerOrgCount %></strong></div>
+                <div class="stack-metric"><span>Agents</span><strong><%= totalPartnerAgents %></strong></div>
+                <div class="stack-metric"><span>Commission due</span><strong><%= formatCurrencyAmount(partnerPendingCommissionMinor, 'NGN') %></strong></div>
+              </div>
+              <ul>
+                <li><%= channelPartnerOrgCount %> channel partners are running agent programs.</li>
+                <li><%= standardPartnerOrgCount %> standard partners are creating courses without agent teams.</li>
+                <li><%= suspendedPartnerOrgCount %> organizations are suspended and need a status review.</li>
+              </ul>
+              <div class="actions">
+                <a class="btn btn-primary btn-sm" href="/admin/partners">Manage Partners</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/users">Manage Roles</a>
+              </div>
+            </article>
+            <article class="command-card">
+              <div>
+                <h3>Financial operations</h3>
+                <p class="mini">Cash movement across creators, partners, and agent payouts.</p>
+              </div>
+              <div class="section-stat-strip">
+                <div class="stack-metric"><span>Revenue</span><strong><%= paymentStats.revenueDisplay %></strong></div>
+                <div class="stack-metric"><span>Creator payouts</span><strong><%= paymentStats.creatorPayoutDisplay %></strong></div>
+                <div class="stack-metric"><span>Pending payments</span><strong><%= paymentStats.pendingCount %></strong></div>
+              </div>
+              <ul>
+                <li><%= (partnerWithdrawalRequests || []).filter((request) => ['pending', 'approved'].includes(String(request.status || '').toLowerCase())).length %> partner withdrawals are still in queue.</li>
+                <li><%= (agentPayoutRows || []).length %> agent commission rows are awaiting admin action.</li>
+                <li>Payment success rate is currently <%= paymentStats.successRatePercent %>% across the active reporting window.</li>
+              </ul>
+              <div class="actions">
+                <a class="btn btn-primary btn-sm" href="/admin/payments">Review Payments</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/analytics">Open Analytics</a>
+              </div>
+            </article>
+          </div>
           <div class="quick-links">
             <a class="quick-link" href="/admin/courses"><strong>Manage Courses</strong><span>Edit, preview, approve, archive.</span></a>
             <a class="quick-link" href="/admin/creators"><strong>Manage Creators</strong><span>Control creator commissions and course catalogs.</span></a>
             <a class="quick-link" href="/admin/approvals"><strong>Open Approval Queue</strong><span>Publish draft/pending creator courses.</span></a>
             <a class="quick-link" href="/admin/users"><strong>Manage Roles</strong><span>Control admin and super admin access.</span></a>
             <a class="quick-link" href="/admin/payments"><strong>Review Payments</strong><span>Filter and re-verify transactions.</span></a>
+            <a class="quick-link" href="<%= websiteHref %>" target="_blank" rel="noreferrer"><strong>Visit Website</strong><span>Open the live public experience in a new tab.</span></a>
           </div>
         </section>
       <% } %>
@@ -1401,82 +2175,107 @@
               <p class="mini">Manage partner lifecycle, review pending role requests, and process agent commission payouts.</p>
             </div>
           </div>
+          <div class="partner-command-grid">
+            <article class="partner-panel">
+              <div>
+                <h3>Lifecycle health</h3>
+                <p class="mini">See how many organizations are active, pending approval, or suspended.</p>
+              </div>
+              <div class="section-stat-strip">
+                <div class="partner-metric"><span>Total orgs</span><strong><%= partnerOrgRows.length %></strong></div>
+                <div class="partner-metric"><span>Active</span><strong><%= activePartnerOrgCount %></strong></div>
+                <div class="partner-metric"><span>Pending</span><strong><%= pendingPartnerOrgCount %></strong></div>
+                <div class="partner-metric"><span>Suspended</span><strong><%= suspendedPartnerOrgCount %></strong></div>
+              </div>
+              <div class="meta-list">
+                <span class="pill"><%= channelPartnerOrgCount %> channel partners</span>
+                <span class="pill"><%= standardPartnerOrgCount %> standard partners</span>
+                <span class="pill"><%= totalPartnerAgents %> linked agents</span>
+              </div>
+            </article>
+            <article class="partner-panel">
+              <div>
+                <h3>Partner commerce</h3>
+                <p class="mini">Keep commission obligations and partner cash availability visible.</p>
+              </div>
+              <div class="section-stat-strip">
+                <div class="partner-metric"><span>Commission due</span><strong><%= formatCurrencyAmount(partnerPendingCommissionMinor, 'NGN') %></strong></div>
+                <div class="partner-metric"><span>Available wallet</span><strong><%= formatCurrencyAmount(partnerAvailableWalletMinor, 'NGN') %></strong></div>
+                <div class="partner-metric"><span>Published courses</span><strong><%= partnerPublishedCourseCount %></strong></div>
+                <div class="partner-metric"><span>Draft courses</span><strong><%= partnerDraftCourseCount %></strong></div>
+              </div>
+            </article>
+            <article class="partner-panel">
+              <div>
+                <h3>Action lanes</h3>
+                <p class="mini">Jump to the other admin tools that affect partner operations.</p>
+              </div>
+              <div class="actions">
+                <a class="btn btn-primary btn-sm" href="/admin/users">Assign Partner Roles</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/analytics">Partner Analytics</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/audit-log">Audit Events</a>
+              </div>
+              <p class="mini">Role requests are for onboarding. Direct role assignment is handled in Users &amp; Roles.</p>
+            </article>
+          </div>
 
-	          <div class="kpis">
-	            <article class="kpi">
-	              <small>Partner Orgs</small>
-	              <strong><%= (partnerOrganizations || []).length %></strong>
-	            </article>
-	            <article class="kpi">
-	              <small>Pending Requests</small>
-	              <strong><%= (roleApprovalRequests || []).filter((request) => String(request.status || '').toLowerCase() === 'pending').length %></strong>
-	            </article>
-	            <article class="kpi">
-	              <small>Agent Payout Queue</small>
-	              <strong><%= (agentPayoutRows || []).length %></strong>
-	            </article>
-	            <article class="kpi">
-	              <small>Partner Withdrawals</small>
-	              <strong><%= (partnerWithdrawalRequests || []).filter((request) => ['pending', 'approved'].includes(String(request.status || '').toLowerCase())).length %></strong>
-	            </article>
-	          </div>
-
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Organization</th>
-                  <th>Type</th>
-	                  <th>Status</th>
-	                  <th>Agents</th>
-	                  <th>Courses</th>
-	                  <th>Commissions Due</th>
-	                  <th>Partner Wallet</th>
-	                  <th>Actions</th>
-	                </tr>
-	              </thead>
-	              <tbody>
-	                <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
-	                  <tr><td colspan="8" class="mini">No partner organizations found.</td></tr>
-	                <% } else { %>
-	                  <% partnerOrganizations.forEach((organization) => { %>
-                    <tr>
-                      <td>
-                        <strong><%= organization.name || 'Partner Organization' %></strong><br>
-                        <span class="mini"><%= organization.description || '-' %></span>
-                      </td>
-                      <td><span class="pill"><%= organization.partnerType || 'partner' %></span></td>
-                      <td><span class="pill"><%= organization.partnerStatus || 'pending' %></span></td>
-                      <td><%= Number(organization.agentCount || 0) %></td>
-                      <td><%= Number(organization.totalCourses || 0) %> total / <%= Number(organization.publishedCourses || 0) %> published</td>
-	                      <td>
-	                        <span class="mini">Pending: <%= organization.pendingCommissionDisplay %></span><br>
-	                        <span class="mini">Recommended: <%= organization.recommendedCommissionDisplay %></span><br>
-	                        <span class="mini">Approved: <%= organization.approvedCommissionDisplay %></span>
-	                      </td>
-	                      <td>
-	                        <span class="mini">Revenue: <%= organization.partnerRevenueDisplay %></span><br>
-	                        <span class="mini">Pending W/D: <%= organization.partnerWithdrawalPendingDisplay %></span><br>
-	                        <span class="mini">Available: <%= organization.partnerWithdrawalAvailableDisplay %></span>
-	                      </td>
-	                      <td>
-	                        <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="inline-form">
-	                          <select class="input" name="partnerStatus">
-                            <option value="pending" <%= String(organization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
-                            <option value="active" <%= String(organization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
-                            <option value="suspended" <%= String(organization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
-                          </select>
-                          <input type="hidden" name="returnTo" value="/admin/partners">
-                          <button class="btn btn-primary btn-sm" type="submit">Update</button>
-                        </form>
-                      </td>
-                    </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
-	          </div>
-	        </section>
+          <div class="partner-org-grid">
+            <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
+              <article class="partner-org-card">
+                <div>
+                  <h3>No partner organizations yet</h3>
+                  <p class="mini">New partner and channel-partner applications will appear here once they are submitted and approved.</p>
+                </div>
+              </article>
+            <% } else { %>
+              <% partnerOrganizations.forEach((organization) => { %>
+                <article class="partner-org-card">
+                  <div class="partner-org-head">
+                    <div>
+                      <h3><%= organization.name || 'Partner Organization' %></h3>
+                      <p class="mini"><%= organization.description || 'No description provided yet.' %></p>
+                    </div>
+                    <div class="partner-org-meta">
+                      <span class="pill"><%= organization.partnerType || 'partner' %></span>
+                      <span class="pill"><%= organization.partnerStatus || 'pending' %></span>
+                    </div>
+                  </div>
+                  <div class="partner-org-metrics">
+                    <div class="stack-metric"><span>Agents</span><strong><%= Number(organization.agentCount || 0) %></strong></div>
+                    <div class="stack-metric"><span>Total courses</span><strong><%= Number(organization.totalCourses || 0) %></strong></div>
+                    <div class="stack-metric"><span>Published</span><strong><%= Number(organization.publishedCourses || 0) %></strong></div>
+                    <div class="stack-metric"><span>Drafts</span><strong><%= Number(organization.draftCourses || 0) %></strong></div>
+                  </div>
+                  <div class="partner-finance-grid">
+                    <div class="stack-metric"><span>Gross sales</span><strong><%= organization.partnerSalesDisplay %></strong></div>
+                    <div class="stack-metric"><span>Partner revenue</span><strong><%= organization.partnerRevenueDisplay %></strong></div>
+                    <div class="stack-metric"><span>Available wallet</span><strong><%= organization.partnerWithdrawalAvailableDisplay %></strong></div>
+                  </div>
+                  <div class="section-stat-strip">
+                    <div class="partner-metric"><span>Pending commission</span><strong><%= organization.pendingCommissionDisplay %></strong></div>
+                    <div class="partner-metric"><span>Recommended</span><strong><%= organization.recommendedCommissionDisplay %></strong></div>
+                    <div class="partner-metric"><span>Approved</span><strong><%= organization.approvedCommissionDisplay %></strong></div>
+                    <div class="partner-metric"><span>Pending withdrawal</span><strong><%= organization.partnerWithdrawalPendingDisplay %></strong></div>
+                  </div>
+                  <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="partner-status-form">
+                    <label>
+                      <span class="mini">Organization status</span>
+                      <select class="input" name="partnerStatus">
+                        <option value="pending" <%= String(organization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
+                        <option value="active" <%= String(organization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
+                        <option value="suspended" <%= String(organization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
+                      </select>
+                    </label>
+                    <div class="actions">
+                      <input type="hidden" name="returnTo" value="/admin/partners">
+                      <button class="btn btn-primary btn-sm" type="submit">Update Status</button>
+                    </div>
+                  </form>
+                </article>
+              <% }) %>
+            <% } %>
+          </div>
+        </section>
 
 	        <section class="card">
 	          <div class="head">
@@ -1548,62 +2347,63 @@
               <p class="mini">Approve or reject partner and channel-partner registration requests.</p>
             </div>
           </div>
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Applicant</th>
-                  <th>Requested Role</th>
-                  <th>Organization</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!roleApprovalRequests || roleApprovalRequests.length === 0) { %>
-                  <tr><td colspan="6" class="mini">No role requests found.</td></tr>
-                <% } else { %>
-                  <% roleApprovalRequests.forEach((request) => { %>
-                    <tr>
-                      <td><%= dateText(request.createdAt) %></td>
-                      <td>
-                        <strong><%= request.accountName %></strong><br>
-                        <span class="mini"><%= request.accountEmail || '-' %></span>
-                      </td>
-                      <td><span class="pill"><%= request.requestedRole %></span></td>
-                      <td><%= request.organizationName || '-' %></td>
-                      <td><span class="pill"><%= request.status %></span></td>
-                      <td>
-                        <% if (String(request.status || '').toLowerCase() === 'pending') { %>
-                          <div class="actions">
-                            <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/approve" class="inline-form">
-                              <select class="input" name="approvedRole">
-                                <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
-                                <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
-                                <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
-                                <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
-                              </select>
-                              <input class="input" type="text" name="notes" placeholder="Review notes (optional)">
-                              <input type="hidden" name="returnTo" value="/admin/partners">
-                              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
-                            </form>
-                            <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/reject" class="inline-form">
-                              <input class="input" type="text" name="notes" placeholder="Reason">
-                              <input type="hidden" name="returnTo" value="/admin/partners">
-                              <button class="btn btn-danger btn-sm" type="submit">Reject</button>
-                            </form>
-                          </div>
-                        <% } else { %>
-                          <span class="mini">Reviewed by <%= request.reviewedByName || '-' %></span><br>
-                          <span class="mini"><%= request.reviewNotes || '-' %></span>
-                        <% } %>
-                      </td>
-                    </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
+          <div class="request-grid">
+            <% if (!roleApprovalRequests || roleApprovalRequests.length === 0) { %>
+              <article class="request-card">
+                <div>
+                  <h3>No role requests yet</h3>
+                  <p class="mini">Partner and channel-partner onboarding requests will appear here for review.</p>
+                </div>
+              </article>
+            <% } else { %>
+              <% roleApprovalRequests.forEach((request) => { %>
+                <article class="request-card">
+                  <div class="request-card-head">
+                    <div>
+                      <h3><%= request.accountName %></h3>
+                      <p class="mini"><%= request.accountEmail || '-' %></p>
+                    </div>
+                    <div class="request-meta">
+                      <span class="pill"><%= request.requestedRole %></span>
+                      <span class="pill"><%= request.status %></span>
+                    </div>
+                  </div>
+                  <div class="section-stat-strip">
+                    <div class="stack-metric"><span>Requested on</span><strong><%= dateText(request.createdAt) %></strong></div>
+                    <div class="stack-metric"><span>Partner type</span><strong><%= request.partnerType || 'partner' %></strong></div>
+                  </div>
+                  <div class="stack-metric">
+                    <span>Organization</span>
+                    <strong><%= request.organizationName || '-' %></strong>
+                  </div>
+                  <% if (String(request.status || '').toLowerCase() === 'pending') { %>
+                    <div class="request-actions">
+                      <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/approve" class="inline-form">
+                        <select class="input" name="approvedRole">
+                          <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                          <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                          <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                          <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                        </select>
+                        <input class="input" type="text" name="notes" placeholder="Review notes (optional)">
+                        <input type="hidden" name="returnTo" value="/admin/partners">
+                        <button class="btn btn-primary btn-sm" type="submit">Approve Request</button>
+                      </form>
+                      <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/reject" class="inline-form">
+                        <input class="input" type="text" name="notes" placeholder="Reason for rejection">
+                        <input type="hidden" name="returnTo" value="/admin/partners">
+                        <button class="btn btn-danger btn-sm" type="submit">Reject Request</button>
+                      </form>
+                    </div>
+                  <% } else { %>
+                    <div class="request-note">
+                      <p class="mini">Reviewed by <strong><%= request.reviewedByName || '-' %></strong></p>
+                      <p class="mini"><%= request.reviewNotes || 'No review note added.' %></p>
+                    </div>
+                  <% } %>
+                </article>
+              <% }) %>
+            <% } %>
           </div>
         </section>
 
@@ -1671,9 +2471,25 @@
           <div class="head">
             <div>
               <h2>Super User Management</h2>
-              <p class="mini">Promote or demote super admins with password re-authentication and audit logging.</p>
+              <p class="mini">Invite new admins through Brevo, verify their onboarding state, and still promote or demote existing super admins with password re-authentication.</p>
             </div>
           </div>
+
+          <article class="card">
+            <strong>Invite New Admin or Super Admin</strong>
+            <form method="post" action="/simple-lms/admin/super-users/invite" class="inline-form">
+              <input class="input" type="email" name="email" placeholder="new-admin@company.com" required>
+              <select class="input" name="requestedRole">
+                <option value="admin">admin</option>
+                <option value="super_admin">super_admin</option>
+              </select>
+              <input class="input" type="text" name="notes" maxlength="1200" placeholder="Optional note for the invite">
+              <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+              <input type="hidden" name="returnTo" value="/admin/super-users">
+              <button class="btn btn-primary btn-sm" type="submit">Send Invite</button>
+            </form>
+            <p class="mini">The invitee receives a Brevo email, registers with the invite link, verifies a one-time code, and then lands in the admin dashboard.</p>
+          </article>
 
           <article class="card">
             <strong>Promote Existing Account</strong>
@@ -1690,6 +2506,62 @@
             </form>
             <p class="mini">Your password is required for every super-user elevation action.</p>
           </article>
+
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Invited By</th>
+                  <th>Registered Account</th>
+                  <th>Expires</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!adminInviteRows || adminInviteRows.length === 0) { %>
+                  <tr><td colspan="7" class="mini">No admin invites recorded yet.</td></tr>
+                <% } else { %>
+                  <% adminInviteRows.forEach((invite) => { %>
+                    <tr>
+                      <td>
+                        <strong><%= invite.email %></strong>
+                        <% if (invite.notes) { %><br><span class="mini"><%= invite.notes %></span><% } %>
+                      </td>
+                      <td><span class="pill"><%= invite.requestedRole %></span></td>
+                      <td><span class="pill"><%= invite.statusLabel %></span></td>
+                      <td><%= invite.invitedByName || '-' %></td>
+                      <td>
+                        <% if (invite.registeredAccountName) { %>
+                          <strong><%= invite.registeredAccountName %></strong><br>
+                          <span class="mini"><%= invite.registeredAccount?.email || '' %></span><br>
+                          <span class="mini"><%= invite.registeredAccount?.emailVerified ? 'verified' : 'waiting for OTP' %></span>
+                        <% } else { %>
+                          <span class="mini">Not registered yet</span>
+                        <% } %>
+                      </td>
+                      <td><%= dateText(invite.expiresAt) %></td>
+                      <td>
+                        <% if (invite.canRevoke) { %>
+                          <form method="post" action="/simple-lms/admin/super-users/invites/<%= invite._id %>/revoke" class="inline-form">
+                            <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                            <input type="hidden" name="returnTo" value="/admin/super-users">
+                            <button class="btn btn-danger btn-sm" type="submit">Revoke</button>
+                          </form>
+                        <% } else { %>
+                          <span class="mini">
+                            <%= invite.acceptedByName ? `Accepted by ${invite.acceptedByName}` : 'No action available' %>
+                          </span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
 
           <div class="table">
             <table>
@@ -1733,50 +2605,120 @@
       <% } %>
 
       <% if (currentSection === 'audit-log') { %>
-        <section class="card">
-          <div class="head">
-            <div>
-              <h2>Audit Log</h2>
-              <p class="mini">Append-only trail of sensitive access, role, partner, and payout actions.</p>
+        <% 
+          const adminActorAuditCount = (auditLogEntries || []).filter((entry) => entry.performedByRole === 'admin').length
+          const superAdminActorAuditCount = (auditLogEntries || []).filter((entry) => entry.performedByRole === 'super_admin').length
+          const inviteAuditCount = (auditLogEntries || []).filter((entry) => String(entry.action || '').startsWith('admin.invite')).length
+          const securityAuditCount = (auditLogEntries || []).filter((entry) => String(entry.action || '').startsWith('security.')).length
+        %>
+        <section class="card audit-log-card">
+          <div class="audit-log-shell">
+            <div class="audit-log-intro">
+              <div>
+                <span class="eyebrow">Platform Access Trail</span>
+                <h3>Admin and super admin activity</h3>
+                <p class="mini">This stream is limited to platform-admin actions and onboarding events. Open any record to inspect who performed it, the role of that user, the affected account or organization, and the full event metadata.</p>
+              </div>
+              <div class="audit-summary-strip">
+                <article class="audit-summary-card">
+                  <span>Total events</span>
+                  <strong><%= (auditLogEntries || []).length %></strong>
+                </article>
+                <article class="audit-summary-card">
+                  <span>Super admin actions</span>
+                  <strong><%= superAdminActorAuditCount %></strong>
+                </article>
+                <article class="audit-summary-card">
+                  <span>Admin actions</span>
+                  <strong><%= adminActorAuditCount %></strong>
+                </article>
+                <article class="audit-summary-card">
+                  <span>Invite and security</span>
+                  <strong><%= inviteAuditCount + securityAuditCount %></strong>
+                </article>
+              </div>
             </div>
-          </div>
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Action</th>
-                  <th>Performed By</th>
-                  <th>Target</th>
-                  <th>Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!auditLogEntries || auditLogEntries.length === 0) { %>
-                  <tr><td colspan="5" class="mini">No audit log events recorded yet.</td></tr>
-                <% } else { %>
-                  <% auditLogEntries.forEach((entry) => { %>
-                    <tr>
-                      <td><%= dateText(entry.createdAt) %></td>
-                      <td><span class="pill"><%= entry.action %></span></td>
-                      <td>
-                        <strong><%= entry.performedByName %></strong><br>
-                        <span class="mini"><%= entry.performedByEmail || '-' %></span>
-                      </td>
-                      <td>
-                        <% if (entry.targetAccountName) { %><span class="mini">Account: <%= entry.targetAccountName %></span><br><% } %>
-                        <% if (entry.targetOrganizationName) { %><span class="mini">Org: <%= entry.targetOrganizationName %></span><% } %>
-                        <% if (!entry.targetAccountName && !entry.targetOrganizationName) { %><span class="mini">-</span><% } %>
-                      </td>
-                      <td>
-                        <span class="mini"><%= entry.ipAddress || '-' %></span><br>
-                        <span class="mini"><%= entry.userAgent || '-' %></span>
-                      </td>
-                    </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
+
+            <% if (!auditLogEntries || auditLogEntries.length === 0) { %>
+              <div class="audit-log-empty">
+                <p class="mini">No admin or super admin audit events have been recorded yet.</p>
+              </div>
+            <% } else { %>
+              <div class="audit-stream">
+                <% auditLogEntries.forEach((entry, index) => { %>
+                  <details class="audit-entry" <%= index === 0 ? 'open' : '' %>>
+                    <summary class="audit-entry-summary">
+                      <div class="audit-entry-main">
+                        <div class="audit-entry-topline">
+                          <span class="pill"><%= entry.actionLabel %></span>
+                          <span class="pill"><%= entry.performedByRoleLabel %></span>
+                          <% if (entry.targetAccountRoleLabel) { %>
+                            <span class="pill">Target: <%= entry.targetAccountRoleLabel %></span>
+                          <% } %>
+                        </div>
+                        <h3><%= entry.headline %></h3>
+                        <p class="mini"><%= entry.narrative %></p>
+                      </div>
+                      <div class="audit-entry-side">
+                        <strong><%= dateText(entry.createdAt) %></strong>
+                        <span><%= entry.performedByName %></span>
+                        <span><%= entry.performedByEmail || 'email not captured' %></span>
+                      </div>
+                    </summary>
+                    <div class="audit-entry-body">
+                      <div class="audit-identity-grid">
+                        <article class="audit-identity-card">
+                          <span class="audit-card-label">Actor</span>
+                          <strong><%= entry.performedByName %></strong>
+                          <span><%= entry.performedByEmail || 'email not captured' %></span>
+                          <span>Type: <%= entry.performedByRoleLabel %></span>
+                          <% if (entry.performedById) { %><span>Account ID: <%= entry.performedById %></span><% } %>
+                        </article>
+                        <article class="audit-identity-card">
+                          <span class="audit-card-label">Affected target</span>
+                          <% if (entry.targetAccountName || entry.targetOrganizationName) { %>
+                            <% if (entry.targetAccountName) { %><strong><%= entry.targetAccountName %></strong><% } %>
+                            <% if (entry.targetAccountEmail) { %><span><%= entry.targetAccountEmail %></span><% } %>
+                            <% if (entry.targetAccountRoleLabel) { %><span>Type: <%= entry.targetAccountRoleLabel %></span><% } %>
+                            <% if (entry.targetOrganizationName) { %><span>Organization: <%= entry.targetOrganizationName %><%= entry.targetOrganizationType ? ` (${entry.targetOrganizationType})` : '' %></span><% } %>
+                            <% if (entry.targetAccountId) { %><span>Account ID: <%= entry.targetAccountId %></span><% } %>
+                          <% } else { %>
+                            <span>No direct target account or organization was recorded for this event.</span>
+                          <% } %>
+                        </article>
+                        <article class="audit-identity-card">
+                          <span class="audit-card-label">Source context</span>
+                          <strong><%= entry.ipAddress || 'IP not captured' %></strong>
+                          <span><%= entry.userAgent || 'User agent not captured' %></span>
+                          <span>Event ID: <%= entry.eventId || '-' %></span>
+                        </article>
+                      </div>
+                      <div class="audit-detail-grid">
+                        <article class="audit-detail-card">
+                          <span class="audit-card-label">What happened</span>
+                          <p><%= entry.narrative %></p>
+                        </article>
+                        <article class="audit-detail-card">
+                          <span class="audit-card-label">Event metadata</span>
+                          <% if (entry.metadataPairs && entry.metadataPairs.length > 0) { %>
+                            <dl class="audit-meta-grid">
+                              <% entry.metadataPairs.forEach((pair) => { %>
+                                <div>
+                                  <dt><%= pair.label %></dt>
+                                  <dd><%= pair.value %></dd>
+                                </div>
+                              <% }) %>
+                            </dl>
+                          <% } else { %>
+                            <p>No extra metadata was captured for this record.</p>
+                          <% } %>
+                        </article>
+                      </div>
+                    </div>
+                  </details>
+                <% }) %>
+              </div>
+            <% } %>
           </div>
         </section>
       <% } %>
@@ -2105,28 +3047,75 @@
       <% if (currentSection === 'users') { %>
         <section class="card">
           <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage platform access and direct partner role assignment. Agents stay managed through partner organizations.</p></div></div>
-          <div class="grid">
-            <% (adminAccounts || []).filter((account) => account.resolvedRole !== 'channel_sales_agent').forEach((account) => { %>
-              <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="card">
-                <strong><%= account.displayName %></strong>
-                <span class="mini"><%= account.email %></span>
+          <div class="role-summary-grid">
+            <article class="role-summary-card">
+              <div>
+                <h3>Role distribution</h3>
+                <p class="mini">The admin panel can directly assign platform and partner roles to existing accounts.</p>
+              </div>
+              <div class="role-stat-strip">
+                <div class="role-summary-metric"><span>Managed accounts</span><strong><%= managedAccountRows.length %></strong></div>
+                <div class="role-summary-metric"><span>Platform admins</span><strong><%= platformAdminAccountCount %></strong></div>
+                <div class="role-summary-metric"><span>Partner-linked users</span><strong><%= partnerManagedAccountCount %></strong></div>
+                <div class="role-summary-metric"><span>Creators</span><strong><%= (creatorAdminRows || []).length %></strong></div>
+              </div>
+            </article>
+            <article class="role-summary-card">
+              <div>
+                <h3>How this page works</h3>
+                <p class="mini">Use this page for direct assignment or promotion. Use Partner Operations for onboarding requests and partner status control.</p>
+              </div>
+              <div class="actions">
+                <a class="btn btn-secondary btn-sm" href="/admin/partners">Open Partner Operations</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Manage Super Users</a>
+              </div>
+            </article>
+          </div>
+          <div class="role-directory">
+            <% managedAccountRows.forEach((account) => { %>
+              <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="role-account-card">
+                <div class="role-account-head">
+                  <div>
+                    <h3><%= account.displayName %></h3>
+                    <p class="mini"><%= account.email %></p>
+                  </div>
+                  <div class="role-account-topline">
+                    <span class="pill"><%= account.resolvedRole %></span>
+                    <% if (account.isSuperAdmin) { %><span class="pill">super flag</span><% } %>
+                    <% if (account.isSystemAdmin && !account.isSuperAdmin) { %><span class="pill">admin flag</span><% } %>
+                  </div>
+                </div>
                 <% if (account.partnerOrganizationName) { %>
-                  <span class="mini">Partner org: <%= account.partnerOrganizationName %> <%= account.partnerOrganizationType ? `(${account.partnerOrganizationType})` : '' %><%= account.partnerOrganizationStatus ? ` - ${account.partnerOrganizationStatus}` : '' %></span>
+                  <div class="meta-list">
+                    <span class="pill">Org: <%= account.partnerOrganizationName %></span>
+                    <% if (account.partnerOrganizationType) { %><span class="pill"><%= account.partnerOrganizationType %></span><% } %>
+                    <% if (account.partnerOrganizationStatus) { %><span class="pill"><%= account.partnerOrganizationStatus %></span><% } %>
+                  </div>
                 <% } %>
-                <select class="input" name="role">
-                  <option value="learner" <%= account.resolvedRole === 'learner' ? 'selected' : '' %>>learner</option>
-                  <option value="creator" <%= account.resolvedRole === 'creator' ? 'selected' : '' %>>creator</option>
-                  <option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option>
-                  <option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option>
-                  <option value="partner_user" <%= account.resolvedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
-                  <option value="partner_super" <%= account.resolvedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
-                  <option value="channel_partner_user" <%= account.resolvedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
-                  <option value="channel_partner_super" <%= account.resolvedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
-                </select>
-                <input class="input" type="text" name="organizationName" maxlength="160" value="<%= account.partnerOrganizationName || '' %>" placeholder="Organization name for partner roles">
-                <span class="mini">Required only when assigning a partner role to a user without an existing partner organization.</span>
-                <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
-                <button class="btn btn-primary btn-sm" type="submit">Update Role</button>
+                <div class="role-account-form">
+                  <label>
+                    <span class="mini">Assign role</span>
+                    <select class="input" name="role">
+                      <option value="learner" <%= account.resolvedRole === 'learner' ? 'selected' : '' %>>learner</option>
+                      <option value="creator" <%= account.resolvedRole === 'creator' ? 'selected' : '' %>>creator</option>
+                      <option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option>
+                      <option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option>
+                      <option value="partner_user" <%= account.resolvedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                      <option value="partner_super" <%= account.resolvedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                      <option value="channel_partner_user" <%= account.resolvedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                      <option value="channel_partner_super" <%= account.resolvedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="mini">Organization name</span>
+                    <input class="input" type="text" name="organizationName" maxlength="160" value="<%= account.partnerOrganizationName || '' %>" placeholder="Needed only if creating a fresh partner org">
+                  </label>
+                </div>
+                <div class="role-account-foot">
+                  <span class="mini">If this user already belongs to a partner org, the existing org link is reused.</span>
+                  <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
+                  <button class="btn btn-primary btn-sm" type="submit">Save Role</button>
+                </div>
               </form>
             <% }) %>
           </div>
@@ -2376,7 +3365,7 @@
       <% } %>
 
       <% if (currentSection === 'analytics') { %>
-        <section class="card">
+        <section class="card analytics-hero">
           <% const reportState = reportFilters || {} %>
           <% const reportQueryParts = [] %>
           <% if (reportState.from) reportQueryParts.push(`from=${encodeURIComponent(reportState.from)}`) %>
@@ -2388,136 +3377,205 @@
           <% const reportQueryString = reportQueryParts.join('&') %>
           <% const salesExportHref = `/api/reports/sales/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
           <% const commissionExportHref = `/api/reports/commissions/export${reportQueryString ? `?${reportQueryString}` : ''}` %>
-          <div class="head"><div><h2>Analytics</h2><p class="mini">Performance for last <%= analytics.lookbackDays %> days plus dedicated daily sales and churn reporting.</p></div></div>
-          <form method="get" action="/admin/analytics" class="inline-form" style="grid-template-columns: repeat(6, minmax(0, 1fr)); gap:10px;">
+          <div class="analytics-hero-top">
             <div>
-              <label>From</label>
+              <h2>Analytics</h2>
+              <p class="mini">Performance for the last <%= analytics.lookbackDays %> days, including revenue flow, partner impact, and churn signals.</p>
+            </div>
+            <div class="actions">
+              <a class="btn btn-secondary btn-sm" href="<%= salesExportHref %>">Export Sales CSV</a>
+              <a class="btn btn-secondary btn-sm" href="<%= commissionExportHref %>">Export Commissions CSV</a>
+            </div>
+          </div>
+          <form method="get" action="/admin/analytics" class="analytics-filter-grid">
+            <label>
+              <span class="mini">From</span>
               <input class="input" type="date" name="reportFrom" value="<%= reportState.from || '' %>">
-            </div>
-            <div>
-              <label>To</label>
+            </label>
+            <label>
+              <span class="mini">To</span>
               <input class="input" type="date" name="reportTo" value="<%= reportState.to || '' %>">
-            </div>
-            <div>
-              <label>Lookback (days)</label>
+            </label>
+            <label>
+              <span class="mini">Lookback (days)</span>
               <input class="input" type="number" name="reportLookbackDays" min="1" max="365" value="<%= Number(reportState.lookbackDays || analytics.lookbackDays || 30) %>">
-            </div>
-            <div>
-              <label>Partner Scope</label>
+            </label>
+            <label>
+              <span class="mini">Partner scope</span>
               <select class="input" name="reportPartnerOrganization">
                 <option value="">All partners</option>
                 <% (partnerOrganizations || []).forEach((organization) => { %>
                   <option value="<%= organization._id %>" <%= String(reportState.partnerOrganizationId || '') === String(organization._id || '') ? 'selected' : '' %>><%= organization.name || 'Partner Organization' %></option>
                 <% }) %>
               </select>
-            </div>
-            <div>
-              <label>Agent ID</label>
+            </label>
+            <label>
+              <span class="mini">Agent ID</span>
               <input class="input" type="text" name="reportAgentId" value="<%= reportState.agentId || '' %>" placeholder="Optional">
-            </div>
-            <div>
-              <label>Course ID</label>
+            </label>
+            <label>
+              <span class="mini">Course ID</span>
               <input class="input" type="text" name="reportCourseId" value="<%= reportState.courseId || '' %>" placeholder="Optional">
-            </div>
-            <div class="actions" style="grid-column: 1 / -1;">
-              <button class="btn btn-primary btn-sm" type="submit">Apply Report Filters</button>
+            </label>
+            <div class="actions">
+              <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
               <a class="btn btn-secondary btn-sm" href="/admin/analytics">Reset</a>
-              <a class="btn btn-secondary btn-sm" href="<%= salesExportHref %>">Export Sales CSV</a>
-              <a class="btn btn-secondary btn-sm" href="<%= commissionExportHref %>">Export Commissions CSV</a>
             </div>
           </form>
-          <div class="kpis">
-            <article class="kpi"><small>Enrollments</small><strong><%= analytics.enrollmentTrend.current %></strong></article>
-            <article class="kpi"><small>Completions</small><strong><%= analytics.completionTrend.current %></strong></article>
-            <article class="kpi"><small>Payments</small><strong><%= analytics.paymentTrend.currentCount %></strong></article>
-            <article class="kpi"><small>Revenue</small><strong><%= analytics.paymentTrend.grossDisplay %></strong></article>
+          <div class="analytics-summary-strip">
+            <article class="analytics-stat"><span>Enrollments</span><strong><%= analytics.enrollmentTrend.current %></strong></article>
+            <article class="analytics-stat"><span>Completions</span><strong><%= analytics.completionTrend.current %></strong></article>
+            <article class="analytics-stat"><span>Payments</span><strong><%= analytics.paymentTrend.currentCount %></strong></article>
+            <article class="analytics-stat"><span>Revenue</span><strong><%= analytics.paymentTrend.grossDisplay %></strong></article>
+            <article class="analytics-stat"><span>Creator share</span><strong><%= formatCurrencyAmount(commissionReport?.summary?.creatorCommissionMinor || 0, 'NGN') %></strong></article>
+            <article class="analytics-stat"><span>Agent share</span><strong><%= formatCurrencyAmount(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></article>
           </div>
-          <div class="grid">
-            <article class="card">
-              <strong>Top Courses by Enrollments</strong>
+          <div class="analytics-top-grid">
+            <article class="analytics-panel">
+              <div class="analytics-panel-head">
+                <div>
+                  <h3>Top courses by enrollments</h3>
+                  <p class="mini">Which catalog items are pulling the most learners.</p>
+                </div>
+              </div>
               <% if (!analytics.topCoursesByEnrollments || analytics.topCoursesByEnrollments.length === 0) { %>
                 <p class="mini">No enrollment trend data.</p>
               <% } else { %>
-                <% analytics.topCoursesByEnrollments.forEach((item) => { %>
-                  <div class="actions"><span><%= item.title %></span><span class="pill"><%= item.enrollmentCount %> enrollments</span></div>
-                <% }) %>
+                <div class="rank-list">
+                  <% analytics.topCoursesByEnrollments.forEach((item) => { %>
+                    <div class="rank-row">
+                      <div class="rank-meta">
+                        <strong><%= item.title %></strong>
+                        <span><%= Number(item.enrollmentCount || 0) %> enrollments</span>
+                      </div>
+                      <div class="rank-bar"><span style="width:<%= calcBarWidth(item.enrollmentCount, topEnrollmentMax) %>;"></span></div>
+                      <div class="rank-value"><%= Number(item.enrollmentCount || 0) %></div>
+                    </div>
+                  <% }) %>
+                </div>
               <% } %>
             </article>
-            <article class="card">
-              <strong>Top Courses by Revenue</strong>
+            <article class="analytics-panel">
+              <div class="analytics-panel-head">
+                <div>
+                  <h3>Top courses by revenue</h3>
+                  <p class="mini">Revenue leaders inside the current reporting window.</p>
+                </div>
+              </div>
               <% if (!analytics.topCoursesByRevenue || analytics.topCoursesByRevenue.length === 0) { %>
                 <p class="mini">No revenue trend data.</p>
               <% } else { %>
-                <% analytics.topCoursesByRevenue.forEach((item) => { %>
-                  <div class="actions"><span><%= item.title %></span><span class="pill"><%= item.revenueDisplay %></span></div>
-                <% }) %>
+                <div class="rank-list">
+                  <% analytics.topCoursesByRevenue.forEach((item) => { %>
+                    <div class="rank-row">
+                      <div class="rank-meta">
+                        <strong><%= item.title %></strong>
+                        <span><%= item.revenueDisplay %></span>
+                      </div>
+                      <div class="rank-bar"><span style="width:<%= calcBarWidth(item.revenueMinor, topRevenueMax) %>;"></span></div>
+                      <div class="rank-value"><%= item.revenueDisplay %></div>
+                    </div>
+                  <% }) %>
+                </div>
               <% } %>
             </article>
-            <article class="card">
-              <strong>Top Creators by Revenue</strong>
+            <article class="analytics-panel">
+              <div class="analytics-panel-head">
+                <div>
+                  <h3>Top creators by revenue</h3>
+                  <p class="mini">Who is generating the strongest creator-side performance.</p>
+                </div>
+              </div>
               <% if (!analytics.topCreatorsByRevenue || analytics.topCreatorsByRevenue.length === 0) { %>
                 <p class="mini">No creator revenue data.</p>
               <% } else { %>
-                <% analytics.topCreatorsByRevenue.forEach((item) => { %>
-                  <div class="actions"><span><%= item.creatorName %></span><span class="pill"><%= item.revenueDisplay %></span></div>
-                <% }) %>
+                <div class="rank-list">
+                  <% analytics.topCreatorsByRevenue.forEach((item) => { %>
+                    <div class="rank-row">
+                      <div class="rank-meta">
+                        <strong><%= item.creatorName %></strong>
+                        <span><%= item.revenueDisplay %></span>
+                      </div>
+                      <div class="rank-bar"><span style="width:<%= calcBarWidth(item.revenueMinor, topCreatorRevenueMax) %>;"></span></div>
+                      <div class="rank-value"><%= item.revenueDisplay %></div>
+                    </div>
+                  <% }) %>
+                </div>
               <% } %>
             </article>
           </div>
-          <div class="grid">
-            <article class="card">
-              <strong>Daily Sales Report</strong>
-              <p class="mini">Date-indexed sales, commission, and partner revenue flow.</p>
-              <div class="kpis">
-                <article class="kpi"><small>Sales</small><strong><%= Number(dailySalesReport?.summary?.saleCount || 0) %></strong></article>
-                <article class="kpi"><small>Gross</small><strong><%= dailySalesReport?.summary?.grossSalesDisplay || 'NGN 0.00' %></strong></article>
-                <article class="kpi"><small>Creator Share</small><strong><%= dailySalesReport?.summary?.creatorCommissionDisplay || 'NGN 0.00' %></strong></article>
-                <article class="kpi"><small>Platform Share</small><strong><%= dailySalesReport?.summary?.platformShareDisplay || 'NGN 0.00' %></strong></article>
+          <div class="analytics-focus-grid">
+            <article class="analytics-panel">
+              <div class="analytics-panel-head">
+                <div>
+                  <h3>Daily sales flow</h3>
+                  <p class="mini">Date-indexed money flow across creator, platform, agent, and partner layers.</p>
+                </div>
+              </div>
+              <div class="analytics-mini-grid">
+                <div class="analytics-stat"><span>Sales</span><strong><%= Number(dailySalesReport?.summary?.saleCount || 0) %></strong></div>
+                <div class="analytics-stat"><span>Gross</span><strong><%= dailySalesReport?.summary?.grossSalesDisplay || 'NGN 0.00' %></strong></div>
+                <div class="analytics-stat"><span>Creator share</span><strong><%= dailySalesReport?.summary?.creatorCommissionDisplay || 'NGN 0.00' %></strong></div>
+                <div class="analytics-stat"><span>Platform share</span><strong><%= dailySalesReport?.summary?.platformShareDisplay || 'NGN 0.00' %></strong></div>
+                <div class="analytics-stat"><span>Agent share</span><strong><%= formatCurrencyAmount(dailySalesReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></div>
+                <div class="analytics-stat"><span>Partner earnings</span><strong><%= formatCurrencyAmount(dailySalesReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></div>
               </div>
               <% if (!dailySalesReport || !dailySalesReport.rows || dailySalesReport.rows.length === 0) { %>
                 <p class="mini">No daily sales data for this filter window.</p>
               <% } else { %>
-                <div class="table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Sales</th>
-                        <th>Gross</th>
-                        <th>Creator</th>
-                        <th>Platform</th>
-                        <th>Agent</th>
-                        <th>Partner</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <% dailySalesReport.rows.forEach((entry) => { %>
+                <div class="analytics-table-shell">
+                  <div class="table">
+                    <table>
+                      <thead>
                         <tr>
-                          <td><%= entry.date %></td>
-                          <td><%= Number(entry.saleCount || 0) %></td>
-                          <td><%= entry.grossSalesDisplay || 'NGN 0.00' %></td>
-                          <td><%= entry.creatorCommissionDisplay || 'NGN 0.00' %></td>
-                          <td><%= entry.platformShareDisplay || 'NGN 0.00' %></td>
-                          <td><%= entry.agentCommissionDisplay || 'NGN 0.00' %></td>
-                          <td><%= entry.partnerEarningsDisplay || 'NGN 0.00' %></td>
+                          <th>Date</th>
+                          <th>Sales</th>
+                          <th>Gross</th>
+                          <th>Creator</th>
+                          <th>Platform</th>
+                          <th>Agent</th>
+                          <th>Partner</th>
                         </tr>
-                      <% }) %>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        <% dailySalesReport.rows.forEach((entry) => { %>
+                          <tr>
+                            <td><%= entry.date %></td>
+                            <td><%= Number(entry.saleCount || 0) %></td>
+                            <td><%= entry.grossSalesDisplay || 'NGN 0.00' %></td>
+                            <td><%= entry.creatorCommissionDisplay || 'NGN 0.00' %></td>
+                            <td><%= entry.platformShareDisplay || 'NGN 0.00' %></td>
+                            <td><%= entry.agentCommissionDisplay || 'NGN 0.00' %></td>
+                            <td><%= entry.partnerEarningsDisplay || 'NGN 0.00' %></td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               <% } %>
             </article>
-            <article class="card">
-              <strong>Churn Metrics</strong>
-              <p class="mini">Tracks agent attrition, time-to-first-sale, and learner drop-off.</p>
-              <div class="kpis">
-                <article class="kpi"><small>Active Agents</small><strong><%= Number(churnMetrics?.activeAgents || 0) %></strong></article>
-                <article class="kpi"><small>Removed Agents</small><strong><%= Number(churnMetrics?.removedAgents || 0) %></strong></article>
-                <article class="kpi"><small>Attrition</small><strong><%= Number(churnMetrics?.agentAttritionRatePercent || 0) %>%</strong></article>
-                <article class="kpi"><small>First Sale</small><strong><%= Number(churnMetrics?.averageTimeToFirstSaleDays || 0) %>d</strong></article>
-                <article class="kpi"><small>At-Risk Learners</small><strong><%= Number(churnMetrics?.atRiskEnrollments || 0) %></strong></article>
-                <article class="kpi"><small>Drop-Off</small><strong><%= Number(churnMetrics?.learnerDropOffRatePercent || 0) %>%</strong></article>
+            <article class="analytics-panel">
+              <div class="analytics-panel-head">
+                <div>
+                  <h3>Churn and payout signals</h3>
+                  <p class="mini">Retention, agent performance, and commission exposure.</p>
+                </div>
               </div>
+              <div class="analytics-mini-grid">
+                <div class="analytics-stat"><span>Active agents</span><strong><%= Number(churnMetrics?.activeAgents || 0) %></strong></div>
+                <div class="analytics-stat"><span>Removed agents</span><strong><%= Number(churnMetrics?.removedAgents || 0) %></strong></div>
+                <div class="analytics-stat"><span>Attrition</span><strong><%= Number(churnMetrics?.agentAttritionRatePercent || 0) %>%</strong></div>
+                <div class="analytics-stat"><span>First sale</span><strong><%= Number(churnMetrics?.averageTimeToFirstSaleDays || 0) %>d</strong></div>
+                <div class="analytics-stat"><span>At-risk learners</span><strong><%= Number(churnMetrics?.atRiskEnrollments || 0) %></strong></div>
+                <div class="analytics-stat"><span>Drop-off</span><strong><%= Number(churnMetrics?.learnerDropOffRatePercent || 0) %>%</strong></div>
+              </div>
+              <ul class="analytics-note-list">
+                <li>Commission report scope: <strong><%= commissionReport?.scope || 'platform' %></strong></li>
+                <li>Total commission rows: <strong><%= Number(commissionReport?.summary?.saleCount || 0) %></strong></li>
+                <li>Partner earnings in window: <strong><%= formatCurrencyAmount(commissionReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></li>
+                <li>Agent commissions in window: <strong><%= formatCurrencyAmount(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></li>
+              </ul>
             </article>
           </div>
         </section>

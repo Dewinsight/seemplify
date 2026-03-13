@@ -126,14 +126,18 @@
   <% const selectedOrgName = typeof organizationName === 'string' ? organizationName : '' %>
   <% const hasInviteToken = typeof inviteToken === 'string' && inviteToken.trim().length > 0 %>
   <% const inviteActive = hasInviteToken && !inviteExpired && typeof inviteEmail === 'string' && inviteEmail.trim().length > 0 %>
-  <% const forcedInviteIntent = inviteActive ? 'learn' : selectedIntent %>
+  <% const hasAdminInviteToken = typeof adminInviteToken === 'string' && adminInviteToken.trim().length > 0 %>
+  <% const adminInviteActive = hasAdminInviteToken && !adminInviteExpired && typeof adminInviteEmail === 'string' && adminInviteEmail.trim().length > 0 %>
+  <% const forcedInviteIntent = inviteActive || adminInviteActive ? 'learn' : selectedIntent %>
   <div class="auth-wrap">
     <div class="auth-card">
       <h1 class="auth-title"><%= `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
       <p class="auth-subtitle">
         <%= inviteActive
           ? 'You were invited to join as a sales agent. Complete your account to activate access.'
-          : 'Select your intent to tailor your onboarding and access level.' %>
+          : (adminInviteActive
+            ? `You were invited to join as a ${String(adminInviteRole || 'admin').replace(/_/g, ' ')}. Complete registration to continue to verification.`
+            : 'Select your intent to tailor your onboarding and access level.') %>
       </p>
 
       <% if (error) { %>
@@ -142,10 +146,19 @@
       <% if (inviteExpired) { %>
         <div class="alert alert-error">This invite link is invalid or expired. Request a fresh invite from your channel partner admin.</div>
       <% } %>
+      <% if (adminInviteExpired) { %>
+        <div class="alert alert-error">This admin invite link is invalid or expired. Request a fresh invite from a super admin.</div>
+      <% } %>
       <% if (inviteActive) { %>
         <div class="intent-note show">
           Invited Organization: <strong><%= inviteOrganizationName || 'Partner Organization' %></strong><br>
           Invited Email: <strong><%= inviteEmail %></strong>
+        </div>
+      <% } %>
+      <% if (adminInviteActive) { %>
+        <div class="intent-note show">
+          Invited Role: <strong><%= String(adminInviteRole || 'admin').replace(/_/g, ' ') %></strong><br>
+          Invited Email: <strong><%= adminInviteEmail %></strong>
         </div>
       <% } %>
 
@@ -156,11 +169,17 @@
         <% if (hasInviteToken) { %>
           <input type="hidden" name="invite_token" value="<%= inviteToken %>">
         <% } %>
+        <% if (hasAdminInviteToken) { %>
+          <input type="hidden" name="admin_invite_token" value="<%= adminInviteToken %>">
+        <% } %>
         <% if (inviteActive) { %>
           <input type="hidden" name="intent" value="learn">
         <% } %>
+        <% if (adminInviteActive) { %>
+          <input type="hidden" name="intent" value="learn">
+        <% } %>
 
-        <% if (!inviteActive) { %>
+        <% if (!inviteActive && !adminInviteActive) { %>
           <label>I want to</label>
           <div class="intent-grid" id="intent-grid">
             <label class="intent-option" data-intent="learn">
@@ -205,14 +224,14 @@
           name="email"
           required
           placeholder="you@company.com"
-          value="<%= inviteActive ? inviteEmail : '' %>"
-          <%= inviteActive ? 'readonly' : '' %>
+          value="<%= inviteActive ? inviteEmail : (adminInviteActive ? adminInviteEmail : '') %>"
+          <%= inviteActive || adminInviteActive ? 'readonly' : '' %>
         >
 
         <label>Password</label>
         <input class="input" type="password" name="password" required minlength="8" placeholder="Minimum 8 characters">
 
-        <button class="btn btn-primary" type="submit" id="submit-label"><%= inviteActive ? 'Join as Sales Agent' : 'Create account' %></button>
+        <button class="btn btn-primary" type="submit" id="submit-label"><%= inviteActive ? 'Join as Sales Agent' : (adminInviteActive ? 'Create Admin Account' : 'Create account') %></button>
       </form>
 
       <p class="auth-footer">Already have an account? <a href="<%= loginUrl || '/login' %>">Sign in</a></p>
@@ -228,6 +247,7 @@
       const submitLabel = document.getElementById('submit-label')
       const intentSource = document.getElementById('intent-source')
       const inviteActive = <%= inviteActive ? 'true' : 'false' %>
+      const adminInviteActive = <%= adminInviteActive ? 'true' : 'false' %>
 
       const submitTextByIntent = {
         learn: 'Start Learning',
@@ -244,7 +264,7 @@
       }
 
       const updateIntentUI = () => {
-        if (inviteActive || !intentGrid) {
+        if (inviteActive || adminInviteActive || !intentGrid) {
           return
         }
         const selected = intentGrid.querySelector('input[name="intent"]:checked')

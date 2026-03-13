@@ -17,8 +17,10 @@ import { SimpleLmsPlatformSetting } from '../models/SimpleLmsPlatformSetting.js'
 import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
 import { RoleApprovalRequest } from '../models/RoleApprovalRequest.js'
 import { AuditLog } from '../models/AuditLog.js'
+import { AdminInvite } from '../models/AdminInvite.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { emailService } from '../services/emailService.js'
 import {
   createFlutterwavePaymentLink,
   getFlutterwavePublicKey,
@@ -90,6 +92,9 @@ const PAYMENT_PROVIDER_COPY = Object.freeze({
     description: 'Card, bank transfer, and USSD'
   }
 })
+
+const ADMIN_INVITE_ROLES = Object.freeze(['admin', 'super_admin'])
+const ADMIN_INVITE_STATUSES = Object.freeze(['pending', 'registered', 'accepted', 'expired', 'revoked'])
 
 const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
 const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
@@ -196,6 +201,184 @@ const toIdString = (value) => {
 const resolveRole = (account) => {
   return resolveLearningRoleFromAccount(account)
 }
+
+const humanizeToken = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+  if (!normalized) return ''
+  return normalized.replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+const isPlatformAuditRole = (role) => ['admin', 'super_admin'].includes(String(role || '').trim().toLowerCase())
+
+const formatAuditMetadataValue = (value) => {
+  if (value === null || value === undefined) return '-'
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) {
+    const items = value
+      .map((entry) => formatAuditMetadataValue(entry))
+      .filter(Boolean)
+    return items.length > 0 ? items.join(', ') : '-'
+  }
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-'
+  if (typeof value === 'string') return value.trim() || '-'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value || '-')
+}
+
+const flattenAuditMetadata = (value, prefix = '', depth = 0, maxPairs = 24) => {
+  if (!value || typeof value !== 'object') {
+    return prefix ? [{ key: prefix, label: humanizeToken(prefix), value: formatAuditMetadataValue(value) }] : []
+  }
+
+  if (Array.isArray(value) || depth >= 2) {
+    return prefix ? [{ key: prefix, label: humanizeToken(prefix), value: formatAuditMetadataValue(value) }] : []
+  }
+
+  const pairs = []
+  for (const [rawKey, childValue] of Object.entries(value)) {
+    if (pairs.length >= maxPairs) break
+    const key = prefix ? `${prefix}.${rawKey}` : rawKey
+    if (childValue && typeof childValue === 'object' && !Array.isArray(childValue) && depth < 1) {
+      const nestedPairs = flattenAuditMetadata(childValue, key, depth + 1, maxPairs - pairs.length)
+      pairs.push(...nestedPairs)
+      continue
+    }
+    pairs.push({
+      key,
+      label: humanizeToken(key),
+      value: formatAuditMetadataValue(childValue)
+    })
+  }
+
+  return pairs
+}
+
+const buildAuditRoleLabel = (account) => {
+  const resolvedRole = resolveRole(account)
+  return humanizeToken(resolvedRole || 'unknown')
+}
+
+const hasPlatformAuditMetadata = (metadata = {}) => {
+  const candidateRoles = [
+    metadata?.requestedRole,
+    metadata?.previousRole,
+    metadata?.nextRole,
+    metadata?.fromRole,
+    metadata?.toRole,
+    metadata?.restoredRole
+  ]
+  return candidateRoles.some((role) => isPlatformAuditRole(role)) || Boolean(metadata?.inviteId)
+}
+
+const isPlatformAuditEntry = (entry) => {
+  const action = String(entry?.action || '').trim().toLowerCase()
+  const actorRole = resolveRole(entry?.performedBy)
+  const targetRole = resolveRole(entry?.targetAccount)
+
+  if (isPlatformAuditRole(actorRole) || isPlatformAuditRole(targetRole)) return true
+  if (action.startsWith('admin.') || action.startsWith('super_user.') || action.startsWith('payment.gateway.')) return true
+  if (action === 'role.change' && hasPlatformAuditMetadata(entry?.metadata || {})) return true
+  if (action.startsWith('security.') && hasPlatformAuditMetadata(entry?.metadata || {})) return true
+  return false
+}
+
+const buildAuditHeadline = ({ action, metadata = {}, targetAccountName = '', targetOrganizationName = '' }) => {
+  switch (action) {
+    case 'admin.invite':
+      return `Sent ${humanizeToken(metadata.requestedRole || 'admin')} invite to ${metadata.email || targetAccountName || 'a new account'}`
+    case 'admin.invite.verify_sent':
+      return `Sent verification code to ${targetAccountName || metadata.registrationEmail || 'the invited account'}`
+    case 'admin.invite.accepted':
+      return `Activated ${humanizeToken(metadata.requestedRole || 'admin')} access for ${targetAccountName || metadata.email || 'the invited account'}`
+    case 'admin.invite.revoked':
+      return `Revoked ${humanizeToken(metadata.requestedRole || 'admin')} invite for ${metadata.email || targetAccountName || 'the invited account'}`
+    case 'super_user.promote':
+      return `Promoted ${targetAccountName || 'the selected account'} to Super Admin`
+    case 'super_user.demote':
+      return `Removed Super Admin access from ${targetAccountName || 'the selected account'}`
+    case 'role.change':
+      return `Changed ${targetAccountName || 'account'} from ${humanizeToken(metadata.fromRole || metadata.previousRole || 'learner')} to ${humanizeToken(metadata.toRole || metadata.nextRole || metadata.restoredRole || 'updated role')}`
+    case 'security.email_verification_requested':
+      return `Requested email verification for ${targetAccountName || metadata.registrationEmail || 'the invited account'}`
+    case 'security.email_verification_completed':
+      return `Completed email verification for ${targetAccountName || metadata.registrationEmail || 'the invited account'}`
+    case 'security.password_reset_requested':
+      return `Requested password reset for ${targetAccountName || 'the admin account'}`
+    case 'security.password_reset_completed':
+      return `Completed password reset for ${targetAccountName || 'the admin account'}`
+    case 'reports.export':
+      return `Exported ${humanizeToken(metadata.reportType || 'platform')} report`
+    case 'payment.gateway.provider_toggled':
+      return `${metadata.enabled === false ? 'Disabled' : 'Updated'} payment provider ${humanizeToken(metadata.provider || metadata.providerKey || 'provider')}`
+    case 'payment.gateway.default_changed':
+      return `Changed default payment provider to ${humanizeToken(metadata.provider || metadata.defaultProvider || 'provider')}`
+    case 'payment.gateway.credential_updated':
+      return `Updated payment provider credentials for ${humanizeToken(metadata.provider || metadata.providerKey || 'provider')}`
+    case 'payment.gateway.reauth_failed':
+      return `Payment provider re-authorization failed for ${humanizeToken(metadata.provider || metadata.providerKey || 'provider')}`
+    case 'payment.gateway.reauth_blocked':
+      return `Blocked payment provider re-authorization for ${humanizeToken(metadata.provider || metadata.providerKey || 'provider')}`
+    default:
+      if (targetAccountName) return `${humanizeToken(action)} for ${targetAccountName}`
+      if (targetOrganizationName) return `${humanizeToken(action)} for ${targetOrganizationName}`
+      return humanizeToken(action)
+  }
+}
+
+const buildAuditNarrative = ({
+  action,
+  metadata = {},
+  performedByName = 'System',
+  performedByRoleLabel = 'Unknown',
+  targetAccountName = '',
+  targetOrganizationName = ''
+}) => {
+  const actorCopy = `${performedByName} (${performedByRoleLabel})`
+  switch (action) {
+    case 'admin.invite':
+      return `${actorCopy} sent an invitation for ${metadata.email || 'a new account'} to join the admin workspace as ${humanizeToken(metadata.requestedRole || 'admin')}.`
+    case 'admin.invite.verify_sent':
+      return `${actorCopy} triggered a verification code for ${targetAccountName || metadata.registrationEmail || 'the invited account'} so the invite could be completed.`
+    case 'admin.invite.accepted':
+      return `${actorCopy} completed the invitation flow and activated ${humanizeToken(metadata.requestedRole || 'admin')} access.`
+    case 'admin.invite.revoked':
+      return `${actorCopy} revoked a pending admin invitation before it was fully accepted.`
+    case 'super_user.promote':
+      return `${actorCopy} granted Super Admin privileges to ${targetAccountName || 'the target account'}.`
+    case 'super_user.demote':
+      return `${actorCopy} removed Super Admin privileges and restored the fallback role for ${targetAccountName || 'the target account'}.`
+    case 'role.change':
+      return `${actorCopy} changed the account role from ${humanizeToken(metadata.fromRole || metadata.previousRole || 'learner')} to ${humanizeToken(metadata.toRole || metadata.nextRole || metadata.restoredRole || 'updated role')}.`
+    case 'reports.export':
+      return `${actorCopy} exported a ${humanizeToken(metadata.reportType || 'platform')} report from the admin console.`
+    default:
+      if (targetOrganizationName) {
+        return `${actorCopy} executed ${humanizeToken(action).toLowerCase()} against ${targetOrganizationName}.`
+      }
+      if (targetAccountName) {
+        return `${actorCopy} executed ${humanizeToken(action).toLowerCase()} against ${targetAccountName}.`
+      }
+      return `${actorCopy} executed ${humanizeToken(action).toLowerCase()} in the admin console.`
+  }
+}
+
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase()
+const createAdminInviteToken = () => crypto.randomBytes(24).toString('hex')
+const normalizeAdminInviteRole = (value, fallback = 'admin') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ADMIN_INVITE_ROLES.includes(normalized) ? normalized : fallback
+}
+const formatAdminInviteStatus = (value) => String(value || '').trim().toLowerCase().replace(/_/g, ' ')
+const buildBaseUrl = (req) => {
+  const proto = String(req.protocol || 'http').trim()
+  const host = String(req.get('host') || '').trim()
+  return host ? `${proto}://${host}` : ''
+}
+const resolveAdminInviteRoleCopy = (role) => normalizeAdminInviteRole(role) === 'super_admin' ? 'super admin' : 'admin'
 
 const resolveAccountFromSessionIdentifier = async (identifier) => {
   const normalized = String(identifier || '').trim()
@@ -5617,6 +5800,184 @@ const ensurePartnerOrganizationForRoleAssignment = async ({
   return organization
 }
 
+pageRouter.post('/admin/super-users/invite', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can send admin invites.'
+      })
+    }
+
+    await assertCurrentPassword({
+      accountId: req.user._id,
+      password: req.body?.currentPassword
+    })
+
+    const email = normalizeEmail(req.body?.email || '')
+    const requestedRole = normalizeAdminInviteRole(req.body?.requestedRole || 'admin')
+    const notes = String(req.body?.notes || '').trim().slice(0, 1200)
+
+    if (!email) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invite email is required.'
+      })
+    }
+
+    const existingAccount = await Account.findOne({ email }).select('_id learningRole isSystemAdmin isSuperAdmin').lean()
+    if (existingAccount) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'That email already belongs to an account. Use direct promotion or role assignment instead.'
+      })
+    }
+
+    const existingInvite = await AdminInvite.findOne({
+      email,
+      status: { $in: ['pending', 'registered'] }
+    }).sort({ createdAt: -1 })
+
+    if (existingInvite) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'An active invite already exists for that email address.'
+      })
+    }
+
+    const invite = await AdminInvite.create({
+      email,
+      invitedBy: req.user._id,
+      requestedRole,
+      token: createAdminInviteToken(),
+      status: 'pending',
+      expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)),
+      notes,
+      metadata: {
+        source: 'admin_console'
+      }
+    })
+
+    const registerUrl = `${buildBaseUrl(req)}${appendQuery('/register', {
+      admin_invite_token: invite.token,
+      return_to: '/admin',
+      source: 'admin_invite'
+    })}`
+    const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
+    const roleCopy = resolveAdminInviteRoleCopy(requestedRole)
+    await emailService.sendNotificationEmail({
+      to: email,
+      subject: `${learningName} ${roleCopy} invitation`,
+      html: `<p>Hello,</p><p>You were invited to join <strong>${learningName}</strong> as a <strong>${roleCopy}</strong>.</p><p>Complete your registration here:</p><p><a href="${registerUrl}">${registerUrl}</a></p><p>This invite expires in 7 days.</p>`,
+      text: `You were invited to join ${learningName} as a ${roleCopy}. Complete registration here within 7 days: ${registerUrl}`
+    })
+
+    await logAuditEvent({
+      action: 'admin.invite',
+      performedBy: req.user._id,
+      metadata: {
+        inviteId: invite._id,
+        email,
+        requestedRole
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: `Invite sent to ${email}.`
+    })
+  } catch (error) {
+    console.error('Invite admin user error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to send admin invite.'
+    })
+  }
+})
+
+pageRouter.post('/admin/super-users/invites/:inviteId/revoke', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (actorRole !== 'super_admin') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can revoke admin invites.'
+      })
+    }
+
+    await assertCurrentPassword({
+      accountId: req.user._id,
+      password: req.body?.currentPassword
+    })
+
+    const inviteId = String(req.params.inviteId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(inviteId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid invite selected.'
+      })
+    }
+
+    const invite = await AdminInvite.findById(inviteId)
+    if (!invite) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invite not found.'
+      })
+    }
+
+    if (!['pending', 'registered'].includes(String(invite.status || '').trim().toLowerCase())) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'Invite can no longer be revoked.'
+      })
+    }
+
+    invite.status = 'revoked'
+    invite.otpHash = ''
+    invite.otpExpiresAt = null
+    await invite.save()
+
+    await logAuditEvent({
+      action: 'admin.invite.revoked',
+      performedBy: req.user._id,
+      metadata: {
+        inviteId: invite._id,
+        email: invite.email,
+        requestedRole: invite.requestedRole
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Admin invite revoked.'
+    })
+  } catch (error) {
+    console.error('Revoke admin invite error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to revoke admin invite.'
+    })
+  }
+})
+
 pageRouter.post('/admin/super-users/promote', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/super-users', '/admin/super-users')
   try {
@@ -7227,7 +7588,7 @@ const renderWorkspacePage = async (
       ? {}
       : partnerScopedFilter({})
 
-    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, paymentGatewaySettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
+    const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, paymentGatewaySettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, adminInvitesRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
@@ -7397,12 +7758,21 @@ const renderWorkspacePage = async (
           .lean()
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? AuditLog.find({})
-          .populate('performedBy', 'email profile.name')
-          .populate('targetAccount', 'email profile.name')
-          .populate('targetOrganization', 'name partnerType')
+        ? AdminInvite.find({})
+          .populate('invitedBy', 'email profile.name')
+          .populate('registeredAccount', 'email profile.name emailVerified')
+          .populate('acceptedBy', 'email profile.name')
           .sort({ createdAt: -1 })
           .limit(300)
+          .lean()
+        : Promise.resolve([]),
+      canManagePlatform(role)
+        ? AuditLog.find({})
+          .populate('performedBy', 'email profile.name learningRole isSystemAdmin isSuperAdmin')
+          .populate('targetAccount', 'email profile.name learningRole isSystemAdmin isSuperAdmin')
+          .populate('targetOrganization', 'name partnerType')
+          .sort({ createdAt: -1 })
+          .limit(600)
           .lean()
         : Promise.resolve([]),
       canManagePlatform(role)
@@ -8241,14 +8611,69 @@ const renderWorkspacePage = async (
     })
       .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
 
-    const auditLogEntries = (auditLogEntriesRaw || []).map((entry) => ({
+    const adminInviteRows = (adminInvitesRaw || []).map((entry) => ({
       ...entry,
-      performedByName: entry.performedBy?.profile?.name || entry.performedBy?.email || 'System',
-      performedByEmail: entry.performedBy?.email || '',
-      targetAccountName: entry.targetAccount?.profile?.name || entry.targetAccount?.email || '',
-      targetOrganizationName: entry.targetOrganization?.name || '',
-      actionLabel: String(entry.action || '').replace(/\./g, ' ')
+      requestedRoleLabel: resolveAdminInviteRoleCopy(entry.requestedRole),
+      statusLabel: formatAdminInviteStatus(entry.status),
+      invitedByName: entry.invitedBy?.profile?.name || entry.invitedBy?.email || '',
+      registeredAccountName: entry.registeredAccount?.profile?.name || entry.registeredAccount?.email || '',
+      acceptedByName: entry.acceptedBy?.profile?.name || entry.acceptedBy?.email || '',
+      canRevoke: ['pending', 'registered'].includes(String(entry.status || '').trim().toLowerCase())
     }))
+
+    const auditLogEntries = (auditLogEntriesRaw || [])
+      .filter((entry) => isPlatformAuditEntry(entry))
+      .slice(0, 300)
+      .map((entry) => {
+        const performedByName = entry.performedBy?.profile?.name || entry.performedBy?.email || 'System'
+        const performedByEmail = entry.performedBy?.email || ''
+        const performedByRole = resolveRole(entry.performedBy)
+        const performedByRoleLabel = buildAuditRoleLabel(entry.performedBy)
+        const targetAccountName = entry.targetAccount?.profile?.name || entry.targetAccount?.email || ''
+        const targetAccountEmail = entry.targetAccount?.email || ''
+        const targetAccountRole = resolveRole(entry.targetAccount)
+        const targetAccountRoleLabel = targetAccountName ? buildAuditRoleLabel(entry.targetAccount) : ''
+        const targetOrganizationName = entry.targetOrganization?.name || ''
+        const metadataPairs = flattenAuditMetadata(entry.metadata || {})
+        const action = String(entry.action || '').trim().toLowerCase()
+        const headline = buildAuditHeadline({
+          action,
+          metadata: entry.metadata || {},
+          targetAccountName,
+          targetOrganizationName
+        })
+        const narrative = buildAuditNarrative({
+          action,
+          metadata: entry.metadata || {},
+          performedByName,
+          performedByRoleLabel,
+          targetAccountName,
+          targetOrganizationName
+        })
+
+        return {
+          ...entry,
+          action,
+          actionLabel: humanizeToken(action),
+          headline,
+          narrative,
+          metadataPairs,
+          metadataPreview: metadataPairs.slice(0, 4),
+          performedByName,
+          performedByEmail,
+          performedByRole,
+          performedByRoleLabel,
+          targetAccountName,
+          targetAccountEmail,
+          targetAccountRole,
+          targetAccountRoleLabel,
+          targetOrganizationName,
+          targetOrganizationType: humanizeToken(entry.targetOrganization?.partnerType || ''),
+          performedById: toIdString(entry.performedBy?._id),
+          targetAccountId: toIdString(entry.targetAccount?._id),
+          eventId: toIdString(entry._id)
+        }
+      })
 
     const agentPayoutRows = (agentPayoutRowsRaw || []).map((entry) => ({
       ...entry,
@@ -9034,6 +9459,7 @@ const renderWorkspacePage = async (
       partnerWithdrawalRequests,
       roleApprovalRequests,
       superUserAccounts,
+      adminInviteRows,
       auditLogEntries,
       agentPayoutRows,
       commissionSettings: {

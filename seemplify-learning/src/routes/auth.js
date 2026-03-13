@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { AgentInvite } from '../models/AgentInvite.js'
+import { AdminInvite } from '../models/AdminInvite.js'
 import { optionalAuth } from '../middleware/auth.js'
 import { resolveBranding } from '../utils/branding.js'
 import { emailService } from '../services/emailService.js'
@@ -51,6 +52,7 @@ const sanitizeIntentSource = (value, fallback = 'direct') => {
 const sanitizeOrgName = sanitizePartnerOrganizationName
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase()
 const sanitizeInviteToken = (value) => String(value || '').trim().slice(0, 200)
+const sanitizeOtpCode = (value) => String(value || '').replace(/\D+/g, '').slice(0, 6)
 
 const appendQuery = (path, entries = {}) => {
   const params = new URLSearchParams()
@@ -81,6 +83,8 @@ const findValidAgentInvite = async (inviteToken) => {
 const createResetToken = () => crypto.randomBytes(32).toString('hex')
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex')
+const hashOtpCode = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex')
+const generateOtpCode = () => String(Math.floor(100000 + Math.random() * 900000))
 
 const buildBaseUrl = (req) => {
   const proto = String(req.protocol || 'http').trim()
@@ -102,6 +106,192 @@ const resolveLoginDestination = (account, returnTo) => {
   }
   const role = resolveLearningRole(account)
   return getPostLoginRedirect(role, '/simple-lms')
+}
+
+const findAdminInviteByToken = async (inviteToken, {
+  allowedStatuses = ['pending', 'registered'],
+  requireRegisteredAccount = false
+} = {}) => {
+  const token = sanitizeInviteToken(inviteToken)
+  if (!token) return null
+
+  const invite = await AdminInvite.findOne({ token })
+    .populate('invitedBy', '_id email profile')
+    .populate('registeredAccount', '_id email profile emailVerified learningRole isSystemAdmin isSuperAdmin')
+
+  if (!invite) return null
+
+  if (invite.expiresAt && invite.expiresAt.getTime() <= Date.now() && !['accepted', 'revoked', 'expired'].includes(String(invite.status || '').trim().toLowerCase())) {
+    invite.status = 'expired'
+    await invite.save()
+  }
+
+  const status = String(invite.status || '').trim().toLowerCase()
+  if (!allowedStatuses.includes(status)) return null
+  if (requireRegisteredAccount && !invite.registeredAccount?._id) return null
+  return invite
+}
+
+const findPendingAdminInviteForEmail = async (email) => {
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+
+  const invite = await AdminInvite.findOne({
+    email: normalizedEmail,
+    status: { $in: ['pending', 'registered'] }
+  })
+    .sort({ createdAt: -1 })
+    .populate('registeredAccount', '_id email profile emailVerified learningRole isSystemAdmin isSuperAdmin')
+
+  if (!invite) return null
+  if (invite.expiresAt && invite.expiresAt.getTime() <= Date.now()) {
+    invite.status = 'expired'
+    await invite.save()
+    return null
+  }
+  return invite
+}
+
+const getAdminInviteRegisterUrl = (req, invite) => {
+  const baseUrl = buildBaseUrl(req)
+  const query = appendQuery('/register', {
+    admin_invite_token: invite?.token,
+    return_to: '/admin',
+    source: 'admin_invite'
+  })
+  return `${baseUrl}${query}`
+}
+
+const getAdminInviteVerifyUrl = (req, invite, email) => {
+  const baseUrl = buildBaseUrl(req)
+  const query = appendQuery('/verify-account', {
+    admin_invite_token: invite?.token,
+    email
+  })
+  return `${baseUrl}${query}`
+}
+
+const resolveAdminInviteRoleCopy = (role) => (
+  String(role || 'admin').trim().toLowerCase() === 'super_admin'
+    ? 'super admin'
+    : 'admin'
+)
+
+const issueAdminInviteOtp = async ({ invite, account, req, purpose = 'initial' }) => {
+  if (!invite?._id || !account?._id) {
+    throw new Error('Invite verification could not be prepared.')
+  }
+
+  const otpCode = generateOtpCode()
+  const now = new Date()
+  invite.status = 'registered'
+  invite.registeredAccount = account._id
+  invite.registeredAt = invite.registeredAt || now
+  invite.otpHash = hashOtpCode(otpCode)
+  invite.otpExpiresAt = new Date(now.getTime() + (10 * 60 * 1000))
+  invite.otpSentAt = now
+  invite.verificationAttempts = 0
+  invite.metadata = {
+    ...(invite.metadata || {}),
+    verificationPurpose: purpose,
+    registrationEmail: account.email
+  }
+  await invite.save()
+
+  const branding = resolveBranding(req.hostname || req.get('host'))
+  const roleCopy = resolveAdminInviteRoleCopy(invite.requestedRole)
+  const verifyUrl = getAdminInviteVerifyUrl(req, invite, account.email)
+
+  await emailService.sendNotificationEmail({
+    to: account.email,
+    subject: `${branding.learningName} ${roleCopy} verification code`,
+    html: `<p>Hello ${account.profile?.name || 'there'},</p><p>Your verification code for ${branding.learningName} ${roleCopy} access is:</p><p style="font-size:28px;font-weight:700;letter-spacing:0.16em;">${otpCode}</p><p>The code expires in 10 minutes.</p><p>You can also continue here:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+    text: `Your ${branding.learningName} ${roleCopy} verification code is ${otpCode}. It expires in 10 minutes. Continue here: ${verifyUrl}`
+  })
+
+  await logAuditEvent({
+    action: 'admin.invite.verify_sent',
+    performedBy: invite.invitedBy?._id || account._id,
+    targetAccount: account._id,
+    metadata: {
+      inviteId: invite._id,
+      requestedRole: invite.requestedRole,
+      purpose
+    },
+    req
+  })
+
+  await logAuditEvent({
+    action: 'security.email_verification_requested',
+    performedBy: account._id,
+    targetAccount: account._id,
+    metadata: {
+      inviteId: invite._id,
+      requestedRole: invite.requestedRole,
+      purpose
+    },
+    req
+  })
+
+  return otpCode
+}
+
+const activateAdminInviteForAccount = async ({ account, invite, req }) => {
+  if (!account?._id || !invite?._id) {
+    throw new Error('Admin invite activation failed.')
+  }
+
+  const requestedRole = String(invite.requestedRole || 'admin').trim().toLowerCase() === 'super_admin'
+    ? 'super_admin'
+    : 'admin'
+  const previousRole = String(account.learningRole || 'learner').trim().toLowerCase()
+
+  account.emailVerified = true
+  account.learningRole = requestedRole
+  account.isSystemAdmin = true
+  account.isSuperAdmin = requestedRole === 'super_admin'
+  account.roleMetadata = {
+    previousLearningRole: previousRole || 'learner',
+    lastUpdatedAt: new Date(),
+    lastUpdatedBy: invite.invitedBy?._id || null
+  }
+  await account.save()
+
+  invite.status = 'accepted'
+  invite.acceptedBy = account._id
+  invite.acceptedAt = new Date()
+  invite.otpHash = ''
+  invite.otpExpiresAt = null
+  invite.verificationAttempts = 0
+  invite.metadata = {
+    ...(invite.metadata || {}),
+    activatedRole: requestedRole
+  }
+  await invite.save()
+
+  await logAuditEvent({
+    action: 'admin.invite.accepted',
+    performedBy: account._id,
+    targetAccount: account._id,
+    metadata: {
+      inviteId: invite._id,
+      requestedRole
+    },
+    req
+  })
+
+  await logAuditEvent({
+    action: 'security.email_verification_completed',
+    performedBy: account._id,
+    targetAccount: account._id,
+    metadata: {
+      inviteId: invite._id,
+      requestedRole
+    },
+    req
+  })
+
+  return requestedRole
 }
 
 const activateAgentInviteForAccount = async ({ account, invite, req }) => {
@@ -205,7 +395,8 @@ const createAccountFromRegistration = async ({
   name,
   email,
   password,
-  organizationName
+  organizationName,
+  emailVerified = true
 }) => {
   const hasExistingSuperAdmin = await Account.exists({
     $or: [
@@ -222,7 +413,7 @@ const createAccountFromRegistration = async ({
     sub: createSub(),
     email,
     passwordHash,
-    emailVerified: true,
+    emailVerified: bootstrapAsSuperAdmin ? true : Boolean(emailVerified),
     profile: {
       name,
       preferred_username: name
@@ -351,6 +542,29 @@ router.post('/login', async (req, res) => {
       return res.redirect(`/login?error=${encodeURIComponent('Invalid credentials')}&return_to=${encodeURIComponent(returnTo)}`)
     }
 
+    if (!account.emailVerified) {
+      const pendingAdminInvite = await findPendingAdminInviteForEmail(account.email)
+      if (pendingAdminInvite?.registeredAccount?._id && String(pendingAdminInvite.registeredAccount._id) === String(account._id)) {
+        const otpExpired = !pendingAdminInvite.otpExpiresAt || pendingAdminInvite.otpExpiresAt.getTime() <= Date.now()
+        if (!pendingAdminInvite.otpHash || otpExpired) {
+          await issueAdminInviteOtp({
+            invite: pendingAdminInvite,
+            account,
+            req,
+            purpose: 'login_retry'
+          })
+        }
+        const verifyPath = appendQuery('/verify-account', {
+          admin_invite_token: pendingAdminInvite.token,
+          email: account.email,
+          info: 'Verify your email to activate admin access.'
+        })
+        return res.redirect(verifyPath)
+      }
+
+      return res.redirect(`/login?error=${encodeURIComponent('Account verification is still required')}&return_to=${encodeURIComponent(returnTo)}`)
+    }
+
     const sessionAccountId = resolveSessionAccountIdentifier(account)
     if (!sessionAccountId) {
       return res.redirect(`/login?error=${encodeURIComponent('Account session could not be established')}&return_to=${encodeURIComponent(returnTo)}`)
@@ -377,16 +591,30 @@ router.get('/register', optionalAuth, async (req, res) => {
   const pendingIntent = req.session?.pendingRegistrationIntent || null
   const inviteToken = sanitizeInviteToken(req.query.invite_token || req.query.inviteToken || '')
   const invite = inviteToken ? await findValidAgentInvite(inviteToken) : null
+  const adminInviteToken = sanitizeInviteToken(req.query.admin_invite_token || req.query.adminInviteToken || '')
+  const adminInvite = adminInviteToken
+    ? await findAdminInviteByToken(adminInviteToken, { allowedStatuses: ['pending', 'registered'] })
+    : null
 
-  const intent = invite
+  const intent = invite || adminInvite
     ? 'learn'
     : sanitizeIntent(req.query.intent || pendingIntent?.intent || 'learn', 'learn')
   const source = sanitizeIntentSource(
-    req.query.source || pendingIntent?.source || (invite ? 'agent_invite' : (intent === 'teach' ? 'teach_landing' : 'direct')),
-    invite ? 'agent_invite' : (intent === 'teach' ? 'teach_landing' : 'direct')
+    req.query.source || pendingIntent?.source || (
+      invite
+        ? 'agent_invite'
+        : (adminInvite ? 'admin_invite' : (intent === 'teach' ? 'teach_landing' : 'direct'))
+    ),
+    invite
+      ? 'agent_invite'
+      : (adminInvite ? 'admin_invite' : (intent === 'teach' ? 'teach_landing' : 'direct'))
   )
   const returnTo = sanitizeReturnTo(
-    req.query.return_to || pendingIntent?.returnTo || (invite ? '/agent-dashboard' : (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
+    req.query.return_to || pendingIntent?.returnTo || (
+      invite
+        ? '/agent-dashboard'
+        : (adminInvite ? '/admin' : (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
+    )
   )
 
   if (req.session?.pendingRegistrationIntent) {
@@ -409,6 +637,10 @@ router.get('/register', optionalAuth, async (req, res) => {
     inviteEmail: invite?.email || '',
     inviteOrganizationName: invite?.partnerOrganization?.name || '',
     inviteExpired: Boolean(inviteToken && !invite),
+    adminInviteToken,
+    adminInviteEmail: adminInvite?.email || '',
+    adminInviteRole: adminInvite?.requestedRole || 'admin',
+    adminInviteExpired: Boolean(adminInviteToken && !adminInvite),
     loginUrl: appendQuery('/login', {
       return_to: returnTo,
       intent,
@@ -422,12 +654,28 @@ router.post('/register', async (req, res) => {
     const branding = resolveBranding(req.hostname || req.get('host'))
     const inviteToken = sanitizeInviteToken(req.body.invite_token || req.body.inviteToken || '')
     const invite = inviteToken ? await findValidAgentInvite(inviteToken) : null
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const adminInvite = adminInviteToken
+      ? await findAdminInviteByToken(adminInviteToken, { allowedStatuses: ['pending', 'registered'] })
+      : null
     const intent = sanitizeIntent(req.body.intent || 'learn', 'learn')
     const source = sanitizeIntentSource(
-      req.body.source || (invite ? 'agent_invite' : (intent === 'teach' ? 'teach_landing' : 'direct')),
-      invite ? 'agent_invite' : (intent === 'teach' ? 'teach_landing' : 'direct')
+      req.body.source || (
+        invite
+          ? 'agent_invite'
+          : (adminInvite ? 'admin_invite' : (intent === 'teach' ? 'teach_landing' : 'direct'))
+      ),
+      invite
+        ? 'agent_invite'
+        : (adminInvite ? 'admin_invite' : (intent === 'teach' ? 'teach_landing' : 'direct'))
     )
-    const returnTo = sanitizeReturnTo(req.body.return_to || (invite ? '/agent-dashboard' : (intent === 'teach' ? '/teach/get-started' : '/simple-lms')))
+    const returnTo = sanitizeReturnTo(
+      req.body.return_to || (
+        invite
+          ? '/agent-dashboard'
+          : (adminInvite ? '/admin' : (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
+      )
+    )
     const name = String(req.body.name || '').trim()
     const email = normalizeEmail(req.body.email)
     const password = String(req.body.password || '')
@@ -440,7 +688,8 @@ router.post('/register', async (req, res) => {
         source,
         return_to: returnTo,
         organization_name: organizationName,
-        invite_token: inviteToken
+        invite_token: inviteToken,
+        admin_invite_token: adminInviteToken
       })
     )
 
@@ -456,20 +705,35 @@ router.post('/register', async (req, res) => {
       return res.redirect(registerRedirect('This invite is invalid or has expired'))
     }
 
+    if (adminInviteToken && !adminInvite) {
+      return res.redirect(registerRedirect('This admin invite is invalid or has expired'))
+    }
+
     if (invite && email !== normalizeEmail(invite.email)) {
       return res.redirect(registerRedirect('Use the invited email address to complete this agent registration'))
     }
 
-    if (!invite && isPartnerRegistrationIntent(intent) && !organizationName) {
+    if (adminInvite && email !== normalizeEmail(adminInvite.email)) {
+      return res.redirect(registerRedirect('Use the invited email address to complete this admin registration'))
+    }
+
+    if (!invite && !adminInvite && isPartnerRegistrationIntent(intent) && !organizationName) {
       return res.redirect(registerRedirect('Organization name is required for partner applications'))
     }
 
     const existingAccount = await Account.findOne({ email }).select('_id').lean()
     if (existingAccount) {
+      if (adminInvite && adminInvite.registeredAccount?._id && String(adminInvite.registeredAccount._id) === String(existingAccount._id)) {
+        return res.redirect(appendQuery('/verify-account', {
+          admin_invite_token: adminInvite.token,
+          email,
+          info: 'Finish verification to activate your admin access.'
+        }))
+      }
       return res.redirect(registerRedirect('Email already exists'))
     }
 
-    const registrationIntent = invite ? 'learn' : intent
+    const registrationIntent = invite || adminInvite ? 'learn' : intent
     const registration = await createAccountFromRegistration({
       req,
       intent: registrationIntent,
@@ -478,7 +742,8 @@ router.post('/register', async (req, res) => {
       name,
       email,
       password,
-      organizationName
+      organizationName,
+      emailVerified: !adminInvite
     })
 
     if (invite) {
@@ -489,6 +754,25 @@ router.post('/register', async (req, res) => {
       })
       registration.successMessage = 'Your sales agent access is active.'
       registration.destination = '/agent-dashboard'
+    }
+
+    if (adminInvite) {
+      await issueAdminInviteOtp({
+        invite: adminInvite,
+        account: registration.account,
+        req,
+        purpose: 'initial'
+      })
+      registration.successMessage = `Verify the code sent to ${email} to activate your ${resolveAdminInviteRoleCopy(adminInvite.requestedRole)} access.`
+      registration.destination = appendQuery('/verify-account', {
+        admin_invite_token: adminInvite.token,
+        email,
+        success: `Welcome to ${branding.learningName}. Check your email for the verification code.`
+      })
+    }
+
+    if (adminInvite) {
+      return res.redirect(registration.destination)
     }
 
     req.session.accountId = registration.account.sub
@@ -526,9 +810,16 @@ router.post('/api/users/register', async (req, res) => {
   try {
     const inviteToken = sanitizeInviteToken(req.body.invite_token || req.body.inviteToken || '')
     const invite = inviteToken ? await findValidAgentInvite(inviteToken) : null
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const adminInvite = adminInviteToken
+      ? await findAdminInviteByToken(adminInviteToken, { allowedStatuses: ['pending', 'registered'] })
+      : null
     const intent = sanitizeIntent(req.body.intent || 'learn', 'learn')
-    const source = sanitizeIntentSource(req.body.source || (invite ? 'agent_invite_api' : 'api'), invite ? 'agent_invite_api' : 'api')
-    const returnTo = sanitizeReturnTo(req.body.return_to || (invite ? '/agent-dashboard' : '/simple-lms'))
+    const source = sanitizeIntentSource(
+      req.body.source || (invite ? 'agent_invite_api' : (adminInvite ? 'admin_invite_api' : 'api')),
+      invite ? 'agent_invite_api' : (adminInvite ? 'admin_invite_api' : 'api')
+    )
+    const returnTo = sanitizeReturnTo(req.body.return_to || (invite ? '/agent-dashboard' : (adminInvite ? '/admin' : '/simple-lms')))
     const name = String(req.body.name || '').trim()
     const email = normalizeEmail(req.body.email)
     const password = String(req.body.password || '')
@@ -543,19 +834,42 @@ router.post('/api/users/register', async (req, res) => {
     if (inviteToken && !invite) {
       return res.status(400).json({ error: 'Invite is invalid or expired', code: 'INVITE_INVALID' })
     }
+    if (adminInviteToken && !adminInvite) {
+      return res.status(400).json({ error: 'Admin invite is invalid or expired', code: 'ADMIN_INVITE_INVALID' })
+    }
     if (invite && email !== normalizeEmail(invite.email)) {
       return res.status(400).json({ error: 'Invite email does not match account email', code: 'INVITE_EMAIL_MISMATCH' })
     }
-    if (!invite && isPartnerRegistrationIntent(intent) && !organizationName) {
+    if (adminInvite && email !== normalizeEmail(adminInvite.email)) {
+      return res.status(400).json({ error: 'Admin invite email does not match account email', code: 'ADMIN_INVITE_EMAIL_MISMATCH' })
+    }
+    if (!invite && !adminInvite && isPartnerRegistrationIntent(intent) && !organizationName) {
       return res.status(400).json({ error: 'Organization name is required for partner applications', code: 'VALIDATION_ERROR' })
     }
 
     const existingAccount = await Account.findOne({ email }).select('_id').lean()
     if (existingAccount) {
+      if (adminInvite && adminInvite.registeredAccount?._id && String(adminInvite.registeredAccount._id) === String(existingAccount._id)) {
+        return res.status(200).json({
+          success: true,
+          destination: appendQuery('/verify-account', {
+            admin_invite_token: adminInvite.token,
+            email
+          }),
+          message: 'Finish verification to activate your admin access.',
+          pendingApproval: false,
+          pendingVerification: true,
+          user: {
+            id: existingAccount._id,
+            email,
+            role: 'learner'
+          }
+        })
+      }
       return res.status(409).json({ error: 'Email already exists', code: 'EMAIL_EXISTS' })
     }
 
-    const registrationIntent = invite ? 'learn' : intent
+    const registrationIntent = invite || adminInvite ? 'learn' : intent
     const registration = await createAccountFromRegistration({
       req,
       intent: registrationIntent,
@@ -564,7 +878,8 @@ router.post('/api/users/register', async (req, res) => {
       name,
       email,
       password,
-      organizationName
+      organizationName,
+      emailVerified: !adminInvite
     })
 
     if (invite) {
@@ -575,6 +890,33 @@ router.post('/api/users/register', async (req, res) => {
       })
       registration.successMessage = 'Your sales agent access is active.'
       registration.destination = '/agent-dashboard'
+    }
+
+    if (adminInvite) {
+      await issueAdminInviteOtp({
+        invite: adminInvite,
+        account: registration.account,
+        req,
+        purpose: 'initial_api'
+      })
+      registration.successMessage = `Verify the code sent to ${email} to activate your ${resolveAdminInviteRoleCopy(adminInvite.requestedRole)} access.`
+      registration.destination = appendQuery('/verify-account', {
+        admin_invite_token: adminInvite.token,
+        email
+      })
+      return res.status(201).json({
+        success: true,
+        destination: registration.destination,
+        message: registration.successMessage,
+        pendingApproval: false,
+        pendingVerification: true,
+        user: {
+          id: registration.account._id,
+          sub: registration.account.sub,
+          email: registration.account.email,
+          role: 'learner'
+        }
+      })
     }
 
     req.session.accountId = registration.account.sub
@@ -769,6 +1111,152 @@ router.post('/reset-password', async (req, res) => {
   } catch (error) {
     console.error('Reset password error:', error)
     return res.redirect('/forgot-password?error=Failed%20to%20reset%20password')
+  }
+})
+
+router.get('/verify-account', optionalAuth, async (req, res) => {
+  const branding = resolveBranding(req.hostname || req.get('host'))
+  const adminInviteToken = sanitizeInviteToken(req.query.admin_invite_token || req.query.adminInviteToken || '')
+  const email = normalizeEmail(req.query.email || '')
+  const invite = adminInviteToken
+    ? await findAdminInviteByToken(adminInviteToken, { allowedStatuses: ['pending', 'registered'] })
+    : null
+
+  const registeredAccount = invite?.registeredAccount || null
+  const verificationReady = Boolean(
+    invite
+    && registeredAccount?._id
+    && normalizeEmail(invite.email) === email
+    && String(invite.status || '').trim().toLowerCase() === 'registered'
+  )
+
+  return res.render('verify-account', {
+    title: `${branding.learningName} - Verify account`,
+    email,
+    adminInviteToken,
+    verificationReady,
+    requestedRole: invite?.requestedRole || 'admin',
+    inviteExpired: Boolean(adminInviteToken && !invite),
+    canResend: Boolean(verificationReady),
+    error: String(req.query.error || ''),
+    success: String(req.query.success || ''),
+    info: String(req.query.info || '')
+  })
+})
+
+router.post('/verify-account', async (req, res) => {
+  try {
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const email = normalizeEmail(req.body.email || '')
+    const otp = sanitizeOtpCode(req.body.otp || req.body.code || '')
+    const redirectBack = (message, type = 'error') => appendQuery('/verify-account', {
+      admin_invite_token: adminInviteToken,
+      email,
+      [type]: message
+    })
+
+    if (!adminInviteToken || !email) {
+      return res.redirect('/login?error=Verification%20session%20is%20missing')
+    }
+    if (!otp || otp.length !== 6) {
+      return res.redirect(redirectBack('Enter the 6-digit verification code'))
+    }
+
+    const invite = await findAdminInviteByToken(adminInviteToken, {
+      allowedStatuses: ['registered'],
+      requireRegisteredAccount: true
+    })
+    if (!invite || normalizeEmail(invite.email) !== email) {
+      return res.redirect(redirectBack('This verification session is invalid or expired'))
+    }
+
+    const account = await Account.findById(invite.registeredAccount?._id)
+    if (!account) {
+      return res.redirect(redirectBack('The invited account could not be found'))
+    }
+    if (account.emailVerified) {
+      return res.redirect('/login?success=Account%20already%20verified')
+    }
+    if (!invite.otpHash || !invite.otpExpiresAt || invite.otpExpiresAt.getTime() <= Date.now()) {
+      return res.redirect(redirectBack('The verification code expired. Request a new code.'))
+    }
+
+    const matches = hashOtpCode(otp) === String(invite.otpHash || '')
+    if (!matches) {
+      invite.verificationAttempts = Math.max(0, Number(invite.verificationAttempts || 0)) + 1
+      await invite.save()
+      return res.redirect(redirectBack('The verification code is incorrect'))
+    }
+
+    await activateAdminInviteForAccount({
+      account,
+      invite,
+      req
+    })
+
+    req.session.accountId = resolveSessionAccountIdentifier(account)
+    return req.session.save((sessionError) => {
+      if (sessionError) {
+        console.error('Verification session save error:', sessionError)
+        return res.redirect('/login?error=Failed%20to%20start%20admin%20session')
+      }
+      return res.redirect('/admin?success=Admin%20access%20activated')
+    })
+  } catch (error) {
+    console.error('Verify account error:', error)
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const email = normalizeEmail(req.body.email || '')
+    return res.redirect(appendQuery('/verify-account', {
+      admin_invite_token: adminInviteToken,
+      email,
+      error: 'Failed to verify account'
+    }))
+  }
+})
+
+router.post('/verify-account/resend', async (req, res) => {
+  try {
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const email = normalizeEmail(req.body.email || '')
+    const redirectBack = (message, type = 'success') => appendQuery('/verify-account', {
+      admin_invite_token: adminInviteToken,
+      email,
+      [type]: message
+    })
+
+    const invite = await findAdminInviteByToken(adminInviteToken, {
+      allowedStatuses: ['registered'],
+      requireRegisteredAccount: true
+    })
+    if (!invite || normalizeEmail(invite.email) !== email) {
+      return res.redirect(redirectBack('Verification session is invalid or expired', 'error'))
+    }
+
+    const account = await Account.findById(invite.registeredAccount?._id)
+    if (!account) {
+      return res.redirect(redirectBack('The invited account could not be found', 'error'))
+    }
+    if (account.emailVerified) {
+      return res.redirect('/login?success=Account%20already%20verified')
+    }
+
+    await issueAdminInviteOtp({
+      invite,
+      account,
+      req,
+      purpose: 'resend'
+    })
+
+    return res.redirect(redirectBack('A fresh verification code was sent to your email'))
+  } catch (error) {
+    console.error('Resend verification code error:', error)
+    const adminInviteToken = sanitizeInviteToken(req.body.admin_invite_token || req.body.adminInviteToken || '')
+    const email = normalizeEmail(req.body.email || '')
+    return res.redirect(appendQuery('/verify-account', {
+      admin_invite_token: adminInviteToken,
+      email,
+      error: 'Failed to resend verification code'
+    }))
   }
 })
 
