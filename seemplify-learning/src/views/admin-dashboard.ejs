@@ -1626,6 +1626,20 @@
     if (!safeValue || !safeMax) return '0%'
     return `${Math.max(12, Math.min(100, Math.round((safeValue / safeMax) * 100)))}%`
   }
+  const moneyText = (value, currency = 'NGN') => {
+    const amount = Number(value || 0)
+    const safeAmount = Number.isFinite(amount) ? amount : 0
+    try {
+      return new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: String(currency || 'NGN').trim().toUpperCase() || 'NGN',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(safeAmount / 100)
+    } catch (error) {
+      return `${String(currency || 'NGN').trim().toUpperCase() || 'NGN'} ${(safeAmount / 100).toFixed(2)}`
+    }
+  }
   const websiteHref = '/'
   const partnerOrgRows = Array.isArray(partnerOrganizations) ? partnerOrganizations : []
   const partnerRequestRows = Array.isArray(roleApprovalRequests) ? roleApprovalRequests : []
@@ -1763,7 +1777,7 @@
                 </article>
                 <article class="hero-panel-stat">
                   <span>Partners Wallet</span>
-                  <strong><%= formatCurrencyAmount(partnerAvailableWalletMinor, 'NGN') %></strong>
+                  <strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong>
                 </article>
                 <article class="hero-panel-stat">
                   <span>Success Rate</span>
@@ -1811,7 +1825,7 @@
               <div class="section-stat-strip">
                 <div class="stack-metric"><span>Active orgs</span><strong><%= activePartnerOrgCount %></strong></div>
                 <div class="stack-metric"><span>Agents</span><strong><%= totalPartnerAgents %></strong></div>
-                <div class="stack-metric"><span>Commission due</span><strong><%= formatCurrencyAmount(partnerPendingCommissionMinor, 'NGN') %></strong></div>
+                <div class="stack-metric"><span>Commission due</span><strong><%= moneyText(partnerPendingCommissionMinor, 'NGN') %></strong></div>
               </div>
               <ul>
                 <li><%= channelPartnerOrgCount %> channel partners are running agent programs.</li>
@@ -2199,8 +2213,8 @@
                 <p class="mini">Keep commission obligations and partner cash availability visible.</p>
               </div>
               <div class="section-stat-strip">
-                <div class="partner-metric"><span>Commission due</span><strong><%= formatCurrencyAmount(partnerPendingCommissionMinor, 'NGN') %></strong></div>
-                <div class="partner-metric"><span>Available wallet</span><strong><%= formatCurrencyAmount(partnerAvailableWalletMinor, 'NGN') %></strong></div>
+                <div class="partner-metric"><span>Commission due</span><strong><%= moneyText(partnerPendingCommissionMinor, 'NGN') %></strong></div>
+                <div class="partner-metric"><span>Available wallet</span><strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong></div>
                 <div class="partner-metric"><span>Published courses</span><strong><%= partnerPublishedCourseCount %></strong></div>
                 <div class="partner-metric"><span>Draft courses</span><strong><%= partnerDraftCourseCount %></strong></div>
               </div>
@@ -3427,8 +3441,8 @@
             <article class="analytics-stat"><span>Completions</span><strong><%= analytics.completionTrend.current %></strong></article>
             <article class="analytics-stat"><span>Payments</span><strong><%= analytics.paymentTrend.currentCount %></strong></article>
             <article class="analytics-stat"><span>Revenue</span><strong><%= analytics.paymentTrend.grossDisplay %></strong></article>
-            <article class="analytics-stat"><span>Creator share</span><strong><%= formatCurrencyAmount(commissionReport?.summary?.creatorCommissionMinor || 0, 'NGN') %></strong></article>
-            <article class="analytics-stat"><span>Agent share</span><strong><%= formatCurrencyAmount(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></article>
+            <article class="analytics-stat"><span>Creator share</span><strong><%= moneyText(commissionReport?.summary?.creatorCommissionMinor || 0, 'NGN') %></strong></article>
+            <article class="analytics-stat"><span>Agent share</span><strong><%= moneyText(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></article>
           </div>
           <div class="analytics-top-grid">
             <article class="analytics-panel">
@@ -3517,8 +3531,8 @@
                 <div class="analytics-stat"><span>Gross</span><strong><%= dailySalesReport?.summary?.grossSalesDisplay || 'NGN 0.00' %></strong></div>
                 <div class="analytics-stat"><span>Creator share</span><strong><%= dailySalesReport?.summary?.creatorCommissionDisplay || 'NGN 0.00' %></strong></div>
                 <div class="analytics-stat"><span>Platform share</span><strong><%= dailySalesReport?.summary?.platformShareDisplay || 'NGN 0.00' %></strong></div>
-                <div class="analytics-stat"><span>Agent share</span><strong><%= formatCurrencyAmount(dailySalesReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></div>
-                <div class="analytics-stat"><span>Partner earnings</span><strong><%= formatCurrencyAmount(dailySalesReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></div>
+                <div class="analytics-stat"><span>Agent share</span><strong><%= moneyText(dailySalesReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></div>
+                <div class="analytics-stat"><span>Partner earnings</span><strong><%= moneyText(dailySalesReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></div>
               </div>
               <% if (!dailySalesReport || !dailySalesReport.rows || dailySalesReport.rows.length === 0) { %>
                 <p class="mini">No daily sales data for this filter window.</p>
@@ -3573,8 +3587,8 @@
               <ul class="analytics-note-list">
                 <li>Commission report scope: <strong><%= commissionReport?.scope || 'platform' %></strong></li>
                 <li>Total commission rows: <strong><%= Number(commissionReport?.summary?.saleCount || 0) %></strong></li>
-                <li>Partner earnings in window: <strong><%= formatCurrencyAmount(commissionReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></li>
-                <li>Agent commissions in window: <strong><%= formatCurrencyAmount(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></li>
+                <li>Partner earnings in window: <strong><%= moneyText(commissionReport?.summary?.partnerEarningsMinor || 0, 'NGN') %></strong></li>
+                <li>Agent commissions in window: <strong><%= moneyText(commissionReport?.summary?.agentCommissionMinor || 0, 'NGN') %></strong></li>
               </ul>
             </article>
           </div>
