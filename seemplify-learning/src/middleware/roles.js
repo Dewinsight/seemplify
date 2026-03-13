@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { Organization } from '../models/Organization.js'
+import { resolveAccessProfile } from '../utils/accessProfile.js'
 import {
   PLATFORM_ADMIN_ROLES,
   PARTNER_ORGANIZATION_MEMBER_ROLES,
@@ -18,24 +19,48 @@ const deny = (req, res, statusCode, message, code = 'FORBIDDEN') => {
   return res.status(statusCode).send(message)
 }
 
+const buildAccessibleRoleSet = ({ learningRole, accessProfile }) => {
+  const roles = new Set()
+  const normalizedLearningRole = String(learningRole || '').trim().toLowerCase()
+  if (normalizedLearningRole) roles.add(normalizedLearningRole)
+  if (accessProfile?.platformRole) roles.add(String(accessProfile.platformRole).trim().toLowerCase())
+  if (accessProfile?.partnerAccess?.dashboardRole) roles.add(String(accessProfile.partnerAccess.dashboardRole).trim().toLowerCase())
+  if (accessProfile?.agentAccess?.dashboardRole) roles.add(String(accessProfile.agentAccess.dashboardRole).trim().toLowerCase())
+  return roles
+}
+
 export function requireRole(allowedRoles = []) {
   const normalizedAllowedRoles = Array.isArray(allowedRoles)
     ? allowedRoles.map((role) => String(role || '').trim().toLowerCase()).filter(Boolean)
     : []
 
-  return (req, res, next) => {
-    if (!req.user) {
-      return deny(req, res, 401, 'Authentication required', 'AUTH_REQUIRED')
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return deny(req, res, 401, 'Authentication required', 'AUTH_REQUIRED')
+      }
+
+      const role = resolveLearningRole(req.user)
+      const accessProfile = req.accessProfile || await resolveAccessProfile(req.user)
+      req.learningRole = role
+      req.accessProfile = accessProfile
+      res.locals.user = req.user
+      res.locals.learningRole = role
+      res.locals.accessProfile = accessProfile
+
+      if (normalizedAllowedRoles.length > 0) {
+        const accessibleRoles = buildAccessibleRoleSet({ learningRole: role, accessProfile })
+        const allowed = normalizedAllowedRoles.some((allowedRole) => accessibleRoles.has(allowedRole))
+        if (!allowed) {
+          return deny(req, res, 403, 'You do not have permission to access this resource.', 'ROLE_FORBIDDEN')
+        }
+      }
+
+      return next()
+    } catch (error) {
+      console.error('Role middleware error:', error)
+      return deny(req, res, 500, 'Failed to validate account role.', 'ROLE_ACCESS_ERROR')
     }
-
-    const role = resolveLearningRole(req.user)
-    req.learningRole = role
-
-    if (normalizedAllowedRoles.length > 0 && !normalizedAllowedRoles.includes(role)) {
-      return deny(req, res, 403, 'You do not have permission to access this resource.', 'ROLE_FORBIDDEN')
-    }
-
-    return next()
   }
 }
 
@@ -52,22 +77,28 @@ export function requirePartnerAccess(allowedOrgRoles = PARTNER_ORGANIZATION_MEMB
       }
 
       const learningRole = resolveLearningRole(req.user)
+      const accessProfile = req.accessProfile || await resolveAccessProfile(req.user)
       req.learningRole = learningRole
+      req.accessProfile = accessProfile
+      res.locals.user = req.user
+      res.locals.learningRole = learningRole
+      res.locals.accessProfile = accessProfile
 
-      if (allowPlatformAdmin && PLATFORM_ADMIN_ROLES.includes(learningRole)) {
+      if (allowPlatformAdmin && (accessProfile?.platformRole && PLATFORM_ADMIN_ROLES.includes(accessProfile.platformRole))) {
         return next()
       }
 
-      const orgId = String(
-        req.params?.orgId
-        || req.body?.orgId
-        || req.query?.orgId
-        || req.user?.partnerOrganization
-        || ''
-      ).trim()
+      const requestedOrgId = String(req.params?.orgId || req.body?.orgId || req.query?.orgId || '').trim()
+      const accessOrgId = String(accessProfile?.partnerAccess?.organizationId || accessProfile?.agentAccess?.organizationId || '').trim()
+      const orgId = requestedOrgId || accessOrgId
 
       if (!orgId || !mongoose.Types.ObjectId.isValid(orgId)) {
         return deny(req, res, 403, 'Partner organization context is required.', 'PARTNER_ORG_REQUIRED')
+      }
+
+      const activePartnerAccess = accessProfile?.partnerAccess || null
+      if (activePartnerAccess && String(activePartnerAccess.organizationId) !== orgId) {
+        return deny(req, res, 403, 'Only the active partner organization can be accessed.', 'PARTNER_CONTEXT_MISMATCH')
       }
 
       const org = await Organization.findById(orgId)

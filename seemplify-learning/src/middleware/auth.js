@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { Account } from '../models/Account.js'
+import { resolveAccessProfile } from '../utils/accessProfile.js'
 import { resolveLearningRole } from '../utils/learningRoles.js'
 
 const findAccountBySessionIdentifier = async (identifier) => {
@@ -34,10 +35,13 @@ export async function requireAuth(req, res, next) {
     }
 
     const learningRole = resolveLearningRole(account)
+    const accessProfile = await resolveAccessProfile(account)
     req.user = account
     req.learningRole = learningRole
+    req.accessProfile = accessProfile
     res.locals.user = account
     res.locals.learningRole = learningRole
+    res.locals.accessProfile = accessProfile
     next()
   } catch (error) {
     console.error('Auth middleware error:', error)
@@ -50,10 +54,13 @@ export async function optionalAuth(req, res, next) {
     const account = await resolveAuthenticatedAccount(req)
     if (account) {
       const learningRole = resolveLearningRole(account)
+      const accessProfile = await resolveAccessProfile(account)
       req.user = account
       req.learningRole = learningRole
+      req.accessProfile = accessProfile
       res.locals.user = account
       res.locals.learningRole = learningRole
+      res.locals.accessProfile = accessProfile
     }
     next()
   } catch (error) {

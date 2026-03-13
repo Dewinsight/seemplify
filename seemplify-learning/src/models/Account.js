@@ -290,7 +290,6 @@ const AccountSchema = new mongoose.Schema({
 AccountSchema.index({ 'organizations.organization': 1 })
 AccountSchema.index({ 'teams.team': 1 })
 AccountSchema.index({ 'teams.organization': 1 })
-AccountSchema.index({ partnerOrganization: 1 })
 
 AccountSchema.methods.setCurrentOrganization = async function (organizationId) {
   const isMember = this.organizations.some((membership) => (

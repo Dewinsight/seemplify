@@ -1,33 +1,48 @@
 <%
   const safeUser = typeof user !== 'undefined' ? user : null
+  const safeAccessProfile = typeof accessProfile !== 'undefined' ? accessProfile : null
   const safeActivePage = typeof activePage === 'string' ? activePage : ''
   const safeActiveLmsView = typeof activeLmsView === 'string' ? activeLmsView : ''
   const safeUserRole = String(safeUser?.learningRole || safeUser?.role || '').trim().toLowerCase()
   const canAccessAdmin = Boolean(
-    safeUser
-    && (
-      safeUser.isSuperAdmin
+    safeUser && (
+      safeAccessProfile?.platformRole
+      || safeUser.isSuperAdmin
       || safeUser.isSystemAdmin
       || ['super_admin', 'admin'].includes(safeUserRole)
     )
   )
   const canAccessPartnerDashboard = Boolean(
-    safeUser
-    && ['channel_partner_super', 'channel_partner_user', 'partner_super', 'partner_user'].includes(safeUserRole)
+    safeUser && (
+      safeAccessProfile?.partnerAccess
+      || ['channel_partner_super', 'channel_partner_user', 'partner_super', 'partner_user'].includes(safeUserRole)
+    )
   )
   const canAccessAgentDashboard = Boolean(
-    safeUser
-    && safeUserRole === 'channel_sales_agent'
+    safeUser && (
+      safeAccessProfile?.agentAccess
+      || safeUserRole === 'channel_sales_agent'
+    )
   )
+  const canSwitchWorkspace = Boolean(safeUser && safeAccessProfile?.hasMultiplePrivilegedDashboards)
   const currentBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
-  const brandDisplayName = typeof brandLearningName === 'string' && brandLearningName.trim()
-    ? brandLearningName.trim()
-    : 'Seemplify Learning'
   const isAiinBrand = currentBrandKey === 'aiin'
-  const defaultTeachBrand = isAiinBrand ? 'AIIN Nigeria' : 'Seemplify'
-  const teachNavLabel = typeof teachLabel === 'string' && teachLabel.trim()
-    ? teachLabel.trim()
-    : `Teach on ${defaultTeachBrand}`
+  const brandDisplayName = isAiinBrand
+    ? 'AIIN Learning'
+    : (typeof brandLearningName === 'string' && brandLearningName.trim()
+      ? brandLearningName.trim()
+      : 'Seemplify Learning')
+  const aiinLogoUrl = '/images/aiin_logo.png'
+  const teachNavLabel = 'Teach on AIIN Nigeria'
+  const formatRoleLabel = (value, fallback = 'Learner') => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return fallback
+    return normalized
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
   const safeUserDisplayName = safeUser?.profile?.name || safeUser?.email || ''
   const safeUserInitials = safeUserDisplayName
     ? safeUserDisplayName
@@ -38,6 +53,22 @@
       .join('')
       .slice(0, 2)
     : 'U'
+  const desktopRoleLabel = (() => {
+    if (!safeUser) return ''
+    if (safeActivePage === 'admin') {
+      return formatRoleLabel(safeAccessProfile?.platformRole || (safeUser.isSuperAdmin ? 'super_admin' : 'admin'), 'Admin')
+    }
+    if (safeActivePage === 'partner-dashboard') {
+      return formatRoleLabel(safeAccessProfile?.partnerAccess?.dashboardRole || safeUserRole, 'Partner')
+    }
+    if (safeActivePage === 'agent-dashboard') {
+      return 'Agent'
+    }
+    if (safeUserRole === 'creator') {
+      return 'Creator'
+    }
+    return 'Learner'
+  })()
 %>
 
 <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
@@ -65,6 +96,9 @@
       <% if (canAccessAgentDashboard) { %>
         <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
       <% } %>
+      <% if (canSwitchWorkspace) { %>
+        <a href="/choose-workspace" class="top-nav-link<%= safeActivePage === 'choose-workspace' ? ' active' : '' %>">Switch Workspace</a>
+      <% } %>
     <% } %>
   </div>
 
@@ -84,58 +118,30 @@
 
 <nav class="top-nav">
   <div class="top-nav-inner">
-    <a href="/" class="top-nav-brand">
-      <% if (isAiinBrand) { %>
-        <svg viewBox="0 0 100 100" aria-hidden="true">
-          <defs>
-            <linearGradient id="aiinLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#0ea5e9" />
-              <stop offset="52%" stop-color="#14b8a6" />
-              <stop offset="100%" stop-color="#6366f1" />
-            </linearGradient>
-          </defs>
-          <rect x="14" y="14" width="72" height="72" rx="18" fill="rgba(15,23,42,.15)" stroke="url(#aiinLearningGradient)" stroke-width="6" />
-          <path d="M31 70L45 31L59 70" stroke="url(#aiinLearningGradient)" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M36 56H54" stroke="url(#aiinLearningGradient)" stroke-width="6" fill="none" stroke-linecap="round" />
-          <path d="M69 34V70" stroke="url(#aiinLearningGradient)" stroke-width="7" fill="none" stroke-linecap="round" />
-          <circle cx="69" cy="24" r="4.5" fill="url(#aiinLearningGradient)" />
-        </svg>
-      <% } else { %>
-        <svg viewBox="0 0 100 100" aria-hidden="true">
-          <defs>
-            <linearGradient id="seemplifyLearningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#10b981" />
-              <stop offset="50%" stop-color="#2dd4bf" />
-              <stop offset="100%" stop-color="#6366f1" />
-            </linearGradient>
-          </defs>
-          <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-            stroke="url(#seemplifyLearningGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-            stroke-linejoin="round" />
-          <circle cx="65" cy="25" r="6" class="logo-dot" />
-          <circle cx="50" cy="50" r="6" class="logo-dot" />
-          <circle cx="35" cy="75" r="6" class="logo-dot" />
-        </svg>
-      <% } %>
-      <span><%= brandDisplayName %></span>
+    <a href="/" class="top-nav-brand" style="display: flex; align-items: center; text-decoration: none;">
+      <img src="https://cdn.magicpatterns.com/uploads/ww1vwmrPLZ6xmKi1VHDkh9/AIIN_LOGO.png" alt="AIIN Learning" style="height: 38px; width: auto; max-width: none; display: block;">
+      <span class="sr-only">AIIN Learning</span>
     </a>
 
     <div class="top-nav-center">
       <div class="top-nav-links">
-        <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(safeActivePage) ? ' active' : '' %>">Explore Courses</a>
-        <a href="/teach" class="top-nav-link<%= safeActivePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
-        <% if (safeUser) { %>
-          <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
-          <% if (canAccessAdmin) { %>
-            <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
-          <% } %>
-          <% if (canAccessPartnerDashboard) { %>
-            <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
-          <% } %>
-          <% if (canAccessAgentDashboard) { %>
-            <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
-          <% } %>
+      <a href="/courses" class="top-nav-link" style="color: #6d28d9; font-weight: 600; padding: 8px 16px; border-radius: 999px; background: rgba(109, 40, 217, 0.08);">Explore Courses</a>
+      <a href="/teach" class="top-nav-link">Teach on AIIN Nigeria</a>
+      <% if (safeUser) { %>
+        <a href="/simple-lms" class="top-nav-link">Learning Workspace</a>
+        <% if (canAccessAdmin) { %>
+          <a href="/admin" class="top-nav-link">Admin</a>
         <% } %>
+        <% if (canAccessPartnerDashboard) { %>
+          <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
+        <% } %>
+        <% if (canAccessAgentDashboard) { %>
+          <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
+        <% } %>
+        <% if (canSwitchWorkspace) { %>
+          <a href="/choose-workspace" class="top-nav-link<%= safeActivePage === 'choose-workspace' ? ' active' : '' %>">Switch Workspace</a>
+        <% } %>
+      <% } %>
       </div>
     </div>
 
@@ -160,18 +166,20 @@
           </a>
         </div>
 
-        <div class="top-nav-account">
+        <span class="top-nav-divider" aria-hidden="true"></span>
+
+        <div class="top-nav-profile">
           <span class="top-nav-avatar" aria-hidden="true"><%= safeUserInitials %></span>
           <div class="top-nav-user-info">
             <div class="top-nav-user-name"><%= safeUserDisplayName %></div>
-            <div class="top-nav-user-email"><%= safeUser.email %></div>
+            <div class="top-nav-user-meta"><%= desktopRoleLabel %></div>
           </div>
-          <a href="/logout" class="btn btn-secondary btn-sm top-nav-signout">Sign out</a>
         </div>
+        <a href="/logout" class="top-nav-signout-link">Sign out</a>
       <% } else { %>
-        <div class="top-nav-user top-nav-user-guest">
-          <a href="/login" class="top-nav-signin">Sign in</a>
-          <a href="/register" class="btn btn-primary btn-sm">Create account</a>
+        <div class="top-nav-user top-nav-user-guest" style="gap: 16px;">
+          <a href="/login" class="top-nav-signin" style="font-weight: 500; font-size: 14px; text-decoration: none;">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-sm" style="background-color: #0ea5e9; border-color: #0ea5e9; border-radius: 999px; padding: 8px 16px; font-weight: 600;">Create account</a>
         </div>
       <% } %>
     </div>

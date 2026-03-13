@@ -5,10 +5,17 @@ import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { AgentInvite } from '../models/AgentInvite.js'
 import { AdminInvite } from '../models/AdminInvite.js'
-import { optionalAuth } from '../middleware/auth.js'
+import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { resolveBranding } from '../utils/branding.js'
 import { emailService } from '../services/emailService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
+import {
+  canAccessReturnPath,
+  getDefaultDashboardPath,
+  getDashboardPathForKey,
+  resolveAccessProfile,
+  shouldUseWorkspaceChooser
+} from '../utils/accessProfile.js'
 import {
   createPartnerApprovalRequest,
   sanitizePartnerOrganizationName
@@ -16,7 +23,6 @@ import {
 import {
   ACTIVE_REGISTRATION_INTENTS,
   INTENT_DEFAULT_ROLE_MAP,
-  getPostLoginRedirect,
   isPartnerRegistrationIntent,
   resolveLearningRole,
 } from '../utils/learningRoles.js'
@@ -100,12 +106,17 @@ const canUseReturnToDirectly = (path) => {
   return true
 }
 
-const resolveLoginDestination = (account, returnTo) => {
-  if (canUseReturnToDirectly(returnTo)) {
-    return sanitizeReturnTo(returnTo)
+const resolveLoginDestination = async (account, returnTo) => {
+  const accessProfile = await resolveAccessProfile(account)
+  const sanitizedReturnTo = sanitizeReturnTo(returnTo)
+
+  if (canUseReturnToDirectly(sanitizedReturnTo) && canAccessReturnPath(accessProfile, sanitizedReturnTo)) {
+    return sanitizedReturnTo
   }
-  const role = resolveLearningRole(account)
-  return getPostLoginRedirect(role, '/simple-lms')
+  if (shouldUseWorkspaceChooser(accessProfile, sanitizedReturnTo)) {
+    return '/choose-workspace'
+  }
+  return getDefaultDashboardPath(accessProfile, '/simple-lms')
 }
 
 const findAdminInviteByToken = async (inviteToken, {
@@ -244,10 +255,13 @@ const activateAdminInviteForAccount = async ({ account, invite, req }) => {
   const requestedRole = String(invite.requestedRole || 'admin').trim().toLowerCase() === 'super_admin'
     ? 'super_admin'
     : 'admin'
-  const previousRole = String(account.learningRole || 'learner').trim().toLowerCase()
+  const currentLearningRole = String(account.learningRole || 'learner').trim().toLowerCase()
+  const previousRole = ['admin', 'super_admin'].includes(currentLearningRole)
+    ? String(account.roleMetadata?.previousLearningRole || 'learner').trim().toLowerCase()
+    : currentLearningRole
 
   account.emailVerified = true
-  account.learningRole = requestedRole
+  account.learningRole = previousRole || 'learner'
   account.isSystemAdmin = true
   account.isSuperAdmin = requestedRole === 'super_admin'
   account.roleMetadata = {
@@ -301,12 +315,25 @@ const activateAgentInviteForAccount = async ({ account, invite, req }) => {
     throw new Error('Partner organization for this invite could not be found.')
   }
 
+  const accessProfile = await resolveAccessProfile(account)
+  const linkedOrganizationId = String(accessProfile?.partnerAccess?.organizationId || accessProfile?.agentAccess?.organizationId || '').trim()
+  if (accessProfile?.platformRole || accessProfile?.partnerAccess) {
+    throw new Error('This account already has platform or partner access and cannot also become a sales agent.')
+  }
+  if (accessProfile?.agentAccess && linkedOrganizationId && linkedOrganizationId !== String(organization._id)) {
+    throw new Error('This account already belongs to another channel partner organization.')
+  }
+
+  const currentLearningRole = String(account.learningRole || 'learner').trim().toLowerCase()
+  const previousRole = currentLearningRole === 'channel_sales_agent'
+    ? String(account.roleMetadata?.previousLearningRole || 'learner').trim().toLowerCase()
+    : currentLearningRole
+
   account.learningRole = 'channel_sales_agent'
-  account.isSuperAdmin = false
-  account.isSystemAdmin = false
   account.partnerOrganization = organization._id
+  account.currentOrganization = organization._id
   account.roleMetadata = {
-    previousLearningRole: 'channel_sales_agent',
+    previousLearningRole: ['learner', 'creator'].includes(previousRole) ? previousRole : 'learner',
     lastUpdatedAt: new Date(),
     lastUpdatedBy: invite.invitedBy?._id || null
   }
@@ -473,7 +500,7 @@ router.get('/login', optionalAuth, async (req, res) => {
   const returnTo = sanitizeReturnTo(req.query.return_to)
   const loginMode = String(req.query.mode || '').trim().toLowerCase() === 'admin' ? 'admin' : 'workspace'
   if (req.user) {
-    return res.redirect(resolveLoginDestination(req.user, returnTo || '/simple-lms'))
+    return res.redirect(await resolveLoginDestination(req.user, returnTo || '/simple-lms'))
   }
 
   const registerIntent = sanitizeIntent(
@@ -504,7 +531,7 @@ router.get('/admin/login', optionalAuth, async (req, res) => {
   const branding = resolveBranding(req.hostname || req.get('host'))
   const returnTo = sanitizeReturnTo(req.query.return_to || '/admin')
   if (req.user) {
-    return res.redirect(resolveLoginDestination(req.user, returnTo || '/admin'))
+    return res.redirect(await resolveLoginDestination(req.user, returnTo || '/admin'))
   }
 
   res.render('login', {
@@ -571,7 +598,7 @@ router.post('/login', async (req, res) => {
     }
 
     req.session.accountId = sessionAccountId
-    const destination = resolveLoginDestination(account, returnTo)
+    const destination = await resolveLoginDestination(account, returnTo)
 
     return req.session.save((sessionError) => {
       if (sessionError) {
@@ -622,7 +649,7 @@ router.get('/register', optionalAuth, async (req, res) => {
   }
 
   if (req.user) {
-    return res.redirect(resolveLoginDestination(req.user, returnTo || '/simple-lms'))
+    return res.redirect(await resolveLoginDestination(req.user, returnTo || '/simple-lms'))
   }
 
   res.render('register', {
@@ -952,6 +979,7 @@ router.get('/api/users/me', async (req, res) => {
     }
 
     const role = resolveLearningRole(account)
+    const accessProfile = await resolveAccessProfile(account)
     return res.json({
       user: {
         id: account._id,
@@ -962,7 +990,8 @@ router.get('/api/users/me', async (req, res) => {
         registrationIntent: account.learningProfile?.registrationIntent || 'unknown',
         partnerOrganization: account.partnerOrganization || null,
         isSuperAdmin: Boolean(account.isSuperAdmin),
-        isSystemAdmin: Boolean(account.isSystemAdmin)
+        isSystemAdmin: Boolean(account.isSystemAdmin),
+        accessProfile
       }
     })
   } catch (error) {
@@ -1195,12 +1224,14 @@ router.post('/verify-account', async (req, res) => {
     })
 
     req.session.accountId = resolveSessionAccountIdentifier(account)
+    const destination = await resolveLoginDestination(account, '/admin')
     return req.session.save((sessionError) => {
       if (sessionError) {
         console.error('Verification session save error:', sessionError)
         return res.redirect('/login?error=Failed%20to%20start%20admin%20session')
       }
-      return res.redirect('/admin?success=Admin%20access%20activated')
+      const joiner = destination.includes('?') ? '&' : '?'
+      return res.redirect(`${destination}${joiner}success=${encodeURIComponent('Admin access activated')}`)
     })
   } catch (error) {
     console.error('Verify account error:', error)
@@ -1211,6 +1242,62 @@ router.post('/verify-account', async (req, res) => {
       email,
       error: 'Failed to verify account'
     }))
+  }
+})
+
+router.get('/choose-workspace', requireAuth, async (req, res) => {
+  try {
+    const branding = resolveBranding(req.hostname || req.get('host'))
+    const accessProfile = req.accessProfile || await resolveAccessProfile(req.user)
+    if (!accessProfile?.hasMultiplePrivilegedDashboards) {
+      return res.redirect(getDefaultDashboardPath(accessProfile, '/simple-lms'))
+    }
+
+    const workspaceCards = [
+      accessProfile.platformRole
+        ? {
+          key: 'admin',
+          title: 'Admin Console',
+          href: getDashboardPathForKey('admin'),
+          body: 'Platform administration, approvals, analytics, payments, and access control.'
+        }
+        : null,
+      accessProfile.partnerAccess
+        ? {
+          key: 'partner',
+          title: 'Partner Dashboard',
+          href: getDashboardPathForKey('partner'),
+          body: `Manage ${accessProfile.partnerAccess.organizationName || 'your organization'} as ${String(accessProfile.partnerAccess.dashboardRole || '').replace(/_/g, ' ')}.`
+        }
+        : null,
+      accessProfile.agentAccess
+        ? {
+          key: 'agent',
+          title: 'Agent Dashboard',
+          href: getDashboardPathForKey('agent'),
+          body: `Track referral sales and commissions for ${accessProfile.agentAccess.organizationName || 'your channel partner organization'}.`
+        }
+        : null,
+      {
+        key: 'workspace',
+        title: 'Learning Workspace',
+        href: '/simple-lms',
+        body: 'Continue learning, view your catalog, and manage your personal workspace.'
+      }
+    ].filter(Boolean)
+
+    return res.render('choose-workspace', {
+      title: `${branding.learningName} - Choose workspace`,
+      user: req.user,
+      accessProfile,
+      activePage: '',
+      workspaceCards,
+      success: String(req.query.success || ''),
+      error: String(req.query.error || '')
+    })
+  } catch (error) {
+    console.error('Choose workspace error:', error)
+    return res.redirect('/simple-lms?error=Failed%20to%20load%20workspace%20chooser')
   }
 })
 

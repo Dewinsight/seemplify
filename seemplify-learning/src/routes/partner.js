@@ -9,22 +9,13 @@ import { PartnerWithdrawal } from '../models/PartnerWithdrawal.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { AuditLog } from '../models/AuditLog.js'
-import { requirePartnerAccess, requireRole } from '../middleware/roles.js'
+import { requirePartnerAccess } from '../middleware/roles.js'
 import { emailService } from '../services/emailService.js'
 import { normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
-import { resolveLearningRole } from '../utils/learningRoles.js'
+import { resolveAccessProfile } from '../utils/accessProfile.js'
 
 const router = express.Router()
-
-const PARTNER_DASHBOARD_ROLES = [
-  'super_admin',
-  'admin',
-  'channel_partner_super',
-  'channel_partner_user',
-  'partner_super',
-  'partner_user'
-]
 
 const formatCurrencyAmount = (amountMinor, currencyCode = 'NGN') => {
   const amount = Number.isFinite(Number(amountMinor)) ? Number(amountMinor) : 0
@@ -49,7 +40,7 @@ const buildBaseUrl = (req) => {
 
 const getSectionsForRole = (role) => {
   const normalizedRole = String(role || '').trim().toLowerCase()
-  if (['super_admin', 'admin', 'channel_partner_super'].includes(normalizedRole)) {
+  if (normalizedRole === 'channel_partner_super') {
     return ['overview', 'agents', 'courses', 'reports', 'commissions', 'withdrawals', 'settings']
   }
   if (normalizedRole === 'channel_partner_user') {
@@ -70,17 +61,17 @@ const normalizeSection = (value, role) => {
   return allowedSections.includes(normalized) ? normalized : 'overview'
 }
 
-const canManageAgents = (role) => ['super_admin', 'admin', 'channel_partner_super', 'channel_partner_user'].includes(role)
+const canManageAgents = (role) => ['channel_partner_super', 'channel_partner_user'].includes(role)
 
-const canRemoveAgents = (role) => ['super_admin', 'admin', 'channel_partner_super'].includes(role)
+const canRemoveAgents = (role) => ['channel_partner_super'].includes(role)
 
-const canApprovePartnerCourses = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+const canApprovePartnerCourses = (role) => ['channel_partner_super', 'partner_super'].includes(role)
 
-const canRecommendAgentPayout = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+const canRecommendAgentPayout = (role) => ['channel_partner_super', 'partner_super'].includes(role)
 
-const canManageAgentCommissionRates = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+const canManageAgentCommissionRates = (role) => ['channel_partner_super', 'partner_super'].includes(role)
 
-const canRequestPartnerWithdrawals = (role) => ['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)
+const canRequestPartnerWithdrawals = (role) => ['channel_partner_super', 'partner_super'].includes(role)
 
 const normalizePartnerWithdrawalStatus = (value, fallback = 'pending') => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -178,6 +169,18 @@ const parseDateBoundary = (value, boundary = 'start') => {
     parsed.setHours(0, 0, 0, 0)
   }
   return parsed
+}
+
+const resolvePartnerDashboardRole = (req) => (
+  String(req.accessProfile?.partnerAccess?.dashboardRole || '').trim().toLowerCase()
+)
+
+const resolveNonAgentFallbackRole = (account) => {
+  const previousRole = String(account?.roleMetadata?.previousLearningRole || '').trim().toLowerCase()
+  if (['learner', 'creator'].includes(previousRole)) return previousRole
+  const currentRole = String(account?.learningRole || '').trim().toLowerCase()
+  if (['learner', 'creator'].includes(currentRole)) return currentRole
+  return 'learner'
 }
 
 const resolveReportWindow = (query = {}, fallbackLookbackDays = 30) => {
@@ -504,12 +507,11 @@ const loadPartnerDashboardData = async ({ orgId }) => {
   }
 }
 
-router.use(requireRole(PARTNER_DASHBOARD_ROLES))
-router.use(requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_user'], { allowPlatformAdmin: true }))
+router.use(requirePartnerAccess(['owner', 'admin', 'partner_admin', 'partner_user']))
 
 router.get('/', async (req, res) => {
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     const availableSections = getSectionsForRole(role)
     const section = normalizeSection(req.query.section, role)
     const org = req.partnerOrg
@@ -654,7 +656,7 @@ router.get('/', async (req, res) => {
 router.post('/agents/invite', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=agents'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canManageAgents(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only channel partners can invite agents.')}`)
     }
@@ -675,14 +677,31 @@ router.post('/agents/invite', async (req, res) => {
 
     const existingAccount = await Account.findOne({ email })
     if (existingAccount) {
-      if (existingAccount.partnerOrganization && String(existingAccount.partnerOrganization) !== String(org._id)) {
-        return res.redirect(`${redirectTo}&error=${encodeURIComponent('This user belongs to another partner organization.')}`)
+      const existingAccessProfile = await resolveAccessProfile(existingAccount)
+      const linkedOrganizationId = String(
+        existingAccessProfile?.partnerAccess?.organizationId
+        || existingAccessProfile?.agentAccess?.organizationId
+        || existingAccount.partnerOrganization
+        || ''
+      ).trim()
+
+      if (existingAccessProfile?.platformRole || existingAccessProfile?.partnerAccess) {
+        return res.redirect(`${redirectTo}&error=${encodeURIComponent('This account already has platform or partner dashboard access and cannot also become an agent.')}`)
+      }
+      if (existingAccessProfile?.agentAccess && linkedOrganizationId && linkedOrganizationId !== String(org._id)) {
+        return res.redirect(`${redirectTo}&error=${encodeURIComponent('This user already belongs to another channel partner organization.')}`)
       }
 
+      const previousLearningRole = resolveNonAgentFallbackRole(existingAccount)
       existingAccount.learningRole = 'channel_sales_agent'
-      existingAccount.isSystemAdmin = false
-      existingAccount.isSuperAdmin = false
       existingAccount.partnerOrganization = org._id
+      existingAccount.currentOrganization = org._id
+      existingAccount.roleMetadata = {
+        ...(existingAccount.roleMetadata || {}),
+        previousLearningRole,
+        lastUpdatedAt: new Date(),
+        lastUpdatedBy: req.user._id
+      }
 
       const existingMembership = Array.isArray(existingAccount.organizations)
         ? existingAccount.organizations.find((entry) => String(entry.organization) === String(org._id))
@@ -776,7 +795,7 @@ router.post('/agents/invite', async (req, res) => {
 router.post('/agents/:agentId/remove', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=agents'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canRemoveAgents(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only channel partner super users can remove agents.')}`)
     }
@@ -793,11 +812,12 @@ router.post('/agents/:agentId/remove', async (req, res) => {
     }
 
     agent.partnerOrganization = null
-    if (agent.learningRole === 'channel_sales_agent') {
-      agent.learningRole = 'learner'
+    if (String(agent.currentOrganization || '') === String(org._id)) {
+      agent.currentOrganization = null
     }
-    agent.isSystemAdmin = false
-    agent.isSuperAdmin = false
+    if (agent.learningRole === 'channel_sales_agent') {
+      agent.learningRole = resolveNonAgentFallbackRole(agent)
+    }
     agent.organizations = (agent.organizations || []).filter((entry) => String(entry.organization) !== String(org._id))
     await agent.save()
 
@@ -823,7 +843,7 @@ router.post('/agents/:agentId/remove', async (req, res) => {
 router.post('/agents/:agentId/commission-rate', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=agents'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canManageAgentCommissionRates(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can update per-agent commission rates.')}`)
     }
@@ -879,7 +899,7 @@ router.post('/agents/:agentId/commission-rate', async (req, res) => {
 router.post('/withdrawals/request', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=withdrawals'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canRequestPartnerWithdrawals(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can request organization withdrawals.')}`)
     }
@@ -941,7 +961,7 @@ router.post('/withdrawals/request', async (req, res) => {
 router.post('/withdrawals/:withdrawalId/cancel', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=withdrawals'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     const org = req.partnerOrg
     const withdrawalId = String(req.params.withdrawalId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(withdrawalId)) {
@@ -999,7 +1019,7 @@ router.post('/withdrawals/:withdrawalId/cancel', async (req, res) => {
 router.post('/courses/:courseId/approve', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=courses'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canApprovePartnerCourses(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can approve partner courses.')}`)
     }
@@ -1043,7 +1063,7 @@ router.post('/courses/:courseId/approve', async (req, res) => {
 router.post('/courses/:courseId/reject', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=courses'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canApprovePartnerCourses(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can review partner courses.')}`)
     }
@@ -1086,7 +1106,7 @@ router.post('/courses/:courseId/reject', async (req, res) => {
 router.post('/commissions/:attributionId/recommend', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=commissions'
   try {
-    const role = resolveLearningRole(req.user)
+    const role = resolvePartnerDashboardRole(req)
     if (!canRecommendAgentPayout(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can recommend payouts.')}`)
     }
@@ -1138,8 +1158,8 @@ router.post('/commissions/:attributionId/recommend', async (req, res) => {
 router.post('/settings', async (req, res) => {
   const redirectTo = '/partner-dashboard?section=settings'
   try {
-    const role = resolveLearningRole(req.user)
-    if (!['super_admin', 'admin', 'channel_partner_super', 'partner_super'].includes(role)) {
+    const role = resolvePartnerDashboardRole(req)
+    if (!['channel_partner_super', 'partner_super'].includes(role)) {
       return res.redirect(`${redirectTo}&error=${encodeURIComponent('Only partner super users can update partner settings.')}`)
     }
 
@@ -1180,3 +1200,4 @@ router.post('/settings', async (req, res) => {
 })
 
 export default router
+

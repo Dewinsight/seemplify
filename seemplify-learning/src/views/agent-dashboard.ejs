@@ -17,17 +17,17 @@
       gap: 22px;
     }
     .agent-side {
-      --side-accent: #0f766e;
-      --side-accent-soft: rgba(20, 184, 166, .14);
-      --side-accent-line: rgba(20, 184, 166, .2);
+      --side-accent: #6d28d9;
+      --side-accent-soft: rgba(139, 92, 246, .14);
+      --side-accent-line: rgba(124, 58, 237, .16);
       position: sticky;
       top: 84px;
       align-self: start;
-      border: 1px solid rgba(148, 163, 184, .18);
+      border: 1px solid rgba(109, 40, 217, .12);
       border-radius: 24px;
       background:
-        linear-gradient(180deg, rgba(255, 255, 255, .95), rgba(248, 250, 252, .92));
-      box-shadow: 0 28px 48px -40px rgba(15, 23, 42, .34);
+        linear-gradient(180deg, rgba(255, 255, 255, .97), rgba(248, 241, 255, .94));
+      box-shadow: 0 28px 48px -40px rgba(91, 33, 182, .26);
       padding: 18px;
       display: grid;
       gap: 16px;
@@ -61,7 +61,7 @@
       border: 1px solid var(--side-accent-line);
       border-radius: 18px;
       background:
-        linear-gradient(160deg, rgba(240, 253, 250, .92), rgba(255, 255, 255, .96));
+        linear-gradient(160deg, rgba(245, 243, 255, .95), rgba(255, 255, 255, .98));
       padding: 14px;
       display: grid;
       gap: 10px;
@@ -76,9 +76,9 @@
       width: fit-content;
       padding: 7px 12px;
       border-radius: 999px;
-      border: 1px solid rgba(20, 184, 166, .24);
+      border: 1px solid rgba(124, 58, 237, .18);
       background: rgba(255, 255, 255, .78);
-      color: var(--side-accent);
+      color: #6d28d9;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: .04em;
@@ -107,8 +107,8 @@
       transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
     }
     .agent-nav a:hover {
-      border-color: rgba(15, 118, 110, .12);
-      background: rgba(255, 255, 255, .78);
+      border-color: rgba(124, 58, 237, .16);
+      background: rgba(245, 243, 255, .88);
       transform: translateX(2px);
     }
     .dashboard-nav-icon {
@@ -120,7 +120,7 @@
       justify-content: center;
       color: var(--side-accent);
       background: var(--side-accent-soft);
-      border: 1px solid rgba(20, 184, 166, .1);
+      border: 1px solid rgba(124, 58, 237, .1);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5);
       flex-shrink: 0;
     }
@@ -156,16 +156,16 @@
       transition: opacity .18s ease, transform .18s ease;
     }
     .agent-nav a.active {
-      border-color: rgba(20, 184, 166, .2);
+      border-color: rgba(124, 58, 237, .18);
       background:
-        linear-gradient(135deg, rgba(236, 253, 245, .98), rgba(255, 255, 255, .98));
-      box-shadow: 0 16px 28px -24px rgba(15, 118, 110, .35);
+        linear-gradient(135deg, rgba(245, 243, 255, .98), rgba(255, 255, 255, .98));
+      box-shadow: 0 16px 28px -24px rgba(124, 58, 237, .28);
     }
     .agent-nav a.active .dashboard-nav-label {
       color: var(--side-accent);
     }
     .agent-nav a.active .dashboard-nav-note {
-      color: #0f766e;
+      color: #6d28d9;
     }
     .agent-nav a.active .dashboard-nav-arrow {
       opacity: 1;
@@ -197,6 +197,74 @@
       font-size: 13px;
       line-height: 1.45;
     }
+    .dashboard-hero {
+      position: relative;
+      overflow: hidden;
+      grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.9fr);
+      align-items: stretch;
+      gap: 16px;
+      background:
+        linear-gradient(135deg, rgba(109, 40, 217, 0.08), rgba(255, 255, 255, 0.96)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 240, 255, 0.94));
+    }
+    .dashboard-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(168, 85, 247, 0.18), transparent 34%);
+      pointer-events: none;
+    }
+    .dashboard-hero-copy,
+    .dashboard-hero-media {
+      position: relative;
+      z-index: 1;
+    }
+    .dashboard-hero-copy {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .dashboard-hero-copy h1 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      letter-spacing: -0.05em;
+      line-height: 0.96;
+    }
+    .dashboard-hero-copy p {
+      font-size: 15px;
+      max-width: 56ch;
+    }
+    .dashboard-hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dashboard-hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 58, 237, 0.14);
+      background: rgba(255, 255, 255, 0.86);
+      color: #5b21b6;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .dashboard-hero-media {
+      min-height: 260px;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(124, 58, 237, 0.12);
+      box-shadow: 0 28px 44px -34px rgba(109, 40, 217, 0.4);
+    }
+    .dashboard-hero-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -205,7 +273,7 @@
     .stat {
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: linear-gradient(160deg, rgba(255, 255, 255, .88), rgba(204, 251, 241, .55));
+      background: linear-gradient(160deg, rgba(255, 255, 255, .9), rgba(237, 233, 254, .72));
       padding: 12px;
       display: grid;
       gap: 4px;
@@ -255,12 +323,12 @@
       color: var(--text);
     }
     .referral {
-      border: 1px dashed rgba(20, 184, 166, .5);
+      border: 1px dashed rgba(124, 58, 237, .4);
       border-radius: 10px;
-      background: rgba(20, 184, 166, .08);
+      background: rgba(237, 233, 254, .72);
       padding: 8px;
       font-size: 12px;
-      color: #0f766e;
+      color: #5b21b6;
       word-break: break-all;
     }
     .table-wrap {
@@ -330,6 +398,9 @@
       }
       .agent-nav {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .dashboard-hero {
+        grid-template-columns: 1fr;
       }
     }
     @media (max-width: 720px) {
@@ -455,14 +526,26 @@
       <% if (info) { %><div class="alert"><%= info %></div><% } %>
 
       <% if (section === 'overview') { %>
-        <article class="panel">
-          <h1>Agent Dashboard</h1>
-          <p>Monitor your attributed sales, commissions, and payout readiness.</p>
+        <article class="panel dashboard-hero">
+          <div class="dashboard-hero-copy">
+            <div class="dashboard-hero-badges">
+              <span class="dashboard-hero-badge">Agent workspace</span>
+              <span class="dashboard-hero-badge"><%= formatCurrencyAmount(totals.totalCommissionMinor || 0, 'NGN') %> earned</span>
+              <span class="dashboard-hero-badge"><%= courses?.length || 0 %> referral courses</span>
+            </div>
+            <div>
+              <h1>Agent Dashboard</h1>
+              <p>Monitor your attributed sales, commission flow, payout readiness, and live referral catalog from the same purple workspace system as the rest of the platform.</p>
+            </div>
 
-          <div class="stats-grid">
-            <div class="stat"><span>Total Earned</span><strong><%= formatCurrencyAmount(totals.totalCommissionMinor || 0, 'NGN') %></strong></div>
-            <div class="stat"><span>Pending Payout</span><strong><%= formatCurrencyAmount(totals.pendingCommissionMinor || 0, 'NGN') %></strong></div>
-            <div class="stat"><span>Paid Out</span><strong><%= formatCurrencyAmount(totals.paidCommissionMinor || 0, 'NGN') %></strong></div>
+            <div class="stats-grid">
+              <div class="stat"><span>Total Earned</span><strong><%= formatCurrencyAmount(totals.totalCommissionMinor || 0, 'NGN') %></strong></div>
+              <div class="stat"><span>Pending Payout</span><strong><%= formatCurrencyAmount(totals.pendingCommissionMinor || 0, 'NGN') %></strong></div>
+              <div class="stat"><span>Paid Out</span><strong><%= formatCurrencyAmount(totals.paidCommissionMinor || 0, 'NGN') %></strong></div>
+            </div>
+          </div>
+          <div class="dashboard-hero-media">
+            <img src="/images/aiin-learning-hero-graphic-new.png" alt="AIIN Learning agent workspace">
           </div>
         </article>
 

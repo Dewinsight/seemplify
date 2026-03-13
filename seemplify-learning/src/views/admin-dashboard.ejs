@@ -11,14 +11,14 @@
     :root {
       --admin-surface: rgba(255, 255, 255, 0.9);
       --admin-surface-strong: #ffffff;
-      --admin-border: #dbe5f2;
-      --admin-border-strong: #c6d4ea;
-      --admin-text: #0f172a;
-      --admin-muted: #60748f;
-      --admin-nav-bg: #0a1221;
-      --admin-nav-border: rgba(130, 150, 182, 0.24);
-      --admin-accent: #38bdf8;
-      --admin-accent-strong: #0ea5e9;
+      --admin-border: rgba(109, 40, 217, 0.12);
+      --admin-border-strong: rgba(124, 58, 237, 0.18);
+      --admin-text: #1c1235;
+      --admin-muted: #665788;
+      --admin-nav-bg: #2a1450;
+      --admin-nav-border: rgba(196, 181, 253, 0.22);
+      --admin-accent: #8b5cf6;
+      --admin-accent-strong: #6d28d9;
     }
     html, body {
       width: 100%;
@@ -34,9 +34,9 @@
       color: var(--admin-text);
       font-family: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
       background:
-        radial-gradient(circle at 90% 8%, rgba(56, 189, 248, 0.08), transparent 34%),
-        radial-gradient(circle at 8% 22%, rgba(59, 130, 246, 0.07), transparent 28%),
-        #ecf2f9;
+        radial-gradient(circle at 90% 8%, rgba(168, 85, 247, 0.12), transparent 34%),
+        radial-gradient(circle at 8% 22%, rgba(124, 58, 237, 0.1), transparent 28%),
+        #f4edff;
       overflow-x: hidden;
       letter-spacing: -0.01em;
     }
@@ -65,9 +65,9 @@
       padding: 18px 16px 16px;
       color: #cbd5e1;
       background:
-        radial-gradient(circle at 14% 8%, rgba(14, 165, 233, 0.22), transparent 34%),
-        radial-gradient(circle at 94% 86%, rgba(30, 64, 175, 0.16), transparent 40%),
-        linear-gradient(180deg, #091225 0%, #0b172d 52%, #111f36 100%);
+        radial-gradient(circle at 14% 8%, rgba(168, 85, 247, 0.24), transparent 34%),
+        radial-gradient(circle at 94% 86%, rgba(76, 29, 149, 0.22), transparent 40%),
+        linear-gradient(180deg, #241046 0%, #2f165b 52%, #1f123d 100%);
       border-right: 1px solid rgba(148, 163, 184, 0.18);
       box-shadow: 12px 0 28px -30px rgba(2, 6, 23, 0.96);
       z-index: 5;
@@ -97,7 +97,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      color: #93c5fd;
+      color: #d8b4fe;
     }
     .side h1 {
       margin: 0;
@@ -144,11 +144,11 @@
     .side-profile .side-role {
       width: fit-content;
       margin-top: 2px;
-      border: 1px solid rgba(56, 189, 248, 0.32);
+      border: 1px solid rgba(196, 181, 253, 0.4);
       border-radius: 999px;
       padding: 2px 8px;
-      color: #bae6fd;
-      background: rgba(14, 116, 144, 0.25);
+      color: #f3e8ff;
+      background: rgba(124, 58, 237, 0.24);
       text-transform: capitalize;
       font-size: 10px;
       font-weight: 700;
@@ -204,15 +204,15 @@
       transition: background 0.18s ease, box-shadow 0.18s ease;
     }
     .side nav a:hover {
-      border-color: rgba(125, 211, 252, 0.5);
+      border-color: rgba(196, 181, 253, 0.5);
       background: rgba(30, 41, 59, 0.56);
       transform: translateX(2px);
       color: #f8fafc;
-      box-shadow: 0 10px 24px -20px rgba(59, 130, 246, 0.75);
+      box-shadow: 0 10px 24px -20px rgba(124, 58, 237, 0.75);
     }
     .side nav a:hover::before {
-      background: rgba(56, 189, 248, 0.9);
-      box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.36);
+      background: rgba(216, 180, 254, 0.95);
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.34);
     }
     .side nav a .label {
       font-weight: 650;
@@ -232,19 +232,19 @@
       letter-spacing: 0.03em;
     }
     .side nav a.active {
-      border-color: rgba(125, 211, 252, 0.6);
+      border-color: rgba(196, 181, 253, 0.58);
       color: #ffffff;
-      background: linear-gradient(130deg, rgba(14, 165, 233, 0.28), rgba(15, 23, 42, 0.9));
-      box-shadow: 0 14px 30px -24px rgba(56, 189, 248, 0.82);
+      background: linear-gradient(130deg, rgba(124, 58, 237, 0.36), rgba(36, 16, 70, 0.96));
+      box-shadow: 0 14px 30px -24px rgba(124, 58, 237, 0.82);
     }
     .side nav a.active::before {
-      background: rgba(186, 230, 253, 1);
-      box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.48);
+      background: rgba(243, 232, 255, 1);
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.42);
     }
     .side nav a.active .meta {
-      border-color: rgba(125, 211, 252, 0.62);
-      color: #dbeafe;
-      background: rgba(14, 116, 144, 0.34);
+      border-color: rgba(196, 181, 253, 0.52);
+      color: #f3e8ff;
+      background: rgba(124, 58, 237, 0.28);
     }
     .side .actions {
       border-top: 1px solid rgba(148, 163, 184, 0.24);
@@ -290,7 +290,7 @@
       width: 100%;
       height: 3px;
       border-radius: 16px 16px 0 0;
-      background: linear-gradient(90deg, var(--admin-accent-strong), #60a5fa, #93c5fd);
+      background: linear-gradient(90deg, var(--admin-accent-strong), #8b5cf6, #c084fc);
       opacity: 0.95;
     }
     .head {
@@ -437,7 +437,7 @@
       transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
     }
     .quick-link:hover {
-      border-color: #bfdbfe;
+      border-color: rgba(124, 58, 237, 0.22);
       transform: translateY(-1px);
       box-shadow: 0 12px 24px -24px rgba(2, 6, 23, 0.6);
       background: #ffffff;
@@ -460,10 +460,10 @@
       gap: 8px;
     }
     .course-mgmt-chip {
-      border: 1px solid #d7e3f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 12px;
       padding: 8px 10px;
-      background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, #faf5ff 100%);
       display: grid;
       gap: 2px;
     }
@@ -683,7 +683,7 @@
       gap: 8px;
     }
     .creator-kpi-tile {
-      border: 1px solid #d7e3f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 12px;
       padding: 8px 10px;
       background: #ffffff;
@@ -872,9 +872,10 @@
     .overview-hero {
       gap: 14px;
       background:
-        radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 30%),
-        linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(243, 248, 255, 0.92));
-      border-color: #d3e2f6;
+        radial-gradient(circle at top right, rgba(168, 85, 247, 0.18), transparent 32%),
+        radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.12), transparent 30%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.94));
+      border-color: rgba(109, 40, 217, 0.14);
     }
     .overview-hero-grid {
       display: grid;
@@ -890,14 +891,14 @@
     .eyebrow {
       width: fit-content;
       border-radius: 999px;
-      border: 1px solid rgba(14, 165, 233, 0.26);
-      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(124, 58, 237, 0.2);
+      background: rgba(124, 58, 237, 0.08);
       padding: 5px 10px;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: #0369a1;
+      color: #6d28d9;
     }
     .overview-copy h3,
     .command-card h3,
@@ -922,18 +923,20 @@
     .overview-badges .pill {
       padding: 4px 9px;
       background: rgba(255, 255, 255, 0.94);
-      border-color: #d2deef;
-      color: #42526b;
+      border-color: rgba(109, 40, 217, 0.12);
+      color: #5b4b82;
     }
     .hero-panel {
-      border: 1px solid #d3e3f4;
+      border: 1px solid rgba(196, 181, 253, 0.34);
       border-radius: 16px;
-      background: linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.8) 56%, rgba(30, 41, 59, 0.9));
-      color: #e2e8f0;
+      background:
+        radial-gradient(circle at top right, rgba(192, 132, 252, 0.26), transparent 34%),
+        linear-gradient(160deg, rgba(44, 20, 84, 0.98), rgba(68, 25, 128, 0.92) 56%, rgba(33, 17, 61, 0.98));
+      color: #f3e8ff;
       padding: 14px;
       display: grid;
       gap: 12px;
-      box-shadow: 0 18px 30px -28px rgba(15, 23, 42, 0.88);
+      box-shadow: 0 22px 38px -28px rgba(76, 29, 149, 0.76);
     }
     .hero-panel-top {
       display: flex;
@@ -951,7 +954,25 @@
     }
     .hero-panel .mini,
     .hero-panel p {
-      color: #cbd5e1;
+      color: rgba(243, 232, 255, 0.78);
+    }
+    .hero-panel-live {
+      border-color: rgba(216, 180, 254, 0.34) !important;
+      background: rgba(124, 58, 237, 0.24) !important;
+      color: #f5f3ff !important;
+    }
+    .hero-panel-media {
+      min-height: 172px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(216, 180, 254, 0.22);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .hero-panel-media img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
     }
     .hero-panel-grid {
       display: grid;
@@ -995,9 +1016,9 @@
     .partner-panel,
     .role-summary-card,
     .analytics-panel {
-      border: 1px solid #d7e3f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 14px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.92));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.9));
       padding: 14px;
       display: grid;
       gap: 10px;
@@ -1028,7 +1049,7 @@
     .partner-metric,
     .role-summary-metric,
     .analytics-stat {
-      border: 1px solid #d9e3f1;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 12px;
       background: #ffffff;
       padding: 10px 11px;
@@ -1054,13 +1075,13 @@
     .partner-org-card,
     .request-card,
     .role-account-card {
-      border: 1px solid #d6e2f2;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 15px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 255, 0.94));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.94));
       padding: 14px;
       display: grid;
       gap: 10px;
-      box-shadow: 0 14px 28px -28px rgba(15, 23, 42, 0.55);
+      box-shadow: 0 14px 28px -28px rgba(76, 29, 149, 0.26);
     }
     .partner-org-head,
     .role-account-head,
@@ -1142,11 +1163,57 @@
       align-items: center;
       flex-wrap: wrap;
     }
+    .partner-org-members {
+      border-top: 1px dashed #d5e2f1;
+      padding-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .partner-member-grid,
+    .platform-admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+    .partner-member-card,
+    .platform-admin-card {
+      border: 1px solid #d7e3f2;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+    .partner-member-card .inline-form,
+    .platform-admin-card .inline-form {
+      width: 100%;
+    }
+    .partner-member-form {
+      display: grid;
+      gap: 8px;
+    }
+    .partner-member-form .inline-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      align-items: stretch;
+      margin: 0;
+    }
+    .partner-member-actions {
+      display: grid;
+      gap: 8px;
+    }
+    .member-empty-state {
+      border: 1px dashed rgba(109, 40, 217, 0.18);
+      border-radius: 13px;
+      padding: 12px;
+      background: rgba(248, 244, 255, 0.85);
+    }
     .analytics-hero {
       gap: 12px;
       background:
-        radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 28%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.94));
+        radial-gradient(circle at top right, rgba(168, 85, 247, 0.16), transparent 28%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.94));
     }
     .analytics-hero-top {
       display: grid;
@@ -1157,9 +1224,9 @@
     .analytics-filter-grid {
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       padding: 12px;
-      border: 1px solid #d9e4f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 14px;
-      background: rgba(248, 250, 252, 0.82);
+      background: rgba(248, 244, 255, 0.82);
     }
     .analytics-filter-grid .actions {
       grid-column: 1 / -1;
@@ -1194,7 +1261,7 @@
     .rank-bar {
       height: 10px;
       border-radius: 999px;
-      background: #e7eef8;
+      background: rgba(196, 181, 253, 0.28);
       overflow: hidden;
       position: relative;
     }
@@ -1202,7 +1269,7 @@
       display: block;
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, #38bdf8, #3b82f6);
+      background: linear-gradient(90deg, #7c3aed, #a855f7);
     }
     .rank-value {
       font-size: 11px;
@@ -1256,13 +1323,13 @@
       gap: 8px;
     }
     .audit-summary-card {
-      border: 1px solid #d7e3f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 14px;
       padding: 11px 12px;
       background: rgba(255, 255, 255, 0.9);
       display: grid;
       gap: 3px;
-      box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.32);
+      box-shadow: inset 0 0 0 1px rgba(233, 213, 255, 0.52);
     }
     .audit-summary-card span,
     .audit-card-label {
@@ -1283,15 +1350,15 @@
       gap: 10px;
     }
     .audit-entry {
-      border: 1px solid #d7e3f3;
+      border: 1px solid rgba(109, 40, 217, 0.12);
       border-radius: 16px;
       background: rgba(255, 255, 255, 0.94);
       overflow: hidden;
       box-shadow: 0 14px 28px -30px rgba(15, 23, 42, 0.68);
     }
     .audit-entry[open] {
-      border-color: #bfdbfe;
-      box-shadow: 0 18px 34px -30px rgba(59, 130, 246, 0.42);
+      border-color: rgba(124, 58, 237, 0.26);
+      box-shadow: 0 18px 34px -30px rgba(124, 58, 237, 0.3);
     }
     .audit-entry summary {
       list-style: none;
@@ -1306,7 +1373,7 @@
       gap: 14px;
       align-items: start;
       padding: 14px 16px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.92));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 240, 255, 0.92));
     }
     .audit-entry-main {
       min-width: 0;
@@ -1508,7 +1575,7 @@
     { key: 'courses', label: 'Course Management' },
     { key: 'approvals', label: 'Approval Queue' },
     { key: 'partners', label: 'Partners' },
-    { key: 'super-users', label: 'Super Users' },
+    { key: 'super-users', label: 'Platform Admins' },
     { key: 'audit-log', label: 'Audit Log' },
     { key: 'creators', label: 'Creators' },
     { key: 'users', label: 'Users & Roles' },
@@ -1529,7 +1596,7 @@
     courses: 'Course Management',
     approvals: 'Course Approval Queue',
     partners: 'Partner Operations',
-    'super-users': 'Super User Management',
+    'super-users': 'Platform Admins',
     'audit-log': 'Admin Activity Log',
     creators: 'Creator Management',
     users: 'Users & Roles',
@@ -1607,7 +1674,7 @@
     courses: `${Number(courses.length)} courses`,
     approvals: `${Number(approvalCourses.length)} queued`,
     partners: `${Number((partnerOrganizations || []).length)} orgs`,
-    'super-users': `${Number((superUserAccounts || []).length)} users`,
+    'super-users': `${Array.isArray(adminAccounts) ? adminAccounts.filter((account) => ['admin', 'super_admin'].includes(String(account.platformRole || '').trim().toLowerCase())).length : 0} users`,
     'audit-log': `${Number((auditLogEntries || []).length)} events`,
     creators: `${Number((creatorAdminRows || []).length)} creators`,
     users: `${Number((adminAccounts || []).length)} users`,
@@ -1644,16 +1711,17 @@
   const partnerOrgRows = Array.isArray(partnerOrganizations) ? partnerOrganizations : []
   const partnerRequestRows = Array.isArray(roleApprovalRequests) ? roleApprovalRequests : []
   const managedAccountRows = Array.isArray(adminAccounts)
-    ? adminAccounts.filter((account) => account.resolvedRole !== 'channel_sales_agent')
+    ? adminAccounts.filter((account) => account.agentDashboardRole !== 'channel_sales_agent')
     : []
+  const platformAdminRows = managedAccountRows.filter((account) => ['admin', 'super_admin'].includes(toLower(account.platformRole)))
   const pendingPartnerRequestCount = partnerRequestRows.filter((request) => toLower(request.status) === 'pending').length
   const activePartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'active').length
   const suspendedPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'suspended').length
   const pendingPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerStatus) === 'pending').length
   const channelPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerType) === 'channel_partner').length
   const standardPartnerOrgCount = partnerOrgRows.filter((organization) => toLower(organization.partnerType) === 'partner').length
-  const platformAdminAccountCount = managedAccountRows.filter((account) => ['super_admin', 'admin'].includes(toLower(account.resolvedRole))).length
-  const partnerManagedAccountCount = managedAccountRows.filter((account) => ['partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super'].includes(toLower(account.resolvedRole))).length
+  const platformAdminAccountCount = platformAdminRows.length
+  const partnerManagedAccountCount = managedAccountRows.filter((account) => Boolean(account.partnerDashboardRole)).length
   const totalPartnerAgents = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.agentCount), 0)
   const partnerPublishedCourseCount = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.publishedCourses), 0)
   const partnerDraftCourseCount = partnerOrgRows.reduce((sum, organization) => sum + toNumber(organization.draftCourses), 0)
@@ -1764,7 +1832,10 @@
                   <strong style="display:block;font-size:18px;letter-spacing:-0.02em;">Platform pulse</strong>
                   <p class="mini">Immediate numbers for the public site, internal operations, and partner network.</p>
                 </div>
-                <span class="pill" style="border-color:rgba(56,189,248,0.35);background:rgba(14,116,144,0.26);color:#dbeafe;">Admin live</span>
+                <span class="pill hero-panel-live">Admin live</span>
+              </div>
+              <div class="hero-panel-media">
+                <img src="/images/aiin-learning-hero-graphic-new.png" alt="AIIN Learning admin command center">
               </div>
               <div class="hero-panel-grid">
                 <article class="hero-panel-stat">
@@ -2222,14 +2293,15 @@
             <article class="partner-panel">
               <div>
                 <h3>Action lanes</h3>
-                <p class="mini">Jump to the other admin tools that affect partner operations.</p>
+                <p class="mini">Partner and channel-partner memberships are managed here. Platform admin access stays in Access Control.</p>
               </div>
               <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/users">Assign Partner Roles</a>
+                <a class="btn btn-primary btn-sm" href="/admin/super-users">Open Platform Admins</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/users">Base User Roles</a>
                 <a class="btn btn-secondary btn-sm" href="/admin/analytics">Partner Analytics</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/audit-log">Audit Events</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/audit-log">Access Audit</a>
               </div>
-              <p class="mini">Role requests are for onboarding. Direct role assignment is handled in Users &amp; Roles.</p>
+              <p class="mini">Use this page to approve partner onboarding, attach existing accounts to organizations, and promote or demote partner super users.</p>
             </article>
           </div>
 
@@ -2285,6 +2357,85 @@
                       <button class="btn btn-primary btn-sm" type="submit">Update Status</button>
                     </div>
                   </form>
+                  <section class="partner-org-members">
+                    <div class="head">
+                      <div>
+                        <h3 style="font-size:18px;">Partner members</h3>
+                        <p class="mini">Manage org-specific partner access without touching platform admin flags.</p>
+                      </div>
+                    </div>
+                    <%
+                      const memberIds = new Set((organization.members || []).map((member) => String(member.id || '')))
+                      const organizationType = String(organization.partnerType || 'partner').trim().toLowerCase()
+                      const defaultMemberRole = organizationType === 'channel_partner' ? 'channel_partner_user' : 'partner_user'
+                      const defaultSuperRole = organizationType === 'channel_partner' ? 'channel_partner_super' : 'partner_super'
+                      const addableAccounts = managedAccountRows.filter((account) => {
+                        if (memberIds.has(String(account._id || ''))) return false
+                        if (account.agentDashboardRole) return false
+                        if (organizationType === 'channel_partner' && String(account.partnerDashboardRole || '').startsWith('partner_')) return false
+                        if (organizationType === 'partner' && String(account.partnerDashboardRole || '').startsWith('channel_partner_')) return false
+                        return true
+                      })
+                    %>
+                    <div class="partner-member-form">
+                      <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members" class="inline-form">
+                        <select class="input" name="accountId" required>
+                          <option value="">Add existing account</option>
+                          <% addableAccounts.forEach((account) => { %>
+                            <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                          <% }) %>
+                        </select>
+                        <select class="input" name="role">
+                          <option value="<%= defaultMemberRole %>"><%= defaultMemberRole %></option>
+                          <option value="<%= defaultSuperRole %>"><%= defaultSuperRole %></option>
+                        </select>
+                        <input type="hidden" name="returnTo" value="/admin/partners">
+                        <button class="btn btn-secondary btn-sm" type="submit">Add Member</button>
+                      </form>
+                      <% if (addableAccounts.length === 0) { %>
+                        <div class="member-empty-state">
+                          <p class="mini">No eligible accounts are available to attach to this organization right now.</p>
+                        </div>
+                      <% } %>
+                    </div>
+                    <% if (!organization.members || organization.members.length === 0) { %>
+                      <div class="member-empty-state">
+                        <p class="mini">No partner members are linked to this organization yet.</p>
+                      </div>
+                    <% } else { %>
+                      <div class="partner-member-grid">
+                        <% organization.members.forEach((member) => { %>
+                          <article class="partner-member-card">
+                            <div class="partner-org-head">
+                              <div>
+                                <h3 style="font-size:17px;"><%= member.displayName %></h3>
+                                <p class="mini"><%= member.email || '-' %></p>
+                              </div>
+                              <div class="partner-org-meta">
+                                <span class="pill"><%= String(member.memberRoleLabel || member.memberRole || '').replace(/_/g, ' ') %></span>
+                                <% if (member.platformRole) { %><span class="pill"><%= String(member.platformRole).replace(/_/g, ' ') %></span><% } %>
+                                <% if (member.baseLearningRole) { %><span class="pill">base: <%= String(member.baseLearningRole).replace(/_/g, ' ') %></span><% } %>
+                              </div>
+                            </div>
+                            <div class="partner-member-actions">
+                              <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members/<%= member.id %>/role" class="inline-form">
+                                <select class="input" name="role">
+                                  <option value="<%= defaultMemberRole %>" <%= member.memberRoleLabel === defaultMemberRole ? 'selected' : '' %>><%= defaultMemberRole %></option>
+                                  <option value="<%= defaultSuperRole %>" <%= member.memberRoleLabel === defaultSuperRole ? 'selected' : '' %>><%= defaultSuperRole %></option>
+                                </select>
+                                <input type="hidden" name="returnTo" value="/admin/partners">
+                                <button class="btn btn-secondary btn-sm" type="submit">Update Member</button>
+                              </form>
+                              <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members/<%= member.id %>/remove" class="inline-form">
+                                <input type="hidden" name="returnTo" value="/admin/partners">
+                                <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                              </form>
+                            </div>
+                          </article>
+                        <% }) %>
+                      </div>
+                    <% } %>
+                  </section>
                 </article>
               <% }) %>
             <% } %>
@@ -2391,13 +2542,17 @@
                     <strong><%= request.organizationName || '-' %></strong>
                   </div>
                   <% if (String(request.status || '').toLowerCase() === 'pending') { %>
+                    <% const requestIsChannelPartner = String(request.partnerType || request.requestedRole || '').includes('channel') %>
                     <div class="request-actions">
                       <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/approve" class="inline-form">
                         <select class="input" name="approvedRole">
-                          <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
-                          <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
-                          <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
-                          <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                          <% if (requestIsChannelPartner) { %>
+                            <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                            <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                          <% } else { %>
+                            <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                            <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                          <% } %>
                         </select>
                         <input class="input" type="text" name="notes" placeholder="Review notes (optional)">
                         <input type="hidden" name="returnTo" value="/admin/partners">
@@ -2484,9 +2639,39 @@
         <section class="card">
           <div class="head">
             <div>
-              <h2>Super User Management</h2>
-              <p class="mini">Invite new admins through Brevo, verify their onboarding state, and still promote or demote existing super admins with password re-authentication.</p>
+              <h2>Platform Admins</h2>
+              <p class="mini">Manage platform-wide admin access here. Partner and channel-partner super-user promotions belong in Partner Operations.</p>
             </div>
+          </div>
+
+          <div class="platform-admin-grid">
+            <% platformAdminRows.forEach((account) => { %>
+              <article class="platform-admin-card">
+                <div class="role-account-head">
+                  <div>
+                    <h3><%= account.displayName %></h3>
+                    <p class="mini"><%= account.email %></p>
+                  </div>
+                  <div class="role-account-topline">
+                    <% if (account.platformRole) { %><span class="pill"><%= String(account.platformRole).replace(/_/g, ' ') %></span><% } %>
+                    <% if (account.partnerDashboardRole) { %><span class="pill"><%= String(account.partnerDashboardRole).replace(/_/g, ' ') %></span><% } %>
+                  </div>
+                </div>
+                <div class="meta-list">
+                  <span class="pill">Base: <%= String(account.roleSelectValue || 'learner').replace(/_/g, ' ') %></span>
+                  <% if (account.partnerOrganizationName) { %><span class="pill">Org: <%= account.partnerOrganizationName %></span><% } %>
+                </div>
+                <p class="mini">This account can access the admin console<%= account.partnerDashboardRole ? ' and keeps separate partner dashboard access.' : '.' %></p>
+              </article>
+            <% }) %>
+            <% if (platformAdminRows.length === 0) { %>
+              <article class="platform-admin-card">
+                <div>
+                  <h3>No platform admins yet</h3>
+                  <p class="mini">Admin and super admin accounts will appear here as soon as they are assigned.</p>
+                </div>
+              </article>
+            <% } %>
           </div>
 
           <article class="card">
@@ -2506,11 +2691,11 @@
           </article>
 
           <article class="card">
-            <strong>Promote Existing Account</strong>
+            <strong>Promote Existing Platform Admin to Super Admin</strong>
             <form method="post" action="/simple-lms/admin/super-users/promote" class="inline-form">
               <select class="input" name="targetAccountId">
                 <option value="">Select account</option>
-                <% (adminAccounts || []).filter((account) => account.resolvedRole !== 'super_admin').forEach((account) => { %>
+                <% platformAdminRows.filter((account) => account.platformRole !== 'super_admin').forEach((account) => { %>
                   <option value="<%= account._id %>"><%= account.displayName %> (<%= account.email %>)</option>
                 <% }) %>
               </select>
@@ -2590,7 +2775,7 @@
               </thead>
               <tbody>
                 <% if (!superUserAccounts || superUserAccounts.length === 0) { %>
-                  <tr><td colspan="5" class="mini">No super users found.</td></tr>
+                  <tr><td colspan="5" class="mini">No super admins found.</td></tr>
                 <% } else { %>
                   <% superUserAccounts.forEach((superUser) => { %>
                     <tr>
@@ -3060,12 +3245,12 @@
 
       <% if (currentSection === 'users') { %>
         <section class="card">
-          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage platform access and direct partner role assignment. Agents stay managed through partner organizations.</p></div></div>
+          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage base LMS roles and additive platform-admin access. Partner and channel-partner memberships stay inside Partner Operations.</p></div></div>
           <div class="role-summary-grid">
             <article class="role-summary-card">
               <div>
                 <h3>Role distribution</h3>
-                <p class="mini">The admin panel can directly assign platform and partner roles to existing accounts.</p>
+                <p class="mini">This page is limited to learner, creator, admin, and super admin access. Partner org roles are managed separately so org context is never lost.</p>
               </div>
               <div class="role-stat-strip">
                 <div class="role-summary-metric"><span>Managed accounts</span><strong><%= managedAccountRows.length %></strong></div>
@@ -3077,11 +3262,11 @@
             <article class="role-summary-card">
               <div>
                 <h3>How this page works</h3>
-                <p class="mini">Use this page for direct assignment or promotion. Use Partner Operations for onboarding requests and partner status control.</p>
+                <p class="mini">Changing admin access here does not erase partner membership. Use Partner Operations for partner super-user promotion and org membership changes.</p>
               </div>
               <div class="actions">
                 <a class="btn btn-secondary btn-sm" href="/admin/partners">Open Partner Operations</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Manage Super Users</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Manage Platform Admins</a>
               </div>
             </article>
           </div>
@@ -3094,7 +3279,9 @@
                     <p class="mini"><%= account.email %></p>
                   </div>
                   <div class="role-account-topline">
-                    <span class="pill"><%= account.resolvedRole %></span>
+                    <span class="pill">base: <%= String(account.roleSelectValue || 'learner').replace(/_/g, ' ') %></span>
+                    <% if (account.platformRole) { %><span class="pill"><%= String(account.platformRole).replace(/_/g, ' ') %></span><% } %>
+                    <% if (account.partnerDashboardRole) { %><span class="pill"><%= String(account.partnerDashboardRole).replace(/_/g, ' ') %></span><% } %>
                     <% if (account.isSuperAdmin) { %><span class="pill">super flag</span><% } %>
                     <% if (account.isSystemAdmin && !account.isSuperAdmin) { %><span class="pill">admin flag</span><% } %>
                   </div>
@@ -3108,25 +3295,17 @@
                 <% } %>
                 <div class="role-account-form">
                   <label>
-                    <span class="mini">Assign role</span>
+                    <span class="mini">Base or platform role</span>
                     <select class="input" name="role">
-                      <option value="learner" <%= account.resolvedRole === 'learner' ? 'selected' : '' %>>learner</option>
-                      <option value="creator" <%= account.resolvedRole === 'creator' ? 'selected' : '' %>>creator</option>
-                      <option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option>
-                      <option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option>
-                      <option value="partner_user" <%= account.resolvedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
-                      <option value="partner_super" <%= account.resolvedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
-                      <option value="channel_partner_user" <%= account.resolvedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
-                      <option value="channel_partner_super" <%= account.resolvedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                      <option value="learner" <%= account.roleSelectValue === 'learner' ? 'selected' : '' %>>learner</option>
+                      <option value="creator" <%= account.roleSelectValue === 'creator' ? 'selected' : '' %>>creator</option>
+                      <option value="admin" <%= account.roleSelectValue === 'admin' ? 'selected' : '' %>>admin</option>
+                      <option value="super_admin" <%= account.roleSelectValue === 'super_admin' ? 'selected' : '' %>>super_admin</option>
                     </select>
-                  </label>
-                  <label>
-                    <span class="mini">Organization name</span>
-                    <input class="input" type="text" name="organizationName" maxlength="160" value="<%= account.partnerOrganizationName || '' %>" placeholder="Needed only if creating a fresh partner org">
                   </label>
                 </div>
                 <div class="role-account-foot">
-                  <span class="mini">If this user already belongs to a partner org, the existing org link is reused.</span>
+                  <span class="mini">Partner and channel-partner roles are handled in Partner Operations. This action only changes base LMS role or platform-admin access.</span>
                   <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
                   <button class="btn btn-primary btn-sm" type="submit">Save Role</button>
                 </div>

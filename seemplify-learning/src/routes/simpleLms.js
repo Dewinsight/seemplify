@@ -45,6 +45,7 @@ import {
 import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
+import { buildAccessProfileSnapshot, resolveAccessProfile } from '../utils/accessProfile.js'
 import {
   createPartnerApprovalRequest,
   sanitizePartnerOrganizationName
@@ -257,9 +258,71 @@ const flattenAuditMetadata = (value, prefix = '', depth = 0, maxPairs = 24) => {
   return pairs
 }
 
+const resolveAuditAccessContext = (account) => {
+  if (!account) {
+    return {
+      organization: null,
+      memberRole: ''
+    }
+  }
+
+  const organization = account?.partnerOrganization && typeof account.partnerOrganization === 'object'
+    ? account.partnerOrganization
+    : null
+  const organizationId = toIdString(organization?._id || account?.partnerOrganization || account?.currentOrganization)
+  const activeMembership = Array.isArray(account?.organizations)
+    ? account.organizations.find((entry) => (
+      entry?.isActive !== false && toIdString(entry.organization) === organizationId
+    ))
+    : null
+
+  let memberRole = String(activeMembership?.role || '').trim().toLowerCase()
+  if (!memberRole) {
+    const normalizedLearningRole = String(account?.learningRole || '').trim().toLowerCase()
+    if (normalizedLearningRole === 'channel_sales_agent') {
+      memberRole = 'sales_agent'
+    } else if (['partner_super', 'channel_partner_super'].includes(normalizedLearningRole)) {
+      memberRole = 'partner_admin'
+    } else if (['partner_user', 'channel_partner_user'].includes(normalizedLearningRole)) {
+      memberRole = 'partner_user'
+    }
+  }
+
+  return {
+    organization,
+    memberRole
+  }
+}
+
 const buildAuditRoleLabel = (account) => {
-  const resolvedRole = resolveRole(account)
-  return humanizeToken(resolvedRole || 'unknown')
+  const { organization, memberRole } = resolveAuditAccessContext(account)
+  const accessProfile = buildAccessProfileSnapshot(account, {
+    organization,
+    memberRole,
+    source: 'audit_snapshot'
+  })
+
+  const labels = []
+  if (accessProfile.platformRole) {
+    labels.push(humanizeToken(accessProfile.platformRole))
+  }
+  if (accessProfile.partnerAccess?.dashboardRole) {
+    const orgName = String(accessProfile.partnerAccess.organizationName || '').trim()
+    labels.push(orgName
+      ? `${humanizeToken(accessProfile.partnerAccess.dashboardRole)} @ ${orgName}`
+      : humanizeToken(accessProfile.partnerAccess.dashboardRole)
+    )
+  } else if (accessProfile.agentAccess?.dashboardRole) {
+    const orgName = String(accessProfile.agentAccess.organizationName || '').trim()
+    labels.push(orgName
+      ? `${humanizeToken(accessProfile.agentAccess.dashboardRole)} @ ${orgName}`
+      : humanizeToken(accessProfile.agentAccess.dashboardRole)
+    )
+  }
+  if (labels.length === 0) {
+    labels.push(humanizeToken(accessProfile.baseLearningRole || resolveRole(account) || 'unknown'))
+  }
+  return labels.join(' + ')
 }
 
 const hasPlatformAuditMetadata = (metadata = {}) => {
@@ -1377,6 +1440,11 @@ const requirePageAuth = async (req, res, next) => {
     return res.redirect(`/login?return_to=${encodeURIComponent(req.originalUrl || '/simple-lms')}`)
   }
   req.user = account
+  req.learningRole = resolveRole(account)
+  req.accessProfile = await resolveAccessProfile(account)
+  res.locals.user = account
+  res.locals.learningRole = req.learningRole
+  res.locals.accessProfile = req.accessProfile
   return next()
 }
 
@@ -1394,6 +1462,11 @@ const requireAdminPageAuth = async (req, res, next) => {
     return res.redirect('/login?error=Admin%20access%20is%20required')
   }
   req.user = account
+  req.learningRole = role
+  req.accessProfile = await resolveAccessProfile(account)
+  res.locals.user = account
+  res.locals.learningRole = role
+  res.locals.accessProfile = req.accessProfile
   return next()
 }
 
@@ -1407,6 +1480,11 @@ const requireApiAuth = async (req, res, next) => {
     return res.status(401).json({ error: 'Authentication required' })
   }
   req.user = account
+  req.learningRole = resolveRole(account)
+  req.accessProfile = await resolveAccessProfile(account)
+  res.locals.user = account
+  res.locals.learningRole = req.learningRole
+  res.locals.accessProfile = req.accessProfile
   return next()
 }
 
@@ -2469,7 +2547,10 @@ const DIRECT_ROLE_UPDATE_VALUES = Object.freeze([
   'learner',
   'creator',
   'admin',
-  'super_admin',
+  'super_admin'
+])
+
+const PARTNER_MEMBER_ASSIGNMENT_VALUES = Object.freeze([
   'partner_user',
   'partner_super',
   'channel_partner_user',
@@ -2483,7 +2564,7 @@ const resolvePartnerTypeForLearningRole = (role) => {
   return 'none'
 }
 
-const isDirectPartnerRoleUpdate = (role) => resolvePartnerTypeForLearningRole(role) !== 'none'
+const isDirectPartnerRoleUpdate = (role) => PARTNER_MEMBER_ASSIGNMENT_VALUES.includes(String(role || '').trim().toLowerCase())
 
 const parseAdminSection = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -5612,7 +5693,7 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
     }
 
     const currentTargetRole = resolveRole(target)
-    if (currentTargetRole === 'super_admin' && nextRole !== 'super_admin') {
+    if (target.isSuperAdmin && nextRole !== 'super_admin') {
       const superAdminCount = await Account.countDocuments({
         $or: [{ isSuperAdmin: true }, { learningRole: 'super_admin' }]
       })
@@ -5625,33 +5706,28 @@ pageRouter.post('/accounts/:accountId/role', requirePageAuth, async (req, res) =
       }
     }
 
-    let targetOrganization = null
-    if (isDirectPartnerRoleUpdate(nextRole)) {
-      targetOrganization = await ensurePartnerOrganizationForRoleAssignment({
-        account: target,
-        nextRole,
-        organizationName: req.body.organizationName || '',
-        actorId: req.user._id
+    const accessProfile = await resolveAccessProfile(target)
+    if ((nextRole === 'admin' || nextRole === 'super_admin') && accessProfile?.agentAccess) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Sales agents cannot also hold platform admin access.'
       })
     }
 
     const previousRole = LEARNING_ROLES.includes(currentTargetRole) ? currentTargetRole : 'learner'
-    target.learningRole = nextRole
-    target.isSuperAdmin = nextRole === 'super_admin'
-    target.isSystemAdmin = ['super_admin', 'admin'].includes(nextRole)
-    target.roleMetadata = {
-      ...(target.roleMetadata || {}),
-      previousLearningRole: previousRole,
-      lastUpdatedAt: new Date(),
-      lastUpdatedBy: req.user._id
-    }
+    applyPlatformRoleUpdate({
+      account: target,
+      nextRole,
+      actorId: req.user._id
+    })
     await target.save()
 
     await logAuditEvent({
       action: 'role.change',
       performedBy: req.user._id,
       targetAccount: target._id,
-      targetOrganization: targetOrganization?._id || target.partnerOrganization || null,
+      targetOrganization: target.partnerOrganization || null,
       metadata: {
         source: 'admin_users_page',
         fromRole: previousRole,
@@ -5682,21 +5758,180 @@ const mapLearningRoleToPartnerMemberRole = (role) => {
   return 'partner_user'
 }
 
+const resolvePartnerDashboardRoleFromOrgMembership = ({ organization, memberRole }) => {
+  const partnerType = String(organization?.partnerType || '').trim().toLowerCase()
+  const normalizedMemberRole = String(memberRole || '').trim().toLowerCase()
+  if (partnerType === 'channel_partner') {
+    return ['owner', 'admin', 'partner_admin'].includes(normalizedMemberRole)
+      ? 'channel_partner_super'
+      : 'channel_partner_user'
+  }
+  if (partnerType === 'partner') {
+    return ['owner', 'admin', 'partner_admin'].includes(normalizedMemberRole)
+      ? 'partner_super'
+      : 'partner_user'
+  }
+  return ''
+}
+
+const resolveNonPlatformRole = (account, fallback = 'learner') => {
+  const currentRole = String(account?.learningRole || '').trim().toLowerCase()
+  if (['learner', 'creator', 'partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super', 'channel_sales_agent'].includes(currentRole)) {
+    return currentRole
+  }
+  const previousRole = String(account?.roleMetadata?.previousLearningRole || '').trim().toLowerCase()
+  if (['learner', 'creator', 'partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super', 'channel_sales_agent'].includes(previousRole)) {
+    return previousRole
+  }
+  return fallback
+}
+
+const resolveNonPartnerFallbackRole = (account, fallback = 'learner') => {
+  const previousRole = String(account?.roleMetadata?.previousLearningRole || '').trim().toLowerCase()
+  if (['learner', 'creator'].includes(previousRole)) return previousRole
+  const currentRole = String(account?.learningRole || '').trim().toLowerCase()
+  if (['learner', 'creator'].includes(currentRole)) return currentRole
+  return fallback
+}
+
+const updateAccountRoleMetadata = ({ account, previousLearningRole, actorId }) => {
+  account.roleMetadata = {
+    ...(account.roleMetadata || {}),
+    previousLearningRole,
+    lastUpdatedAt: new Date(),
+    lastUpdatedBy: actorId || null
+  }
+}
+
+const applyPlatformRoleUpdate = ({ account, nextRole, actorId }) => {
+  const normalizedNextRole = String(nextRole || '').trim().toLowerCase()
+  const previousLearningRole = resolveNonPlatformRole(account)
+  if (normalizedNextRole === 'admin' || normalizedNextRole === 'super_admin') {
+    account.isSystemAdmin = true
+    account.isSuperAdmin = normalizedNextRole === 'super_admin'
+    if (!['admin', 'super_admin'].includes(String(account.learningRole || '').trim().toLowerCase())) {
+      account.learningRole = resolveNonPlatformRole(account)
+    } else {
+      account.learningRole = previousLearningRole
+    }
+    updateAccountRoleMetadata({
+      account,
+      previousLearningRole,
+      actorId
+    })
+    return
+  }
+
+  account.learningRole = normalizedNextRole
+  account.isSystemAdmin = false
+  account.isSuperAdmin = false
+  updateAccountRoleMetadata({
+    account,
+    previousLearningRole: normalizedNextRole,
+    actorId
+  })
+}
+
+const assertPartnerAccessCompatibility = async ({
+  account,
+  organization,
+  nextRole
+}) => {
+  const nextPartnerType = resolvePartnerTypeForLearningRole(nextRole)
+  if (nextPartnerType === 'none') {
+    throw new Error('A partner role is required for this operation.')
+  }
+
+  const orgPartnerType = String(organization?.partnerType || '').trim().toLowerCase()
+  if (orgPartnerType !== nextPartnerType) {
+    throw new Error('Selected role does not match the partner organization type.')
+  }
+
+  const accessProfile = await resolveAccessProfile(account)
+  if (accessProfile?.agentAccess) {
+    throw new Error('Sales agents cannot be promoted into partner management access.')
+  }
+
+  const currentPartnerOrganizationId = String(accessProfile?.partnerAccess?.organizationId || '').trim()
+  const targetOrganizationId = toIdString(organization?._id)
+  if (currentPartnerOrganizationId && currentPartnerOrganizationId !== targetOrganizationId) {
+    throw new Error('This account is already linked to another partner organization. Remove that membership first.')
+  }
+
+  const currentPartnerType = String(accessProfile?.partnerAccess?.partnerType || '').trim().toLowerCase()
+  if (currentPartnerType && currentPartnerType !== orgPartnerType) {
+    throw new Error('Accounts cannot mix partner and channel partner memberships.')
+  }
+}
+
+const upsertOrganizationMemberRecord = ({ organization, accountId, memberRole, actorId }) => {
+  const existingMember = Array.isArray(organization.members)
+    ? organization.members.find((entry) => toIdString(entry.account) === toIdString(accountId))
+    : null
+
+  if (existingMember) {
+    existingMember.role = memberRole
+    existingMember.status = 'active'
+    existingMember.updatedAt = new Date()
+    existingMember.updatedBy = actorId || accountId
+    return existingMember
+  }
+
+  organization.members = Array.isArray(organization.members) ? organization.members : []
+  organization.members.push({
+    account: accountId,
+    role: memberRole,
+    appAccess: {
+      mode: 'all',
+      appIds: []
+    },
+    joinedAt: new Date(),
+    invitedBy: actorId || accountId,
+    status: 'active',
+    updatedAt: new Date(),
+    updatedBy: actorId || accountId
+  })
+  return organization.members[organization.members.length - 1]
+}
+
+const upsertAccountOrganizationMembership = ({ account, organizationId, memberRole }) => {
+  const existingMembership = Array.isArray(account.organizations)
+    ? account.organizations.find((entry) => toIdString(entry.organization) === toIdString(organizationId))
+    : null
+
+  if (existingMembership) {
+    existingMembership.role = memberRole
+    existingMembership.isActive = true
+    return existingMembership
+  }
+
+  account.organizations = Array.isArray(account.organizations) ? account.organizations : []
+  account.organizations.push({
+    organization: organizationId,
+    role: memberRole,
+    appAccess: { mode: 'all', appIds: [] },
+    joinedAt: new Date(),
+    isActive: true
+  })
+  return account.organizations[account.organizations.length - 1]
+}
+
 const ensurePartnerOrganizationForRoleAssignment = async ({
   account,
   nextRole,
   organizationName,
-  actorId
+  actorId,
+  organization: existingOrganization = null
 }) => {
   const partnerType = resolvePartnerTypeForLearningRole(nextRole)
   if (partnerType === 'none') return null
 
   const normalizedOrgName = sanitizePartnerOrganizationName(organizationName)
   const orgRole = mapLearningRoleToPartnerMemberRole(nextRole)
-  let organization = null
+  let organization = existingOrganization || null
   const organizationId = toIdString(account?.partnerOrganization)
 
-  if (organizationId && mongoose.Types.ObjectId.isValid(organizationId)) {
+  if (!organization && organizationId && mongoose.Types.ObjectId.isValid(organizationId)) {
     organization = await Organization.findById(organizationId)
   }
 
@@ -5732,8 +5967,7 @@ const ensurePartnerOrganizationForRoleAssignment = async ({
     })
   } else {
     const currentPartnerType = String(organization.partnerType || 'partner').trim().toLowerCase()
-    const isOwnedByAccount = toIdString(organization.owner) === toIdString(account._id)
-    if (currentPartnerType && currentPartnerType !== partnerType && !isOwnedByAccount) {
+    if (currentPartnerType && currentPartnerType !== partnerType) {
       throw new Error('This account is linked to a different partner organization type. Update the organization first or use a different account.')
     }
     if (normalizedOrgName) {
@@ -5748,56 +5982,67 @@ const ensurePartnerOrganizationForRoleAssignment = async ({
       defaultAgentCommissionRate: organization.partnerSettings?.defaultAgentCommissionRate ?? 10,
       agentInviteApproval: organization.partnerSettings?.agentInviteApproval ?? true
     }
-
-    const existingMember = Array.isArray(organization.members)
-      ? organization.members.find((entry) => toIdString(entry.account) === toIdString(account._id))
-      : null
-
-    if (existingMember) {
-      existingMember.role = orgRole
-      existingMember.status = 'active'
-      existingMember.updatedAt = new Date()
-      existingMember.updatedBy = actorId || account._id
-    } else {
-      organization.members = Array.isArray(organization.members) ? organization.members : []
-      organization.members.push({
-        account: account._id,
-        role: orgRole,
-        appAccess: {
-          mode: 'all',
-          appIds: []
-        },
-        joinedAt: new Date(),
-        invitedBy: actorId || account._id,
-        status: 'active',
-        updatedAt: new Date(),
-        updatedBy: actorId || account._id
-      })
-    }
-
-    await organization.save()
   }
 
-  const existingMembership = Array.isArray(account.organizations)
-    ? account.organizations.find((entry) => toIdString(entry.organization) === toIdString(organization._id))
-    : null
+  await assertPartnerAccessCompatibility({
+    account,
+    organization,
+    nextRole
+  })
+  upsertOrganizationMemberRecord({
+    organization,
+    accountId: account._id,
+    memberRole: orgRole,
+    actorId
+  })
+  await organization.save()
 
-  if (existingMembership) {
-    existingMembership.role = orgRole
-    existingMembership.isActive = true
-  } else {
-    account.organizations = Array.isArray(account.organizations) ? account.organizations : []
-    account.organizations.push({
-      organization: organization._id,
-      role: orgRole,
-      appAccess: { mode: 'all', appIds: [] },
-      joinedAt: new Date(),
-      isActive: true
-    })
-  }
-
+  const previousLearningRole = resolveNonPlatformRole(account)
+  upsertAccountOrganizationMembership({
+    account,
+    organizationId: organization._id,
+    memberRole: orgRole
+  })
   account.partnerOrganization = organization._id
+  account.currentOrganization = organization._id
+  account.learningRole = nextRole
+  updateAccountRoleMetadata({
+    account,
+    previousLearningRole: isDirectPartnerRoleUpdate(previousLearningRole) ? resolveNonPartnerFallbackRole(account) : previousLearningRole,
+    actorId
+  })
   return organization
+}
+
+const removePartnerOrganizationMembership = async ({
+  account,
+  organization,
+  actorId
+}) => {
+  organization.members = (organization.members || []).filter((member) => (
+    toIdString(member.account) !== toIdString(account._id)
+  ))
+  await organization.save()
+
+  account.organizations = (account.organizations || []).filter((entry) => (
+    toIdString(entry.organization) !== toIdString(organization._id)
+  ))
+  if (toIdString(account.partnerOrganization) === toIdString(organization._id)) {
+    account.partnerOrganization = null
+  }
+  if (toIdString(account.currentOrganization) === toIdString(organization._id)) {
+    account.currentOrganization = null
+  }
+
+  const remainingPartnerMembership = (account.organizations || []).find((entry) => Boolean(entry?.isActive))
+  if (!remainingPartnerMembership) {
+    account.learningRole = resolveNonPartnerFallbackRole(account)
+  }
+  updateAccountRoleMetadata({
+    account,
+    previousLearningRole: resolveNonPartnerFallbackRole(account),
+    actorId
+  })
 }
 
 pageRouter.post('/admin/super-users/invite', requirePageAuth, async (req, res) => {
@@ -6020,15 +6265,21 @@ pageRouter.post('/admin/super-users/promote', requirePageAuth, async (req, res) 
       })
     }
 
-    const previousRole = String(target.learningRole || 'learner').trim().toLowerCase()
-    target.learningRole = 'super_admin'
-    target.isSuperAdmin = true
-    target.isSystemAdmin = true
-    target.roleMetadata = {
-      previousLearningRole: LEARNING_ROLES.includes(previousRole) ? previousRole : 'learner',
-      lastUpdatedAt: new Date(),
-      lastUpdatedBy: req.user._id
+    const targetAccessProfile = await resolveAccessProfile(target)
+    if (targetAccessProfile?.agentAccess) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Sales agents cannot also hold super admin access.'
+      })
     }
+
+    const previousRole = String(resolveRole(target) || 'learner').trim().toLowerCase()
+    applyPlatformRoleUpdate({
+      account: target,
+      nextRole: 'super_admin',
+      actorId: req.user._id
+    })
     await target.save()
 
     await logAuditEvent({
@@ -6291,18 +6542,15 @@ pageRouter.post('/admin/super-users/:accountId/demote', requirePageAuth, async (
       })
     }
 
-    const fallbackRoleRaw = String(target.roleMetadata?.previousLearningRole || 'learner').trim().toLowerCase()
-    const fallbackRole = LEARNING_ROLES.includes(fallbackRoleRaw) && fallbackRoleRaw !== 'super_admin'
-      ? fallbackRoleRaw
-      : 'learner'
+    const fallbackRole = resolveNonPlatformRole(target, 'learner')
     target.learningRole = fallbackRole
     target.isSuperAdmin = false
-    target.isSystemAdmin = fallbackRole === 'admin'
-    target.roleMetadata = {
+    target.isSystemAdmin = false
+    updateAccountRoleMetadata({
+      account: target,
       previousLearningRole: fallbackRole,
-      lastUpdatedAt: new Date(),
-      lastUpdatedBy: req.user._id
-    }
+      actorId: req.user._id
+    })
     await target.save()
 
     await logAuditEvent({
@@ -6361,7 +6609,7 @@ pageRouter.post('/admin/role-requests/:requestId/approve', requirePageAuth, asyn
     }
 
     const approvedRoleRaw = String(req.body?.approvedRole || roleRequest.requestedRole || '').trim().toLowerCase()
-    if (!['partner_user', 'partner_super', 'channel_partner_user', 'channel_partner_super'].includes(approvedRoleRaw)) {
+    if (!PARTNER_MEMBER_ASSIGNMENT_VALUES.includes(approvedRoleRaw)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -6384,91 +6632,15 @@ pageRouter.post('/admin/role-requests/:requestId/approve', requirePageAuth, asyn
     if (roleRequestOrgId && mongoose.Types.ObjectId.isValid(roleRequestOrgId)) {
       organization = await Organization.findById(roleRequestOrgId)
     }
-    if (!organization) {
-      const organizationName = String(roleRequest.organizationName || '').trim()
-      if (organizationName) {
-        organization = await Organization.create({
-          name: organizationName,
-          description: `${roleRequest.partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} organization`,
-          owner: targetAccount._id,
-          partnerType: roleRequest.partnerType || 'partner',
-          members: [{
-            account: targetAccount._id,
-            role: mapLearningRoleToPartnerMemberRole(approvedRoleRaw),
-            appAccess: { mode: 'all', appIds: [] },
-            joinedAt: new Date(),
-            invitedBy: req.user._id,
-            status: 'active'
-          }],
-          partnerSettings: {
-            partnerStatus: 'active',
-            maxAgents: null,
-            defaultAgentCommissionRate: 10,
-            agentInviteApproval: true
-          }
-        })
-      }
-    }
-
-    if (organization) {
-      const partnerStatus = String(organization.partnerSettings?.partnerStatus || '').trim().toLowerCase()
-      if (!['active', 'suspended'].includes(partnerStatus)) {
-        organization.partnerSettings = organization.partnerSettings || {}
-        organization.partnerSettings.partnerStatus = 'active'
-      }
-
-      const orgRole = mapLearningRoleToPartnerMemberRole(approvedRoleRaw)
-      const member = (organization.members || []).find((entry) => (
-        toIdString(entry.account) === toIdString(targetAccount._id)
-      ))
-      if (member) {
-        member.role = orgRole
-        member.status = 'active'
-        member.updatedAt = new Date()
-        member.updatedBy = req.user._id
-      } else {
-        organization.members = Array.isArray(organization.members) ? organization.members : []
-        organization.members.push({
-          account: targetAccount._id,
-          role: orgRole,
-          appAccess: { mode: 'all', appIds: [] },
-          joinedAt: new Date(),
-          invitedBy: req.user._id,
-          status: 'active',
-          updatedAt: new Date(),
-          updatedBy: req.user._id
-        })
-      }
-      await organization.save()
-
-      const membership = Array.isArray(targetAccount.organizations)
-        ? targetAccount.organizations.find((entry) => toIdString(entry.organization) === toIdString(organization._id))
-        : null
-      if (membership) {
-        membership.role = orgRole
-        membership.isActive = true
-      } else {
-        targetAccount.organizations = Array.isArray(targetAccount.organizations) ? targetAccount.organizations : []
-        targetAccount.organizations.push({
-          organization: organization._id,
-          role: orgRole,
-          appAccess: { mode: 'all', appIds: [] },
-          joinedAt: new Date(),
-          isActive: true
-        })
-      }
-      targetAccount.partnerOrganization = organization._id
+    organization = await ensurePartnerOrganizationForRoleAssignment({
+      account: targetAccount,
+      nextRole: approvedRoleRaw,
+      organizationName: roleRequest.organizationName || '',
+      actorId: req.user._id,
+      organization
+    })
+    if (organization?._id) {
       roleRequest.organization = organization._id
-    }
-
-    targetAccount.learningRole = approvedRoleRaw
-    targetAccount.isSuperAdmin = approvedRoleRaw === 'super_admin'
-    targetAccount.isSystemAdmin = ['super_admin', 'admin'].includes(approvedRoleRaw)
-    targetAccount.roleMetadata = {
-      ...(targetAccount.roleMetadata || {}),
-      previousLearningRole: LEARNING_ROLES.includes(previousTargetRole) ? previousTargetRole : 'learner',
-      lastUpdatedAt: new Date(),
-      lastUpdatedBy: req.user._id
     }
     await targetAccount.save()
 
@@ -6632,6 +6804,289 @@ pageRouter.post('/admin/partners/:organizationId/status', requirePageAuth, async
       res,
       path: returnTo,
       error: error?.message || 'Failed to update partner status.'
+    })
+  }
+})
+
+pageRouter.post('/admin/partners/:organizationId/members', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can manage partner members.'
+      })
+    }
+
+    const organizationId = String(req.params.organizationId || '').trim()
+    const requestedRole = String(req.body?.role || '').trim().toLowerCase()
+    const accountId = String(req.body?.accountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(organizationId) || !mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid organization member.'
+      })
+    }
+    if (!PARTNER_MEMBER_ASSIGNMENT_VALUES.includes(requestedRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid partner role.'
+      })
+    }
+
+    const organization = await Organization.findById(organizationId)
+    if (!organization || organization.partnerType === 'none') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization not found.'
+      })
+    }
+
+    const targetAccount = await Account.findById(accountId)
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Target account not found.'
+      })
+    }
+
+    await ensurePartnerOrganizationForRoleAssignment({
+      account: targetAccount,
+      nextRole: requestedRole,
+      organizationName: organization.name,
+      actorId: req.user._id,
+      organization
+    })
+    await targetAccount.save()
+
+    await logAuditEvent({
+      action: 'role.change',
+      performedBy: req.user._id,
+      targetAccount: targetAccount._id,
+      targetOrganization: organization._id,
+      metadata: {
+        source: 'partner_member_add',
+        toRole: requestedRole
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Partner member added successfully.'
+    })
+  } catch (error) {
+    console.error('Add partner member error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to add partner member.'
+    })
+  }
+})
+
+pageRouter.post('/admin/partners/:organizationId/members/:accountId/role', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can manage partner members.'
+      })
+    }
+
+    const organizationId = String(req.params.organizationId || '').trim()
+    const accountId = String(req.params.accountId || '').trim()
+    const requestedRole = String(req.body?.role || '').trim().toLowerCase()
+    if (!mongoose.Types.ObjectId.isValid(organizationId) || !mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid partner member selected.'
+      })
+    }
+    if (!PARTNER_MEMBER_ASSIGNMENT_VALUES.includes(requestedRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid partner role.'
+      })
+    }
+
+    const organization = await Organization.findById(organizationId)
+    if (!organization || organization.partnerType === 'none') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization not found.'
+      })
+    }
+
+    const targetAccount = await Account.findById(accountId)
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Target account not found.'
+      })
+    }
+
+    const member = (organization.members || []).find((entry) => toIdString(entry.account) === accountId)
+    if (!member) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'That account is not currently a member of this organization.'
+      })
+    }
+    if (String(member.role || '').trim().toLowerCase() === 'sales_agent') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Sales agents must be managed from the channel partner dashboard.'
+      })
+    }
+
+    const previousRole = resolvePartnerDashboardRoleFromOrgMembership({
+      organization,
+      memberRole: member.role
+    })
+    await ensurePartnerOrganizationForRoleAssignment({
+      account: targetAccount,
+      nextRole: requestedRole,
+      organizationName: organization.name,
+      actorId: req.user._id,
+      organization
+    })
+    await targetAccount.save()
+
+    await logAuditEvent({
+      action: 'role.change',
+      performedBy: req.user._id,
+      targetAccount: targetAccount._id,
+      targetOrganization: organization._id,
+      metadata: {
+        source: 'partner_member_update',
+        fromRole: previousRole,
+        toRole: requestedRole
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Partner member role updated successfully.'
+    })
+  } catch (error) {
+    console.error('Update partner member role error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to update partner member role.'
+    })
+  }
+})
+
+pageRouter.post('/admin/partners/:organizationId/members/:accountId/remove', requirePageAuth, async (req, res) => {
+  const returnTo = sanitizeInternalPath(req.body?.returnTo || '/admin/partners', '/admin/partners')
+  try {
+    const actorRole = resolveRole(req.user)
+    if (!canManagePlatform(actorRole)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can manage partner members.'
+      })
+    }
+
+    const organizationId = String(req.params.organizationId || '').trim()
+    const accountId = String(req.params.accountId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(organizationId) || !mongoose.Types.ObjectId.isValid(accountId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid partner member selected.'
+      })
+    }
+
+    const organization = await Organization.findById(organizationId)
+    if (!organization || organization.partnerType === 'none') {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Partner organization not found.'
+      })
+    }
+    if (toIdString(organization.owner) === accountId) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Transfer organization ownership before removing the owner.'
+      })
+    }
+
+    const targetAccount = await Account.findById(accountId)
+    if (!targetAccount) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Target account not found.'
+      })
+    }
+
+    const member = (organization.members || []).find((entry) => toIdString(entry.account) === accountId)
+    if (!member) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'That account is not currently a member of this organization.'
+      })
+    }
+
+    await removePartnerOrganizationMembership({
+      account: targetAccount,
+      organization,
+      actorId: req.user._id
+    })
+    await targetAccount.save()
+
+    await logAuditEvent({
+      action: 'role.change',
+      performedBy: req.user._id,
+      targetAccount: targetAccount._id,
+      targetOrganization: organization._id,
+      metadata: {
+        source: 'partner_member_remove',
+        fromRole: resolvePartnerDashboardRoleFromOrgMembership({
+          organization,
+          memberRole: member.role
+        }),
+        toRole: 'removed'
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Partner member removed successfully.'
+    })
+  } catch (error) {
+    console.error('Remove partner member error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to remove partner member.'
     })
   }
 })
@@ -7616,7 +8071,7 @@ const renderWorkspacePage = async (
       SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
       canManagePlatform(role)
         ? Account.find({})
-          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization')
+          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization currentOrganization organizations roleMetadata')
           .populate('partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
           .sort({ createdAt: -1 })
           .limit(500)
@@ -7738,6 +8193,8 @@ const renderWorkspacePage = async (
         ? Organization.find({
           partnerType: { $in: ['channel_partner', 'partner'] }
         })
+          .populate('owner', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+          .populate('members.account', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
           .sort({ updatedAt: -1 })
           .limit(300)
           .lean()
@@ -7768,8 +8225,10 @@ const renderWorkspacePage = async (
         : Promise.resolve([]),
       canManagePlatform(role)
         ? AuditLog.find({})
-          .populate('performedBy', 'email profile.name learningRole isSystemAdmin isSuperAdmin')
-          .populate('targetAccount', 'email profile.name learningRole isSystemAdmin isSuperAdmin')
+          .populate('performedBy', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+          .populate('performedBy.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
+          .populate('targetAccount', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+          .populate('targetAccount.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
           .populate('targetOrganization', 'name partnerType')
           .sort({ createdAt: -1 })
           .limit(600)
@@ -8100,25 +8559,51 @@ const renderWorkspacePage = async (
     }))
     const recommendedPrograms = catalogPrograms.filter(program => !program.isEnrolled).slice(0, 6)
 
-    const adminAccounts = adminAccountsRaw.map((account) => ({
-      ...account,
-      resolvedRole: resolveRole(account),
-      displayName: account.profile?.name || account.email || 'User',
-      partnerOrganizationName: account.partnerOrganization?.name || '',
-      partnerOrganizationType: String(account.partnerOrganization?.partnerType || '').trim().toLowerCase(),
-      partnerOrganizationStatus: String(account.partnerOrganization?.partnerSettings?.partnerStatus || '').trim().toLowerCase()
-    }))
+    const adminAccounts = adminAccountsRaw.map((account) => {
+      const partnerOrganizationId = toIdString(account.partnerOrganization)
+      const membership = Array.isArray(account.organizations)
+        ? account.organizations.find((entry) => (
+          entry?.isActive !== false && toIdString(entry.organization) === partnerOrganizationId
+        ))
+        : null
+      const snapshotMemberRole = membership?.role || (
+        partnerOrganizationId && isDirectPartnerRoleUpdate(account.learningRole)
+          ? mapLearningRoleToPartnerMemberRole(account.learningRole)
+          : ''
+      )
+      const accessProfileSnapshot = buildAccessProfileSnapshot(account, {
+        organization: account.partnerOrganization || null,
+        memberRole: snapshotMemberRole
+      })
+      const accessDisplayRole = accessProfileSnapshot.platformRole
+        || accessProfileSnapshot.partnerAccess?.dashboardRole
+        || accessProfileSnapshot.agentAccess?.dashboardRole
+        || accessProfileSnapshot.baseLearningRole
+      return {
+        ...account,
+        accessProfile: accessProfileSnapshot,
+        resolvedRole: accessDisplayRole,
+        roleSelectValue: accessProfileSnapshot.platformRole || accessProfileSnapshot.baseLearningRole,
+        displayName: account.profile?.name || account.email || 'User',
+        partnerOrganizationName: account.partnerOrganization?.name || '',
+        partnerOrganizationType: String(account.partnerOrganization?.partnerType || '').trim().toLowerCase(),
+        partnerOrganizationStatus: String(account.partnerOrganization?.partnerSettings?.partnerStatus || '').trim().toLowerCase(),
+        partnerDashboardRole: accessProfileSnapshot.partnerAccess?.dashboardRole || '',
+        agentDashboardRole: accessProfileSnapshot.agentAccess?.dashboardRole || '',
+        platformRole: accessProfileSnapshot.platformRole || ''
+      }
+    })
 
     const roleBreakdown = {
-      super_admin: adminAccounts.filter(account => account.resolvedRole === 'super_admin').length,
-      admin: adminAccounts.filter(account => account.resolvedRole === 'admin').length,
-      creator: adminAccounts.filter(account => account.resolvedRole === 'creator').length,
-      learner: adminAccounts.filter(account => account.resolvedRole === 'learner').length,
-      channel_partner_super: adminAccounts.filter(account => account.resolvedRole === 'channel_partner_super').length,
-      channel_partner_user: adminAccounts.filter(account => account.resolvedRole === 'channel_partner_user').length,
-      partner_super: adminAccounts.filter(account => account.resolvedRole === 'partner_super').length,
-      partner_user: adminAccounts.filter(account => account.resolvedRole === 'partner_user').length,
-      channel_sales_agent: adminAccounts.filter(account => account.resolvedRole === 'channel_sales_agent').length
+      super_admin: adminAccounts.filter(account => account.platformRole === 'super_admin').length,
+      admin: adminAccounts.filter(account => account.platformRole === 'admin').length,
+      creator: adminAccounts.filter(account => account.roleSelectValue === 'creator').length,
+      learner: adminAccounts.filter(account => account.roleSelectValue === 'learner').length,
+      channel_partner_super: adminAccounts.filter(account => account.partnerDashboardRole === 'channel_partner_super').length,
+      channel_partner_user: adminAccounts.filter(account => account.partnerDashboardRole === 'channel_partner_user').length,
+      partner_super: adminAccounts.filter(account => account.partnerDashboardRole === 'partner_super').length,
+      partner_user: adminAccounts.filter(account => account.partnerDashboardRole === 'partner_user').length,
+      channel_sales_agent: adminAccounts.filter(account => account.agentDashboardRole === 'channel_sales_agent').length
     }
 
     const studioCourseMap = new Map()
@@ -8544,8 +9029,34 @@ const renderWorkspacePage = async (
       )
       const payoutCurrency = normalizeCurrencyCode(organization?.partnerSettings?.payoutProfile?.currency || 'NGN')
       const status = String(organization?.partnerSettings?.partnerStatus || 'pending').trim().toLowerCase()
+      const ownerName = organization?.owner?.profile?.name || organization?.owner?.email || ''
+      const members = (Array.isArray(organization?.members) ? organization.members : [])
+        .filter((member) => String(member?.status || 'active').trim().toLowerCase() === 'active')
+        .filter((member) => String(member?.role || '').trim().toLowerCase() !== 'sales_agent')
+        .map((member) => {
+          const account = member?.account || null
+          const accessProfile = buildAccessProfileSnapshot(account, {
+            organization,
+            memberRole: member.role
+          })
+          return {
+            id: toIdString(account?._id),
+            displayName: account?.profile?.name || account?.email || 'Member',
+            email: account?.email || '',
+            memberRole: String(member?.role || '').trim().toLowerCase(),
+            memberRoleLabel: resolvePartnerDashboardRoleFromOrgMembership({
+              organization,
+              memberRole: member.role
+            }) || String(member?.role || '').trim().toLowerCase(),
+            platformRole: accessProfile.platformRole || '',
+            baseLearningRole: accessProfile.baseLearningRole || 'learner'
+          }
+        })
+        .sort((left, right) => String(left.displayName || '').localeCompare(String(right.displayName || '')))
       return {
         ...organization,
+        ownerName,
+        members,
         partnerStatus: ['pending', 'active', 'suspended'].includes(status) ? status : 'pending',
         agentCount: Number(orgAgentStatsMap.get(orgId) || 0),
         totalCourses: Number(courseStats.totalCourses || 0),
