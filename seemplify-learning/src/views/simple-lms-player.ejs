@@ -533,6 +533,27 @@
               </ul>
             </div>
           <% } %>
+          <% if (currentLesson.quizQuestions && currentLesson.quizQuestions.length > 0) {
+            const latestScore = Number(latestAttempt?.score || 0)
+            const latestMaxScore = Number(latestAttempt?.maxScore || 0)
+            const latestPercentage = latestMaxScore > 0 ? Math.round((latestScore / latestMaxScore) * 100) : 0
+            const latestPassed = latestPercentage >= 70
+          %>
+            <section class="quiz-wrap">
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                <div style="display:grid;gap:4px;">
+                  <h3 class="quiz-section-head">Lesson Quiz</h3>
+                  <p class="quiz-modal-meta">Answer <%= currentLesson.quizQuestions.length %> question<%= currentLesson.quizQuestions.length === 1 ? '' : 's' %>. Pass mark: 70%.</p>
+                  <% if (latestMaxScore > 0) { %>
+                    <p class="quiz-modal-status"><strong class="<%= latestPassed ? 'quiz-result-pass' : 'quiz-result-fail' %>"><%= latestPassed ? 'Passed' : 'Not passed' %></strong> - Latest score: <strong><%= latestScore %>/<%= latestMaxScore %></strong> (<%= latestPercentage %>%).</p>
+                  <% } else { %>
+                    <p class="quiz-modal-status">No attempt submitted yet.</p>
+                  <% } %>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="open-lesson-quiz"><%= latestMaxScore > 0 ? 'Retake Lesson Quiz' : 'Take Lesson Quiz' %></button>
+              </div>
+            </section>
+          <% } %>
           <div class="player-actions">
             <form id="markCompleteForm" method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
               <button class="btn btn-primary" type="submit">Mark Lesson Complete</button>
@@ -635,6 +656,20 @@
           }))
         }))
       }))) %>
+      const currentLessonQuizData = <%- JSON.stringify(currentLesson && Array.isArray(currentLesson.quizQuestions) && currentLesson.quizQuestions.length > 0 ? {
+        key: String(currentLesson.lessonKey || ''),
+        chapterNumber: Number(currentLesson.chapterNumber || 1),
+        lessonNumber: Number(currentLesson.lessonNumber || 1),
+        title: String(currentLesson.title || 'Current Lesson'),
+        quizQuestions: (currentLesson.quizQuestions || []).map((question) => ({
+          prompt: question.prompt,
+          choices: (question.choices || []).map((choice) => ({ text: choice.text }))
+        }))
+      } : null) %>
+      const latestLessonAttempt = <%- JSON.stringify(latestAttempt ? {
+        score: Number(latestAttempt.score || 0),
+        maxScore: Number(latestAttempt.maxScore || 0)
+      } : null) %>
 
       const enrollmentId = <%- JSON.stringify(String((enrollment && enrollment._id) || '')) %>
       const modal = document.getElementById('chapterQuizModal')
@@ -648,10 +683,16 @@
       const completeNextForm = document.getElementById('completeNextForm')
       const lessonIframe = document.querySelector('.player-media iframe')
       const lessonNativeMedia = document.querySelector('.player-media video, .player-media audio')
-      let activeChapter = null
+      let activeQuizSession = null
       let submitting = false
       let autoAdvanceSubmitting = false
+      let bypassQuizGateOnce = false
       let driveWatchInterval = null
+      let currentLessonQuizPassed = Boolean(
+        latestLessonAttempt
+        && Number(latestLessonAttempt.maxScore || 0) > 0
+        && Math.round((Number(latestLessonAttempt.score || 0) / Number(latestLessonAttempt.maxScore || 1)) * 100) >= 70
+      )
 
       const escapeHtml = (value) => String(value || '')
         .replace(/&/g, '&amp;')
@@ -669,7 +710,7 @@
 
       const closeModal = () => {
         if (submitting) return
-        activeChapter = null
+        activeQuizSession = null
         if (form) form.innerHTML = ''
         if (statusNode) statusNode.textContent = ''
         if (resultsNode) resultsNode.innerHTML = ''
@@ -677,18 +718,17 @@
         setModalOpen(false)
       }
 
-      const openChapterQuiz = (chapterKey) => {
-        const chapter = chapterQuizData.find((entry) => String(entry.key) === String(chapterKey))
-        if (!chapter || !Array.isArray(chapter.quizLessons) || chapter.quizLessons.length === 0) return
-        activeChapter = chapter
-        titleNode.textContent = `Chapter ${chapter.chapterNumber} Quiz`
-        const questionTotal = chapter.quizLessons.reduce((count, lesson) => count + ((lesson.quizQuestions || []).length), 0)
-        metaNode.textContent = `${chapter.title} - ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
+      const openQuizSession = (session) => {
+        if (!session || !Array.isArray(session.quizLessons) || session.quizLessons.length === 0) return false
+        activeQuizSession = session
+        titleNode.textContent = session.title
+        const questionTotal = session.quizLessons.reduce((count, lesson) => count + ((lesson.quizQuestions || []).length), 0)
+        metaNode.textContent = `${session.meta} - ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
         statusNode.textContent = ''
         if (resultsNode) resultsNode.innerHTML = ''
-        form.innerHTML = chapter.quizLessons.map((lesson) => `
+        form.innerHTML = session.quizLessons.map((lesson) => `
           <section>
-            <h3 class="quiz-section-head">Lesson ${chapter.chapterNumber}.${lesson.lessonNumber}: ${escapeHtml(lesson.title)}</h3>
+            <h3 class="quiz-section-head">Lesson ${session.chapterNumber ? `${session.chapterNumber}.` : ''}${lesson.lessonNumber}: ${escapeHtml(lesson.title)}</h3>
             ${(lesson.quizQuestions || []).map((question, questionIndex) => `
               <section class="quiz-q">
                 <p>${questionIndex + 1}. ${escapeHtml(question.prompt)}</p>
@@ -703,11 +743,51 @@
           </section>
         `).join('')
         setModalOpen(true)
+        return true
+      }
+
+      const openChapterQuiz = (chapterKey) => {
+        const chapter = chapterQuizData.find((entry) => String(entry.key) === String(chapterKey))
+        if (!chapter || !Array.isArray(chapter.quizLessons) || chapter.quizLessons.length === 0) return false
+        return openQuizSession({
+          mode: 'chapter',
+          title: `Chapter ${chapter.chapterNumber} Quiz`,
+          meta: chapter.title,
+          chapterNumber: chapter.chapterNumber,
+          quizLessons: chapter.quizLessons,
+          autoAdvanceOnPass: false
+        })
+      }
+
+      const openLessonQuiz = ({ autoAdvanceOnPass = false } = {}) => {
+        if (!currentLessonQuizData || !Array.isArray(currentLessonQuizData.quizQuestions) || currentLessonQuizData.quizQuestions.length === 0) {
+          return false
+        }
+        return openQuizSession({
+          mode: 'lesson',
+          title: `Lesson ${currentLessonQuizData.chapterNumber}.${currentLessonQuizData.lessonNumber} Quiz`,
+          meta: `${currentLessonQuizData.title} - pass to complete this lesson`,
+          chapterNumber: currentLessonQuizData.chapterNumber,
+          quizLessons: [currentLessonQuizData],
+          autoAdvanceOnPass
+        })
+      }
+
+      const shouldGateCurrentLessonQuiz = () => Boolean(
+        currentLessonQuizData
+        && Array.isArray(currentLessonQuizData.quizQuestions)
+        && currentLessonQuizData.quizQuestions.length > 0
+        && !currentLessonQuizPassed
+      )
+
+      const maybeOpenLessonQuizGate = ({ autoAdvanceOnPass = false } = {}) => {
+        if (!shouldGateCurrentLessonQuiz()) return false
+        return openLessonQuiz({ autoAdvanceOnPass })
       }
 
       const submitChapterQuiz = async (event) => {
         event.preventDefault()
-        if (!activeChapter || submitting || !enrollmentId) return
+        if (!activeQuizSession || submitting || !enrollmentId) return
         submitting = true
         statusNode.textContent = 'Submitting quiz...'
         if (resultsNode) resultsNode.innerHTML = ''
@@ -715,10 +795,10 @@
 
         try {
           const lessonResults = []
-          let chapterScore = 0
-          let chapterMaxScore = 0
+          let quizScore = 0
+          let quizMaxScore = 0
 
-          for (const lesson of activeChapter.quizLessons || []) {
+          for (const lesson of activeQuizSession.quizLessons || []) {
             const body = new URLSearchParams()
             ;(lesson.quizQuestions || []).forEach((_, questionIndex) => {
               const input = form.querySelector(`input[name="${lesson.key}_answer_${questionIndex}"]:checked`)
@@ -740,8 +820,8 @@
               throw new Error((payload && payload.error) || 'Quiz submission failed.')
             }
 
-            chapterScore += Number(payload.score || 0)
-            chapterMaxScore += Number(payload.maxScore || 0)
+            quizScore += Number(payload.score || 0)
+            quizMaxScore += Number(payload.maxScore || 0)
             lessonResults.push({
               lesson,
               score: Number(payload.score || 0),
@@ -752,9 +832,9 @@
             })
           }
 
-          const chapterPercent = chapterMaxScore > 0 ? Math.round((chapterScore / chapterMaxScore) * 100) : 0
-          const chapterPassed = chapterPercent >= 70
-          statusNode.innerHTML = `${chapterPassed ? '<strong class="quiz-result-pass">Passed</strong>' : '<strong class="quiz-result-fail">Not passed</strong>'} - Score: <strong>${chapterScore}/${chapterMaxScore}</strong> (${chapterPercent}%).`
+          const quizPercent = quizMaxScore > 0 ? Math.round((quizScore / quizMaxScore) * 100) : 0
+          const quizPassed = quizPercent >= 70
+          statusNode.innerHTML = `${quizPassed ? '<strong class="quiz-result-pass">Passed</strong>' : '<strong class="quiz-result-fail">Not passed</strong>'} - Score: <strong>${quizScore}/${quizMaxScore}</strong> (${quizPercent}%).`
 
           if (resultsNode) {
             resultsNode.innerHTML = lessonResults.map((result) => {
@@ -773,7 +853,7 @@
               return `
                 <section class="quiz-result-card">
                   <p class="quiz-result-head">
-                    <span>Lesson ${activeChapter.chapterNumber}.${result.lesson.lessonNumber}: ${escapeHtml(result.lesson.title)}</span>
+                    <span>Lesson ${activeQuizSession.chapterNumber ? `${activeQuizSession.chapterNumber}.` : ''}${result.lesson.lessonNumber}: ${escapeHtml(result.lesson.title)}</span>
                     <span class="${result.passed ? 'quiz-result-pass' : 'quiz-result-fail'}">${result.score}/${result.maxScore} (${result.percentage}%)</span>
                   </p>
                   ${feedbackList.length > 0
@@ -782,6 +862,21 @@
                 </section>
               `
             }).join('')
+          }
+
+          if (activeQuizSession.mode === 'lesson') {
+            currentLessonQuizPassed = Boolean(lessonResults[0]?.passed)
+          }
+
+          if (activeQuizSession.autoAdvanceOnPass && quizPassed) {
+            statusNode.innerHTML += ' Moving to the next lesson...'
+            window.setTimeout(() => {
+              activeQuizSession = null
+              if (form) form.innerHTML = ''
+              if (resultsNode) resultsNode.innerHTML = ''
+              setModalOpen(false)
+              submitAutoAdvance({ skipQuizGate: true })
+            }, 900)
           }
         } catch (error) {
           statusNode.textContent = error && error.message ? error.message : 'Quiz submission failed. Please try again.'
@@ -795,6 +890,12 @@
         const trigger = event.target.closest('[data-action="open-chapter-quiz"]')
         if (trigger) {
           openChapterQuiz(trigger.getAttribute('data-chapter-key'))
+          return
+        }
+
+        const lessonTrigger = event.target.closest('[data-action="open-lesson-quiz"]')
+        if (lessonTrigger) {
+          openLessonQuiz({ autoAdvanceOnPass: false })
           return
         }
 
@@ -812,12 +913,14 @@
         form.addEventListener('submit', submitChapterQuiz)
       }
 
-      const submitAutoAdvance = () => {
+      const submitAutoAdvance = ({ skipQuizGate = false } = {}) => {
         if (autoAdvanceSubmitting) return
+        if (!skipQuizGate && maybeOpenLessonQuizGate({ autoAdvanceOnPass: true })) return
         const targetForm = completeNextForm || markCompleteForm
         if (!targetForm) return
 
         autoAdvanceSubmitting = true
+        bypassQuizGateOnce = true
         const marker = document.createElement('input')
         marker.type = 'hidden'
         marker.name = 'auto'
@@ -830,6 +933,22 @@
         }
         targetForm.submit()
       }
+
+      const bindQuizGateToCompletionForm = (targetForm, { autoAdvanceOnPass = false } = {}) => {
+        if (!targetForm) return
+        targetForm.addEventListener('submit', (event) => {
+          if (bypassQuizGateOnce) {
+            bypassQuizGateOnce = false
+            return
+          }
+          if (maybeOpenLessonQuizGate({ autoAdvanceOnPass })) {
+            event.preventDefault()
+          }
+        })
+      }
+
+      bindQuizGateToCompletionForm(markCompleteForm, { autoAdvanceOnPass: false })
+      bindQuizGateToCompletionForm(completeNextForm, { autoAdvanceOnPass: true })
 
       if (lessonNativeMedia) {
         lessonNativeMedia.addEventListener('ended', submitAutoAdvance, { once: true })

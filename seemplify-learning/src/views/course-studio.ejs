@@ -545,6 +545,47 @@
       line-height: 1.45;
       text-align: center;
     }
+    .builder-media-panel {
+      display: grid;
+      gap: 8px;
+    }
+    .builder-media-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .builder-media-summary,
+    .builder-media-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .builder-media-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      border: 1px solid #d5ddf7;
+      background: #f6f2ff;
+      color: #5b21b6;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .builder-file-input {
+      display: none;
+    }
+    .builder-legacy-note {
+      margin: 0;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
     .course-list {
       display: grid;
       gap: 12px;
@@ -583,6 +624,77 @@
     .course-item-meta strong {
       color: #0f172a;
       font-weight: 700;
+    }
+    .course-review-feedback {
+      border: 1px solid #d9e4f0;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .course-review-feedback-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .course-review-feedback-head h4 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+      color: #0f172a;
+    }
+    .course-review-feedback-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .course-review-feedback-note,
+    .course-review-feedback-copy {
+      margin: 0;
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+    .course-review-feedback.is-pending {
+      border-color: rgba(245, 158, 11, 0.28);
+      background: linear-gradient(180deg, rgba(255, 251, 235, 0.96), #ffffff);
+    }
+    .course-review-feedback.is-approved {
+      border-color: rgba(22, 163, 74, 0.24);
+      background: linear-gradient(180deg, rgba(240, 253, 244, 0.98), #ffffff);
+    }
+    .course-review-feedback.is-changes_requested {
+      border-color: rgba(245, 158, 11, 0.3);
+      background: linear-gradient(180deg, rgba(255, 247, 237, 0.98), #ffffff);
+    }
+    .course-review-feedback.is-denied {
+      border-color: rgba(220, 38, 38, 0.24);
+      background: linear-gradient(180deg, rgba(254, 242, 242, 0.98), #ffffff);
+    }
+    .pill.review-approved {
+      color: #166534;
+      border-color: rgba(22, 163, 74, 0.3);
+      background: rgba(220, 252, 231, 0.86);
+    }
+    .pill.review-changes_requested {
+      color: #92400e;
+      border-color: rgba(245, 158, 11, 0.35);
+      background: rgba(254, 243, 199, 0.88);
+    }
+    .pill.review-denied {
+      color: #991b1b;
+      border-color: rgba(220, 38, 38, 0.3);
+      background: rgba(254, 226, 226, 0.88);
+    }
+    .pill.review-pending {
+      color: #6d28d9;
+      border-color: rgba(124, 58, 237, 0.28);
+      background: rgba(237, 233, 254, 0.9);
     }
     .inline-form {
       display: inline-flex;
@@ -910,6 +1022,27 @@
       return '-'
     }
   }
+  const reviewDecisionClass = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'changes_requested') return 'review-changes_requested'
+    if (decision === 'denied') return 'review-denied'
+    if (decision === 'approved') return 'review-approved'
+    if (decision === 'pending') return 'review-pending'
+    return ''
+  }
+  const reviewFeedbackTone = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (['pending', 'approved', 'changes_requested', 'denied'].includes(decision)) return decision
+    return 'pending'
+  }
+  const reviewMessageForCourse = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'pending') return 'This course is waiting for admin review. You can keep editing, but any major changes should be followed by a fresh submission.'
+    if (decision === 'approved') return 'This course was approved for publishing. The latest review note is kept here for audit visibility.'
+    if (decision === 'changes_requested') return 'Admin requested specific updates. Make the changes below, then set the course back to published to resubmit it for review.'
+    if (decision === 'denied') return 'This submission was denied. You can still revise the course, address the feedback, and submit it again when it is ready.'
+    return ''
+  }
   const courseStatusChoices = ['draft', 'published', 'archived', 'pending_public_review']
   const editingCourseChaptersJson = editingCourse ? JSON.stringify(editingCourse.chapters || [], null, 2) : '[]'
 %>
@@ -981,22 +1114,40 @@
         </div>
       </section>
 
-      <% if (editingCourse) { %>
-        <section class="studio-card" id="edit-course">
-          <div class="section-head">
-            <div>
-              <h3>Edit Course</h3>
+        <% if (editingCourse) { %>
+          <section class="studio-card" id="edit-course">
+            <div class="section-head">
+              <div>
+                <h3>Edit Course</h3>
               <p>Update all fields for <strong><%= editingCourse.title %></strong>.</p>
             </div>
             <div class="actions">
               <span class="pill <%= editingCourse.isSystemCourse ? 'system' : 'creator' %>"><%= editingCourse.isSystemCourse ? 'System Course' : 'Creator Course' %></span>
-              <a class="btn btn-secondary btn-sm" href="<%= studioPath %>#manage-courses">Close Editor</a>
+                <a class="btn btn-secondary btn-sm" href="<%= studioPath %>#manage-courses">Close Editor</a>
+              </div>
             </div>
-          </div>
-          <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/update" class="studio-form">
-            <input type="hidden" name="returnTo" value="<%= studioPath %>">
-            <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
-            <div class="form-grid">
+            <% if (editingCourse.reviewHasFeedback) { %>
+              <article class="course-review-feedback is-<%= reviewFeedbackTone(editingCourse) %>">
+                <div class="course-review-feedback-head">
+                  <div>
+                    <h4>Review status: <%= editingCourse.reviewDecisionLabel %></h4>
+                    <p class="course-review-feedback-copy"><%= reviewMessageForCourse(editingCourse) %></p>
+                  </div>
+                  <div class="course-review-feedback-meta">
+                    <span class="pill <%= reviewDecisionClass(editingCourse) %>"><%= editingCourse.reviewDecisionLabel %></span>
+                    <% if (editingCourse.reviewedAt) { %><span class="pill">Reviewed <%= dateText(editingCourse.reviewedAt) %></span><% } %>
+                    <% if (editingCourse.reviewedByName) { %><span class="pill">By <%= editingCourse.reviewedByName %></span><% } %>
+                  </div>
+                </div>
+                <% if (String(editingCourse.reviewNotes || '').trim()) { %>
+                  <p class="course-review-feedback-note"><%= editingCourse.reviewNotes %></p>
+                <% } %>
+              </article>
+            <% } %>
+            <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/update" class="studio-form">
+              <input type="hidden" name="returnTo" value="<%= studioPath %>">
+              <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
+              <div class="form-grid">
               <label>Course Title<input class="input" name="title" value="<%= editingCourse.title || '' %>" required></label>
               <label>Slug<input class="input" name="slug" value="<%= editingCourse.slug || '' %>" placeholder="course-slug"></label>
               <label>Category<input class="input" name="category" value="<%= editingCourse.category || '' %>"></label>
@@ -1297,24 +1448,44 @@
                     <h4 class="course-item-title"><%= course.title %></h4>
                     <p class="subtle-note"><%= course.summaryText %></p>
                   </div>
-                  <div class="actions">
-                    <span class="pill <%= course.isSystemCourse ? 'system' : 'creator' %>"><%= course.isSystemCourse ? 'System' : 'Creator' %></span>
-                    <span class="pill status-<%= course.status %>"><%= course.status %></span>
-                    <span class="pill"><%= course.visibilityDisplay %></span>
-                    <span class="pill"><%= course.displayPrice %></span>
+                    <div class="actions">
+                      <span class="pill <%= course.isSystemCourse ? 'system' : 'creator' %>"><%= course.isSystemCourse ? 'System' : 'Creator' %></span>
+                      <span class="pill status-<%= course.status %>"><%= course.status %></span>
+                      <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
+                      <span class="pill"><%= course.visibilityDisplay %></span>
+                      <span class="pill"><%= course.displayPrice %></span>
+                    </div>
                   </div>
-                </div>
 
-                <div class="course-item-meta">
-                  <div><strong>Owner:</strong> <%= course.createdByName || course.authorName || 'Unknown' %> (<%= course.createdByEmail || '-' %>)</div>
-                  <div><strong>Lessons:</strong> <%= Number(course.lessonCount || 0) %></div>
-                  <div><strong>Enrollments:</strong> <%= Number(course.enrollmentCount || 0) %></div>
-                  <div><strong>Updated:</strong> <%= dateText(course.updatedAt) %></div>
-                </div>
+                  <div class="course-item-meta">
+                    <div><strong>Owner:</strong> <%= course.createdByName || course.authorName || 'Unknown' %> (<%= course.createdByEmail || '-' %>)</div>
+                    <div><strong>Lessons:</strong> <%= Number(course.lessonCount || 0) %></div>
+                    <div><strong>Enrollments:</strong> <%= Number(course.enrollmentCount || 0) %></div>
+                    <div><strong>Updated:</strong> <%= dateText(course.updatedAt) %></div>
+                  </div>
 
-                <div class="actions">
-                  <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
-                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
+                  <% if (course.reviewHasFeedback) { %>
+                    <article class="course-review-feedback is-<%= reviewFeedbackTone(course) %>">
+                      <div class="course-review-feedback-head">
+                        <div>
+                          <h4>Review status: <%= course.reviewDecisionLabel %></h4>
+                          <p class="course-review-feedback-copy"><%= reviewMessageForCourse(course) %></p>
+                        </div>
+                        <div class="course-review-feedback-meta">
+                          <span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span>
+                          <% if (course.reviewedAt) { %><span class="pill">Reviewed <%= dateText(course.reviewedAt) %></span><% } %>
+                          <% if (course.reviewedByName) { %><span class="pill">By <%= course.reviewedByName %></span><% } %>
+                        </div>
+                      </div>
+                      <% if (String(course.reviewNotes || '').trim()) { %>
+                        <p class="course-review-feedback-note"><%= course.reviewNotes %></p>
+                      <% } %>
+                    </article>
+                  <% } %>
+
+                  <div class="actions">
+                    <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
                   <% if (course.isActive) { %>
                     <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
                       <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
@@ -1388,12 +1559,37 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
 
+      const lessonMediaUploadEndpoint = '/api/simple-lms/upload/lesson-media'
+
+      const sanitizeLessonMedia = (input) => {
+        if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+        const url = sanitizeText(input.url, 2000)
+        const publicId = sanitizeText(input.publicId, 400)
+        if (!url && !publicId) return null
+        const resourceTypeValue = String(input.resourceType || 'video').trim().toLowerCase()
+        const resourceType = ['audio', 'video', 'raw', 'link'].includes(resourceTypeValue) ? resourceTypeValue : 'video'
+        return {
+          provider: String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary',
+          url,
+          publicId,
+          resourceType,
+          format: sanitizeText(input.format, 40).toLowerCase(),
+          bytes: Number.isFinite(Number(input.bytes)) ? Math.max(0, Number(input.bytes)) : 0,
+          width: Number.isFinite(Number(input.width)) ? Math.max(0, Number(input.width)) : 0,
+          height: Number.isFinite(Number(input.height)) ? Math.max(0, Number(input.height)) : 0,
+          durationSeconds: Number.isFinite(Number(input.durationSeconds)) ? Math.max(0, Number(input.durationSeconds)) : 0,
+          sourceLabel: sanitizeText(input.sourceLabel, 120)
+        }
+      }
+
       const createEmptyLesson = (chapterKey, lessonIndex = 0) => ({
         key: `${chapterKey}-lesson-${lessonIndex + 1}`,
         title: '',
         description: '',
         durationMinutes: preferredLessonDuration,
         videoUrl: '',
+        legacyVideoUrl: '',
+        media: null,
         content: '',
         resources: [],
         quizQuestions: []
@@ -1409,6 +1605,40 @@
         }
       }
 
+      const buildLessonState = (lesson, chapterKey, lessonIndex) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const derivedDurationMinutes = Number(media?.durationSeconds) > 0
+          ? Math.max(1, Math.ceil(Number(media.durationSeconds) / 60))
+          : preferredLessonDuration
+        const legacyVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl, 2000)
+        const playbackUrl = media?.url || legacyVideoUrl
+        return {
+          key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : derivedDurationMinutes,
+          videoUrl: playbackUrl,
+          legacyVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const lessonHasContent = (lesson) => Boolean(
+        lesson?.title
+        || lesson?.description
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || lesson?.media?.url
+        || lesson?.content
+      )
+
       const normalizeChapters = (input = []) => {
         const chapters = Array.isArray(input) ? input : []
         const normalized = chapters
@@ -1417,19 +1647,8 @@
             const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
             const lessons = Array.isArray(chapter?.lessons) ? chapter.lessons : []
             const normalizedLessons = lessons
-              .map((lesson, lessonIndex) => ({
-                key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`),
-                title: sanitizeText(lesson?.title, 200),
-                description: sanitizeText(lesson?.description, 3000),
-                durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
-                  ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
-                  : preferredLessonDuration,
-                videoUrl: sanitizeText(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl, 2000),
-                content: sanitizeText(lesson?.content, 40000),
-                resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
-                quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
-              }))
-              .filter((lesson) => lesson.title || lesson.description || lesson.videoUrl || lesson.content)
+              .map((lesson, lessonIndex) => buildLessonState(lesson, chapterKey, lessonIndex))
+              .filter((lesson) => lessonHasContent(lesson))
 
             return {
               key: chapterKey,
@@ -1438,7 +1657,7 @@
               lessons: normalizedLessons.length > 0 ? normalizedLessons : [createEmptyLesson(chapterKey, 0)]
             }
           })
-          .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lesson.title || lesson.description || lesson.videoUrl || lesson.content))
+          .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
 
         return normalized.length > 0 ? normalized : [createEmptyChapter(0)]
       }
@@ -1453,15 +1672,80 @@
               description: 'Set the context and walk through the curriculum structure.',
               durationMinutes: preferredLessonDuration,
               videoUrl: '',
+              legacyVideoUrl: '',
+              media: null,
               content: 'Welcome to this course. Use this lesson to set context and expected outcomes.'
             }
           ]
         }
       ])
 
-      const getMediaPreviewDescriptor = (rawUrl) => {
-        const value = String(rawUrl || '').trim()
+      const serializeLessonForJson = (lesson) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const externalVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.legacyVideoUrl || lesson?.videoUrl, 2000)
+        return {
+          key: sanitizeKey(lesson?.key, 'lesson'),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : 0,
+          videoUrl: externalVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const serializeChaptersForJson = (chapters) => (Array.isArray(chapters) ? chapters : [])
+        .map((chapter, chapterIndex) => {
+          const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
+          const lessons = (Array.isArray(chapter?.lessons) ? chapter.lessons : [])
+            .map((lesson, lessonIndex) => serializeLessonForJson({
+              ...lesson,
+              key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`)
+            }))
+            .filter((lesson) => lessonHasContent(lesson))
+          return {
+            key: chapterKey,
+            title: sanitizeText(chapter?.title, 200),
+            description: sanitizeText(chapter?.description, 3000),
+            lessons
+          }
+        })
+        .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
+
+      const getLessonPlaybackUrl = (lesson) => String(
+        lesson?.media?.url
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || ''
+      ).trim()
+
+      const getMediaPreviewDescriptor = (lessonOrUrl) => {
+        const media = sanitizeLessonMedia(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? lessonOrUrl.media
+            : null
+        )
+        const value = media?.url || String(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? getLessonPlaybackUrl(lessonOrUrl)
+            : lessonOrUrl || ''
+        ).trim()
         if (!value) return { kind: 'none', embedUrl: '', directUrl: '', sourceLabel: '' }
+
+        if (media?.provider === 'cloudinary') {
+          return {
+            kind: media.resourceType === 'audio' ? 'audio' : 'video',
+            embedUrl: '',
+            directUrl: value,
+            sourceLabel: media.sourceLabel || (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+          }
+        }
 
         let parsed
         try {
@@ -1496,9 +1780,11 @@
         return { kind: 'link', embedUrl: '', directUrl: value, sourceLabel: 'External Link' }
       }
 
-      const renderMediaPreviewMarkup = (rawUrl) => {
-        const descriptor = getMediaPreviewDescriptor(rawUrl)
-        if (descriptor.kind === 'none') return '<p class="builder-preview-note">Add a media URL to preview the lesson output.</p>'
+      const renderMediaPreviewMarkup = (lesson, { allowLegacyExternalMedia = false } = {}) => {
+        const descriptor = getMediaPreviewDescriptor(lesson)
+        if (descriptor.kind === 'none') {
+          return `<p class="builder-preview-note">${allowLegacyExternalMedia ? 'Upload a Cloudinary video or audio file, or keep the existing legacy link for this lesson.' : 'Upload a Cloudinary video or audio file to preview the lesson output.'}</p>`
+        }
         if (descriptor.kind === 'embed' && descriptor.embedUrl) return `<iframe src="${escapeHtml(descriptor.embedUrl)}" allowfullscreen loading="lazy"></iframe><p class="builder-preview-note">${escapeHtml(descriptor.sourceLabel)} embed preview</p>`
         if (descriptor.kind === 'video' && descriptor.directUrl) return `<video controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></video><p class="builder-preview-note">Direct video preview</p>`
         if (descriptor.kind === 'audio' && descriptor.directUrl) return `<audio controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></audio><p class="builder-preview-note">Direct audio preview</p>`
@@ -1511,6 +1797,7 @@
         addChapterButtonId,
         loadJsonButtonId,
         sampleButtonId,
+        allowLegacyExternalMedia = false,
         allowAutoSample = false
       }) => {
         const builderRoot = document.getElementById(builderId)
@@ -1524,7 +1811,31 @@
         let builderState = normalizeChapters(safeParseJson(chaptersJsonField.value, []))
 
         const syncJsonField = () => {
-          chaptersJsonField.value = JSON.stringify(builderState, null, 2)
+          chaptersJsonField.value = JSON.stringify(serializeChaptersForJson(builderState), null, 2)
+        }
+
+        const getLesson = (chapterIndex, lessonIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return null
+          const chapter = builderState[chapterIndex]
+          if (!chapter || !Array.isArray(chapter.lessons)) return null
+          if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= chapter.lessons.length) return null
+          return chapter.lessons[lessonIndex]
+        }
+
+        const renderLessonMediaSummaryMarkup = (lesson) => {
+          const parts = []
+          if (lesson?.media?.url) {
+            parts.push(`<span class="builder-media-pill">${escapeHtml(lesson.media.sourceLabel || 'Cloudinary')}</span>`)
+            parts.push(`<span class="builder-media-pill">${escapeHtml((lesson.media.resourceType || 'video').toUpperCase())}</span>`)
+            if (Number.isFinite(Number(lesson.media.durationSeconds)) && Number(lesson.media.durationSeconds) > 0) {
+              parts.push(`<span class="builder-media-pill">${Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))} min</span>`)
+            }
+          } else if (allowLegacyExternalMedia && lesson?.legacyVideoUrl) {
+            parts.push('<span class="builder-media-pill">Legacy link</span>')
+          } else {
+            parts.push('<span class="builder-media-pill">Upload required</span>')
+          }
+          return parts.join('')
         }
 
         const renderBuilder = () => {
@@ -1554,8 +1865,20 @@
                       <label>Lesson Key<input class="input" data-kind="lesson" data-field="key" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.key)}"></label>
                       <label>Duration (mins)<input class="input" type="number" min="0" data-kind="lesson" data-field="durationMinutes" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${Number(lesson.durationMinutes || 0)}"></label>
                     </div>
-                    <label>Media URL<input class="input" data-kind="lesson" data-field="videoUrl" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.videoUrl)}" placeholder="https://youtube.com/..."></label>
-                    <div class="builder-preview">${renderMediaPreviewMarkup(lesson.videoUrl)}</div>
+                    <section class="builder-media-panel">
+                      <div class="builder-media-toolbar">
+                        <div class="builder-media-summary">${renderLessonMediaSummaryMarkup(lesson)}</div>
+                        <div class="builder-media-actions">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="upload-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${lesson.media?.url ? 'Replace Media' : 'Upload Media'}</button>
+                          <input class="builder-file-input" type="file" accept="video/*,audio/*" data-action="media-input" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="remove-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${lesson.media?.url || lesson.legacyVideoUrl ? '' : 'disabled'}>Clear Media</button>
+                        </div>
+                      </div>
+                      ${allowLegacyExternalMedia && lesson.legacyVideoUrl
+                        ? `<label>Legacy Media URL<input class="input" data-kind="lesson" data-field="legacyVideoUrl" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.legacyVideoUrl)}" placeholder="https://youtube.com/..."></label><p class="builder-legacy-note">Legacy lessons can keep external links. New lessons should use Cloudinary uploads.</p>`
+                        : '<p class="builder-legacy-note">Use Cloudinary uploads for lesson playback, duration detection, and auto-progression.</p>'}
+                      <div class="builder-preview">${renderMediaPreviewMarkup(lesson, { allowLegacyExternalMedia })}</div>
+                    </section>
                     <label>Lesson Description<textarea class="input" rows="2" data-kind="lesson" data-field="description" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${escapeHtml(lesson.description)}</textarea></label>
                     <label>Lesson Notes<textarea class="input" rows="4" data-kind="lesson" data-field="content" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${escapeHtml(lesson.content)}</textarea></label>
                   </article>
@@ -1589,8 +1912,11 @@
               lesson[field] = Number.isFinite(Number(target.value)) ? Math.max(0, Math.round(Number(target.value))) : 0
             } else if (field === 'key') {
               lesson[field] = sanitizeKey(target.value, `${builderState[chapterIndex].key || `chapter-${chapterIndex + 1}`}-lesson-${lessonIndex + 1}`)
-            } else if (field === 'videoUrl') {
-              lesson[field] = sanitizeText(target.value, 2000)
+            } else if (field === 'legacyVideoUrl') {
+              lesson.legacyVideoUrl = sanitizeText(target.value, 2000)
+              if (!lesson.media?.url) {
+                lesson.videoUrl = lesson.legacyVideoUrl
+              }
             } else if (field === 'title') {
               lesson[field] = sanitizeText(target.value, 200)
             } else if (field === 'description') {
@@ -1635,6 +1961,55 @@
           renderBuilder()
         }
 
+        const uploadLessonMedia = async (chapterIndex, lessonIndex, file, lessonNode) => {
+          const lesson = getLesson(chapterIndex, lessonIndex)
+          if (!lesson || !file) return
+
+          const uploadButton = lessonNode?.querySelector('[data-action="upload-media"]')
+          const removeButton = lessonNode?.querySelector('[data-action="remove-media"]')
+          const originalUploadText = uploadButton?.textContent || 'Upload Media'
+
+          try {
+            if (uploadButton) {
+              uploadButton.disabled = true
+              uploadButton.textContent = 'Uploading...'
+            }
+            if (removeButton) removeButton.disabled = true
+
+            const formData = new FormData()
+            formData.append('media', file)
+
+            const response = await fetch(lessonMediaUploadEndpoint, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json'
+              },
+              body: formData
+            })
+            const payload = await parseMediaUploadResponse(response)
+            const media = sanitizeLessonMedia(payload?.lessonMedia)
+            if (!media?.url) {
+              throw new Error('Lesson media upload did not return a playable URL.')
+            }
+
+            lesson.media = media
+            lesson.videoUrl = media.url
+            lesson.legacyVideoUrl = ''
+            if (Number.isFinite(Number(payload?.durationMinutes)) && Number(payload.durationMinutes) > 0) {
+              lesson.durationMinutes = Math.max(1, Math.round(Number(payload.durationMinutes)))
+            }
+            syncJsonField()
+            renderBuilder()
+          } catch (error) {
+            alert(error && error.message ? error.message : 'Lesson media upload failed. Please try again.')
+            if (uploadButton) {
+              uploadButton.disabled = false
+              uploadButton.textContent = originalUploadText
+            }
+            if (removeButton) removeButton.disabled = false
+          }
+        }
+
         builderRoot.addEventListener('input', (event) => {
           const target = event.target
           if (!(target instanceof HTMLElement)) return
@@ -1643,10 +2018,24 @@
           const kind = target.dataset.kind
           updateStateFromInput(target)
           syncJsonField()
-          if (kind === 'lesson' && field === 'videoUrl') {
+          if (kind === 'lesson' && field === 'legacyVideoUrl') {
             const previewNode = target.closest('.builder-lesson')?.querySelector('.builder-preview')
-            if (previewNode) previewNode.innerHTML = renderMediaPreviewMarkup(target.value)
+            const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+            const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+            const lesson = getLesson(chapterIndex, lessonIndex)
+            if (previewNode && lesson) previewNode.innerHTML = renderMediaPreviewMarkup(lesson, { allowLegacyExternalMedia })
           }
+        })
+
+        builderRoot.addEventListener('change', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLInputElement)) return
+          if (target.dataset.action !== 'media-input') return
+          const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+          const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+          const file = target.files?.[0]
+          const lessonNode = target.closest('.builder-lesson')
+          void uploadLessonMedia(chapterIndex, lessonIndex, file, lessonNode)
         })
 
         builderRoot.addEventListener('click', (event) => {
@@ -1661,6 +2050,18 @@
           if (action === 'add-lesson') addLesson(chapterIndex)
           if (action === 'remove-chapter') removeChapter(chapterIndex)
           if (action === 'remove-lesson') removeLesson(chapterIndex, lessonIndex)
+          if (action === 'upload-media') {
+            const fileInput = button.parentElement?.querySelector('input[data-action="media-input"]')
+            if (fileInput instanceof HTMLInputElement) fileInput.click()
+          }
+          if (action === 'remove-media') {
+            const lesson = getLesson(chapterIndex, lessonIndex)
+            if (!lesson) return
+            lesson.media = null
+            lesson.videoUrl = allowLegacyExternalMedia ? lesson.legacyVideoUrl : ''
+            syncJsonField()
+            renderBuilder()
+          }
         })
 
         if (addChapterButton) addChapterButton.addEventListener('click', addChapter)
@@ -1688,6 +2089,7 @@
         addChapterButtonId: 'addCreateChapter',
         loadJsonButtonId: 'createBuilderLoadJson',
         sampleButtonId: 'fillCourseTemplate',
+        allowLegacyExternalMedia: false,
         allowAutoSample: autoLoadSample
       })
 
@@ -1697,6 +2099,7 @@
         addChapterButtonId: 'addEditChapter',
         loadJsonButtonId: 'editBuilderLoadJson',
         sampleButtonId: '',
+        allowLegacyExternalMedia: true,
         allowAutoSample: false
       })
 
@@ -2193,6 +2596,25 @@
 
         const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
         throw new Error(`Upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
+      }
+
+      async function parseMediaUploadResponse(response) {
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        if (contentType.includes('application/json')) {
+          const payload = await response.json()
+          if (!response.ok) {
+            throw new Error(payload?.error || `Lesson media upload failed (${response.status}).`)
+          }
+          return payload
+        }
+
+        const textPayload = await response.text()
+        if (!response.ok && response.status === 404) {
+          throw new Error('Lesson media upload endpoint was not found (404). Please refresh this page and try again.')
+        }
+
+        const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+        throw new Error(`Lesson media upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
       }
     })()
   </script>

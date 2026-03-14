@@ -53,6 +53,59 @@ const simpleLmsQuizQuestionSchema = new mongoose.Schema({
   }
 }, { _id: false })
 
+const simpleLmsLessonMediaSchema = new mongoose.Schema({
+  provider: {
+    type: String,
+    enum: ['cloudinary', 'external'],
+    default: 'cloudinary'
+  },
+  url: {
+    type: String,
+    trim: true,
+    maxlength: 2000
+  },
+  publicId: {
+    type: String,
+    trim: true,
+    maxlength: 400
+  },
+  resourceType: {
+    type: String,
+    enum: ['video', 'audio', 'raw', 'link'],
+    default: 'video'
+  },
+  format: {
+    type: String,
+    trim: true,
+    maxlength: 40
+  },
+  bytes: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  width: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  height: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  durationSeconds: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  sourceLabel: {
+    type: String,
+    trim: true,
+    maxlength: 120
+  }
+}, { _id: false })
+
 const simpleLmsLessonSchema = new mongoose.Schema({
   key: {
     type: String,
@@ -75,6 +128,10 @@ const simpleLmsLessonSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: 2000
+  },
+  media: {
+    type: simpleLmsLessonMediaSchema,
+    default: null
   },
   content: {
     type: String,
@@ -268,6 +325,12 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AiinAccount'
   },
+  reviewDecision: {
+    type: String,
+    enum: ['none', 'pending', 'approved', 'changes_requested', 'denied'],
+    default: 'none',
+    index: true
+  },
   reviewedAt: Date,
   reviewedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -276,7 +339,7 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
   reviewNotes: {
     type: String,
     trim: true,
-    maxlength: 2000
+    maxlength: 3000
   },
   archivedAt: Date,
   chapters: {
@@ -330,6 +393,12 @@ SimpleLmsCourseSchema.pre('save', function(next) {
     chapter.lessons = Array.isArray(chapter.lessons) ? chapter.lessons : []
     chapter.lessons.forEach((lesson, lessonIndex) => {
       lesson.key = String(lesson.key || `${chapter.key}_lesson_${lessonIndex + 1}`)
+      if (lesson?.media?.url && !lesson.videoUrl) {
+        lesson.videoUrl = String(lesson.media.url)
+      }
+      if ((!Number.isFinite(Number(lesson.durationMinutes)) || Number(lesson.durationMinutes) <= 0) && Number(lesson?.media?.durationSeconds) > 0) {
+        lesson.durationMinutes = Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))
+      }
       lessonCount += 1
       totalMinutes += Number.isFinite(Number(lesson.durationMinutes))
         ? Number(lesson.durationMinutes)

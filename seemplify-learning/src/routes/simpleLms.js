@@ -66,6 +66,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024 }
 })
+const lessonMediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 150 * 1024 * 1024 }
+})
 
 const ROLES = LEARNING_ROLES
 const VIEW_MODES = ['overview', 'settings', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
@@ -96,6 +100,7 @@ const PAYMENT_PROVIDER_COPY = Object.freeze({
 
 const ADMIN_INVITE_ROLES = Object.freeze(['admin', 'super_admin'])
 const ADMIN_INVITE_STATUSES = Object.freeze(['pending', 'registered', 'accepted', 'expired', 'revoked'])
+const COURSE_REVIEW_DECISIONS = Object.freeze(['none', 'pending', 'approved', 'changes_requested', 'denied'])
 
 const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
 const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
@@ -210,6 +215,20 @@ const humanizeToken = (value) => {
     .replace(/\s+/g, ' ')
   if (!normalized) return ''
   return normalized.replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+const normalizeCourseReviewDecision = (value, fallback = 'none') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return COURSE_REVIEW_DECISIONS.includes(normalized) ? normalized : fallback
+}
+
+const formatCourseReviewDecision = (value) => {
+  const normalized = normalizeCourseReviewDecision(value)
+  if (normalized === 'changes_requested') return 'Changes Requested'
+  if (normalized === 'denied') return 'Denied'
+  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'pending') return 'Pending Review'
+  return 'No Review'
 }
 
 const isPlatformAuditRole = (role) => ['admin', 'super_admin'].includes(String(role || '').trim().toLowerCase())
@@ -2588,6 +2607,26 @@ const normalizeProgramVisibility = (value, fallback = 'organization_private') =>
   return fallback
 }
 
+const getLessonMediaUrl = (lesson) => String(
+  lesson?.media?.url
+  || lesson?.videoUrl
+  || lesson?.mediaUrl
+  || lesson?.audioUrl
+  || ''
+).trim()
+
+const getLessonDurationMinutes = (lesson) => {
+  const directMinutes = Number(lesson?.durationMinutes)
+  if (Number.isFinite(directMinutes) && directMinutes > 0) {
+    return Math.max(0, Math.round(directMinutes))
+  }
+  const durationSeconds = Number(lesson?.media?.durationSeconds)
+  if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
+    return Math.max(1, Math.ceil(durationSeconds / 60))
+  }
+  return 0
+}
+
 const flattenCourseLessons = (course) => {
   const entries = []
   ;(course?.chapters || []).forEach((chapter, chapterIndex) => {
@@ -2607,8 +2646,22 @@ const flattenCourseLessons = (course) => {
         title: String(lesson?.title || 'Lesson'),
         description: String(lesson?.description || ''),
         content: String(lesson?.content || ''),
-        videoUrl: String(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl || ''),
-        durationMinutes: Number.isFinite(Number(lesson?.durationMinutes)) ? Number(lesson.durationMinutes) : 0,
+        videoUrl: getLessonMediaUrl(lesson),
+        media: lesson?.media && typeof lesson.media === 'object'
+          ? {
+            provider: String(lesson.media.provider || '').trim().toLowerCase(),
+            url: String(lesson.media.url || '').trim(),
+            publicId: String(lesson.media.publicId || '').trim(),
+            resourceType: String(lesson.media.resourceType || '').trim().toLowerCase(),
+            format: String(lesson.media.format || '').trim().toLowerCase(),
+            bytes: Number.isFinite(Number(lesson.media.bytes)) ? Number(lesson.media.bytes) : 0,
+            width: Number.isFinite(Number(lesson.media.width)) ? Number(lesson.media.width) : 0,
+            height: Number.isFinite(Number(lesson.media.height)) ? Number(lesson.media.height) : 0,
+            durationSeconds: Number.isFinite(Number(lesson.media.durationSeconds)) ? Number(lesson.media.durationSeconds) : 0,
+            sourceLabel: String(lesson.media.sourceLabel || '').trim()
+          }
+          : null,
+        durationMinutes: getLessonDurationMinutes(lesson),
         resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
         quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
       })
@@ -2672,8 +2725,28 @@ const extractGoogleDriveFileId = (parsedUrl) => {
   return ''
 }
 
-const resolveLessonMedia = (rawUrl) => {
-  const value = String(rawUrl || '').trim()
+const resolveLessonMedia = (rawLessonMedia) => {
+  if (rawLessonMedia && typeof rawLessonMedia === 'object' && !Array.isArray(rawLessonMedia)) {
+    const mediaUrl = String(rawLessonMedia.url || '').trim()
+    if (mediaUrl) {
+      const mediaType = normalizeLessonMediaResourceType(rawLessonMedia.resourceType, 'video')
+      const sourceLabel = String(rawLessonMedia.sourceLabel || '').trim()
+        || (mediaType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+      return {
+        kind: mediaType === 'audio' ? 'audio' : 'video',
+        rawUrl: mediaUrl,
+        directUrl: mediaUrl,
+        embedUrl: '',
+        sourceLabel,
+        durationSeconds: Number.isFinite(Number(rawLessonMedia.durationSeconds))
+          ? Math.max(0, Number(rawLessonMedia.durationSeconds))
+          : 0,
+        bytes: Number.isFinite(Number(rawLessonMedia.bytes)) ? Math.max(0, Number(rawLessonMedia.bytes)) : 0
+      }
+    }
+  }
+
+  const value = String(rawLessonMedia || '').trim()
   if (!value) {
     return {
       kind: 'none',
@@ -2880,6 +2953,17 @@ const decorateCourse = (course) => {
     && String(course?.status || '').trim().toLowerCase() === 'published'
     && PUBLIC_VISIBILITY_VALUES.includes(String(course?.visibility || '').trim().toLowerCase())
   )
+  const storedReviewDecision = normalizeCourseReviewDecision(course?.reviewDecision, '')
+  const reviewDecision = storedReviewDecision || (
+    String(course?.status || '').trim().toLowerCase() === 'pending_public_review'
+      ? 'pending'
+      : ((course?.reviewedAt || String(course?.reviewNotes || '').trim()) ? 'changes_requested' : 'none')
+  )
+  const reviewedByName = String(
+    course?.reviewedBy?.profile?.name
+    || course?.reviewedBy?.email
+    || ''
+  ).trim()
 
   return {
     ...course,
@@ -2894,7 +2978,12 @@ const decorateCourse = (course) => {
     previewCourseUrl,
     isPubliclyAvailable,
     courseUrl: isPubliclyAvailable ? publicCourseUrl : previewCourseUrl,
-    authorName: String(course?.createdByName || '').trim() || 'Learning Team'
+    authorName: String(course?.createdByName || '').trim() || 'Learning Team',
+    reviewDecision,
+    reviewDecisionLabel: formatCourseReviewDecision(reviewDecision),
+    reviewHasFeedback: reviewDecision !== 'none' || Boolean(String(course?.reviewNotes || '').trim()),
+    reviewNeedsCreatorAction: ['changes_requested', 'denied'].includes(reviewDecision),
+    reviewedByName
   }
 }
 
@@ -3001,6 +3090,39 @@ const redirectWithMessage = ({ res, path = '/simple-lms', success = '', error = 
   const hashSuffix = hashSuffixRaw ? `#${hashSuffixRaw}` : ''
   return res.redirect(query ? `${basePath}${basePath.includes('?') ? '&' : '?'}${query}${hashSuffix}` : `${basePath}${hashSuffix}`)
 }
+
+const normalizeLessonMediaResourceType = (value, fallback = 'video') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['video', 'audio', 'raw', 'link'].includes(normalized)) return normalized
+  return fallback
+}
+
+const sanitizeLessonMediaInput = (input) => {
+  if (!input || typeof input !== 'object') return null
+
+  const url = String(input.url || '').trim().slice(0, 2000)
+  const publicId = String(input.publicId || '').trim().slice(0, 400)
+  const resourceType = normalizeLessonMediaResourceType(input.resourceType, 'video')
+  const provider = String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary'
+
+  if (!url && !publicId) return null
+
+  return {
+    provider,
+    url,
+    publicId,
+    resourceType,
+    format: String(input.format || '').trim().toLowerCase().slice(0, 40),
+    bytes: Number.isFinite(Number(input.bytes)) ? Math.max(0, Math.round(Number(input.bytes))) : 0,
+    width: Number.isFinite(Number(input.width)) ? Math.max(0, Math.round(Number(input.width))) : 0,
+    height: Number.isFinite(Number(input.height)) ? Math.max(0, Math.round(Number(input.height))) : 0,
+    durationSeconds: Number.isFinite(Number(input.durationSeconds))
+      ? Math.max(0, Number(input.durationSeconds))
+      : 0,
+    sourceLabel: String(input.sourceLabel || '').trim().slice(0, 120)
+  }
+}
+
 const sanitizeQuizChoices = (choicesInput = [], correctIndexInput = -1) => {
   const choices = Array.isArray(choicesInput)
     ? choicesInput
@@ -3030,7 +3152,7 @@ const sanitizeQuizChoices = (choicesInput = [], correctIndexInput = -1) => {
   return choices.slice(0, 6)
 }
 
-const sanitizeChaptersInput = (input) => {
+const sanitizeChaptersInput = (input, { allowExternalLessonMedia = true } = {}) => {
   const chaptersInput = Array.isArray(input) ? input : []
   const chapters = []
 
@@ -3078,15 +3200,25 @@ const sanitizeChaptersInput = (input) => {
         })
         .filter(Boolean)
 
-      const mediaUrl = String(rawLesson?.mediaUrl || rawLesson?.videoUrl || rawLesson?.audioUrl || '').trim().slice(0, 2000)
+      const media = sanitizeLessonMediaInput(rawLesson?.media)
+      const externalMediaUrl = allowExternalLessonMedia
+        ? String(rawLesson?.mediaUrl || rawLesson?.videoUrl || rawLesson?.audioUrl || '').trim().slice(0, 2000)
+        : ''
+      const mediaUrl = String(media?.url || externalMediaUrl).trim().slice(0, 2000)
+      const derivedDurationMinutes = Number(media?.durationSeconds) > 0
+        ? Math.max(1, Math.ceil(Number(media.durationSeconds) / 60))
+        : 0
 
       lessons.push({
         key: lessonKey || `${chapterKey}-lesson-${lessonIndex + 1}`,
         title: lessonTitle.slice(0, 200),
         description: String(rawLesson?.description || '').trim().slice(0, 3000),
         videoUrl: mediaUrl,
+        media,
         content: String(rawLesson?.content || '').trim().slice(0, 40000),
-        durationMinutes: Number.isFinite(Number(rawLesson?.durationMinutes)) ? Math.max(0, Math.round(Number(rawLesson.durationMinutes))) : 0,
+        durationMinutes: derivedDurationMinutes > 0
+          ? derivedDurationMinutes
+          : (Number.isFinite(Number(rawLesson?.durationMinutes)) ? Math.max(0, Math.round(Number(rawLesson.durationMinutes))) : 0),
         resources,
         quizQuestions,
         order: lessonIndex + 1
@@ -3150,7 +3282,9 @@ const parseCoursePayload = ({
     || normalizedCreatorSettings.defaultVisibility
     || normalizedPlatformSettings.defaultCourseVisibility
   const visibility = normalizeVisibility(visibilityInput, role)
-  const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []))
+  const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []), {
+    allowExternalLessonMedia: Boolean(existingCourse)
+  })
   const limitedChapters = chapters
     .slice(0, normalizedPlatformSettings.maxChaptersPerCourse)
     .map((chapter) => ({
@@ -3242,6 +3376,7 @@ const parseCoursePayload = ({
 
   if (requestedStatus === 'published' && status === 'pending_public_review') {
     payload.submittedForPublicReviewAt = new Date()
+    payload.reviewDecision = 'pending'
     payload.reviewedAt = null
     payload.reviewedBy = null
     payload.reviewNotes = ''
@@ -3410,6 +3545,74 @@ const buildStudioEditCoursePath = (value, courseId, fallback = '/simple-lms/stud
   const [pathWithoutHash] = String(basePath).split('#')
   const separator = pathWithoutHash.includes('?') ? '&' : '?'
   return `${pathWithoutHash}${separator}editCourse=${encodeURIComponent(String(courseId || '').trim())}#edit-course`
+}
+
+const sendCourseReviewNotification = async ({
+  req,
+  res,
+  course,
+  decision,
+  notes = ''
+}) => {
+  try {
+    const createdById = toIdString(course?.createdBy)
+    if (!mongoose.Types.ObjectId.isValid(createdById)) return
+
+    const creator = await Account.findById(createdById)
+      .select('email profile.name')
+      .lean()
+
+    const to = String(creator?.email || course?.createdByEmail || '').trim().toLowerCase()
+    if (!to) return
+
+    const creatorName = String(creator?.profile?.name || course?.createdByName || 'Creator').trim() || 'Creator'
+    const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
+    const normalizedDecision = normalizeCourseReviewDecision(decision)
+    const decisionLabel = formatCourseReviewDecision(normalizedDecision)
+    const feedbackText = String(notes || '').trim()
+    const appBaseUrl = buildAppBaseUrl(req)
+    const editPath = buildStudioEditCoursePath('/simple-lms/studio/courses', course?._id, '/simple-lms/studio/courses')
+    const previewPath = `/simple-lms/courses/${encodeURIComponent(String(course?._id || '').trim())}/preview`
+    const editUrl = `${appBaseUrl}${editPath}`
+    const previewUrl = `${appBaseUrl}${previewPath}`
+
+    let subject = `${learningName}: course review update`
+    let intro = `There is an update on your course "${String(course?.title || 'Untitled Course').trim() || 'Untitled Course'}".`
+    if (normalizedDecision === 'approved') {
+      subject = `${learningName}: course approved`
+      intro = `Your course "${String(course?.title || 'Untitled Course').trim() || 'Untitled Course'}" has been approved and published.`
+    } else if (normalizedDecision === 'changes_requested') {
+      subject = `${learningName}: changes requested for your course`
+      intro = `Changes were requested for your course "${String(course?.title || 'Untitled Course').trim() || 'Untitled Course'}".`
+    } else if (normalizedDecision === 'denied') {
+      subject = `${learningName}: course submission denied`
+      intro = `Your course submission "${String(course?.title || 'Untitled Course').trim() || 'Untitled Course'}" was denied.`
+    }
+
+    await emailService.sendNotificationEmail({
+      to,
+      subject,
+      html: `
+        <p>Hello ${creatorName},</p>
+        <p>${intro}</p>
+        <p><strong>Decision:</strong> ${decisionLabel}</p>
+        ${feedbackText ? `<p><strong>Reviewer note:</strong><br>${String(feedbackText).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>` : ''}
+        <p><a href="${editUrl}">Open Course Studio</a> to review the course and make updates.</p>
+        <p>You can also preview the current course version here: <a href="${previewUrl}">${previewUrl}</a></p>
+      `,
+      text: [
+        `Hello ${creatorName},`,
+        '',
+        intro,
+        `Decision: ${decisionLabel}`,
+        feedbackText ? `Reviewer note: ${feedbackText}` : '',
+        `Open Course Studio: ${editUrl}`,
+        `Preview course: ${previewUrl}`
+      ].filter(Boolean).join('\n')
+    })
+  } catch (error) {
+    console.error('Course review notification email error:', error)
+  }
 }
 
 const findPublicCourseForLearning = async (courseId) => {
@@ -4400,7 +4603,7 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       .filter(attempt => String(attempt.lessonKey) === currentLesson.lessonKey)
       .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] || null
 
-    const lessonMedia = resolveLessonMedia(currentLesson.videoUrl)
+    const lessonMedia = resolveLessonMedia(currentLesson.media || currentLesson.videoUrl)
     const chapterSections = (enrollment.course.chapters || []).map((chapter, chapterIndex) => {
       const chapterNumber = Number.isFinite(Number(chapter?.order)) ? Number(chapter.order) : chapterIndex + 1
       const chapterTitle = String(chapter?.title || '').trim() || `Chapter ${chapterNumber}`
@@ -4948,6 +5151,7 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
       submittedForPublicReviewAt: null,
       approvedPublicAt: null,
       approvedPublicBy: null,
+      reviewDecision: 'none',
       reviewedAt: null,
       reviewedBy: null,
       reviewNotes: '',
@@ -5086,6 +5290,74 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
   }
 })
 
+const reviewCourseSubmission = async ({
+  req,
+  res,
+  course,
+  decision,
+  reviewNotes
+}) => {
+  const normalizedDecision = normalizeCourseReviewDecision(decision)
+  const notes = String(reviewNotes || '').trim().slice(0, 3000)
+
+  if (!['approved', 'changes_requested', 'denied'].includes(normalizedDecision)) {
+    throw new Error('Invalid review decision.')
+  }
+  if (String(course?.status || '').trim().toLowerCase() !== 'pending_public_review') {
+    throw new Error('Only courses pending public review can be reviewed.')
+  }
+  if (normalizedDecision !== 'approved' && !notes) {
+    throw new Error(normalizedDecision === 'denied'
+      ? 'A denial reason is required.'
+      : 'A change request message is required.')
+  }
+
+  const now = new Date()
+  course.reviewDecision = normalizedDecision
+  course.reviewedAt = now
+  course.reviewedBy = req.user._id
+  course.reviewNotes = notes
+
+  if (normalizedDecision === 'approved') {
+    course.status = 'published'
+    course.isActive = true
+    course.publishedAt = course.publishedAt || now
+    course.approvedPublicAt = now
+    course.approvedPublicBy = req.user._id
+  } else {
+    course.status = 'draft'
+    course.isActive = true
+    course.publishedAt = null
+    course.approvedPublicAt = null
+    course.approvedPublicBy = null
+  }
+
+  await course.save()
+
+  await logAuditEvent({
+    action: `course.review.${normalizedDecision}`,
+    performedBy: req.user._id,
+    targetAccount: course.createdBy || null,
+    metadata: {
+      courseId: course._id,
+      courseTitle: course.title,
+      decision: normalizedDecision,
+      reviewNotes: notes
+    },
+    req
+  })
+
+  await sendCourseReviewNotification({
+    req,
+    res,
+    course,
+    decision: normalizedDecision,
+    notes
+  })
+
+  return normalizedDecision
+}
+
 pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req, res) => {
   const returnTo = resolveAdminReturnPath(req)
   try {
@@ -5116,15 +5388,13 @@ pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req
       })
     }
 
-    course.status = 'published'
-    course.isActive = true
-    course.publishedAt = course.publishedAt || new Date()
-    course.approvedPublicAt = new Date()
-    course.approvedPublicBy = req.user._id
-    course.reviewedAt = new Date()
-    course.reviewedBy = req.user._id
-    course.reviewNotes = String(req.body.reviewNotes || '').trim().slice(0, 2000)
-    await course.save()
+    await reviewCourseSubmission({
+      req,
+      res,
+      course,
+      decision: 'approved',
+      reviewNotes: req.body.reviewNotes
+    })
 
     return redirectWithMessage({
       res,
@@ -5141,7 +5411,7 @@ pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req
   }
 })
 
-pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req, res) => {
+pageRouter.post('/courses/:courseId/review-public', requirePageAuth, async (req, res) => {
   const returnTo = resolveAdminReturnPath(req)
   try {
     const role = resolveRole(req.user)
@@ -5149,7 +5419,7 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
       return redirectWithMessage({
         res,
         path: returnTo,
-        error: 'Only admins can reject public course submissions.'
+        error: 'Only admins can review public course submissions.'
       })
     }
 
@@ -5171,23 +5441,86 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
       })
     }
 
-    course.status = 'draft'
-    course.reviewedAt = new Date()
-    course.reviewedBy = req.user._id
-    course.reviewNotes = String(req.body.reviewNotes || '').trim().slice(0, 2000)
-    await course.save()
+    const decision = normalizeCourseReviewDecision(req.body?.decision, 'changes_requested')
+    await reviewCourseSubmission({
+      req,
+      res,
+      course,
+      decision,
+      reviewNotes: req.body.reviewNotes
+    })
+
+    const successMessage = decision === 'denied'
+      ? `Course denied: ${course.title}.`
+      : `Changes requested for course: ${course.title}.`
 
     return redirectWithMessage({
       res,
       path: returnTo,
-      success: `Course returned to draft: ${course.title}.`
+      success: successMessage
+    })
+  } catch (error) {
+    console.error('Review course error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to review this course submission.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req)
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can review public course submissions.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const decision = normalizeCourseReviewDecision(req.body?.decision, 'changes_requested')
+    await reviewCourseSubmission({
+      req,
+      res,
+      course,
+      decision,
+      reviewNotes: req.body.reviewNotes
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: decision === 'denied'
+        ? `Course denied: ${course.title}.`
+        : `Changes requested for course: ${course.title}.`
     })
   } catch (error) {
     console.error('Reject course error:', error)
     return redirectWithMessage({
       res,
       path: returnTo,
-      error: 'Failed to reject this course submission.'
+      error: error?.message || 'Failed to review this course submission.'
     })
   }
 })
@@ -8050,6 +8383,7 @@ const renderWorkspacePage = async (
         .lean(),
       canCreateCourses(role)
         ? SimpleLmsCourse.find({ ...managedFilter })
+          .populate('reviewedBy', 'email profile.name')
           .sort({ updatedAt: -1 })
           .limit(240)
           .lean()
@@ -9832,23 +10166,32 @@ const renderWorkspacePage = async (
       creatorEmail: course.createdBy?.email || course.createdByEmail || '',
       submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt
     }))
-    const approvalQueueCourses = canManagePlatform(role)
+    const approvalQueueCourses = pendingReviewCourses
+      .slice()
+      .sort((a, b) => {
+        const bTime = new Date(b.submittedAt || 0).getTime()
+        const aTime = new Date(a.submittedAt || 0).getTime()
+        return bTime - aTime
+      })
+    const recentCourseReviewDecisions = canManagePlatform(role)
       ? managedCourses
         .filter((course) => {
-          const status = String(course.status || '').trim().toLowerCase()
-          return course.isActive !== false && (status === 'pending_public_review' || status === 'draft')
+          const reviewDecision = normalizeCourseReviewDecision(course.reviewDecision)
+          return ['approved', 'changes_requested', 'denied'].includes(reviewDecision) && course.reviewedAt
         })
         .map((course) => ({
           ...course,
           creatorName: course.createdByName || course.authorName || 'Author',
           creatorEmail: course.createdByEmail || '',
-          submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt
+          submittedAt: course.submittedForPublicReviewAt || course.updatedAt || course.createdAt,
+          reviewedAt: course.reviewedAt || course.updatedAt || course.createdAt
         }))
         .sort((a, b) => {
-          const bTime = new Date(b.submittedAt || 0).getTime()
-          const aTime = new Date(a.submittedAt || 0).getTime()
+          const bTime = new Date(b.reviewedAt || 0).getTime()
+          const aTime = new Date(a.reviewedAt || 0).getTime()
           return bTime - aTime
         })
+        .slice(0, 8)
       : []
 
     const learningName = String(res.locals?.brandLearningName || 'Seemplify Learning').trim() || 'Seemplify Learning'
@@ -9966,6 +10309,7 @@ const renderWorkspacePage = async (
       },
       pendingReviewCourses,
       approvalQueueCourses,
+      recentCourseReviewDecisions,
       partnerOrganizations,
       partnerWithdrawalRequests,
       roleApprovalRequests,
@@ -10681,6 +11025,61 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
   } catch (error) {
     console.error('Banner upload error:', error)
     return res.status(500).json({ error: 'Failed to upload banner.' })
+  }
+})
+
+apiRouter.post('/upload/lesson-media', lessonMediaUpload.single('media'), async (req, res) => {
+  try {
+    const role = resolveRole(req.user)
+    if (!canCreateCourses(role)) {
+      return res.status(403).json({ error: 'You do not have permission to upload lesson media.' })
+    }
+
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: 'No lesson media file uploaded.' })
+    }
+
+    if (!isCloudinaryConfigured()) {
+      return res.status(500).json({ error: 'Cloudinary is not configured for lesson uploads.' })
+    }
+
+    const mimeType = String(req.file.mimetype || '').trim().toLowerCase()
+    const normalizedResourceType = mimeType.startsWith('audio/')
+      ? 'audio'
+      : (mimeType.startsWith('video/') ? 'video' : 'raw')
+
+    const uploadResult = await uploadBufferToCloudinary({
+      buffer: req.file.buffer,
+      filename: `${Date.now()}-${slugifyValue(req.file.originalname || 'lesson-media', 'lesson-media')}`,
+      folder: 'seemplify-learning/lesson-media',
+      resourceType: normalizedResourceType === 'raw' ? 'raw' : 'video'
+    })
+
+    const durationSeconds = Number.isFinite(Number(uploadResult.duration))
+      ? Math.max(0, Number(uploadResult.duration))
+      : 0
+    const durationMinutes = durationSeconds > 0 ? Math.max(1, Math.ceil(durationSeconds / 60)) : 0
+    const lessonMedia = {
+      provider: 'cloudinary',
+      url: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
+      resourceType: normalizedResourceType,
+      format: String(uploadResult.format || '').trim().toLowerCase(),
+      bytes: Number.isFinite(Number(uploadResult.bytes)) ? Number(uploadResult.bytes) : 0,
+      width: Number.isFinite(Number(uploadResult.width)) ? Number(uploadResult.width) : 0,
+      height: Number.isFinite(Number(uploadResult.height)) ? Number(uploadResult.height) : 0,
+      durationSeconds,
+      sourceLabel: normalizedResourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video'
+    }
+
+    return res.json({
+      message: 'Lesson media uploaded successfully.',
+      lessonMedia,
+      durationMinutes
+    })
+  } catch (error) {
+    console.error('Lesson media upload error:', error)
+    return res.status(500).json({ error: 'Failed to upload lesson media.' })
   }
 })
 

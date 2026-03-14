@@ -125,12 +125,12 @@
 
     <div class="top-nav-center">
       <div class="top-nav-links">
-      <a href="/courses" class="top-nav-link" style="color: #6d28d9; font-weight: 600; padding: 8px 16px; border-radius: 999px; background: rgba(109, 40, 217, 0.08);">Explore Courses</a>
-      <a href="/teach" class="top-nav-link">Teach on AIIN Nigeria</a>
+      <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(safeActivePage) ? ' active' : '' %>">Explore Courses</a>
+      <a href="/teach" class="top-nav-link<%= safeActivePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
       <% if (safeUser) { %>
-        <a href="/simple-lms" class="top-nav-link">Learning Workspace</a>
+        <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
         <% if (canAccessAdmin) { %>
-          <a href="/admin" class="top-nav-link">Admin</a>
+          <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
         <% } %>
         <% if (canAccessPartnerDashboard) { %>
           <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
