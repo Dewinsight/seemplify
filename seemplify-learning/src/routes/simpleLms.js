@@ -1608,28 +1608,95 @@ const verifyPaymentSettingsReauth = async ({ req, password }) => {
   throw error
 }
 
+const ownsCourseRecord = ({ accountId, course }) => (
+  Boolean(course) && toIdString(course.createdBy) === toIdString(accountId)
+)
+
+const courseBelongsToPartnerOrganization = ({ course, partnerOrganizationId = null }) => {
+  const normalizedPartnerOrg = toIdString(partnerOrganizationId)
+  const courseOrgId = toIdString(course?.organization)
+  return Boolean(normalizedPartnerOrg) && normalizedPartnerOrg === courseOrgId
+}
+
 const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
+  if (ownsCourseRecord({ accountId, course })) return true
 
-   const normalizedRole = String(role || '').trim().toLowerCase()
-   const normalizedPartnerOrg = toIdString(partnerOrganizationId)
-   const courseOrgId = toIdString(course.organization)
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  if (isPartnerSuperRole(normalizedRole)) {
+    return courseBelongsToPartnerOrganization({ course, partnerOrganizationId })
+  }
 
-   if (isPartnerSuperRole(normalizedRole)) {
-     return Boolean(normalizedPartnerOrg) && normalizedPartnerOrg === courseOrgId
-   }
+  return false
+}
 
-   if (isPartnerUserRole(normalizedRole)) {
-     const ownsCourse = toIdString(course.createdBy) === toIdString(accountId)
-     const isDraft = String(course.status || '').trim().toLowerCase() === 'draft'
-     return Boolean(normalizedPartnerOrg)
-       && normalizedPartnerOrg === courseOrgId
-       && ownsCourse
-       && isDraft
-   }
+const canEditCourse = ({ accountId, course }) => ownsCourseRecord({ accountId, course })
 
-  return toIdString(course.createdBy) === toIdString(accountId)
+const canDuplicateCourse = ({ role, accountId, course }) => (
+  canCreateCourses(role) && canEditCourse({ accountId, course })
+)
+
+const canArchiveCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
+  if (!course) return false
+  if (canManagePlatform(role)) return true
+  if (ownsCourseRecord({ accountId, course })) return true
+
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  if (isPartnerSuperRole(normalizedRole)) {
+    return courseBelongsToPartnerOrganization({ course, partnerOrganizationId })
+  }
+
+  return false
+}
+
+const canRestoreCourse = ({ role, accountId, course, partnerOrganizationId = null }) => (
+  canArchiveCourse({ role, accountId, course, partnerOrganizationId })
+)
+
+const canAssignCourse = ({ role, accountId, course, partnerOrganizationId = null }) => (
+  canArchiveCourse({ role, accountId, course, partnerOrganizationId })
+)
+
+const canDeleteCourse = ({ role }) => isSuperAdminRole(role)
+
+const buildCourseActionPermissions = ({
+  role,
+  accountId,
+  course,
+  partnerOrganizationId = null,
+  programReferenceCount = 0,
+  successfulPaymentCount = 0
+}) => {
+  const isArchived = String(course?.status || '').trim().toLowerCase() === 'archived' || course?.isActive === false
+  const enrollmentCount = Math.max(0, Number(course?.enrollmentCount || 0))
+  const deleteRestrictions = []
+  if (enrollmentCount > 0) {
+    deleteRestrictions.push(`${enrollmentCount} enrollment${enrollmentCount === 1 ? '' : 's'}`)
+  }
+  if (successfulPaymentCount > 0) {
+    deleteRestrictions.push(`${successfulPaymentCount} successful payment${successfulPaymentCount === 1 ? '' : 's'}`)
+  }
+  if (programReferenceCount > 0) {
+    deleteRestrictions.push(`${programReferenceCount} program reference${programReferenceCount === 1 ? '' : 's'}`)
+  }
+
+  const baseDeleteAccess = canDeleteCourse({ role })
+
+  return {
+    isOwnedByCurrentUser: ownsCourseRecord({ accountId, course }),
+    canEdit: canEditCourse({ accountId, course }),
+    canDuplicate: canDuplicateCourse({ role, accountId, course }),
+    canArchive: !isArchived && canArchiveCourse({ role, accountId, course, partnerOrganizationId }),
+    canRestore: isArchived && canRestoreCourse({ role, accountId, course, partnerOrganizationId }),
+    canAssign: canAssignCourse({ role, accountId, course, partnerOrganizationId }),
+    canDelete: baseDeleteAccess && deleteRestrictions.length === 0,
+    deleteBlockedReason: baseDeleteAccess && deleteRestrictions.length > 0
+      ? `Permanent delete is blocked because this course has ${deleteRestrictions.join(' and ')}.`
+      : '',
+    programReferenceCount,
+    successfulPaymentCount
+  }
 }
 
 const parseDateBoundary = (value, boundary = 'start') => {
@@ -4154,7 +4221,10 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
     const canStartNow = courseIsPublished && (!requiresPayment || hasSuccessfulPayment || isEnrolled)
     const previewCourse = buildCourseDetailViewModel(course)
 
-    const previewEditUrl = managesCourse
+    const previewEditUrl = canEditCourse({
+      accountId: req.user._id,
+      course
+    })
       ? (canManagePlatform(role)
           ? `/admin/courses?editCourse=${course._id}#edit-course`
           : `/simple-lms/studio/courses?editCourse=${course._id}`)
@@ -5001,11 +5071,10 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       })
     }
 
-    if (!canManageCourse({
+    if (!canEditCourse({
       role,
       accountId: req.user._id,
-      course,
-      partnerOrganizationId: req.user.partnerOrganization
+      course
     })) {
       return redirectWithMessage({
         res,
@@ -5086,11 +5155,10 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
       })
     }
 
-    if (!canManageCourse({
+    if (!canDuplicateCourse({
       role,
       accountId: req.user._id,
-      course: sourceCourse,
-      partnerOrganizationId: req.user.partnerOrganization
+      course: sourceCourse
     })) {
       return redirectWithMessage({
         res,
@@ -5202,7 +5270,7 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
       })
     }
 
-    if (!canManageCourse({
+    if (!canArchiveCourse({
       role,
       accountId: req.user._id,
       course,
@@ -5257,7 +5325,7 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
       })
     }
 
-    if (!canManageCourse({
+    if (!canRestoreCourse({
       role,
       accountId: req.user._id,
       course,
@@ -5286,6 +5354,89 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
       res,
       path: returnTo,
       error: 'Failed to restore course.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/delete', requirePageAuth, async (req, res) => {
+  const returnTo = resolveCourseStudioReturnPath(req, '/admin/courses')
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const role = resolveRole(req.user)
+    if (!canDeleteCourse({ role })) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only super admins can permanently delete courses.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const [enrollmentCount, successfulPaymentCount, programReferenceCount] = await Promise.all([
+      SimpleLmsEnrollment.countDocuments({ course: course._id }),
+      SimpleLmsPayment.countDocuments({ course: course._id, status: 'successful' }),
+      SimpleLmsProgram.countDocuments({ 'steps.course': course._id })
+    ])
+
+    const blockingReasons = []
+    if (enrollmentCount > 0) {
+      blockingReasons.push(`${enrollmentCount} enrollment${enrollmentCount === 1 ? '' : 's'}`)
+    }
+    if (successfulPaymentCount > 0) {
+      blockingReasons.push(`${successfulPaymentCount} successful payment${successfulPaymentCount === 1 ? '' : 's'}`)
+    }
+    if (programReferenceCount > 0) {
+      blockingReasons.push(`${programReferenceCount} program reference${programReferenceCount === 1 ? '' : 's'}`)
+    }
+    if (blockingReasons.length > 0) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: `Permanent delete is blocked because this course has ${blockingReasons.join(' and ')}. Archive it instead.`
+      })
+    }
+
+    await SimpleLmsCourse.deleteOne({ _id: course._id })
+
+    await logAuditEvent({
+      action: 'course.delete',
+      performedBy: req.user._id,
+      targetAccount: course.createdBy || null,
+      metadata: {
+        courseId: toIdString(course._id),
+        courseTitle: course.title || 'Untitled Course',
+        organizationId: toIdString(course.organization)
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Course permanently deleted.'
+    })
+  } catch (error) {
+    console.error('Delete course error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to delete course.'
     })
   }
 })
@@ -5547,7 +5698,7 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     }
 
     const course = await SimpleLmsCourse.findById(courseId).lean()
-    if (!course || !canManageCourse({
+    if (!course || !canAssignCourse({
       role,
       accountId: req.user._id,
       course,
@@ -8818,15 +8969,71 @@ const renderWorkspacePage = async (
       currentStreakDays
     }
 
-    const managedCourses = managedRaw.map(course => decorateCourse(course))
+    const managedCourseIdList = managedRaw.map((course) => course._id).filter(Boolean)
+    const managedCourseProgramReferenceRaw = isSuperAdminRole(role) && managedCourseIdList.length > 0
+      ? await SimpleLmsProgram.aggregate([
+        { $match: { 'steps.course': { $in: managedCourseIdList } } },
+        { $unwind: '$steps' },
+        { $match: { 'steps.course': { $in: managedCourseIdList } } },
+        {
+          $group: {
+            _id: '$steps.course',
+            count: { $sum: 1 }
+          }
+        }
+      ])
+      : []
+    const managedCoursePaymentReferenceRaw = isSuperAdminRole(role) && managedCourseIdList.length > 0
+      ? await SimpleLmsPayment.aggregate([
+        {
+          $match: {
+            course: { $in: managedCourseIdList },
+            status: 'successful'
+          }
+        },
+        {
+          $group: {
+            _id: '$course',
+            count: { $sum: 1 }
+          }
+        }
+      ])
+      : []
+    const programReferenceCountByCourseId = new Map(
+      (managedCourseProgramReferenceRaw || []).map((entry) => [
+        toIdString(entry?._id),
+        Math.max(0, Number(entry?.count || 0))
+      ])
+    )
+    const successfulPaymentCountByCourseId = new Map(
+      (managedCoursePaymentReferenceRaw || []).map((entry) => [
+        toIdString(entry?._id),
+        Math.max(0, Number(entry?.count || 0))
+      ])
+    )
+    const decorateManagedCourseForActor = (course) => {
+      const decoratedCourse = decorateCourse(course)
+      return {
+        ...decoratedCourse,
+        ...buildCourseActionPermissions({
+          role,
+          accountId: req.user._id,
+          course: decoratedCourse,
+          partnerOrganizationId: req.user.partnerOrganization,
+          programReferenceCount: programReferenceCountByCourseId.get(toIdString(decoratedCourse._id)) || 0,
+          successfulPaymentCount: successfulPaymentCountByCourseId.get(toIdString(decoratedCourse._id)) || 0
+        })
+      }
+    }
+    const managedCourses = managedRaw.map((course) => decorateManagedCourseForActor(course))
     const catalogProgramsDecorated = catalogProgramsRaw.map(program => decorateProgram(program, programCourseMap))
     const managedPrograms = managedProgramsRaw.map(program => decorateProgram(program, programCourseMap))
 
     let editingCourse = null
     if (editCourseId && mongoose.Types.ObjectId.isValid(editCourseId) && canCreateCourses(role)) {
-      const candidate = managedRaw.find(course => toIdString(course._id) === editCourseId)
-      if (candidate) {
-        editingCourse = decorateCourse(candidate)
+      const candidate = managedCourses.find((course) => toIdString(course._id) === editCourseId)
+      if (candidate?.canEdit) {
+        editingCourse = candidate
       }
     }
 
@@ -8961,7 +9168,6 @@ const renderWorkspacePage = async (
       providerReference: payment.providerTxId || payment.flutterwaveTxId || payment.paystackReference || ''
     }))
 
-    const managedCourseIdList = managedRaw.map((course) => course._id)
     const creatorSalesRaw = managedCourseIdList.length > 0
       ? await SimpleLmsPayment.find({
         status: 'successful',

@@ -586,8 +586,50 @@
       font-size: 12px;
       line-height: 1.5;
     }
+    .studio-lane-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .studio-lane-card {
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid rgba(109, 40, 217, 0.14);
+      border-radius: 16px;
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.98), rgba(245, 243, 255, 0.92));
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      box-shadow: 0 16px 32px -30px rgba(15, 23, 42, 0.38);
+    }
+    .studio-lane-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(109, 40, 217, 0.28);
+      box-shadow: 0 20px 34px -30px rgba(109, 40, 217, 0.52);
+    }
+    .studio-lane-card small {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7c3aed;
+    }
+    .studio-lane-card strong {
+      font-size: 18px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #0b1224;
+    }
+    .studio-lane-card span {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #665788;
+    }
     .course-list {
       display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 12px;
     }
     .course-item {
@@ -624,6 +666,54 @@
     .course-item-meta strong {
       color: #0f172a;
       font-weight: 700;
+    }
+    .course-item-stat {
+      border: 1px solid rgba(191, 219, 254, 0.82);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.92);
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .course-item-stat span {
+      color: #7c3aed;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .course-item-stat strong {
+      color: #0f172a;
+      font-size: 14px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .course-item-stat small {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .course-item-action-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .course-item-action-bar .inline-form {
+      display: inline-flex;
+      margin: 0;
+      width: auto;
+    }
+    .course-item-note {
+      margin: 0;
+      border: 1px solid rgba(109, 40, 217, 0.16);
+      border-radius: 12px;
+      background: rgba(245, 243, 255, 0.84);
+      padding: 10px 12px;
+      color: #5b21b6;
+      font-size: 12px;
+      line-height: 1.6;
     }
     .course-review-feedback {
       border: 1px solid #d9e4f0;
@@ -935,6 +1025,9 @@
       .hero-actions {
         justify-content: flex-start;
       }
+      .studio-lane-grid {
+        grid-template-columns: 1fr;
+      }
       .section-head h3 {
         font-size: clamp(24px, 7vw, 30px);
       }
@@ -978,9 +1071,11 @@
 </head>
 <%
   const isAdminStudio = studioContext === 'admin'
-  const studioPath = isAdminStudio ? '/admin/course-studio' : '/simple-lms/studio/courses'
+  const studioPath = isAdminStudio ? '/admin/courses' : '/simple-lms/studio/courses'
   const homePath = isAdminStudio ? '/admin' : '/simple-lms'
   const courses = (managedCourses || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const ownerEditableCount = courses.filter((course) => course?.canEdit).length
+  const moderationOnlyCount = courses.filter((course) => !course?.canEdit).length
   const systemCourseCount = courses.filter((course) => Boolean(course?.isSystemCourse)).length
   const creatorCourseCount = Math.max(0, courses.length - systemCourseCount)
   const publishedCourseCount = courses.filter((course) => String(course?.status || '') === 'published').length
@@ -1095,12 +1190,12 @@
           <div>
             <h2><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></h2>
             <p><%= isAdminStudio
-              ? 'Courses created from this admin studio are saved as system courses by default. Manage both system and creator-owned courses from one place.'
-              : 'This studio is separate from the LMS browsing pages. Courses created here are creator-owned courses tied to your account.' %></p>
+              ? 'Create new system courses here, then moderate the wider course library without exposing owner-only editing on creator-owned content.'
+              : 'This studio is separate from the LMS browsing pages. Create new courses here, then manage the courses you own from a cleaner library view.' %></p>
           </div>
           <div class="hero-actions">
             <a class="btn btn-secondary btn-sm" href="#create-course">Create New Course</a>
-            <a class="btn btn-secondary btn-sm" href="#manage-courses">Manage Existing Courses</a>
+            <a class="btn btn-secondary btn-sm" href="#manage-courses">Open Course Library</a>
             <% if (editingCourse) { %>
               <a class="btn btn-primary btn-sm" href="#edit-course">Editing: <%= editingCourse.title %></a>
             <% } %>
@@ -1109,8 +1204,20 @@
         <div class="hero-metrics">
           <article class="hero-metric"><small>Draft Courses</small><strong><%= draftCourseCount %></strong></article>
           <article class="hero-metric"><small>Pending Review</small><strong><%= pendingCourseCount %></strong></article>
-          <article class="hero-metric"><small>Total Enrollments</small><strong><%= courses.reduce((sum, course) => sum + Math.max(0, Number(course.enrollmentCount || 0)), 0) %></strong></article>
-          <article class="hero-metric"><small>Total Lessons</small><strong><%= courses.reduce((sum, course) => sum + Math.max(0, Number(course.lessonCount || 0)), 0) %></strong></article>
+          <article class="hero-metric"><small>Owner Editable</small><strong><%= ownerEditableCount %></strong></article>
+          <article class="hero-metric"><small>Moderation Only</small><strong><%= moderationOnlyCount %></strong></article>
+        </div>
+        <div class="studio-lane-grid">
+          <a class="studio-lane-card" href="#create-course">
+            <small>Creation Flow</small>
+            <strong>Create a new course</strong>
+            <span>Open the guided wizard, upload the lesson media, and structure the curriculum without the management list getting in the way.</span>
+          </a>
+          <a class="studio-lane-card" href="#manage-courses">
+            <small>Course Library</small>
+            <strong>View and manage existing courses</strong>
+            <span>Review ownership, see lifecycle status quickly, and only edit or duplicate courses that belong to you.</span>
+          </a>
         </div>
       </section>
 
@@ -1433,8 +1540,8 @@
       <section class="studio-card" id="manage-courses">
         <div class="section-head">
           <div>
-            <h3>Manage Existing Courses</h3>
-            <p>Review ownership, edit any course, archive/restore, and assign learners.</p>
+            <h3>Course Library</h3>
+            <p>See ownership clearly, keep editing locked to the owner, and surface moderation actions separately from content authoring.</p>
           </div>
         </div>
         <% if (!courses || courses.length === 0) { %>
@@ -1458,10 +1565,26 @@
                   </div>
 
                   <div class="course-item-meta">
-                    <div><strong>Owner:</strong> <%= course.createdByName || course.authorName || 'Unknown' %> (<%= course.createdByEmail || '-' %>)</div>
-                    <div><strong>Lessons:</strong> <%= Number(course.lessonCount || 0) %></div>
-                    <div><strong>Enrollments:</strong> <%= Number(course.enrollmentCount || 0) %></div>
-                    <div><strong>Updated:</strong> <%= dateText(course.updatedAt) %></div>
+                    <article class="course-item-stat">
+                      <span>Owner</span>
+                      <strong><%= course.createdByName || course.authorName || 'Unknown' %></strong>
+                      <small><%= course.createdByEmail || '-' %></small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Structure</span>
+                      <strong><%= Number(course.lessonCount || 0) %> lessons</strong>
+                      <small><%= Number(course.estimatedDurationMinutes || 0) %> mins total</small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Learners</span>
+                      <strong><%= Number(course.enrollmentCount || 0) %> enrolled</strong>
+                      <small><%= Number(course.completionCount || 0) %> completed</small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Updated</span>
+                      <strong><%= dateText(course.updatedAt) %></strong>
+                      <small><%= course.isOwnedByCurrentUser ? 'Owner-controlled' : 'Owner-locked content' %></small>
+                    </article>
                   </div>
 
                   <% if (course.reviewHasFeedback) { %>
@@ -1483,40 +1606,58 @@
                     </article>
                   <% } %>
 
-                  <div class="actions">
-                    <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
-                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
-                  <% if (course.isActive) { %>
-                    <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
-                      <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
-                      <button class="btn btn-danger btn-sm" type="submit">Archive</button>
-                    </form>
-                  <% } else { %>
-                    <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
-                      <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
-                      <button class="btn btn-primary btn-sm" type="submit">Restore</button>
-                    </form>
+                  <% if (!course.canEdit) { %>
+                    <p class="course-item-note">Only the course owner can edit or duplicate this course. This card stays visible so you can still review status, preview the course, and use any moderation tools your role allows.</p>
                   <% } %>
-                </div>
 
-                <details>
-                  <summary>Assign to learner</summary>
-                  <form method="post" action="/simple-lms/courses/<%= course._id %>/assign" class="assign-grid" style="margin-top:8px;">
-                    <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
-                    <label>Account
-                      <select class="input" name="targetAccountId">
-                        <option value="">Select account</option>
-                        <% (assignableAccounts || []).forEach((account) => { %>
-                          <option value="<%= account._id %>"><%= account.displayName || account.email %> - <%= account.email %></option>
-                        <% }) %>
-                      </select>
-                    </label>
-                    <label>or Email<input class="input" type="email" name="targetEmail" placeholder="learner@email.com"></label>
-                    <div class="actions" style="align-self:end;">
-                      <button class="btn btn-primary btn-sm" type="submit">Assign Course</button>
-                    </div>
-                  </form>
-                </details>
+                  <div class="course-item-action-bar">
+                    <% if (course.canEdit) { %>
+                      <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
+                    <% } %>
+                    <% if (course.canDuplicate) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <input type="hidden" name="studioPath" value="<%= studioPath %>">
+                        <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
+                        <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
+                        <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
+                      </form>
+                    <% } %>
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
+                    <% if (course.canArchive) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <button class="btn btn-danger btn-sm" type="submit">Archive</button>
+                      </form>
+                    <% } %>
+                    <% if (course.canRestore) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <button class="btn btn-primary btn-sm" type="submit">Restore</button>
+                      </form>
+                    <% } %>
+                  </div>
+
+                  <% if (course.canAssign) { %>
+                    <details>
+                      <summary>Assign to learner</summary>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/assign" class="assign-grid" style="margin-top:8px;">
+                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <label>Account
+                          <select class="input" name="targetAccountId">
+                            <option value="">Select account</option>
+                            <% (assignableAccounts || []).forEach((account) => { %>
+                              <option value="<%= account._id %>"><%= account.displayName || account.email %> - <%= account.email %></option>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <label>or Email<input class="input" type="email" name="targetEmail" placeholder="learner@email.com"></label>
+                        <div class="actions" style="align-self:end;">
+                          <button class="btn btn-primary btn-sm" type="submit">Assign Course</button>
+                        </div>
+                      </form>
+                    </details>
+                  <% } %>
               </article>
             <% }) %>
           </div>

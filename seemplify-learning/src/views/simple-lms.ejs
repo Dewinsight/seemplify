@@ -1233,17 +1233,20 @@
         </div>
 
         <aside class="stack">
-          <div class="head"><div><h2>Managed Courses</h2><p class="mini">Edit, archive/restore, and assign learners.</p></div></div>
+          <div class="head"><div><h2>Course Library</h2><p class="mini">Ownership is explicit here. Edit and duplicate stay owner-only, while lifecycle actions remain separate.</p></div></div>
           <% if (!managedCourses || managedCourses.length === 0) { %><div class="empty">No managed courses.</div><% } else { %>
             <% managedCourses.forEach((course) => { %>
               <article class="card"><div class="body">
                 <h3><%= course.title %></h3>
                 <p><%= course.summaryText %></p>
-                <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span></div>
+                <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span><% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %></div>
+                <% if (!course.canEdit) { %><p class="mini">Only the course owner can edit or duplicate this course.</p><% } %>
                 <div class="actions">
-                  <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a>
+                  <% if (course.canEdit) { %><a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a><% } %>
+                  <% if (course.canDuplicate) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><input type="hidden" name="studioPath" value="/simple-lms/studio/courses"><input type="hidden" name="studioContext" value="creator"><button class="btn btn-secondary btn-sm" type="submit">Duplicate</button></form><% } %>
                   <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/simple-lms?view=course-studio') %>" target="_blank" rel="noreferrer">View</a>
-                  <% if (course.isActive) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/archive" style="display:inline-flex;"><button class="btn btn-danger btn-sm" type="submit">Archive</button></form><% } else { %><form method="post" action="/simple-lms/courses/<%= course._id %>/restore" style="display:inline-flex;"><button class="btn btn-primary btn-sm" type="submit">Restore</button></form><% } %>
+                  <% if (course.canArchive) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/archive" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><button class="btn btn-danger btn-sm" type="submit">Archive</button></form><% } %>
+                  <% if (course.canRestore) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/restore" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><button class="btn btn-primary btn-sm" type="submit">Restore</button></form><% } %>
                 </div>
               </div></article>
             <% }) %>
