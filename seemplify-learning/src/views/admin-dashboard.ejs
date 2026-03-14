@@ -1331,6 +1331,360 @@
       letter-spacing: -0.03em;
       color: #ffffff;
     }
+    .partner-hub-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+    .partner-nav-card {
+      text-decoration: none;
+      color: #0f172a;
+      border: 1px solid rgba(109, 40, 217, 0.14);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.92));
+      padding: 15px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 16px 32px -30px rgba(76, 29, 149, 0.28);
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+    .partner-nav-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(109, 40, 217, 0.24);
+      box-shadow: 0 22px 36px -30px rgba(76, 29, 149, 0.36);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(243, 232, 255, 0.94));
+    }
+    .partner-nav-card.active {
+      border-color: rgba(109, 40, 217, 0.32);
+      background: linear-gradient(180deg, rgba(245, 243, 255, 0.98), rgba(237, 233, 254, 0.96));
+      box-shadow: 0 26px 42px -34px rgba(76, 29, 149, 0.42);
+    }
+    .partner-nav-card-head,
+    .partner-view-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-nav-open {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #7c3aed;
+    }
+    .partner-nav-card-copy {
+      display: grid;
+      gap: 5px;
+    }
+    .partner-nav-card-copy strong {
+      font-size: 18px;
+      line-height: 1.14;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .partner-nav-card-metric {
+      border: 1px solid rgba(109, 40, 217, 0.14);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 10px 11px;
+      display: grid;
+      gap: 3px;
+    }
+    .partner-nav-card-metric span {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7c3aed;
+    }
+    .partner-nav-card-metric strong {
+      font-size: 21px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .partner-nav-card-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .partner-view-shell {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.86);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .partner-view-head h3 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .partner-subnav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .partner-subnav-link {
+      text-decoration: none;
+      border: 1px solid rgba(109, 40, 217, 0.14);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #5b4b82;
+      background: rgba(255, 255, 255, 0.92);
+      transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+    }
+    .partner-subnav-link:hover {
+      border-color: rgba(109, 40, 217, 0.24);
+      background: rgba(245, 243, 255, 0.96);
+      color: #4c1d95;
+    }
+    .partner-subnav-link.active {
+      border-color: rgba(109, 40, 217, 0.28);
+      background: linear-gradient(135deg, rgba(109, 40, 217, 0.12), rgba(168, 85, 247, 0.18));
+      color: #4c1d95;
+    }
+    .partner-record-grid,
+    .partner-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+    }
+    .partner-record-card {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 15px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.94));
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 14px 28px -28px rgba(76, 29, 149, 0.26);
+    }
+    .partner-record-card h3,
+    .partner-detail-shell h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .partner-detail-shell {
+      border: 1px solid rgba(109, 40, 217, 0.16);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 15px;
+      display: grid;
+      gap: 12px;
+      box-shadow: 0 18px 32px -30px rgba(76, 29, 149, 0.32);
+    }
+    .partner-detail-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-detail-copy {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .partner-detail-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .partner-detail-section {
+      border: 1px solid rgba(109, 40, 217, 0.1);
+      border-radius: 14px;
+      background: rgba(248, 244, 255, 0.62);
+      padding: 13px;
+      display: grid;
+      gap: 10px;
+    }
+    .partner-detail-section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-detail-section-head h4 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+    .partner-detail-section-head p {
+      margin: 0;
+    }
+    .partner-record-list {
+      display: grid;
+      gap: 10px;
+    }
+    .partner-empty-detail {
+      border: 1px dashed rgba(109, 40, 217, 0.22);
+      border-radius: 15px;
+      background: rgba(248, 244, 255, 0.62);
+      padding: 18px;
+      display: grid;
+      gap: 6px;
+    }
+    .partner-empty-detail strong {
+      font-size: 16px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+    .partner-table-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .partner-workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(340px, 1.08fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .partner-preview-shell {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.94);
+      overflow: hidden;
+      box-shadow: 0 14px 28px -28px rgba(76, 29, 149, 0.26);
+    }
+    .partner-preview-head {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(109, 40, 217, 0.08);
+      display: grid;
+      gap: 4px;
+    }
+    .partner-preview-head h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .partner-preview-table {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      box-shadow: none;
+    }
+    .partner-preview-table table {
+      width: 100%;
+      min-width: 0;
+    }
+    .partner-preview-table thead th {
+      white-space: nowrap;
+    }
+    .partner-preview-table tbody tr.is-selected {
+      background: rgba(245, 243, 255, 0.88);
+    }
+    .partner-preview-table tbody tr.is-selected td {
+      border-top-color: rgba(109, 40, 217, 0.14);
+    }
+    .partner-preview-table td strong {
+      display: block;
+      color: #0f172a;
+      line-height: 1.3;
+    }
+    .partner-preview-table td .mini {
+      display: block;
+      margin-top: 2px;
+    }
+    .partner-preview-empty {
+      padding: 16px;
+      display: grid;
+      gap: 6px;
+    }
+    .partner-record-card.is-selected {
+      border-color: rgba(109, 40, 217, 0.28);
+      background: linear-gradient(180deg, rgba(245, 243, 255, 0.98), rgba(237, 233, 254, 0.92));
+      box-shadow: 0 22px 36px -30px rgba(76, 29, 149, 0.4);
+    }
+    .partner-record-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-record-card-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .partner-record-card-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }
+    .partner-record-card .stack-metric,
+    .partner-detail-shell .stack-metric {
+      background: rgba(255, 255, 255, 0.94);
+    }
+    .partner-detail-form-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      align-items: end;
+    }
+    .partner-detail-form-grid .actions {
+      grid-column: 1 / -1;
+    }
+    .partner-detail-form-grid textarea.input {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .partner-detail-note {
+      border: 1px dashed rgba(109, 40, 217, 0.2);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .partner-detail-note strong {
+      font-size: 13px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+    .partner-detail-note p {
+      margin: 0;
+    }
+    .partner-detail-shell .inline-form {
+      margin: 0;
+    }
+    .partner-record-card .actions {
+      margin: 0;
+    }
+    .partner-detail-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    @media (max-width: 1180px) {
+      .partner-workspace-grid {
+        grid-template-columns: 1fr;
+      }
+    }
     .partner-lane-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -2371,9 +2725,88 @@
       return `${String(currency || 'NGN').trim().toUpperCase() || 'NGN'} ${(safeAmount / 100).toFixed(2)}`
     }
   }
+  const reviewDecisionClass = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'changes_requested') return 'review-changes_requested'
+    if (decision === 'denied') return 'review-denied'
+    if (decision === 'approved') return 'review-approved'
+    if (decision === 'pending') return 'review-pending'
+    return ''
+  }
+  const reviewFeedbackTone = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (['pending', 'approved', 'changes_requested', 'denied'].includes(decision)) return decision
+    return 'pending'
+  }
+  const reviewMessageForCourse = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'pending') return 'This course is waiting for admin review. You can keep editing, but any major changes should be followed by a fresh submission.'
+    if (decision === 'approved') return 'This course was approved for publishing. The latest review note is kept here for audit visibility.'
+    if (decision === 'changes_requested') return 'Admin requested specific updates. Make the changes below, then set the course back to published to resubmit it for review.'
+    if (decision === 'denied') return 'This submission was denied. You can still revise the course, address the feedback, and submit it again when it is ready.'
+    return ''
+  }
   const websiteHref = '/'
   const partnerOrgRows = Array.isArray(partnerOrganizations) ? partnerOrganizations : []
   const partnerRequestRows = Array.isArray(roleApprovalRequests) ? roleApprovalRequests : []
+  const partnerView = ['directory', 'cash', 'onboarding', 'agents'].includes(String(adminPartnerView || '').trim().toLowerCase())
+    ? String(adminPartnerView || '').trim().toLowerCase()
+    : 'overview'
+  const partnerFocus = adminPartnerFocus || {}
+  const partnerViewPath = (value = 'overview', focus = {}) => {
+    const normalizedValue = String(value || '').trim().toLowerCase()
+    const params = new URLSearchParams()
+    if (normalizedValue && normalizedValue !== 'overview') {
+      params.set('partnerView', normalizedValue)
+    }
+    const normalizedFocus = focus || {}
+    if (normalizedValue === 'directory' && normalizedFocus.organizationId) {
+      params.set('organizationId', String(normalizedFocus.organizationId).trim())
+    }
+    if (normalizedValue === 'cash' && normalizedFocus.withdrawalId) {
+      params.set('withdrawalId', String(normalizedFocus.withdrawalId).trim())
+    }
+    if (normalizedValue === 'onboarding' && normalizedFocus.requestId) {
+      params.set('requestId', String(normalizedFocus.requestId).trim())
+    }
+    if (normalizedValue === 'agents' && normalizedFocus.agentPayoutId) {
+      params.set('agentPayoutId', String(normalizedFocus.agentPayoutId).trim())
+    }
+    const query = params.toString()
+    return query ? `/admin/partners?${query}` : '/admin/partners'
+  }
+  const partnerSubviewMeta = {
+    overview: {
+      label: 'Overview',
+      title: 'Partner hub',
+      description: 'Start from a clean hub, then open the exact operating lane you need.'
+    },
+    directory: {
+      label: 'Directory',
+      title: 'Partner directory',
+      description: 'Manage organizations, members, and partner-super assignments without mixing in payouts.'
+    },
+    cash: {
+      label: 'Cash',
+      title: 'Cash operations',
+      description: 'Keep partner withdrawals in one controlled payout lane.'
+    },
+    onboarding: {
+      label: 'Onboarding',
+      title: 'Partner onboarding',
+      description: 'Review partner and channel-partner requests in a dedicated queue.'
+    },
+    agents: {
+      label: 'Agents',
+      title: 'Agent commissions',
+      description: 'Track agent payout approvals separately from partner withdrawals.'
+    }
+  }
+  const activePartnerSubview = partnerSubviewMeta[partnerView] || partnerSubviewMeta.overview
+  const selectedPartnerOrganization = partnerOrgRows.find((organization) => String(organization._id || '') === String(partnerFocus.organizationId || '')) || null
+  const selectedPartnerWithdrawal = (partnerWithdrawalRequests || []).find((request) => String(request._id || '') === String(partnerFocus.withdrawalId || '')) || null
+  const selectedPartnerRequest = partnerRequestRows.find((request) => String(request._id || '') === String(partnerFocus.requestId || '')) || null
+  const selectedAgentPayout = (agentPayoutRows || []).find((entry) => String(entry._id || '') === String(partnerFocus.agentPayoutId || '')) || null
   const managedAccountRows = Array.isArray(adminAccounts)
     ? adminAccounts.filter((account) => account.agentDashboardRole !== 'channel_sales_agent')
     : []
@@ -2404,6 +2837,62 @@
   const pendingAgentPayoutCount = (agentPayoutRows || []).filter((entry) => ['pending', 'recommended', 'approved'].includes(toLower(entry.status))).length
   const paidAgentPayoutCount = (agentPayoutRows || []).filter((entry) => toLower(entry.status) === 'paid').length
   const reviewedPartnerRequestCount = partnerRequestRows.filter((request) => toLower(request.status) !== 'pending').length
+  const channelPartnerRequestCount = partnerRequestRows.filter((request) => String(request.partnerType || request.requestedRole || '').toLowerCase().includes('channel')).length
+  const standardPartnerRequestCount = partnerRequestRows.length - channelPartnerRequestCount
+  const partnerSubviewCards = [
+    {
+      key: 'directory',
+      eyebrow: 'Directory',
+      title: 'Organizations and member control',
+      description: 'Browse partner organizations, inspect status, and manage member roles inside each org.',
+      primary: `${partnerOrgRows.length}`,
+      primaryLabel: 'Organizations',
+      metrics: [
+        `${activePartnerOrgCount} active`,
+        `${totalPartnerMembers} members`,
+        `${totalPartnerAgents} linked agents`
+      ]
+    },
+    {
+      key: 'cash',
+      eyebrow: 'Cash',
+      title: 'Withdrawal review lane',
+      description: 'Handle partner withdrawal requests without scrolling through onboarding or agent operations.',
+      primary: moneyText(partnerPendingCommissionMinor, 'NGN'),
+      primaryLabel: 'Commission due',
+      metrics: [
+        `${openPartnerWithdrawalCount} open withdrawals`,
+        `${paidPartnerWithdrawalCount} paid`,
+        `${moneyText(partnerAvailableWalletMinor, 'NGN')} available`
+      ]
+    },
+    {
+      key: 'onboarding',
+      eyebrow: 'Onboarding',
+      title: 'Application review queue',
+      description: 'Approve or reject partner and channel-partner requests from one focused queue.',
+      primary: `${pendingPartnerRequestCount}`,
+      primaryLabel: 'Pending requests',
+      metrics: [
+        `${reviewedPartnerRequestCount} reviewed`,
+        `${channelPartnerRequestCount} channel requests`,
+        `${standardPartnerRequestCount} standard partner requests`
+      ]
+    },
+    {
+      key: 'agents',
+      eyebrow: 'Agents',
+      title: 'Commission payout lane',
+      description: 'Keep agent commissions isolated so channel-partner operations stay readable.',
+      primary: `${pendingAgentPayoutCount}`,
+      primaryLabel: 'Open payouts',
+      metrics: [
+        `${paidAgentPayoutCount} paid`,
+        `${channelPartnerOrgCount} channel orgs`,
+        `${(agentPayoutRows || []).length} total entries`
+      ]
+    }
+  ]
   const topEnrollmentMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByEnrollments) ? analytics.topCoursesByEnrollments.map((item) => toNumber(item.enrollmentCount)) : [0]))
   const topRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByRevenue) ? analytics.topCoursesByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
   const topCreatorRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCreatorsByRevenue) ? analytics.topCreatorsByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
@@ -3124,8 +3613,8 @@
             <div class="partner-overview-copy">
               <span class="eyebrow">Partner Ops</span>
               <div>
-                <h3>Manage partner organizations in clear lanes instead of one crowded control wall.</h3>
-                <p class="mini">This area is for partner governance, channel partner operations, and org-scoped role management. Platform admins stay in Access Control so partner work stays readable.</p>
+                <h3>Run partner operations from a clean hub, then open one lane at a time.</h3>
+                <p class="mini">Directory, cash, onboarding, and agent operations now have their own entry points so long queues stop burying the rest of the work.</p>
               </div>
               <div class="overview-badges">
                 <span class="pill"><%= partnerOrgRows.length %> organizations</span>
@@ -3156,17 +3645,60 @@
                   <strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong>
                 </article>
                 <article class="partner-summary-card">
-                  <span>Open payout lanes</span>
-                  <strong><%= openPartnerWithdrawalCount + pendingAgentPayoutCount %></strong>
+                  <span>Active lane</span>
+                  <strong><%= activePartnerSubview.label %></strong>
                 </article>
               </div>
               <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/users">Open User Directory</a>
+                <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('directory') %>">Open Directory</a>
+                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('cash') %>">Review Cash</a>
+                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('onboarding') %>">Review Onboarding</a>
                 <a class="btn btn-secondary btn-sm" href="/admin/super-users">Platform Admins</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/analytics">Partner Analytics</a>
               </div>
             </aside>
           </div>
+          <div class="partner-hub-grid">
+            <% partnerSubviewCards.forEach((card) => { %>
+              <a href="<%= partnerViewPath(card.key) %>" class="partner-nav-card <%= partnerView === card.key ? 'active' : '' %>">
+                <div class="partner-nav-card-head">
+                  <span class="eyebrow"><%= card.eyebrow %></span>
+                  <span class="partner-nav-open">Open lane</span>
+                </div>
+                <div class="partner-nav-card-copy">
+                  <strong><%= card.title %></strong>
+                  <p class="mini"><%= card.description %></p>
+                </div>
+                <div class="partner-nav-card-metric">
+                  <span><%= card.primaryLabel %></span>
+                  <strong><%= card.primary %></strong>
+                </div>
+                <ul class="partner-nav-card-list">
+                  <% card.metrics.forEach((metric) => { %>
+                    <li><%= metric %></li>
+                  <% }) %>
+                </ul>
+              </a>
+            <% }) %>
+          </div>
+          <div class="partner-view-shell">
+            <div class="partner-view-head">
+              <div>
+                <p class="section-kicker">Current lane</p>
+                <h3><%= activePartnerSubview.title %></h3>
+                <p class="mini"><%= activePartnerSubview.description %></p>
+              </div>
+              <div class="actions">
+                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('overview') %>">Partner Hub</a>
+                <a class="btn btn-secondary btn-sm" href="/admin/users">Base User Roles</a>
+              </div>
+            </div>
+            <nav class="partner-subnav" aria-label="Partner operations lanes">
+              <% Object.entries(partnerSubviewMeta).forEach(([key, item]) => { %>
+                <a href="<%= partnerViewPath(key) %>" class="partner-subnav-link <%= partnerView === key ? 'active' : '' %>"><%= item.label %></a>
+              <% }) %>
+            </nav>
+          </div>
+          <% if (partnerView === 'overview') { %>
           <div class="partner-lane-grid">
             <article class="partner-panel is-emphasis">
               <div>
@@ -3215,15 +3747,17 @@
               <p class="mini">Use this page to attach existing accounts to organizations, promote partner super users, and review partner onboarding. Do not use it for platform-wide admin promotion.</p>
             </article>
           </div>
+          <% } %>
         </section>
 
+        <% if (partnerView === 'directory') { %>
         <section class="card partner-section-shell">
           <div class="section-header-row">
             <div class="section-header-copy">
               <p class="section-kicker">Directory</p>
               <div>
                 <h2>Partner organizations</h2>
-                <p class="mini">Each organization card keeps the business summary visible and pushes deeper member management into its own drawer.</p>
+                <p class="mini">Start with the org list, then open one record to work on status, membership, and org-level partner access.</p>
               </div>
             </div>
             <div class="section-header-meta">
@@ -3232,167 +3766,229 @@
               <span class="pill"><%= suspendedPartnerOrgCount %> suspended</span>
             </div>
           </div>
-          <div class="partner-org-grid">
-            <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
-              <article class="partner-org-card">
-                <div>
-                  <h3>No partner organizations yet</h3>
+          <div class="partner-workspace-grid">
+            <div class="partner-preview-shell">
+              <div class="partner-preview-head">
+                <h3>Organization preview</h3>
+                <p class="mini">Minimal list first. Open a row to manage the full organization record.</p>
+              </div>
+              <% if (!partnerOrganizations || partnerOrganizations.length === 0) { %>
+                <div class="partner-preview-empty">
+                  <strong>No partner organizations yet</strong>
                   <p class="mini">New partner and channel-partner applications will appear here once they are submitted and approved.</p>
                 </div>
-              </article>
+              <% } else { %>
+                <div class="table partner-preview-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Organization</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Members</th>
+                        <th>Courses</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% partnerOrganizations.forEach((organization) => { %>
+                        <% const isSelectedOrganization = selectedPartnerOrganization && String(selectedPartnerOrganization._id || '') === String(organization._id || '') %>
+                        <tr class="<%= isSelectedOrganization ? 'is-selected' : '' %>">
+                          <td>
+                            <strong><%= organization.name || 'Partner Organization' %></strong>
+                            <span class="mini"><%= organization.ownerName || 'No owner captured' %></span>
+                          </td>
+                          <td><%= String(organization.partnerType || 'partner').replace(/_/g, ' ') %></td>
+                          <td><span class="pill"><%= organization.partnerStatus || 'pending' %></span></td>
+                          <td><%= Array.isArray(organization.members) ? organization.members.length : 0 %></td>
+                          <td><%= Number(organization.publishedCourses || 0) %> live / <%= Number(organization.draftCourses || 0) %> draft</td>
+                          <td>
+                            <a class="btn <%= isSelectedOrganization ? 'btn-secondary' : 'btn-primary' %> btn-sm" href="<%= partnerViewPath('directory', { organizationId: organization._id }) %>"><%= isSelectedOrganization ? 'Open' : 'View' %></a>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </div>
+            <% if (!selectedPartnerOrganization) { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-empty-detail">
+                  <strong>Select an organization record</strong>
+                  <p class="mini">The left side stays at summary level. Open one organization to edit status, attach accounts, and manage partner-super roles without pushing the rest of the directory down the page.</p>
+                </div>
+              </aside>
             <% } else { %>
-              <% partnerOrganizations.forEach((organization) => { %>
-                <%
-                  const memberIds = new Set((organization.members || []).map((member) => String(member.id || '')))
-                  const organizationType = String(organization.partnerType || 'partner').trim().toLowerCase()
-                  const defaultMemberRole = organizationType === 'channel_partner' ? 'channel_partner_user' : 'partner_user'
-                  const defaultSuperRole = organizationType === 'channel_partner' ? 'channel_partner_super' : 'partner_super'
-                  const addableAccounts = managedAccountRows.filter((account) => {
-                    if (memberIds.has(String(account._id || ''))) return false
-                    if (account.agentDashboardRole) return false
-                    if (organizationType === 'channel_partner' && String(account.partnerDashboardRole || '').startsWith('partner_')) return false
-                    if (organizationType === 'partner' && String(account.partnerDashboardRole || '').startsWith('channel_partner_')) return false
-                    return true
-                  })
-                %>
-                <article class="partner-org-card">
-                  <div class="partner-org-head">
-                    <div>
-                      <h3><%= organization.name || 'Partner Organization' %></h3>
-                      <p class="mini"><%= organization.description || 'No description provided yet.' %></p>
+              <%
+                const selectedMemberIds = new Set((selectedPartnerOrganization.members || []).map((member) => String(member.id || '')))
+                const selectedOrganizationType = String(selectedPartnerOrganization.partnerType || 'partner').trim().toLowerCase()
+                const selectedDefaultMemberRole = selectedOrganizationType === 'channel_partner' ? 'channel_partner_user' : 'partner_user'
+                const selectedDefaultSuperRole = selectedOrganizationType === 'channel_partner' ? 'channel_partner_super' : 'partner_super'
+                const selectedAddableAccounts = managedAccountRows.filter((account) => {
+                  if (selectedMemberIds.has(String(account._id || ''))) return false
+                  if (account.agentDashboardRole) return false
+                  if (selectedOrganizationType === 'channel_partner' && String(account.partnerDashboardRole || '').startsWith('partner_')) return false
+                  if (selectedOrganizationType === 'partner' && String(account.partnerDashboardRole || '').startsWith('channel_partner_')) return false
+                  return true
+                })
+              %>
+              <aside class="partner-detail-shell">
+                <div class="partner-detail-head">
+                  <div class="partner-detail-copy">
+                    <p class="section-kicker">Directory record</p>
+                    <h3><%= selectedPartnerOrganization.name || 'Partner Organization' %></h3>
+                    <p class="mini"><%= selectedPartnerOrganization.description || 'No description provided yet.' %></p>
+                  </div>
+                  <div class="partner-detail-meta">
+                    <span class="pill"><%= selectedPartnerOrganization.partnerType || 'partner' %></span>
+                    <span class="pill"><%= selectedPartnerOrganization.partnerStatus || 'pending' %></span>
+                    <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('directory') %>">Back to list</a>
+                  </div>
+                </div>
+                <div class="partner-detail-stack">
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Operating snapshot</h4>
+                        <p class="mini">The org summary stays read-only here so the actual write actions are isolated below.</p>
+                      </div>
                     </div>
-                    <div class="partner-org-meta">
-                      <span class="pill"><%= organization.partnerType || 'partner' %></span>
-                      <span class="pill"><%= organization.partnerStatus || 'pending' %></span>
+                    <div class="section-stat-strip">
+                      <div class="stack-metric"><span>Members</span><strong><%= Array.isArray(selectedPartnerOrganization.members) ? selectedPartnerOrganization.members.length : 0 %></strong></div>
+                      <div class="stack-metric"><span>Agents</span><strong><%= Number(selectedPartnerOrganization.agentCount || 0) %></strong></div>
+                      <div class="stack-metric"><span>Published</span><strong><%= Number(selectedPartnerOrganization.publishedCourses || 0) %></strong></div>
+                      <div class="stack-metric"><span>Drafts</span><strong><%= Number(selectedPartnerOrganization.draftCourses || 0) %></strong></div>
                     </div>
-                  </div>
-                  <div class="partner-org-metrics">
-                    <div class="stack-metric"><span>Members</span><strong><%= Array.isArray(organization.members) ? organization.members.length : 0 %></strong></div>
-                    <div class="stack-metric"><span>Agents</span><strong><%= Number(organization.agentCount || 0) %></strong></div>
-                    <div class="stack-metric"><span>Published</span><strong><%= Number(organization.publishedCourses || 0) %></strong></div>
-                    <div class="stack-metric"><span>Drafts</span><strong><%= Number(organization.draftCourses || 0) %></strong></div>
-                  </div>
-                  <div class="partner-finance-grid">
-                    <div class="stack-metric"><span>Gross sales</span><strong><%= organization.partnerSalesDisplay %></strong></div>
-                    <div class="stack-metric"><span>Partner revenue</span><strong><%= organization.partnerRevenueDisplay %></strong></div>
-                    <div class="stack-metric"><span>Available wallet</span><strong><%= organization.partnerWithdrawalAvailableDisplay %></strong></div>
-                  </div>
-                  <div class="section-stat-strip">
-                    <div class="partner-metric"><span>Pending commission</span><strong><%= organization.pendingCommissionDisplay %></strong></div>
-                    <div class="partner-metric"><span>Recommended</span><strong><%= organization.recommendedCommissionDisplay %></strong></div>
-                    <div class="partner-metric"><span>Approved</span><strong><%= organization.approvedCommissionDisplay %></strong></div>
-                    <div class="partner-metric"><span>Pending withdrawal</span><strong><%= organization.partnerWithdrawalPendingDisplay %></strong></div>
-                  </div>
-                  <div class="partner-org-status-row">
-                    <div class="partner-org-status-copy">
-                      <strong>Organization status</strong>
-                      <p class="mini">Keep onboarding in pending, switch active when the org can operate, and suspend when partner access should pause.</p>
+                    <div class="partner-detail-grid">
+                      <div class="stack-metric"><span>Gross sales</span><strong><%= selectedPartnerOrganization.partnerSalesDisplay %></strong></div>
+                      <div class="stack-metric"><span>Partner revenue</span><strong><%= selectedPartnerOrganization.partnerRevenueDisplay %></strong></div>
+                      <div class="stack-metric"><span>Available wallet</span><strong><%= selectedPartnerOrganization.partnerWithdrawalAvailableDisplay %></strong></div>
+                      <div class="stack-metric"><span>Pending withdrawal</span><strong><%= selectedPartnerOrganization.partnerWithdrawalPendingDisplay %></strong></div>
                     </div>
-                    <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/status" class="partner-status-form">
+                    <div class="partner-detail-note">
+                      <strong>Owner: <%= selectedPartnerOrganization.ownerName || 'Not captured' %></strong>
+                      <p class="mini">Pending commission: <%= selectedPartnerOrganization.pendingCommissionDisplay %>. Recommended commission: <%= selectedPartnerOrganization.recommendedCommissionDisplay %>. Approved commission: <%= selectedPartnerOrganization.approvedCommissionDisplay %>.</p>
+                    </div>
+                  </section>
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Status control</h4>
+                        <p class="mini">Keep onboarding in pending, activate when operations can start, and suspend when access needs to pause.</p>
+                      </div>
+                    </div>
+                    <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/status" class="partner-detail-form-grid">
                       <label>
                         <span class="mini">Status</span>
                         <select class="input" name="partnerStatus">
-                          <option value="pending" <%= String(organization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
-                          <option value="active" <%= String(organization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
-                          <option value="suspended" <%= String(organization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
+                          <option value="pending" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
+                          <option value="active" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
+                          <option value="suspended" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
                         </select>
                       </label>
                       <div class="actions">
-                        <input type="hidden" name="returnTo" value="/admin/partners">
-                        <button class="btn btn-primary btn-sm" type="submit">Update Status</button>
+                        <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                        <button class="btn btn-primary btn-sm" type="submit">Update status</button>
                       </div>
                     </form>
-                  </div>
-                  <details class="partner-member-drawer">
-                    <summary>
-                      <span>Manage members</span>
-                      <span class="partner-member-summary">
-                        <span class="pill"><%= Array.isArray(organization.members) ? organization.members.length : 0 %> members</span>
-                        <span class="pill"><%= organizationType === 'channel_partner' ? 'channel team' : 'partner team' %></span>
-                      </span>
-                    </summary>
-                    <div class="partner-member-drawer-body">
-                      <section class="partner-org-members">
-                        <div class="head">
-                          <div>
-                            <h3 style="font-size:18px;">Partner members</h3>
-                            <p class="mini">Manage org-specific partner access without touching platform admin flags.</p>
-                          </div>
-                        </div>
-                        <div class="partner-member-form">
-                          <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members" class="inline-form">
-                            <select class="input" name="accountId" required>
-                              <option value="">Add existing account</option>
-                              <% addableAccounts.forEach((account) => { %>
-                                <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
-                              <% }) %>
-                            </select>
-                            <select class="input" name="role">
-                              <option value="<%= defaultMemberRole %>"><%= defaultMemberRole %></option>
-                              <option value="<%= defaultSuperRole %>"><%= defaultSuperRole %></option>
-                            </select>
-                            <input type="hidden" name="returnTo" value="/admin/partners">
-                            <button class="btn btn-secondary btn-sm" type="submit">Add Member</button>
-                          </form>
-                          <% if (addableAccounts.length === 0) { %>
-                            <div class="member-empty-state">
-                              <p class="mini">No eligible accounts are available to attach to this organization right now.</p>
-                            </div>
-                          <% } %>
-                        </div>
-                        <% if (!organization.members || organization.members.length === 0) { %>
-                          <div class="member-empty-state">
-                            <p class="mini">No partner members are linked to this organization yet.</p>
-                          </div>
-                        <% } else { %>
-                          <div class="partner-member-grid">
-                            <% organization.members.forEach((member) => { %>
-                              <article class="partner-member-card">
-                                <div class="partner-org-head">
-                                  <div>
-                                    <h3 style="font-size:17px;"><%= member.displayName %></h3>
-                                    <p class="mini"><%= member.email || '-' %></p>
-                                  </div>
-                                  <div class="partner-org-meta">
-                                    <span class="pill"><%= String(member.memberRoleLabel || member.memberRole || '').replace(/_/g, ' ') %></span>
-                                    <% if (member.platformRole) { %><span class="pill"><%= String(member.platformRole).replace(/_/g, ' ') %></span><% } %>
-                                    <% if (member.baseLearningRole) { %><span class="pill">base: <%= String(member.baseLearningRole).replace(/_/g, ' ') %></span><% } %>
-                                  </div>
-                                </div>
-                                <div class="partner-member-actions">
-                                  <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members/<%= member.id %>/role" class="inline-form">
-                                    <select class="input" name="role">
-                                      <option value="<%= defaultMemberRole %>" <%= member.memberRoleLabel === defaultMemberRole ? 'selected' : '' %>><%= defaultMemberRole %></option>
-                                      <option value="<%= defaultSuperRole %>" <%= member.memberRoleLabel === defaultSuperRole ? 'selected' : '' %>><%= defaultSuperRole %></option>
-                                    </select>
-                                    <input type="hidden" name="returnTo" value="/admin/partners">
-                                    <button class="btn btn-secondary btn-sm" type="submit">Update Member</button>
-                                  </form>
-                                  <form method="post" action="/simple-lms/admin/partners/<%= organization._id %>/members/<%= member.id %>/remove" class="inline-form">
-                                    <input type="hidden" name="returnTo" value="/admin/partners">
-                                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                                  </form>
-                                </div>
-                              </article>
-                            <% }) %>
-                          </div>
-                        <% } %>
-                      </section>
+                  </section>
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Attach existing account</h4>
+                        <p class="mini">Partner org membership is managed here. Platform admin access stays in Access Control.</p>
+                      </div>
                     </div>
-                  </details>
-                </article>
-              <% }) %>
+                    <% if (selectedAddableAccounts.length === 0) { %>
+                      <div class="member-empty-state">
+                        <p class="mini">No eligible accounts are available to attach to this organization right now.</p>
+                      </div>
+                    <% } else { %>
+                      <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members" class="partner-detail-form-grid">
+                        <label>
+                          <span class="mini">Account</span>
+                          <select class="input" name="accountId" required>
+                            <option value="">Add existing account</option>
+                            <% selectedAddableAccounts.forEach((account) => { %>
+                              <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <label>
+                          <span class="mini">Partner role</span>
+                          <select class="input" name="role">
+                            <option value="<%= selectedDefaultMemberRole %>"><%= selectedDefaultMemberRole %></option>
+                            <option value="<%= selectedDefaultSuperRole %>"><%= selectedDefaultSuperRole %></option>
+                          </select>
+                        </label>
+                        <div class="actions">
+                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                          <button class="btn btn-secondary btn-sm" type="submit">Add member</button>
+                        </div>
+                      </form>
+                    <% } %>
+                  </section>
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Current members</h4>
+                        <p class="mini">Promote or demote partner-super access here without touching the platform admin model.</p>
+                      </div>
+                    </div>
+                    <% if (!selectedPartnerOrganization.members || selectedPartnerOrganization.members.length === 0) { %>
+                      <div class="member-empty-state">
+                        <p class="mini">No partner members are linked to this organization yet.</p>
+                      </div>
+                    <% } else { %>
+                      <div class="partner-member-grid">
+                        <% selectedPartnerOrganization.members.forEach((member) => { %>
+                          <article class="partner-member-card">
+                            <div class="partner-org-head">
+                              <div>
+                                <h3 style="font-size:17px;"><%= member.displayName %></h3>
+                                <p class="mini"><%= member.email || '-' %></p>
+                              </div>
+                              <div class="partner-org-meta">
+                                <span class="pill"><%= String(member.memberRoleLabel || member.memberRole || '').replace(/_/g, ' ') %></span>
+                                <% if (member.platformRole) { %><span class="pill"><%= String(member.platformRole).replace(/_/g, ' ') %></span><% } %>
+                                <% if (member.baseLearningRole) { %><span class="pill">base: <%= String(member.baseLearningRole).replace(/_/g, ' ') %></span><% } %>
+                              </div>
+                            </div>
+                            <div class="partner-member-actions">
+                              <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/role" class="inline-form">
+                                <select class="input" name="role">
+                                  <option value="<%= selectedDefaultMemberRole %>" <%= member.memberRoleLabel === selectedDefaultMemberRole ? 'selected' : '' %>><%= selectedDefaultMemberRole %></option>
+                                  <option value="<%= selectedDefaultSuperRole %>" <%= member.memberRoleLabel === selectedDefaultSuperRole ? 'selected' : '' %>><%= selectedDefaultSuperRole %></option>
+                                </select>
+                                <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                                <button class="btn btn-secondary btn-sm" type="submit">Update member</button>
+                              </form>
+                              <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/remove" class="inline-form">
+                                <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                                <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                              </form>
+                            </div>
+                          </article>
+                        <% }) %>
+                      </div>
+                    <% } %>
+                  </section>
+                </div>
+              </aside>
             <% } %>
           </div>
         </section>
+        <% } %>
 
+        <% if (partnerView === 'cash') { %>
         <section class="card partner-section-shell">
           <div class="section-header-row">
             <div class="section-header-copy">
               <p class="section-kicker">Cash</p>
               <div>
                 <h2>Partner withdrawal queue</h2>
-                <p class="mini">Review partner organization withdrawals separately from agent commissions so cash movement is easier to track.</p>
+                <p class="mini">Review one withdrawal at a time. The queue stays on the left, while the payout decision lives in a focused review panel.</p>
               </div>
             </div>
             <div class="section-header-meta">
@@ -3407,69 +4003,146 @@
             <div class="stack-metric"><span>Available wallet</span><strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong></div>
             <div class="stack-metric"><span>Commission due</span><strong><%= moneyText(partnerPendingCommissionMinor, 'NGN') %></strong></div>
           </div>
-          <div class="table">
-	            <table>
-	              <thead>
-	                <tr>
-	                  <th>Date</th>
-	                  <th>Organization</th>
-	                  <th>Requested By</th>
-	                  <th>Amount</th>
-	                  <th>Status</th>
-	                  <th>Actions</th>
-	                </tr>
-	              </thead>
-	              <tbody>
-	                <% if (!partnerWithdrawalRequests || partnerWithdrawalRequests.length === 0) { %>
-	                  <tr><td colspan="6" class="mini">No partner withdrawal requests found.</td></tr>
-	                <% } else { %>
-	                  <% partnerWithdrawalRequests.forEach((request) => { %>
-	                    <tr>
-	                      <td><%= dateText(request.createdAt) %></td>
-	                      <td>
-	                        <strong><%= request.organizationName || 'Partner Organization' %></strong><br>
-	                        <span class="mini"><%= request.partnerType || 'partner' %></span>
-	                      </td>
-	                      <td>
-	                        <strong><%= request.requestedByName %></strong><br>
-	                        <span class="mini"><%= request.requestedByEmail || '-' %></span>
-	                      </td>
-	                      <td><%= request.amountDisplay %></td>
-	                      <td><span class="pill"><%= request.statusLabel %></span></td>
-	                      <td>
-	                        <% if (request.canApprove || request.canMarkPaid || request.canReject) { %>
-	                          <form method="post" action="/simple-lms/admin/partner-withdrawals/<%= request._id %>/status" class="inline-form">
-	                            <select class="input" name="status">
-	                              <% if (request.canApprove) { %><option value="approved">approved</option><% } %>
-	                              <% if (request.canMarkPaid) { %><option value="paid">paid</option><% } %>
-	                              <% if (request.canReject) { %><option value="rejected">rejected</option><% } %>
-	                            </select>
-	                            <input class="input" type="text" name="transactionRef" placeholder="Tx ref (for paid)">
-	                            <input class="input" type="text" name="adminNotes" placeholder="Admin note">
-	                            <input type="hidden" name="returnTo" value="/admin/partners">
-	                            <button class="btn btn-primary btn-sm" type="submit">Update</button>
-	                          </form>
-	                        <% } else { %>
-	                          <span class="mini">Reviewer: <%= request.reviewerName || '-' %></span><br>
-	                          <span class="mini">Paid By: <%= request.paidByName || '-' %></span><br>
-	                          <span class="mini">Tx Ref: <%= request.transactionRef || '-' %></span>
-	                        <% } %>
-	                      </td>
-	                    </tr>
-	                  <% }) %>
-	                <% } %>
-	              </tbody>
-	            </table>
-	          </div>
+          <div class="partner-workspace-grid">
+            <div class="partner-preview-shell">
+              <div class="partner-preview-head">
+                <h3>Withdrawal preview</h3>
+                <p class="mini">Queue first. Open one withdrawal to review and apply a payout action.</p>
+              </div>
+              <% if (!partnerWithdrawalRequests || partnerWithdrawalRequests.length === 0) { %>
+                <div class="partner-preview-empty">
+                  <strong>No partner withdrawal requests found</strong>
+                  <p class="mini">New partner payout requests will appear here when organizations submit withdrawals.</p>
+                </div>
+              <% } else { %>
+                <div class="table partner-preview-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Organization</th>
+                        <th>Requested By</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% partnerWithdrawalRequests.forEach((request) => { %>
+                        <% const isSelectedWithdrawal = selectedPartnerWithdrawal && String(selectedPartnerWithdrawal._id || '') === String(request._id || '') %>
+                        <tr class="<%= isSelectedWithdrawal ? 'is-selected' : '' %>">
+                          <td><%= dateText(request.createdAt) %></td>
+                          <td>
+                            <strong><%= request.organizationName || 'Partner Organization' %></strong>
+                            <span class="mini"><%= request.partnerType || 'partner' %></span>
+                          </td>
+                          <td>
+                            <strong><%= request.requestedByName %></strong>
+                            <span class="mini"><%= request.requestedByEmail || '-' %></span>
+                          </td>
+                          <td><%= request.amountDisplay %></td>
+                          <td><span class="pill"><%= request.statusLabel %></span></td>
+                          <td>
+                            <a class="btn <%= isSelectedWithdrawal ? 'btn-secondary' : 'btn-primary' %> btn-sm" href="<%= partnerViewPath('cash', { withdrawalId: request._id }) %>"><%= isSelectedWithdrawal ? 'Open' : 'View' %></a>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </div>
+            <% if (!selectedPartnerWithdrawal) { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-empty-detail">
+                  <strong>Select a withdrawal request</strong>
+                  <p class="mini">Leave the queue collapsed on the left. Open a single request to approve, reject, or mark it paid without turning the whole lane into one long form list.</p>
+                </div>
+              </aside>
+            <% } else { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-detail-head">
+                  <div class="partner-detail-copy">
+                    <p class="section-kicker">Withdrawal review</p>
+                    <h3><%= selectedPartnerWithdrawal.amountDisplay %></h3>
+                    <p class="mini"><strong><%= selectedPartnerWithdrawal.organizationName || 'Partner Organization' %></strong> requested by <%= selectedPartnerWithdrawal.requestedByName %> on <%= dateText(selectedPartnerWithdrawal.createdAt) %>.</p>
+                  </div>
+                  <div class="partner-detail-meta">
+                    <span class="pill"><%= selectedPartnerWithdrawal.statusLabel %></span>
+                    <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('cash') %>">Back to queue</a>
+                  </div>
+                </div>
+                <div class="partner-detail-stack">
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Request details</h4>
+                        <p class="mini">Keep the request summary visible while you make a payout decision.</p>
+                      </div>
+                    </div>
+                    <div class="partner-detail-grid">
+                      <div class="stack-metric"><span>Organization</span><strong><%= selectedPartnerWithdrawal.organizationName || '-' %></strong></div>
+                      <div class="stack-metric"><span>Partner type</span><strong><%= selectedPartnerWithdrawal.partnerType || 'partner' %></strong></div>
+                      <div class="stack-metric"><span>Requested by</span><strong><%= selectedPartnerWithdrawal.requestedByName %></strong></div>
+                      <div class="stack-metric"><span>Email</span><strong><%= selectedPartnerWithdrawal.requestedByEmail || '-' %></strong></div>
+                    </div>
+                    <div class="partner-detail-note">
+                      <strong>Reviewer trail</strong>
+                      <p class="mini">Reviewer: <%= selectedPartnerWithdrawal.reviewerName || '-' %>. Paid by: <%= selectedPartnerWithdrawal.paidByName || '-' %>. Transaction ref: <%= selectedPartnerWithdrawal.transactionRef || '-' %>.</p>
+                    </div>
+                  </section>
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Payout action</h4>
+                        <p class="mini">Choose the next payout state from one controlled form.</p>
+                      </div>
+                    </div>
+                    <% if (selectedPartnerWithdrawal.canApprove || selectedPartnerWithdrawal.canMarkPaid || selectedPartnerWithdrawal.canReject) { %>
+                      <form method="post" action="/simple-lms/admin/partner-withdrawals/<%= selectedPartnerWithdrawal._id %>/status" class="partner-detail-form-grid">
+                        <label>
+                          <span class="mini">Status</span>
+                          <select class="input" name="status">
+                            <% if (selectedPartnerWithdrawal.canApprove) { %><option value="approved">approved</option><% } %>
+                            <% if (selectedPartnerWithdrawal.canMarkPaid) { %><option value="paid">paid</option><% } %>
+                            <% if (selectedPartnerWithdrawal.canReject) { %><option value="rejected">rejected</option><% } %>
+                          </select>
+                        </label>
+                        <label>
+                          <span class="mini">Transaction ref</span>
+                          <input class="input" type="text" name="transactionRef" placeholder="Required when marking paid">
+                        </label>
+                        <label>
+                          <span class="mini">Admin note</span>
+                          <textarea class="input" name="adminNotes" rows="4" placeholder="Explain the review or payout decision."></textarea>
+                        </label>
+                        <div class="actions">
+                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('cash', { withdrawalId: selectedPartnerWithdrawal._id }) %>">
+                          <button class="btn btn-primary btn-sm" type="submit">Save payout action</button>
+                        </div>
+                      </form>
+                    <% } else { %>
+                      <div class="partner-empty-detail">
+                        <strong>This payout is already resolved</strong>
+                        <p class="mini">No more actions are available. Use the reviewer trail above for audit context.</p>
+                      </div>
+                    <% } %>
+                  </section>
+                </div>
+              </aside>
+            <% } %>
+          </div>
         </section>
+        <% } %>
 
+        <% if (partnerView === 'onboarding') { %>
         <section class="card partner-section-shell">
           <div class="section-header-row">
             <div class="section-header-copy">
               <p class="section-kicker">Onboarding</p>
               <div>
                 <h2>Partner role requests</h2>
-                <p class="mini">Approve or reject partner and channel-partner applications without mixing them into the organization directory above.</p>
+                <p class="mini">Keep the approval queue compact. Open one application to review the org context and make the final decision.</p>
               </div>
             </div>
             <div class="section-header-meta">
@@ -3484,77 +4157,160 @@
             <div class="stack-metric"><span>Channel requests</span><strong><%= partnerRequestRows.filter((request) => String(request.partnerType || request.requestedRole || '').includes('channel')).length %></strong></div>
             <div class="stack-metric"><span>Standard partner</span><strong><%= partnerRequestRows.filter((request) => !String(request.partnerType || request.requestedRole || '').includes('channel')).length %></strong></div>
           </div>
-          <div class="request-grid">
-            <% if (!roleApprovalRequests || roleApprovalRequests.length === 0) { %>
-              <article class="request-card">
-                <div>
-                  <h3>No role requests yet</h3>
+          <div class="partner-workspace-grid">
+            <div class="partner-preview-shell">
+              <div class="partner-preview-head">
+                <h3>Request preview</h3>
+                <p class="mini">Review the queue like a normal table. Open one request to approve or reject it.</p>
+              </div>
+              <% if (!roleApprovalRequests || roleApprovalRequests.length === 0) { %>
+                <div class="partner-preview-empty">
+                  <strong>No role requests yet</strong>
                   <p class="mini">Partner and channel-partner onboarding requests will appear here for review.</p>
                 </div>
-              </article>
+              <% } else { %>
+                <div class="table partner-preview-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Applicant</th>
+                        <th>Requested Role</th>
+                        <th>Organization</th>
+                        <th>Submitted</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% roleApprovalRequests.forEach((request) => { %>
+                        <% const isSelectedRequest = selectedPartnerRequest && String(selectedPartnerRequest._id || '') === String(request._id || '') %>
+                        <tr class="<%= isSelectedRequest ? 'is-selected' : '' %>">
+                          <td>
+                            <strong><%= request.accountName %></strong>
+                            <span class="mini"><%= request.accountEmail || '-' %></span>
+                          </td>
+                          <td><%= request.requestedRole %></td>
+                          <td><%= request.organizationName || '-' %></td>
+                          <td><%= dateText(request.createdAt) %></td>
+                          <td><span class="pill"><%= request.status %></span></td>
+                          <td>
+                            <a class="btn <%= isSelectedRequest ? 'btn-secondary' : 'btn-primary' %> btn-sm" href="<%= partnerViewPath('onboarding', { requestId: request._id }) %>"><%= isSelectedRequest ? 'Open' : 'View' %></a>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </div>
+            <% if (!selectedPartnerRequest) { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-empty-detail">
+                  <strong>Select an onboarding request</strong>
+                  <p class="mini">The request list stays compact. Open one application to approve, reject, and document the outcome without stretching the whole page.</p>
+                </div>
+              </aside>
             <% } else { %>
-              <% roleApprovalRequests.forEach((request) => { %>
-                <article class="request-card">
-                  <div class="request-card-head">
-                    <div>
-                      <h3><%= request.accountName %></h3>
-                      <p class="mini"><%= request.accountEmail || '-' %></p>
+              <% const selectedRequestIsChannelPartner = String(selectedPartnerRequest.partnerType || selectedPartnerRequest.requestedRole || '').includes('channel') %>
+              <aside class="partner-detail-shell">
+                <div class="partner-detail-head">
+                  <div class="partner-detail-copy">
+                    <p class="section-kicker">Onboarding review</p>
+                    <h3><%= selectedPartnerRequest.accountName %></h3>
+                    <p class="mini"><%= selectedPartnerRequest.accountEmail || '-' %> requested <strong><%= selectedPartnerRequest.requestedRole %></strong> for <strong><%= selectedPartnerRequest.organizationName || 'a new organization' %></strong>.</p>
+                  </div>
+                  <div class="partner-detail-meta">
+                    <span class="pill"><%= selectedPartnerRequest.status %></span>
+                    <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('onboarding') %>">Back to queue</a>
+                  </div>
+                </div>
+                <div class="partner-detail-stack">
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Request summary</h4>
+                        <p class="mini">Review the applicant, organization, and partner family before making the approval decision.</p>
+                      </div>
                     </div>
-                    <div class="request-meta">
-                      <span class="pill"><%= request.requestedRole %></span>
-                      <span class="pill"><%= request.status %></span>
+                    <div class="partner-detail-grid">
+                      <div class="stack-metric"><span>Requested role</span><strong><%= selectedPartnerRequest.requestedRole %></strong></div>
+                      <div class="stack-metric"><span>Partner type</span><strong><%= selectedPartnerRequest.partnerType || 'partner' %></strong></div>
+                      <div class="stack-metric"><span>Requested on</span><strong><%= dateText(selectedPartnerRequest.createdAt) %></strong></div>
+                      <div class="stack-metric"><span>Organization</span><strong><%= selectedPartnerRequest.organizationName || '-' %></strong></div>
                     </div>
-                  </div>
-                  <div class="section-stat-strip">
-                    <div class="stack-metric"><span>Requested on</span><strong><%= dateText(request.createdAt) %></strong></div>
-                    <div class="stack-metric"><span>Partner type</span><strong><%= request.partnerType || 'partner' %></strong></div>
-                  </div>
-                  <div class="stack-metric">
-                    <span>Organization</span>
-                    <strong><%= request.organizationName || '-' %></strong>
-                  </div>
-                  <% if (String(request.status || '').toLowerCase() === 'pending') { %>
-                    <% const requestIsChannelPartner = String(request.partnerType || request.requestedRole || '').includes('channel') %>
-                    <div class="request-actions">
-                      <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/approve" class="inline-form">
-                        <select class="input" name="approvedRole">
-                          <% if (requestIsChannelPartner) { %>
-                            <option value="channel_partner_user" <%= request.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
-                            <option value="channel_partner_super" <%= request.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
-                          <% } else { %>
-                            <option value="partner_user" <%= request.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
-                            <option value="partner_super" <%= request.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
-                          <% } %>
-                        </select>
-                        <input class="input" type="text" name="notes" placeholder="Review notes (optional)">
-                        <input type="hidden" name="returnTo" value="/admin/partners">
-                        <button class="btn btn-primary btn-sm" type="submit">Approve Request</button>
+                  </section>
+                  <% if (String(selectedPartnerRequest.status || '').toLowerCase() === 'pending') { %>
+                    <section class="partner-detail-section">
+                      <div class="partner-detail-section-head">
+                        <div>
+                          <h4>Approve request</h4>
+                          <p class="mini">Choose the exact org-scoped role to activate when this request is approved.</p>
+                        </div>
+                      </div>
+                      <form method="post" action="/simple-lms/admin/role-requests/<%= selectedPartnerRequest._id %>/approve" class="partner-detail-form-grid">
+                        <label>
+                          <span class="mini">Approved role</span>
+                          <select class="input" name="approvedRole">
+                            <% if (selectedRequestIsChannelPartner) { %>
+                              <option value="channel_partner_user" <%= selectedPartnerRequest.requestedRole === 'channel_partner_user' ? 'selected' : '' %>>channel_partner_user</option>
+                              <option value="channel_partner_super" <%= selectedPartnerRequest.requestedRole === 'channel_partner_super' ? 'selected' : '' %>>channel_partner_super</option>
+                            <% } else { %>
+                              <option value="partner_user" <%= selectedPartnerRequest.requestedRole === 'partner_user' ? 'selected' : '' %>>partner_user</option>
+                              <option value="partner_super" <%= selectedPartnerRequest.requestedRole === 'partner_super' ? 'selected' : '' %>>partner_super</option>
+                            <% } %>
+                          </select>
+                        </label>
+                        <label>
+                          <span class="mini">Approval note</span>
+                          <textarea class="input" name="notes" rows="4" placeholder="Optional note for the approved request."></textarea>
+                        </label>
+                        <div class="actions">
+                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('onboarding', { requestId: selectedPartnerRequest._id }) %>">
+                          <button class="btn btn-primary btn-sm" type="submit">Approve request</button>
+                        </div>
                       </form>
-                      <form method="post" action="/simple-lms/admin/role-requests/<%= request._id %>/reject" class="inline-form">
-                        <input class="input" type="text" name="notes" placeholder="Reason for rejection">
-                        <input type="hidden" name="returnTo" value="/admin/partners">
-                        <button class="btn btn-danger btn-sm" type="submit">Reject Request</button>
+                    </section>
+                    <section class="partner-detail-section">
+                      <div class="partner-detail-section-head">
+                        <div>
+                          <h4>Reject request</h4>
+                          <p class="mini">Rejections should capture a clear reason so the applicant knows why the request did not pass.</p>
+                        </div>
+                      </div>
+                      <form method="post" action="/simple-lms/admin/role-requests/<%= selectedPartnerRequest._id %>/reject" class="partner-detail-form-grid">
+                        <label>
+                          <span class="mini">Reason for rejection</span>
+                          <textarea class="input" name="notes" rows="4" placeholder="Explain why this request is being rejected."></textarea>
+                        </label>
+                        <div class="actions">
+                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('onboarding', { requestId: selectedPartnerRequest._id }) %>">
+                          <button class="btn btn-danger btn-sm" type="submit">Reject request</button>
+                        </div>
                       </form>
-                    </div>
+                    </section>
                   <% } else { %>
-                    <div class="request-note">
-                      <p class="mini">Reviewed by <strong><%= request.reviewedByName || '-' %></strong></p>
-                      <p class="mini"><%= request.reviewNotes || 'No review note added.' %></p>
-                    </div>
+                    <section class="partner-detail-section">
+                      <div class="partner-detail-note">
+                        <strong>Reviewed by <%= selectedPartnerRequest.reviewedByName || '-' %></strong>
+                        <p class="mini"><%= selectedPartnerRequest.reviewNotes || 'No review note added.' %></p>
+                      </div>
+                    </section>
                   <% } %>
-                </article>
-              <% }) %>
+                </div>
+              </aside>
             <% } %>
           </div>
         </section>
+        <% } %>
 
+        <% if (partnerView === 'agents') { %>
         <section class="card partner-section-shell">
           <div class="section-header-row">
             <div class="section-header-copy">
               <p class="section-kicker">Agents</p>
               <div>
                 <h2>Agent commission payout queue</h2>
-                <p class="mini">Track recommended and approved commissions in a dedicated queue instead of mixing them into partner withdrawal review.</p>
+                <p class="mini">Open one agent payout at a time. The left side stays as the queue, while the right side becomes the payout workspace.</p>
               </div>
             </div>
             <div class="section-header-meta">
@@ -3569,56 +4325,134 @@
             <div class="stack-metric"><span>Linked agents</span><strong><%= totalPartnerAgents %></strong></div>
             <div class="stack-metric"><span>Channel orgs</span><strong><%= channelPartnerOrgCount %></strong></div>
           </div>
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Agent</th>
-                  <th>Organization</th>
-                  <th>Course</th>
-                  <th>Sale</th>
-                  <th>Commission</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!agentPayoutRows || agentPayoutRows.length === 0) { %>
-                  <tr><td colspan="8" class="mini">No agent commissions in the payout queue.</td></tr>
-                <% } else { %>
-                  <% agentPayoutRows.forEach((entry) => { %>
-                    <tr>
-                      <td><%= dateText(entry.createdAt) %></td>
-                      <td>
-                        <strong><%= entry.agentName %></strong><br>
-                        <span class="mini"><%= entry.agentEmail || '-' %></span>
-                      </td>
-                      <td><%= entry.organizationName || '-' %></td>
-                      <td><%= entry.courseTitle %></td>
-                      <td><%= entry.saleAmountDisplay %></td>
-                      <td><%= entry.amountDisplay %> (<%= Number(entry.commissionRatePercent || 0) %>%)</td>
-                      <td><span class="pill"><%= entry.statusLabel %></span></td>
-                      <td>
-                        <form method="post" action="/simple-lms/admin/agent-commissions/<%= entry._id %>/status" class="inline-form">
+          <div class="partner-workspace-grid">
+            <div class="partner-preview-shell">
+              <div class="partner-preview-head">
+                <h3>Agent payout preview</h3>
+                <p class="mini">Keep the payout queue in table form. Open one commission to see the full payout workspace.</p>
+              </div>
+              <% if (!agentPayoutRows || agentPayoutRows.length === 0) { %>
+                <div class="partner-preview-empty">
+                  <strong>No agent commissions in the payout queue</strong>
+                  <p class="mini">Recommended and approved agent commissions will appear here for payout review.</p>
+                </div>
+              <% } else { %>
+                <div class="table partner-preview-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Agent</th>
+                        <th>Organization</th>
+                        <th>Course</th>
+                        <th>Commission</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% agentPayoutRows.forEach((entry) => { %>
+                        <% const isSelectedAgentPayout = selectedAgentPayout && String(selectedAgentPayout._id || '') === String(entry._id || '') %>
+                        <tr class="<%= isSelectedAgentPayout ? 'is-selected' : '' %>">
+                          <td>
+                            <strong><%= entry.agentName %></strong>
+                            <span class="mini"><%= entry.agentEmail || '-' %></span>
+                          </td>
+                          <td><%= entry.organizationName || '-' %></td>
+                          <td><%= entry.courseTitle %></td>
+                          <td><%= entry.amountDisplay %></td>
+                          <td><span class="pill"><%= entry.statusLabel %></span></td>
+                          <td>
+                            <a class="btn <%= isSelectedAgentPayout ? 'btn-secondary' : 'btn-primary' %> btn-sm" href="<%= partnerViewPath('agents', { agentPayoutId: entry._id }) %>"><%= isSelectedAgentPayout ? 'Open' : 'View' %></a>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </div>
+            <% if (!selectedAgentPayout) { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-empty-detail">
+                  <strong>Select an agent payout</strong>
+                  <p class="mini">Keep the queue readable. Open one commission record to approve, pay, or reject it without filling the whole page with action forms.</p>
+                </div>
+              </aside>
+            <% } else { %>
+              <aside class="partner-detail-shell">
+                <div class="partner-detail-head">
+                  <div class="partner-detail-copy">
+                    <p class="section-kicker">Agent payout review</p>
+                    <h3><%= selectedAgentPayout.agentName %></h3>
+                    <p class="mini"><%= selectedAgentPayout.organizationName || '-' %> • <%= selectedAgentPayout.courseTitle %></p>
+                  </div>
+                  <div class="partner-detail-meta">
+                    <span class="pill"><%= selectedAgentPayout.statusLabel %></span>
+                    <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('agents') %>">Back to queue</a>
+                  </div>
+                </div>
+                <div class="partner-detail-stack">
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Payout summary</h4>
+                        <p class="mini">This keeps the commercial details visible while you decide the next payout state.</p>
+                      </div>
+                    </div>
+                    <div class="partner-detail-grid">
+                      <div class="stack-metric"><span>Commission</span><strong><%= selectedAgentPayout.amountDisplay %></strong></div>
+                      <div class="stack-metric"><span>Sale amount</span><strong><%= selectedAgentPayout.saleAmountDisplay %></strong></div>
+                      <div class="stack-metric"><span>Rate</span><strong><%= Number(selectedAgentPayout.commissionRatePercent || 0) %>%</strong></div>
+                      <div class="stack-metric"><span>Created</span><strong><%= dateText(selectedAgentPayout.createdAt) %></strong></div>
+                    </div>
+                    <div class="partner-detail-note">
+                      <strong>Approval trail</strong>
+                      <p class="mini">Recommended by <%= selectedAgentPayout.recommendedByName || '-' %>. Approved by <%= selectedAgentPayout.approvedByName || '-' %>. Transaction ref: <%= selectedAgentPayout.transactionRef || '-' %>.</p>
+                    </div>
+                  </section>
+                  <section class="partner-detail-section">
+                    <div class="partner-detail-section-head">
+                      <div>
+                        <h4>Payout action</h4>
+                        <p class="mini">Handle the payout lifecycle from one action panel.</p>
+                      </div>
+                    </div>
+                    <% if (selectedAgentPayout.canApprove || selectedAgentPayout.canMarkPaid || selectedAgentPayout.canReject) { %>
+                      <form method="post" action="/simple-lms/admin/agent-commissions/<%= selectedAgentPayout._id %>/status" class="partner-detail-form-grid">
+                        <label>
+                          <span class="mini">Status</span>
                           <select class="input" name="status">
-                            <% if (entry.canApprove) { %><option value="approved">approved</option><% } %>
-                            <% if (entry.canMarkPaid) { %><option value="paid">paid</option><% } %>
-                            <% if (entry.canReject) { %><option value="rejected">rejected</option><% } %>
+                            <% if (selectedAgentPayout.canApprove) { %><option value="approved">approved</option><% } %>
+                            <% if (selectedAgentPayout.canMarkPaid) { %><option value="paid">paid</option><% } %>
+                            <% if (selectedAgentPayout.canReject) { %><option value="rejected">rejected</option><% } %>
                           </select>
-                          <input class="input" type="text" name="transactionRef" placeholder="Tx ref (for paid)">
-                          <input class="input" type="text" name="adminNotes" placeholder="Admin note">
-                          <input type="hidden" name="returnTo" value="/admin/partners">
-                          <button class="btn btn-primary btn-sm" type="submit">Update</button>
-                        </form>
-                      </td>
-                    </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
+                        </label>
+                        <label>
+                          <span class="mini">Transaction ref</span>
+                          <input class="input" type="text" name="transactionRef" placeholder="Required when marking paid">
+                        </label>
+                        <label>
+                          <span class="mini">Admin note</span>
+                          <textarea class="input" name="adminNotes" rows="4" placeholder="Explain the payout decision."></textarea>
+                        </label>
+                        <div class="actions">
+                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('agents', { agentPayoutId: selectedAgentPayout._id }) %>">
+                          <button class="btn btn-primary btn-sm" type="submit">Save payout action</button>
+                        </div>
+                      </form>
+                    <% } else { %>
+                      <div class="partner-empty-detail">
+                        <strong>This commission is already resolved</strong>
+                        <p class="mini">No more actions are available. Use the approval trail above for audit context.</p>
+                      </div>
+                    <% } %>
+                  </section>
+                </div>
+              </aside>
+            <% } %>
           </div>
         </section>
+        <% } %>
       <% } %>
 
       <% if (currentSection === 'super-users') { %>

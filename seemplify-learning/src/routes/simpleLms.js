@@ -8355,6 +8355,16 @@ const renderWorkspacePage = async (
     const role = resolveRole(req.user)
     const currencyCatalog = await getActiveCurrencyCatalog()
     const viewMode = forcedViewMode || parseViewMode(req.query.view)
+    const requestedAdminPartnerView = String(req.query?.partnerView || '').trim().toLowerCase()
+    const adminPartnerView = ['directory', 'cash', 'onboarding', 'agents'].includes(requestedAdminPartnerView)
+      ? requestedAdminPartnerView
+      : 'overview'
+    const adminPartnerFocus = {
+      organizationId: String(req.query?.organizationId || req.query?.partnerOrganizationId || '').trim(),
+      withdrawalId: String(req.query?.withdrawalId || req.query?.partnerWithdrawalId || '').trim(),
+      requestId: String(req.query?.requestId || req.query?.partnerRequestId || '').trim(),
+      agentPayoutId: String(req.query?.agentPayoutId || req.query?.partnerAgentPayoutId || '').trim()
+    }
     const resolvedStudioContext = String(
       studioContext || (adminPortal ? 'admin' : 'creator')
     ).trim().toLowerCase() === 'admin'
@@ -10516,6 +10526,8 @@ const renderWorkspacePage = async (
       pendingReviewCourses,
       approvalQueueCourses,
       recentCourseReviewDecisions,
+      adminPartnerView,
+      adminPartnerFocus,
       partnerOrganizations,
       partnerWithdrawalRequests,
       roleApprovalRequests,
