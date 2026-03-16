@@ -961,6 +961,22 @@
       color: #0f172a;
       line-height: 1.25;
     }
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 12px 14px;
+      border: 1px solid #d8e2ed;
+      border-radius: 12px;
+      background: #ffffff;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .checkbox-field input {
+      width: 16px;
+      height: 16px;
+    }
     .wizard-footer {
       display: flex;
       justify-content: space-between;
@@ -1071,9 +1087,29 @@
 </head>
 <%
   const isAdminStudio = studioContext === 'admin'
-  const studioPath = isAdminStudio ? '/admin/courses' : '/simple-lms/studio/courses'
+  const currentStudioMode = ['create', 'edit'].includes(String(studioMode || '').trim().toLowerCase())
+    ? String(studioMode || '').trim().toLowerCase()
+    : 'overview'
+  const studioOverviewPath = isAdminStudio ? '/admin/courses' : '/simple-lms/studio/courses'
+  const studioCreatePath = isAdminStudio ? '/admin/courses/new' : '#create-course'
+  const buildStudioEditPath = (courseId) => (
+    isAdminStudio
+      ? `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}/edit`
+      : `${studioOverviewPath}?editCourse=${encodeURIComponent(String(courseId || '').trim())}#edit-course`
+  )
+  const studioRecordPath = (courseId) => (
+    isAdminStudio
+      ? `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}`
+      : `${studioOverviewPath}#manage-courses`
+  )
+  const studioPath = currentStudioMode === 'create'
+    ? studioCreatePath
+    : (currentStudioMode === 'edit' && editingCourse ? buildStudioEditPath(editingCourse._id) : studioOverviewPath)
   const homePath = isAdminStudio ? '/admin' : '/simple-lms'
   const courses = (managedCourses || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const showEditSection = Boolean(editingCourse) && currentStudioMode !== 'create'
+  const showCreateSection = currentStudioMode !== 'edit'
+  const showLibrarySection = currentStudioMode === 'overview'
   const ownerEditableCount = courses.filter((course) => course?.canEdit).length
   const moderationOnlyCount = courses.filter((course) => !course?.canEdit).length
   const systemCourseCount = courses.filter((course) => Boolean(course?.isSystemCourse)).length
@@ -1158,7 +1194,7 @@
 
       <nav class="rail-links">
         <a class="rail-link" href="<%= homePath %>"><span><%= isAdminStudio ? 'Admin Dashboard' : 'Learning Workspace' %></span></a>
-        <a class="rail-link active" href="<%= studioPath %>"><span><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></span></a>
+        <a class="rail-link active" href="<%= studioOverviewPath %>"><span><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></span></a>
         <% if (!isAdminStudio) { %>
           <a class="rail-link" href="/simple-lms?view=program-studio"><span>Program Studio</span></a>
           <a class="rail-link" href="/simple-lms?view=settings&settingsTab=creator"><span>Creator Settings</span></a>
@@ -1194,10 +1230,10 @@
               : 'This studio is separate from the LMS browsing pages. Create new courses here, then manage the courses you own from a cleaner library view.' %></p>
           </div>
           <div class="hero-actions">
-            <a class="btn btn-secondary btn-sm" href="#create-course">Create New Course</a>
-            <a class="btn btn-secondary btn-sm" href="#manage-courses">Open Course Library</a>
-            <% if (editingCourse) { %>
-              <a class="btn btn-primary btn-sm" href="#edit-course">Editing: <%= editingCourse.title %></a>
+            <a class="btn btn-secondary btn-sm" href="<%= studioCreatePath %>">Create New Course</a>
+            <a class="btn btn-secondary btn-sm" href="<%= studioOverviewPath %>">Open Course Library</a>
+            <% if (showEditSection) { %>
+              <a class="btn btn-primary btn-sm" href="<%= buildStudioEditPath(editingCourse._id) %>">Editing: <%= editingCourse.title %></a>
             <% } %>
           </div>
         </div>
@@ -1208,12 +1244,12 @@
           <article class="hero-metric"><small>Moderation Only</small><strong><%= moderationOnlyCount %></strong></article>
         </div>
         <div class="studio-lane-grid">
-          <a class="studio-lane-card" href="#create-course">
+          <a class="studio-lane-card" href="<%= studioCreatePath %>">
             <small>Creation Flow</small>
             <strong>Create a new course</strong>
             <span>Open the guided wizard, upload the lesson media, and structure the curriculum without the management list getting in the way.</span>
           </a>
-          <a class="studio-lane-card" href="#manage-courses">
+          <a class="studio-lane-card" href="<%= studioOverviewPath %>">
             <small>Course Library</small>
             <strong>View and manage existing courses</strong>
             <span>Review ownership, see lifecycle status quickly, and only edit or duplicate courses that belong to you.</span>
@@ -1221,7 +1257,7 @@
         </div>
       </section>
 
-        <% if (editingCourse) { %>
+        <% if (showEditSection) { %>
           <section class="studio-card" id="edit-course">
             <div class="section-head">
               <div>
@@ -1230,7 +1266,10 @@
             </div>
             <div class="actions">
               <span class="pill <%= editingCourse.isSystemCourse ? 'system' : 'creator' %>"><%= editingCourse.isSystemCourse ? 'System Course' : 'Creator Course' %></span>
-                <a class="btn btn-secondary btn-sm" href="<%= studioPath %>#manage-courses">Close Editor</a>
+                <% if (isAdminStudio) { %>
+                  <a class="btn btn-secondary btn-sm" href="<%= studioRecordPath(editingCourse._id) %>">Open Course Record</a>
+                <% } %>
+                <a class="btn btn-secondary btn-sm" href="<%= studioOverviewPath %>">Close Editor</a>
               </div>
             </div>
             <% if (editingCourse.reviewHasFeedback) { %>
@@ -1252,7 +1291,7 @@
               </article>
             <% } %>
             <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/update" class="studio-form">
-              <input type="hidden" name="returnTo" value="<%= studioPath %>">
+              <input type="hidden" name="returnTo" value="<%= isAdminStudio ? buildStudioEditPath(editingCourse._id) : studioOverviewPath %>">
               <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
               <div class="form-grid">
               <label>Course Title<input class="input" name="title" value="<%= editingCourse.title || '' %>" required></label>
@@ -1297,6 +1336,16 @@
                     <option value="<%= optionCode %>" <%= editCurrencyCode === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
                   <% }) %>
                 </select>
+              </label>
+              <label class="checkbox-field" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="partnerSellingEnabled" value="on" <%= editingCourse.partnerSelling?.enabled ? 'checked' : '' %>>
+                <span>Allow partner organizations to sell this course</span>
+              </label>
+              <label>Creator Share (%)
+                <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="<%= Number.isFinite(Number(editingCourse.partnerSelling?.creatorSharePercent)) ? Number(editingCourse.partnerSelling.creatorSharePercent) : 70 %>">
+              </label>
+              <label>Partner Share (%)
+                <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="<%= Number.isFinite(Number(editingCourse.partnerSelling?.partnerSharePercent)) ? Number(editingCourse.partnerSelling.partnerSharePercent) : 20 %>">
               </label>
               <label>Tags (comma-separated)<input class="input" name="tags" value="<%= Array.isArray(editingCourse.tags) ? editingCourse.tags.join(', ') : '' %>"></label>
               <% if (isAdminStudio && canManagePlatform) { %>
@@ -1366,6 +1415,7 @@
         </section>
       <% } %>
 
+      <% if (showCreateSection) { %>
       <section class="studio-card" id="create-course">
         <div class="section-head">
           <div>
@@ -1377,7 +1427,7 @@
           <span class="pill <%= isAdminStudio ? 'system' : 'creator' %>"><%= isAdminStudio ? 'System Course Flow' : 'Creator Course Flow' %></span>
         </div>
         <form method="post" action="/simple-lms/courses/create" class="studio-form" id="createCourseWizardForm" data-wizard-flow="course-create">
-          <input type="hidden" name="returnTo" value="<%= studioPath %>">
+          <input type="hidden" name="returnTo" value="<%= isAdminStudio ? studioCreatePath : studioOverviewPath %>">
           <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
           <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
 
@@ -1451,6 +1501,16 @@
                     <% }) %>
                   </select>
                 </label>
+                <label class="checkbox-field" style="grid-column: 1 / -1;">
+                  <input type="checkbox" name="partnerSellingEnabled" value="on">
+                  <span>Allow partner organizations to sell this course</span>
+                </label>
+                <label>Creator Share (%)
+                  <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="70">
+                </label>
+                <label>Partner Share (%)
+                  <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="20">
+                </label>
                 <label>Tags (comma-separated)<input class="input" name="tags" placeholder="productivity, agile"></label>
                 <div class="banner-upload-section">
                   <label>Course Banner</label>
@@ -1520,6 +1580,7 @@
                 <article class="wizard-review-card"><small>Status</small><strong id="courseWizardReviewStatus">draft</strong></article>
                 <article class="wizard-review-card"><small>Visibility</small><strong id="courseWizardReviewVisibility">private</strong></article>
                 <article class="wizard-review-card"><small>Pricing</small><strong id="courseWizardReviewPricing">free</strong></article>
+                <article class="wizard-review-card"><small>Sell Through</small><strong id="courseWizardReviewSellThrough">Direct creator sale only</strong></article>
                 <article class="wizard-review-card"><small>Curriculum</small><strong id="courseWizardReviewCurriculum">0 chapters / 0 lessons</strong></article>
               </div>
               <p class="subtle-note">When you choose <strong>published</strong>, the platform may still send the course for admin approval based on current settings.</p>
@@ -1536,7 +1597,9 @@
           </div>
         </form>
       </section>
+      <% } %>
 
+      <% if (showLibrarySection) { %>
       <section class="studio-card" id="manage-courses">
         <div class="section-head">
           <div>
@@ -1561,6 +1624,8 @@
                       <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
                       <span class="pill"><%= course.visibilityDisplay %></span>
                       <span class="pill"><%= course.displayPrice %></span>
+                      <% if (course.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
+                      <% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %>
                     </div>
                   </div>
 
@@ -1569,6 +1634,11 @@
                       <span>Owner</span>
                       <strong><%= course.createdByName || course.authorName || 'Unknown' %></strong>
                       <small><%= course.createdByEmail || '-' %></small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Sell Through</span>
+                      <strong><%= course.partnerSellingSummary %></strong>
+                      <small><%= course.assignedOrganizationCount %> assigned organizations</small>
                     </article>
                     <article class="course-item-stat">
                       <span>Structure</span>
@@ -1612,27 +1682,27 @@
 
                   <div class="course-item-action-bar">
                     <% if (course.canEdit) { %>
-                      <a class="btn btn-secondary btn-sm" href="<%= studioPath %>?editCourse=<%= course._id %>#edit-course">Edit Course</a>
+                      <a class="btn btn-secondary btn-sm" href="<%= buildStudioEditPath(course._id) %>">Edit Course</a>
                     <% } %>
                     <% if (course.canDuplicate) { %>
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
-                        <input type="hidden" name="studioPath" value="<%= studioPath %>">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
+                        <input type="hidden" name="studioPath" value="<%= studioOverviewPath %>">
                         <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
                         <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
                         <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
                       </form>
                     <% } %>
-                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioPath + '#manage-courses') %>" target="_blank" rel="noreferrer">View Course</a>
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioOverviewPath) %>" target="_blank" rel="noreferrer">View Course</a>
                     <% if (course.canArchive) { %>
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
                         <button class="btn btn-danger btn-sm" type="submit">Archive</button>
                       </form>
                     <% } %>
                     <% if (course.canRestore) { %>
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
                         <button class="btn btn-primary btn-sm" type="submit">Restore</button>
                       </form>
                     <% } %>
@@ -1642,7 +1712,7 @@
                     <details>
                       <summary>Assign to learner</summary>
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/assign" class="assign-grid" style="margin-top:8px;">
-                        <input type="hidden" name="returnTo" value="<%= studioPath %>#manage-courses">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
                         <label>Account
                           <select class="input" name="targetAccountId">
                             <option value="">Select account</option>
@@ -1663,6 +1733,7 @@
           </div>
         <% } %>
       </section>
+      <% } %>
     </section>
   </main>
 
@@ -2516,6 +2587,7 @@
           status: document.getElementById('courseWizardReviewStatus'),
           visibility: document.getElementById('courseWizardReviewVisibility'),
           pricing: document.getElementById('courseWizardReviewPricing'),
+          sellThrough: document.getElementById('courseWizardReviewSellThrough'),
           curriculum: document.getElementById('courseWizardReviewCurriculum')
         }
 
@@ -2527,6 +2599,7 @@
           const field = form.elements.namedItem(name)
           if (!field) return ''
           if (Array.isArray(field)) return String(field[0]?.value || '').trim()
+          if (field.type === 'checkbox') return field.checked ? 'on' : ''
           return String(field.value || '').trim()
         }
 
@@ -2562,6 +2635,9 @@
           const paymentMode = getFieldValue('paymentMode')
           const amount = Number(getFieldValue('amount') || 0)
           const currency = getFieldValue('currency') || 'NGN'
+          const partnerSellingEnabled = getFieldValue('partnerSellingEnabled') === 'on'
+          const creatorSharePercent = Number(getFieldValue('partnerSellingCreatorSharePercent') || 0)
+          const partnerSharePercent = Number(getFieldValue('partnerSellingPartnerSharePercent') || 0)
           const curriculum = getCurriculumStats()
 
           if (reviewNodes.title) reviewNodes.title.textContent = title || 'Untitled course'
@@ -2579,6 +2655,11 @@
               ? `${currency.toUpperCase()} ${amountText}`
               : 'Free course'
           }
+          if (reviewNodes.sellThrough) {
+            reviewNodes.sellThrough.textContent = partnerSellingEnabled
+              ? `${Number.isFinite(creatorSharePercent) ? creatorSharePercent : 0}% creator / ${Number.isFinite(partnerSharePercent) ? partnerSharePercent : 0}% partner`
+              : 'Direct creator sale only'
+          }
           if (reviewNodes.curriculum) {
             reviewNodes.curriculum.textContent = `${curriculum.chapterCount} chapters / ${curriculum.lessonCount} lessons`
           }
@@ -2593,8 +2674,14 @@
           if (stepIndex === 1) {
             const paymentMode = getFieldValue('paymentMode')
             const amount = Number(getFieldValue('amount') || 0)
+            const partnerSellingEnabled = getFieldValue('partnerSellingEnabled') === 'on'
+            const creatorSharePercent = Number(getFieldValue('partnerSellingCreatorSharePercent') || 0)
+            const partnerSharePercent = Number(getFieldValue('partnerSellingPartnerSharePercent') || 0)
             if (paymentMode === 'paid' && (!Number.isFinite(amount) || amount <= 0)) {
               return 'Paid courses need an amount greater than 0.'
+            }
+            if (partnerSellingEnabled && (!Number.isFinite(creatorSharePercent) || !Number.isFinite(partnerSharePercent) || (creatorSharePercent + partnerSharePercent) > 100)) {
+              return 'Creator share and partner share must be valid and add up to 100% or less.'
             }
             return ''
           }
@@ -2692,6 +2779,9 @@
             'paymentMode',
             'amount',
             'currency',
+            'partnerSellingEnabled',
+            'partnerSellingCreatorSharePercent',
+            'partnerSellingPartnerSharePercent',
             'summary',
             'description',
             'chaptersJson'

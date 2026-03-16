@@ -47,6 +47,18 @@ import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasS
 import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
 import { buildAccessProfileSnapshot, resolveAccessProfile } from '../utils/accessProfile.js'
 import {
+  SELL_THROUGH_DEFAULTS,
+  buildOrganizationSellableCourseFilter,
+  courseIsSellableByOrganization,
+  findCourseSellingAssignment,
+  getCourseSellingAssignments,
+  normalizePartnerSelling,
+  normalizeRevenuePercent,
+  normalizeSellingOrganizationAssignment,
+  resolveCourseRevenueSplit,
+  resolveCourseSaleContext
+} from '../utils/courseSelling.js'
+import {
   createPartnerApprovalRequest,
   sanitizePartnerOrganizationName
 } from '../utils/partnerRoleRequests.js'
@@ -105,6 +117,7 @@ const COURSE_REVIEW_DECISIONS = Object.freeze(['none', 'pending', 'approved', 'c
 const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
 const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
 const PARTNER_DASHBOARD_ROLES = [...PARTNER_SUPER_ROLES, ...PARTNER_USER_ROLES]
+const PAYMENT_COURSE_COMMISSION_SELECT = '_id organization createdBy partnerSelling sellingOrganizations'
 
 const LEVEL_LABELS = Object.freeze({
   beginner: 'Beginner',
@@ -516,11 +529,60 @@ const clearReferralCodeForCourse = (req, courseId) => {
   req.session.simpleLmsAgentReferrals = store
 }
 
-const resolveAgentForReferral = async ({ course, referralCode }) => {
+const getSellingOrganizationSessionStore = (req, { create = false } = {}) => {
+  if (!req.session) return {}
+  const current = req.session.simpleLmsSellingOrganizations
+  if (current && typeof current === 'object') return current
+  if (!create) return {}
+  req.session.simpleLmsSellingOrganizations = {}
+  return req.session.simpleLmsSellingOrganizations
+}
+
+const setSellingOrganizationForCourse = (req, courseId, organizationId) => {
+  const normalizedCourseId = toIdString(courseId)
+  const normalizedOrganizationId = toIdString(organizationId)
+  if (!normalizedCourseId || !normalizedOrganizationId || !req.session) return
+  const store = getSellingOrganizationSessionStore(req, { create: true })
+  store[normalizedCourseId] = normalizedOrganizationId
+}
+
+const getSellingOrganizationForCourse = (req, courseId) => {
+  const normalizedCourseId = toIdString(courseId)
+  if (!normalizedCourseId) return ''
+  const store = getSellingOrganizationSessionStore(req)
+  return toIdString(store[normalizedCourseId] || '')
+}
+
+const clearSellingOrganizationForCourse = (req, courseId) => {
+  const normalizedCourseId = toIdString(courseId)
+  if (!normalizedCourseId || !req.session) return
+  const store = getSellingOrganizationSessionStore(req)
+  if (!store[normalizedCourseId]) return
+  delete store[normalizedCourseId]
+  req.session.simpleLmsSellingOrganizations = store
+}
+
+const appendCourseSellingParams = (path, { referralCode = '', organizationId = '' } = {}) => {
+  const normalizedPath = String(path || '').trim()
+  if (!normalizedPath) return ''
+  const url = new URL(normalizedPath, 'https://seemplify.local')
+  const normalizedReferralCode = normalizeAgentReferralCode(referralCode)
+  const normalizedOrganizationId = toIdString(organizationId)
+  if (normalizedReferralCode) {
+    url.searchParams.set('ref', normalizedReferralCode)
+  }
+  if (normalizedOrganizationId) {
+    url.searchParams.set('org', normalizedOrganizationId)
+  }
+  const search = url.searchParams.toString()
+  return `${url.pathname}${search ? `?${search}` : ''}`
+}
+
+const resolveAgentForReferral = async ({ referralCode, sellingOrganizationId }) => {
   const normalizedCode = normalizeAgentReferralCode(referralCode)
   if (!normalizedCode) return null
 
-  const partnerOrgId = toIdString(course?.organization)
+  const partnerOrgId = toIdString(sellingOrganizationId)
   if (!partnerOrgId || !mongoose.Types.ObjectId.isValid(partnerOrgId)) return null
 
   const candidates = await Account.find({
@@ -548,7 +610,7 @@ const resolveAgentCommissionRate = ({ organization, agentId }) => {
   return Math.min(100, Math.max(0, override))
 }
 
-const resolveAgentReferralForCheckout = async ({ req, course }) => {
+const resolveAgentReferralForCheckout = async ({ req, course, saleContext }) => {
   if (!course?._id) return null
 
   const explicitRef = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
@@ -556,7 +618,10 @@ const resolveAgentReferralForCheckout = async ({ req, course }) => {
   const referralCode = explicitRef || sessionRef
   if (!referralCode) return null
 
-  const agent = await resolveAgentForReferral({ course, referralCode })
+  const agent = await resolveAgentForReferral({
+    referralCode,
+    sellingOrganizationId: saleContext?.sellingOrganizationId
+  })
   if (!agent?._id) return null
 
   const buyerAccountId = toIdString(req.user?._id)
@@ -568,7 +633,7 @@ const resolveAgentReferralForCheckout = async ({ req, course }) => {
 
   setReferralCodeForCourse(req, course._id, referralCode)
 
-  const organization = await Organization.findById(course.organization)
+  const organization = await Organization.findById(saleContext?.sellingOrganizationId)
     .select('_id partnerType partnerSettings members')
     .lean()
   if (!organization || organization.partnerType === 'none') return null
@@ -595,7 +660,7 @@ const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => 
 
   const referral = payment.metadata?.agentReferral || {}
   const agentId = toIdString(referral.agentId)
-  const partnerOrganizationId = toIdString(referral.partnerOrganization || course.organization)
+  const partnerOrganizationId = toIdString(payment.sellingOrganization || referral.partnerOrganization || course.organization)
   const referralCode = normalizeAgentReferralCode(referral.code)
 
   if (!agentId || !mongoose.Types.ObjectId.isValid(agentId)) return null
@@ -609,14 +674,17 @@ const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => 
   if (toIdString(payment.account) === toIdString(agent._id)) return null
   if (!organization || organization.partnerType === 'none') return null
   if (String(agent.partnerOrganization || '') !== String(partnerOrganizationId)) return null
-  if (String(course.organization || '') !== String(partnerOrganizationId)) return null
+  if (!courseIsSellableByOrganization(course, partnerOrganizationId)) return null
 
   const commissionRatePercent = Number.isFinite(Number(referral.commissionRatePercent))
     ? Math.min(100, Math.max(0, Number(referral.commissionRatePercent)))
     : resolveAgentCommissionRate({ organization, agentId: agent._id })
 
-  const platformShareMinor = Math.max(0, Number(payment.platformShareMinor || 0))
-  const commissionAmountMinor = Math.max(0, Math.round((platformShareMinor * commissionRatePercent) / 100))
+  const partnerGrossShareMinor = Math.max(0, Number(payment.partnerShareMinor || payment.metadata?.partnerShareMinor || 0))
+  const commissionAmountMinor = Math.max(0, Math.round((partnerGrossShareMinor * commissionRatePercent) / 100))
+  const creatorCommissionMinor = Math.max(0, Number(payment.creatorCommissionMinor || payment.metadata?.creatorCommissionMinor || 0))
+  const platformShareMinor = Math.max(0, Number(payment.platformShareMinor || payment.metadata?.platformShareMinor || 0))
+  const partnerNetShareMinor = Math.max(0, partnerGrossShareMinor - commissionAmountMinor)
 
   return AgentSaleAttribution.create({
     payment: payment._id,
@@ -635,7 +703,12 @@ const createOrUpdateAgentAttributionForPayment = async ({ payment, course }) => 
       provider: payment.provider || 'flutterwave',
       providerTxId: payment.providerTxId || '',
       flutterwaveTxId: payment.flutterwaveTxId || '',
-      platformShareMinor
+      creatorCommissionMinor,
+      partnerShareMinor: partnerGrossShareMinor,
+      partnerNetShareMinor,
+      platformShareMinor,
+      sellingOrganizationId: partnerOrganizationId,
+      saleMode: String(payment.saleMode || payment.metadata?.saleMode || '').trim().toLowerCase() || 'org_owned'
     }
   })
 }
@@ -648,17 +721,33 @@ const markPaymentSuccessful = async ({ payment, course, paidAt = new Date() }) =
     creatorId,
     courseId: course?._id || payment.course
   })
-  const split = splitCommission({
+  const split = resolveCourseRevenueSplit({
+    course,
     amountMinor: payment.amountMinor,
-    ratePercent: commissionRate
+    defaultCreatorCommissionRate: commissionRate,
+    sellingOrganizationId: payment.sellingOrganization || payment.metadata?.sellingOrganizationId || ''
   })
 
   payment.status = 'successful'
   payment.paidAt = payment.paidAt || paidAt
   payment.creatorAccount = creatorId || payment.creatorAccount || null
-  payment.creatorCommissionRate = commissionRate
+  payment.creatorCommissionRate = split.creatorSharePercent
   payment.creatorCommissionMinor = split.creatorCommissionMinor
+  payment.partnerShareMinor = split.partnerShareMinor
   payment.platformShareMinor = split.platformShareMinor
+  payment.sellingOrganization = split.sellingOrganizationId || null
+  payment.saleMode = split.saleMode || 'direct_creator'
+  payment.metadata = {
+    ...(payment.metadata || {}),
+    sellingOrganizationId: split.sellingOrganizationId || '',
+    saleMode: split.saleMode || 'direct_creator',
+    creatorSharePercent: split.creatorSharePercent,
+    partnerSharePercent: split.partnerSharePercent,
+    platformSharePercent: split.platformSharePercent,
+    creatorCommissionMinor: split.creatorCommissionMinor,
+    partnerShareMinor: split.partnerShareMinor,
+    platformShareMinor: split.platformShareMinor
+  }
   await payment.save()
 
   await createOrUpdateEnrollment({
@@ -805,17 +894,6 @@ const normalizeCommissionRate = (value, fallback = 70) => {
   return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
 }
 
-const splitCommission = ({ amountMinor = 0, ratePercent = 70 }) => {
-  const amount = Math.max(0, Math.round(Number(amountMinor || 0)))
-  const normalizedRate = normalizeCommissionRate(ratePercent, 70)
-  const creatorCommissionMinor = Math.max(0, Math.round((amount * normalizedRate) / 100))
-  const platformShareMinor = Math.max(0, amount - creatorCommissionMinor)
-  return {
-    creatorCommissionMinor,
-    platformShareMinor
-  }
-}
-
 const parseAmountToMinor = (value) => parseMajorAmountToMinor(value)
 
 const normalizeWithdrawalStatus = (value, fallback = 'pending') => {
@@ -843,9 +921,14 @@ const buildPartnerRevenueExpression = () => ({
   $max: [
     0,
     {
-      $subtract: [
-        { $ifNull: ['$metadata.platformShareMinor', 0] },
-        { $ifNull: ['$commissionAmountMinor', 0] }
+      $ifNull: [
+        '$metadata.partnerNetShareMinor',
+        {
+          $subtract: [
+            { $ifNull: ['$metadata.platformShareMinor', 0] },
+            { $ifNull: ['$commissionAmountMinor', 0] }
+          ]
+        }
       ]
     }
   ]
@@ -865,15 +948,30 @@ const getPartnerWalletSnapshot = async (organizationId) => {
   }
 
   const organizationObjectId = new mongoose.Types.ObjectId(normalizedOrgId)
-  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+  const [earningsRaw, attributionRaw, withdrawalsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      {
+        $match: {
+          sellingOrganization: organizationObjectId,
+          status: 'successful'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+          creatorShareMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          partnerGrossShareMinor: { $sum: { $ifNull: ['$partnerShareMinor', 0] } },
+          platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+        }
+      }
+    ]),
     AgentSaleAttribution.aggregate([
       { $match: { partnerOrganization: organizationObjectId } },
       {
         $group: {
           _id: null,
-          totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
-          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
-          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } }
         }
       }
     ]),
@@ -889,14 +987,25 @@ const getPartnerWalletSnapshot = async (organizationId) => {
     ])
   ])
 
-  const earnings = earningsRaw[0] || { totalSalesMinor: 0, totalAgentCommissionMinor: 0, partnerEarningsMinor: 0 }
+  const earnings = earningsRaw[0] || {
+    totalSalesMinor: 0,
+    creatorShareMinor: 0,
+    partnerGrossShareMinor: 0,
+    platformShareMinor: 0
+  }
+  const attributionSummary = attributionRaw[0] || { totalAgentCommissionMinor: 0 }
   const withdrawals = withdrawalsRaw[0] || { paidOutMinor: 0, pendingWithdrawalMinor: 0 }
-  const partnerEarningsMinor = Math.max(0, Number(earnings.partnerEarningsMinor || 0))
+  const totalAgentCommissionMinor = Math.max(0, Number(attributionSummary.totalAgentCommissionMinor || 0))
+  const partnerGrossShareMinor = Math.max(0, Number(earnings.partnerGrossShareMinor || 0))
+  const partnerEarningsMinor = Math.max(0, partnerGrossShareMinor - totalAgentCommissionMinor)
   const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
   const pendingWithdrawalMinor = Math.max(0, Number(withdrawals.pendingWithdrawalMinor || 0))
   return {
     totalSalesMinor: Math.max(0, Number(earnings.totalSalesMinor || 0)),
-    totalAgentCommissionMinor: Math.max(0, Number(earnings.totalAgentCommissionMinor || 0)),
+    totalAgentCommissionMinor,
+    creatorShareMinor: Math.max(0, Number(earnings.creatorShareMinor || 0)),
+    partnerGrossShareMinor,
+    platformShareMinor: Math.max(0, Number(earnings.platformShareMinor || 0)),
     partnerEarningsMinor,
     paidOutMinor,
     pendingWithdrawalMinor,
@@ -2623,6 +2732,12 @@ const parseCreatorSettingsSection = (value) => {
   return CREATOR_SETTINGS_SECTIONS.includes(normalized) ? normalized : 'defaults'
 }
 
+const parseStudioMode = (value, fallback = 'overview') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['overview', 'create', 'edit'].includes(normalized)) return normalized
+  return fallback
+}
+
 const parsePartnerApplicationIntent = (value, fallback = 'partner') => {
   const normalized = String(value || '').trim().toLowerCase()
   if (['partner', 'channel_partner'].includes(normalized)) return normalized
@@ -3031,6 +3146,9 @@ const decorateCourse = (course) => {
     || course?.reviewedBy?.email
     || ''
   ).trim()
+  const partnerSelling = normalizePartnerSelling(course?.partnerSelling || {}, course?.partnerSelling || SELL_THROUGH_DEFAULTS)
+  const sellingAssignments = getCourseSellingAssignments(course, { onlyActive: false })
+  const activeSellingAssignments = sellingAssignments.filter((assignment) => assignment.status === 'active')
 
   return {
     ...course,
@@ -3050,7 +3168,15 @@ const decorateCourse = (course) => {
     reviewDecisionLabel: formatCourseReviewDecision(reviewDecision),
     reviewHasFeedback: reviewDecision !== 'none' || Boolean(String(course?.reviewNotes || '').trim()),
     reviewNeedsCreatorAction: ['changes_requested', 'denied'].includes(reviewDecision),
-    reviewedByName
+    reviewedByName,
+    partnerSelling,
+    sellingAssignments,
+    activeSellingAssignments,
+    assignedOrganizationCount: activeSellingAssignments.length,
+    isSellThroughEnabled: Boolean(partnerSelling.enabled),
+    partnerSellingSummary: partnerSelling.enabled
+      ? `${partnerSelling.creatorSharePercent}% creator / ${partnerSelling.partnerSharePercent}% partner / ${partnerSelling.platformSharePercent}% platform`
+      : 'Direct creator sale only'
   }
 }
 
@@ -3422,6 +3548,16 @@ const parseCoursePayload = ({
   const slugSource = String(body.slug || existingCourse?.slug || title).trim()
   const slug = slugifyValue(slugSource, 'course')
   const normalizedStudioContext = String(studioContext || body.studioContext || '').trim().toLowerCase()
+  const partnerSellingEnabled = body.partnerSellingEnabled === 'on' || body.partnerSellingEnabled === true || body.partnerSellingEnabled === 'true'
+  const effectivePartnerSellingFallback = normalizePartnerSelling(
+    existingCourse?.partnerSelling || {},
+    SELL_THROUGH_DEFAULTS
+  )
+  const partnerSelling = normalizePartnerSelling({
+    enabled: partnerSellingEnabled,
+    creatorSharePercent: body.partnerSellingCreatorSharePercent,
+    partnerSharePercent: body.partnerSellingPartnerSharePercent
+  }, effectivePartnerSellingFallback)
 
   const payload = {
     title: title.slice(0, 200),
@@ -3438,7 +3574,8 @@ const parseCoursePayload = ({
       paymentMode,
       amount,
       currency
-    }
+    },
+    partnerSelling
   }
 
   if (requestedStatus === 'published' && status === 'pending_public_review') {
@@ -3610,6 +3747,9 @@ const resolveCourseStudioReturnPath = (req, fallback = '/simple-lms/studio/cours
 const buildStudioEditCoursePath = (value, courseId, fallback = '/simple-lms/studio/courses') => {
   const basePath = sanitizeInternalPath(value || fallback, fallback)
   const [pathWithoutHash] = String(basePath).split('#')
+  if (pathWithoutHash.startsWith('/admin/courses')) {
+    return `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}/edit`
+  }
   const separator = pathWithoutHash.includes('?') ? '&' : '?'
   return `${pathWithoutHash}${separator}editCourse=${encodeURIComponent(String(courseId || '').trim())}#edit-course`
 }
@@ -3690,6 +3830,46 @@ const findPublicCourseForLearning = async (courseId) => {
     status: 'published',
     visibility: { $in: PUBLIC_VISIBILITY_VALUES }
   }).lean()
+}
+
+const resolveRequestedSellingOrganizationId = (req, courseId) => {
+  const explicitOrganizationId = toIdString(req.body?.org || req.query?.org || '')
+  const sessionOrganizationId = getSellingOrganizationForCourse(req, courseId)
+  return explicitOrganizationId || sessionOrganizationId || ''
+}
+
+const resolveCourseSaleState = async ({ req, course }) => {
+  const requestedOrganizationId = resolveRequestedSellingOrganizationId(req, course?._id)
+  const saleContext = resolveCourseSaleContext({
+    course,
+    requestedOrganizationId
+  })
+
+  if (saleContext.sellingOrganizationId) {
+    setSellingOrganizationForCourse(req, course._id, saleContext.sellingOrganizationId)
+  } else {
+    clearSellingOrganizationForCourse(req, course._id)
+  }
+
+  let sellingOrganization = null
+  if (saleContext.sellingOrganizationId && mongoose.Types.ObjectId.isValid(saleContext.sellingOrganizationId)) {
+    sellingOrganization = await Organization.findById(saleContext.sellingOrganizationId)
+      .select('_id name partnerType partnerSettings.defaultAgentCommissionRate')
+      .lean()
+  }
+
+  return {
+    ...saleContext,
+    sellingOrganization,
+    sellingOrganizationId: toIdString(saleContext.sellingOrganizationId),
+    detailPath: appendCourseSellingParams(
+      `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`,
+      {
+        referralCode: getReferralCodeForCourse(req, course._id),
+        organizationId: saleContext.sellingOrganizationId
+      }
+    )
+  }
 }
 
 const getRemainingPayableCartCount = async ({ req, accountId }) => {
@@ -3874,6 +4054,7 @@ const initiateCoursePaymentCheckout = async ({
     : 'direct'
   const finalNextPath = sanitizeInternalPath(nextPath, `/simple-lms/take/${course._id}`)
   const finalFallbackPath = sanitizeInternalPath(fallbackPath, '/simple-lms?view=catalog')
+  const saleState = await resolveCourseSaleState({ req, course })
 
   const requestedProvider = normalizePaymentProvider(
     req.body?.provider || req.query?.provider || req.body?.paymentProvider || req.query?.paymentProvider,
@@ -3912,7 +4093,7 @@ const initiateCoursePaymentCheckout = async ({
     req.session[PAYMENT_PROVIDER_SESSION_KEY] = selectedProvider
   }
 
-  const agentReferral = await resolveAgentReferralForCheckout({ req, course })
+  const agentReferral = await resolveAgentReferralForCheckout({ req, course, saleContext: saleState })
 
   const recentPendingPayment = await SimpleLmsPayment.findOne({
     account: req.user._id,
@@ -3930,6 +4111,8 @@ const initiateCoursePaymentCheckout = async ({
       { _id: recentPendingPayment._id },
       {
         $set: {
+          sellingOrganization: saleState.sellingOrganizationId || null,
+          saleMode: saleState.saleMode || 'direct_creator',
           metadata: {
             ...(recentPendingPayment.metadata || {}),
             nextPath: finalNextPath,
@@ -3944,7 +4127,10 @@ const initiateCoursePaymentCheckout = async ({
                     commissionRatePercent: agentReferral.commissionRatePercent
                   }
                 }
-              : {})
+              : {}),
+            sellingOrganizationId: saleState.sellingOrganizationId || '',
+            sellingOrganizationName: saleState.sellingOrganization?.name || '',
+            saleMode: saleState.saleMode || 'direct_creator'
           }
         }
       }
@@ -3969,16 +4155,21 @@ const initiateCoursePaymentCheckout = async ({
       commissionRatePercent: agentReferral.commissionRatePercent
     }
   }
+  paymentMetadata.sellingOrganizationId = saleState.sellingOrganizationId || ''
+  paymentMetadata.sellingOrganizationName = saleState.sellingOrganization?.name || ''
+  paymentMetadata.saleMode = saleState.saleMode || 'direct_creator'
 
   const payment = await SimpleLmsPayment.create({
     account: req.user._id,
     course: course._id,
     creatorAccount: course.createdBy || null,
+    sellingOrganization: saleState.sellingOrganizationId || null,
     txRef,
     amountMinor,
     currency,
     provider: selectedProvider,
     status: 'initiated',
+    saleMode: saleState.saleMode || 'direct_creator',
     customerEmail: req.user.email || '',
     customerName: req.user.profile?.name || req.user.email || 'Learner',
     metadata: paymentMetadata
@@ -4120,12 +4311,19 @@ const handleCoursePayRequest = async (req, res) => {
     const courseId = String(req.params.courseId || '').trim()
     const course = await findPublicCourseForLearning(courseId)
     const referralCode = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
+    const sellingOrganizationId = toIdString(req.body?.org || req.query?.org || '')
     if (course?._id && referralCode) {
       setReferralCodeForCourse(req, course._id, referralCode)
     }
+    if (course?._id && sellingOrganizationId) {
+      setSellingOrganizationForCourse(req, course._id, sellingOrganizationId)
+    }
     const defaultFallback = '/simple-lms?view=catalog'
     const publicFallback = course
-      ? `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+      ? appendCourseSellingParams(`/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`, {
+          referralCode,
+          organizationId: sellingOrganizationId
+        })
       : '/courses'
     const requestedFallback = req.body?.fallback || req.body?.returnTo || req.query?.fallback || req.query?.returnTo
     const fallbackPath = sanitizeInternalPath(
@@ -4226,7 +4424,7 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
       course
     })
       ? (canManagePlatform(role)
-          ? `/admin/courses?editCourse=${course._id}#edit-course`
+          ? `/admin/courses/${encodeURIComponent(String(course._id || '').trim())}/edit`
           : `/simple-lms/studio/courses?editCourse=${course._id}`)
       : ''
 
@@ -4342,6 +4540,7 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
     const courseId = String(req.body?.courseId || req.body?.course || '').trim()
     const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms?view=catalog', '/simple-lms?view=catalog')
     const referralCode = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
+    const sellingOrganizationId = toIdString(req.body?.org || req.query?.org || '')
     if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return redirectWithMessage({
         res,
@@ -4392,6 +4591,9 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
     if (referralCode) {
       setReferralCodeForCourse(req, course._id, referralCode)
     }
+    if (sellingOrganizationId) {
+      setSellingOrganizationForCourse(req, course._id, sellingOrganizationId)
+    }
     addSessionCartCourseId(req, course._id)
     return redirectWithMessage({
       res,
@@ -4412,6 +4614,8 @@ pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
   const courseId = String(req.params.courseId || '').trim()
   const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms/cart', '/simple-lms/cart')
   removeSessionCartCourseId(req, courseId)
+  clearReferralCodeForCourse(req, courseId)
+  clearSellingOrganizationForCourse(req, courseId)
   return redirectWithMessage({
     res,
     path: returnTo,
@@ -4421,6 +4625,10 @@ pageRouter.post('/cart/remove/:courseId', requirePageAuth, async (req, res) => {
 
 pageRouter.post('/cart/clear', requirePageAuth, async (req, res) => {
   const returnTo = sanitizeInternalPath(req.body?.returnTo || req.body?.next || '/simple-lms/cart', '/simple-lms/cart')
+  for (const courseId of getSessionCartCourseIds(req)) {
+    clearReferralCodeForCourse(req, courseId)
+    clearSellingOrganizationForCourse(req, courseId)
+  }
   clearSessionCart(req)
   return redirectWithMessage({
     res,
@@ -4555,6 +4763,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
       })
       removeSessionCartCourseId(req, payment.course._id)
       clearReferralCodeForCourse(req, payment.course._id)
+      clearSellingOrganizationForCourse(req, payment.course._id)
       return redirectAfterPaymentCallback({
         req,
         res,
@@ -4599,6 +4808,7 @@ pageRouter.get('/payments/flutterwave/callback', requirePageAuth, async (req, re
     })
     removeSessionCartCourseId(req, payment.course._id)
     clearReferralCodeForCourse(req, payment.course._id)
+    clearSellingOrganizationForCourse(req, payment.course._id)
 
     return redirectAfterPaymentCallback({
       req,
@@ -4738,6 +4948,7 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       previousLesson,
       nextLesson,
       latestAttempt,
+      autoplayRequested: String(req.query.autoplay || '').trim() === '1',
       success: String(req.query.success || ''),
       error: String(req.query.error || '')
     })
@@ -4810,13 +5021,20 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', requir
     await enrollment.save()
     await refreshCourseMetrics(enrollment.course._id)
 
+    const shouldAutoplayNextLesson = req.body.next === '1'
+      && req.body.auto === '1'
+      && Boolean(progress.nextLessonKey)
     const targetLesson = req.body.next === '1' && progress.nextLessonKey
       ? progress.nextLessonKey
       : lessonKey
+    const targetPathBase = `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(targetLesson)}`
+    const targetPath = shouldAutoplayNextLesson
+      ? `${targetPathBase}?autoplay=1`
+      : targetPathBase
 
     return redirectWithMessage({
       res,
-      path: `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(targetLesson)}`,
+      path: targetPath,
       success: progress.isCompleted
         ? 'Course completed. Excellent work.'
         : 'Lesson marked as complete.'
@@ -5032,9 +5250,13 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       req.user.learningProfile.firstCourse || createdCourse._id
     await req.user.save()
 
+    const postCreatePath = createAsSystemCourse
+      ? `/admin/courses/${encodeURIComponent(String(createdCourse._id || '').trim())}`
+      : returnTo
+
     return redirectWithMessage({
       res,
-      path: returnTo,
+      path: postCreatePath,
       success: createdCourse.status === 'pending_public_review'
         ? 'Course submitted for admin approval.'
         : 'Course created successfully.'
@@ -5509,6 +5731,14 @@ const reviewCourseSubmission = async ({
   return normalizedDecision
 }
 
+const normalizeAdminCourseStatus = (value, fallback = 'draft') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['draft', 'pending_public_review', 'published', 'archived'].includes(normalized)) {
+    return normalized
+  }
+  return fallback
+}
+
 pageRouter.post('/courses/:courseId/approve-public', requirePageAuth, async (req, res) => {
   const returnTo = resolveAdminReturnPath(req)
   try {
@@ -5672,6 +5902,317 @@ pageRouter.post('/courses/:courseId/reject-public', requirePageAuth, async (req,
       res,
       path: returnTo,
       error: error?.message || 'Failed to review this course submission.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/admin-status', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req, '/admin/courses')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only admins can manage course status.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const currentStatus = String(course.status || '').trim().toLowerCase()
+    const targetStatus = normalizeAdminCourseStatus(req.body?.status, currentStatus || 'draft')
+    const adminNote = String(req.body?.statusNote || '').trim().slice(0, 1500)
+
+    if (!targetStatus) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid course status.'
+      })
+    }
+
+    if (currentStatus === targetStatus) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        success: `Course already set to ${targetStatus}.`
+      })
+    }
+
+    if (currentStatus === 'pending_public_review') {
+      if (targetStatus === 'published') {
+        await reviewCourseSubmission({
+          req,
+          res,
+          course,
+          decision: 'approved',
+          reviewNotes: adminNote
+        })
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          success: `Course approved and published: ${course.title}.`
+        })
+      }
+
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Use the review actions for a course that is already pending public review.'
+      })
+    }
+
+    const now = new Date()
+    if (targetStatus === 'draft') {
+      course.status = 'draft'
+      course.isActive = true
+      course.publishedAt = null
+      course.approvedPublicAt = null
+      course.approvedPublicBy = null
+    } else if (targetStatus === 'pending_public_review') {
+      course.status = 'pending_public_review'
+      course.isActive = true
+      course.submittedForPublicReviewAt = now
+      course.reviewDecision = 'pending'
+      course.reviewNotes = ''
+      course.reviewedAt = null
+      course.reviewedBy = null
+      course.approvedPublicAt = null
+      course.approvedPublicBy = null
+    } else if (targetStatus === 'published') {
+      course.status = 'published'
+      course.isActive = true
+      course.publishedAt = course.publishedAt || now
+      course.approvedPublicAt = course.approvedPublicAt || now
+      course.approvedPublicBy = course.approvedPublicBy || req.user._id
+    } else if (targetStatus === 'archived') {
+      course.status = 'archived'
+      course.isActive = false
+    }
+
+    await course.save()
+
+    await logAuditEvent({
+      action: 'course.admin_status.updated',
+      performedBy: req.user._id,
+      targetAccount: course.createdBy || null,
+      metadata: {
+        courseId: course._id,
+        courseTitle: course.title,
+        fromStatus: currentStatus,
+        toStatus: targetStatus,
+        note: adminNote
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: `Course status updated to ${targetStatus}: ${course.title}.`
+    })
+  } catch (error) {
+    console.error('Admin course status update error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to update the course status.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/assign-organization', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req, '/admin/courses')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have permission to assign course selling organizations.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    const organizationId = String(req.body.organizationId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(organizationId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid course and organization.'
+      })
+    }
+
+    const [course, organization] = await Promise.all([
+      SimpleLmsCourse.findById(courseId),
+      Organization.findOne({
+        _id: organizationId,
+        partnerType: { $in: ['partner', 'channel_partner'] }
+      }).lean()
+    ])
+
+    if (!course || !course.isActive) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+    if (!organization) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Target organization not found.'
+      })
+    }
+    if (toIdString(course.organization) === organizationId) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'This course already belongs to that organization.'
+      })
+    }
+
+    const isCreatorOwnedCourse = !toIdString(course.organization)
+    if (isCreatorOwnedCourse && !Boolean(course.partnerSelling?.enabled)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'The creator has not enabled partner selling for this course yet.'
+      })
+    }
+
+    const fallbackSplit = normalizePartnerSelling(course.partnerSelling || {}, SELL_THROUGH_DEFAULTS)
+    const assignment = normalizeSellingOrganizationAssignment({
+      organization: organization._id,
+      organizationName: organization.name,
+      partnerType: organization.partnerType,
+      creatorSharePercent: req.body.creatorSharePercent,
+      partnerSharePercent: req.body.partnerSharePercent,
+      status: req.body.assignmentStatus || 'active',
+      assignedBy: req.user._id,
+      assignedAt: new Date(),
+      updatedAt: new Date()
+    }, fallbackSplit)
+
+    const existingAssignments = getCourseSellingAssignments(course, { onlyActive: false })
+      .filter((entry) => toIdString(entry.organization) !== organizationId)
+    course.sellingOrganizations = [
+      ...existingAssignments,
+      assignment
+    ]
+    await course.save()
+
+    await logAuditEvent({
+      action: 'course.organization_assignment',
+      performedBy: req.user._id,
+      targetOrganization: organization._id,
+      metadata: {
+        courseId: course._id,
+        courseTitle: course.title,
+        creatorSharePercent: assignment.creatorSharePercent,
+        partnerSharePercent: assignment.partnerSharePercent,
+        assignmentStatus: assignment.status
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: `${organization.name} can now sell this course.`
+    })
+  } catch (error) {
+    console.error('Assign course to organization error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to assign the course to that organization.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/unassign-organization', requirePageAuth, async (req, res) => {
+  const returnTo = resolveAdminReturnPath(req, '/admin/courses')
+  try {
+    const role = resolveRole(req.user)
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'You do not have permission to remove course selling organizations.'
+      })
+    }
+
+    const courseId = String(req.params.courseId || '').trim()
+    const organizationId = String(req.body.organizationId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(organizationId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a valid assignment to remove.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const previousLength = Array.isArray(course.sellingOrganizations) ? course.sellingOrganizations.length : 0
+    course.sellingOrganizations = getCourseSellingAssignments(course, { onlyActive: false })
+      .filter((assignment) => toIdString(assignment.organization) !== organizationId)
+    if (course.sellingOrganizations.length === previousLength) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        info: 'That organization was not assigned to this course.'
+      })
+    }
+
+    await course.save()
+    await logAuditEvent({
+      action: 'course.organization_unassignment',
+      performedBy: req.user._id,
+      metadata: {
+        courseId: course._id,
+        organizationId
+      },
+      req
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: 'Course selling assignment removed.'
+    })
+  } catch (error) {
+    console.error('Remove course organization assignment error:', error)
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      error: error?.message || 'Failed to remove the course selling assignment.'
     })
   }
 })
@@ -6459,12 +7000,13 @@ const ensurePartnerOrganizationForRoleAssignment = async ({
     }
     organization.description = `${partnerType === 'channel_partner' ? 'Channel partner' : 'Partner'} organization`
     organization.partnerType = partnerType
-    organization.partnerSettings = {
-      ...(organization.partnerSettings || {}),
-      partnerStatus: 'active',
-      maxAgents: organization.partnerSettings?.maxAgents ?? null,
-      defaultAgentCommissionRate: organization.partnerSettings?.defaultAgentCommissionRate ?? 10,
-      agentInviteApproval: organization.partnerSettings?.agentInviteApproval ?? true
+    organization.partnerSettings = organization.partnerSettings || {}
+    organization.partnerSettings.partnerStatus = 'active'
+    organization.partnerSettings.maxAgents = organization.partnerSettings.maxAgents ?? null
+    organization.partnerSettings.defaultAgentCommissionRate = organization.partnerSettings.defaultAgentCommissionRate ?? 10
+    organization.partnerSettings.agentInviteApproval = organization.partnerSettings.agentInviteApproval ?? true
+    if (!organization.partnerSettings.payoutProfile || typeof organization.partnerSettings.payoutProfile !== 'object') {
+      organization.partnerSettings.payoutProfile = {}
     }
   }
 
@@ -6829,6 +7371,7 @@ pageRouter.get('/payments/paystack/callback', requirePageAuth, async (req, res) 
       })
       removeSessionCartCourseId(req, payment.course._id)
       clearReferralCodeForCourse(req, payment.course._id)
+      clearSellingOrganizationForCourse(req, payment.course._id)
       return redirectAfterPaymentCallback({
         req,
         res,
@@ -6872,6 +7415,7 @@ pageRouter.get('/payments/paystack/callback', requirePageAuth, async (req, res) 
     })
     removeSessionCartCourseId(req, payment.course._id)
     clearReferralCodeForCourse(req, payment.course._id)
+    clearSellingOrganizationForCourse(req, payment.course._id)
 
     return redirectAfterPaymentCallback({
       req,
@@ -8349,12 +8893,25 @@ pageRouter.get('/checkout/course/:courseId', requirePageAuth, async (req, res) =
 const renderWorkspacePage = async (
   req,
   res,
-  { forcedViewMode = '', adminPortal = false, studioPortal = false, studioContext = '', adminSection = '' } = {}
+  {
+    forcedViewMode = '',
+    adminPortal = false,
+    studioPortal = false,
+    studioContext = '',
+    adminSection = '',
+    studioMode = '',
+    forcedEditCourseId = '',
+    forcedCourseFocusId = ''
+  } = {}
 ) => {
   try {
     const role = resolveRole(req.user)
     const currencyCatalog = await getActiveCurrencyCatalog()
     const viewMode = forcedViewMode || parseViewMode(req.query.view)
+    const normalizedStudioMode = parseStudioMode(
+      studioMode || req.query.studioMode || req.query.mode,
+      studioPortal ? 'overview' : 'overview'
+    )
     const requestedAdminPartnerView = String(req.query?.partnerView || '').trim().toLowerCase()
     const adminPartnerView = ['directory', 'cash', 'onboarding', 'agents'].includes(requestedAdminPartnerView)
       ? requestedAdminPartnerView
@@ -8412,7 +8969,7 @@ const renderWorkspacePage = async (
     const categoryFilter = String(req.query.category || '').trim()
     const levelFilter = String(req.query.level || '').trim().toLowerCase()
     const sortFilter = normalizeSort(req.query.sort)
-    const editCourseId = String(req.query.editCourse || req.query.edit || '').trim()
+    const editCourseId = String(forcedEditCourseId || req.query.editCourse || req.query.edit || '').trim()
     const editProgramId = String(req.query.editProgram || '').trim()
     const sessionCartCourseIds = getSessionCartCourseIds(req)
     const paymentStatusFilter = normalizePaymentStatusFilter(req.query.paymentStatus)
@@ -8459,6 +9016,9 @@ const renderWorkspacePage = async (
       const normalized = String(req.query.compose || req.query.courseCompose || '').trim().toLowerCase()
       return ['1', 'true', 'yes', 'new', 'create'].includes(normalized) ? 'create' : 'manage'
     })()
+    const adminCourseFocusId = adminPortal && selectedAdminSection === 'courses'
+      ? String(forcedCourseFocusId || req.query.courseId || '').trim()
+      : ''
     const adminPaymentFilter = {}
     if (canManagePlatform(role)) {
       if (paymentStatusFilter !== 'all') adminPaymentFilter.status = paymentStatusFilter
@@ -8477,7 +9037,7 @@ const renderWorkspacePage = async (
       search: paymentSearchFilter,
       basePath: adminBasePath
     })
-    const adminCoursesReturnTo = buildAdminCoursesReturnTo({
+    const adminCoursesBaseReturnTo = buildAdminCoursesReturnTo({
       creatorId: adminCreatorFilterId,
       status: adminCourseStatusFilter,
       visibility: adminCourseVisibilityFilter,
@@ -8486,6 +9046,10 @@ const renderWorkspacePage = async (
       search: adminCourseSearchFilter,
       basePath: '/admin/courses'
     })
+    const adminCoursesReturnTo = sanitizeInternalPath(
+      req.query?.returnTo || adminCoursesBaseReturnTo,
+      adminCoursesBaseReturnTo
+    )
     const adminCreatorsReturnTo = buildAdminCreatorReturnTo({
       creatorId: adminCreatorFilterId,
       basePath: '/admin/creators'
@@ -9045,6 +9609,25 @@ const renderWorkspacePage = async (
       if (candidate?.canEdit) {
         editingCourse = candidate
       }
+    }
+    if (studioPortal && resolvedStudioContext === 'admin' && normalizedStudioMode === 'edit' && editCourseId && !editingCourse) {
+      return redirectWithMessage({
+        res,
+        path: '/admin/courses',
+        error: 'Only the course owner can edit this course.'
+      })
+    }
+
+    let focusedAdminCourse = null
+    if (adminCourseFocusId && mongoose.Types.ObjectId.isValid(adminCourseFocusId) && canManagePlatform(role)) {
+      focusedAdminCourse = managedCourses.find((course) => toIdString(course._id) === adminCourseFocusId) || null
+    }
+    if (adminPortal && selectedAdminSection === 'courses' && adminCourseFocusId && !focusedAdminCourse) {
+      return redirectWithMessage({
+        res,
+        path: '/admin/courses',
+        error: 'Course not found in the admin library.'
+      })
     }
 
     let editingProgram = null
@@ -10434,8 +11017,9 @@ const renderWorkspacePage = async (
       adminPortal,
       studioPortal,
       studioContext: resolvedStudioContext,
+      studioMode: normalizedStudioMode,
       creatorStudioPath: '/simple-lms/studio/courses',
-      adminStudioPath: '/admin/courses?compose=create',
+      adminStudioPath: '/admin/courses/new',
       courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/courses' : '/simple-lms/studio/courses',
       settingsTab,
       creatorSection,
@@ -10462,6 +11046,7 @@ const renderWorkspacePage = async (
       myEnrollments,
       myPrograms,
       editingCourse,
+      focusedAdminCourse,
       editingProgram,
       studioCourses,
       assignableAccounts,
@@ -10495,6 +11080,7 @@ const renderWorkspacePage = async (
         paymentMode: adminCoursePaymentFilter,
         search: adminCourseSearchFilter,
         composeMode: adminCourseComposeMode,
+        focusCourseId: adminCourseFocusId,
         returnTo: adminCoursesReturnTo
       },
       adminCreatorFilters: {
@@ -10585,16 +11171,60 @@ pageRouter.get('/studio/courses', requirePageAuth, async (req, res) => (
 
 pageRouter.get('/', requirePageAuth, async (req, res) => renderWorkspacePage(req, res))
 
-const renderAdminPortalSection = (section = 'overview') => async (req, res) => (
+const renderAdminPortalSection = (section = 'overview', options = {}) => async (req, res) => (
   renderWorkspacePage(req, res, {
     forcedViewMode: 'admin',
     adminPortal: true,
-    adminSection: section
+    adminSection: section,
+    ...options
   })
 )
 
 adminPageRouter.get('/', requireAdminPageAuth, renderAdminPortalSection('overview'))
 adminPageRouter.get('/courses', requireAdminPageAuth, renderAdminPortalSection('courses'))
+adminPageRouter.get('/courses/new', requireAdminPageAuth, (req, res) => (
+  renderWorkspacePage(req, res, {
+    forcedViewMode: 'course-studio',
+    studioPortal: true,
+    studioContext: 'admin',
+    studioMode: 'create'
+  })
+))
+adminPageRouter.get('/courses/:courseId/edit', requireAdminPageAuth, (req, res) => {
+  const courseId = String(req.params.courseId || '').trim()
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    return redirectWithMessage({
+      res,
+      path: '/admin/courses',
+      error: 'Invalid course selected.'
+    })
+  }
+
+  return renderWorkspacePage(req, res, {
+    forcedViewMode: 'course-studio',
+    studioPortal: true,
+    studioContext: 'admin',
+    studioMode: 'edit',
+    forcedEditCourseId: courseId
+  })
+})
+adminPageRouter.get('/courses/:courseId', requireAdminPageAuth, (req, res) => {
+  const courseId = String(req.params.courseId || '').trim()
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    return redirectWithMessage({
+      res,
+      path: '/admin/courses',
+      error: 'Invalid course selected.'
+    })
+  }
+
+  return renderWorkspacePage(req, res, {
+    forcedViewMode: 'admin',
+    adminPortal: true,
+    adminSection: 'courses',
+    forcedCourseFocusId: courseId
+  })
+})
 adminPageRouter.get('/approvals', requireAdminPageAuth, renderAdminPortalSection('approvals'))
 adminPageRouter.get('/partners', requireAdminPageAuth, renderAdminPortalSection('partners'))
 adminPageRouter.get('/super-users', requireAdminPageAuth, renderAdminPortalSection('super-users'))
@@ -10619,13 +11249,11 @@ adminPageRouter.get('/settings', requireAdminPageAuth, renderAdminPortalSection(
 adminPageRouter.get('/analytics', requireAdminPageAuth, renderAdminPortalSection('analytics'))
 
 adminPageRouter.get('/course-studio', requireAdminPageAuth, async (req, res) => {
-  const params = new URLSearchParams(req.query || {})
-  if (!params.has('compose') && !params.has('editCourse')) {
-    params.set('compose', 'create')
+  const editCourseId = String(req.query?.editCourse || req.query?.edit || '').trim()
+  if (mongoose.Types.ObjectId.isValid(editCourseId)) {
+    return res.redirect(`/admin/courses/${encodeURIComponent(editCourseId)}/edit`)
   }
-  const queryString = params.toString()
-  const targetHash = params.has('editCourse') ? '#edit-course' : '#create-course'
-  return res.redirect(queryString ? `/admin/courses?${queryString}${targetHash}` : `/admin/courses${targetHash}`)
+  return res.redirect('/admin/courses/new')
 })
 
 apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
@@ -10659,7 +11287,7 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
     }
     if (String(payment.status || '').trim().toLowerCase() === 'successful') {
       const courseForAttribution = await SimpleLmsCourse.findById(payment.course)
-        .select('_id organization createdBy')
+        .select(PAYMENT_COURSE_COMMISSION_SELECT)
         .lean()
       if (courseForAttribution?._id) {
         await createOrUpdateAgentAttributionForPayment({
@@ -10681,7 +11309,7 @@ apiRouter.post('/payments/flutterwave/webhook', async (req, res) => {
     }
 
     const courseForCommission = await SimpleLmsCourse.findById(payment.course)
-      .select('_id organization createdBy')
+      .select(PAYMENT_COURSE_COMMISSION_SELECT)
     if (!courseForCommission?._id) {
       payment.status = 'failed'
       await payment.save()
@@ -10739,7 +11367,7 @@ apiRouter.post('/payments/paystack/webhook', async (req, res) => {
     }
     if (String(payment.status || '').trim().toLowerCase() === 'successful') {
       const courseForAttribution = await SimpleLmsCourse.findById(payment.course)
-        .select('_id organization createdBy')
+        .select(PAYMENT_COURSE_COMMISSION_SELECT)
         .lean()
       if (courseForAttribution?._id) {
         await createOrUpdateAgentAttributionForPayment({
@@ -10761,7 +11389,7 @@ apiRouter.post('/payments/paystack/webhook', async (req, res) => {
     }
 
     const courseForCommission = await SimpleLmsCourse.findById(payment.course)
-      .select('_id organization createdBy')
+      .select(PAYMENT_COURSE_COMMISSION_SELECT)
     if (!courseForCommission?._id) {
       payment.status = 'failed'
       await payment.save()

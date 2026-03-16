@@ -15,9 +15,18 @@
 
   <% const takePath = `/simple-lms/take/${course._id}` %>
   <% const persistedReferralCode = typeof referralCode === 'string' ? referralCode : '' %>
+  <% const persistedSellingOrganizationId = typeof sellingOrganizationId === 'string' ? sellingOrganizationId : '' %>
   <% const serverDetailPath = (typeof detailPath === 'string' && detailPath) ? detailPath : '' %>
-  <% const resolvedDetailPath = serverDetailPath || `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}${persistedReferralCode ? `?ref=${encodeURIComponent(persistedReferralCode)}` : ''}` %>
-  <% const courseHref = (entry) => `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}` %>
+  <% const fallbackDetailParams = [] %>
+  <% if (persistedReferralCode) fallbackDetailParams.push(`ref=${encodeURIComponent(persistedReferralCode)}`) %>
+  <% if (persistedSellingOrganizationId) fallbackDetailParams.push(`org=${encodeURIComponent(persistedSellingOrganizationId)}`) %>
+  <% const resolvedDetailPath = serverDetailPath || `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}${fallbackDetailParams.length ? `?${fallbackDetailParams.join('&')}` : ''}` %>
+  <% const courseHref = (entry) => {
+    const params = []
+    if (persistedReferralCode) params.push(`ref=${encodeURIComponent(persistedReferralCode)}`)
+    if (persistedSellingOrganizationId) params.push(`org=${encodeURIComponent(persistedSellingOrganizationId)}`)
+    return `/courses/${entry._id}${entry.slug ? `/${entry.slug}` : ''}${params.length ? `?${params.join('&')}` : ''}`
+  } %>
   <% const learnLoginHref = `/login?return_to=${encodeURIComponent(takePath)}` %>
   <% const registerToLearnHref = `/register?return_to=${encodeURIComponent(takePath)}&intent=learn&source=course_detail` %>
   <% const isPreviewMode = typeof previewMode !== 'undefined' && Boolean(previewMode) %>
@@ -192,6 +201,7 @@
                 <input type="hidden" name="next" value="<%= takePath %>">
                 <input type="hidden" name="fallback" value="<%= resolvedDetailPath %>">
                 <% if (persistedReferralCode) { %><input type="hidden" name="ref" value="<%= persistedReferralCode %>"><% } %>
+                <% if (persistedSellingOrganizationId) { %><input type="hidden" name="org" value="<%= persistedSellingOrganizationId %>"><% } %>
                 <button type="submit" class="btn btn-primary" style="width:100%;">Purchase Now</button>
               </form>
               <% if (inCart) { %>
@@ -204,6 +214,7 @@
                   <input type="hidden" name="courseId" value="<%= course._id %>">
                   <input type="hidden" name="returnTo" value="<%= resolvedDetailPath %>">
                   <% if (persistedReferralCode) { %><input type="hidden" name="ref" value="<%= persistedReferralCode %>"><% } %>
+                  <% if (persistedSellingOrganizationId) { %><input type="hidden" name="org" value="<%= persistedSellingOrganizationId %>"><% } %>
                   <button type="submit" class="btn btn-secondary" style="width:100%;">Add To Cart</button>
                 </form>
               <% } %>

@@ -19,6 +19,12 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
     index: true,
     default: null
   },
+  sellingOrganization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinOrganization',
+    index: true,
+    default: null
+  },
   provider: {
     type: String,
     enum: ['flutterwave', 'paystack'],
@@ -67,10 +73,21 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  partnerShareMinor: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
   platformShareMinor: {
     type: Number,
     min: 0,
     default: 0
+  },
+  saleMode: {
+    type: String,
+    enum: ['direct_creator', 'org_owned', 'assigned_partner'],
+    default: 'direct_creator',
+    index: true
   },
   currency: {
     type: String,
@@ -122,6 +139,7 @@ const SimpleLmsPaymentSchema = new mongoose.Schema({
 SimpleLmsPaymentSchema.index({ account: 1, course: 1, status: 1, createdAt: -1 })
 SimpleLmsPaymentSchema.index({ course: 1, status: 1, createdAt: -1 })
 SimpleLmsPaymentSchema.index({ creatorAccount: 1, status: 1, createdAt: -1 })
+SimpleLmsPaymentSchema.index({ sellingOrganization: 1, status: 1, createdAt: -1 })
 SimpleLmsPaymentSchema.index({ provider: 1, flutterwaveTxId: 1 })
 SimpleLmsPaymentSchema.index({ provider: 1, providerTxId: 1 })
 SimpleLmsPaymentSchema.index({ provider: 1, paystackReference: 1 })

@@ -564,6 +564,9 @@
             <div class="stats-grid">
               <div class="stat"><span>Agents</span><strong><%= metrics.agentCount || 0 %></strong></div>
               <div class="stat"><span>Total Sales</span><strong><%= formatCurrencyAmount(metrics.totalSalesMinor || 0, 'NGN') %></strong></div>
+              <div class="stat"><span>Creator Share</span><strong><%= formatCurrencyAmount(metrics.creatorShareMinor || 0, 'NGN') %></strong></div>
+              <div class="stat"><span>Partner Gross</span><strong><%= formatCurrencyAmount(metrics.partnerGrossShareMinor || 0, 'NGN') %></strong></div>
+              <div class="stat"><span>Platform Share</span><strong><%= formatCurrencyAmount(metrics.platformShareMinor || 0, 'NGN') %></strong></div>
               <div class="stat"><span>Commissions Due</span><strong><%= formatCurrencyAmount(metrics.pendingCommissionMinor || 0, 'NGN') %></strong></div>
               <div class="stat"><span>Total Courses</span><strong><%= metrics.courseCount || 0 %></strong></div>
               <div class="stat"><span>Published</span><strong><%= metrics.publishedCourseCount || 0 %></strong></div>
@@ -692,7 +695,7 @@
       <% if (section === 'courses') { %>
         <article class="panel">
           <h2>Partner Courses</h2>
-          <p>Courses are scoped to your organization. Drafts can be approved by partner super users.</p>
+          <p>Sell both organization-owned courses and creator courses explicitly assigned to your organization. Approval remains separate from ownership.</p>
           <a href="/simple-lms/studio/courses" class="btn btn-primary" style="width:fit-content;">Open Course Studio</a>
         </article>
 
@@ -705,9 +708,10 @@
                 <thead>
                   <tr>
                     <th>Course</th>
-                    <th>Status</th>
-                    <th>Visibility</th>
+                    <th>Relationship</th>
+                    <th>Revenue Split</th>
                     <th>Price</th>
+                    <th>Creator</th>
                     <th>Updated</th>
                     <th>Actions</th>
                   </tr>
@@ -717,14 +721,23 @@
                     <tr>
                       <td>
                         <strong><%= course.title %></strong><br>
-                        <span class="tiny"><%= course.summary || 'No summary provided yet.' %></span>
+                        <span class="tiny"><%= course.summary || 'No summary provided yet.' %></span><br>
+                        <span class="tiny"><%= course.status %> / <%= course.visibility %></span>
                       </td>
-                      <td><%= course.status %></td>
-                      <td><%= course.visibility %></td>
+                      <td>
+                        <strong><%= course.saleRelationshipLabel %></strong><br>
+                        <span class="tiny"><%= course.saleRelationship === 'owned' ? 'You control approval and live selling for this course.' : 'Creator ownership stays intact. Your org can sell only while assignment remains active.' %></span>
+                      </td>
+                      <td>
+                        <strong><%= course.splitSummary %></strong><br>
+                        <span class="tiny"><%= course.agentSummary %></span>
+                      </td>
                       <td><%= Number(course?.pricing?.amount || 0) > 0 ? formatCurrencyAmount(course.pricing.amount, course?.pricing?.currency || 'NGN') : 'Free' %></td>
+                      <td><%= course.createdByName || 'Platform creator' %></td>
                       <td><%= new Date(course.updatedAt).toLocaleDateString() %></td>
                       <td>
                         <div class="actions">
+                          <a class="btn btn-secondary btn-sm" href="<%= course.publicCourseUrl %>" target="_blank" rel="noopener">View Sell Page</a>
                           <% if (canApprovePartnerCourses && ['draft', 'pending_public_review'].includes(String(course.status || '').toLowerCase())) { %>
                             <form method="post" action="/partner-dashboard/courses/<%= course._id %>/approve">
                               <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
@@ -750,7 +763,7 @@
       <% if (section === 'reports') { %>
         <article class="panel">
           <h2>Sales & Churn Reports</h2>
-          <p>Daily sales tracking, commission flow, and churn analytics for your partner organization.</p>
+          <p>Daily sales tracking across creator share, partner share, platform share, and agent commission for every sellable course in your organization.</p>
           <form method="get" action="/partner-dashboard" class="inline-form">
             <input type="hidden" name="section" value="reports">
             <div class="grid-two">
@@ -785,8 +798,11 @@
           <div class="stats-grid">
             <div class="stat"><span>Sales</span><strong><%= Number(partnerSalesReport?.summary?.saleCount || 0) %></strong></div>
             <div class="stat"><span>Gross Sales</span><strong><%= partnerSalesReport?.summary?.grossSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Creator Share</span><strong><%= partnerSalesReport?.summary?.creatorShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Partner Gross</span><strong><%= partnerSalesReport?.summary?.partnerGrossShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Platform Share</span><strong><%= partnerSalesReport?.summary?.platformShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
             <div class="stat"><span>Agent Commission</span><strong><%= partnerSalesReport?.summary?.agentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
-            <div class="stat"><span>Partner Earnings</span><strong><%= partnerSalesReport?.summary?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+            <div class="stat"><span>Partner Net</span><strong><%= partnerSalesReport?.summary?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
           </div>
           <% if (!partnerSalesReport?.rows || partnerSalesReport.rows.length === 0) { %>
             <p class="tiny">No daily sales data for this report window.</p>
@@ -798,8 +814,11 @@
                     <th>Date</th>
                     <th>Sales</th>
                     <th>Gross</th>
+                    <th>Creator Share</th>
+                    <th>Partner Gross</th>
+                    <th>Platform Share</th>
                     <th>Agent Commission</th>
-                    <th>Partner Earnings</th>
+                    <th>Partner Net</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -808,6 +827,9 @@
                       <td><%= entry.date %></td>
                       <td><%= Number(entry.saleCount || 0) %></td>
                       <td><%= entry.grossSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                      <td><%= entry.creatorShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                      <td><%= entry.partnerGrossShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
+                      <td><%= entry.platformShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
                       <td><%= entry.agentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
                       <td><%= entry.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></td>
                     </tr>
@@ -834,7 +856,7 @@
 	      <% if (section === 'commissions') { %>
         <article class="panel">
           <h2>Agent Commissions</h2>
-          <p>Trace every attributed sale, current payout status, and commission values.</p>
+          <p>Trace every attributed sale and see the full split across creator, partner, platform, and agent commission before payout.</p>
 
           <% if (!commissions || commissions.length === 0) { %>
             <p>No commission entries yet.</p>
@@ -846,8 +868,12 @@
                     <th>Agent</th>
                     <th>Course</th>
                     <th>Sale</th>
+                    <th>Creator Share</th>
+                    <th>Partner Gross</th>
+                    <th>Platform Share</th>
                     <th>Rate</th>
-                    <th>Commission</th>
+                    <th>Agent Commission</th>
+                    <th>Partner Net</th>
                     <th>Status</th>
                     <th>Date</th>
                     <th>Action</th>
@@ -859,8 +885,12 @@
                       <td><%= entry.agent?.profile?.name || entry.agent?.email || 'Agent' %></td>
                       <td><%= entry.course?.title || 'Course' %></td>
                       <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.creatorShareDisplay %></td>
+                      <td><%= entry.partnerGrossShareDisplay %></td>
+                      <td><%= entry.platformShareDisplay %></td>
                       <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
                       <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.partnerNetShareDisplay %></td>
                       <td><%= entry.status %></td>
                       <td><%= new Date(entry.createdAt).toLocaleDateString() %></td>
                       <td>
@@ -884,11 +914,14 @@
 	      <% if (section === 'withdrawals') { %>
 	        <article class="panel">
 	          <h2>Partner Wallet</h2>
-	          <p>Withdraw organization earnings from platform share after agent commissions.</p>
+	          <p>Withdraw organization earnings after creator share is settled and agent commissions are deducted from the partner share.</p>
 	          <div class="stats-grid">
 	            <div class="stat"><span>Total Sales</span><strong><%= partnerWallet?.totalSalesDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Creator Share</span><strong><%= partnerWallet?.creatorShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Partner Gross</span><strong><%= partnerWallet?.partnerGrossShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Platform Share</span><strong><%= partnerWallet?.platformShareDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
 	            <div class="stat"><span>Agent Commissions</span><strong><%= partnerWallet?.totalAgentCommissionDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
-	            <div class="stat"><span>Partner Earnings</span><strong><%= partnerWallet?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
+	            <div class="stat"><span>Partner Net</span><strong><%= partnerWallet?.partnerEarningsDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
 	            <div class="stat"><span>Pending Withdrawals</span><strong><%= partnerWallet?.pendingWithdrawalDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
 	            <div class="stat"><span>Paid Out</span><strong><%= partnerWallet?.paidOutDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>
 	            <div class="stat"><span>Available Balance</span><strong><%= partnerWallet?.availableBalanceDisplay || formatCurrencyAmount(0, payout.currency || 'NGN') %></strong></div>

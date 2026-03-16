@@ -22,6 +22,7 @@ import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajor
 import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
 import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
 import { normalizeAgentReferralCode } from './utils/agentReferral.js'
+import { resolveCourseSaleContext } from './utils/courseSelling.js'
 import { resolveLearningRole as resolveLearningRoleFromAccount } from './utils/learningRoles.js'
 
 dotenv.config()
@@ -246,6 +247,40 @@ const decoratePublicCourse = (course) => {
   }
 }
 
+const getSellingOrganizationSessionStore = (req, { create = false } = {}) => {
+  if (!req.session) return {}
+  const current = req.session.simpleLmsSellingOrganizations
+  if (current && typeof current === 'object') return current
+  if (!create) return {}
+  req.session.simpleLmsSellingOrganizations = {}
+  return req.session.simpleLmsSellingOrganizations
+}
+
+const setSellingOrganizationForCourse = (req, courseId, organizationId) => {
+  const normalizedCourseId = String(courseId || '').trim()
+  const normalizedOrganizationId = String(organizationId || '').trim()
+  if (!normalizedCourseId || !normalizedOrganizationId || !req.session) return
+  const store = getSellingOrganizationSessionStore(req, { create: true })
+  store[normalizedCourseId] = normalizedOrganizationId
+}
+
+const getSellingOrganizationForCourse = (req, courseId) => {
+  const normalizedCourseId = String(courseId || '').trim()
+  if (!normalizedCourseId) return ''
+  const store = getSellingOrganizationSessionStore(req)
+  return String(store[normalizedCourseId] || '').trim()
+}
+
+const buildCourseDetailPath = ({ course, referralCode = '', organizationId = '' }) => {
+  const url = new URL(`/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`, 'https://seemplify.local')
+  const normalizedReferralCode = normalizeAgentReferralCode(referralCode)
+  const normalizedOrganizationId = String(organizationId || '').trim()
+  if (normalizedReferralCode) url.searchParams.set('ref', normalizedReferralCode)
+  if (normalizedOrganizationId) url.searchParams.set('org', normalizedOrganizationId)
+  const search = url.searchParams.toString()
+  return `${url.pathname}${search ? `?${search}` : ''}`
+}
+
 const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 app.get('/', async (req, res) => {
@@ -419,6 +454,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
     const canonicalSlug = String(courseRaw.slug || '').trim()
     const requestedSlug = String(req.params.slug || '').trim()
     const incomingReferralCode = normalizeAgentReferralCode(req.query.ref || '')
+    const incomingSellingOrganizationId = String(req.query.org || '').trim()
     if (incomingReferralCode && req.session) {
       req.session.simpleLmsAgentReferrals = req.session.simpleLmsAgentReferrals || {}
       req.session.simpleLmsAgentReferrals[String(courseRaw._id)] = incomingReferralCode
@@ -426,7 +462,19 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
     const persistedReferralCode = normalizeAgentReferralCode(
       req.session?.simpleLmsAgentReferrals?.[String(courseRaw._id)] || ''
     )
-    const detailPath = `/courses/${courseRaw._id}${canonicalSlug ? `/${canonicalSlug}` : ''}${persistedReferralCode ? `?ref=${encodeURIComponent(persistedReferralCode)}` : ''}`
+    const requestedOrganizationId = incomingSellingOrganizationId || getSellingOrganizationForCourse(req, courseRaw._id)
+    const saleContext = resolveCourseSaleContext({
+      course: courseRaw,
+      requestedOrganizationId
+    })
+    if (saleContext.sellingOrganizationId) {
+      setSellingOrganizationForCourse(req, courseRaw._id, saleContext.sellingOrganizationId)
+    }
+    const detailPath = buildCourseDetailPath({
+      course: courseRaw,
+      referralCode: persistedReferralCode,
+      organizationId: saleContext.sellingOrganizationId
+    })
 
     if (canonicalSlug && requestedSlug !== canonicalSlug) {
       return res.redirect(detailPath)
@@ -494,6 +542,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       activePage: 'courses',
       detailPath,
       referralCode: persistedReferralCode,
+      sellingOrganizationId: saleContext.sellingOrganizationId || '',
       course,
       chapters,
       relatedCourses,

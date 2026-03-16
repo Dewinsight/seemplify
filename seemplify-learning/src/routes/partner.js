@@ -8,12 +8,14 @@ import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
 import { PartnerWithdrawal } from '../models/PartnerWithdrawal.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
+import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
 import { AuditLog } from '../models/AuditLog.js'
 import { requirePartnerAccess } from '../middleware/roles.js'
 import { emailService } from '../services/emailService.js'
 import { normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from '../services/simpleLmsCurrencyService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { resolveAccessProfile } from '../utils/accessProfile.js'
+import { buildOrganizationSellableCourseFilter, findCourseSellingAssignment } from '../utils/courseSelling.js'
 
 const router = express.Router()
 
@@ -36,6 +38,15 @@ const buildBaseUrl = (req) => {
   const proto = String(req.protocol || 'http').trim()
   const host = String(req.get('host') || '').trim()
   return host ? `${proto}://${host}` : ''
+}
+
+const buildOrgCourseUrl = (req, course, organizationId) => {
+  const base = buildBaseUrl(req)
+  const path = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+  const params = new URLSearchParams()
+  if (organizationId) params.set('org', String(organizationId))
+  const query = params.toString()
+  return `${base}${path}${query ? `?${query}` : ''}`
 }
 
 const getSectionsForRole = (role) => {
@@ -89,9 +100,14 @@ const buildPartnerRevenueExpression = () => ({
   $max: [
     0,
     {
-      $subtract: [
-        { $ifNull: ['$metadata.platformShareMinor', 0] },
-        { $ifNull: ['$commissionAmountMinor', 0] }
+      $ifNull: [
+        '$metadata.partnerNetShareMinor',
+        {
+          $subtract: [
+            { $ifNull: ['$metadata.platformShareMinor', 0] },
+            { $ifNull: ['$commissionAmountMinor', 0] }
+          ]
+        }
       ]
     }
   ]
@@ -110,15 +126,30 @@ const getPartnerWalletSnapshot = async (orgId) => {
   }
 
   const partnerOrgObjectId = new mongoose.Types.ObjectId(String(orgId))
-  const [earningsRaw, withdrawalsRaw] = await Promise.all([
+  const [earningsRaw, attributionRaw, withdrawalsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      {
+        $match: {
+          sellingOrganization: partnerOrgObjectId,
+          status: 'successful'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+          creatorShareMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          partnerGrossShareMinor: { $sum: { $ifNull: ['$partnerShareMinor', 0] } },
+          platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+        }
+      }
+    ]),
     AgentSaleAttribution.aggregate([
       { $match: { partnerOrganization: partnerOrgObjectId } },
       {
         $group: {
           _id: null,
-          totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
-          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
-          partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+          totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } }
         }
       }
     ]),
@@ -136,21 +167,28 @@ const getPartnerWalletSnapshot = async (orgId) => {
 
   const earnings = earningsRaw[0] || {
     totalSalesMinor: 0,
-    totalAgentCommissionMinor: 0,
-    partnerEarningsMinor: 0
+    creatorShareMinor: 0,
+    partnerGrossShareMinor: 0,
+    platformShareMinor: 0
   }
+  const attributionSummary = attributionRaw[0] || { totalAgentCommissionMinor: 0 }
   const withdrawals = withdrawalsRaw[0] || {
     paidOutMinor: 0,
     pendingWithdrawalMinor: 0
   }
-  const partnerEarningsMinor = Math.max(0, Number(earnings.partnerEarningsMinor || 0))
+  const totalAgentCommissionMinor = Math.max(0, Number(attributionSummary.totalAgentCommissionMinor || 0))
+  const partnerGrossShareMinor = Math.max(0, Number(earnings.partnerGrossShareMinor || 0))
+  const partnerEarningsMinor = Math.max(0, partnerGrossShareMinor - totalAgentCommissionMinor)
   const paidOutMinor = Math.max(0, Number(withdrawals.paidOutMinor || 0))
   const pendingWithdrawalMinor = Math.max(0, Number(withdrawals.pendingWithdrawalMinor || 0))
   const availableBalanceMinor = Math.max(0, partnerEarningsMinor - paidOutMinor - pendingWithdrawalMinor)
 
   return {
     totalSalesMinor: Math.max(0, Number(earnings.totalSalesMinor || 0)),
-    totalAgentCommissionMinor: Math.max(0, Number(earnings.totalAgentCommissionMinor || 0)),
+    totalAgentCommissionMinor,
+    creatorShareMinor: Math.max(0, Number(earnings.creatorShareMinor || 0)),
+    partnerGrossShareMinor,
+    platformShareMinor: Math.max(0, Number(earnings.platformShareMinor || 0)),
     partnerEarningsMinor,
     paidOutMinor,
     pendingWithdrawalMinor,
@@ -218,60 +256,197 @@ const buildPartnerSalesReportData = async ({
   agentId = '',
   courseId = ''
 }) => {
-  const match = {
+  const paymentMatch = {
+    sellingOrganization: new mongoose.Types.ObjectId(String(orgId)),
+    status: 'successful'
+  }
+  const attributionMatch = {
     partnerOrganization: new mongoose.Types.ObjectId(String(orgId))
   }
   const dateRange = {}
   if (from || to) {
     dateRange.$gte = from || undefined
     dateRange.$lte = to || undefined
-    match.createdAt = dateRange
-  }
-  if (mongoose.Types.ObjectId.isValid(String(agentId || ''))) {
-    match.agent = new mongoose.Types.ObjectId(String(agentId))
+    paymentMatch.createdAt = dateRange
+    attributionMatch.createdAt = dateRange
   }
   if (mongoose.Types.ObjectId.isValid(String(courseId || ''))) {
-    match.course = new mongoose.Types.ObjectId(String(courseId))
+    paymentMatch.course = new mongoose.Types.ObjectId(String(courseId))
+    attributionMatch.course = new mongoose.Types.ObjectId(String(courseId))
+  }
+  if (mongoose.Types.ObjectId.isValid(String(agentId || ''))) {
+    attributionMatch.agent = new mongoose.Types.ObjectId(String(agentId))
   }
 
-  const rowsRaw = await AgentSaleAttribution.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: {
-          $dateToString: {
-            format: '%Y-%m-%d',
-            date: '$createdAt'
-          }
-        },
-        saleCount: { $sum: 1 },
-        grossSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
-        agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
-        partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
-      }
-    },
-    { $sort: { _id: 1 } }
+  const [paymentRowsRaw, attributionRowsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      { $match: paymentMatch },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          saleCount: { $sum: 1 },
+          grossSalesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+          creatorShareMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          partnerGrossShareMinor: { $sum: { $ifNull: ['$partnerShareMinor', 0] } },
+          platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    AgentSaleAttribution.aggregate([
+      { $match: attributionMatch },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          agentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ])
   ])
 
-  const rows = (rowsRaw || []).map((entry) => ({
-    date: String(entry?._id || ''),
-    saleCount: Math.max(0, Number(entry?.saleCount || 0)),
-    grossSalesMinor: Math.max(0, Number(entry?.grossSalesMinor || 0)),
-    agentCommissionMinor: Math.max(0, Number(entry?.agentCommissionMinor || 0)),
-    partnerEarningsMinor: Math.max(0, Number(entry?.partnerEarningsMinor || 0))
-  }))
+  const attributionByDate = new Map((attributionRowsRaw || []).map((entry) => [
+    String(entry?._id || ''),
+    Math.max(0, Number(entry?.agentCommissionMinor || 0))
+  ]))
+
+  const rows = (paymentRowsRaw || []).map((entry) => {
+    const date = String(entry?._id || '')
+    const partnerGrossShareMinor = Math.max(0, Number(entry?.partnerGrossShareMinor || 0))
+    const agentCommissionMinor = attributionByDate.get(date) || 0
+    return {
+      date,
+      saleCount: Math.max(0, Number(entry?.saleCount || 0)),
+      grossSalesMinor: Math.max(0, Number(entry?.grossSalesMinor || 0)),
+      creatorShareMinor: Math.max(0, Number(entry?.creatorShareMinor || 0)),
+      partnerGrossShareMinor,
+      platformShareMinor: Math.max(0, Number(entry?.platformShareMinor || 0)),
+      agentCommissionMinor,
+      partnerEarningsMinor: Math.max(0, partnerGrossShareMinor - agentCommissionMinor)
+    }
+  })
   const summary = rows.reduce((acc, row) => ({
     saleCount: acc.saleCount + row.saleCount,
     grossSalesMinor: acc.grossSalesMinor + row.grossSalesMinor,
+    creatorShareMinor: acc.creatorShareMinor + row.creatorShareMinor,
+    partnerGrossShareMinor: acc.partnerGrossShareMinor + row.partnerGrossShareMinor,
+    platformShareMinor: acc.platformShareMinor + row.platformShareMinor,
     agentCommissionMinor: acc.agentCommissionMinor + row.agentCommissionMinor,
     partnerEarningsMinor: acc.partnerEarningsMinor + row.partnerEarningsMinor
   }), {
     saleCount: 0,
     grossSalesMinor: 0,
+    creatorShareMinor: 0,
+    partnerGrossShareMinor: 0,
+    platformShareMinor: 0,
     agentCommissionMinor: 0,
     partnerEarningsMinor: 0
   })
   return { rows, summary, scope: 'partner' }
+}
+
+const buildPartnerSalesTrend = async ({ orgId, since }) => {
+  const paymentMatch = {
+    sellingOrganization: new mongoose.Types.ObjectId(String(orgId)),
+    status: 'successful',
+    createdAt: { $gte: since }
+  }
+  const attributionMatch = {
+    partnerOrganization: new mongoose.Types.ObjectId(String(orgId)),
+    createdAt: { $gte: since }
+  }
+
+  const [paymentRowsRaw, attributionRowsRaw] = await Promise.all([
+    SimpleLmsPayment.aggregate([
+      { $match: paymentMatch },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          },
+          salesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+          creatorShareMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          partnerGrossShareMinor: { $sum: { $ifNull: ['$partnerShareMinor', 0] } },
+          deals: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+      { $limit: 30 }
+    ]),
+    AgentSaleAttribution.aggregate([
+      { $match: attributionMatch },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          },
+          commissionsMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } }
+        }
+      }
+    ])
+  ])
+
+  const attributionByDate = new Map((attributionRowsRaw || []).map((entry) => {
+    const key = `${entry._id.year}-${String(entry._id.month).padStart(2, '0')}-${String(entry._id.day).padStart(2, '0')}`
+    return [key, Math.max(0, Number(entry?.commissionsMinor || 0))]
+  }))
+
+  return (paymentRowsRaw || []).map((point) => {
+    const date = `${point._id.year}-${String(point._id.month).padStart(2, '0')}-${String(point._id.day).padStart(2, '0')}`
+    return {
+      date,
+      deals: Number(point.deals || 0),
+      salesMinor: Number(point.salesMinor || 0),
+      creatorShareMinor: Number(point.creatorShareMinor || 0),
+      partnerGrossShareMinor: Number(point.partnerGrossShareMinor || 0),
+      commissionsMinor: attributionByDate.get(date) || 0
+    }
+  })
+}
+
+const buildPartnerCourseRow = ({ course, organizationId, defaultAgentCommissionRate = 10 }) => {
+  const normalizedOrganizationId = String(organizationId || '').trim()
+  const ownedByOrganization = String(course?.organization || '') === normalizedOrganizationId
+  const assignment = ownedByOrganization
+    ? null
+    : findCourseSellingAssignment(course, normalizedOrganizationId, { onlyActive: true })
+
+  const creatorSharePercent = Number.isFinite(Number(assignment?.creatorSharePercent))
+    ? Number(assignment.creatorSharePercent)
+    : 70
+  const partnerSharePercent = ownedByOrganization
+    ? Math.max(0, Math.round((100 - creatorSharePercent) * 100) / 100)
+    : Number.isFinite(Number(assignment?.partnerSharePercent))
+      ? Number(assignment.partnerSharePercent)
+      : 0
+  const platformSharePercent = Math.max(0, Math.round((100 - creatorSharePercent - partnerSharePercent) * 100) / 100)
+  const agentRatePercent = Math.min(100, Math.max(0, Number(defaultAgentCommissionRate || 10) || 10))
+
+  return {
+    ...course,
+    saleRelationship: ownedByOrganization ? 'owned' : 'assigned',
+    saleRelationshipLabel: ownedByOrganization ? 'Owned by your organization' : 'Assigned creator course',
+    creatorSharePercent,
+    partnerSharePercent,
+    platformSharePercent,
+    agentRatePercent,
+    splitSummary: `${creatorSharePercent}% creator / ${partnerSharePercent}% partner / ${platformSharePercent}% platform`,
+    agentSummary: `${agentRatePercent}% of partner share on attributed agent sales`
+  }
 }
 
 const buildPartnerChurnMetrics = async ({ orgId, from, to }) => {
@@ -306,7 +481,7 @@ const buildPartnerChurnMetrics = async ({ orgId, from, to }) => {
         }
       }
     ]),
-    SimpleLmsCourse.find({ organization: organizationId }).select('_id').lean()
+    SimpleLmsCourse.find(buildOrganizationSellableCourseFilter(organizationId, { isActive: true })).select('_id').lean()
   ])
 
   const firstSaleAgentIds = (firstSaleRows || [])
@@ -384,7 +559,8 @@ const loadPartnerDashboardData = async ({ orgId }) => {
     courseCount,
     publishedCourseCount,
     pendingDraftCount,
-    attributionsSummary,
+    paymentSummary,
+    pendingAgentSummary,
     topAgentRows,
     recentInvites,
     recentCourses,
@@ -392,15 +568,31 @@ const loadPartnerDashboardData = async ({ orgId }) => {
     salesTrend
   ] = await Promise.all([
     Account.countDocuments({ partnerOrganization: orgId, learningRole: 'channel_sales_agent' }),
-    SimpleLmsCourse.countDocuments({ organization: orgId, isActive: true }),
-    SimpleLmsCourse.countDocuments({ organization: orgId, isActive: true, status: 'published' }),
+    SimpleLmsCourse.countDocuments(buildOrganizationSellableCourseFilter(orgId, { isActive: true })),
+    SimpleLmsCourse.countDocuments(buildOrganizationSellableCourseFilter(orgId, { isActive: true, status: 'published' })),
     SimpleLmsCourse.countDocuments({ organization: orgId, isActive: true, status: { $in: ['draft', 'pending_public_review'] } }),
+    SimpleLmsPayment.aggregate([
+      {
+        $match: {
+          sellingOrganization: new mongoose.Types.ObjectId(orgId),
+          status: 'successful'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalSalesMinor: { $sum: { $ifNull: ['$amountMinor', 0] } },
+          creatorShareMinor: { $sum: { $ifNull: ['$creatorCommissionMinor', 0] } },
+          partnerGrossShareMinor: { $sum: { $ifNull: ['$partnerShareMinor', 0] } },
+          platformShareMinor: { $sum: { $ifNull: ['$platformShareMinor', 0] } }
+        }
+      }
+    ]),
     AgentSaleAttribution.aggregate([
       { $match: { partnerOrganization: new mongoose.Types.ObjectId(orgId) } },
       {
         $group: {
           _id: null,
-          totalSalesMinor: { $sum: '$saleAmountMinor' },
           totalCommissionMinor: { $sum: '$commissionAmountMinor' },
           pendingCommissionMinor: {
             $sum: {
@@ -428,10 +620,10 @@ const loadPartnerDashboardData = async ({ orgId }) => {
       .limit(8)
       .select('email status createdAt expiresAt acceptedAt')
       .lean(),
-    SimpleLmsCourse.find({ organization: orgId, isActive: true })
+    SimpleLmsCourse.find(buildOrganizationSellableCourseFilter(orgId, { isActive: true }))
       .sort({ updatedAt: -1 })
       .limit(8)
-      .select('title status visibility pricing updatedAt createdByName')
+      .select('title status visibility pricing updatedAt createdByName organization sellingOrganizations')
       .lean(),
     AgentSaleAttribution.find({ partnerOrganization: orgId })
       .sort({ createdAt: -1 })
@@ -439,32 +631,16 @@ const loadPartnerDashboardData = async ({ orgId }) => {
       .populate('agent', 'profile email')
       .populate('course', 'title')
       .lean(),
-    AgentSaleAttribution.aggregate([
-      {
-        $match: {
-          partnerOrganization: new mongoose.Types.ObjectId(orgId),
-          createdAt: { $gte: since }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' }
-          },
-          salesMinor: { $sum: '$saleAmountMinor' },
-          commissionsMinor: { $sum: '$commissionAmountMinor' },
-          deals: { $sum: 1 }
-        }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
-      { $limit: 30 }
-    ])
+    buildPartnerSalesTrend({ orgId, since })
   ])
 
-  const summary = attributionsSummary[0] || {
+  const paymentSummaryRow = paymentSummary[0] || {
     totalSalesMinor: 0,
+    creatorShareMinor: 0,
+    partnerGrossShareMinor: 0,
+    platformShareMinor: 0
+  }
+  const pendingSummaryRow = pendingAgentSummary[0] || {
     totalCommissionMinor: 0,
     pendingCommissionMinor: 0
   }
@@ -490,20 +666,21 @@ const loadPartnerDashboardData = async ({ orgId }) => {
       courseCount,
       publishedCourseCount,
       pendingDraftCount,
-      totalSalesMinor: Number(summary.totalSalesMinor || 0),
-      totalCommissionMinor: Number(summary.totalCommissionMinor || 0),
-      pendingCommissionMinor: Number(summary.pendingCommissionMinor || 0)
+      totalSalesMinor: Number(paymentSummaryRow.totalSalesMinor || 0),
+      totalCommissionMinor: Number(pendingSummaryRow.totalCommissionMinor || 0),
+      pendingCommissionMinor: Number(pendingSummaryRow.pendingCommissionMinor || 0),
+      creatorShareMinor: Number(paymentSummaryRow.creatorShareMinor || 0),
+      partnerGrossShareMinor: Number(paymentSummaryRow.partnerGrossShareMinor || 0),
+      platformShareMinor: Number(paymentSummaryRow.platformShareMinor || 0)
     },
     topAgents: topAgentsWithStats,
     recentInvites,
-    recentCourses,
+    recentCourses: recentCourses.map((course) => buildPartnerCourseRow({
+      course,
+      organizationId: orgId
+    })),
     recentAttributions,
-    salesTrend: salesTrend.map((point) => ({
-      date: `${point._id.year}-${String(point._id.month).padStart(2, '0')}-${String(point._id.day).padStart(2, '0')}`,
-      deals: Number(point.deals || 0),
-      salesMinor: Number(point.salesMinor || 0),
-      commissionsMinor: Number(point.commissionsMinor || 0)
-    }))
+    salesTrend
   }
 }
 
@@ -531,11 +708,12 @@ router.get('/', async (req, res) => {
         .limit(100)
         .populate('agent', 'profile email payoutProfile')
         .populate('course', 'title')
+        .populate('payment', 'amountMinor currency creatorCommissionMinor partnerShareMinor platformShareMinor saleMode metadata')
         .lean(),
-      SimpleLmsCourse.find({ organization: org._id, isActive: true })
+      SimpleLmsCourse.find(buildOrganizationSellableCourseFilter(org._id, { isActive: true }))
         .sort({ updatedAt: -1 })
         .limit(120)
-        .select('title summary status visibility pricing createdByName updatedAt createdBy')
+        .select('title summary status visibility pricing createdByName updatedAt createdBy organization sellingOrganizations')
         .lean(),
       PartnerWithdrawal.find({ organization: org._id })
         .sort({ createdAt: -1 })
@@ -575,6 +753,9 @@ router.get('/', async (req, res) => {
     const partnerWallet = {
       ...partnerWalletSummary,
       totalSalesDisplay: formatCurrencyAmount(partnerWalletSummary.totalSalesMinor, payoutCurrency),
+      creatorShareDisplay: formatCurrencyAmount(partnerWalletSummary.creatorShareMinor || 0, payoutCurrency),
+      partnerGrossShareDisplay: formatCurrencyAmount(partnerWalletSummary.partnerGrossShareMinor || 0, payoutCurrency),
+      platformShareDisplay: formatCurrencyAmount(partnerWalletSummary.platformShareMinor || 0, payoutCurrency),
       totalAgentCommissionDisplay: formatCurrencyAmount(partnerWalletSummary.totalAgentCommissionMinor, payoutCurrency),
       partnerEarningsDisplay: formatCurrencyAmount(partnerWalletSummary.partnerEarningsMinor, payoutCurrency),
       paidOutDisplay: formatCurrencyAmount(partnerWalletSummary.paidOutMinor, payoutCurrency),
@@ -587,12 +768,18 @@ router.get('/', async (req, res) => {
       rows: (partnerSalesReportRaw.rows || []).map((entry) => ({
         ...entry,
         grossSalesDisplay: formatCurrencyAmount(entry.grossSalesMinor || 0, payoutCurrency),
+        creatorShareDisplay: formatCurrencyAmount(entry.creatorShareMinor || 0, payoutCurrency),
+        partnerGrossShareDisplay: formatCurrencyAmount(entry.partnerGrossShareMinor || 0, payoutCurrency),
+        platformShareDisplay: formatCurrencyAmount(entry.platformShareMinor || 0, payoutCurrency),
         agentCommissionDisplay: formatCurrencyAmount(entry.agentCommissionMinor || 0, payoutCurrency),
         partnerEarningsDisplay: formatCurrencyAmount(entry.partnerEarningsMinor || 0, payoutCurrency)
       })),
       summary: {
         ...partnerSalesReportRaw.summary,
         grossSalesDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.grossSalesMinor || 0, payoutCurrency),
+        creatorShareDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.creatorShareMinor || 0, payoutCurrency),
+        partnerGrossShareDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.partnerGrossShareMinor || 0, payoutCurrency),
+        platformShareDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.platformShareMinor || 0, payoutCurrency),
         agentCommissionDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.agentCommissionMinor || 0, payoutCurrency),
         partnerEarningsDisplay: formatCurrencyAmount(partnerSalesReportRaw.summary?.partnerEarningsMinor || 0, payoutCurrency)
       }
@@ -619,6 +806,33 @@ router.get('/', async (req, res) => {
       }
     })
 
+    const courseRowsDecorated = (courseRows || []).map((course) => ({
+      ...buildPartnerCourseRow({
+        course,
+        organizationId: org._id,
+        defaultAgentCommissionRate: org?.partnerSettings?.defaultAgentCommissionRate ?? 10
+      }),
+      publicCourseUrl: buildOrgCourseUrl(req, course, org._id)
+    }))
+    const commissionRowsDecorated = (commissionRows || []).map((entry) => {
+      const paymentCurrency = entry.payment?.currency || entry.currency || payoutCurrency
+      const creatorShareMinor = Number(entry.payment?.creatorCommissionMinor || entry.metadata?.creatorCommissionMinor || 0)
+      const partnerGrossShareMinor = Number(entry.payment?.partnerShareMinor || entry.metadata?.partnerShareMinor || 0)
+      const platformShareMinor = Number(entry.payment?.platformShareMinor || entry.metadata?.platformShareMinor || 0)
+      const partnerNetShareMinor = Math.max(0, Number(entry.metadata?.partnerNetShareMinor || (partnerGrossShareMinor - Number(entry.commissionAmountMinor || 0))))
+      return {
+        ...entry,
+        creatorShareMinor,
+        creatorShareDisplay: formatCurrencyAmount(creatorShareMinor, paymentCurrency),
+        partnerGrossShareMinor,
+        partnerGrossShareDisplay: formatCurrencyAmount(partnerGrossShareMinor, paymentCurrency),
+        platformShareMinor,
+        platformShareDisplay: formatCurrencyAmount(platformShareMinor, paymentCurrency),
+        partnerNetShareMinor,
+        partnerNetShareDisplay: formatCurrencyAmount(partnerNetShareMinor, paymentCurrency)
+      }
+    })
+
     return res.render('partner-dashboard', {
       title: `${res.locals.brandLearningName || 'Seemplify Learning'} - Partner Dashboard`,
       activePage: 'partner-dashboard',
@@ -629,8 +843,8 @@ router.get('/', async (req, res) => {
       organization: org,
       dashboardData,
       agents: agentRowsDecorated,
-      commissions: commissionRows,
-      courses: courseRows,
+      commissions: commissionRowsDecorated,
+      courses: courseRowsDecorated,
       partnerWithdrawals,
       partnerWallet,
       reportFilters,

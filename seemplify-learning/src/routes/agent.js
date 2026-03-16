@@ -6,6 +6,7 @@ import { AgentSaleAttribution } from '../models/AgentSaleAttribution.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { requireRole } from '../middleware/roles.js'
 import { buildAgentReferralCode } from '../utils/agentReferral.js'
+import { buildOrganizationSellableCourseFilter, findCourseSellingAssignment } from '../utils/courseSelling.js'
 
 const router = express.Router()
 
@@ -28,12 +29,15 @@ const normalizeSection = (value) => {
   return sections.includes(normalized) ? normalized : 'overview'
 }
 
-const buildReferralUrl = (req, course, code) => {
+const buildReferralUrl = (req, course, code, organizationId) => {
   const proto = String(req.protocol || 'http').trim()
   const host = String(req.get('host') || '').trim()
   const base = host ? `${proto}://${host}` : ''
   const courseUrl = `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
-  return `${base}${courseUrl}?ref=${encodeURIComponent(code)}`
+  const params = new URLSearchParams()
+  params.set('ref', code)
+  if (organizationId) params.set('org', String(organizationId))
+  return `${base}${courseUrl}?${params.toString()}`
 }
 
 router.use(requireRole(['channel_sales_agent']))
@@ -49,20 +53,19 @@ router.get('/', async (req, res) => {
 
     const [organization, courses, attributions] = await Promise.all([
       Organization.findById(partnerOrgId).lean(),
-      SimpleLmsCourse.find({
-        organization: partnerOrgId,
+      SimpleLmsCourse.find(buildOrganizationSellableCourseFilter(partnerOrgId, {
         isActive: true,
         status: 'published',
         visibility: { $in: ['organization_public', 'system_public'] }
-      })
+      }))
         .sort({ updatedAt: -1 })
         .limit(200)
-        .select('title slug summary pricing level banner updatedAt')
+        .select('title slug summary pricing level banner updatedAt organization sellingOrganizations createdByName')
         .lean(),
       AgentSaleAttribution.find({ agent: req.user._id })
         .sort({ createdAt: -1 })
         .limit(200)
-        .populate('payment', 'account amountMinor currency creatorCommissionMinor platformShareMinor paidAt')
+        .populate('payment', 'account amountMinor currency creatorCommissionMinor partnerShareMinor platformShareMinor saleMode metadata paidAt')
         .populate('course', 'title')
         .lean()
     ])
@@ -84,10 +87,46 @@ router.get('/', async (req, res) => {
     })
 
     const referralCode = buildAgentReferralCode(req.user)
-    const enrichedCourses = courses.map((course) => ({
-      ...course,
-      referralUrl: buildReferralUrl(req, course, referralCode)
-    }))
+    const enrichedCourses = courses.map((course) => {
+      const ownedByOrganization = String(course?.organization || '') === partnerOrgId
+      const assignment = ownedByOrganization
+        ? null
+        : findCourseSellingAssignment(course, partnerOrgId, { onlyActive: true })
+      const creatorSharePercent = Number.isFinite(Number(assignment?.creatorSharePercent))
+        ? Number(assignment.creatorSharePercent)
+        : 70
+      const partnerSharePercent = ownedByOrganization
+        ? Math.max(0, Math.round((100 - creatorSharePercent) * 100) / 100)
+        : Number.isFinite(Number(assignment?.partnerSharePercent))
+          ? Number(assignment.partnerSharePercent)
+          : 0
+      const platformSharePercent = Math.max(0, Math.round((100 - creatorSharePercent - partnerSharePercent) * 100) / 100)
+      return {
+        ...course,
+        saleRelationshipLabel: ownedByOrganization ? 'Owned by your organization' : 'Assigned creator course',
+        splitSummary: `${creatorSharePercent}% creator / ${partnerSharePercent}% partner / ${platformSharePercent}% platform`,
+        referralUrl: buildReferralUrl(req, course, referralCode, partnerOrgId)
+      }
+    })
+
+    const attributionRows = (attributions || []).map((entry) => {
+      const paymentCurrency = entry.payment?.currency || entry.currency || 'NGN'
+      const creatorShareMinor = Number(entry.payment?.creatorCommissionMinor || entry.metadata?.creatorCommissionMinor || 0)
+      const partnerGrossShareMinor = Number(entry.payment?.partnerShareMinor || entry.metadata?.partnerShareMinor || 0)
+      const platformShareMinor = Number(entry.payment?.platformShareMinor || entry.metadata?.platformShareMinor || 0)
+      const partnerNetShareMinor = Math.max(0, Number(entry.metadata?.partnerNetShareMinor || (partnerGrossShareMinor - Number(entry.commissionAmountMinor || 0))))
+      return {
+        ...entry,
+        creatorShareMinor,
+        creatorShareDisplay: formatCurrencyAmount(creatorShareMinor, paymentCurrency),
+        partnerGrossShareMinor,
+        partnerGrossShareDisplay: formatCurrencyAmount(partnerGrossShareMinor, paymentCurrency),
+        platformShareMinor,
+        platformShareDisplay: formatCurrencyAmount(platformShareMinor, paymentCurrency),
+        partnerNetShareMinor,
+        partnerNetShareDisplay: formatCurrencyAmount(partnerNetShareMinor, paymentCurrency)
+      }
+    })
 
     return res.render('agent-dashboard', {
       title: `${res.locals.brandLearningName || 'Seemplify Learning'} - Agent Dashboard`,
@@ -97,7 +136,7 @@ router.get('/', async (req, res) => {
       organization,
       referralCode,
       courses: enrichedCourses,
-      attributions,
+      attributions: attributionRows,
       totals,
       formatCurrencyAmount,
       success: String(req.query.success || ''),
@@ -155,10 +194,11 @@ router.get('/courses/:courseId/referral', async (req, res) => {
 
     const course = await SimpleLmsCourse.findOne({
       _id: courseId,
-      organization: partnerOrgId,
-      isActive: true,
-      status: 'published',
-      visibility: { $in: ['organization_public', 'system_public'] }
+      ...buildOrganizationSellableCourseFilter(partnerOrgId, {
+        isActive: true,
+        status: 'published',
+        visibility: { $in: ['organization_public', 'system_public'] }
+      })
     })
       .select('_id slug title')
       .lean()
@@ -168,7 +208,7 @@ router.get('/courses/:courseId/referral', async (req, res) => {
     }
 
     const referralCode = buildAgentReferralCode(req.user)
-    const referralUrl = buildReferralUrl(req, course, referralCode)
+    const referralUrl = buildReferralUrl(req, course, referralCode, partnerOrgId)
 
     return res.json({
       referralCode,

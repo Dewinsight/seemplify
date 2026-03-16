@@ -503,13 +503,13 @@
           </div>
           <div class="player-media">
             <% if (lessonMedia && lessonMedia.kind === 'embed' && lessonMedia.embedUrl) { %>
-              <iframe src="<%= lessonMedia.embedUrl %>" allowfullscreen></iframe>
+              <iframe src="<%= lessonMedia.embedUrl %>" allow="autoplay; fullscreen" allowfullscreen></iframe>
             <% } else if (lessonMedia && lessonMedia.kind === 'video' && lessonMedia.directUrl) { %>
-              <video controls preload="metadata" src="<%= lessonMedia.directUrl %>"></video>
+              <video controls preload="metadata" src="<%= lessonMedia.directUrl %>" <%= autoplayRequested ? 'autoplay playsinline' : '' %>></video>
             <% } else if (lessonMedia && lessonMedia.kind === 'audio' && lessonMedia.directUrl) { %>
               <div class="player-media-audio">
                 <h4>Audio Lesson</h4>
-                <audio controls preload="metadata" src="<%= lessonMedia.directUrl %>"></audio>
+                <audio controls preload="metadata" src="<%= lessonMedia.directUrl %>" <%= autoplayRequested ? 'autoplay' : '' %>></audio>
                 <p class="player-media-source">Source: <%= lessonMedia.sourceLabel || 'Audio stream' %></p>
               </div>
             <% } else if (lessonMedia && lessonMedia.directUrl) { %>
@@ -638,6 +638,7 @@
   <%- include('./partials/public-footer') %>
   <script>
     (() => {
+      const autoplayRequested = <%- JSON.stringify(Boolean(autoplayRequested)) %>
       const mediaType = <%- JSON.stringify((lessonMedia && lessonMedia.kind) ? String(lessonMedia.kind) : '') %>
       const mediaEmbedUrl = <%- JSON.stringify((lessonMedia && lessonMedia.embedUrl) ? String(lessonMedia.embedUrl) : '') %>
       const mediaSourceLabel = <%- JSON.stringify((lessonMedia && lessonMedia.sourceLabel) ? String(lessonMedia.sourceLabel) : '') %>
@@ -780,9 +781,43 @@
         && !currentLessonQuizPassed
       )
 
+      const attemptNativeAutoplay = async () => {
+        if (!autoplayRequested || !lessonNativeMedia || typeof lessonNativeMedia.play !== 'function') return false
+        lessonNativeMedia.autoplay = true
+        if ('playsInline' in lessonNativeMedia) {
+          lessonNativeMedia.playsInline = true
+        }
+        lessonNativeMedia.setAttribute('autoplay', 'autoplay')
+        try {
+          const playAttempt = lessonNativeMedia.play()
+          if (playAttempt && typeof playAttempt.then === 'function') {
+            await playAttempt
+          }
+          return true
+        } catch (_) {
+          return false
+        }
+      }
+
       const maybeOpenLessonQuizGate = ({ autoAdvanceOnPass = false } = {}) => {
         if (!shouldGateCurrentLessonQuiz()) return false
         return openLessonQuiz({ autoAdvanceOnPass })
+      }
+
+      const maybeAutoStartCurrentLesson = async () => {
+        if (!autoplayRequested) return
+
+        const hasNativeMedia = Boolean(lessonNativeMedia)
+        const hasEmbedMedia = Boolean(lessonIframe && mediaType === 'embed' && mediaEmbedUrl)
+
+        if (!hasNativeMedia && !hasEmbedMedia) {
+          maybeOpenLessonQuizGate({ autoAdvanceOnPass: true })
+          return
+        }
+
+        if (hasNativeMedia) {
+          await attemptNativeAutoplay()
+        }
       }
 
       const submitChapterQuiz = async (event) => {
@@ -987,6 +1022,7 @@
         if (!iframe || !embedUrl) return
 
         const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
           if (!params.get('enablejsapi')) params.set('enablejsapi', '1')
           if (!params.get('origin')) params.set('origin', window.location.origin)
           if (!params.get('playsinline')) params.set('playsinline', '1')
@@ -1039,6 +1075,16 @@
                 }),
                 '*'
               )
+              if (autoplayRequested) {
+                iframe.contentWindow?.postMessage(
+                  JSON.stringify({
+                    event: 'command',
+                    func: 'playVideo',
+                    args: []
+                  }),
+                  '*'
+                )
+              }
             } catch (_) {
               // Ignore postMessage failures.
             }
@@ -1072,6 +1118,14 @@
           // eslint-disable-next-line no-new
           new youtubeApi.Player(iframe.id, {
             events: {
+              onReady: (event) => {
+                if (!autoplayRequested || !event?.target || typeof event.target.playVideo !== 'function') return
+                try {
+                  event.target.playVideo()
+                } catch (_) {
+                  // Ignore autoplay rejections and keep manual controls available.
+                }
+              },
               onStateChange: (event) => {
                 if (event && event.data === youtubeApi.PlayerState.ENDED) {
                   submitAutoAdvance()
@@ -1086,6 +1140,13 @@
 
       const configureGoogleDriveAutoAdvance = (iframe, durationMinutes) => {
         if (!iframe) return
+
+        const normalizedSrc = normalizeEmbedUrl(iframe.getAttribute('src') || mediaEmbedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
+        })
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
 
         const mediaContainer = iframe.closest('.player-media')
         const expectedSeconds = durationMinutes > 0
@@ -1157,6 +1218,7 @@
         const playerId = iframe.id
 
         const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
           if (!params.get('api')) params.set('api', '1')
           params.set('player_id', playerId)
         })
@@ -1171,6 +1233,11 @@
               method: 'addEventListener',
               value: 'ended'
             }), 'https://player.vimeo.com')
+            if (autoplayRequested) {
+              iframe.contentWindow?.postMessage(JSON.stringify({
+                method: 'play'
+              }), 'https://player.vimeo.com')
+            }
           } catch (_) {
             // Ignore cross-origin postMessage failures.
           }
@@ -1209,6 +1276,8 @@
           configureGoogleDriveAutoAdvance(lessonIframe, currentLessonDurationMinutes)
         }
       }
+
+      maybeAutoStartCurrentLesson()
     })()
   </script>
 </body>

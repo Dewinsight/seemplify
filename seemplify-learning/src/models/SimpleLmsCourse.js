@@ -219,6 +219,73 @@ const pricingSchema = new mongoose.Schema({
   }
 }, { _id: false })
 
+const partnerSellingSchema = new mongoose.Schema({
+  enabled: {
+    type: Boolean,
+    default: false
+  },
+  creatorSharePercent: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 70
+  },
+  partnerSharePercent: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 20
+  }
+}, { _id: false })
+
+const sellingOrganizationSchema = new mongoose.Schema({
+  organization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinOrganization',
+    required: true
+  },
+  organizationName: {
+    type: String,
+    trim: true,
+    maxlength: 200
+  },
+  partnerType: {
+    type: String,
+    enum: ['partner', 'channel_partner'],
+    default: 'partner'
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive'],
+    default: 'active'
+  },
+  creatorSharePercent: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 70
+  },
+  partnerSharePercent: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 20
+  },
+  assignedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinAccount',
+    default: null
+  },
+  assignedAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: false })
+
 const slugify = (value) => String(value || '')
   .trim()
   .toLowerCase()
@@ -292,6 +359,14 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
   pricing: {
     type: pricingSchema,
     default: () => ({})
+  },
+  partnerSelling: {
+    type: partnerSellingSchema,
+    default: () => ({})
+  },
+  sellingOrganizations: {
+    type: [sellingOrganizationSchema],
+    default: []
   },
   visibility: {
     type: String,
@@ -377,6 +452,7 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
 SimpleLmsCourseSchema.index({ organization: 1, status: 1, visibility: 1, updatedAt: -1 })
 SimpleLmsCourseSchema.index({ isSystemCourse: 1, status: 1, visibility: 1, updatedAt: -1 })
 SimpleLmsCourseSchema.index({ organization: 1, slug: 1 })
+SimpleLmsCourseSchema.index({ 'sellingOrganizations.organization': 1, status: 1, visibility: 1, updatedAt: -1 })
 
 SimpleLmsCourseSchema.pre('save', function(next) {
   if (!this.slug) {
@@ -408,6 +484,42 @@ SimpleLmsCourseSchema.pre('save', function(next) {
 
   this.lessonCount = lessonCount
   this.estimatedDurationMinutes = Math.max(0, Math.round(totalMinutes))
+
+  if (!this.partnerSelling) {
+    this.partnerSelling = {}
+  }
+  this.partnerSelling.enabled = Boolean(this.partnerSelling.enabled)
+  this.partnerSelling.creatorSharePercent = Math.min(100, Math.max(0, Number(this.partnerSelling.creatorSharePercent ?? 70) || 70))
+  this.partnerSelling.partnerSharePercent = Math.min(100, Math.max(0, Number(this.partnerSelling.partnerSharePercent ?? 20) || 20))
+  if ((this.partnerSelling.creatorSharePercent + this.partnerSelling.partnerSharePercent) > 100) {
+    return next(new Error('Creator share and partner share cannot exceed 100%.'))
+  }
+
+  const assignmentMap = new Map()
+  this.sellingOrganizations = (Array.isArray(this.sellingOrganizations) ? this.sellingOrganizations : [])
+    .filter((entry) => entry?.organization)
+    .map((entry) => ({
+      ...entry,
+      organizationName: String(entry.organizationName || '').trim().slice(0, 200),
+      partnerType: ['partner', 'channel_partner'].includes(String(entry.partnerType || '').trim().toLowerCase())
+        ? String(entry.partnerType).trim().toLowerCase()
+        : 'partner',
+      status: String(entry.status || '').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active',
+      creatorSharePercent: Math.min(100, Math.max(0, Number(entry.creatorSharePercent ?? this.partnerSelling.creatorSharePercent) || this.partnerSelling.creatorSharePercent)),
+      partnerSharePercent: Math.min(100, Math.max(0, Number(entry.partnerSharePercent ?? this.partnerSelling.partnerSharePercent) || this.partnerSelling.partnerSharePercent)),
+      assignedAt: entry.assignedAt || new Date(),
+      updatedAt: new Date()
+    }))
+    .filter((entry) => {
+      const totalShare = Number(entry.creatorSharePercent || 0) + Number(entry.partnerSharePercent || 0)
+      if (totalShare > 100) {
+        return false
+      }
+      const key = String(entry.organization)
+      if (assignmentMap.has(key)) return false
+      assignmentMap.set(key, true)
+      return true
+    })
 
   if (this.status === 'published' && !this.publishedAt) {
     this.publishedAt = new Date()

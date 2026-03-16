@@ -839,6 +839,172 @@
       margin: 0;
       width: auto;
     }
+    .course-record-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .course-record-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .course-record-copy {
+      display: grid;
+      gap: 10px;
+      max-width: 820px;
+    }
+    .course-record-copy h3 {
+      margin: 0;
+      font-size: clamp(28px, 3vw, 38px);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+    .course-record-subtitle {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--admin-muted);
+      max-width: 760px;
+    }
+    .course-record-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .course-record-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .course-record-main,
+    .course-record-side {
+      display: grid;
+      gap: 14px;
+    }
+    .course-record-panel {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 18px;
+      padding: 16px;
+      background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(249, 247, 255, 0.92));
+      display: grid;
+      gap: 12px;
+      box-shadow: 0 18px 36px -32px rgba(15, 23, 42, 0.34);
+    }
+    .course-record-panel h4 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .course-record-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .course-record-stat {
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.86);
+      display: grid;
+      gap: 4px;
+    }
+    .course-record-stat small {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7c3aed;
+    }
+    .course-record-stat strong {
+      font-size: 15px;
+      line-height: 1.4;
+      color: var(--admin-text);
+      word-break: break-word;
+    }
+    .course-record-stat span {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--admin-muted);
+      word-break: break-word;
+    }
+    .course-record-status-form,
+    .course-record-review-form {
+      display: grid;
+      gap: 10px;
+    }
+    .course-record-status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .course-record-note {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--admin-muted);
+    }
+    .course-record-summary {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--admin-text);
+    }
+    .course-record-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      color: var(--admin-muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .course-record-curriculum {
+      display: grid;
+      gap: 10px;
+    }
+    .course-record-chapter {
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.84);
+      display: grid;
+      gap: 8px;
+    }
+    .course-record-chapter h5 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.4;
+      color: var(--admin-text);
+    }
+    .course-record-chapter p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--admin-muted);
+    }
+    .course-record-lessons {
+      display: grid;
+      gap: 6px;
+    }
+    .course-record-lesson {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--admin-text);
+    }
+    @media (max-width: 1100px) {
+      .course-record-grid {
+        grid-template-columns: 1fr;
+      }
+    }
     .creator-management-card {
       gap: 12px;
     }
@@ -1265,11 +1431,59 @@
         radial-gradient(circle at top right, rgba(168, 85, 247, 0.14), transparent 32%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 240, 255, 0.94));
     }
-    .partner-overview-hero {
+    .partner-lane-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .partner-lane-toolbar h3 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .partner-lane-toolbar .mini {
+      max-width: 760px;
+    }
+    .partner-lane-toolbar-actions {
+      justify-content: flex-end;
+    }
+    .partner-lane-context {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.9fr);
       gap: 12px;
       align-items: stretch;
+    }
+    .partner-lane-context-main {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.88);
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+      box-shadow: 0 14px 28px -28px rgba(76, 29, 149, 0.22);
+    }
+    .partner-lane-context-head {
+      display: grid;
+      gap: 8px;
+    }
+    .partner-lane-context-head h4 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .partner-lane-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
     }
     .partner-overview-copy,
     .section-header-copy {
@@ -2476,7 +2690,7 @@
       }
       .course-management-table { min-width: 740px; }
       .overview-hero-grid,
-      .partner-overview-hero,
+      .partner-lane-context,
       .analytics-focus-grid,
       .audit-log-intro {
         grid-template-columns: minmax(0, 1fr);
@@ -2546,6 +2760,9 @@
         grid-template-columns: minmax(0, 1fr);
       }
       .page-header-actions {
+        justify-content: flex-start;
+      }
+      .partner-lane-toolbar-actions {
         justify-content: flex-start;
       }
       .hero-panel-grid,
@@ -2676,8 +2893,24 @@
   const courseTypeFilter = String((adminCourseFilters && adminCourseFilters.type) || 'all')
   const coursePaymentFilter = String((adminCourseFilters && adminCourseFilters.paymentMode) || 'all')
   const courseSearchFilter = String((adminCourseFilters && adminCourseFilters.search) || '')
-  const courseComposeMode = String((adminCourseFilters && adminCourseFilters.composeMode) || 'manage')
-  const showCreateCoursePanel = courseComposeMode === 'create'
+  const focusedCourseId = String((adminCourseFilters && adminCourseFilters.focusCourseId) || '')
+  const focusedCourse = focusedAdminCourse || null
+  const withAdminReturnTo = (path, returnTo = '') => {
+    const normalizedReturnTo = String(returnTo || '').trim()
+    return normalizedReturnTo
+      ? `${path}${path.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(normalizedReturnTo)}`
+      : path
+  }
+  const buildAdminCourseRecordPath = (courseId, returnTo = '') => withAdminReturnTo(
+    `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}`,
+    returnTo
+  )
+  const buildAdminCourseEditPath = (courseId, returnTo = '') => withAdminReturnTo(
+    `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}/edit`,
+    returnTo
+  )
+  const courseLifecycleChoices = ['draft', 'pending_public_review', 'published', 'archived']
+  const showCreateCoursePanel = false
   const hasActiveCourseFilters = Boolean(
     selectedCreatorId
     || (courseStatusFilter && courseStatusFilter !== 'all')
@@ -2893,6 +3126,59 @@
       ]
     }
   ]
+  const partnerLaneSummaryByView = {
+    overview: {
+      title: 'Partner hub',
+      description: 'Start with one lane. The workspace below switches to that lane so lists and records stay separated.',
+      metrics: [
+        { label: 'Organizations', value: `${partnerOrgRows.length}` },
+        { label: 'Pending requests', value: `${pendingPartnerRequestCount}` },
+        { label: 'Commission due', value: moneyText(partnerPendingCommissionMinor, 'NGN') },
+        { label: 'Wallet available', value: moneyText(partnerAvailableWalletMinor, 'NGN') }
+      ]
+    },
+    directory: {
+      title: 'Partner directory',
+      description: 'Browse organizations first, then open one record to manage status, membership, and org-level access.',
+      metrics: [
+        { label: 'Active orgs', value: `${activePartnerOrgCount}` },
+        { label: 'Members', value: `${totalPartnerMembers}` },
+        { label: 'Linked agents', value: `${totalPartnerAgents}` },
+        { label: 'Suspended', value: `${suspendedPartnerOrgCount}` }
+      ]
+    },
+    cash: {
+      title: 'Cash operations',
+      description: 'Review withdrawals and partner wallet pressure without mixing in onboarding or directory work.',
+      metrics: [
+        { label: 'Open withdrawals', value: `${openPartnerWithdrawalCount}` },
+        { label: 'Commission due', value: moneyText(partnerPendingCommissionMinor, 'NGN') },
+        { label: 'Wallet available', value: moneyText(partnerAvailableWalletMinor, 'NGN') },
+        { label: 'Paid withdrawals', value: `${paidPartnerWithdrawalCount}` }
+      ]
+    },
+    onboarding: {
+      title: 'Partner onboarding',
+      description: 'Handle partner and channel-partner applications from one focused queue.',
+      metrics: [
+        { label: 'Pending', value: `${pendingPartnerRequestCount}` },
+        { label: 'Reviewed', value: `${reviewedPartnerRequestCount}` },
+        { label: 'Channel requests', value: `${channelPartnerRequestCount}` },
+        { label: 'Partner requests', value: `${standardPartnerRequestCount}` }
+      ]
+    },
+    agents: {
+      title: 'Agent commissions',
+      description: 'Keep agent payout reviews isolated so channel-partner operations remain readable.',
+      metrics: [
+        { label: 'Open payouts', value: `${pendingAgentPayoutCount}` },
+        { label: 'Paid payouts', value: `${paidAgentPayoutCount}` },
+        { label: 'Linked agents', value: `${totalPartnerAgents}` },
+        { label: 'Channel orgs', value: `${channelPartnerOrgCount}` }
+      ]
+    }
+  }
+  const activePartnerLaneSummary = partnerLaneSummaryByView[partnerView] || partnerLaneSummaryByView.overview
   const topEnrollmentMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByEnrollments) ? analytics.topCoursesByEnrollments.map((item) => toNumber(item.enrollmentCount)) : [0]))
   const topRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCoursesByRevenue) ? analytics.topCoursesByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
   const topCreatorRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCreatorsByRevenue) ? analytics.topCreatorsByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
@@ -2927,7 +3213,7 @@
         <% }) %>
       </nav>
       <div class="actions">
-        <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create Course</a>
+        <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create Course</a>
         <a class="btn btn-secondary btn-sm" href="/simple-lms">Workspace</a>
         <a class="btn btn-secondary btn-sm" href="/logout">Sign Out</a>
       </div>
@@ -2963,7 +3249,7 @@
           <div class="page-header-actions">
             <a class="btn btn-secondary btn-sm" href="<%= websiteHref %>" target="_blank" rel="noreferrer">Visit Website</a>
             <a class="btn btn-secondary btn-sm" href="/simple-lms">Open Workspace</a>
-            <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create Course</a>
+            <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create Course</a>
           </div>
         </div>
         <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
@@ -3104,22 +3390,22 @@
       <% if (currentSection === 'courses') { %>
         <section class="card course-management-shell">
           <div class="head">
-            <div><h2>Course Management</h2><p class="mini">Review the full course library here, but keep editing and duplication locked to the course owner. Lifecycle moderation stays in admin.</p></div>
+            <div><h2>Course Management</h2><p class="mini">Use the library to find a course, then open one record to moderate it. Owner-only editing stays separate from platform moderation.</p></div>
             <div class="actions course-page-actions">
               <a class="btn btn-secondary btn-sm" href="/admin/courses">Manage Courses</a>
-              <a class="btn btn-primary btn-sm" href="/admin/courses?compose=create#create-course">Create New Course</a>
+              <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create New Course</a>
             </div>
           </div>
           <div class="course-mode-grid">
             <a class="course-mode-card <%= showCreateCoursePanel ? '' : 'active' %>" href="/admin/courses">
               <small>Library View</small>
               <strong>Manage course library</strong>
-              <span>Review every course, moderate lifecycle actions, and only expose editing on courses you actually own.</span>
+              <span>Browse preview cards, filter by creator or status, and open a dedicated record for moderation.</span>
             </a>
-            <a class="course-mode-card <%= showCreateCoursePanel ? 'active' : '' %>" href="/admin/courses?compose=create#create-course">
+            <a class="course-mode-card <%= showCreateCoursePanel ? 'active' : '' %>" href="/admin/courses/new">
               <small>Creation Flow</small>
               <strong>Create a new system course</strong>
-              <span>Open the authoring panel for new system content without mixing the creation form into the course library itself.</span>
+              <span>Open a separate authoring page for new system content instead of dropping the form into the library page.</span>
             </a>
           </div>
 
@@ -3195,7 +3481,304 @@
             <% } %>
           </div>
 
-          <% if (!courses || courses.length === 0) { %>
+          <% if (focusedCourse) { %>
+            <section class="course-record-shell">
+              <div class="course-record-head">
+                <div class="course-record-copy">
+                  <div class="course-manage-pill-row">
+                    <span class="pill"><%= focusedCourse.isSystemCourse ? 'System' : 'Creator' %></span>
+                    <span class="pill"><%= focusedCourse.status || 'draft' %></span>
+                    <span class="pill"><%= focusedCourse.visibilityDisplay || focusedCourse.visibility || 'private' %></span>
+                    <span class="pill"><%= focusedCourse.displayPrice %></span>
+                    <% if (focusedCourse.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
+                    <% if (focusedCourse.assignedOrganizationCount) { %><span class="pill"><%= focusedCourse.assignedOrganizationCount %> assigned orgs</span><% } %>
+                    <% if (focusedCourse.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %>
+                    <% if (focusedCourse.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(focusedCourse) %>"><%= focusedCourse.reviewDecisionLabel %></span><% } %>
+                  </div>
+                  <div>
+                    <h3><%= focusedCourse.title %></h3>
+                    <p class="course-record-subtitle"><%= focusedCourse.summaryText %></p>
+                  </div>
+                </div>
+                <div class="course-record-actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= coursesReturnTo %>">Back to Library</a>
+                  <% if (focusedCourse.canEdit) { %>
+                    <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(focusedCourse._id, coursesReturnTo) %>">Edit Course</a>
+                  <% } %>
+                  <a class="btn btn-secondary btn-sm" href="<%= focusedCourse.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">Preview Course</a>
+                </div>
+              </div>
+
+              <div class="course-record-grid">
+                <div class="course-record-main">
+                  <article class="course-record-panel">
+                    <h4>Course Snapshot</h4>
+                    <div class="course-record-meta-grid">
+                      <article class="course-record-stat">
+                        <small>Creator</small>
+                        <strong><%= focusedCourse.createdByName || focusedCourse.authorName || 'Unknown' %></strong>
+                        <span><%= focusedCourse.createdByEmail || '-' %></span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Status</small>
+                        <strong><%= focusedCourse.status || 'draft' %></strong>
+                        <span><%= focusedCourse.reviewDecisionLabel || 'No review history yet' %></span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Delivery</small>
+                        <strong><%= focusedCourse.levelLabel || focusedCourse.level || 'mixed' %></strong>
+                        <span><%= Number(focusedCourse.lessonCount || 0) %> lessons - <%= Number(focusedCourse.estimatedDurationMinutes || 0) %> mins</span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Learners</small>
+                        <strong><%= Number(focusedCourse.enrollmentCount || 0) %> enrolled</strong>
+                        <span><%= Number(focusedCourse.completionCount || 0) %> completed</span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Pricing</small>
+                        <strong><%= focusedCourse.displayPrice %></strong>
+                        <span><%= isPaidCourse(focusedCourse) ? 'Paid course' : 'Free course' %></span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Sell Through</small>
+                        <strong><%= focusedCourse.partnerSellingSummary %></strong>
+                        <span><%= focusedCourse.assignedOrganizationCount %> assigned organizations</span>
+                      </article>
+                      <article class="course-record-stat">
+                        <small>Updated</small>
+                        <strong><%= dateText(focusedCourse.updatedAt) %></strong>
+                        <span>Created <%= dateText(focusedCourse.createdAt) %></span>
+                      </article>
+                    </div>
+                    <% if (!focusedCourse.canEdit) { %>
+                      <p class="course-lock-note">Editing stays with the owner. Admin moderation here does not transfer authorship or let you take over the course content.</p>
+                    <% } %>
+                    <% if (focusedCourse.deleteBlockedReason) { %>
+                      <p class="course-delete-note"><%= focusedCourse.deleteBlockedReason %></p>
+                    <% } %>
+                  </article>
+
+                  <% if (focusedCourse.reviewHasFeedback) { %>
+                    <article class="course-review-feedback is-<%= reviewFeedbackTone(focusedCourse) %>">
+                      <div class="course-review-feedback-head">
+                        <div>
+                          <h4>Review status: <%= focusedCourse.reviewDecisionLabel %></h4>
+                          <p class="course-review-feedback-copy"><%= reviewMessageForCourse(focusedCourse) %></p>
+                        </div>
+                        <div class="course-review-feedback-meta">
+                          <span class="pill <%= reviewDecisionClass(focusedCourse) %>"><%= focusedCourse.reviewDecisionLabel %></span>
+                          <% if (focusedCourse.reviewedAt) { %><span class="pill">Reviewed <%= dateText(focusedCourse.reviewedAt) %></span><% } %>
+                          <% if (focusedCourse.reviewedByName) { %><span class="pill">By <%= focusedCourse.reviewedByName %></span><% } %>
+                        </div>
+                      </div>
+                      <% if (String(focusedCourse.reviewNotes || '').trim()) { %>
+                        <p class="course-review-feedback-note"><%= focusedCourse.reviewNotes %></p>
+                      <% } %>
+                    </article>
+                  <% } %>
+
+                  <article class="course-record-panel">
+                    <h4>Publishing Summary</h4>
+                    <p class="course-record-summary"><%= focusedCourse.description || focusedCourse.summaryText %></p>
+                    <ul class="course-record-list">
+                      <li>Category: <strong><%= focusedCourse.category || 'Uncategorized' %></strong></li>
+                      <li>Visibility: <strong><%= focusedCourse.visibilityDisplay || focusedCourse.visibility || 'private' %></strong></li>
+                      <li>Course key: <strong><%= focusedCourse.slug || focusedCourse._id %></strong></li>
+                      <li>Sell through: <strong><%= focusedCourse.partnerSellingSummary %></strong></li>
+                      <li>Queue behavior: only courses in <strong>pending review</strong> appear in the approval queue.</li>
+                    </ul>
+                  </article>
+
+                  <article class="course-record-panel">
+                    <h4>Curriculum Preview</h4>
+                    <% if (!focusedCourse.chapters || focusedCourse.chapters.length === 0) { %>
+                      <p class="course-record-note">No chapters added yet.</p>
+                    <% } else { %>
+                      <div class="course-record-curriculum">
+                        <% focusedCourse.chapters.forEach((chapter, chapterIndex) => { %>
+                          <article class="course-record-chapter">
+                            <div>
+                              <h5>Chapter <%= chapterIndex + 1 %>: <%= chapter.title || `Chapter ${chapterIndex + 1}` %></h5>
+                              <% if (chapter.description) { %><p><%= chapter.description %></p><% } %>
+                            </div>
+                            <div class="course-record-lessons">
+                              <% (chapter.lessons || []).forEach((lesson, lessonIndex) => { %>
+                                <div class="course-record-lesson">
+                                  <span>Lesson <%= lessonIndex + 1 %>: <%= lesson.title || `Lesson ${lessonIndex + 1}` %></span>
+                                  <span><%= Number(lesson.durationMinutes || 0) %> mins</span>
+                                </div>
+                              <% }) %>
+                            </div>
+                          </article>
+                        <% }) %>
+                      </div>
+                    <% } %>
+                  </article>
+                </div>
+
+                <aside class="course-record-side">
+                  <% if (String(focusedCourse.status || '') === 'pending_public_review') { %>
+                    <article class="course-record-panel">
+                      <h4>Review This Submission</h4>
+                      <p class="course-record-note">This course is already in the public review queue. Approve it here, or request changes or denial with a creator-facing note.</p>
+                      <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/review-public" class="course-record-review-form" data-course-review-form>
+                        <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                        <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
+                        <label>
+                          <span>Feedback for the creator</span>
+                          <textarea class="input" name="reviewNotes" rows="6" data-review-notes placeholder="Explain required changes or the denial reason."></textarea>
+                        </label>
+                        <div class="course-action-bar">
+                          <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= focusedCourse._id %>/approve-public" data-review-submit="approved">Approve & Publish</button>
+                          <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested">Request Changes</button>
+                          <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied">Deny Submission</button>
+                        </div>
+                      </form>
+                    </article>
+                  <% } else { %>
+                    <article class="course-record-panel">
+                      <h4>Admin Status Control</h4>
+                      <p class="course-record-note">Use this when the course is not already in the public review queue. Draft admin-created courses can be published directly from here.</p>
+                      <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/admin-status" class="course-record-status-form">
+                        <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                        <div class="course-record-status-grid">
+                          <label>
+                            <span>Status</span>
+                            <select class="input" name="status">
+                              <% courseLifecycleChoices.forEach((statusOption) => { %>
+                                <option value="<%= statusOption %>" <%= String(focusedCourse.status || '') === statusOption ? 'selected' : '' %>><%= statusOption %></option>
+                              <% }) %>
+                            </select>
+                          </label>
+                          <label style="grid-column: 1 / -1;">
+                            <span>Admin note (optional)</span>
+                            <textarea class="input" name="statusNote" rows="4" placeholder="Internal context for this status change."></textarea>
+                          </label>
+                        </div>
+                        <div class="course-action-bar">
+                          <button class="btn btn-primary btn-sm" type="submit">Save Status</button>
+                          <a class="btn btn-secondary btn-sm" href="/admin/approvals">Open Approval Queue</a>
+                        </div>
+                      </form>
+                    </article>
+                  <% } %>
+
+                  <article class="course-record-panel">
+                    <h4>Partner Selling Assignments</h4>
+                    <p class="course-record-note">Creator-owned courses must opt into partner selling before you can assign them. Assigned organizations can sell without taking over course ownership or editing rights.</p>
+                    <% if (focusedCourse.activeSellingAssignments && focusedCourse.activeSellingAssignments.length > 0) { %>
+                      <div class="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Organization</th>
+                              <th>Type</th>
+                              <th>Split</th>
+                              <th>Status</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <% focusedCourse.activeSellingAssignments.forEach((assignment) => { %>
+                              <tr>
+                                <td><strong><%= assignment.organizationName || 'Organization' %></strong></td>
+                                <td><%= assignment.partnerType || 'partner' %></td>
+                                <td><%= assignment.creatorSharePercent %>% creator / <%= assignment.partnerSharePercent %>% partner / <%= assignment.platformSharePercent %>% platform</td>
+                                <td><%= assignment.status %></td>
+                                <td>
+                                  <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/unassign-organization" class="inline-form">
+                                    <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                                    <input type="hidden" name="organizationId" value="<%= assignment.organization %>">
+                                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                                  </form>
+                                </td>
+                              </tr>
+                            <% }) %>
+                          </tbody>
+                        </table>
+                      </div>
+                    <% } else { %>
+                      <p class="course-record-note">No selling organizations assigned yet.</p>
+                    <% } %>
+                    <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/assign-organization" class="course-record-status-form" style="margin-top:12px;">
+                      <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                      <div class="course-record-status-grid">
+                        <label>
+                          <span>Organization</span>
+                          <select class="input" name="organizationId" required>
+                            <option value="">Select organization</option>
+                            <% (partnerOrganizations || []).forEach((organization) => { %>
+                              <% if (String(organization._id || '') !== String(focusedCourse.organization || '')) { %>
+                                <option value="<%= organization._id %>"><%= organization.name || 'Partner Organization' %> (<%= organization.partnerType || 'partner' %>)</option>
+                              <% } %>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Creator Share (%)</span>
+                          <input class="input" type="number" step="0.01" min="0" max="100" name="creatorSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.creatorSharePercent)) ? Number(focusedCourse.partnerSelling.creatorSharePercent) : 70 %>">
+                        </label>
+                        <label>
+                          <span>Partner Share (%)</span>
+                          <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.partnerSharePercent)) ? Number(focusedCourse.partnerSelling.partnerSharePercent) : 20 %>">
+                        </label>
+                        <label>
+                          <span>Status</span>
+                          <select class="input" name="assignmentStatus">
+                            <option value="active">active</option>
+                            <option value="inactive">inactive</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div class="course-action-bar">
+                        <button class="btn btn-primary btn-sm" type="submit">Assign Organization</button>
+                      </div>
+                    </form>
+                  </article>
+
+                  <article class="course-record-panel">
+                    <h4>Moderation Tools</h4>
+                    <div class="course-action-bar">
+                      <a class="btn btn-secondary btn-sm" href="<%= focusedCourse.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View Course</a>
+                      <% if (focusedCourse.createdById) { %>
+                        <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(focusedCourse.createdById) %>">Open Creator</a>
+                      <% } %>
+                      <% if (focusedCourse.canEdit) { %>
+                        <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(focusedCourse._id, coursesReturnTo) %>">Edit Content</a>
+                      <% } %>
+                      <% if (focusedCourse.canDuplicate) { %>
+                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/duplicate" class="inline-form">
+                          <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                          <input type="hidden" name="studioPath" value="/admin/courses">
+                          <input type="hidden" name="studioContext" value="admin">
+                          <input type="hidden" name="isSystemCourse" value="on">
+                          <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
+                        </form>
+                      <% } %>
+                      <% if (focusedCourse.canArchive) { %>
+                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/archive" class="inline-form">
+                          <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                          <button class="btn btn-danger btn-sm" type="submit">Archive</button>
+                        </form>
+                      <% } %>
+                      <% if (focusedCourse.canRestore) { %>
+                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/restore" class="inline-form">
+                          <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                          <button class="btn btn-primary btn-sm" type="submit">Restore</button>
+                        </form>
+                      <% } %>
+                      <% if (focusedCourse.canDelete) { %>
+                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/delete" class="inline-form" onsubmit="return confirm('Permanently delete this course? This cannot be undone.');">
+                          <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                          <button class="btn btn-danger btn-sm" type="submit">Delete Permanently</button>
+                        </form>
+                      <% } %>
+                    </div>
+                  </article>
+                </aside>
+              </div>
+            </section>
+          <% } else if (!courses || courses.length === 0) { %>
             <div class="empty">No courses found for this filter.</div>
           <% } else { %>
             <div class="course-manage-grid">
@@ -3208,6 +3791,8 @@
                         <span class="pill"><%= course.status || 'draft' %></span>
                         <span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span>
                         <span class="pill"><%= isPaidCourse(course) ? 'Paid' : 'Free' %></span>
+                        <% if (course.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
+                        <% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %>
                         <% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %>
                         <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
                       </div>
@@ -3236,6 +3821,11 @@
                       <small>Updated</small>
                       <strong><%= dateText(course.updatedAt) %></strong>
                       <span><%= course.displayPrice %></span>
+                    </article>
+                    <article class="course-manage-stat">
+                      <small>Sell Through</small>
+                      <strong><%= course.partnerSellingSummary %></strong>
+                      <span><%= course.assignedOrganizationCount %> assigned organizations</span>
                     </article>
                   </div>
 
@@ -3266,13 +3856,14 @@
                   <% } %>
 
                   <div class="course-action-bar">
+                    <a class="btn btn-primary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>">Open Record</a>
                     <% if (course.canEdit) { %>
-                      <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Edit Course</a>
+                      <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(course._id, coursesReturnTo) %>">Edit Course</a>
                     <% } %>
                     <% if (course.canDuplicate) { %>
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
                         <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <input type="hidden" name="studioPath" value="/admin/courses?compose=create">
+                        <input type="hidden" name="studioPath" value="/admin/courses">
                         <input type="hidden" name="studioContext" value="admin">
                         <input type="hidden" name="isSystemCourse" value="on">
                         <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
@@ -3282,36 +3873,13 @@
                     <% if (course.createdById) { %>
                       <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(course.createdById) %>">Open Creator</a>
                     <% } %>
-                    <% if (String(course.status || '') === 'pending_public_review') { %>
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/approve-public" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <button class="btn btn-primary btn-sm" type="submit">Approve & Publish</button>
-                      </form>
-                    <% } %>
-                    <% if (course.canArchive) { %>
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <button class="btn btn-danger btn-sm" type="submit">Archive</button>
-                      </form>
-                    <% } %>
-                    <% if (course.canRestore) { %>
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <button class="btn btn-primary btn-sm" type="submit">Restore</button>
-                      </form>
-                    <% } %>
-                    <% if (course.canDelete) { %>
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/delete" class="inline-form" onsubmit="return confirm('Permanently delete this course? This cannot be undone.');">
-                        <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <button class="btn btn-danger btn-sm" type="submit">Delete Permanently</button>
-                      </form>
-                    <% } %>
                   </div>
                 </article>
               <% }) %>
             </div>
           <% } %>
 
+          <% if (false) { %>
           <p class="mini course-studio-note">The library stays separate from creation. Open the create panel when you want a new system course, and use moderation actions here without exposing owner-only editing controls.</p>
 
           <details class="course-compose-shell" id="create-course" <%= showCreateCoursePanel ? 'open' : '' %>>
@@ -3440,6 +4008,7 @@
               </div>
             </details>
           <% } %>
+          <% } %>
         </section>
       <% } %>
 
@@ -3536,7 +4105,7 @@
 
                       <div class="actions">
                         <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview Course</a>
-                        <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Open Editor</a>
+                        <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, '/admin/approvals') %>">Open Record</a>
                       </div>
 
                       <form method="post" action="/simple-lms/courses/<%= course._id %>/review-public" class="approval-review-form" data-course-review-form>
@@ -3596,7 +4165,7 @@
                       <% } %>
                       <div class="actions">
                         <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
-                        <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Open Editor</a>
+                        <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, '/admin/approvals') %>">Open Record</a>
                       </div>
                     </article>
                   <% }) %>
@@ -3609,54 +4178,83 @@
 
       <% if (currentSection === 'partners') { %>
         <section class="card partner-overview-shell">
-          <div class="partner-overview-hero">
+          <div class="partner-lane-toolbar">
             <div class="partner-overview-copy">
-              <span class="eyebrow">Partner Ops</span>
+              <p class="section-kicker">Partner Ops</p>
               <div>
-                <h3>Run partner operations from a clean hub, then open one lane at a time.</h3>
-                <p class="mini">Directory, cash, onboarding, and agent operations now have their own entry points so long queues stop burying the rest of the work.</p>
+                <h3>Partner Operations</h3>
+                <p class="mini">Choose one operating lane, then work a single record at a time. The lane switcher stays here so the actual queue or directory starts immediately below it.</p>
               </div>
-              <div class="overview-badges">
+              <div class="partner-lane-meta-row">
                 <span class="pill"><%= partnerOrgRows.length %> organizations</span>
                 <span class="pill"><%= totalPartnerMembers %> partner members</span>
                 <span class="pill"><%= totalPartnerAgents %> linked agents</span>
                 <span class="pill"><%= pendingPartnerRequestCount %> requests pending</span>
               </div>
             </div>
+            <div class="actions partner-lane-toolbar-actions">
+              <% if (partnerView !== 'overview') { %>
+                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('overview') %>">Partner Hub</a>
+              <% } %>
+              <a class="btn btn-secondary btn-sm" href="/admin/users">Base User Roles</a>
+              <a class="btn btn-secondary btn-sm" href="/admin/super-users">Platform Admins</a>
+            </div>
+          </div>
+          <div class="partner-lane-context">
+            <div class="partner-lane-context-main">
+              <div class="partner-lane-context-head">
+                <p class="section-kicker">Current lane</p>
+                <div>
+                  <h4><%= activePartnerLaneSummary.title %></h4>
+                  <p class="mini"><%= activePartnerLaneSummary.description %></p>
+                </div>
+              </div>
+              <nav class="partner-subnav" aria-label="Partner operations lanes">
+                <% Object.entries(partnerSubviewMeta).forEach(([key, item]) => { %>
+                  <a href="<%= partnerViewPath(key) %>" class="partner-subnav-link <%= partnerView === key ? 'active' : '' %>"><%= item.label %></a>
+                <% }) %>
+              </nav>
+              <% if (partnerView === 'overview') { %>
+                <p class="mini">Open a lane card below when you want the actual workspace. Once you are inside a lane, this top band stays compact instead of repeating the same information again.</p>
+              <% } %>
+            </div>
             <aside class="partner-overview-aside">
               <div class="partner-overview-aside-head">
                 <div>
-                  <strong>Operations pulse</strong>
-                  <p class="mini">Track onboarding, commissions, and cash movement before they become backlog.</p>
+                  <strong><%= activePartnerSubview.label %> pulse</strong>
+                  <p class="mini">Only the numbers relevant to the active lane stay here.</p>
                 </div>
                 <span class="pill hero-panel-live">Partner live</span>
               </div>
               <div class="partner-summary-grid">
-                <article class="partner-summary-card">
-                  <span>Active orgs</span>
-                  <strong><%= activePartnerOrgCount %></strong>
-                </article>
-                <article class="partner-summary-card">
-                  <span>Commission due</span>
-                  <strong><%= moneyText(partnerPendingCommissionMinor, 'NGN') %></strong>
-                </article>
-                <article class="partner-summary-card">
-                  <span>Wallet available</span>
-                  <strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong>
-                </article>
-                <article class="partner-summary-card">
-                  <span>Active lane</span>
-                  <strong><%= activePartnerSubview.label %></strong>
-                </article>
+                <% activePartnerLaneSummary.metrics.forEach((metric) => { %>
+                  <article class="partner-summary-card">
+                    <span><%= metric.label %></span>
+                    <strong><%= metric.value %></strong>
+                  </article>
+                <% }) %>
               </div>
               <div class="actions">
-                <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('directory') %>">Open Directory</a>
-                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('cash') %>">Review Cash</a>
-                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('onboarding') %>">Review Onboarding</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Platform Admins</a>
+                <% if (partnerView === 'overview') { %>
+                  <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('directory') %>">Open Directory</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('onboarding') %>">Review Onboarding</a>
+                <% } else if (partnerView === 'directory') { %>
+                  <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('directory') %>">Stay in Directory</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('cash') %>">Switch to Cash</a>
+                <% } else if (partnerView === 'cash') { %>
+                  <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('cash') %>">Stay in Cash</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('agents') %>">Switch to Agents</a>
+                <% } else if (partnerView === 'onboarding') { %>
+                  <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('onboarding') %>">Stay in Onboarding</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('directory') %>">Open Directory</a>
+                <% } else { %>
+                  <a class="btn btn-primary btn-sm" href="<%= partnerViewPath('agents') %>">Stay in Agents</a>
+                  <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('cash') %>">Review Cash</a>
+                <% } %>
               </div>
             </aside>
           </div>
+          <% if (partnerView === 'overview') { %>
           <div class="partner-hub-grid">
             <% partnerSubviewCards.forEach((card) => { %>
               <a href="<%= partnerViewPath(card.key) %>" class="partner-nav-card <%= partnerView === card.key ? 'active' : '' %>">
@@ -3679,73 +4277,6 @@
                 </ul>
               </a>
             <% }) %>
-          </div>
-          <div class="partner-view-shell">
-            <div class="partner-view-head">
-              <div>
-                <p class="section-kicker">Current lane</p>
-                <h3><%= activePartnerSubview.title %></h3>
-                <p class="mini"><%= activePartnerSubview.description %></p>
-              </div>
-              <div class="actions">
-                <a class="btn btn-secondary btn-sm" href="<%= partnerViewPath('overview') %>">Partner Hub</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/users">Base User Roles</a>
-              </div>
-            </div>
-            <nav class="partner-subnav" aria-label="Partner operations lanes">
-              <% Object.entries(partnerSubviewMeta).forEach(([key, item]) => { %>
-                <a href="<%= partnerViewPath(key) %>" class="partner-subnav-link <%= partnerView === key ? 'active' : '' %>"><%= item.label %></a>
-              <% }) %>
-            </nav>
-          </div>
-          <% if (partnerView === 'overview') { %>
-          <div class="partner-lane-grid">
-            <article class="partner-panel is-emphasis">
-              <div>
-                <h3>Organization mix</h3>
-                <p class="mini">See which partner families are active and where the review load is building.</p>
-              </div>
-              <div class="section-stat-strip">
-                <div class="partner-metric"><span>Total orgs</span><strong><%= partnerOrgRows.length %></strong></div>
-                <div class="partner-metric"><span>Pending</span><strong><%= pendingPartnerOrgCount %></strong></div>
-                <div class="partner-metric"><span>Suspended</span><strong><%= suspendedPartnerOrgCount %></strong></div>
-                <div class="partner-metric"><span>Members</span><strong><%= totalPartnerMembers %></strong></div>
-              </div>
-              <ul class="partner-list">
-                <li><%= channelPartnerOrgCount %> channel partner organizations are running agent-based distribution.</li>
-                <li><%= standardPartnerOrgCount %> standard partner organizations are operating without agent teams.</li>
-                <li><%= pendingPartnerRequestCount %> onboarding requests still need an admin decision.</li>
-              </ul>
-            </article>
-            <article class="partner-panel">
-              <div>
-                <h3>Cash movement</h3>
-                <p class="mini">Keep partner withdrawals and agent commissions visible as one operating lane.</p>
-              </div>
-              <div class="section-stat-strip">
-                <div class="partner-metric"><span>Open withdrawals</span><strong><%= openPartnerWithdrawalCount %></strong></div>
-                <div class="partner-metric"><span>Agent payout queue</span><strong><%= pendingAgentPayoutCount %></strong></div>
-                <div class="partner-metric"><span>Paid withdrawals</span><strong><%= paidPartnerWithdrawalCount %></strong></div>
-                <div class="partner-metric"><span>Paid agent payouts</span><strong><%= paidAgentPayoutCount %></strong></div>
-              </div>
-              <ul class="partner-list">
-                <li><%= partnerPublishedCourseCount %> partner-owned courses are already published.</li>
-                <li><%= partnerDraftCourseCount %> partner course drafts still need review or publication work.</li>
-                <li><%= moneyText(partnerPendingCommissionMinor, 'NGN') %> remains tied to partner commission obligations.</li>
-              </ul>
-            </article>
-            <article class="partner-panel">
-              <div>
-                <h3>Control boundary</h3>
-                <p class="mini">Keep partner-super promotions here. Platform admin access belongs in Access Control.</p>
-              </div>
-              <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/users">Base User Roles</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/audit-log">Access Audit</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Platform Admins</a>
-              </div>
-              <p class="mini">Use this page to attach existing accounts to organizations, promote partner super users, and review partner onboarding. Do not use it for platform-wide admin promotion.</p>
-            </article>
           </div>
           <% } %>
         </section>
@@ -4817,7 +5348,7 @@
                   <% if (selectedCreator.topCourses && selectedCreator.topCourses.length > 0) { %>
                     <p><strong>Latest:</strong></p>
                     <% selectedCreator.topCourses.forEach((course) => { %>
-                      <p><a href="/admin/courses?editCourse=<%= encodeURIComponent(course.courseId) %>#edit-course"><%= course.title %></a> (<%= course.status %>)</p>
+                      <p><a href="<%= buildAdminCourseRecordPath(course.courseId, creatorsReturnTo) %>"><%= course.title %></a> (<%= course.status %>)</p>
                     <% }) %>
                   <% } else { %>
                     <p>No courses available for this creator yet.</p>

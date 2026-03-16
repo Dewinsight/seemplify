@@ -560,6 +560,9 @@
                   <tr>
                     <th>Course</th>
                     <th>Sale</th>
+                    <th>Creator Share</th>
+                    <th>Partner Gross</th>
+                    <th>Platform Share</th>
                     <th>Rate</th>
                     <th>Commission</th>
                     <th>Status</th>
@@ -571,6 +574,9 @@
                     <tr>
                       <td><%= entry.course?.title || 'Course' %></td>
                       <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.creatorShareDisplay %></td>
+                      <td><%= entry.partnerGrossShareDisplay %></td>
+                      <td><%= entry.platformShareDisplay %></td>
                       <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
                       <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
                       <td><%= entry.status %></td>
@@ -587,7 +593,7 @@
       <% if (section === 'courses') { %>
         <article class="panel">
           <h2>Partner Course Catalog</h2>
-          <p>Use referral links to attribute sales to your agent account.</p>
+          <p>Use referral links to sell both organization-owned courses and creator courses assigned to your organization. Your commission is taken from the partner share.</p>
 
           <% if (!courses || courses.length === 0) { %>
             <p>No courses available in your organization catalog yet.</p>
@@ -601,6 +607,8 @@
                     <span><%= Number(course?.pricing?.amount || 0) > 0 ? formatCurrencyAmount(course.pricing.amount, course?.pricing?.currency || 'NGN') : 'Free' %></span>
                     <span><%= String(course.level || 'mixed') %></span>
                   </div>
+                  <p><strong><%= course.saleRelationshipLabel %></strong></p>
+                  <p><%= course.splitSummary %></p>
                   <div class="referral"><%= course.referralUrl %></div>
                   <a class="btn btn-secondary btn-sm" href="<%= course.referralUrl %>" target="_blank" rel="noopener">Open Referral Link</a>
                 </article>
@@ -613,7 +621,7 @@
       <% if (section === 'sales' || section === 'commissions' || section === 'earnings') { %>
         <article class="panel">
           <h2><%= section === 'sales' ? 'My Sales' : (section === 'commissions' ? 'My Commissions' : 'Earnings Trace') %></h2>
-          <p>Detailed sale-by-sale trace including platform share and your commission split.</p>
+          <p>Detailed sale-by-sale trace across creator share, partner share, platform share, and your own commission.</p>
 
           <% if (!attributions || attributions.length === 0) { %>
             <p>No attributed sales yet.</p>
@@ -624,22 +632,27 @@
                   <tr>
                     <th>Course</th>
                     <th>Sale</th>
+                    <th>Creator Share</th>
+                    <th>Partner Gross</th>
                     <th>Platform Share</th>
                     <th>Rate</th>
                     <th>Your Commission</th>
+                    <th>Partner Net</th>
                     <th>Status</th>
                     <th>Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   <% attributions.forEach((entry) => { %>
-                    <% const paymentPlatformShare = Number(entry.payment?.platformShareMinor || 0) %>
                     <tr>
                       <td><%= entry.course?.title || 'Course' %></td>
                       <td><%= formatCurrencyAmount(entry.saleAmountMinor || 0, entry.currency || 'NGN') %></td>
-                      <td><%= formatCurrencyAmount(paymentPlatformShare, entry.currency || 'NGN') %></td>
+                      <td><%= entry.creatorShareDisplay %></td>
+                      <td><%= entry.partnerGrossShareDisplay %></td>
+                      <td><%= entry.platformShareDisplay %></td>
                       <td><%= Number(entry.commissionRatePercent || 0) %>%</td>
                       <td><%= formatCurrencyAmount(entry.commissionAmountMinor || 0, entry.currency || 'NGN') %></td>
+                      <td><%= entry.partnerNetShareDisplay %></td>
                       <td><%= entry.status %></td>
                       <td><%= new Date(entry.createdAt).toLocaleDateString() %></td>
                     </tr>

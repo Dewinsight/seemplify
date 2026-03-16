@@ -1207,6 +1207,12 @@
                 <div><label>System Course</label><input type="checkbox" name="isSystemCourse" value="on"></div>
               <% } %>
             </div>
+            <div class="form-grid">
+              <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="partnerSellingEnabled" value="on"> Allow partner organizations to sell this course</label>
+              <div><label>Creator Share (%)</label><input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="70"></div>
+              <div><label>Partner Share (%)</label><input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="20"></div>
+            </div>
+            <p class="mini">For assigned partner sales only. Platform share is calculated automatically from the remaining percentage.</p>
             <div><label>Summary</label><textarea class="input" name="summary" rows="2"></textarea></div>
             <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
             <div class="stack">
@@ -1239,7 +1245,8 @@
               <article class="card"><div class="body">
                 <h3><%= course.title %></h3>
                 <p><%= course.summaryText %></p>
-                <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span><% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %></div>
+                <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span><% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %><% if (course.isSellThroughEnabled) { %><span class="pill">Partner sellable</span><% } %><% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %></div>
+                <p class="mini">Sell through: <strong><%= course.partnerSellingSummary || 'Direct creator sale only' %></strong></p>
                 <% if (!course.canEdit) { %><p class="mini">Only the course owner can edit or duplicate this course.</p><% } %>
                 <div class="actions">
                   <% if (course.canEdit) { %><a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a><% } %>
