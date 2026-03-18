@@ -17,7 +17,7 @@
     const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
     const highlightCourses = Array.isArray(featuredCourses) ? featuredCourses.slice(0, 6) : []
     const leadCourse = highlightCourses[0] || null
-    const heroGraphicImage = 'https://learning.aiinnigeria.com/images/aiin-learning-hero-graphic-new.png?v=20260306'
+    const heroGraphicImage = '/images/aiin-learning-hero-graphic-new.png?v=20260318'
     const showPartnerHeroImage = typeof partnerMode !== 'undefined' && partnerMode === true
     let learnerImage = '/images/aiin-learner-collab.jpg'
     let creatorImage = '/images/aiin-creator-collab.jpg'
