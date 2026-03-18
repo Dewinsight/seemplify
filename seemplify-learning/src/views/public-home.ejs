@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260318-12">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site public-home-page">
@@ -55,63 +55,63 @@
     }
   %>
 
-  <div class="lmsv-home-hero-band" style="background:#090B19; overflow: hidden; position: relative; width: 100vw; margin-left: calc(-50vw + 50%); margin-right: calc(-50vw + 50%); min-height: 540px; display: flex; align-items: center; padding-bottom: 80px;">
+  <div class="lmsv-home-hero-band">
   
     <!-- Right Side Img Full Height with Fade -->
-    <div class="lmsv-home-hero-image-panel" style="position: absolute; top: 0; right: 0; bottom: 0; width: 60%; z-index: 1;">
+    <div class="lmsv-home-hero-image-panel">
       <!-- Gradient overlay to fade left side to #090B19 -->
-      <div class="lmsv-home-hero-image-fade" style="position: absolute; inset: 0; background: linear-gradient(to right, #090B19 0%, rgba(9,11,25,0) 40%); z-index: 2;"></div>
+      <div class="lmsv-home-hero-image-fade"></div>
       <!-- Mask image fading bottom to match dark overlapping bottom, but actually overlap card is just above -->
-      <img src="<%= heroGraphicImage %>" alt="Learners collaborating" style="width: 100%; height: 100%; object-fit: cover; object-position: center;">
+      <img src="<%= heroGraphicImage %>" alt="Learners collaborating" class="lmsv-home-hero-image">
       
       <!-- Floating Widgets -->
-      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-growth" style="position: absolute; top: 80px; right: 12%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
-        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; display: flex; align-items: center; justify-content: center;">
+      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-growth">
+        <div class="lmsv-home-hero-widget-icon">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="13"></line></svg>
         </div>
-        <div>
-          <div style="color: #ffffff; font-size: 14px; font-weight: 700; line-height: 1.2;">Progress +24%</div>
-          <div style="color: #cbd5e1; font-size: 11px; line-height: 1.2; margin-top: 2px;">Learning growth this month</div>
+        <div class="lmsv-home-hero-widget-copy">
+          <div class="lmsv-home-hero-widget-title">Progress +24%</div>
+          <div class="lmsv-home-hero-widget-note">Learning growth this month</div>
         </div>
       </div>
   
-      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-cert" style="position: absolute; bottom: 140px; left: 15%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
-        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; display: flex; align-items: center; justify-content: center;">
+      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-cert">
+        <div class="lmsv-home-hero-widget-icon">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4-8 4-8-4 8-4z"></path><path d="M4 11l8 4 8-4"></path><path d="M10 15v4l2 2 2-2v-4"></path></svg>
         </div>
-        <div>
-          <div style="color: #ffffff; font-size: 14px; font-weight: 700; line-height: 1.2;">Certificate Ready</div>
-          <div style="color: #cbd5e1; font-size: 11px; line-height: 1.2; margin-top: 2px;">Career credentials in view</div>
+        <div class="lmsv-home-hero-widget-copy">
+          <div class="lmsv-home-hero-widget-title">Certificate Ready</div>
+          <div class="lmsv-home-hero-widget-note">Career credentials in view</div>
         </div>
       </div>
     </div>
   
-    <main class="lmsv-home-hero-copy-shell" style="max-width: 1320px; margin: 0 auto; width: 100%; position: relative; z-index: 2; padding: 0 24px;">
-      <div style="max-width: 600px; padding: 60px 0;">
-        <div style="display: flex; gap: 10px; margin-bottom: 24px;">
-          <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #e9d5ff; padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;">LAUNCH</span>
-          <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #e9d5ff; padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;">CAREER</span>
-          <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #e9d5ff; padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;">CREATOR</span>
+    <main class="lmsv-home-hero-copy-shell">
+      <div class="lmsv-home-hero-copy">
+        <div class="lmsv-home-hero-tags">
+          <span class="lmsv-home-hero-tag">LAUNCH</span>
+          <span class="lmsv-home-hero-tag">CAREER</span>
+          <span class="lmsv-home-hero-tag">CREATOR</span>
         </div>
-        <h1 style="color: #ffffff; font-size: clamp(40px, 5vw, 56px); line-height: 1.1; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em;">
+        <h1 class="lmsv-home-hero-title">
           Learn with clarity.<br>
-          <span style="color: #a855f7;">Build with confidence.</span>
+          <span>Build with confidence.</span>
         </h1>
-        <p style="font-size: 16px; color: #cbd5e1; line-height: 1.6; max-width: 46ch; margin-bottom: 32px;">
+        <p class="lmsv-home-hero-description">
           Nigeria's premier platform for practical skill development.<br>
           Launch your career, grow your expertise, or create courses<br>
           that impact thousands.
         </p>
-        <div style="display: flex; flex-wrap: wrap; gap: 16px;">
-          <a href="/courses" style="background: #a855f7; border: 1px solid #a855f7; color: #ffffff; padding: 12px 24px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;">Explore Courses <span aria-hidden="true">&rarr;</span></a>
-          <a href="/teach" style="background: rgba(15, 23, 42, 0.5); color: #f8fafc; border: 1px solid rgba(255, 255, 255, 0.15); font-weight: 600; font-size: 15px; border-radius: 10px; padding: 12px 24px; text-decoration: none; display: inline-flex; align-items: center; transition: all 0.2s;">Start Teaching</a>
+        <div class="lmsv-home-hero-actions">
+          <a href="/courses" class="lmsv-home-hero-btn lmsv-home-hero-btn-primary">Explore Courses <span aria-hidden="true">&rarr;</span></a>
+          <a href="/teach" class="lmsv-home-hero-btn lmsv-home-hero-btn-secondary">Start Teaching</a>
         </div>
       </div>
     </main>
   </div>
 
 <main class="lmsv-shell">
-  <div class="lmsv-hero-overlap-wrapper" style="margin-top: -100px; position: relative; z-index: 20;">
+  <div class="lmsv-hero-overlap-wrapper">
       <div class="lmsv-surface-card lmsv-hero-overlap-card lmsv-fade-up lmsv-delay-3">
         <div class="lmsv-overlap-stats">
           <div class="lmsv-pulse-row">
