@@ -58,14 +58,14 @@
   <div class="lmsv-home-hero-band" style="background:#090B19; overflow: hidden; position: relative; width: 100vw; margin-left: calc(-50vw + 50%); margin-right: calc(-50vw + 50%); min-height: 540px; display: flex; align-items: center; padding-bottom: 80px;">
   
     <!-- Right Side Img Full Height with Fade -->
-    <div style="position: absolute; top: 0; right: 0; bottom: 0; width: 60%; z-index: 1;">
+    <div class="lmsv-home-hero-image-panel" style="position: absolute; top: 0; right: 0; bottom: 0; width: 60%; z-index: 1;">
       <!-- Gradient overlay to fade left side to #090B19 -->
-      <div style="position: absolute; inset: 0; background: linear-gradient(to right, #090B19 0%, rgba(9,11,25,0) 40%); z-index: 2;"></div>
+      <div class="lmsv-home-hero-image-fade" style="position: absolute; inset: 0; background: linear-gradient(to right, #090B19 0%, rgba(9,11,25,0) 40%); z-index: 2;"></div>
       <!-- Mask image fading bottom to match dark overlapping bottom, but actually overlap card is just above -->
       <img src="<%= heroGraphicImage %>" alt="Learners collaborating" style="width: 100%; height: 100%; object-fit: cover; object-position: center;">
       
       <!-- Floating Widgets -->
-      <div style="position: absolute; top: 80px; right: 12%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
+      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-growth" style="position: absolute; top: 80px; right: 12%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
         <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; display: flex; align-items: center; justify-content: center;">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="13"></line></svg>
         </div>
@@ -75,7 +75,7 @@
         </div>
       </div>
   
-      <div style="position: absolute; bottom: 140px; left: 15%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
+      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-cert" style="position: absolute; bottom: 140px; left: 15%; z-index: 3; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);">
         <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; display: flex; align-items: center; justify-content: center;">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4-8 4-8-4 8-4z"></path><path d="M4 11l8 4 8-4"></path><path d="M10 15v4l2 2 2-2v-4"></path></svg>
         </div>
@@ -86,7 +86,7 @@
       </div>
     </div>
   
-    <main style="max-width: 1320px; margin: 0 auto; width: 100%; position: relative; z-index: 2; padding: 0 24px;">
+    <main class="lmsv-home-hero-copy-shell" style="max-width: 1320px; margin: 0 auto; width: 100%; position: relative; z-index: 2; padding: 0 24px;">
       <div style="max-width: 600px; padding: 60px 0;">
         <div style="display: flex; gap: 10px; margin-bottom: 24px;">
           <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #e9d5ff; padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;">LAUNCH</span>

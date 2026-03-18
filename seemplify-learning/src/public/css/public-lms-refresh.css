@@ -849,12 +849,18 @@ body.public-site .btn-sm {
   align-items: center;
   justify-content: space-between;
   padding: 32px 40px;
+  gap: 24px;
 }
 
 .lmsv-overlap-stats .lmsv-pulse-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
 }
 
 .lmsv-overlap-stats .lmsv-pulse-row span {
@@ -2479,6 +2485,45 @@ body.public-site.lmsv-auth-page .lmsv-shell {
   }
 }
 
+@media (max-width: 1024px) {
+  .lmsv-home-hero {
+    grid-template-columns: 1fr;
+    padding: 60px 24px 180px;
+    gap: 40px;
+  }
+
+  .lmsv-home-hero-band {
+    min-height: auto !important;
+    padding-bottom: 56px !important;
+  }
+
+  .lmsv-hero-overlap-wrapper {
+    margin-top: -92px;
+  }
+
+  .lmsv-hero-overlap-card {
+    flex-direction: column;
+  }
+
+  .lmsv-overlap-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 24px;
+    gap: 16px;
+  }
+
+  .lmsv-overlap-divider {
+    display: none;
+  }
+
+  .lmsv-overlap-featured {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+    padding: 24px;
+  }
+}
+
 @media (max-width: 860px) {
   body.public-site .top-nav-inner {
     padding: 9px 12px;
@@ -2498,6 +2543,34 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 
   .lmsv-shell {
     padding: 0 16px 30px;
+  }
+
+  .lmsv-home-hero-band {
+    background:
+      linear-gradient(180deg, rgba(9, 11, 25, 0.72), rgba(9, 11, 25, 0.94)),
+      url('/images/aiin-learning-hero-graphic-new.png') center / cover no-repeat !important;
+  }
+
+  .lmsv-home-hero-image-panel {
+    display: none !important;
+  }
+
+  .lmsv-home-hero-copy-shell {
+    padding: 0 16px !important;
+  }
+
+  .lmsv-home-hero-copy-shell > div {
+    max-width: 100% !important;
+    padding: 36px 0 20px !important;
+  }
+
+  .lmsv-home-hero-band h1 {
+    font-size: clamp(34px, 10vw, 46px) !important;
+  }
+
+  .lmsv-home-hero-band p {
+    max-width: 100% !important;
+    font-size: 15px !important;
   }
 
   .lmsv-home-hero {
@@ -2568,34 +2641,6 @@ body.public-site.lmsv-auth-page .lmsv-shell {
     font-size: 28px;
   }
 
-@media (max-width: 1024px) {
-  .lmsv-home-hero {
-    grid-template-columns: 1fr;
-    padding: 60px 24px 180px;
-    gap: 40px;
-  }
-  .lmsv-hero-overlap-wrapper {
-    margin-top: -140px;
-  }
-  .lmsv-hero-overlap-card {
-    flex-direction: column;
-  }
-  .lmsv-overlap-stats {
-    padding: 24px;
-    flex-wrap: wrap;
-    gap: 24px;
-  }
-  .lmsv-overlap-divider {
-    display: none;
-  }
-  .lmsv-overlap-featured {
-    width: 100%;
-    border-left: none;
-    border-top: 1px solid #e2e8f0;
-    padding: 24px;
-  }
-}
-
   .lmsv-course-grid {
     grid-template-columns: 1fr;
   }
@@ -2639,6 +2684,76 @@ body.public-site.lmsv-auth-page .lmsv-shell {
 }
 
 @media (max-width: 640px) {
+  .lmsv-home-hero-band {
+    padding-bottom: 40px !important;
+  }
+
+  .lmsv-home-hero-copy-shell {
+    padding: 0 12px !important;
+  }
+
+  .lmsv-home-hero-copy-shell > div {
+    padding: 28px 0 18px !important;
+  }
+
+  .lmsv-home-hero-band .lmsv-actions {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .lmsv-home-hero-band .lmsv-actions a {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .lmsv-hero-overlap-wrapper {
+    margin-top: -52px;
+    padding: 0 12px;
+  }
+
+  .lmsv-hero-overlap-card {
+    border-radius: 18px;
+  }
+
+  .lmsv-overlap-stats {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .lmsv-overlap-stats .lmsv-pulse-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgba(124, 58, 237, 0.12);
+    border-radius: 14px;
+    background: #faf5ff;
+    padding: 14px 16px;
+  }
+
+  .lmsv-overlap-stats .lmsv-pulse-row span {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .lmsv-overlap-stats .lmsv-pulse-row strong {
+    font-size: 26px;
+  }
+
+  .lmsv-overlap-featured {
+    padding: 18px 16px 20px;
+  }
+
+  .lmsv-featured-header {
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .lmsv-overlap-featured h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
   .lmsv-home-hero-overlay-cert {
     display: none;
   }
