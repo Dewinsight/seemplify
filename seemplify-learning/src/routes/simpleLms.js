@@ -3284,6 +3284,15 @@ const redirectWithMessage = ({ res, path = '/simple-lms', success = '', error = 
   return res.redirect(query ? `${basePath}${basePath.includes('?') ? '&' : '?'}${query}${hashSuffix}` : `${basePath}${hashSuffix}`)
 }
 
+const safeWorkspaceLoad = async (label, loader, fallback) => {
+  try {
+    return await loader()
+  } catch (error) {
+    console.error(`Simple LMS data load error (${label}):`, error)
+    return typeof fallback === 'function' ? fallback() : fallback
+  }
+}
+
 const normalizeLessonMediaResourceType = (value, fallback = 'video') => {
   const normalized = String(value || '').trim().toLowerCase()
   if (['video', 'audio', 'raw', 'link'].includes(normalized)) return normalized
@@ -9129,12 +9138,16 @@ const renderWorkspacePage = async (
         .then((ids) => Array.isArray(ids) ? ids.length : 0),
       SimpleLmsEnrollment.countDocuments({ status: 'completed' }),
       canManagePlatform(role)
-        ? Account.find({})
-          .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization currentOrganization organizations roleMetadata')
-          .populate('partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
-          .sort({ createdAt: -1 })
-          .limit(500)
-          .lean()
+        ? safeWorkspaceLoad(
+          'admin accounts',
+          () => Account.find({})
+            .select('email profile.name learningRole isSystemAdmin isSuperAdmin createdAt payoutProfile partnerOrganization currentOrganization organizations roleMetadata')
+            .populate('partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
+            .sort({ createdAt: -1 })
+            .limit(500)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       SimpleLmsCourse.countDocuments({
         isActive: true,
@@ -9171,22 +9184,30 @@ const renderWorkspacePage = async (
         .sort({ paidAt: -1, createdAt: -1 })
         .lean(),
       canManagePlatform(role)
-        ? SimpleLmsPayment.find(adminPaymentFilter)
-          .populate('account', 'email profile.name')
-          .populate('course', 'title')
-          .sort({ createdAt: -1 })
-          .limit(500)
-          .lean()
+        ? safeWorkspaceLoad(
+          'admin payments',
+          () => SimpleLmsPayment.find(adminPaymentFilter)
+            .populate('account', 'email profile.name')
+            .populate('course', 'title')
+            .sort({ createdAt: -1 })
+            .limit(500)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? SimpleLmsCourse.find({
-          status: 'pending_public_review',
-          isActive: true
-        })
-          .populate('createdBy', 'email profile.name')
-          .sort({ submittedForPublicReviewAt: -1, updatedAt: -1 })
-          .limit(200)
-          .lean()
+        ? safeWorkspaceLoad(
+          'pending review courses',
+          () => SimpleLmsCourse.find({
+            status: 'pending_public_review',
+            isActive: true
+          })
+            .populate('createdBy', 'email profile.name')
+            .sort({ submittedForPublicReviewAt: -1, updatedAt: -1 })
+            .limit(200)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       getCommissionSettings(),
       getPlatformSettings(currencyCatalog.codes),
@@ -9240,105 +9261,145 @@ const renderWorkspacePage = async (
           .lean()
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? SimpleLmsWithdrawal.find({})
-          .populate('creatorAccount', 'email profile.name payoutProfile')
-          .populate('reviewedBy', 'email profile.name')
-          .populate('paidBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .limit(400)
-          .lean()
+        ? safeWorkspaceLoad(
+          'admin withdrawal requests',
+          () => SimpleLmsWithdrawal.find({})
+            .populate('creatorAccount', 'email profile.name payoutProfile')
+            .populate('reviewedBy', 'email profile.name')
+            .populate('paidBy', 'email profile.name')
+            .sort({ createdAt: -1 })
+            .limit(400)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? Organization.find({
-          partnerType: { $in: ['channel_partner', 'partner'] }
-        })
-          .populate('owner', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
-          .populate('members.account', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
-          .sort({ updatedAt: -1 })
-          .limit(300)
-          .lean()
+        ? safeWorkspaceLoad(
+          'partner organizations',
+          () => Organization.find({
+            partnerType: { $in: ['channel_partner', 'partner'] }
+          })
+            .populate('owner', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+            .populate('members.account', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+            .sort({ updatedAt: -1 })
+            .limit(300)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? RoleApprovalRequest.find({})
-          .populate('account', 'email profile.name')
-          .populate('organization', 'name partnerType partnerSettings.partnerStatus')
-          .populate('reviewedBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .limit(300)
-          .lean()
+        ? safeWorkspaceLoad(
+          'partner role requests',
+          () => RoleApprovalRequest.find({})
+            .populate('account', 'email profile.name')
+            .populate('organization', 'name partnerType partnerSettings.partnerStatus')
+            .populate('reviewedBy', 'email profile.name')
+            .sort({ createdAt: -1 })
+            .limit(300)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? Account.find({ isSuperAdmin: true })
-          .select('_id email profile.name roleMetadata createdAt updatedAt')
-          .sort({ createdAt: 1 })
-          .lean()
+        ? safeWorkspaceLoad(
+          'platform admins',
+          () => Account.find({ isSuperAdmin: true })
+            .select('_id email profile.name roleMetadata createdAt updatedAt')
+            .sort({ createdAt: 1 })
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? AdminInvite.find({})
-          .populate('invitedBy', 'email profile.name')
-          .populate('registeredAccount', 'email profile.name emailVerified')
-          .populate('acceptedBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .limit(300)
-          .lean()
+        ? safeWorkspaceLoad(
+          'admin invites',
+          () => AdminInvite.find({})
+            .populate('invitedBy', 'email profile.name')
+            .populate('registeredAccount', 'email profile.name emailVerified')
+            .populate('acceptedBy', 'email profile.name')
+            .sort({ createdAt: -1 })
+            .limit(300)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? AuditLog.find({})
-          .populate('performedBy', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
-          .populate('performedBy.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
-          .populate('targetAccount', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
-          .populate('targetAccount.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
-          .populate('targetOrganization', 'name partnerType')
-          .sort({ createdAt: -1 })
-          .limit(600)
-          .lean()
+        ? safeWorkspaceLoad(
+          'admin audit log',
+          () => AuditLog.find({})
+            .populate('performedBy', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+            .populate('performedBy.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
+            .populate('targetAccount', 'email profile.name learningRole isSystemAdmin isSuperAdmin partnerOrganization currentOrganization organizations roleMetadata')
+            .populate('targetAccount.partnerOrganization', 'name partnerType partnerSettings.partnerStatus')
+            .populate('targetOrganization', 'name partnerType')
+            .sort({ createdAt: -1 })
+            .limit(600)
+            .lean(),
+          []
+        )
         : Promise.resolve([]),
       canManagePlatform(role)
-        ? AgentSaleAttribution.find({
-          status: { $in: ['pending', 'recommended', 'approved'] }
-        })
-          .populate('agent', 'email profile.name payoutProfile')
-          .populate('course', 'title')
-          .populate('partnerOrganization', 'name partnerType')
-          .populate('recommendedBy', 'email profile.name')
-          .populate('approvedBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .limit(500)
-          .lean()
+        ? safeWorkspaceLoad(
+          'agent payout rows',
+          () => AgentSaleAttribution.find({
+            status: { $in: ['pending', 'recommended', 'approved'] }
+          })
+            .populate('agent', 'email profile.name payoutProfile')
+            .populate('course', 'title')
+            .populate('partnerOrganization', 'name partnerType')
+            .populate('recommendedBy', 'email profile.name')
+            .populate('approvedBy', 'email profile.name')
+            .sort({ createdAt: -1 })
+            .limit(500)
+            .lean(),
+          []
+        )
         : Promise.resolve([])
     ])
 
     const [partnerWithdrawalRequestsRaw, partnerWithdrawalAggregateRaw, partnerRevenueAggregateRaw] = canManagePlatform(role)
       ? await Promise.all([
-        PartnerWithdrawal.find({})
-          .populate('organization', 'name partnerType partnerSettings')
-          .populate('requestedBy', 'email profile.name')
-          .populate('reviewedBy', 'email profile.name')
-          .populate('paidBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .limit(400)
-          .lean(),
-        PartnerWithdrawal.aggregate([
-          {
-            $group: {
-              _id: '$organization',
-              requestCount: { $sum: 1 },
-              pendingMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } },
-              paidMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
-              latestRequestedAt: { $max: '$createdAt' }
+        safeWorkspaceLoad(
+          'partner withdrawal requests',
+          () => PartnerWithdrawal.find({})
+            .populate('organization', 'name partnerType partnerSettings')
+            .populate('requestedBy', 'email profile.name')
+            .populate('reviewedBy', 'email profile.name')
+            .populate('paidBy', 'email profile.name')
+            .sort({ createdAt: -1 })
+            .limit(400)
+            .lean(),
+          []
+        ),
+        safeWorkspaceLoad(
+          'partner withdrawal aggregate',
+          () => PartnerWithdrawal.aggregate([
+            {
+              $group: {
+                _id: '$organization',
+                requestCount: { $sum: 1 },
+                pendingMinor: { $sum: { $cond: [{ $in: ['$status', ['pending', 'approved']] }, '$amountMinor', 0] } },
+                paidMinor: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amountMinor', 0] } },
+                latestRequestedAt: { $max: '$createdAt' }
+              }
             }
-          }
-        ]),
-        AgentSaleAttribution.aggregate([
-          {
-            $group: {
-              _id: '$partnerOrganization',
-              totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
-              totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
-              partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+          ]),
+          []
+        ),
+        safeWorkspaceLoad(
+          'partner revenue aggregate',
+          () => AgentSaleAttribution.aggregate([
+            {
+              $group: {
+                _id: '$partnerOrganization',
+                totalSalesMinor: { $sum: { $ifNull: ['$saleAmountMinor', 0] } },
+                totalAgentCommissionMinor: { $sum: { $ifNull: ['$commissionAmountMinor', 0] } },
+                partnerEarningsMinor: { $sum: buildPartnerRevenueExpression() }
+              }
             }
-          }
-        ])
+          ]),
+          []
+        )
       ])
       : [[], [], []]
 
@@ -10628,29 +10689,41 @@ const renderWorkspacePage = async (
     }
     const [dailySalesReportRaw, commissionReportRaw, churnMetrics] = canManagePlatform(role)
       ? await Promise.all([
-          buildSalesReportData({
-            role,
-            accountId: req.user?._id,
-            partnerOrganizationId: reportPartnerOrganizationId,
-            agentId: reportAgentId,
-            courseId: reportCourseId,
-            from: reportWindow.from,
-            to: reportWindow.to
-          }),
-          buildCommissionReportData({
-            role,
-            accountId: req.user?._id,
-            partnerOrganizationId: reportPartnerOrganizationId,
-            agentId: reportAgentId,
-            courseId: reportCourseId,
-            from: reportWindow.from,
-            to: reportWindow.to
-          }),
-          buildChurnMetrics({
-            from: reportWindow.from,
-            to: reportWindow.to,
-            partnerOrganizationId: reportPartnerOrganizationId
-          })
+          safeWorkspaceLoad(
+            'daily sales report',
+            () => buildSalesReportData({
+              role,
+              accountId: req.user?._id,
+              partnerOrganizationId: reportPartnerOrganizationId,
+              agentId: reportAgentId,
+              courseId: reportCourseId,
+              from: reportWindow.from,
+              to: reportWindow.to
+            }),
+            defaultDailySalesReport
+          ),
+          safeWorkspaceLoad(
+            'commission report',
+            () => buildCommissionReportData({
+              role,
+              accountId: req.user?._id,
+              partnerOrganizationId: reportPartnerOrganizationId,
+              agentId: reportAgentId,
+              courseId: reportCourseId,
+              from: reportWindow.from,
+              to: reportWindow.to
+            }),
+            defaultCommissionReport
+          ),
+          safeWorkspaceLoad(
+            'churn metrics',
+            () => buildChurnMetrics({
+              from: reportWindow.from,
+              to: reportWindow.to,
+              partnerOrganizationId: reportPartnerOrganizationId
+            }),
+            defaultChurnMetrics
+          )
         ])
       : [defaultDailySalesReport, defaultCommissionReport, defaultChurnMetrics]
     const reportCurrency = 'NGN'
@@ -11153,7 +11226,7 @@ const renderWorkspacePage = async (
       res,
       path: studioPortal
         ? (studioContext === 'admin' ? '/admin/courses' : '/simple-lms/studio/courses')
-        : (adminPortal ? '/admin' : '/simple-lms'),
+        : (adminPortal ? '/simple-lms' : '/simple-lms'),
       error: studioPortal
         ? 'Failed to load course studio.'
         : (adminPortal ? 'Failed to load admin portal.' : 'Failed to load workspace.')
