@@ -837,6 +837,141 @@
   color: var(--text);
 }
 
+.admin-card-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.admin-stats-grid--compact {
+  margin-bottom: 0;
+}
+
+.admin-stat-card--accent {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-stat-card--accent::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #10b981, #14b8a6, #6366f1);
+}
+
+.workforce-app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.workforce-app-card {
+  margin-bottom: 0;
+  border-top: 3px solid var(--app-accent, #6366f1);
+}
+
+.workforce-app-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.workforce-app-card__eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-accent, #818cf8);
+  margin-bottom: 6px;
+}
+
+.workforce-app-card__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.workforce-app-card__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--app-accent, #6366f1);
+  color: var(--app-accent, #818cf8);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.workforce-app-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.workforce-app-metric {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+}
+
+.workforce-app-metric__label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.workforce-app-metric__value {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.workforce-app-card__trend {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.workforce-sparkline {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  align-items: end;
+  gap: 4px;
+  height: 92px;
+  margin-bottom: 12px;
+}
+
+.workforce-sparkline__bar {
+  display: block;
+  min-height: 10px;
+  border-radius: 999px;
+  background: var(--app-accent, #6366f1);
+  opacity: 0.92;
+}
+
+.workforce-app-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workforce-app-card__footnote {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 /* Forms */
 .admin-form-group {
   margin-bottom: 20px;
@@ -1184,6 +1319,14 @@ html[data-theme="light"] {
 
   .admin-stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workforce-app-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workforce-app-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-table-container {

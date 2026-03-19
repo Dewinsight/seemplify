@@ -1,11 +1,12 @@
 "use client";
 
+import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAdmin } from '@/context/AdminContext';
 
 interface AdminProtectedRouteProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export default function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
@@ -14,33 +15,36 @@ export default function AdminProtectedRoute({ children }: AdminProtectedRoutePro
   const router = useRouter();
 
   useEffect(() => {
-    console.log('🛡️ AdminProtectedRoute effect:', { 
-      isLoading, 
-      isAuthenticated, 
-      pathname,
-      isAdminLoginPage: pathname === '/admin/login'
-    });
-    
-    if (isLoading) return;
-
     const isAdminLoginPage = pathname === '/admin/login';
     const isPasswordResetRoute = pathname?.startsWith('/admin/forgot-password') ||
                                 pathname?.startsWith('/admin/reset-password');
+    const isAdminSsoPage = pathname === '/admin/sso';
+    const isPublicAdminRoute = isAdminLoginPage || isPasswordResetRoute || isAdminSsoPage;
 
-    // Skip protection for password reset routes
-    if (isPasswordResetRoute) {
-      console.log('🔓 Password reset route - skipping protection');
+    console.log('AdminProtectedRoute effect:', {
+      isLoading,
+      isAuthenticated,
+      pathname,
+      isPublicAdminRoute
+    });
+
+    if (isLoading) return;
+
+    if (isPublicAdminRoute) {
+      if (isAuthenticated && isAdminLoginPage) {
+        console.log('Authenticated on login page, redirecting to dashboard');
+        router.push('/admin/dashboard');
+      } else {
+        console.log('Public admin route, skipping protection');
+      }
       return;
     }
 
-    if (!isAuthenticated && !isAdminLoginPage) {
-      console.log('🚫 Not authenticated, redirecting to admin login');
+    if (!isAuthenticated) {
+      console.log('Not authenticated, redirecting to admin login');
       router.push('/admin/login');
-    } else if (isAuthenticated && isAdminLoginPage) {
-      console.log('✅ Authenticated on login page, redirecting to dashboard');
-      router.push('/admin/dashboard');
     } else {
-      console.log('✅ AdminProtectedRoute: Allowing access');
+      console.log('AdminProtectedRoute allowing access');
     }
   }, [isAuthenticated, isLoading, pathname, router]);
 
@@ -55,13 +59,14 @@ export default function AdminProtectedRoute({ children }: AdminProtectedRoutePro
   const isAdminLoginPage = pathname === '/admin/login';
   const isPasswordResetRoute = pathname?.startsWith('/admin/forgot-password') ||
                               pathname?.startsWith('/admin/reset-password');
+  const isAdminSsoPage = pathname === '/admin/sso';
+  const isPublicAdminRoute = isAdminLoginPage || isPasswordResetRoute || isAdminSsoPage;
 
-  // Allow password reset routes without authentication
-  if (isPasswordResetRoute) {
+  if (isPublicAdminRoute) {
     return <>{children}</>;
   }
 
-  if (!isAuthenticated && !isAdminLoginPage) {
+  if (!isAuthenticated) {
     return null;
   }
 

@@ -8,6 +8,37 @@ const Organization = require('../models/Organization');
 const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const {
+  consumeIdpAdminSsoToken,
+  upsertAdminFromIdpIdentity,
+  verifyIdpAdminSsoToken
+} = require('../services/idpAdminSsoService');
+
+const buildAdminTokenPayload = (admin) => ({
+  admin: {
+    id: admin.id
+  },
+  isAdmin: true
+});
+
+const issueAdminToken = (admin) => {
+  return jwt.sign(
+    buildAdminTokenPayload(admin),
+    process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+};
+
+const buildAdminAuthResponse = (admin, token = issueAdminToken(admin)) => ({
+  token,
+  admin: {
+    id: admin.id,
+    email: admin.email,
+    name: admin.name,
+    role: admin.role,
+    permissions: admin.permissions
+  }
+});
 
 // @route   POST /api/admin/auth/login
 // @desc    Admin login
@@ -46,36 +77,45 @@ router.post('/auth/login', async (req, res) => {
     // Reset login attempts on successful login
     await admin.resetLoginAttempts();
 
-    // Create JWT payload
-    const payload = {
-      admin: {
-        id: admin.id
-      },
-      isAdmin: true // Flag to distinguish admin tokens
-    };
-
-    // Sign token
-    jwt.sign(
-      payload,
-      process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
-      { expiresIn: '8h' }, // Admin tokens expire in 8 hours
-      (err, token) => {
-        if (err) throw err;
-        res.json({
-          token,
-          admin: {
-            id: admin.id,
-            email: admin.email,
-            name: admin.name,
-            role: admin.role,
-            permissions: admin.permissions
-          }
-        });
-      }
-    );
+    res.json(buildAdminAuthResponse(admin));
   } catch (err) {
     console.error('Admin login error:', err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   POST /api/admin/auth/idp-exchange
+// @desc    Exchange an IDP admin SSO token for a recruiter admin token
+// @access  Public
+router.post('/auth/idp-exchange', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ msg: 'IDP admin SSO token is required' });
+    }
+
+    const identity = verifyIdpAdminSsoToken(token);
+    consumeIdpAdminSsoToken(identity.jti, identity.exp);
+
+    const admin = await upsertAdminFromIdpIdentity(identity);
+    res.json(buildAdminAuthResponse(admin));
+  } catch (err) {
+    console.error('IDP admin SSO exchange error:', err);
+
+    if (err.code === 'IDP_ADMIN_SSO_NOT_CONFIGURED') {
+      return res.status(500).json({ msg: 'Admin SSO is not configured' });
+    }
+
+    if (err.code === 'INVALID_IDP_ADMIN_SSO_TOKEN' || err.code === 'IDP_ADMIN_SSO_TOKEN_REPLAYED') {
+      return res.status(401).json({ msg: err.message });
+    }
+
+    if (err.code === 'IDP_ADMIN_LINK_MISMATCH') {
+      return res.status(409).json({ msg: err.message });
+    }
+
+    res.status(500).json({ msg: 'Failed to exchange IDP admin SSO token' });
   }
 });
 

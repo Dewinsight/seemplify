@@ -8,6 +8,8 @@ import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import AppLaunchActivity from '../models/AppLaunchActivity.js'
+import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
+import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 
 const router = express.Router()
 const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
@@ -36,15 +38,19 @@ router.use(setAdminContext)
  */
 router.get('/', async (req, res) => {
   try {
-    const stats = await subscriptionService.getStats()
-    const recentRequests = await SubscriptionRequest.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate(['organization', 'plan', 'requestedBy'])
+    const [stats, recentRequests, workforceAnalytics] = await Promise.all([
+      subscriptionService.getStats(),
+      SubscriptionRequest.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate(['organization', 'plan', 'requestedBy']),
+      getWorkforceOperationsAnalytics()
+    ])
 
     res.render('admin/dashboard', {
       stats,
       recentRequests,
+      workforceAnalytics,
       user: req.user
     })
   } catch (error) {
@@ -179,6 +185,23 @@ router.get('/simple-lms', async (req, res) => {
     res.status(500).render('error', {
       title: 'Error',
       message: 'Failed to open Seemplify Learning workspace'
+    })
+  }
+})
+
+/**
+ * GET /admin/recruiter-admin
+ * Launch recruiter admin via IDP-issued admin SSO
+ */
+router.get('/recruiter-admin', async (req, res) => {
+  try {
+    const launchUrl = await buildRecruiterAdminLaunchUrl(req.user)
+    res.redirect(launchUrl)
+  } catch (error) {
+    console.error('Error launching recruiter admin:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to open recruiter admin'
     })
   }
 })

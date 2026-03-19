@@ -11,7 +11,9 @@ const AdminSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: function() {
+      return (this.authSource || 'local') === 'local';
+    }
   },
   name: {
     type: String,
@@ -31,11 +33,28 @@ const AdminSchema = new mongoose.Schema({
     viewAnalytics: { type: Boolean, default: false },
     systemSettings: { type: Boolean, default: false }
   },
+  authSource: {
+    type: String,
+    enum: ['local', 'idp'],
+    default: 'local'
+  },
+  idpAccountId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
   isActive: {
     type: Boolean,
     default: true
   },
   lastLogin: {
+    type: Date
+  },
+  lastSsoLoginAt: {
+    type: Date
+  },
+  lastIdpSyncAt: {
     type: Date
   },
   loginAttempts: {
@@ -73,7 +92,7 @@ AdminSchema.virtual('isLocked').get(function() {
 
 // Pre-save middleware to hash password
 AdminSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   
   try {
     const salt = await bcrypt.genSalt(10);
@@ -86,6 +105,9 @@ AdminSchema.pre('save', async function(next) {
 
 // Method to compare password
 AdminSchema.methods.comparePassword = async function(candidatePassword) {
+  if (!candidatePassword || !this.password) {
+    return false;
+  }
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

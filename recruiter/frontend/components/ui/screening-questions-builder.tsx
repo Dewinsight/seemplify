@@ -7,10 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { Trash2, GripVertical, Plus, ChevronUp, ChevronDown, Check } from 'lucide-react'
+import { Trash2, GripVertical, Plus, Check } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -40,7 +39,7 @@ interface ScreeningQuestionsBuilderProps {
   existingQuestions?: Question[]
 }
 
-export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [] }: ScreeningQuestionsBuilderProps) {
+export function ScreeningQuestionsBuilder({ jobId: _jobId, onSave, existingQuestions = [] }: ScreeningQuestionsBuilderProps) {
   const [questions, setQuestions] = useState<Question[]>(existingQuestions)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -71,11 +70,29 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
     if (editingId === id) setEditingId(null)
   }
 
+  const handleToggleAddQuestion = () => {
+    if (!showAddForm) {
+      addQuestion()
+      return
+    }
+
+    if (editingId && editingId.startsWith('new-')) {
+      deleteQuestion(editingId)
+    } else {
+      setEditingId(null)
+    }
+
+    setShowAddForm(false)
+  }
+
   const saveQuestions = () => {
     // Update orders to be sequential
     const reorderedQuestions = questions.map((q, index) => ({ ...q, order: index }))
     onSave?.(reorderedQuestions)
-    toast.success('Screening questions saved')
+    toast({
+      title: 'Success',
+      description: 'Screening questions saved'
+    })
   }
 
   const renderQuestionInput = (question: Question) => {
@@ -124,7 +141,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
               variant="outline"
               size="sm"
               onClick={() => {
-                const newOptions = [...(question.options || []), { value: '', label: `Option ${question.options?.length + 1}` }]
+                const newOptions = [...(question.options || []), { value: '', label: `Option ${(question.options?.length ?? 0) + 1}` }]
                 updateQuestion(question._id, { options: newOptions })
               }}
             >
@@ -179,7 +196,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
               variant="outline"
               size="sm"
               onClick={() => {
-                const newOptions = [...(question.options || []), { value: '', label: `Option ${question.options?.length + 1}` }]
+                const newOptions = [...(question.options || []), { value: '', label: `Option ${(question.options?.length ?? 0) + 1}` }]
                 updateQuestion(question._id, { options: newOptions })
               }}
             >
@@ -233,7 +250,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
               variant="outline"
               size="sm"
               onClick={() => {
-                const newOptions = [...(question.options || []), { value: '', label: `Option ${question.options?.length + 1}` }]
+                const newOptions = [...(question.options || []), { value: '', label: `Option ${(question.options?.length ?? 0) + 1}` }]
                 updateQuestion(question._id, { options: newOptions })
               }}
             >
@@ -251,7 +268,8 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
   const renderConditionalLogic = (question: Question, allQuestions: Question[]) => {
     if (!question.condition) return null
 
-    const dependentQuestion = allQuestions.find(q => q._id === question.condition.dependsOn)
+    const condition = question.condition
+    const dependentQuestion = allQuestions.find(q => q._id === condition.dependsOn)
     if (!dependentQuestion) return null
 
     return (
@@ -259,9 +277,9 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm font-medium">Show if</span>
           <Select
-            value={question.condition.operator}
+            value={condition.operator}
             onValueChange={(value) => updateQuestion(question._id, { 
-              condition: { ...question.condition, operator: value as any }
+              condition: { ...condition, operator: value as any }
             })}
           >
             <SelectTrigger className="w-40">
@@ -277,9 +295,9 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
         </div>
         <Input
           placeholder="Value to compare"
-          value={question.condition.value}
+          value={condition.value}
           onChange={(e) => updateQuestion(question._id, { 
-            condition: { ...question.condition, value: e.target.value }
+            condition: { ...condition, value: e.target.value }
           })}
           className="w-40"
         />
@@ -289,15 +307,16 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
 
   const renderAutoAction = (question: Question) => {
     if (!question.action) return null
+    const action = question.action
 
     return (
       <div className="ml-4 mt-2 p-3 bg-blue-50 dark:bg-blue-950/50 rounded-lg border border-blue-200 dark:border-blue-800">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm font-medium">Auto-Action</span>
           <Select
-            value={question.action.actionType}
+            value={action.actionType}
             onValueChange={(value) => updateQuestion(question._id, { 
-              action: { ...question.action, actionType: value as any }
+              action: { ...action, actionType: value as any }
             })}
           >
             <SelectTrigger className="w-40">
@@ -310,12 +329,12 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
             </SelectContent>
           </Select>
         </div>
-        {question.action.actionType === 'reject' && (
+        {action.actionType === 'reject' && (
           <Input
             placeholder="Rejection reason"
-            value={question.action.reason || ''}
+            value={action.reason || ''}
             onChange={(e) => updateQuestion(question._id, { 
-              action: { ...question.action, reason: e.target.value }
+              action: { ...action, reason: e.target.value }
             })}
             className="flex-1 ml-2"
           />
@@ -336,7 +355,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
         <div className="flex gap-2">
           <Button
             type="button"
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={handleToggleAddQuestion}
             variant={showAddForm ? "outline" : "default"}
           >
             {showAddForm ? "Cancel" : <Plus className="h-4 w-4 mr-2" />}
@@ -357,7 +376,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
 
       {/* Questions List */}
       <div className="space-y-4">
-        {questions.map((question, index) => (
+        {questions.map((question) => (
           <Card key={question._id} className={cn(
             "transition-all duration-200",
             editingId === question._id && "ring-2 ring-ring ring-offset-2"
@@ -458,7 +477,7 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
                     <Checkbox
                       id={`required-${question._id}`}
                       checked={question.isRequired}
-                      onCheckedChange={(checked) => updateQuestion(question._id, { isRequired: checked })}
+                      onCheckedChange={(checked) => updateQuestion(question._id, { isRequired: checked === true })}
                     />
                     <Label htmlFor={`required-${question._id}`}>Required</Label>
                   </div>
@@ -478,7 +497,11 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      setEditingId(null)
+                      if (question._id.startsWith('new-')) {
+                        deleteQuestion(question._id)
+                      } else {
+                        setEditingId(null)
+                      }
                       setShowAddForm(false)
                     }}
                   >
@@ -489,12 +512,16 @@ export function ScreeningQuestionsBuilder({ jobId, onSave, existingQuestions = [
                     onClick={() => {
                       setEditingId(null)
                       setShowAddForm(false)
-                      toast.success('Question updated')
+                      toast({
+                        title: 'Success',
+                        description: 'Question updated'
+                      })
                     }}
                   >
                     Save
                   </Button>
                 </CardFooter>
+              </CardContent>
             )}
           </Card>
         ))}

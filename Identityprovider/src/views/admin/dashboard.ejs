@@ -17,6 +17,12 @@
     <%- include('../partials/admin-nav', { activePage: 'dashboard' }) %>
 
     <main class="admin-content">
+      <%
+        const workforceSummary = workforceAnalytics?.summary || {};
+        const workforceApps = workforceAnalytics?.apps || [];
+        const workforceTopOrganizations = workforceAnalytics?.topOrganizations || [];
+        const workforceRecentActivity = workforceAnalytics?.recentActivity || [];
+      %>
       <div class="admin-header">
         <h1>Dashboard</h1>
         <div class="admin-header-actions">
@@ -30,7 +36,6 @@
         </div>
       </div>
 
-      <!-- Stats Grid -->
       <div class="admin-stats-grid">
         <div class="admin-stat-card">
           <div class="admin-stat-label">Total Organizations</div>
@@ -52,7 +57,199 @@
         </div>
       </div>
 
-      <!-- Recent Requests -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div>
+            <div class="admin-card-title">Workforce Operations Analytics</div>
+            <div class="admin-card-subtitle">
+              Payroll, Leave Management, and Time &amp; Attendance activity from
+              <%= new Date(workforceSummary.lookbackStart || Date.now()).toLocaleDateString('en-GB') %>
+              to
+              <%= new Date(workforceSummary.lookbackEnd || Date.now()).toLocaleDateString('en-GB') %>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-stats-grid admin-stats-grid--compact">
+          <div class="admin-stat-card admin-stat-card--accent">
+            <div class="admin-stat-label">HR Suite Licensed Orgs</div>
+            <div class="admin-stat-value"><%= workforceSummary.entitledOrganizations || 0 %></div>
+            <div class="admin-stat-change">With at least one workforce product enabled</div>
+          </div>
+          <div class="admin-stat-card admin-stat-card--accent">
+            <div class="admin-stat-label">Active Orgs (30d)</div>
+            <div class="admin-stat-value"><%= workforceSummary.activeOrganizations30d || 0 %></div>
+            <div class="admin-stat-change"><%= workforceSummary.averageAdoptionRate || 0 %>% average adoption across the tracked apps</div>
+          </div>
+          <div class="admin-stat-card admin-stat-card--accent">
+            <div class="admin-stat-label">Active Users (30d)</div>
+            <div class="admin-stat-value"><%= workforceSummary.activeUsers30d || 0 %></div>
+            <div class="admin-stat-change">Unique admins and employees reaching the HR apps</div>
+          </div>
+          <div class="admin-stat-card admin-stat-card--accent">
+            <div class="admin-stat-label">Successful Launches (30d)</div>
+            <div class="admin-stat-value"><%= workforceSummary.successfulLaunches30d || 0 %></div>
+            <div class="admin-stat-change <%= workforceSummary.blockedLaunches30d > 0 ? 'negative' : 'positive' %>">
+              <%= workforceSummary.blockedLaunches30d || 0 %> blocked launches, top app: <%= workforceSummary.mostUsedAppName || 'None' %>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workforce-app-grid">
+        <% workforceApps.forEach(app => { %>
+          <div class="admin-card workforce-app-card" style="--app-accent: <%= app.color %>;">
+            <div class="workforce-app-card__header">
+              <div>
+                <div class="workforce-app-card__eyebrow"><%= app.name %></div>
+                <div class="workforce-app-card__title"><%= app.adoptionRate30d %>% org adoption</div>
+              </div>
+              <span class="workforce-app-card__chip"><%= app.successRate30d %>% success rate</span>
+            </div>
+
+            <div class="workforce-app-metrics">
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Licensed Orgs</span>
+                <span class="workforce-app-metric__value"><%= app.entitledOrganizations %></span>
+              </div>
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Active Orgs</span>
+                <span class="workforce-app-metric__value"><%= app.activeOrganizations30d %></span>
+              </div>
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Active Users</span>
+                <span class="workforce-app-metric__value"><%= app.activeUsers30d %></span>
+              </div>
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Launches (30d)</span>
+                <span class="workforce-app-metric__value"><%= app.successfulLaunches30d %></span>
+              </div>
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Launches (7d)</span>
+                <span class="workforce-app-metric__value"><%= app.launches7d %></span>
+              </div>
+              <div class="workforce-app-metric">
+                <span class="workforce-app-metric__label">Idle Licensed Orgs</span>
+                <span class="workforce-app-metric__value"><%= app.idleOrganizations %></span>
+              </div>
+            </div>
+
+            <div class="workforce-app-card__trend">
+              <div class="workforce-sparkline" aria-hidden="true">
+                <% app.sparkline.forEach(point => { %>
+                  <span
+                    class="workforce-sparkline__bar"
+                    title="<%= point.label %>: <%= point.count %> launches"
+                    style="height: <%= point.height %>%"
+                  ></span>
+                <% }) %>
+              </div>
+              <div class="workforce-app-card__meta">
+                <div class="admin-stat-change <%= app.growth.tone === 'positive' ? 'positive' : app.growth.tone === 'negative' ? 'negative' : '' %>">
+                  <%= app.growth.label %>
+                </div>
+                <div class="workforce-app-card__footnote">
+                  <%= app.blockedLaunches30d %> blocked attempts
+                  <% if (app.lastLaunchAt) { %>
+                    | last activity <%= new Date(app.lastLaunchAt).toLocaleString('en-GB') %>
+                  <% } else { %>
+                    | no activity recorded yet
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div class="admin-card-title">Top Organizations By Workforce Usage</div>
+        </div>
+
+        <% if (workforceTopOrganizations.length > 0) { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Organization</th>
+                  <th>Total Launches</th>
+                  <th>Apps Used</th>
+                  <th>Breakdown</th>
+                  <th>Last Activity</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% workforceTopOrganizations.forEach(org => { %>
+                  <tr>
+                    <td style="font-weight: 600;"><%= org.organizationName %></td>
+                    <td><%= org.totalLaunches %></td>
+                    <td><%= org.appsUsed %></td>
+                    <td><%= org.breakdownText || 'No recent breakdown' %></td>
+                    <td><%= org.lastUsedAt ? new Date(org.lastUsedAt).toLocaleString('en-GB') : 'Never' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3v18h18" />
+              <path d="M7 14l3-3 3 2 4-6" />
+            </svg>
+            <h3>No workforce usage yet</h3>
+            <p>When organizations start using payroll, leave, or time-attendance, their activity will appear here.</p>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div class="admin-card-title">Recent HR App Activity</div>
+        </div>
+
+        <% if (workforceRecentActivity.length > 0) { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>App</th>
+                  <th>Organization</th>
+                  <th>User</th>
+                  <th>Status</th>
+                  <th>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% workforceRecentActivity.forEach(activity => { %>
+                  <tr>
+                    <td style="font-weight: 600;"><%= activity.appName %></td>
+                    <td><%= activity.organizationName %></td>
+                    <td><%= activity.accountName %></td>
+                    <td>
+                      <span class="status-badge status-badge--<%= activity.badgeStatus %>">
+                        <%= activity.statusLabel %>
+                      </span>
+                    </td>
+                    <td><%= activity.createdAt ? new Date(activity.createdAt).toLocaleString('en-GB') : 'Unknown' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 8v4l3 3" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            <h3>No recent HR app activity</h3>
+            <p>Launch events across Payroll, Leave Management, and Time &amp; Attendance will show here.</p>
+          </div>
+        <% } %>
+      </div>
+
       <div class="admin-card">
         <div class="admin-card-header">
           <div class="admin-card-title">Recent Subscription Requests</div>
@@ -114,7 +311,6 @@
         <% } %>
       </div>
 
-      <!-- Plan Overview -->
       <div class="admin-card">
         <div class="admin-card-header">
           <div class="admin-card-title">Plan Overview</div>
