@@ -5799,6 +5799,125 @@ const buildDocumentDownloadUrl = (assignmentId, itemId, version) => {
   return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/download${query ? `?${query}` : ''}`
 }
 
+const buildDocumentViewUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document${query ? `?${query}` : ''}`
+}
+
+const buildProfileDocumentEntries = (assignments = [], user = {}) => {
+  const currentUserId = user?._id?.toString?.() || user?.toString?.() || ''
+  const entries = []
+
+  assignments.forEach((assignment) => {
+    const assignmentId = assignment?._id?.toString?.() || ''
+    const assignmentMemberId = assignment?.member?._id?.toString?.()
+      || assignment?.member?.toString?.()
+      || ''
+    const isAssignee = assignmentMemberId === currentUserId
+    const organizationName = assignment?.organization?.name || 'Organization'
+    const workflowType = normalizeWorkflowType(assignment?.workflowType, { fallback: 'general' })
+    const workflowLabel = WORKFLOW_LABELS[workflowType] || 'Document Workflow'
+
+    ;(assignment?.items || []).forEach((item) => {
+      if (!['esign', 'upload'].includes(item?.type)) {
+        return
+      }
+
+      const configuredSigners = item?.config?.signers || []
+      const signingStatus = item?.data?.esign?.signers || []
+      const isConfiguredSigner = item.type === 'esign'
+        ? configuredSigners.some((signer) => String(signer?.member || signer?.memberId || signer || '') === currentUserId)
+        : false
+      const isSignerInStatus = item.type === 'esign'
+        ? signingStatus.some((signer) => String(signer?.member || '') === currentUserId)
+        : false
+
+      if (!(isAssignee || isConfiguredSigner || isSignerInStatus)) {
+        return
+      }
+
+      const descriptor = resolveOnboardingDocumentPayload(item, item.type === 'esign' ? 'signed' : null)
+      if (!descriptor?.docUrl) {
+        return
+      }
+
+      const signerEntry = item.type === 'esign'
+        ? signingStatus.find((signer) => String(signer?.member || '') === currentUserId)
+        : null
+      const hasSigned = signerEntry?.status === 'signed'
+
+      let statusKey = 'available'
+      let statusLabel = 'Available'
+
+      if (item.type === 'esign') {
+        if (item.status === 'completed' || hasSigned || descriptor.resolvedVersion === 'signed') {
+          statusKey = 'completed'
+          statusLabel = 'Signed'
+        } else {
+          statusKey = 'needs_action'
+          statusLabel = 'Needs Signature'
+        }
+      } else if (item.type === 'upload') {
+        statusKey = 'completed'
+        statusLabel = 'Uploaded'
+      }
+
+      const issuedAt = item.type === 'esign'
+        ? (item?.data?.esign?.signedAt || assignment?.completedAt || assignment?.createdAt)
+        : (item?.data?.upload?.uploadedAt || assignment?.completedAt || assignment?.createdAt)
+
+      const fileName = descriptor.docFileName || item?.data?.upload?.fileName || item?.config?.document?.fileName || item?.title || 'Document'
+      const title = item?.title || fileName
+      const searchText = [
+        title,
+        fileName,
+        descriptor.subtitle,
+        organizationName,
+        workflowLabel,
+        statusLabel,
+        item?.description || ''
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      entries.push({
+        id: `${assignmentId}:${item?._id?.toString?.() || ''}`,
+        assignmentId,
+        itemId: item?._id?.toString?.() || '',
+        title,
+        description: item?.description || '',
+        organizationName,
+        workflowType,
+        workflowLabel,
+        itemType: item.type,
+        itemTypeLabel: item.type === 'esign' ? 'E-sign Document' : 'Uploaded File',
+        subtitle: descriptor.subtitle,
+        fileName,
+        statusKey,
+        statusLabel,
+        assignmentStatus: assignment?.status || 'pending',
+        itemStatus: item?.status || 'pending',
+        issuedAt: issuedAt || assignment?.createdAt || null,
+        dueAt: assignment?.dueAt || null,
+        viewUrl: buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+        downloadUrl: buildDocumentDownloadUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+        searchText
+      })
+    })
+  })
+
+  return entries.sort((left, right) => {
+    const leftTime = left?.issuedAt ? new Date(left.issuedAt).getTime() : 0
+    const rightTime = right?.issuedAt ? new Date(right.issuedAt).getTime() : 0
+    return rightTime - leftTime
+  })
+}
+
 const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => {
   const assignment = await OnboardingAssignment.findById(assignmentId)
     .populate('organization', 'name')
@@ -8182,7 +8301,31 @@ app.get('/profile/dependents', getSessionUser, async (req, res) => {
 
 app.get('/profile/documents', getSessionUser, async (req, res) => {
   try {
-    res.redirect('/documents')
+    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
+    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+      documentNotificationOrgIds.push(currentOrgId)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'documents',
+        organizationIds: documentNotificationOrgIds
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark profile documents notification as viewed:', notificationViewError)
+    }
+
+    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
+    const documents = buildProfileDocumentEntries(assignments, req.user)
+
+    res.render('profile-documents', {
+      ...buildProfilePageViewModel(req.user, 'documents'),
+      documents,
+      workflowLabels: WORKFLOW_LABELS,
+      workflowTypes: WORKFLOW_TYPES
+    })
   } catch (error) {
     console.error('Error loading documents page:', error)
     res.status(500).send('Error loading page')

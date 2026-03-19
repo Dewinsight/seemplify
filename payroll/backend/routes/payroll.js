@@ -54,6 +54,39 @@ const getIdpBaseUrl = () =>
   process.env.OIDC_ISSUER ||
   'http://localhost:4000';
 
+function getBearerAccessToken(req) {
+  const authHeader = String(req.headers?.authorization || '').trim();
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return '';
+  return authHeader.substring(7).trim();
+}
+
+function getIdpAccessToken(req) {
+  return String(req.session?.user?.accessToken || getBearerAccessToken(req) || '').trim();
+}
+
+function isIdpUpstreamAuthFailure(error) {
+  const status = Number(error?.response?.status || 0);
+  return status === 401 || status === 403;
+}
+
+function getIdpProxyErrorMessage(error, fallbackMessage) {
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallbackMessage
+  );
+}
+
+function buildIdpListFallback(organizationId, key, syncError) {
+  return {
+    organizationId,
+    [key]: [],
+    syncAvailable: false,
+    syncError
+  };
+}
+
 async function fetchIdpOrgMembers(accessToken, organizationId) {
   const idpBaseUrl = getIdpBaseUrl();
   const url = `${idpBaseUrl}/api/organizations/${organizationId}/members`;
@@ -84,6 +117,19 @@ async function fetchIdpOrgTeams(accessToken, organizationId) {
   const url = `${idpBaseUrl}/api/organizations/${organizationId}/teams`;
 
   const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function updateIdpMemberPayrollSync(accessToken, organizationId, memberId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members/${encodedMemberId}/payroll-sync`;
+
+  const res = await axios.put(url, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: 15000,
   });
@@ -493,20 +539,37 @@ router.get('/admin/overview', requireHRAdmin, async (req, res) => {
 router.get('/idp/members', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
 
     if (!organizationId) {
       return res.status(400).json({ error: 'No organization selected' });
     }
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'members',
+        'Identity Provider sync is currently unavailable for this session'
+      ));
     }
 
     const data = await fetchIdpOrgMembers(accessToken, organizationId);
-    res.json(data);
+    res.json({
+      ...data,
+      organizationId: data?.organizationId || organizationId,
+      members: Array.isArray(data?.members) ? data.members : [],
+      syncAvailable: true
+    });
   } catch (err) {
     console.error('IDP Members Proxy Error:', err?.response?.data || err.message || err);
+    if (isIdpUpstreamAuthFailure(err)) {
+      const { organizationId } = getUserInfo(req);
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'members',
+        'Identity Provider session expired while loading members'
+      ));
+    }
     res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP members' });
   }
 });
@@ -514,14 +577,18 @@ router.get('/idp/members', requireHRAdmin, async (req, res) => {
 router.get('/idp/teams', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
 
     if (!organizationId) {
       return res.status(400).json({ error: 'No organization selected' });
     }
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'teams',
+        'Identity Provider sync is currently unavailable for this session'
+      ));
     }
 
     const data = await fetchIdpOrgTeams(accessToken, organizationId);
@@ -529,22 +596,31 @@ router.get('/idp/teams', requireHRAdmin, async (req, res) => {
 
     res.json({
       organizationId,
-      teams
+      teams,
+      syncAvailable: true
     });
   } catch (err) {
     console.error('IDP Teams Proxy Error:', err?.response?.data || err.message || err);
+    if (isIdpUpstreamAuthFailure(err)) {
+      const { organizationId } = getUserInfo(req);
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'teams',
+        'Identity Provider session expired while loading teams'
+      ));
+    }
     res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP teams' });
   }
 });
 
 router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
   try {
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
     const { teamId } = req.params;
     const { accountId, role = 'member' } = req.body || {};
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
     }
 
     if (!teamId || !accountId) {
@@ -555,8 +631,9 @@ router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
     res.status(201).json(data);
   } catch (err) {
     console.error('IDP Team Member Add Proxy Error:', err?.response?.data || err.message || err);
-    res.status(err?.response?.status || 500).json({
-      error: err?.response?.data?.error || 'Failed to assign member to team'
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to assign member to team')
     });
   }
 });
@@ -564,7 +641,7 @@ router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
 router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
     const memberId = String(req.body?.memberId || '').trim();
     const dueAt = req.body?.dueAt;
 
@@ -573,7 +650,7 @@ router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
     }
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
     }
 
     if (!memberId) {
@@ -590,8 +667,9 @@ router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
     res.status(201).json(data);
   } catch (err) {
     console.error('IDP Onboarding Assign Proxy Error:', err?.response?.data || err.message || err);
-    res.status(err?.response?.status || 500).json({
-      error: err?.response?.data?.error || 'Failed to assign onboarding'
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to assign onboarding')
     });
   }
 });
@@ -599,7 +677,7 @@ router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
 router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
     const memberId = String(req.params?.memberId || '').trim();
     const status = String(req.body?.status || '').trim().toLowerCase();
     const clearOverride = req.body?.clearOverride === true;
@@ -609,7 +687,7 @@ router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (
     }
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
     }
 
     if (!memberId) {
@@ -624,8 +702,9 @@ router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (
     res.json(data);
   } catch (err) {
     console.error('IDP Onboarding Status Proxy Error:', err?.response?.data || err.message || err);
-    res.status(err?.response?.status || 500).json({
-      error: err?.response?.data?.error || 'Failed to update onboarding status'
+    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(statusCode).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to update onboarding status')
     });
   }
 });
@@ -670,7 +749,8 @@ router.get('/profiles', requireHRAdmin, async (req, res) => {
 router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
+    let idpSync = null;
 
     let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
@@ -685,6 +765,7 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
       try {
         const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, req.params.userId);
         if (member) {
+          idpSync = member;
           applyPayrollSyncFromMember(profile, member);
           await profile.save();
           profile = await PayrollProfile.findOne({
@@ -697,7 +778,12 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
       }
     }
 
-    res.json(profile);
+    const payload = profile.toObject({ virtuals: true });
+    if (idpSync) {
+      payload.idpSync = idpSync;
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error('Get Profile Error:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
@@ -711,6 +797,7 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
 router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
     const {
       basicSalary,
       currency,
@@ -728,9 +815,27 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       terminationDate,
       terminationReason,
       notes,
-      tags
+      tags,
+      idpProfileSync
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    let syncedMember = null;
+
+    if (idpProfileSync !== undefined) {
+      if (!accessToken) {
+        return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+      }
+
+      try {
+        syncedMember = await updateIdpMemberPayrollSync(accessToken, organizationId, req.params.userId, idpProfileSync);
+      } catch (syncErr) {
+        console.error('Update IDP Member Payroll Sync Error:', syncErr?.response?.data || syncErr.message || syncErr);
+        const statusCode = isIdpUpstreamAuthFailure(syncErr) ? 502 : (syncErr?.response?.status || 500);
+        return res.status(statusCode).json({
+          error: getIdpProxyErrorMessage(syncErr, 'Failed to update employee profile in Identity Provider')
+        });
+      }
+    }
 
     let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
@@ -767,11 +872,14 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (terminationReason !== undefined) profile.terminationReason = terminationReason;
     if (notes !== undefined) profile.notes = notes;
     if (tags !== undefined) profile.tags = tags;
+    if (syncedMember) {
+      applyPayrollSyncFromMember(profile, syncedMember);
+    }
 
     profile.lastModifiedBy = adminId;
     await profile.save();
 
-    res.json({ success: true, profile });
+    res.json({ success: true, profile, idpSync: syncedMember });
   } catch (err) {
     console.error('Update Profile Error:', err);
     res.status(500).json({ error: 'Failed to update profile' });
@@ -858,7 +966,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
 router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId } = getUserInfo(req);
-    const accessToken = req.session?.user?.accessToken;
+    const accessToken = getIdpAccessToken(req);
     const targetUserId = String(req.body?.userId || '').trim();
 
     if (!organizationId) {
@@ -866,7 +974,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     }
 
     if (!accessToken) {
-      return res.status(401).json({ error: 'Missing access token' });
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
     }
 
     if (!targetUserId) {
@@ -912,7 +1020,8 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     res.status(201).json({ success: true, profile, existed: false });
   } catch (err) {
     console.error('Import Profile From IDP Error:', err);
-    res.status(500).json({ error: 'Failed to import profile from IDP' });
+    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : 500;
+    res.status(statusCode).json({ error: getIdpProxyErrorMessage(err, 'Failed to import profile from IDP') });
   }
 });
 

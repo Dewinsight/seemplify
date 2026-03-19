@@ -114,9 +114,13 @@
 
             <!-- Add/Edit Account Form -->
             <div class="card">
-                <h3 style="font-size: 18px; margin-bottom: 16px;">Add Payment Account</h3>
+                <h3 id="bankingFormTitle" style="font-size: 18px; margin-bottom: 16px;">Add Payment Account</h3>
+                <p id="salaryAccountNotice" class="form-hint" style="display:none; margin-bottom: 16px;">
+                    Only one salary account is allowed. Edit the existing salary account instead of creating another one.
+                </p>
 
                 <form id="bankingForm">
+                    <input type="hidden" id="accountIndex" name="accountIndex" value="">
                     <!-- Country Selection -->
                     <div class="form-group">
                         <label for="country">Country <span style="color: var(--error);">*</span></label>
@@ -280,7 +284,7 @@
                         <span id="btnText">Add Payment Account</span>
                         <span id="btnSpinner" style="display:none;">Saving...</span>
                     </button>
-                    <a href="/profile" class="btn btn-secondary">Cancel</a>
+                    <button type="button" class="btn btn-secondary" id="cancelBtn" onclick="handleCancel()">Cancel</button>
                 </div>
 
                 <div
@@ -292,24 +296,80 @@
         </div>
 
         <script>
+            const bankAccounts = <%- JSON.stringify((user.profile?.banking?.accounts || []).map((account, index) => ({
+                index,
+                country: account.country || '',
+                bankName: account.bankName || '',
+                routingNumber: account.routingNumber || '',
+                accountNumber: account.accountNumber || '',
+                sortCode: account.sortCode || '',
+                iban: account.iban || '',
+                bicSwift: account.bicSwift || '',
+                bankCode: account.bankCode || '',
+                accountType: account.accountType || '',
+                accountHolderName: account.accountHolderName || '',
+                percentage: Number(account.percentage || 100),
+                isActive: account.isActive !== false
+            }))).replace(/</g, '\\u003c') %>;
+
+            let editingAccountIndex = null;
+
+            const bankForm = document.getElementById('bankingForm');
+            const bankFormTitle = document.getElementById('bankingFormTitle');
+            const accountIndexField = document.getElementById('accountIndex');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const saveBtn = document.getElementById('saveBtn');
+            const btnText = document.getElementById('btnText');
+            const btnSpinner = document.getElementById('btnSpinner');
+            const salaryAccountNotice = document.getElementById('salaryAccountNotice');
+            const alertSuccess = document.getElementById('alertSuccess');
+            const alertError = document.getElementById('alertError');
+
+            function clearAlerts() {
+                alertSuccess.classList.remove('show');
+                alertError.classList.remove('show');
+            }
+
+            function updateSalaryAccountAvailability() {
+                const country = document.getElementById('country').value;
+                const nigeriaAccountType = document.getElementById('nigeriaAccountType');
+                const salaryOption = nigeriaAccountType?.querySelector('option[value="salary"]');
+                const salaryLocked = bankAccounts.some((account) => {
+                    return account.isActive !== false
+                        && String(account.accountType || '').toLowerCase() === 'salary'
+                        && account.index !== editingAccountIndex;
+                });
+
+                if (salaryOption) {
+                    salaryOption.disabled = salaryLocked;
+                }
+
+                if (salaryLocked && nigeriaAccountType && nigeriaAccountType.value === 'salary') {
+                    nigeriaAccountType.value = 'savings';
+                }
+
+                if (salaryAccountNotice) {
+                    salaryAccountNotice.style.display = salaryLocked && (!country || country === 'Nigeria') ? 'block' : 'none';
+                }
+            }
+
             function updateFormFields() {
                 const country = document.getElementById('country').value;
 
-                // Hide all country-specific fields
                 document.getElementById('usaFields').style.display = 'none';
                 document.getElementById('ukFields').style.display = 'none';
                 document.getElementById('euFields').style.display = 'none';
                 document.getElementById('nigeriaFields').style.display = 'none';
-
-                // Show common fields
                 document.getElementById('accountNumberField').style.display = 'none';
                 document.getElementById('accountNumberConfirmField').style.display = 'none';
                 document.getElementById('accountHolderField').style.display = 'none';
                 document.getElementById('percentageField').style.display = 'none';
 
-                if (!country) return;
+                if (!country) {
+                    updateSalaryAccountAvailability();
+                    return;
+                }
 
-                // Show country-specific fields
                 if (country === 'USA') {
                     document.getElementById('usaFields').style.display = 'block';
                     document.getElementById('accountNumberField').style.display = 'block';
@@ -322,7 +382,6 @@
                     document.getElementById('accountNumberHint').textContent = 'Your 8-digit account number';
                 } else if (country === 'EU') {
                     document.getElementById('euFields').style.display = 'block';
-                    // IBAN contains account number, so no separate account number field needed
                 } else if (country === 'Nigeria') {
                     document.getElementById('nigeriaFields').style.display = 'block';
                     document.getElementById('accountNumberField').style.display = 'block';
@@ -332,6 +391,7 @@
 
                 document.getElementById('accountHolderField').style.display = 'block';
                 document.getElementById('percentageField').style.display = 'block';
+                updateSalaryAccountAvailability();
             }
 
             function updateBankCode() {
@@ -339,21 +399,84 @@
                 const bankCodeInput = document.getElementById('bankCode');
                 bankCodeInput.value = select.value;
 
-                // Update bank name based on selection
-                const bankName = select.options[select.selectedIndex].text.split('(')[0].trim();
-                document.getElementById('bankName').value = bankName;
+                if (select.selectedIndex >= 0 && select.value) {
+                    const bankName = select.options[select.selectedIndex].text.split('(')[0].trim();
+                    document.getElementById('bankName').value = bankName;
+                }
+            }
+
+            function resetBankingForm() {
+                bankForm.reset();
+                editingAccountIndex = null;
+                accountIndexField.value = '';
+                bankFormTitle.textContent = 'Add Payment Account';
+                btnText.textContent = 'Add Payment Account';
+                cancelBtn.textContent = 'Cancel';
+                document.getElementById('bankCode').value = '';
+                clearAlerts();
+                updateFormFields();
+            }
+
+            function handleCancel() {
+                if (editingAccountIndex !== null) {
+                    resetBankingForm();
+                    return;
+                }
+
+                window.location.href = '/profile';
+            }
+
+            function scrollToForm() {
+                const offsetTop = bankForm.getBoundingClientRect().top + window.scrollY - 120;
+                window.scrollTo({ top: Math.max(offsetTop, 0), behavior: 'smooth' });
+            }
+
+            function editAccount(index) {
+                const account = bankAccounts.find((item) => item.index === index);
+                if (!account) {
+                    return;
+                }
+
+                editingAccountIndex = index;
+                accountIndexField.value = String(index);
+                bankFormTitle.textContent = 'Edit Payment Account';
+                btnText.textContent = 'Save Account Changes';
+                cancelBtn.textContent = 'Cancel Edit';
+                clearAlerts();
+
+                document.getElementById('country').value = account.country || '';
+                updateFormFields();
+
+                document.getElementById('bankName').value = account.bankName || '';
+                document.getElementById('accountHolderName').value = account.accountHolderName || '';
+                document.getElementById('percentage').value = account.percentage || 100;
+                document.getElementById('accountNumber').value = account.accountNumber || '';
+                document.getElementById('accountNumberConfirm').value = account.accountNumber || '';
+                document.getElementById('routingNumber').value = account.routingNumber || '';
+                document.getElementById('sortCode').value = account.sortCode || '';
+                document.getElementById('ukIban').value = account.iban || '';
+                document.getElementById('iban').value = account.iban || '';
+                document.getElementById('bicSwift').value = account.bicSwift || '';
+                document.getElementById('bankCode').value = account.bankCode || '';
+
+                if (account.country === 'USA') {
+                    document.getElementById('accountType').value = account.accountType || 'checking';
+                } else if (account.country === 'UK') {
+                    document.getElementById('ukAccountType').value = account.accountType || 'current';
+                } else if (account.country === 'Nigeria') {
+                    document.getElementById('nigeriaBank').value = account.bankCode || '';
+                    document.getElementById('nigeriaAccountType').value = account.accountType || 'salary';
+                    if (account.bankCode) {
+                        updateBankCode();
+                    }
+                }
+
+                updateSalaryAccountAvailability();
+                scrollToForm();
             }
 
             async function saveBankingInfo() {
-                const alertSuccess = document.getElementById('alertSuccess');
-                const alertError = document.getElementById('alertError');
-                const saveBtn = document.getElementById('saveBtn');
-                const btnText = document.getElementById('btnText');
-                const btnSpinner = document.getElementById('btnSpinner');
-
-                // Hide previous alerts
-                alertSuccess.classList.remove('show');
-                alertError.classList.remove('show');
+                clearAlerts();
 
                 const country = document.getElementById('country').value;
                 if (!country) {
@@ -363,9 +486,8 @@
                     return;
                 }
 
-                // Validate account number confirmation
-                const accountNumber = document.getElementById('accountNumber').value;
-                const accountNumberConfirm = document.getElementById('accountNumberConfirm').value;
+                const accountNumber = document.getElementById('accountNumber').value.trim();
+                const accountNumberConfirm = document.getElementById('accountNumberConfirm').value.trim();
 
                 if (accountNumber && accountNumber !== accountNumberConfirm) {
                     alertError.textContent = 'Account numbers do not match';
@@ -374,9 +496,8 @@
                     return;
                 }
 
-                // Country-specific validation
                 if (country === 'USA') {
-                    const routing = document.getElementById('routingNumber').value;
+                    const routing = document.getElementById('routingNumber').value.trim();
                     if (!/^\d{9}$/.test(routing)) {
                         alertError.textContent = 'Routing number must be exactly 9 digits';
                         alertError.classList.add('show');
@@ -384,44 +505,41 @@
                         return;
                     }
                 } else if (country === 'UK') {
-                    const sortCode = document.getElementById('sortCode').value;
+                    const sortCode = document.getElementById('sortCode').value.trim();
                     if (!/^\d{2}-\d{2}-\d{2}$/.test(sortCode)) {
                         alertError.textContent = 'Sort code must be in format XX-XX-XX';
                         alertError.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                         return;
                     }
-                } else if (country === 'Nigeria') {
-                    if (accountNumber && accountNumber.length !== 10) {
-                        alertError.textContent = 'Nigerian account numbers must be exactly 10 digits';
-                        alertError.classList.add('show');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                        return;
-                    }
+                } else if (country === 'Nigeria' && accountNumber.length !== 10) {
+                    alertError.textContent = 'Nigerian account numbers must be exactly 10 digits';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
                 }
 
-                // Show loading
                 saveBtn.disabled = true;
                 btnText.style.display = 'none';
                 btnSpinner.style.display = 'inline';
 
-                // Collect data based on country
                 const data = {
-                    country: country,
+                    country,
+                    accountIndex: accountIndexField.value,
                     account: {
-                        country: country,
+                        country,
                         bankName: document.getElementById('bankName').value.trim(),
                         accountHolderName: document.getElementById('accountHolderName').value.trim(),
-                        percentage: parseInt(document.getElementById('percentage').value) || 100
+                        percentage: Number.parseInt(document.getElementById('percentage').value, 10) || 100
                     }
                 };
 
                 if (country === 'USA') {
-                    data.account.routingNumber = document.getElementById('routingNumber').value;
+                    data.account.routingNumber = document.getElementById('routingNumber').value.trim();
                     data.account.accountNumber = accountNumber;
                     data.account.accountType = document.getElementById('accountType').value;
                 } else if (country === 'UK') {
-                    data.account.sortCode = document.getElementById('sortCode').value;
+                    data.account.sortCode = document.getElementById('sortCode').value.trim();
                     data.account.accountNumber = accountNumber;
                     data.account.iban = document.getElementById('ukIban').value.trim();
                     data.account.accountType = document.getElementById('ukAccountType').value;
@@ -430,9 +548,12 @@
                     data.account.bicSwift = document.getElementById('bicSwift').value.trim();
                     data.account.accountType = 'current';
                 } else if (country === 'Nigeria') {
-                    data.account.bankCode = document.getElementById('bankCode').value;
+                    data.account.bankCode = document.getElementById('bankCode').value.trim();
                     data.account.accountNumber = accountNumber;
                     data.account.accountType = document.getElementById('nigeriaAccountType').value;
+                } else {
+                    data.account.accountNumber = accountNumber;
+                    data.account.accountType = 'checking';
                 }
 
                 try {
@@ -448,6 +569,7 @@
                         alertSuccess.textContent = result.message || 'Banking information updated successfully! Payroll has been notified.';
                         alertSuccess.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
+
                         if (result?.nextStep?.route && result.nextStep.key !== 'banking') {
                             setTimeout(() => {
                                 window.location.href = `${result.nextStep.route}?wizard=1`;
@@ -472,9 +594,7 @@
                 }
             }
 
-            function editAccount(index) {
-                alert('Edit functionality coming soon - for now, please add a new account');
-            }
+            updateFormFields();
         </script>
 
         <%- include('partials/profile-completion-wizard', { profileCompletion, currentProfileSection }) %>

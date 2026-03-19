@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
+import { SimpleLmsCourseReview } from '../models/SimpleLmsCourseReview.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsPayment } from '../models/SimpleLmsPayment.js'
@@ -46,6 +47,16 @@ import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajor
 import { addSessionCartCourseId, clearSessionCart, getSessionCartCourseIds, hasSessionCartCourse, removeSessionCartCourseId, setSessionCartCourseIds } from '../utils/simpleLmsCart.js'
 import { buildAgentReferralCode, normalizeAgentReferralCode } from '../utils/agentReferral.js'
 import { buildAccessProfileSnapshot, resolveAccessProfile } from '../utils/accessProfile.js'
+import {
+  buildVisibleCourseReviewFilter,
+  buildCourseReviewSummary,
+  clampCourseRating,
+  mapCourseReviewForDisplay,
+  normalizeCourseReviewModerationStatus,
+  sanitizeCourseReviewComment,
+  sanitizeCourseReviewModerationReason,
+  sanitizeCourseReviewReply
+} from '../utils/courseReviews.js'
 import {
   SELL_THROUGH_DEFAULTS,
   buildOrganizationSellableCourseFilter,
@@ -113,6 +124,7 @@ const PAYMENT_PROVIDER_COPY = Object.freeze({
 const ADMIN_INVITE_ROLES = Object.freeze(['admin', 'super_admin'])
 const ADMIN_INVITE_STATUSES = Object.freeze(['pending', 'registered', 'accepted', 'expired', 'revoked'])
 const COURSE_REVIEW_DECISIONS = Object.freeze(['none', 'pending', 'approved', 'changes_requested', 'denied'])
+const COURSE_REVIEW_MODERATION_STATUSES = Object.freeze(['visible', 'hidden'])
 
 const PARTNER_SUPER_ROLES = ['channel_partner_super', 'partner_super']
 const PARTNER_USER_ROLES = ['channel_partner_user', 'partner_user']
@@ -3160,6 +3172,7 @@ const decorateCourse = (course) => {
   const partnerSelling = normalizePartnerSelling(course?.partnerSelling || {}, course?.partnerSelling || SELL_THROUGH_DEFAULTS)
   const sellingAssignments = getCourseSellingAssignments(course, { onlyActive: false })
   const activeSellingAssignments = sellingAssignments.filter((assignment) => assignment.status === 'active')
+  const reviewSummary = buildCourseReviewSummary(course)
 
   return {
     ...course,
@@ -3185,6 +3198,7 @@ const decorateCourse = (course) => {
     activeSellingAssignments,
     assignedOrganizationCount: activeSellingAssignments.length,
     isSellThroughEnabled: Boolean(partnerSelling.enabled),
+    reviewSummary,
     partnerSellingSummary: partnerSelling.enabled
       ? `${partnerSelling.creatorSharePercent}% creator / ${partnerSelling.partnerSharePercent}% partner / ${partnerSelling.platformSharePercent}% platform`
       : 'Direct creator sale only'
@@ -3225,6 +3239,113 @@ const refreshCourseMetrics = async (courseId) => {
     SimpleLmsEnrollment.countDocuments({ course: courseId, status: 'completed' })
   ])
   await SimpleLmsCourse.updateOne({ _id: courseId }, { $set: { enrollmentCount, completionCount } })
+}
+
+const syncCourseReviewMetrics = async (courseId) => {
+  if (!mongoose.Types.ObjectId.isValid(String(courseId || ''))) return
+  const normalizedCourseId = new mongoose.Types.ObjectId(String(courseId))
+  const [aggregate] = await SimpleLmsCourseReview.aggregate([
+    { $match: buildVisibleCourseReviewFilter(normalizedCourseId) },
+    {
+      $group: {
+        _id: null,
+        ratingCount: { $sum: 1 },
+        ratingAverage: { $avg: '$rating' },
+        commentCount: {
+          $sum: {
+            $cond: [
+              { $gt: [{ $strLenCP: { $ifNull: ['$comment', ''] } }, 0] },
+              1,
+              0
+            ]
+          }
+        }
+      }
+    }
+  ])
+
+  const ratingCount = Math.max(0, Math.round(Number(aggregate?.ratingCount) || 0))
+  const ratingAverage = ratingCount > 0
+    ? Math.max(0, Math.min(5, Math.round((Number(aggregate?.ratingAverage) || 0) * 10) / 10))
+    : 0
+  const commentCount = Math.max(0, Math.round(Number(aggregate?.commentCount) || 0))
+
+  await SimpleLmsCourse.updateOne(
+    { _id: normalizedCourseId },
+    {
+      $set: {
+        ratingCount,
+        ratingAverage,
+        commentCount
+      }
+    }
+  )
+}
+
+const loadCourseReviewsForDisplay = async ({ courseId, viewerId = null, limit = 6 } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(String(courseId || ''))) {
+    return {
+      existingReview: null,
+      recentReviews: []
+    }
+  }
+
+  const [existingReviewRaw, recentReviewsRaw] = await Promise.all([
+    viewerId
+      ? SimpleLmsCourseReview.findOne({
+          course: courseId,
+          account: viewerId
+        })
+          .lean()
+      : Promise.resolve(null),
+    SimpleLmsCourseReview.find(buildVisibleCourseReviewFilter(courseId))
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(Math.max(1, Math.min(12, Number(limit) || 6)))
+      .populate('creatorReplyBy', 'email profile.name')
+      .lean()
+  ])
+
+  return {
+    existingReview: existingReviewRaw ? mapCourseReviewForDisplay(existingReviewRaw, { viewerId }) : null,
+    recentReviews: Array.isArray(recentReviewsRaw)
+      ? recentReviewsRaw.map((entry) => mapCourseReviewForDisplay(entry, { viewerId }))
+      : []
+  }
+}
+
+const loadCourseReviewsForManagement = async ({ courseId, viewerId = null, limit = 40 } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(String(courseId || ''))) return []
+  const reviewRows = await SimpleLmsCourseReview.find({ course: courseId })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(Math.max(1, Math.min(80, Number(limit) || 40)))
+    .populate('creatorReplyBy', 'email profile.name')
+    .populate('moderatedBy', 'email profile.name')
+    .lean()
+
+  return Array.isArray(reviewRows)
+    ? reviewRows.map((entry) => mapCourseReviewForDisplay(entry, { viewerId }))
+    : []
+}
+
+const buildCourseReviewManagementStats = (reviews = []) => {
+  const reviewRows = Array.isArray(reviews) ? reviews : []
+  return reviewRows.reduce((stats, review) => {
+    stats.total += 1
+    if (String(review?.moderationStatus || 'visible') === 'hidden') {
+      stats.hidden += 1
+    } else {
+      stats.visible += 1
+    }
+    if (review?.hasComment) stats.withComments += 1
+    if (review?.hasCreatorReply) stats.withReplies += 1
+    return stats
+  }, {
+    total: 0,
+    visible: 0,
+    hidden: 0,
+    withComments: 0,
+    withReplies: 0
+  })
 }
 
 const createOrUpdateEnrollment = async ({
@@ -4444,6 +4565,11 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
       user: req.user,
       activePage: 'simple-lms',
       course: previewCourse,
+      courseReviewSummary: buildCourseReviewSummary(previewCourse),
+      courseCommentsEnabled: false,
+      canSubmitCourseReview: false,
+      existingCourseReview: null,
+      recentCourseReviews: [],
       chapters: mapCourseChaptersForDetail(course),
       relatedCourses: [],
       inCart: false,
@@ -4466,6 +4592,290 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
       res,
       path: '/simple-lms/studio/courses',
       error: 'Failed to open course preview.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/reviews', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    const defaultReturnTo = mongoose.Types.ObjectId.isValid(courseId)
+      ? `/courses/${courseId}`
+      : '/simple-lms?view=my-learning'
+    const returnTo = sanitizeInternalPath(
+      req.body?.returnTo || req.body?.fallback || defaultReturnTo,
+      '/simple-lms?view=my-learning'
+    )
+
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course selected for rating.'
+      })
+    }
+
+    const platformSettings = await getPlatformSettings()
+    if (!platformSettings.allowCourseComments) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course comments and ratings are currently disabled.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+      .select('_id title isActive status visibility')
+      .lean()
+
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const enrollment = await SimpleLmsEnrollment.findOne({
+      course: course._id,
+      enrolledMember: req.user._id
+    })
+      .select('_id')
+      .lean()
+
+    if (!enrollment) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Start this course before leaving a rating or comment.'
+      })
+    }
+
+    const rating = clampCourseRating(req.body?.rating, 0)
+    if (rating < 1 || rating > 5) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Select a rating between 1 and 5 stars.'
+      })
+    }
+
+    const comment = sanitizeCourseReviewComment(req.body?.comment, 1200)
+    let review = await SimpleLmsCourseReview.findOne({
+      course: course._id,
+      account: req.user._id
+    })
+    const created = !review
+
+    if (!review) {
+      review = new SimpleLmsCourseReview({
+        course: course._id,
+        account: req.user._id
+      })
+    }
+
+    review.enrollment = enrollment._id
+    review.authorName = String(req.user?.profile?.name || req.user?.email || 'Learner')
+    review.authorEmail = String(req.user?.email || '')
+    review.rating = rating
+    review.comment = comment
+    await review.save()
+
+    await syncCourseReviewMetrics(course._id)
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: created ? 'Course rating saved.' : 'Course rating updated.'
+    })
+  } catch (error) {
+    console.error('Submit course review error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms?view=my-learning',
+      error: 'Failed to save course rating.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/reviews/:reviewId/reply', requirePageAuth, async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || '').trim()
+    const reviewId = String(req.params.reviewId || '').trim()
+    const returnTo = sanitizeInternalPath(
+      req.body?.returnTo || `/simple-lms/studio/courses/${encodeURIComponent(courseId)}/edit`,
+      '/simple-lms/studio/courses'
+    )
+
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(reviewId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid course review selected.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+      .select('_id title createdBy')
+      .lean()
+
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    if (!canEditCourse({ accountId: req.user._id, course })) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only the course owner can reply to learner feedback.'
+      })
+    }
+
+    const review = await SimpleLmsCourseReview.findOne({
+      _id: reviewId,
+      course: course._id
+    })
+
+    if (!review) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course review not found.'
+      })
+    }
+
+    const creatorReply = sanitizeCourseReviewReply(req.body?.creatorReply, 1500)
+    review.creatorReply = creatorReply
+    review.creatorReplyBy = creatorReply ? req.user._id : null
+    review.creatorReplyUpdatedAt = creatorReply ? new Date() : null
+    await review.save()
+
+    await logAuditEvent({
+      action: 'course.review.reply',
+      performedBy: req.user._id,
+      targetCourse: course._id,
+      targetAccount: review.account || null,
+      metadata: {
+        reviewId: toIdString(review._id),
+        courseTitle: course.title || 'Course',
+        hasReply: Boolean(creatorReply)
+      }
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: creatorReply ? 'Creator response saved.' : 'Creator response removed.'
+    })
+  } catch (error) {
+    console.error('Reply to course review error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/simple-lms/studio/courses',
+      error: 'Failed to save the creator response.'
+    })
+  }
+})
+
+pageRouter.post('/courses/:courseId/reviews/:reviewId/moderate', requirePageAuth, async (req, res) => {
+  try {
+    const role = resolveLearningRoleFromAccount(req.user)
+    const courseId = String(req.params.courseId || '').trim()
+    const reviewId = String(req.params.reviewId || '').trim()
+    const returnTo = sanitizeInternalPath(
+      req.body?.returnTo || `/admin/courses/${encodeURIComponent(courseId)}`,
+      '/admin/courses'
+    )
+
+    if (!canManagePlatform(role)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Only platform admins can moderate ratings and comments.'
+      })
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(reviewId)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid review moderation request.'
+      })
+    }
+
+    const course = await SimpleLmsCourse.findById(courseId)
+      .select('_id title')
+      .lean()
+
+    if (!course) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course not found.'
+      })
+    }
+
+    const review = await SimpleLmsCourseReview.findOne({
+      _id: reviewId,
+      course: course._id
+    })
+
+    if (!review) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Course review not found.'
+      })
+    }
+
+    const moderationStatus = normalizeCourseReviewModerationStatus(req.body?.moderationStatus, 'visible')
+    if (!COURSE_REVIEW_MODERATION_STATUSES.includes(moderationStatus)) {
+      return redirectWithMessage({
+        res,
+        path: returnTo,
+        error: 'Invalid moderation status selected.'
+      })
+    }
+
+    const moderationReason = sanitizeCourseReviewModerationReason(req.body?.moderationReason, 600)
+    review.moderationStatus = moderationStatus
+    review.moderationReason = moderationReason
+    review.moderatedAt = new Date()
+    review.moderatedBy = req.user._id
+    await review.save()
+    await syncCourseReviewMetrics(course._id)
+
+    await logAuditEvent({
+      action: 'course.review.moderated',
+      performedBy: req.user._id,
+      targetCourse: course._id,
+      targetAccount: review.account || null,
+      metadata: {
+        reviewId: toIdString(review._id),
+        moderationStatus,
+        moderationReason,
+        courseTitle: course.title || 'Course',
+        rating: Math.max(0, Number(review.rating || 0))
+      }
+    })
+
+    return redirectWithMessage({
+      res,
+      path: returnTo,
+      success: moderationStatus === 'hidden'
+        ? 'Course review hidden from public view.'
+        : 'Course review restored to public view.'
+    })
+  } catch (error) {
+    console.error('Moderate course review error:', error)
+    return redirectWithMessage({
+      res,
+      path: '/admin/courses',
+      error: 'Failed to moderate course review.'
     })
   }
 })
@@ -4893,6 +5303,16 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
     const latestAttempt = (enrollment.quizAttempts || [])
       .filter(attempt => String(attempt.lessonKey) === currentLesson.lessonKey)
       .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] || null
+    const [platformSettings, courseReviewState] = await Promise.all([
+      getPlatformSettings(),
+      loadCourseReviewsForDisplay({
+        courseId: enrollment.course._id,
+        viewerId: req.user._id,
+        limit: 5
+      })
+    ])
+    const decoratedCourse = decorateCourse(enrollment.course)
+    const courseReviewSummary = buildCourseReviewSummary(decoratedCourse)
 
     const lessonMedia = resolveLessonMedia(currentLesson.media || currentLesson.videoUrl)
     const chapterSections = (enrollment.course.chapters || []).map((chapter, chapterIndex) => {
@@ -4948,7 +5368,12 @@ pageRouter.get('/learn/:enrollmentId/:lessonKey?', requirePageAuth, async (req, 
       activePage: 'simple-lms',
       role,
       enrollment,
-      course: decorateCourse(enrollment.course),
+      course: decoratedCourse,
+      courseReviewSummary,
+      courseCommentsEnabled: Boolean(platformSettings.allowCourseComments),
+      canSubmitCourseReview: Boolean(platformSettings.allowCourseComments),
+      existingCourseReview: courseReviewState.existingReview,
+      recentCourseReviews: courseReviewState.recentReviews,
       lessons,
       currentLesson,
       embedUrl: lessonMedia.embedUrl,
@@ -9641,6 +10066,25 @@ const renderWorkspacePage = async (
       })
     }
 
+    const [editingCourseReviews, focusedAdminCourseReviews] = await Promise.all([
+      editingCourse
+        ? loadCourseReviewsForManagement({
+            courseId: editingCourse._id,
+            viewerId: req.user._id,
+            limit: 30
+          })
+        : Promise.resolve([]),
+      focusedAdminCourse
+        ? loadCourseReviewsForManagement({
+            courseId: focusedAdminCourse._id,
+            viewerId: req.user._id,
+            limit: 60
+          })
+        : Promise.resolve([])
+    ])
+    const editingCourseReviewStats = buildCourseReviewManagementStats(editingCourseReviews)
+    const focusedAdminCourseReviewStats = buildCourseReviewManagementStats(focusedAdminCourseReviews)
+
     let editingProgram = null
     if (editProgramId && mongoose.Types.ObjectId.isValid(editProgramId) && canCreateCourses(role)) {
       const candidate = managedProgramsRaw.find(program => toIdString(program._id) === editProgramId)
@@ -11057,7 +11501,11 @@ const renderWorkspacePage = async (
       myEnrollments,
       myPrograms,
       editingCourse,
+      editingCourseReviews,
+      editingCourseReviewStats,
       focusedAdminCourse,
+      focusedAdminCourseReviews,
+      focusedAdminCourseReviewStats,
       editingProgram,
       studioCourses,
       assignableAccounts,

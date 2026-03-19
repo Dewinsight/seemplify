@@ -11,7 +11,7 @@ import {
 import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
-import { buildPayrollProfileSyncData } from '../utils/profileCompletion.js'
+import { buildPayrollProfileSyncData, getProfileCompletion } from '../utils/profileCompletion.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -76,6 +76,107 @@ function getMemberAppAccessSummary(member, appNameById = new Map(), validAppIds 
 function matchesMemberIdentity(memberAccount, requestedId) {
   if (!memberAccount) return false
   return memberAccount._id.toString() === requestedId || memberAccount.sub === requestedId
+}
+
+function hasText(value = '') {
+  return String(value || '').trim().length > 0
+}
+
+function normalizeText(value = '') {
+  return String(value || '').trim()
+}
+
+function normalizeDateValue(value) {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+  const parsed = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function normalizeMailingAddress(input = {}, fallback = {}) {
+  return {
+    street: normalizeText(input.street ?? fallback.street),
+    street2: normalizeText(input.street2 ?? fallback.street2),
+    city: normalizeText(input.city ?? fallback.city),
+    state: normalizeText(input.state ?? fallback.state),
+    zipCode: normalizeText(input.zipCode ?? fallback.zipCode),
+    country: normalizeText(input.country ?? fallback.country ?? 'USA') || 'USA'
+  }
+}
+
+function normalizePhoneNumbers(input = {}, fallback = {}) {
+  return {
+    mobile: normalizeText(input.mobile ?? fallback.mobile),
+    home: normalizeText(input.home ?? fallback.home),
+    work: normalizeText(input.work ?? fallback.work)
+  }
+}
+
+function normalizeEmergencyContact(input = {}, fallback = {}) {
+  return {
+    name: normalizeText(input.name ?? fallback.name),
+    relationship: normalizeText(input.relationship ?? fallback.relationship),
+    phone: normalizeText(input.phone ?? fallback.phone),
+    email: normalizeText(input.email ?? fallback.email),
+    isPrimary: true
+  }
+}
+
+function emergencyContactHasValues(input = {}) {
+  return [
+    input.name,
+    input.relationship,
+    input.phone,
+    input.email
+  ].some(hasText)
+}
+
+function bankingAccountHasValues(input = {}) {
+  return [
+    input.bankName,
+    input.accountHolderName,
+    input.accountNumber,
+    input.routingNumber,
+    input.sortCode,
+    input.iban,
+    input.bicSwift,
+    input.bankCode
+  ].some(hasText)
+}
+
+function normalizeBankingAccount(country = '', input = {}, fallback = {}) {
+  const resolvedCountry = normalizeText(input.country ?? country ?? fallback.country ?? 'Other') || 'Other'
+  const normalizedPercentage = Number.parseInt(input.percentage ?? fallback.percentage ?? 100, 10)
+
+  return {
+    country: resolvedCountry,
+    bankName: normalizeText(input.bankName ?? fallback.bankName),
+    accountHolderName: normalizeText(input.accountHolderName ?? fallback.accountHolderName),
+    accountNumber: normalizeText(input.accountNumber ?? fallback.accountNumber),
+    routingNumber: normalizeText(input.routingNumber ?? fallback.routingNumber),
+    sortCode: normalizeText(input.sortCode ?? fallback.sortCode),
+    iban: normalizeText(input.iban ?? fallback.iban),
+    bicSwift: normalizeText(input.bicSwift ?? fallback.bicSwift),
+    bankCode: normalizeText(input.bankCode ?? fallback.bankCode),
+    accountType: normalizeText(input.accountType ?? fallback.accountType),
+    percentage: Number.isFinite(normalizedPercentage) ? normalizedPercentage : 100,
+    isActive: input.isActive !== false
+  }
+}
+
+function updateCompletionTracking(account) {
+  const completion = getProfileCompletion(account)
+  account.profile = account.profile || {}
+  account.profile.completionReminders = {
+    ...(account.profile.completionReminders || {}),
+    lastMissingSteps: (completion.steps || []).filter(step => !step.complete).map(step => step.key)
+  }
+
+  if (completion.complete) {
+    account.profile.completionReminders.lastCompletedAt = new Date()
+  }
+
+  return completion
 }
 
 /**
@@ -312,6 +413,204 @@ router.get('/:orgId/members/:memberId/payroll-sync',
     } catch (error) {
       console.error('Get member payroll sync error:', error)
       res.status(500).json({ error: 'Failed to get member payroll sync data' })
+    }
+  }
+)
+
+router.put('/:orgId/members/:memberId/payroll-sync',
+  requireAuthOrAPIToken,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      const organization = await Organization.findById(req.params.orgId)
+        .populate('members.account', 'sub email profile')
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const member = organization.members.find(
+        entry => entry.status === 'active' && matchesMemberIdentity(entry.account, req.params.memberId)
+      )
+
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' })
+      }
+
+      const body = req.body || {}
+      const hasName = Object.prototype.hasOwnProperty.call(body, 'name')
+      const hasDesignation = Object.prototype.hasOwnProperty.call(body, 'designation')
+      const hasEmployeeId = Object.prototype.hasOwnProperty.call(body, 'employeeId')
+      const hasPersonalInfo = body.personalInfo && typeof body.personalInfo === 'object'
+      const hasBanking = body.banking && typeof body.banking === 'object'
+      const hasDependentsDeclaration = body.dependentsDeclaration && typeof body.dependentsDeclaration === 'object'
+
+      if (hasEmployeeId && await hasPendingInviteWithEmployeeId(req.params.orgId, body.employeeId)) {
+        return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
+      }
+
+      if (hasDesignation || hasEmployeeId) {
+        await organization.updateMemberDetails(
+          member.account._id,
+          {
+            ...(hasDesignation ? { designation: body.designation } : {}),
+            ...(hasEmployeeId ? { employeeId: body.employeeId } : {})
+          },
+          req.user._id
+        )
+      }
+
+      const account = member.account
+      if (!account) {
+        return res.status(404).json({ error: 'Member account not found' })
+      }
+
+      account.profile = account.profile || {}
+      account.profile.personalInfo = account.profile.personalInfo || {}
+
+      if (hasName) {
+        account.profile.name = normalizeText(body.name)
+      }
+
+      if (hasPersonalInfo) {
+        const personalInfo = body.personalInfo || {}
+        const currentPersonalInfo = account.profile.personalInfo || {}
+
+        if (Object.prototype.hasOwnProperty.call(personalInfo, 'dateOfBirth')) {
+          account.profile.personalInfo.dateOfBirth = normalizeDateValue(personalInfo.dateOfBirth)
+        }
+
+        if (Object.prototype.hasOwnProperty.call(personalInfo, 'mailingAddress')) {
+          account.profile.personalInfo.mailingAddress = normalizeMailingAddress(
+            personalInfo.mailingAddress || {},
+            currentPersonalInfo.mailingAddress || {}
+          )
+        }
+
+        if (Object.prototype.hasOwnProperty.call(personalInfo, 'phoneNumbers')) {
+          account.profile.personalInfo.phoneNumbers = normalizePhoneNumbers(
+            personalInfo.phoneNumbers || {},
+            currentPersonalInfo.phoneNumbers || {}
+          )
+        }
+
+        if (Object.prototype.hasOwnProperty.call(personalInfo, 'emergencyContact')) {
+          const normalizedEmergencyContact = normalizeEmergencyContact(
+            personalInfo.emergencyContact || {},
+            Array.isArray(currentPersonalInfo.emergencyContacts) ? currentPersonalInfo.emergencyContacts[0] : {}
+          )
+
+          account.profile.personalInfo.emergencyContacts = emergencyContactHasValues(normalizedEmergencyContact)
+            ? [normalizedEmergencyContact]
+            : []
+        }
+      }
+
+      if (hasBanking) {
+        const banking = body.banking || {}
+        const currentBanking = account.profile.banking || {}
+        const currentAccount = Array.isArray(currentBanking.accounts) ? currentBanking.accounts[0] || {} : {}
+        const rawIncomingAccount = banking.account || {}
+        const clearBankingAccount = Object.prototype.hasOwnProperty.call(banking, 'account')
+          && !bankingAccountHasValues(rawIncomingAccount)
+        const normalizedAccount = clearBankingAccount
+          ? normalizeBankingAccount(banking.country, rawIncomingAccount, {})
+          : normalizeBankingAccount(banking.country, rawIncomingAccount, currentAccount)
+
+        account.profile.banking = {
+          ...(currentBanking || {}),
+          country: normalizeText(banking.country ?? currentBanking.country ?? normalizedAccount.country) || normalizedAccount.country,
+          accounts: !clearBankingAccount && bankingAccountHasValues(normalizedAccount)
+            ? [{
+                ...normalizedAccount,
+                createdAt: currentAccount?.createdAt || new Date()
+              }]
+            : []
+        }
+      }
+
+      if (hasDependentsDeclaration) {
+        const nextStatus = normalizeText(body.dependentsDeclaration.status).toLowerCase()
+        if (!['pending', 'none'].includes(nextStatus)) {
+          return res.status(400).json({ error: 'Dependents declaration status must be pending or none' })
+        }
+
+        account.profile.dependentsDeclaration = nextStatus === 'none'
+          ? {
+              status: 'none',
+              confirmedAt: new Date(),
+              lastUpdated: new Date()
+            }
+          : {
+              status: 'pending',
+              confirmedAt: null,
+              lastUpdated: new Date()
+            }
+      }
+
+      const completion = updateCompletionTracking(account)
+      account.markModified('profile')
+      await account.save()
+
+      const teams = await Team.find({
+        organization: req.params.orgId,
+        'members.account': account._id,
+        'members.status': 'active'
+      })
+        .select('name department members.account members.status')
+        .lean()
+
+      const onboardingAssignments = await OnboardingAssignment.find({
+        organization: req.params.orgId,
+        member: account._id,
+        workflowType: 'onboarding'
+      })
+        .select('member status workflowType updatedAt createdAt completedAt')
+        .sort({ updatedAt: -1 })
+        .lean()
+
+      const structure = getMemberStructure(
+        buildMemberStructureMap(organization, teams),
+        account._id,
+        organization
+      )
+      const updatedMember = organization.members.find(
+        entry => entry.status === 'active' && matchesMemberIdentity(entry.account, account._id.toString())
+      )
+      const onboardingStateByMember = buildOnboardingStateMap({
+        members: updatedMember ? [updatedMember] : [],
+        assignments: onboardingAssignments,
+        workflowType: 'onboarding'
+      })
+      const onboardingState = getMemberOnboardingState(account._id, onboardingStateByMember)
+
+      res.json({
+        departmentId: structure.departmentId,
+        departmentName: structure.departmentName,
+        teamIds: structure.teamIds,
+        teamNames: structure.teamNames,
+        id: account._id,
+        sub: account.sub,
+        email: account.email,
+        name: account.profile?.name,
+        designation: updatedMember?.designation || '',
+        employeeId: updatedMember?.employeeId || '',
+        role: updatedMember?.role || 'staff',
+        onboardingStatus: onboardingState.status,
+        onboardingStatusSource: onboardingState.source,
+        onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
+        payrollSync: {
+          ...buildPayrollProfileSyncData(account),
+          profileCompletion: completion
+        }
+      })
+    } catch (error) {
+      console.error('Update member payroll sync error:', error)
+      res.status(500).json({ error: error.message || 'Failed to update member payroll sync data' })
     }
   }
 )

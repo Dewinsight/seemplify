@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -7,7 +7,7 @@
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
-  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260319-1">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="public-site">
@@ -36,6 +36,9 @@
   <% const resolvedPreviewEditUrl = typeof previewEditUrl === 'string' ? previewEditUrl : '' %>
   <% const backHref = isPreviewMode ? (resolvedPreviewReturnTo || '/simple-lms/studio/courses') : '/courses' %>
   <% const backLabel = isPreviewMode ? 'Back to Workspace' : 'Back to Catalog' %>
+  <% const reviewSummary = courseReviewSummary || course.reviewSummary || { ratingAverage: 0, ratingAverageLabel: '0.0', ratingCount: 0, commentCount: 0, hasRatings: false, hasComments: false, roundedStarCount: 0 } %>
+  <% const visibleCourseReviews = Array.isArray(recentCourseReviews) ? recentCourseReviews : [] %>
+  <% const courseReviewAction = `/simple-lms/courses/${course._id}/reviews` %>
   <%
     const formatDuration = (minutes) => {
       const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
@@ -90,6 +93,9 @@
         <% if (course.category) { %><span><%= course.category %></span><% } %>
         <span><%= course.lessonCount %> lessons</span>
         <span><%= formatDuration(course.estimatedDurationMinutes) %></span>
+        <% if (reviewSummary.hasRatings) { %>
+          <span><%= `${reviewSummary.ratingAverageLabel}/5 Â· ${reviewSummary.ratingCount} rating${reviewSummary.ratingCount === 1 ? '' : 's'}` %></span>
+        <% } %>
       </div>
       <p><%= course.previewSummary %></p>
     </section>
@@ -108,7 +114,6 @@
             <p class="lmsv-detail-note"><%= course.description %></p>
           </article>
         <% } %>
-
         <article class="lmsv-detail-card">
           <h3>Course Outline</h3>
           <% if (!chapters || chapters.length === 0) { %>
@@ -138,6 +143,112 @@
             </div>
           <% } %>
         </article>
+
+
+        <% if (courseCommentsEnabled && !isPreviewMode) { %>
+          <article class="lmsv-detail-card lmsv-review-panel">
+            <div class="lmsv-review-panel-head">
+              <div>
+                <h3>Ratings & Comments</h3>
+                <p class="lmsv-detail-note">Learners who have started this course can rate it and leave feedback. Creator responses appear below each published review.</p>
+              </div>
+              <div class="lmsv-review-score-card">
+                <strong><%= reviewSummary.ratingAverageLabel %></strong>
+                <div class="lmsv-review-stars" aria-label="<%= `${reviewSummary.ratingAverageLabel} out of 5` %>">
+                  <% for (let star = 1; star <= 5; star += 1) { %>
+                    <span class="<%= star <= (reviewSummary.roundedStarCount || 0) ? 'active' : '' %>">&#9733;</span>
+                  <% } %>
+                </div>
+                <span><%= reviewSummary.ratingCount > 0 ? `${reviewSummary.ratingCount} rating${reviewSummary.ratingCount === 1 ? '' : 's'}` : 'No ratings yet' %></span>
+              </div>
+            </div>
+
+            <div class="lmsv-review-grid">
+              <div class="lmsv-review-form-wrap">
+                <% if (canSubmitCourseReview) { %>
+                  <form method="post" action="<%= courseReviewAction %>" class="lmsv-review-form">
+                    <input type="hidden" name="returnTo" value="<%= resolvedDetailPath %>">
+                    <div class="lmsv-review-rating-group">
+                      <span class="lmsv-review-label">Your rating</span>
+                      <div class="lmsv-review-rating-options">
+                        <% for (let star = 5; star >= 1; star -= 1) { %>
+                          <label class="lmsv-review-rating-option">
+                            <input type="radio" name="rating" value="<%= star %>" <%= Number(existingCourseReview?.rating || 0) === star ? 'checked' : '' %>>
+                            <span><%= `${star} star${star === 1 ? '' : 's'}` %></span>
+                          </label>
+                        <% } %>
+                      </div>
+                    </div>
+                    <label class="lmsv-review-field">
+                      <span class="lmsv-review-label">Comment</span>
+                      <textarea class="input" name="comment" rows="5" maxlength="1200" placeholder="What stood out, what could be clearer, or what other learners should expect."><%= existingCourseReview?.comment || '' %></textarea>
+                    </label>
+                    <% if (existingCourseReview?.moderationStatus === 'hidden') { %>
+                      <div class="lmsv-review-owner-note">
+                        Your current review is hidden from public view by the admin team. You can still update it here.
+                      </div>
+                    <% } %>
+                    <div class="lmsv-review-form-foot">
+                      <span class="lmsv-detail-note"><%= existingCourseReview ? 'You can update your existing course review at any time.' : 'You can leave a rating after you start learning.' %></span>
+                      <button type="submit" class="btn btn-primary btn-sm"><%= existingCourseReview ? 'Update Review' : 'Submit Review' %></button>
+                    </div>
+                  </form>
+                <% } else if (user) { %>
+                  <div class="lmsv-review-empty">
+                    <strong>Start the course to review it</strong>
+                    <p>Only learners with an active enrollment can leave ratings and comments.</p>
+                  </div>
+                <% } else { %>
+                  <div class="lmsv-review-empty">
+                    <strong>Login to join the conversation</strong>
+                    <p>Create an account and start the course before leaving a review.</p>
+                    <div class="lmsv-review-actions">
+                      <a href="<%= learnLoginHref %>" class="btn btn-primary btn-sm">Login</a>
+                      <a href="<%= registerToLearnHref %>" class="btn btn-secondary btn-sm">Create Account</a>
+                    </div>
+                  </div>
+                <% } %>
+              </div>
+
+              <div class="lmsv-review-list-wrap">
+                <% if (visibleCourseReviews.length > 0) { %>
+                  <div class="lmsv-review-list">
+                    <% visibleCourseReviews.forEach((review) => { %>
+                      <article class="lmsv-review-item">
+                        <div class="lmsv-review-item-head">
+                          <div>
+                            <strong><%= review.authorName %></strong>
+                            <span><%= review.updatedAtLabel || review.createdAtLabel || '' %><%= review.isEdited ? ' · edited' : '' %></span>
+                          </div>
+                          <div class="lmsv-review-stars" aria-hidden="true">
+                            <% for (let star = 1; star <= 5; star += 1) { %>
+                              <span class="<%= star <= Number(review.rating || 0) ? 'active' : '' %>">&#9733;</span>
+                            <% } %>
+                          </div>
+                        </div>
+                        <p class="lmsv-review-text"><%= review.comment || 'Left a rating without a written comment.' %></p>
+                        <% if (review.hasCreatorReply) { %>
+                          <div class="lmsv-review-response">
+                            <div class="lmsv-review-response-head">
+                              <strong><%= review.creatorReplyByName || 'Course creator' %></strong>
+                              <span><%= review.creatorReplyUpdatedAtLabel ? `Responded ${review.creatorReplyUpdatedAtLabel}` : 'Creator response' %></span>
+                            </div>
+                            <p class="lmsv-review-response-text"><%= review.creatorReply %></p>
+                          </div>
+                        <% } %>
+                      </article>
+                    <% }) %>
+                  </div>
+                <% } else { %>
+                  <div class="lmsv-review-empty">
+                    <strong>No comments yet</strong>
+                    <p>Be the first learner to leave feedback on this course.</p>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </article>
+        <% } %>
 
         <% if (relatedCourses && relatedCourses.length > 0) { %>
           <section class="lmsv-section">
@@ -181,6 +292,15 @@
             <strong>Instructor:</strong> <%= course.authorName %><br>
             <strong>Duration:</strong> <%= formatDuration(course.estimatedDurationMinutes) %>
           </p>
+          <% if (courseCommentsEnabled && !isPreviewMode) { %>
+            <div class="lmsv-side-rating">
+              <div>
+                <span class="lmsv-side-rating-label">Course rating</span>
+                <strong><%= reviewSummary.ratingCount > 0 ? `${reviewSummary.ratingAverageLabel}/5` : 'New' %></strong>
+              </div>
+              <span><%= reviewSummary.ratingCount > 0 ? `${reviewSummary.ratingCount} rating${reviewSummary.ratingCount === 1 ? '' : 's'}` : 'No ratings yet' %></span>
+            </div>
+          <% } %>
 
           <% if (isPreviewMode) { %>
             <% if (resolvedPreviewEditUrl) { %>
@@ -238,5 +358,7 @@
   <%- include('./partials/public-footer') %>
 </body>
 </html>
+
+
 
 

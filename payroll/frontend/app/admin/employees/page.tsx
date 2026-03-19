@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import api, { handleAuthCallback, isAuthenticated } from '@/lib/api';
+import api, { authApi, handleAuthCallback } from '@/lib/api';
 import Link from 'next/link';
 import {
     Search,
@@ -145,6 +145,8 @@ export default function EmployeesPage() {
     const [selectedTeamId, setSelectedTeamId] = useState('');
     const [teamAssignmentBusy, setTeamAssignmentBusy] = useState(false);
     const [onboardingActionBusy, setOnboardingActionBusy] = useState(false);
+    const [syncNotice, setSyncNotice] = useState('');
+    const [pageError, setPageError] = useState('');
 
     useEffect(() => {
         if (searchParams.get('setup') === 'pending') {
@@ -155,32 +157,53 @@ export default function EmployeesPage() {
     useEffect(() => {
         handleAuthCallback();
 
-        if (!isAuthenticated()) {
-            router.push('/login');
-            return;
-        }
-
         const fetchEmployees = async () => {
             try {
+                const me = await authApi.getMe();
+                const currentOrgId = me.currentOrganizationId;
+                const currentOrg =
+                    me.user?.organizations?.find((organization: any) => organization.id === currentOrgId)
+                    || me.user?.organizations?.[0];
+
+                if (!currentOrg || !['owner', 'admin', 'hr_manager'].includes(currentOrg.role)) {
+                    router.push('/dashboard');
+                    return;
+                }
+
                 const [idpResult, profilesResult, teamsResult] = await Promise.allSettled([
                     api.get('/payroll/idp/members'),
                     api.get('/payroll/profiles', { params: { limit: 1000 } }),
                     api.get('/payroll/idp/teams'),
                 ]);
+                const notices: string[] = [];
+
+                if (idpResult.status !== 'fulfilled' && profilesResult.status !== 'fulfilled') {
+                    throw idpResult.reason || profilesResult.reason;
+                }
+
+                const idpPayload = idpResult.status === 'fulfilled' ? idpResult.value.data : null;
+                const members: IdpMember[] = Array.isArray(idpPayload?.members) ? idpPayload.members : [];
+                const profiles: any[] = profilesResult.status === 'fulfilled' && Array.isArray(profilesResult.value.data?.profiles)
+                    ? profilesResult.value.data.profiles
+                    : [];
 
                 if (idpResult.status !== 'fulfilled') {
-                    throw idpResult.reason;
+                    notices.push('Identity Provider member sync is unavailable right now. Showing existing payroll profiles only.');
+                } else if (idpPayload?.syncAvailable === false) {
+                    notices.push(String(idpPayload?.syncError || 'Identity Provider member sync is unavailable right now.'));
                 }
 
                 if (profilesResult.status !== 'fulfilled') {
-                    throw profilesResult.reason;
+                    notices.push('Payroll profile sync is unavailable right now. Employees without a loaded payroll profile will appear as needing setup.');
                 }
-
-                const members: IdpMember[] = Array.isArray(idpResult.value.data?.members) ? idpResult.value.data.members : [];
-                const profiles: any[] = Array.isArray(profilesResult.value.data?.profiles) ? profilesResult.value.data.profiles : [];
 
                 const teamsPayload = teamsResult.status === 'fulfilled' ? teamsResult.value.data : null;
                 const teams: IdpTeam[] = Array.isArray(teamsPayload?.teams) ? teamsPayload.teams : [];
+                if (teamsResult.status !== 'fulfilled') {
+                    notices.push('Team sync is unavailable right now. Team assignment actions may be limited.');
+                } else if (teamsPayload?.syncAvailable === false) {
+                    notices.push(String(teamsPayload?.syncError || 'Team sync is unavailable right now.'));
+                }
 
                 const profileByUserId = new Map<string, any>();
                 profiles.forEach((profile) => {
@@ -207,8 +230,12 @@ export default function EmployeesPage() {
                     }
                 });
 
+                rows.sort((left, right) => getEmployeeName(left).localeCompare(getEmployeeName(right)));
+
                 setEmployees(rows);
-                setIdpOrganizationId(String(idpResult.value.data?.organizationId || teamsPayload?.organizationId || '').trim());
+                setSyncNotice(Array.from(new Set(notices.filter(Boolean))).join(' '));
+                setPageError('');
+                setIdpOrganizationId(String(idpPayload?.organizationId || teamsPayload?.organizationId || '').trim());
                 setIdpTeams(
                     teams
                         .map((team) => ({
@@ -222,8 +249,13 @@ export default function EmployeesPage() {
                         }))
                         .filter((team) => !!team.id && !!team.name)
                 );
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to fetch employees:', error);
+                setPageError(error?.response?.data?.error || error?.message || 'Failed to load employees');
+                if (error?.response?.status === 401) {
+                    router.push('/login');
+                    return;
+                }
             } finally {
                 setLoading(false);
             }
@@ -639,6 +671,18 @@ export default function EmployeesPage() {
                     </div>
                 </div>
             </div>
+
+            {syncNotice && !pageError && (
+                <div className="max-w-6xl mx-auto mb-6 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                    {syncNotice}
+                </div>
+            )}
+
+            {pageError && (
+                <div className="max-w-6xl mx-auto mb-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {pageError}
+                </div>
+            )}
 
             <div className="max-w-6xl mx-auto mb-6 flex flex-col gap-4 md:flex-row">
                 <div className="flex-1 relative">

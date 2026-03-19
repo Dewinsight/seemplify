@@ -1018,6 +1018,71 @@
       line-height: 1.5;
       color: var(--admin-text);
     }
+    .course-review-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .course-review-manage-list {
+      display: grid;
+      gap: 12px;
+    }
+    .course-review-manage-item {
+      border: 1px solid rgba(109, 40, 217, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .course-review-manage-item.is-hidden {
+      border-color: rgba(220, 38, 38, 0.2);
+      background: rgba(254, 242, 242, 0.94);
+    }
+    .course-review-manage-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .course-review-manage-head strong {
+      display: block;
+      color: var(--admin-text);
+      font-size: 15px;
+      margin-bottom: 2px;
+    }
+    .course-review-manage-head span,
+    .course-review-manage-note {
+      color: var(--admin-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .course-review-manage-copy,
+    .course-review-manage-reply-copy {
+      margin: 0;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .course-review-manage-reply {
+      border: 1px solid rgba(124, 58, 237, 0.16);
+      border-radius: 14px;
+      background: rgba(245, 243, 255, 0.9);
+      padding: 11px 12px;
+      display: grid;
+      gap: 5px;
+    }
+    .course-review-moderation-form {
+      display: grid;
+      gap: 10px;
+    }
+    .course-review-moderation-form textarea.input {
+      min-height: 96px;
+      resize: vertical;
+    }
     @media (max-width: 1100px) {
       .course-record-grid {
         grid-template-columns: 1fr;
@@ -2912,6 +2977,8 @@
   const courseSearchFilter = String((adminCourseFilters && adminCourseFilters.search) || '')
   const focusedCourseId = String((adminCourseFilters && adminCourseFilters.focusCourseId) || '')
   const focusedCourse = focusedAdminCourse || null
+  const focusedCourseReviews = Array.isArray(focusedAdminCourseReviews) ? focusedAdminCourseReviews : []
+  const focusedCourseReviewStats = focusedAdminCourseReviewStats || { total: 0, visible: 0, hidden: 0, withComments: 0, withReplies: 0 }
   const withAdminReturnTo = (path, returnTo = '') => {
     const normalizedReturnTo = String(returnTo || '').trim()
     return normalizedReturnTo
@@ -3623,6 +3690,7 @@
                     <div class="admin-tab-bar" role="tablist" aria-label="Course record panels">
                       <button class="admin-tab is-active" type="button" data-tab-trigger="course-status">Status</button>
                       <button class="admin-tab" type="button" data-tab-trigger="course-selling">Selling</button>
+                      <button class="admin-tab" type="button" data-tab-trigger="course-reviews">Reviews</button>
                       <button class="admin-tab" type="button" data-tab-trigger="course-tools">Tools</button>
                     </div>
 
@@ -3748,6 +3816,74 @@
                             <button class="btn btn-primary btn-sm" type="submit">Assign Organization</button>
                           </div>
                         </form>
+                      </article>
+                    </div>
+
+                    <div class="admin-tab-panel" data-tab-panel="course-reviews" hidden>
+                      <p class="admin-tab-intro">Ratings and comments are moderated here. Hidden reviews drop out of the public course rating until you restore them.</p>
+                      <article class="course-record-panel">
+                        <h4>Ratings & Comments Moderation</h4>
+                        <div class="course-review-metrics">
+                          <span class="pill"><%= focusedCourseReviewStats.total %> reviews</span>
+                          <span class="pill"><%= focusedCourseReviewStats.visible %> visible</span>
+                          <span class="pill"><%= focusedCourseReviewStats.hidden %> hidden</span>
+                          <span class="pill"><%= focusedCourseReviewStats.withReplies %> creator replies</span>
+                        </div>
+                        <% if (focusedCourseReviews.length === 0) { %>
+                          <p class="course-record-note">No learner ratings or comments have been submitted for this course yet.</p>
+                        <% } else { %>
+                          <div class="course-review-manage-list">
+                            <% focusedCourseReviews.forEach((review) => { %>
+                              <article class="course-review-manage-item <%= review.moderationStatus === 'hidden' ? 'is-hidden' : '' %>">
+                                <div class="course-review-manage-head">
+                                  <div>
+                                    <strong><%= review.authorName %></strong>
+                                    <span><%= review.authorEmail || '' %></span>
+                                  </div>
+                                  <div class="actions">
+                                    <span class="pill"><%= `${Number(review.rating || 0)}/5` %></span>
+                                    <span class="pill <%= review.moderationStatus === 'hidden' ? 'review-denied' : 'review-approved' %>"><%= review.moderationStatus === 'hidden' ? 'Hidden' : 'Visible' %></span>
+                                    <span class="pill"><%= review.updatedAtLabel || review.createdAtLabel || '-' %></span>
+                                  </div>
+                                </div>
+                                <p class="course-review-manage-copy"><%= review.comment || 'This learner left a rating without a written comment.' %></p>
+                                <% if (review.hasCreatorReply) { %>
+                                  <div class="course-review-manage-reply">
+                                    <strong><%= review.creatorReplyByName || 'Course creator' %></strong>
+                                    <span class="course-review-manage-note"><%= review.creatorReplyUpdatedAtLabel ? `Responded ${review.creatorReplyUpdatedAtLabel}` : 'Creator response' %></span>
+                                    <p class="course-review-manage-reply-copy"><%= review.creatorReply %></p>
+                                  </div>
+                                <% } %>
+                                <% if (review.moderatedAtLabel || review.hasModerationReason) { %>
+                                  <p class="course-review-manage-note">
+                                    <% if (review.moderatedAtLabel) { %>Last moderated <%= review.moderatedAtLabel %><% } %>
+                                    <% if (review.moderatedByName) { %> by <%= review.moderatedByName %><% } %>
+                                    <% if (review.hasModerationReason) { %><br><strong>Moderator note:</strong> <%= review.moderationReason %><% } %>
+                                  </p>
+                                <% } %>
+                                <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/reviews/<%= review._id %>/moderate" class="course-review-moderation-form">
+                                  <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                                  <div class="course-record-status-grid">
+                                    <label>
+                                      <span>Moderation status</span>
+                                      <select class="input" name="moderationStatus">
+                                        <option value="visible" <%= review.moderationStatus !== 'hidden' ? 'selected' : '' %>>visible</option>
+                                        <option value="hidden" <%= review.moderationStatus === 'hidden' ? 'selected' : '' %>>hidden</option>
+                                      </select>
+                                    </label>
+                                    <label style="grid-column: 1 / -1;">
+                                      <span>Moderator note</span>
+                                      <textarea class="input" name="moderationReason" rows="4" maxlength="600" placeholder="Explain why the review is hidden or why it was restored."><%= review.moderationReason || '' %></textarea>
+                                    </label>
+                                  </div>
+                                  <div class="course-action-bar">
+                                    <button class="btn btn-primary btn-sm" type="submit">Save Moderation</button>
+                                  </div>
+                                </form>
+                              </article>
+                            <% }) %>
+                          </div>
+                        <% } %>
                       </article>
                     </div>
 

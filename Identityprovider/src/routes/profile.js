@@ -28,6 +28,88 @@ function updateCompletionTracking(account) {
     return completion;
 }
 
+function normalizeText(value) {
+    return String(value || '').trim();
+}
+
+function normalizeOptionalNumber(value, fallback = 100) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isSalaryAccount(account = {}) {
+    return normalizeText(account.accountType).toLowerCase() === 'salary';
+}
+
+function normalizeBankAccount(country, account = {}) {
+    const normalizedCountry = normalizeText(account.country || country || 'Other') || 'Other';
+
+    return {
+        country: normalizedCountry,
+        bankName: normalizeText(account.bankName),
+        accountHolderName: normalizeText(account.accountHolderName),
+        accountNumber: normalizeText(account.accountNumber),
+        routingNumber: normalizeText(account.routingNumber),
+        sortCode: normalizeText(account.sortCode),
+        iban: normalizeText(account.iban),
+        bicSwift: normalizeText(account.bicSwift),
+        bankCode: normalizeText(account.bankCode),
+        accountType: normalizeText(account.accountType),
+        percentage: normalizeOptionalNumber(account.percentage, 100),
+        isActive: account.isActive !== false,
+        updatedAt: new Date()
+    };
+}
+
+function validateBankAccount(account = {}) {
+    if (!normalizeText(account.bankName)) {
+        return 'Bank name is required';
+    }
+
+    switch (account.country) {
+        case 'USA':
+            if (!/^\d{9}$/.test(account.routingNumber || '')) {
+                return 'Routing number must be exactly 9 digits';
+            }
+            if (!normalizeText(account.accountNumber)) {
+                return 'Account number is required';
+            }
+            break;
+        case 'UK':
+            if (!/^\d{2}-\d{2}-\d{2}$/.test(account.sortCode || '')) {
+                return 'Sort code must be in format XX-XX-XX';
+            }
+            if (!normalizeText(account.accountNumber)) {
+                return 'Account number is required';
+            }
+            break;
+        case 'EU':
+            if (!normalizeText(account.iban) || !normalizeText(account.bicSwift)) {
+                return 'IBAN and BIC/SWIFT code are required';
+            }
+            break;
+        case 'Nigeria':
+            if (!normalizeText(account.bankCode)) {
+                return 'Bank code is required';
+            }
+            if (!/^\d{10}$/.test(account.accountNumber || '')) {
+                return 'Nigerian account numbers must be exactly 10 digits';
+            }
+            break;
+        default:
+            if (!normalizeText(account.accountNumber) && !normalizeText(account.iban)) {
+                return 'Account details are required';
+            }
+            break;
+    }
+
+    if (!normalizeText(account.accountType)) {
+        return 'Account type is required';
+    }
+
+    return null;
+}
+
 /**
  * GET /api/profile/dashboard
  * Fetch aggregated employee dashboard data from all HR modules
@@ -141,26 +223,85 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
     try {
         const userId = req.session.accountId;
         const orgId = req.session.currentOrganization;
-        const { country, account: bankAccount } = req.body;
+        const { country, account: bankAccount, accountIndex } = req.body;
 
         const userAccount = await Account.findOne({ sub: userId });
         if (!userAccount) {
             return res.status(404).json({ error: 'Account not found' });
         }
 
-        userAccount.profile = userAccount.profile || {};
-        userAccount.profile.banking = userAccount.profile.banking || { country: country, accounts: [] };
-
-        // Update primary banking country if provided
-        if (country) {
-            userAccount.profile.banking.country = country;
+        if (!bankAccount || typeof bankAccount !== 'object') {
+            return res.status(400).json({ error: 'Bank account details are required' });
         }
 
-        // Add new account with timestamp
-        userAccount.profile.banking.accounts.push({
-            ...bankAccount,
-            createdAt: new Date()
+        userAccount.profile = userAccount.profile || {};
+        userAccount.profile.banking = userAccount.profile.banking || { country: country, accounts: [] };
+        userAccount.profile.banking.accounts = Array.isArray(userAccount.profile.banking.accounts)
+            ? userAccount.profile.banking.accounts
+            : [];
+
+        const hasAccountIndex = accountIndex !== undefined && accountIndex !== null && `${accountIndex}` !== '';
+        const parsedAccountIndex = hasAccountIndex ? Number.parseInt(accountIndex, 10) : null;
+
+        if (hasAccountIndex && (!Number.isInteger(parsedAccountIndex) || parsedAccountIndex < 0 || parsedAccountIndex >= userAccount.profile.banking.accounts.length)) {
+            return res.status(400).json({ error: 'Invalid account selected for editing' });
+        }
+
+        const normalizedAccount = normalizeBankAccount(country, bankAccount);
+        const validationError = validateBankAccount(normalizedAccount);
+        if (validationError) {
+            return res.status(400).json({ error: validationError });
+        }
+
+        const existingSalaryIndex = userAccount.profile.banking.accounts.findIndex((existingAccount, index) => {
+            if (existingAccount?.isActive === false) {
+                return false;
+            }
+            if (hasAccountIndex && index === parsedAccountIndex) {
+                return false;
+            }
+            return isSalaryAccount(existingAccount);
         });
+
+        const editingExistingSalaryAccount = hasAccountIndex && isSalaryAccount(userAccount.profile.banking.accounts[parsedAccountIndex]);
+        if (isSalaryAccount(normalizedAccount) && existingSalaryIndex !== -1 && !editingExistingSalaryAccount) {
+            return res.status(400).json({
+                error: 'Only one salary account is allowed. Edit the existing salary account instead.'
+            });
+        }
+
+        // Update primary banking country if provided
+        if (normalizedAccount.country) {
+            userAccount.profile.banking.country = normalizedAccount.country;
+        }
+
+        let message = 'Banking information updated successfully! Payroll has been notified.';
+        if (hasAccountIndex) {
+            const existingAccount = userAccount.profile.banking.accounts[parsedAccountIndex];
+            existingAccount.country = normalizedAccount.country;
+            existingAccount.bankName = normalizedAccount.bankName;
+            existingAccount.accountHolderName = normalizedAccount.accountHolderName;
+            existingAccount.accountNumber = normalizedAccount.accountNumber;
+            existingAccount.routingNumber = normalizedAccount.routingNumber;
+            existingAccount.sortCode = normalizedAccount.sortCode;
+            existingAccount.iban = normalizedAccount.iban;
+            existingAccount.bicSwift = normalizedAccount.bicSwift;
+            existingAccount.bankCode = normalizedAccount.bankCode;
+            existingAccount.accountType = normalizedAccount.accountType;
+            existingAccount.percentage = normalizedAccount.percentage;
+            existingAccount.isActive = normalizedAccount.isActive;
+            existingAccount.updatedAt = new Date();
+            if (!existingAccount.createdAt) {
+                existingAccount.createdAt = new Date();
+            }
+            message = 'Payment account updated successfully! Payroll has been notified.';
+        } else {
+            userAccount.profile.banking.accounts.push({
+                ...normalizedAccount,
+                createdAt: new Date()
+            });
+            message = 'Payment account added successfully! Payroll has been notified.';
+        }
 
         const completion = updateCompletionTracking(userAccount);
         userAccount.markModified('profile');
@@ -178,7 +319,7 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Banking information updated successfully! Payroll has been notified.',
+            message,
             profileCompletion: completion,
             nextStep: completion.nextIncompleteStep
         });

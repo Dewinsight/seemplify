@@ -250,6 +250,7 @@ const AccountSchema = new mongoose.Schema({
 
     // Extended personal information
     personalInfo: {
+      dateOfBirth: Date,
       mailingAddress: {
         street: String,
         street2: String,

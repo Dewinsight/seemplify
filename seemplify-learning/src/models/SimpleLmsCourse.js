@@ -441,6 +441,22 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  ratingAverage: {
+    type: Number,
+    min: 0,
+    max: 5,
+    default: 0
+  },
+  ratingCount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  commentCount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
   isActive: {
     type: Boolean,
     default: true

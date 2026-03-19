@@ -786,6 +786,99 @@
       border-color: rgba(124, 58, 237, 0.28);
       background: rgba(237, 233, 254, 0.9);
     }
+    .course-feedback-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .course-feedback-list {
+      display: grid;
+      gap: 14px;
+    }
+    .course-feedback-item {
+      border: 1px solid var(--studio-border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .course-feedback-item.is-hidden {
+      border-color: rgba(220, 38, 38, 0.2);
+      background: rgba(254, 242, 242, 0.94);
+    }
+    .course-feedback-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .course-feedback-head strong {
+      display: block;
+      font-size: 16px;
+      color: #0b1224;
+      margin-bottom: 3px;
+    }
+    .course-feedback-head span,
+    .course-feedback-meta-note {
+      font-size: 12px;
+      color: var(--studio-muted);
+    }
+    .course-feedback-copy,
+    .course-feedback-reply-copy {
+      margin: 0;
+      color: #334155;
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .course-feedback-reply {
+      border: 1px solid rgba(14, 116, 144, 0.18);
+      border-radius: 16px;
+      background: rgba(240, 249, 255, 0.72);
+      padding: 12px 13px;
+      display: grid;
+      gap: 6px;
+    }
+    .course-feedback-reply strong {
+      color: #0f172a;
+      font-size: 13px;
+    }
+    .course-feedback-form {
+      display: grid;
+      gap: 10px;
+    }
+    .course-feedback-form textarea.input {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .course-feedback-form-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .course-feedback-empty {
+      border: 1px dashed var(--studio-border-strong);
+      border-radius: 18px;
+      background: rgba(248, 250, 252, 0.92);
+      padding: 18px;
+      display: grid;
+      gap: 8px;
+    }
+    .course-feedback-empty strong {
+      color: #0b1224;
+      font-size: 15px;
+    }
+    .course-feedback-empty p {
+      margin: 0;
+      color: var(--studio-muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
     .inline-form {
       display: inline-flex;
       align-items: center;
@@ -1176,6 +1269,8 @@
   }
   const courseStatusChoices = ['draft', 'published', 'archived', 'pending_public_review']
   const editingCourseChaptersJson = editingCourse ? JSON.stringify(editingCourse.chapters || [], null, 2) : '[]'
+  const editableCourseReviews = Array.isArray(editingCourseReviews) ? editingCourseReviews : []
+  const editableCourseReviewStats = editingCourseReviewStats || { total: 0, visible: 0, hidden: 0, withComments: 0, withReplies: 0 }
 %>
 <body class="public-site lmsv-course-studio-page <%= isAdminStudio ? 'studio-admin' : 'studio-creator' %>">
   <% if (!isAdminStudio) { %>
@@ -1412,6 +1507,67 @@
 
             <div class="actions"><button class="btn btn-primary" type="submit">Save Course Changes</button></div>
           </form>
+        </section>
+
+        <section class="studio-card" id="course-feedback">
+          <div class="section-head">
+            <div>
+              <h3>Learner Ratings & Comments</h3>
+              <p>Reply to learner feedback here. Admin moderation still controls what stays visible on the public course page.</p>
+            </div>
+          </div>
+          <div class="course-feedback-summary">
+            <span class="pill"><%= editableCourseReviewStats.total %> total reviews</span>
+            <span class="pill"><%= editableCourseReviewStats.visible %> visible</span>
+            <% if (editableCourseReviewStats.hidden > 0) { %><span class="pill review-denied"><%= editableCourseReviewStats.hidden %> hidden by admin</span><% } %>
+            <span class="pill"><%= editableCourseReviewStats.withReplies %> creator replies</span>
+          </div>
+          <% if (editableCourseReviews.length === 0) { %>
+            <div class="course-feedback-empty">
+              <strong>No learner feedback yet</strong>
+              <p>Ratings and comments will appear here after enrolled learners start reviewing this course.</p>
+            </div>
+          <% } else { %>
+            <div class="course-feedback-list">
+              <% editableCourseReviews.forEach((review) => { %>
+                <article class="course-feedback-item <%= review.moderationStatus === 'hidden' ? 'is-hidden' : '' %>">
+                  <div class="course-feedback-head">
+                    <div>
+                      <strong><%= review.authorName %></strong>
+                      <span><%= review.authorEmail || '' %></span>
+                    </div>
+                    <div class="actions">
+                      <span class="pill"><%= `${Number(review.rating || 0)}/5` %></span>
+                      <span class="pill <%= review.moderationStatus === 'hidden' ? 'review-denied' : 'review-approved' %>"><%= review.moderationStatus === 'hidden' ? 'Hidden by admin' : 'Visible publicly' %></span>
+                      <span class="pill"><%= review.updatedAtLabel || review.createdAtLabel || '-' %></span>
+                    </div>
+                  </div>
+                  <p class="course-feedback-copy"><%= review.comment || 'This learner left a rating without a written comment.' %></p>
+                  <% if (review.hasModerationReason) { %>
+                    <p class="course-feedback-meta-note">Admin note: <%= review.moderationReason %></p>
+                  <% } %>
+                  <% if (review.hasCreatorReply) { %>
+                    <div class="course-feedback-reply">
+                      <strong><%= review.creatorReplyByName || 'Course creator' %></strong>
+                      <span class="course-feedback-meta-note"><%= review.creatorReplyUpdatedAtLabel ? `Responded ${review.creatorReplyUpdatedAtLabel}` : 'Creator response' %></span>
+                      <p class="course-feedback-reply-copy"><%= review.creatorReply %></p>
+                    </div>
+                  <% } %>
+                  <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/reviews/<%= review._id %>/reply" class="course-feedback-form">
+                    <input type="hidden" name="returnTo" value="<%= buildStudioEditPath(editingCourse._id) %>#course-feedback">
+                    <label>
+                      <span class="lmsv-review-label">Creator response</span>
+                      <textarea class="input" name="creatorReply" rows="4" maxlength="1500" placeholder="Reply to this learner. This response will appear under the review when it is public."><%= review.creatorReply || '' %></textarea>
+                    </label>
+                    <div class="course-feedback-form-foot">
+                      <span class="course-feedback-meta-note">Keep the response focused on the course content and next steps for the learner.</span>
+                      <button class="btn btn-primary btn-sm" type="submit"><%= review.hasCreatorReply ? 'Update Response' : 'Post Response' %></button>
+                    </div>
+                  </form>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
         </section>
       <% } %>
 

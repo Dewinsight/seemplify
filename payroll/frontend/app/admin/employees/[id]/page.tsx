@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api, { authApi, isAuthenticated } from '@/lib/api';
+import api, { authApi, handleAuthCallback } from '@/lib/api';
 import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import {
     filingStatusOptions,
@@ -24,6 +24,72 @@ import {
     Trash2,
     PiggyBank
 } from 'lucide-react';
+
+function toDateInputValue(value: any): string {
+    if (!value) return '';
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toISOString().slice(0, 10);
+}
+
+function hasText(value: any): boolean {
+    return String(value || '').trim().length > 0;
+}
+
+function hasAnyBankingValue(account: any = {}): boolean {
+    return [
+        account?.bankName,
+        account?.accountHolderName,
+        account?.accountNumber,
+        account?.routingNumber,
+        account?.sortCode,
+        account?.iban,
+        account?.bicSwift,
+        account?.bankCode
+    ].some(hasText);
+}
+
+function normalizePayrollBankAccountType(country: string, accountType: string): 'checking' | 'savings' | 'current' {
+    const rawType = String(accountType || '').trim().toLowerCase();
+    if (rawType === 'checking' || rawType === 'savings' || rawType === 'current') {
+        return rawType;
+    }
+    if (rawType === 'salary' || country === 'UK' || country === 'Nigeria') {
+        return 'current';
+    }
+    return 'checking';
+}
+
+function getDefaultSetupData() {
+    return {
+        name: '',
+        designation: '',
+        employeeId: '',
+        personalInfo: {
+            dateOfBirth: '',
+            mailingAddress: {
+                street: '',
+                street2: '',
+                city: '',
+                state: '',
+                zipCode: '',
+                country: 'USA'
+            },
+            phoneNumbers: {
+                mobile: '',
+                home: '',
+                work: ''
+            },
+            emergencyContact: {
+                name: '',
+                relationship: '',
+                phone: '',
+                email: ''
+            }
+        },
+        dependentsDeclarationStatus: 'pending'
+    };
+}
 
 function getDefaultTaxConfig() {
     return {
@@ -131,6 +197,10 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<any>(null);
+    const [setupData, setSetupData] = useState<any>(getDefaultSetupData());
+    const [profileCompletion, setProfileCompletion] = useState<any>(null);
+    const [idpSyncWarning, setIdpSyncWarning] = useState('');
+    const [canSyncIdpProfile, setCanSyncIdpProfile] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState<any>({
@@ -152,9 +222,16 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             employerPensionPercent: 0
         },
         bankAccount: {
+            country: 'USA',
             bankName: '',
+            accountHolderName: '',
             accountNumber: '',
-            routingNumber: ''
+            routingNumber: '',
+            sortCode: '',
+            iban: '',
+            bicSwift: '',
+            bankCode: '',
+            accountType: 'checking'
         },
         recurringDeductions: [] as any[]
     });
@@ -182,15 +259,68 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     });
 
     useEffect(() => {
-        if (!isAuthenticated()) {
-            router.push('/login');
-            return;
-        }
+        handleAuthCallback();
 
         const fetchProfile = async () => {
             try {
+                const me = await authApi.getMe();
+                const currentOrg =
+                    me.user?.organizations?.find((organization: any) => organization.id === me.currentOrganizationId)
+                    || me.user?.organizations?.[0];
+
+                if (!currentOrg || !['owner', 'admin', 'hr_manager'].includes(currentOrg.role)) {
+                    router.push('/dashboard');
+                    return;
+                }
+
                 const res = await api.get(`/payroll/profiles/${params.id}`);
                 setProfile(res.data);
+
+                const idpSync = res.data?.idpSync || null;
+                const payrollSync = idpSync?.payrollSync || {};
+                const syncedBankAccount = payrollSync?.banking?.accounts?.[0] || {};
+                const payrollBankAccount = res.data.bankAccounts?.[0] || {};
+                const resolvedCountry = String(
+                    syncedBankAccount?.country
+                    || payrollSync?.banking?.country
+                    || 'USA'
+                ).trim() || 'USA';
+                const dependentsCount = Number(payrollSync?.dependentsCount || 0);
+                const nextDependentsStatus = dependentsCount > 0
+                    ? 'provided'
+                    : (payrollSync?.profileCompletion?.hasDeclaredNoDependents ? 'none' : 'pending');
+
+                setProfileCompletion(payrollSync?.profileCompletion || null);
+                setCanSyncIdpProfile(!!idpSync);
+                setIdpSyncWarning(idpSync ? '' : 'Identity Provider profile sync is unavailable right now. Payroll values can still be saved, but employee setup details will not push back to IDP until sync is restored.');
+                setSetupData({
+                    name: idpSync?.name || res.data?.employeeInfo?.name || '',
+                    designation: idpSync?.designation || res.data?.employeeInfo?.designation || '',
+                    employeeId: idpSync?.employeeId || res.data?.employeeInfo?.employeeId || '',
+                    personalInfo: {
+                        dateOfBirth: toDateInputValue(payrollSync?.personalInfo?.dateOfBirth || res.data?.employeeInfo?.dateOfBirth),
+                        mailingAddress: {
+                            street: payrollSync?.personalInfo?.mailingAddress?.street || '',
+                            street2: payrollSync?.personalInfo?.mailingAddress?.street2 || '',
+                            city: payrollSync?.personalInfo?.mailingAddress?.city || '',
+                            state: payrollSync?.personalInfo?.mailingAddress?.state || '',
+                            zipCode: payrollSync?.personalInfo?.mailingAddress?.zipCode || '',
+                            country: payrollSync?.personalInfo?.mailingAddress?.country || 'USA'
+                        },
+                        phoneNumbers: {
+                            mobile: payrollSync?.personalInfo?.phoneNumbers?.mobile || '',
+                            home: payrollSync?.personalInfo?.phoneNumbers?.home || '',
+                            work: payrollSync?.personalInfo?.phoneNumbers?.work || ''
+                        },
+                        emergencyContact: {
+                            name: payrollSync?.emergencyContact?.name || '',
+                            relationship: payrollSync?.emergencyContact?.relationship || '',
+                            phone: payrollSync?.emergencyContact?.phone || '',
+                            email: payrollSync?.emergencyContact?.email || ''
+                        }
+                    },
+                    dependentsDeclarationStatus: nextDependentsStatus
+                });
 
                 // Initialize form
                 setFormData({
@@ -212,14 +342,25 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         employerPensionPercent: res.data.statutoryContributions?.employerPensionPercent || 0
                     },
                     bankAccount: {
-                        bankName: res.data.bankAccounts?.[0]?.bankName || '',
-                        accountNumber: res.data.bankAccounts?.[0]?.accountNumber || '',
-                        routingNumber: res.data.bankAccounts?.[0]?.routingNumber || ''
+                        country: resolvedCountry,
+                        bankName: syncedBankAccount?.bankName || payrollBankAccount?.bankName || '',
+                        accountHolderName: syncedBankAccount?.accountHolderName || payrollBankAccount?.accountName || res.data?.employeeInfo?.name || '',
+                        accountNumber: syncedBankAccount?.accountNumber || payrollBankAccount?.accountNumber || '',
+                        routingNumber: syncedBankAccount?.routingNumber || payrollBankAccount?.routingNumber || '',
+                        sortCode: syncedBankAccount?.sortCode || (resolvedCountry === 'UK' ? (payrollBankAccount?.branchCode || '') : ''),
+                        iban: syncedBankAccount?.iban || payrollBankAccount?.iban || '',
+                        bicSwift: syncedBankAccount?.bicSwift || payrollBankAccount?.swiftCode || '',
+                        bankCode: syncedBankAccount?.bankCode || (resolvedCountry === 'Nigeria' ? (payrollBankAccount?.branchCode || '') : ''),
+                        accountType: syncedBankAccount?.accountType || payrollBankAccount?.accountType || (resolvedCountry === 'USA' ? 'checking' : 'current')
                     },
                     recurringDeductions: res.data.recurringDeductions || []
                 });
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to fetch profile:', error);
+                if (error?.response?.status === 401) {
+                    router.push('/login');
+                    return;
+                }
             } finally {
                 setLoading(false);
             }
@@ -233,14 +374,24 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         setSaving(true);
 
         try {
+            const bankCountry = String(formData.bankAccount?.country || 'USA').trim() || 'USA';
             const bankName = String(formData.bankAccount?.bankName || '').trim();
+            const accountHolderName = String(formData.bankAccount?.accountHolderName || '').trim();
             const accountNumber = String(formData.bankAccount?.accountNumber || '').trim();
             const routingNumber = String(formData.bankAccount?.routingNumber || '').trim();
+            const sortCode = String(formData.bankAccount?.sortCode || '').trim();
+            const iban = String(formData.bankAccount?.iban || '').trim();
+            const bicSwift = String(formData.bankAccount?.bicSwift || '').trim();
+            const bankCode = String(formData.bankAccount?.bankCode || '').trim();
+            const accountType = String(formData.bankAccount?.accountType || '').trim();
+            const effectivePayrollAccountNumber = accountNumber || iban;
+            const hasBankingDetails = hasAnyBankingValue(formData.bankAccount);
+            const canUpdateDependentsDeclaration = Number(profileCompletion?.dependentsCount || 0) === 0;
 
             let bankAccounts: any[] = [];
-            if (!bankName && !accountNumber && !routingNumber) {
+            if (!hasBankingDetails) {
                 bankAccounts = [];
-            } else if (!bankName || !accountNumber) {
+            } else if (!bankName || !effectivePayrollAccountNumber) {
                 alert('Bank name and account number are required if you want to save bank details.');
                 setSaving(false);
                 return;
@@ -248,13 +399,56 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 bankAccounts = [
                     {
                         bankName,
-                        accountNumber,
+                        accountNumber: effectivePayrollAccountNumber,
                         routingNumber: routingNumber || undefined,
+                        branchCode: (bankCountry === 'UK' ? sortCode : bankCountry === 'Nigeria' ? bankCode : '') || undefined,
+                        swiftCode: bicSwift || undefined,
+                        iban: iban || undefined,
+                        accountType: normalizePayrollBankAccountType(bankCountry, accountType),
                         isPrimary: true,
-                        accountName: profile?.employeeInfo?.name || 'Primary'
+                        accountName: accountHolderName || setupData.name || profile?.employeeInfo?.name || 'Primary'
                     }
                 ];
             }
+
+            const idpProfileSyncPayload = canSyncIdpProfile ? {
+                name: setupData.name,
+                designation: setupData.designation,
+                employeeId: setupData.employeeId,
+                personalInfo: {
+                    dateOfBirth: setupData.personalInfo?.dateOfBirth || null,
+                    mailingAddress: {
+                        ...(setupData.personalInfo?.mailingAddress || {})
+                    },
+                    phoneNumbers: {
+                        ...(setupData.personalInfo?.phoneNumbers || {})
+                    },
+                    emergencyContact: {
+                        ...(setupData.personalInfo?.emergencyContact || {})
+                    }
+                },
+                banking: {
+                    country: bankCountry,
+                    account: hasBankingDetails ? {
+                        bankName,
+                        accountHolderName: accountHolderName || setupData.name || profile?.employeeInfo?.name || '',
+                        accountNumber,
+                        routingNumber,
+                        sortCode,
+                        iban,
+                        bicSwift,
+                        bankCode,
+                        accountType,
+                        percentage: 100,
+                        isActive: true
+                    } : {}
+                },
+                ...(canUpdateDependentsDeclaration ? {
+                    dependentsDeclaration: {
+                        status: setupData.dependentsDeclarationStatus
+                    }
+                } : {})
+            } : undefined;
 
             await api.put(`/payroll/profiles/${params.id}`, {
                 basicSalary: Number(formData.basicSalary),
@@ -276,19 +470,27 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     multipleJobs: !!formData.taxConfig.multipleJobs,
                     customBrackets: serializeCustomBrackets(formData.taxConfig.customBrackets || [])
                 },
+                employeeInfo: {
+                    ...profile?.employeeInfo,
+                    name: setupData.name,
+                    designation: setupData.designation,
+                    employeeId: setupData.employeeId,
+                    dateOfBirth: setupData.personalInfo?.dateOfBirth || null
+                },
                 statutoryContributions: {
                     ...formData.statutoryContributions,
                     pensionContributionPercent: Number(formData.statutoryContributions.pensionContributionPercent || 0),
                     employerPensionPercent: Number(formData.statutoryContributions.employerPensionPercent || 0)
                 },
                 bankAccounts,
-                recurringDeductions: formData.recurringDeductions
+                recurringDeductions: formData.recurringDeductions,
+                idpProfileSync: idpProfileSyncPayload
             });
 
             alert('Profile updated successfully');
             router.push('/admin/employees');
-        } catch (error) {
-            alert('Failed to update profile');
+        } catch (error: any) {
+            alert(error?.response?.data?.error || 'Failed to update profile');
             console.error(error);
         } finally {
             setSaving(false);
@@ -487,9 +689,47 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     </button>
                 </div>
 
+                {idpSyncWarning && (
+                    <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                        {idpSyncWarning}
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     {/* Sidebar Info */}
                     <div className="space-y-6">
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+                                Setup Status
+                            </h3>
+                            <div className="space-y-3">
+                                <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+                                    <p className="text-sm font-medium text-zinc-200">
+                                        {profileCompletion?.completedCount || 0} of {profileCompletion?.totalSteps || 3} required profile sections completed
+                                    </p>
+                                    <p className="mt-1 text-xs text-zinc-500">
+                                        {profileCompletion?.nextIncompleteStep
+                                            ? `Next required step: ${profileCompletion.nextIncompleteStep.label}`
+                                            : 'Profile setup is complete for payroll-required sections.'}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {(profileCompletion?.steps || []).map((step: any) => (
+                                        <span
+                                            key={step.key}
+                                            className={`rounded-full border px-2.5 py-1 text-xs ${
+                                                step.complete
+                                                    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                                                    : 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                                            }`}
+                                        >
+                                            {step.label}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
                             <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                                 Identity Info
@@ -732,6 +972,304 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
                     {/* Main Form */}
                     <div className="md:col-span-2 space-y-6">
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+                                    <FileText className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-zinc-200">Employee Setup</h3>
+                                    <p className="text-sm text-zinc-500">Complete payroll-required employee details and sync them back to IDP</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Full Name</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.name}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            name: e.target.value
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Designation</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.designation}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            designation: e.target.value
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee ID</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.employeeId}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            employeeId: e.target.value
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date of Birth</label>
+                                    <input
+                                        type="date"
+                                        value={setupData.personalInfo?.dateOfBirth || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                dateOfBirth: e.target.value
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Mobile Phone</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.phoneNumbers?.mobile || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                phoneNumbers: {
+                                                    ...setupData.personalInfo.phoneNumbers,
+                                                    mobile: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Address Country</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.country || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    country: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        placeholder="e.g. Nigeria"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Street Address</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.street || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    street: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Address Line 2</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.street2 || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    street2: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">City</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.city || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    city: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">State / Region</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.state || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    state: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Postal Code</label>
+                                    <input
+                                        type="text"
+                                        value={setupData.personalInfo?.mailingAddress?.zipCode || ''}
+                                        onChange={(e) => setSetupData({
+                                            ...setupData,
+                                            personalInfo: {
+                                                ...setupData.personalInfo,
+                                                mailingAddress: {
+                                                    ...setupData.personalInfo.mailingAddress,
+                                                    zipCode: e.target.value
+                                                }
+                                            }
+                                        })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+                                <h4 className="text-sm font-semibold text-zinc-200 mb-3">Emergency Contact</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Name</label>
+                                        <input
+                                            type="text"
+                                            value={setupData.personalInfo?.emergencyContact?.name || ''}
+                                            onChange={(e) => setSetupData({
+                                                ...setupData,
+                                                personalInfo: {
+                                                    ...setupData.personalInfo,
+                                                    emergencyContact: {
+                                                        ...setupData.personalInfo.emergencyContact,
+                                                        name: e.target.value
+                                                    }
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Relationship</label>
+                                        <input
+                                            type="text"
+                                            value={setupData.personalInfo?.emergencyContact?.relationship || ''}
+                                            onChange={(e) => setSetupData({
+                                                ...setupData,
+                                                personalInfo: {
+                                                    ...setupData.personalInfo,
+                                                    emergencyContact: {
+                                                        ...setupData.personalInfo.emergencyContact,
+                                                        relationship: e.target.value
+                                                    }
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Phone</label>
+                                        <input
+                                            type="text"
+                                            value={setupData.personalInfo?.emergencyContact?.phone || ''}
+                                            onChange={(e) => setSetupData({
+                                                ...setupData,
+                                                personalInfo: {
+                                                    ...setupData.personalInfo,
+                                                    emergencyContact: {
+                                                        ...setupData.personalInfo.emergencyContact,
+                                                        phone: e.target.value
+                                                    }
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Email</label>
+                                        <input
+                                            type="email"
+                                            value={setupData.personalInfo?.emergencyContact?.email || ''}
+                                            onChange={(e) => setSetupData({
+                                                ...setupData,
+                                                personalInfo: {
+                                                    ...setupData.personalInfo,
+                                                    emergencyContact: {
+                                                        ...setupData.personalInfo.emergencyContact,
+                                                        email: e.target.value
+                                                    }
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4">
+                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents Declaration</label>
+                                <select
+                                    value={setupData.dependentsDeclarationStatus}
+                                    onChange={(e) => setSetupData({
+                                        ...setupData,
+                                        dependentsDeclarationStatus: e.target.value
+                                    })}
+                                    disabled={Number(profileCompletion?.dependentsCount || 0) > 0}
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none disabled:opacity-60"
+                                >
+                                    <option value="pending">Still needs dependents confirmation</option>
+                                    <option value="none">No dependents to add</option>
+                                    {Number(profileCompletion?.dependentsCount || 0) > 0 && (
+                                        <option value="provided">Dependents already provided</option>
+                                    )}
+                                </select>
+                                <p className="mt-2 text-xs text-zinc-500">
+                                    {Number(profileCompletion?.dependentsCount || 0) > 0
+                                        ? `This employee already has ${profileCompletion?.dependentsCount} dependent(s) on record in IDP.`
+                                        : 'Use "No dependents to add" when HR has confirmed there is nothing else to collect.'}
+                                </p>
+                            </div>
+                        </div>
+
                         {/* Compensation */}
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
                             <div className="flex items-center gap-3 mb-6">
@@ -1067,20 +1605,78 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             </div>
 
                             <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Bank Name</label>
-                                    <input
-                                        type="text"
-                                        value={formData.bankAccount.bankName}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            bankAccount: { ...formData.bankAccount, bankName: e.target.value }
-                                        })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        placeholder="e.g. Chase Bank"
-                                    />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Bank Country</label>
+                                        <select
+                                            value={formData.bankAccount.country}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: {
+                                                    ...formData.bankAccount,
+                                                    country: e.target.value,
+                                                    accountType: e.target.value === 'USA' ? 'checking' : 'current'
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        >
+                                            <option value="USA">USA</option>
+                                            <option value="UK">UK</option>
+                                            <option value="EU">EU</option>
+                                            <option value="Nigeria">Nigeria</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Holder Name</label>
+                                        <input
+                                            type="text"
+                                            value={formData.bankAccount.accountHolderName}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: { ...formData.bankAccount, accountHolderName: e.target.value }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Bank Name</label>
+                                        <input
+                                            type="text"
+                                            value={formData.bankAccount.bankName}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: { ...formData.bankAccount, bankName: e.target.value }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            placeholder="e.g. Chase Bank"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Type</label>
+                                        <select
+                                            value={formData.bankAccount.accountType}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: { ...formData.bankAccount, accountType: e.target.value }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        >
+                                            {formData.bankAccount.country === 'USA' ? (
+                                                <>
+                                                    <option value="checking">Checking</option>
+                                                    <option value="savings">Savings</option>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <option value="current">Current</option>
+                                                    <option value="salary">Salary</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Number</label>
                                         <input
@@ -1094,13 +1690,54 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Routing Number</label>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                            {formData.bankAccount.country === 'UK'
+                                                ? 'Sort Code'
+                                                : formData.bankAccount.country === 'Nigeria'
+                                                    ? 'Bank Code'
+                                                    : 'Routing Number'}
+                                        </label>
                                         <input
                                             type="text"
-                                            value={formData.bankAccount.routingNumber}
+                                            value={
+                                                formData.bankAccount.country === 'UK'
+                                                    ? formData.bankAccount.sortCode
+                                                    : formData.bankAccount.country === 'Nigeria'
+                                                        ? formData.bankAccount.bankCode
+                                                        : formData.bankAccount.routingNumber
+                                            }
                                             onChange={(e) => setFormData({
                                                 ...formData,
-                                                bankAccount: { ...formData.bankAccount, routingNumber: e.target.value }
+                                                bankAccount: {
+                                                    ...formData.bankAccount,
+                                                    sortCode: formData.bankAccount.country === 'UK' ? e.target.value : formData.bankAccount.sortCode,
+                                                    bankCode: formData.bankAccount.country === 'Nigeria' ? e.target.value : formData.bankAccount.bankCode,
+                                                    routingNumber: !['UK', 'Nigeria'].includes(formData.bankAccount.country) ? e.target.value : formData.bankAccount.routingNumber
+                                                }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">IBAN</label>
+                                        <input
+                                            type="text"
+                                            value={formData.bankAccount.iban}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: { ...formData.bankAccount, iban: e.target.value }
+                                            })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">BIC / SWIFT</label>
+                                        <input
+                                            type="text"
+                                            value={formData.bankAccount.bicSwift}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                bankAccount: { ...formData.bankAccount, bicSwift: e.target.value }
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         />

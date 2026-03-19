@@ -16,10 +16,13 @@ import partnerApiRouter from './routes/partnerApi.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { csrfGuard } from './middleware/csrf.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
+import { SimpleLmsCourseReview } from './models/SimpleLmsCourseReview.js'
 import { SimpleLmsEnrollment } from './models/SimpleLmsEnrollment.js'
 import { SimpleLmsPayment } from './models/SimpleLmsPayment.js'
+import { SimpleLmsPlatformSetting } from './models/SimpleLmsPlatformSetting.js'
 import { getSimpleLmsCurrencyCatalog, normalizeSimpleLmsCurrencyCode, parseMajorAmountToMinor } from './services/simpleLmsCurrencyService.js'
 import { resolveBranding, resolveTeachBrand } from './utils/branding.js'
+import { buildCourseReviewSummary, buildVisibleCourseReviewFilter, mapCourseReviewForDisplay } from './utils/courseReviews.js'
 import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
 import { normalizeAgentReferralCode } from './utils/agentReferral.js'
 import { resolveCourseSaleContext } from './utils/courseSelling.js'
@@ -230,6 +233,7 @@ const decoratePublicCourse = (course) => {
 
   const summary = String(course?.summary || '').trim()
   const fallbackSummary = String(course?.description || '').trim()
+  const reviewSummary = buildCourseReviewSummary(course)
 
   return {
     ...course,
@@ -238,6 +242,7 @@ const decoratePublicCourse = (course) => {
     requiresPayment: paymentMode === 'paid' && amount > 0,
     previewSummary: summary || fallbackSummary || 'No course summary yet.',
     authorName: String(course?.createdByName || '').trim() || 'Learning Team',
+    reviewSummary,
     lessonCount: Number.isFinite(Number(course?.lessonCount))
       ? Math.max(0, Number(course.lessonCount))
       : 0,
@@ -245,6 +250,13 @@ const decoratePublicCourse = (course) => {
       ? Math.max(0, Number(course.estimatedDurationMinutes))
       : 0
   }
+}
+
+const getPublicCourseCommentSetting = async () => {
+  const settings = await SimpleLmsPlatformSetting.findOne({})
+    .select('allowCourseComments')
+    .lean()
+  return settings?.allowCourseComments !== false
 }
 
 const getSellingOrganizationSessionStore = (req, { create = false } = {}) => {
@@ -444,7 +456,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       _id: courseId,
       ...PUBLIC_COURSE_FILTER
     })
-      .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail chapters updatedAt')
+      .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail chapters updatedAt ratingAverage ratingCount commentCount')
       .lean()
 
     if (!courseRaw) {
@@ -487,7 +499,7 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
         ? { category: courseRaw.category }
         : {})
     })
-      .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail updatedAt')
+      .select('title slug summary description category level banner lessonCount estimatedDurationMinutes pricing createdByName createdByEmail updatedAt ratingAverage ratingCount commentCount')
       .sort({ updatedAt: -1 })
       .limit(4)
       .lean()
@@ -518,6 +530,29 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
 
     const canStartNow = !course.requiresPayment || hasSuccessfulPayment || isEnrolled
     const relatedCourses = relatedRaw.map(decoratePublicCourse)
+    const courseCommentsEnabled = await getPublicCourseCommentSetting()
+    const [existingCourseReviewRaw, recentCourseReviewsRaw] = courseCommentsEnabled
+      ? await Promise.all([
+          req.user?._id
+            ? SimpleLmsCourseReview.findOne({
+                course: courseRaw._id,
+                account: req.user._id
+              }).lean()
+            : Promise.resolve(null),
+          SimpleLmsCourseReview.find(buildVisibleCourseReviewFilter(courseRaw._id))
+            .sort({ updatedAt: -1, createdAt: -1 })
+            .limit(6)
+            .populate('creatorReplyBy', 'email profile.name')
+            .lean()
+        ])
+      : [null, []]
+    const courseReviewSummary = buildCourseReviewSummary(courseRaw)
+    const existingCourseReview = existingCourseReviewRaw
+      ? mapCourseReviewForDisplay(existingCourseReviewRaw, { viewerId: req.user?._id })
+      : null
+    const recentCourseReviews = Array.isArray(recentCourseReviewsRaw)
+      ? recentCourseReviewsRaw.map((entry) => mapCourseReviewForDisplay(entry, { viewerId: req.user?._id }))
+      : []
 
     const chapters = Array.isArray(courseRaw.chapters)
       ? courseRaw.chapters.map((chapter, chapterIndex) => ({
@@ -544,6 +579,11 @@ app.get('/courses/:courseId/:slug?', async (req, res) => {
       referralCode: persistedReferralCode,
       sellingOrganizationId: saleContext.sellingOrganizationId || '',
       course,
+      courseReviewSummary,
+      courseCommentsEnabled,
+      canSubmitCourseReview: Boolean(courseCommentsEnabled && req.user?._id && isEnrolled),
+      existingCourseReview,
+      recentCourseReviews,
       chapters,
       relatedCourses,
       inCart,

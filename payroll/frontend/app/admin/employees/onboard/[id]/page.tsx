@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
+import api, { authApi, handleAuthCallback } from '@/lib/api';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function OnboardEmployeePage({ params }: { params: { id: string } }) {
@@ -12,11 +12,6 @@ export default function OnboardEmployeePage({ params }: { params: { id: string }
 
   useEffect(() => {
     handleAuthCallback();
-
-    if (!isAuthenticated()) {
-      router.push('/login');
-      return;
-    }
 
     (async () => {
       try {
@@ -71,4 +66,3 @@ export default function OnboardEmployeePage({ params }: { params: { id: string }
     </div>
   );
 }
-
