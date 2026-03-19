@@ -7,6 +7,14 @@ import {
   normalizeDepartmentName
 } from '../utils/departments.js'
 
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function getEmployeeIdKey(value = '') {
+  return normalizeEmployeeId(value).toLowerCase()
+}
+
 const OrganizationSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -39,6 +47,11 @@ const OrganizationSchema = new mongoose.Schema({
       type: String,
       trim: true,
       maxLength: 120
+    },
+    employeeId: {
+      type: String,
+      trim: true,
+      maxLength: 80
     },
     department: {
       type: mongoose.Schema.Types.ObjectId,
@@ -415,6 +428,10 @@ OrganizationSchema.methods.syncMemberDepartmentsFromTeams = async function(accou
 OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null, options = {}) {
   const normalizedAppAccess = normalizeAppAccess(appAccess)
   const departmentId = null
+  const designation = String(options.designation || '').trim() || undefined
+  const employeeId = normalizeEmployeeId(options.employeeId) || undefined
+
+  this.assertActiveEmployeeIdAvailable(employeeId, accountId)
 
   // Check if already a member
   const existing = this.members.find(
@@ -429,6 +446,8 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     existing.status = 'active'
     existing.role = role
     existing.appAccess = normalizedAppAccess
+    existing.designation = designation
+    existing.employeeId = employeeId
     existing.department = departmentId
     existing.joinedAt = new Date()
     existing.invitedBy = invitedBy
@@ -458,6 +477,8 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
   this.members.push({
     account: accountId,
     role: role,
+    designation,
+    employeeId,
     department: departmentId,
     appAccess: normalizedAppAccess,
     joinedAt: new Date(),
@@ -581,6 +602,12 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
     member.designation = String(updates.designation || '').trim() || undefined
   }
 
+  if (Object.prototype.hasOwnProperty.call(updates, 'employeeId')) {
+    const employeeId = normalizeEmployeeId(updates.employeeId) || undefined
+    this.assertActiveEmployeeIdAvailable(employeeId, accountId)
+    member.employeeId = employeeId
+  }
+
   if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
     throw new Error('Department is derived from active team assignments')
   }
@@ -602,6 +629,30 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
   await this.save()
 
   return member
+}
+
+OrganizationSchema.methods.findActiveMemberByEmployeeId = function(employeeId, excludeAccountId = null) {
+  const employeeIdKey = getEmployeeIdKey(employeeId)
+  if (!employeeIdKey) return null
+
+  return (this.members || []).find((member) => {
+    if (member.status !== 'active') return false
+    if (excludeAccountId && member.account?.toString() === excludeAccountId.toString()) {
+      return false
+    }
+
+    return getEmployeeIdKey(member.employeeId) === employeeIdKey
+  }) || null
+}
+
+OrganizationSchema.methods.assertActiveEmployeeIdAvailable = function(employeeId, excludeAccountId = null) {
+  const normalizedEmployeeId = normalizeEmployeeId(employeeId)
+  if (!normalizedEmployeeId) return
+
+  const conflictingMember = this.findActiveMemberByEmployeeId(normalizedEmployeeId, excludeAccountId)
+  if (conflictingMember) {
+    throw new Error('Employee ID is already assigned to another active member')
+  }
 }
 
 OrganizationSchema.methods.setMemberOnboardingStatusOverride = async function(accountId, status, updatedBy) {

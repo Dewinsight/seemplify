@@ -386,6 +386,9 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
 
     const tokenSet = await client.callback(redirectUri, params, checks);
     const userinfo = await client.userinfo(tokenSet);
+    const currentOrganization = userinfo.currentOrganization || userinfo.current_organization || null;
+    const currentOrganizationId = currentOrganization?.id || userinfo.organizations?.[0]?.id || null;
+    const currentOrganizationDesignation = currentOrganization?.designation || null;
 
     console.log('✅ OIDC tokens received for:', userinfo.email);
     console.log('📊 Organization claims:', userinfo.organizations?.length || 0);
@@ -400,7 +403,9 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       organizations: userinfo.organizations || [],
       teams: userinfo.teams || [],
       idpTeams: userinfo.teams || [],
-      currentOrganization: userinfo.currentOrganization,
+      currentOrganization,
+      designation: currentOrganizationDesignation,
+      employeeId: currentOrganization?.employeeId || null,
       accessToken: tokenSet.access_token,
       refreshToken: tokenSet.refresh_token,
       idToken: tokenSet.id_token,
@@ -416,8 +421,8 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       // Update profile, current org preference, AND idpTeams on every login
       user.lastGrantRefresh = new Date();
       user.idpSub = userinfo.sub;
-      if (userinfo.currentOrganization?.id) {
-        user.currentOrganizationId = userinfo.currentOrganization.id;
+      if (currentOrganizationId) {
+        user.currentOrganizationId = currentOrganizationId;
       }
       // IMPORTANT: Sync idpTeams from IDP on every login
       user.idpTeams = userinfo.teams || [];
@@ -426,6 +431,10 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       if (userinfo.name) {
         user.profile = user.profile || {};
         user.profile.displayName = userinfo.name;
+      }
+      if (currentOrganizationDesignation) {
+        user.profile = user.profile || {};
+        user.profile.title = currentOrganizationDesignation;
       }
       await user.save();
       console.log('✅ Updated user teams:', user.email, 'teams:', user.idpTeams?.length || 0);
@@ -436,10 +445,11 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
         profile: {
           firstName: userinfo.given_name || userinfo.name?.split(' ')[0] || 'Performance',
           lastName: userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || 'User',
-          displayName: userinfo.name
+          displayName: userinfo.name,
+          title: currentOrganizationDesignation || undefined
         },
         lastGrantRefresh: new Date(),
-        currentOrganizationId: userinfo.currentOrganization?.id || (userinfo.organizations?.[0]?.id) || null,
+        currentOrganizationId,
         hasCompletedOrganizationSetup: true,
         // IMPORTANT: Save idpTeams for new users
         idpTeams: userinfo.teams || [],
@@ -457,10 +467,8 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     res.clearCookie('oidc_state');
 
     // Set current organization in session
-    if (userinfo.currentOrganization) {
-      req.session.currentOrganizationId = userinfo.currentOrganization.id;
-    } else if (userinfo.organizations?.length > 0) {
-      req.session.currentOrganizationId = userinfo.organizations[0].id;
+    if (currentOrganizationId) {
+      req.session.currentOrganizationId = currentOrganizationId;
     }
 
     // Redirect to frontend with access token
@@ -488,7 +496,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     const teams = req.session.user.teams || req.session.user.userinfo?.teams || [];
     
     // Get current organization - prefer session, fallback to db preference
-    const currentOrganization = req.session.user.currentOrganization;
+    const currentOrganization = req.session.user.currentOrganization || req.session.user.userinfo?.currentOrganization || req.session.user.userinfo?.current_organization;
     const currentOrgId = req.session.currentOrganizationId || 
                          dbUser?.currentOrganizationId || 
                          currentOrganization?.id ||
@@ -552,11 +560,17 @@ app.post('/api/auth/refresh', requireAuth, async (req, res) => {
 
     // Get fresh userinfo
     const userinfo = await getUserInfo(tokenSet.access_token);
+    const currentOrganization = userinfo.currentOrganization || userinfo.current_organization || null;
     req.session.user.userinfo = userinfo;
     req.session.user.organizations = userinfo.organizations || [];
     req.session.user.teams = userinfo.teams || [];
     req.session.user.idpTeams = userinfo.teams || [];
-    req.session.user.currentOrganization = userinfo.currentOrganization;
+    req.session.user.currentOrganization = currentOrganization;
+    req.session.user.designation = currentOrganization?.designation || null;
+    req.session.user.employeeId = currentOrganization?.employeeId || null;
+    if (currentOrganization?.id) {
+      req.session.currentOrganizationId = currentOrganization.id;
+    }
 
     res.json({
       success: true,

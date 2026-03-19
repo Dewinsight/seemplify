@@ -32,6 +32,33 @@ function getHubAppMetadata() {
   }
 }
 
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function getEmployeeIdKey(value = '') {
+  return normalizeEmployeeId(value).toLowerCase()
+}
+
+async function hasPendingInviteWithEmployeeId(organizationId, employeeId, excludeInvitationId = null) {
+  const employeeIdKey = getEmployeeIdKey(employeeId)
+  if (!employeeIdKey) return false
+
+  const pendingInvites = await OrganizationInvite.find({
+    organization: organizationId,
+    status: 'pending',
+    expiresAt: { $gt: new Date() }
+  }).select('employeeId')
+
+  return pendingInvites.some((invite) => {
+    if (excludeInvitationId && invite._id.toString() === excludeInvitationId.toString()) {
+      return false
+    }
+
+    return getEmployeeIdKey(invite.employeeId) === employeeIdKey
+  })
+}
+
 function parseInvitationAppAccess(reqBody = {}, validAppIds = null) {
   const appAccessPayload = reqBody.appAccess && typeof reqBody.appAccess === 'object'
     ? reqBody.appAccess
@@ -92,6 +119,8 @@ router.get('/pending',
           description: inv.organization.description
         },
         role: inv.role,
+        designation: inv.designation || '',
+        employeeId: inv.employeeId || '',
         department: inv.department || null,
         team: inv.team || null,
         invitedBy: {
@@ -160,6 +189,8 @@ router.post('/:invitationId/resend',
             <h2>Reminder: You've been invited to join ${invitation.organization.name}</h2>
             <p>This is a reminder that you have a pending invitation to join this organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${invitation.role}</p>
+            <p><strong>Designation:</strong> ${invitation.designation || 'Not specified'}</p>
+            ${invitation.employeeId ? `<p><strong>Employee ID:</strong> ${invitation.employeeId}</p>` : ''}
             ${formatAppAccessHtml(invitation.appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
@@ -258,7 +289,11 @@ router.post('/accept/:invitationId',
         req.user._id,
         invitation.role,
         invitation.invitedBy,
-        normalizeAppAccess(invitation.appAccess)
+        normalizeAppAccess(invitation.appAccess),
+        {
+          designation: invitation.designation,
+          employeeId: invitation.employeeId
+        }
       )
 
       if (invitation.team) {
@@ -330,7 +365,11 @@ router.post('/:token/accept',
         req.user._id,
         matchedInvite.role,
         matchedInvite.invitedBy,
-        normalizeAppAccess(matchedInvite.appAccess)
+        normalizeAppAccess(matchedInvite.appAccess),
+        {
+          designation: matchedInvite.designation,
+          employeeId: matchedInvite.employeeId
+        }
       )
 
       if (matchedInvite.team) {
@@ -466,6 +505,8 @@ router.get('/:orgId/invitations',
         id: inv._id,
         email: inv.email,
         role: inv.role,
+        designation: inv.designation || '',
+        employeeId: inv.employeeId || '',
         department: inv.department || null,
         team: inv.team || null,
         status: inv.status,
@@ -509,11 +550,24 @@ router.post('/:orgId/invitations',
 
       await req.organization.save()
 
-      const { email, role = 'recruiter', department: requestedDepartmentId = null, team: teamId = null } = req.body
+      const {
+        email,
+        role = 'recruiter',
+        designation: rawDesignation = '',
+        employeeId: rawEmployeeId = '',
+        department: requestedDepartmentId = null,
+        team: teamId = null
+      } = req.body
       const { appIdSet, appNameById } = getHubAppMetadata()
+      const designation = String(rawDesignation || '').trim()
+      const employeeId = normalizeEmployeeId(rawEmployeeId)
 
       if (!email || !email.includes('@')) {
         return res.status(400).json({ error: 'Valid email is required' })
+      }
+
+      if (!designation) {
+        return res.status(400).json({ error: 'Designation is required' })
       }
 
       if (!teamId) {
@@ -563,6 +617,16 @@ router.post('/:orgId/invitations',
         }
       }
 
+      try {
+        req.organization.assertActiveEmployeeIdAvailable(employeeId)
+      } catch (validationError) {
+        return res.status(400).json({ error: validationError.message })
+      }
+
+      if (await hasPendingInviteWithEmployeeId(req.params.orgId, employeeId)) {
+        return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
+      }
+
       // Check for existing pending invite
       const existingInvite = await OrganizationInvite.hasPendingInvite(req.params.orgId, normalizedEmail)
       if (existingInvite) {
@@ -577,6 +641,8 @@ router.post('/:orgId/invitations',
         organization: req.params.orgId,
         email: normalizedEmail,
         role,
+        designation,
+        employeeId: employeeId || undefined,
         department: departmentId,
         team: teamId,
         appAccess,
@@ -596,6 +662,8 @@ router.post('/:orgId/invitations',
             <h2>You've been invited to join ${req.organization.name}</h2>
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
+            <p><strong>Designation:</strong> ${designation}</p>
+            ${employeeId ? `<p><strong>Employee ID:</strong> ${employeeId}</p>` : ''}
             <p><strong>Department:</strong> ${department.name}</p>
             <p><strong>Team:</strong> ${invitedTeam.name}</p>
             ${formatAppAccessHtml(appAccess, appNameById)}
@@ -621,6 +689,8 @@ router.post('/:orgId/invitations',
         id: invitation._id,
         email: invitation.email,
         role: invitation.role,
+        designation: invitation.designation,
+        employeeId: invitation.employeeId || '',
         department: invitation.department,
         team: invitation.team,
         appAccess: normalizeAppAccess(invitation.appAccess),

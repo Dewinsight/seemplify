@@ -14,6 +14,13 @@ import zulipService from '../services/zulipService.js'
 
 const router = express.Router()
 
+const requireOrganizationDepartmentManager = (req, res, next) => {
+  if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+    return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+  }
+  next()
+}
+
 // Helper: allow either session auth or API token with scopes for create
 const requireOrgCreateAuth = [
   requireAuthOrAPIToken,
@@ -229,7 +236,7 @@ router.get('/:orgId/departments',
 router.post('/:orgId/departments',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireOrganizationDepartmentManager,
   async (req, res) => {
     try {
       const department = await req.organization.addDepartment(req.body || {}, req.user._id)
@@ -250,7 +257,7 @@ router.post('/:orgId/departments',
 router.put('/:orgId/departments/:departmentId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireOrganizationDepartmentManager,
   async (req, res) => {
     try {
       const department = await req.organization.updateDepartment(req.params.departmentId, req.body || {})

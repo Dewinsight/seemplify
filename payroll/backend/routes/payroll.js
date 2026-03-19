@@ -6,6 +6,7 @@ const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
 const PayrollEngineService = require('../services/PayrollEngineService');
+const taxService = require('../services/TaxCalculationService');
 const payrollEngineService = new PayrollEngineService();
 
 // Import RBAC middleware
@@ -56,6 +57,19 @@ const getIdpBaseUrl = () =>
 async function fetchIdpOrgMembers(accessToken, organizationId) {
   const idpBaseUrl = getIdpBaseUrl();
   const url = `${idpBaseUrl}/api/organizations/${organizationId}/members`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function fetchIdpMemberPayrollSync(accessToken, organizationId, memberId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members/${encodedMemberId}/payroll-sync`;
 
   const res = await axios.get(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -125,16 +139,139 @@ function getPrimaryMemberTeam(member = {}) {
 
 function buildEmployeeSnapshotFromMember(member = {}, existingEmployeeInfo = {}) {
   const { teamId, teamName } = getPrimaryMemberTeam(member);
+  const idpDateOfBirth = member?.payrollSync?.personalInfo?.dateOfBirth
+    ? new Date(member.payrollSync.personalInfo.dateOfBirth)
+    : null;
 
   return {
     ...(existingEmployeeInfo || {}),
     name: member.name || existingEmployeeInfo?.name,
     email: member.email || existingEmployeeInfo?.email,
+    employeeId: member.employeeId || existingEmployeeInfo?.employeeId,
     department: member.departmentName || '',
     designation: member.designation || existingEmployeeInfo?.designation,
     teamId: teamId || existingEmployeeInfo?.teamId || '',
     teamName: teamName || existingEmployeeInfo?.teamName || '',
+    dateOfBirth: idpDateOfBirth || existingEmployeeInfo?.dateOfBirth || null,
     lastSyncedAt: new Date()
+  };
+}
+
+function normalizePayrollBankAccountType(type = '', country = '') {
+  const rawType = String(type || '').trim().toLowerCase();
+  if (['checking', 'savings', 'current'].includes(rawType)) {
+    return rawType;
+  }
+
+  if (rawType === 'salary' || country === 'UK' || country === 'Nigeria') {
+    return 'current';
+  }
+
+  return 'checking';
+}
+
+function buildPayrollBankAccountsFromMember(member = {}, existingBankAccounts = []) {
+  const accounts = Array.isArray(member?.payrollSync?.banking?.accounts)
+    ? member.payrollSync.banking.accounts
+    : [];
+
+  if (accounts.length === 0) {
+    return Array.isArray(existingBankAccounts) ? existingBankAccounts : [];
+  }
+
+  const hasExplicitPrimary = accounts.some((account) => account?.isPrimary === true);
+
+  return accounts
+    .filter((account) => account && (account.bankName || account.accountNumber || account.iban))
+    .map((account, index) => {
+      const country = String(account.country || member?.payrollSync?.banking?.country || '').trim();
+      return {
+        isPrimary: hasExplicitPrimary ? account.isPrimary === true : index === 0,
+        accountName: account.accountHolderName || member.name || 'Primary',
+        accountNumber: account.accountNumber || '',
+        bankName: account.bankName || '',
+        branchCode: account.sortCode || account.bankCode || '',
+        swiftCode: account.bicSwift || '',
+        routingNumber: account.routingNumber || '',
+        iban: account.iban || '',
+        accountType: normalizePayrollBankAccountType(account.accountType, country),
+        splitPercentage: Number(account.percentage || 100),
+        isVerified: false,
+      };
+    });
+}
+
+function buildEmergencyContactFromMember(member = {}, existingEmergencyContact = null) {
+  const contact = member?.payrollSync?.emergencyContact;
+  if (!contact || (!contact.name && !contact.phone && !contact.email)) {
+    return existingEmergencyContact;
+  }
+
+  return {
+    ...(existingEmergencyContact || {}),
+    name: contact.name || existingEmergencyContact?.name || '',
+    relationship: contact.relationship || existingEmergencyContact?.relationship || '',
+    phone: contact.phone || existingEmergencyContact?.phone || '',
+    email: contact.email || existingEmergencyContact?.email || '',
+  };
+}
+
+function applyPayrollSyncFromMember(profile, member = {}) {
+  profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
+  profile.bankAccounts = buildPayrollBankAccountsFromMember(member, profile.bankAccounts);
+  profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
+
+  const dependentsCount = Number(member?.payrollSync?.dependentsCount || 0);
+  if (dependentsCount > 0 && Number(profile?.taxConfig?.dependents || 0) === 0) {
+    profile.taxConfig = {
+      ...(profile.taxConfig || {}),
+      dependents: dependentsCount,
+    };
+  }
+
+  return profile;
+}
+
+function deriveLegacyCalculationRegime(taxConfig = {}) {
+  if (taxConfig.taxRegime === 'exempt') return 'none';
+
+  if (taxConfig.calculationMode === 'builtin') {
+    if (taxConfig.jurisdictionCode === 'GB') return 'progressive_uk';
+    if (taxConfig.jurisdictionCode === 'US') return 'progressive_us';
+    return 'progressive_generic';
+  }
+
+  if (taxConfig.manualCalculationType === 'none') return 'none';
+  if (taxConfig.manualCalculationType === 'flat') return 'flat';
+  return 'progressive_generic';
+}
+
+function normalizeTaxConfigPayload(input) {
+  if (input === undefined) return undefined;
+
+  const normalized = taxService.normalizeConfig(input || {});
+
+  return {
+    ...input,
+    ...normalized,
+    calculationRegime: deriveLegacyCalculationRegime(normalized),
+    flatTaxRate: Number(normalized.flatTaxRate || 0),
+    manualTaxFreeAllowance: Number(normalized.manualTaxFreeAllowance || 0),
+    socialSecurityRate: Number(normalized.socialSecurityRate || 0),
+    socialSecurityCap: Number(normalized.socialSecurityCap || 0),
+    additionalWithholding: Number(normalized.additionalWithholding || 0),
+    otherIncome: Number(normalized.otherIncome || 0),
+    deductionsAdjustment: Number(normalized.deductionsAdjustment || 0),
+    taxCredits: Number(normalized.taxCredits || 0),
+    dependents: Number(normalized.dependents || 0),
+    multipleJobs: !!normalized.multipleJobs,
+    customBrackets: Array.isArray(normalized.customBrackets)
+      ? normalized.customBrackets.map((bracket) => ({
+        min: Number(bracket.min || 0),
+        max: bracket.max === null || bracket.max === undefined ? null : Number(bracket.max),
+        rate: Number(bracket.rate || 0),
+      }))
+      : [],
   };
 }
 
@@ -546,12 +683,9 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
 
     if (accessToken) {
       try {
-        const membersPayload = await fetchIdpOrgMembers(accessToken, organizationId);
-        const members = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
-        const member = members.find((m) => m?.sub === req.params.userId || m?.id === req.params.userId);
-
+        const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, req.params.userId);
         if (member) {
-          profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
+          applyPayrollSyncFromMember(profile, member);
           await profile.save();
           profile = await PayrollProfile.findOne({
             userId: req.params.userId,
@@ -596,6 +730,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       notes,
       tags
     } = req.body || {};
+    const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
 
     let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
@@ -620,7 +755,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (allowances !== undefined) profile.allowances = allowances;
     if (recurringDeductions !== undefined) profile.recurringDeductions = recurringDeductions;
     if (benefits !== undefined) profile.benefits = benefits;
-    if (taxConfig !== undefined) profile.taxConfig = taxConfig;
+    if (normalizedTaxConfig !== undefined) profile.taxConfig = normalizedTaxConfig;
     if (statutoryContributions !== undefined) {
       profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
     }
@@ -668,8 +803,8 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       notes,
       tags
     } = req.body || {};
+    const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
 
-    // Check if profile already exists
     const existing = await PayrollProfile.findOne({ userId, organizationId });
     if (existing) {
       return res.status(400).json({ error: 'Profile already exists for this user' });
@@ -685,7 +820,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       allowances: allowances || [],
       recurringDeductions: recurringDeductions || [],
       benefits: benefits || {},
-      taxConfig: taxConfig || {},
+      taxConfig: normalizedTaxConfig || {},
       statutoryContributions: statutoryContributions || {},
       bankAccounts: bankAccounts || [],
       payrollFlags: payrollFlags || {},
@@ -738,27 +873,35 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    const existing = await PayrollProfile.findOne({ userId: targetUserId, organizationId });
-
-    const membersPayload = await fetchIdpOrgMembers(accessToken, organizationId);
-    const members = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
-    const member = members.find((m) => m?.sub === targetUserId || m?.id === targetUserId);
+    const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, targetUserId);
 
     if (!member) {
       return res.status(404).json({ error: 'Employee not found in IDP organization members' });
     }
 
+    const resolvedUserId = String(member.sub || targetUserId).trim();
+    const existing = await PayrollProfile.findOne({
+      userId: { $in: Array.from(new Set([resolvedUserId, targetUserId].filter(Boolean))) },
+      organizationId
+    });
+
     if (existing) {
-      existing.employeeInfo = buildEmployeeSnapshotFromMember(member, existing.employeeInfo);
+      existing.userId = resolvedUserId;
+      applyPayrollSyncFromMember(existing, member);
       await existing.save();
       return res.json({ success: true, profile: existing, existed: true });
     }
 
     const profile = new PayrollProfile({
-      userId: targetUserId,
+      userId: resolvedUserId,
       organizationId,
       basicSalary: 0,
       employeeInfo: buildEmployeeSnapshotFromMember(member),
+      bankAccounts: buildPayrollBankAccountsFromMember(member, []),
+      emergencyContact: buildEmergencyContactFromMember(member, null),
+      taxConfig: Number(member?.payrollSync?.dependentsCount || 0) > 0
+        ? { dependents: Number(member.payrollSync.dependentsCount) }
+        : {},
       createdBy: adminId,
       status: 'active',
       isActive: true,

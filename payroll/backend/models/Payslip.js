@@ -115,7 +115,17 @@ const TaxBreakdownSchema = new Schema({
   taxRate: { type: Number, default: 0 }, // Effective tax rate %
   taxAmount: { type: Number, default: 0 },
   yearToDateTax: { type: Number, default: 0 },
-  taxBracket: String // e.g., "20% bracket"
+  taxBracket: String, // e.g., "20% bracket"
+  jurisdictionCode: String,
+  jurisdictionName: String,
+  taxYearLabel: String,
+  calculationMode: String,
+  method: String,
+  annualizedIncome: { type: Number, default: 0 },
+  annualizedTaxableIncome: { type: Number, default: 0 },
+  taxableIncomeAfterReliefs: { type: Number, default: 0 },
+  notes: [String],
+  details: Schema.Types.Mixed
 }, { _id: false });
 
 // Year-to-Date summary schema

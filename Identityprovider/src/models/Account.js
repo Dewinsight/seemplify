@@ -10,6 +10,7 @@ const AccountSchema = new mongoose.Schema({
     preferred_username: String,
     // Extended personal information for employee self-service
     personalInfo: {
+      dateOfBirth: Date,
       mailingAddress: {
         street: String,
         street2: String,
@@ -332,7 +333,25 @@ const AccountSchema = new mongoose.Schema({
       ssn: String,  // Encrypted - for tax purposes
       isBeneficiary: { type: Boolean, default: false },
       beneficiaryPercentage: { type: Number, default: 0 }
-    }]
+    }],
+    dependentsDeclaration: {
+      status: {
+        type: String,
+        enum: ['pending', 'none', 'provided'],
+        default: 'pending'
+      },
+      confirmedAt: Date,
+      lastUpdated: Date
+    },
+    completionReminders: {
+      lastSentAt: Date,
+      sendCount: { type: Number, default: 0 },
+      lastCompletedAt: Date,
+      lastMissingSteps: {
+        type: [String],
+        default: []
+      }
+    }
   },
 
   createdAt: { type: Date, default: Date.now }

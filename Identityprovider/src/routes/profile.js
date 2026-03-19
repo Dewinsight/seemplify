@@ -1,6 +1,7 @@
 import express from 'express';
 import { Account } from '../models/Account.js';
 import CrossModuleApiService from '../../services/CrossModuleApiService.js';
+import { getProfileCompletion } from '../utils/profileCompletion.js';
 
 const router = express.Router();
 
@@ -10,6 +11,21 @@ function ensureAuthenticated(req, res, next) {
         return next();
     }
     res.status(401).json({ error: 'Unauthorized' });
+}
+
+function updateCompletionTracking(account) {
+    const completion = getProfileCompletion(account);
+    account.profile = account.profile || {};
+    account.profile.completionReminders = {
+        ...(account.profile.completionReminders || {}),
+        lastMissingSteps: (completion.steps || []).filter(step => !step.complete).map(step => step.key),
+    };
+
+    if (completion.complete) {
+        account.profile.completionReminders.lastCompletedAt = new Date();
+    }
+
+    return completion;
 }
 
 /**
@@ -84,7 +100,7 @@ router.put('/api/profile', ensureAuthenticated, async (req, res) => {
 router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
     try {
         const userId = req.session.accountId;
-        const { mailingAddress, phoneNumbers, emergencyContacts } = req.body;
+        const { dateOfBirth, mailingAddress, phoneNumbers, emergencyContacts } = req.body;
 
         const account = await Account.findOne({ sub: userId });
         if (!account) {
@@ -94,15 +110,22 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
         account.profile = account.profile || {};
         account.profile.personalInfo = account.profile.personalInfo || {};
 
+        if (dateOfBirth !== undefined) {
+            account.profile.personalInfo.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+        }
         if (mailingAddress) account.profile.personalInfo.mailingAddress = mailingAddress;
         if (phoneNumbers) account.profile.personalInfo.phoneNumbers = phoneNumbers;
         if (emergencyContacts) account.profile.personalInfo.emergencyContacts = emergencyContacts;
 
+        const completion = updateCompletionTracking(account);
+        account.markModified('profile');
         await account.save();
 
         res.json({
             success: true,
-            message: 'Personal information updated successfully'
+            message: 'Personal information updated successfully',
+            profileCompletion: completion,
+            nextStep: completion.nextIncompleteStep
         });
     } catch (error) {
         console.error('Personal info update error:', error);
@@ -139,6 +162,8 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
             createdAt: new Date()
         });
 
+        const completion = updateCompletionTracking(userAccount);
+        userAccount.markModified('profile');
         await userAccount.save();
 
         // TODO: Send webhook to Payroll module with updated banking info
@@ -153,7 +178,9 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Banking information updated successfully! Payroll has been notified.'
+            message: 'Banking information updated successfully! Payroll has been notified.',
+            profileCompletion: completion,
+            nextStep: completion.nextIncompleteStep
         });
     } catch (error) {
         console.error('Banking info update error:', error);
@@ -168,7 +195,7 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
 router.put('/api/profile/dependents', ensureAuthenticated, async (req, res) => {
     try {
         const userId = req.session.accountId;
-        const { dependent } = req.body;
+        const { dependent, hasDependents } = req.body;
 
         const account = await Account.findOne({ sub: userId });
         if (!account) {
@@ -177,14 +204,46 @@ router.put('/api/profile/dependents', ensureAuthenticated, async (req, res) => {
 
         account.profile = account.profile || {};
         account.profile.dependents = account.profile.dependents || [];
+        account.profile.dependentsDeclaration = account.profile.dependentsDeclaration || {};
+
+        if (hasDependents === false || hasDependents === 'false') {
+            account.profile.dependentsDeclaration = {
+                status: 'none',
+                confirmedAt: new Date(),
+                lastUpdated: new Date()
+            };
+            const completion = updateCompletionTracking(account);
+            account.markModified('profile');
+            await account.save();
+
+            return res.json({
+                success: true,
+                message: 'Dependents marked as complete',
+                profileCompletion: completion,
+                nextStep: completion.nextIncompleteStep
+            });
+        }
+
+        if (!dependent || typeof dependent !== 'object') {
+            return res.status(400).json({ error: 'Dependent details are required' });
+        }
 
         account.profile.dependents.push(dependent);
+        account.profile.dependentsDeclaration = {
+            status: 'provided',
+            confirmedAt: new Date(),
+            lastUpdated: new Date()
+        };
 
+        const completion = updateCompletionTracking(account);
+        account.markModified('profile');
         await account.save();
 
         res.json({
             success: true,
-            message: 'Dependent added successfully'
+            message: 'Dependent added successfully',
+            profileCompletion: completion,
+            nextStep: completion.nextIncompleteStep
         });
     } catch (error) {
         console.error('Dependent add error:', error);

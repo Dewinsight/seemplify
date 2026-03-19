@@ -32,6 +32,7 @@ type IdpMember = {
     sub?: string;
     email?: string;
     name?: string;
+    employeeId?: string;
     designation?: string;
     departmentId?: string;
     departmentName?: string;
@@ -116,6 +117,10 @@ function getEmployeeName(row: EmployeeRow): string {
 
 function getEmployeeEmail(row: EmployeeRow): string {
     return row.profile?.employeeInfo?.email || row.member?.email || '';
+}
+
+function resolveEmployeeId(row: EmployeeRow): string {
+    return String(row.profile?.employeeInfo?.employeeId || row.member?.employeeId || '').trim();
 }
 
 function getMemberAccountId(row: EmployeeRow): string {
@@ -262,6 +267,7 @@ export default function EmployeesPage() {
 
             const name = String(profile?.employeeInfo?.name || member?.name || '').toLowerCase();
             const email = String(profile?.employeeInfo?.email || member?.email || '').toLowerCase();
+            const employeeId = resolveEmployeeId(row).toLowerCase();
             const department = String(departmentName || '').toLowerCase();
             const designation = String(profile?.employeeInfo?.designation || member?.designation || '').toLowerCase();
             const team = String(teamName || '').toLowerCase();
@@ -270,6 +276,7 @@ export default function EmployeesPage() {
             const searchMatch = !query ||
                 name.includes(query) ||
                 email.includes(query) ||
+                employeeId.includes(query) ||
                 department.includes(query) ||
                 designation.includes(query) ||
                 team.includes(query);
@@ -472,6 +479,9 @@ export default function EmployeesPage() {
                         </div>
                         <div className="px-6 py-5">
                             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                                <p className="mb-2 text-sm font-medium text-zinc-200">
+                                    {getEmployeeName(activeOnboardingRow)}{resolveEmployeeId(activeOnboardingRow) ? ` • ${resolveEmployeeId(activeOnboardingRow)}` : ''}{getEmployeeEmail(activeOnboardingRow) ? ` • ${getEmployeeEmail(activeOnboardingRow)}` : ''}
+                                </p>
                                 <p className="text-sm text-zinc-300">
                                     This employee is available in payroll but is not fully onboarded yet. Send them into the document workspace onboarding flow, or mark them as onboarded if HR already completed that process manually.
                                 </p>
@@ -532,7 +542,9 @@ export default function EmployeesPage() {
                                 </div>
                                 <h2 className="text-xl font-semibold text-white">Assign employee to a team</h2>
                                 <p className="mt-1 text-sm text-zinc-400">
-                                    {getEmployeeName(activeTeamAssignmentRow)} {getEmployeeEmail(activeTeamAssignmentRow) ? `(${getEmployeeEmail(activeTeamAssignmentRow)})` : ''}
+                                    {getEmployeeName(activeTeamAssignmentRow)}
+                                    {resolveEmployeeId(activeTeamAssignmentRow) ? ` • ${resolveEmployeeId(activeTeamAssignmentRow)}` : ''}
+                                    {getEmployeeEmail(activeTeamAssignmentRow) ? ` • ${getEmployeeEmail(activeTeamAssignmentRow)}` : ''}
                                 </p>
                             </div>
                             <button
@@ -633,7 +645,7 @@ export default function EmployeesPage() {
                     <Search className="absolute left-3 top-2.5 w-5 h-5 text-zinc-500" />
                     <input
                         type="text"
-                        placeholder="Search by name, email, department, designation, or team..."
+                        placeholder="Search by name, email, employee ID, department, designation, or team..."
                         className="w-full bg-zinc-900 border border-zinc-700/50 rounded-xl pl-10 pr-4 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-600"
                         value={searchQuery}
                         onChange={(event) => setSearchQuery(event.target.value)}
@@ -685,6 +697,7 @@ export default function EmployeesPage() {
                     const needsSetup = hasProfile && (!employee?.basicSalary || Number(employee.basicSalary) === 0);
                     const teamName = resolveTeamName(row);
                     const departmentName = resolveDepartmentName(row);
+                    const employeeId = resolveEmployeeId(row);
                     const currency = employee?.currency || 'USD';
                     const totalAllowances = Number(employee?.totalAllowances || 0);
                     const grossMonthlySalary = Number(employee?.grossMonthlySalary || (Number(employee?.basicSalary || 0) + totalAllowances));
@@ -708,6 +721,7 @@ export default function EmployeesPage() {
                                         </h3>
                                         <p className="text-xs text-zinc-500 truncate">
                                             {employee?.employeeInfo?.designation || member?.designation || 'No Designation'}
+                                            {employeeId ? ` • ${employeeId}` : ''}
                                         </p>
                                     </div>
                                 </div>
@@ -739,6 +753,11 @@ export default function EmployeesPage() {
                             </div>
 
                             <div className="space-y-2.5">
+                                <div className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="text-zinc-500">Employee ID</span>
+                                    <span className="text-zinc-300 text-right">{employeeId || '--'}</span>
+                                </div>
+
                                 <div className="flex items-center justify-between gap-3 text-sm">
                                     <span className="text-zinc-500 flex items-center gap-1.5">
                                         <Briefcase className="w-3.5 h-3.5" /> Department

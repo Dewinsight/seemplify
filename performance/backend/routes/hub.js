@@ -24,6 +24,8 @@ router.get('/launch', validateHubToken, async (req, res) => {
       teams: hubUser.teams || [],
       idpTeams: hubUser.teams || [],
       currentOrganization: hubUser.currentOrganization,
+      designation: hubUser.currentOrganization?.designation || null,
+      employeeId: hubUser.currentOrganization?.employeeId || null,
       userinfo: hubUser,
       hubInitiated: true, // Mark as hub-initiated login
     };
@@ -68,9 +70,14 @@ router.get('/launch', validateHubToken, async (req, res) => {
     let user = await User.findOne({ email: hubUser.email });
     if (user) {
       user.idpTeams = hubUser.teams || []; // Cache teams for org queries
+      user.idpOrganizations = hubUser.organizations || [];
       user.lastGrantRefresh = new Date();
       if (req.session.currentOrganizationId) {
         user.currentOrganizationId = req.session.currentOrganizationId;
+      }
+      if (hubUser.currentOrganization?.designation) {
+        user.profile = user.profile || {};
+        user.profile.title = hubUser.currentOrganization.designation;
       }
       await user.save();
     } else {
@@ -79,9 +86,11 @@ router.get('/launch', validateHubToken, async (req, res) => {
         profile: {
           displayName: hubUser.name,
           firstName: hubUser.name?.split(' ')[0],
-          lastName: hubUser.name?.split(' ').slice(1).join(' ')
+          lastName: hubUser.name?.split(' ').slice(1).join(' '),
+          title: hubUser.currentOrganization?.designation || undefined
         },
         idpTeams: hubUser.teams || [], // Cache teams for org queries
+        idpOrganizations: hubUser.organizations || [],
         currentOrganizationId: req.session.currentOrganizationId,
         lastGrantRefresh: new Date()
       });

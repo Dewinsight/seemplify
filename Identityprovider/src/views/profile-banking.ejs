@@ -26,15 +26,7 @@
                 </div>
             </div>
 
-            <!-- Profile Navigation Tabs -->
-            <div class="profile-nav">
-                <a href="/profile">Dashboard</a>
-                <a href="/profile/personal">Personal Info</a>
-                <a href="/profile/documents">Documents</a>
-                <a href="/profile/tax">Tax Settings</a>
-                <a href="/profile/banking" class="active">Banking</a>
-                <a href="/profile/dependents">Dependents</a>
-            </div>
+            <%- include('partials/profile-nav', { activeProfileSection }) %>
 
             <div id="alertSuccess" class="alert alert-success"></div>
             <div id="alertError" class="alert alert-error"></div>
@@ -456,9 +448,13 @@
                         alertSuccess.textContent = result.message || 'Banking information updated successfully! Payroll has been notified.';
                         alertSuccess.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
-
-                        // Reload page after 2 seconds
-                        setTimeout(() => window.location.reload(), 2000);
+                        if (result?.nextStep?.route && result.nextStep.key !== 'banking') {
+                            setTimeout(() => {
+                                window.location.href = `${result.nextStep.route}?wizard=1`;
+                            }, 900);
+                        } else {
+                            setTimeout(() => window.location.reload(), 1200);
+                        }
                     } else {
                         alertError.textContent = result.error || 'Failed to update banking information';
                         alertError.classList.add('show');
@@ -480,6 +476,8 @@
                 alert('Edit functionality coming soon - for now, please add a new account');
             }
         </script>
+
+        <%- include('partials/profile-completion-wizard', { profileCompletion, currentProfileSection }) %>
 
         <script src="/js/invitation-gatekeeper.js"></script>
 </body>

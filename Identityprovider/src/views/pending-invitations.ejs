@@ -55,6 +55,9 @@
                             <span class="role-badge role-<%= invite.role %>">
                               <%= invite.role %>
                             </span>
+                            <% if (invite.employeeId) { %>
+                              <span>Employee ID: <%= invite.employeeId %></span>
+                            <% } %>
                             <span class="role-badge role-admin" style="background: rgba(56, 189, 248, 0.16); color: #38bdf8;">
                               <%= invite.appAccessLabel || 'All apps' %>
                             </span>

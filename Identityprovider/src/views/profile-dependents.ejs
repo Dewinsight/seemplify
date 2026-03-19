@@ -26,15 +26,7 @@
                 </div>
             </div>
 
-            <!-- Profile Navigation Tabs -->
-            <div class="profile-nav">
-                <a href="/profile">Dashboard</a>
-                <a href="/profile/personal">Personal Info</a>
-                <a href="/profile/documents">Documents</a>
-                <a href="/profile/tax">Tax Settings</a>
-                <a href="/profile/banking">Banking</a>
-                <a href="/profile/dependents" class="active">Dependents</a>
-            </div>
+            <%- include('partials/profile-nav', { activeProfileSection }) %>
 
             <div id="alertSuccess" class="alert alert-success"></div>
             <div id="alertError" class="alert alert-error"></div>
@@ -84,6 +76,22 @@
                                     </p>
                                 </div>
                                 <% } %>
+            </div>
+
+            <div class="card" style="background: var(--hover-bg);">
+                <h3 style="font-size: 18px; margin-bottom: 12px;">No Dependents?</h3>
+                <p style="margin: 0 0 16px; color: var(--muted);">
+                    If you do not have dependents to add, confirm that here so your profile can still be marked complete.
+                </p>
+                <% if (user.profile?.dependentsDeclaration?.status === 'none') { %>
+                    <div style="font-size: 14px; color: var(--brand); font-weight: 600;">
+                        Confirmed on <%= user.profile?.dependentsDeclaration?.confirmedAt ? new Date(user.profile.dependentsDeclaration.confirmedAt).toLocaleDateString() : 'today' %>
+                    </div>
+                <% } else { %>
+                    <button type="button" class="btn btn-secondary" onclick="confirmNoDependents()">
+                        I have no dependents to add
+                    </button>
+                <% } %>
             </div>
 
             <!-- Add Dependent Form -->
@@ -204,9 +212,13 @@
                         alertSuccess.textContent = result.message || 'Dependent added successfully!';
                         alertSuccess.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
-
-                        // Reload page after 2 seconds
-                        setTimeout(() => window.location.reload(), 2000);
+                        if (result?.nextStep?.route && result.nextStep.key !== 'dependents') {
+                            setTimeout(() => {
+                                window.location.href = `${result.nextStep.route}?wizard=1`;
+                            }, 900);
+                        } else {
+                            setTimeout(() => window.location.reload(), 1200);
+                        }
                     } else {
                         alertError.textContent = result.error || 'Failed to add dependent';
                         alertError.classList.add('show');
@@ -229,6 +241,42 @@
                 alert('Edit functionality coming soon');
             }
 
+            async function confirmNoDependents() {
+                const alertSuccess = document.getElementById('alertSuccess');
+                const alertError = document.getElementById('alertError');
+                alertSuccess.classList.remove('show');
+                alertError.classList.remove('show');
+
+                try {
+                    const response = await fetch('/api/profile/dependents', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hasDependents: false })
+                    });
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Failed to confirm dependents status');
+                    }
+
+                    alertSuccess.textContent = result.message || 'Dependents status saved successfully!';
+                    alertSuccess.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                    if (result?.nextStep?.route && result.nextStep.key !== 'dependents') {
+                        setTimeout(() => {
+                            window.location.href = `${result.nextStep.route}?wizard=1`;
+                        }, 900);
+                    } else {
+                        setTimeout(() => window.location.reload(), 1200);
+                    }
+                } catch (error) {
+                    alertError.textContent = error.message || 'Failed to confirm dependents status';
+                    alertError.classList.add('show');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }
+
             function removeDependent(index) {
                 if (confirm('Are you sure you want to remove this dependent?')) {
                     // TODO: Implement remove functionality
@@ -236,6 +284,8 @@
                 }
             }
         </script>
+
+        <%- include('partials/profile-completion-wizard', { profileCompletion, currentProfileSection }) %>
 
         <script src="/js/invitation-gatekeeper.js"></script>
 </body>

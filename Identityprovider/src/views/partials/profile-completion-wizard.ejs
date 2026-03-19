@@ -1,0 +1,129 @@
+<% if (profileCompletion && !profileCompletion.complete) { %>
+    <div id="profileCompletionWizard" class="profile-wizard-overlay" hidden>
+        <div class="profile-wizard-modal" role="dialog" aria-modal="true" aria-labelledby="profileWizardTitle">
+            <button type="button" class="profile-wizard-close" id="profileWizardClose" aria-label="Close wizard">×</button>
+            <div class="profile-wizard-kicker">Profile Setup</div>
+            <h2 id="profileWizardTitle" class="profile-wizard-title">Complete your employee profile</h2>
+            <p class="profile-wizard-copy">
+                Payroll and HR need these details before your profile is fully ready. Complete each step below.
+            </p>
+
+            <div class="profile-wizard-progress">
+                <div class="profile-wizard-progress-bar" style="width: <%= profileCompletion.percent %>%;"></div>
+            </div>
+            <div class="profile-wizard-progress-label">
+                <%= profileCompletion.completedCount %> of <%= profileCompletion.totalSteps %> required sections completed
+            </div>
+
+            <div class="profile-wizard-steps">
+                <% profileCompletion.steps.forEach((step, index) => { %>
+                    <div class="profile-wizard-step <%= step.complete ? 'is-complete' : '' %> <%= profileCompletion.nextIncompleteStep?.key === step.key ? 'is-current' : '' %>">
+                        <div class="profile-wizard-step-index"><%= index + 1 %></div>
+                        <div>
+                            <div class="profile-wizard-step-title"><%= step.label %></div>
+                            <div class="profile-wizard-step-copy"><%= step.description %></div>
+                        </div>
+                        <div class="profile-wizard-step-status"><%= step.complete ? 'Done' : 'Required' %></div>
+                    </div>
+                <% }) %>
+            </div>
+
+            <div class="profile-wizard-actions">
+                <button type="button" class="btn btn-primary" id="profileWizardPrimary">
+                    Continue
+                </button>
+                <% const dependentsStep = (profileCompletion.steps || []).find(step => step.key === 'dependents') %>
+                <% if (currentProfileSection === 'dependents' && dependentsStep && !dependentsStep.complete) { %>
+                    <button type="button" class="btn btn-secondary" id="profileWizardNoDependents">
+                        I have no dependents
+                    </button>
+                <% } %>
+                <button type="button" class="btn btn-secondary" id="profileWizardDismiss">
+                    Remind me later
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (() => {
+            const profileCompletion = <%- JSON.stringify(profileCompletion) %>;
+            const currentProfileSection = <%- JSON.stringify(currentProfileSection || '') %>;
+            const modal = document.getElementById('profileCompletionWizard');
+            const primaryButton = document.getElementById('profileWizardPrimary');
+            const closeButton = document.getElementById('profileWizardClose');
+            const dismissButton = document.getElementById('profileWizardDismiss');
+            const noDependentsButton = document.getElementById('profileWizardNoDependents');
+
+            if (!modal || !profileCompletion || profileCompletion.complete) {
+                return;
+            }
+
+            const nextStep = profileCompletion.nextIncompleteStep || (profileCompletion.steps || []).find(step => !step.complete) || null;
+
+            function closeWizard() {
+                modal.hidden = true;
+                document.body.classList.remove('profile-wizard-open');
+            }
+
+            function openWizard() {
+                modal.hidden = false;
+                document.body.classList.add('profile-wizard-open');
+            }
+
+            function resolveWizardTarget() {
+                if (!nextStep) {
+                    return '/profile/personal';
+                }
+
+                if (nextStep.key === currentProfileSection) {
+                    return null;
+                }
+
+                return `${nextStep.route}?wizard=1`;
+            }
+
+            primaryButton?.addEventListener('click', () => {
+                const target = resolveWizardTarget();
+                if (!target) {
+                    closeWizard();
+                    return;
+                }
+
+                window.location.href = target;
+            });
+
+            closeButton?.addEventListener('click', closeWizard);
+            dismissButton?.addEventListener('click', closeWizard);
+
+            noDependentsButton?.addEventListener('click', async () => {
+                noDependentsButton.disabled = true;
+                try {
+                    const response = await fetch('/api/profile/dependents', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hasDependents: false })
+                    });
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Failed to confirm dependents status');
+                    }
+
+                    const nextRoute = result?.nextStep?.route ? `${result.nextStep.route}?wizard=1` : null;
+                    if (nextRoute) {
+                        window.location.href = nextRoute;
+                        return;
+                    }
+
+                    window.location.reload();
+                } catch (error) {
+                    alert(error.message || 'Failed to confirm dependents status');
+                    noDependentsButton.disabled = false;
+                }
+            });
+
+            document.addEventListener('DOMContentLoaded', openWizard, { once: true });
+        })();
+    </script>
+<% } %>

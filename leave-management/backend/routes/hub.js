@@ -6,6 +6,10 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { getUserInfo } = require('../config/oidc');
 const { logHubLaunch } = require('../services/auditService');
 
+function resolveCurrentOrganization(userinfo = {}) {
+  return userinfo.currentOrganization || userinfo.current_organization || null;
+}
+
 // Hub launch endpoint - handles IdP-initiated SSO
 router.get('/launch', validateHubToken, asyncHandler(async (req, res) => {
   try {
@@ -14,6 +18,7 @@ router.get('/launch', validateHubToken, asyncHandler(async (req, res) => {
 
     // Try to get full userinfo from IdP if we have access token
     let userinfo = hubUser;
+    const currentOrganization = resolveCurrentOrganization(userinfo);
 
     // If the hub token contains enough info, use it directly
     // Otherwise, we might need to initiate OIDC flow
@@ -25,7 +30,7 @@ router.get('/launch', validateHubToken, asyncHandler(async (req, res) => {
       name: hubUser.name,
       organizations: hubUser.organizations || [],
       teams: hubUser.teams || [],
-      currentOrganization: hubUser.currentOrganization,
+      currentOrganization,
       userinfo: hubUser,
       hubInitiated: true, // Mark as hub-initiated login
     };
@@ -37,8 +42,8 @@ router.get('/launch', validateHubToken, asyncHandler(async (req, res) => {
       if (org) {
         req.session.currentOrganizationId = req.query.orgId;
       }
-    } else if (hubUser.currentOrganization) {
-      req.session.currentOrganizationId = hubUser.currentOrganization.id;
+    } else if (currentOrganization) {
+      req.session.currentOrganizationId = currentOrganization.id;
     } else if (hubUser.organizations?.length > 0) {
       req.session.currentOrganizationId = hubUser.organizations[0].id;
     }

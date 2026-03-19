@@ -46,7 +46,9 @@ import {
   normalizeAppAccess
 } from './utils/appAccess.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
+import { startProfileCompletionReminderJobs } from './jobs/profileCompletionReminders.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
+import { getProfileCompletion } from './utils/profileCompletion.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
@@ -93,6 +95,30 @@ async function getCachedClaims(acc) {
     buildSubscriptionClaims(acc)
   ])
 
+  const currentOrganizationId =
+    acc.currentOrganization?._id?.toString() ||
+    acc.currentOrganization?.toString() ||
+    null
+  const currentOrganizationClaim = currentOrganizationId
+    ? organizationClaims.find((organization) => organization.id === currentOrganizationId) || null
+    : null
+  const currentOrganization = currentOrganizationClaim
+    ? {
+      id: currentOrganizationClaim.id,
+      name: currentOrganizationClaim.name,
+      role: currentOrganizationClaim.role,
+      departmentId: currentOrganizationClaim.departmentId || null,
+      departmentName: currentOrganizationClaim.departmentName || null,
+      designation: currentOrganizationClaim.designation || null,
+      employeeId: currentOrganizationClaim.employeeId || null
+    }
+    : (acc.currentOrganization
+      ? {
+        id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
+        name: acc.currentOrganization.name
+      }
+      : null)
+
   const claims = {
     sub: acc.sub,
     email: acc.email,
@@ -101,10 +127,8 @@ async function getCachedClaims(acc) {
     preferred_username: acc.profile?.preferred_username,
     // Organization claims (with permissions)
     organizations: organizationClaims,
-    current_organization: acc.currentOrganization ? {
-      id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
-      name: acc.currentOrganization.name
-    } : null,
+    current_organization: currentOrganization,
+    currentOrganization: currentOrganization,
     // Subscription claims (for current organization)
     subscription: subscriptionClaims,
     // Team claims (with hierarchy)
@@ -491,7 +515,7 @@ const config = {
 
       // Grant all requested scopes
       grant.addOIDCScope('openid email profile offline_access');
-      grant.addOIDCClaims(['email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams', 'team_permissions']);
+      grant.addOIDCClaims(['email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']);
 
       await grant.save();
       return grant;
@@ -503,7 +527,7 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization']
+    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()
@@ -5216,11 +5240,9 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
 // Profile page
 app.get('/profile', getSessionUser, async (req, res) => {
   try {
-    res.render('profile', {
-      user: req.user,
-      error: req.query.error,
-      success: req.query.success
-    })
+    const completion = getProfileCompletion(req.user)
+    const targetRoute = completion?.nextIncompleteStep?.route || '/profile/personal'
+    res.redirect(targetRoute)
   } catch (error) {
     console.error('Profile page error:', error)
     res.redirect('/?error=Failed to load profile page')
@@ -5350,6 +5372,11 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       assignments,
       workflowType: 'onboarding'
     })
+    const memberEntryById = new Map(
+      organization.members
+        .filter((m) => m.status === 'active')
+        .map((m) => [((m.account?._id || m.account).toString()), m])
+    )
 
     const mappedMembers = organization.members
       .filter(m => m.status === 'active')
@@ -5362,6 +5389,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
           email: m.account?.email || '',
           designation: m.designation || '',
+          employeeId: m.employeeId || '',
           departmentId: structure.departmentId,
           departmentName: structure.departmentName || '',
           role: m.role,
@@ -5382,7 +5410,8 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         ...getMemberStructure(memberStructure, m._id, organization),
         id: m._id.toString(),
         email: m.email,
-        name: m.profile?.name
+        name: m.profile?.name,
+        employeeId: memberEntryById.get(m._id.toString())?.employeeId || ''
       })),
       teams: teams.map((team) => ({
         id: team._id.toString(),
@@ -5401,6 +5430,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           id: m.account._id.toString(),
           email: m.account.email,
           name: m.account.profile?.name,
+          employeeId: memberEntryById.get(m.account._id.toString())?.employeeId || '',
           role: m.role
         })),
         memberCount: team.memberCount
@@ -6735,6 +6765,7 @@ app.get('/invitations/pending', getSessionUser, async (req, res) => {
           description: inv.organization.description
         },
         role: inv.role,
+        employeeId: inv.employeeId || '',
         invitedBy: {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
@@ -8098,81 +8129,55 @@ function getAppIcon(iconName) {
 // Register profile API routes
 app.use(profileRouter)
 
+function buildProfilePageViewModel(account, currentProfileSection) {
+  return {
+    user: account,
+    currentProfileSection,
+    activeProfileSection: currentProfileSection,
+    profileCompletion: getProfileCompletion(account)
+  }
+}
+
 // Profile page GET routes
-app.get('/profile/personal', async (req, res) => {
+app.get('/profile/personal', getSessionUser, async (req, res) => {
   try {
-    if (!req.session || !req.session.accountId) {
-      return res.redirect('/interaction/' + req.params.uid)
-    }
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (!account) {
-      return res.status(404).send('Account not found')
-    }
-    res.render('profile-personal', { user: account })
+    res.render('profile-personal', buildProfilePageViewModel(req.user, 'personal'))
   } catch (error) {
     console.error('Error loading personal page:', error)
     res.status(500).send('Error loading page')
   }
 })
 
-app.get('/profile/tax', async (req, res) => {
+app.get('/profile/tax', getSessionUser, async (req, res) => {
   try {
-    if (!req.session || !req.session.accountId) {
-      return res.redirect('/interaction/' + req.params.uid)
-    }
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (!account) {
-      return res.status(404).send('Account not found')
-    }
-    res.render('profile-tax', { user: account })
+    res.redirect('/profile/personal')
   } catch (error) {
     console.error('Error loading tax page:', error)
     res.status(500).send('Error loading page')
   }
 })
 
-app.get('/profile/banking', async (req, res) => {
+app.get('/profile/banking', getSessionUser, async (req, res) => {
   try {
-    if (!req.session || !req.session.accountId) {
-      return res.redirect('/interaction/' + req.params.uid)
-    }
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (!account) {
-      return res.status(404).send('Account not found')
-    }
-    res.render('profile-banking', { user: account })
+    res.render('profile-banking', buildProfilePageViewModel(req.user, 'banking'))
   } catch (error) {
     console.error('Error loading banking page:', error)
     res.status(500).send('Error loading page')
   }
 })
 
-app.get('/profile/dependents', async (req, res) => {
+app.get('/profile/dependents', getSessionUser, async (req, res) => {
   try {
-    if (!req.session || !req.session.accountId) {
-      return res.redirect('/interaction/' + req.params.uid)
-    }
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (!account) {
-      return res.status(404).send('Account not found')
-    }
-    res.render('profile-dependents', { user: account })
+    res.render('profile-dependents', buildProfilePageViewModel(req.user, 'dependents'))
   } catch (error) {
     console.error('Error loading dependents page:', error)
     res.status(500).send('Error loading page')
   }
 })
 
-app.get('/profile/documents', async (req, res) => {
+app.get('/profile/documents', getSessionUser, async (req, res) => {
   try {
-    if (!req.session || !req.session.accountId) {
-      return res.redirect('/interaction/' + req.params.uid)
-    }
-    const account = await Account.findOne({ sub: req.session.accountId })
-    if (!account) {
-      return res.status(404).send('Account not found')
-    }
-    res.render('profile-documents', { user: account })
+    res.redirect('/documents')
   } catch (error) {
     console.error('Error loading documents page:', error)
     res.status(500).send('Error loading page')
@@ -8237,6 +8242,13 @@ app.listen(PORT, async () => {
     console.log('✅ Cleanup jobs initialized')
   } catch (error) {
     console.error('⚠️ Failed to initialize cleanup jobs:', error)
+  }
+
+  try {
+    startProfileCompletionReminderJobs(24)
+    console.log('✅ Profile completion reminder jobs initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize profile completion reminder jobs:', error)
   }
 
   // Initialize subscription lifecycle jobs (runs every 6 hours)

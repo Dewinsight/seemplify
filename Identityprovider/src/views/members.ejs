@@ -185,7 +185,7 @@
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
     <div class="toolbar">
-      <input id="memberSearch" type="text" class="role-select" placeholder="Search by name, email, designation">
+      <input id="memberSearch" type="text" class="role-select" placeholder="Search by name, email, employee ID, designation">
       <select id="departmentFilter" class="role-select">
         <option value="all">All Departments</option>
         <option value="unassigned">Unassigned</option>
@@ -208,6 +208,7 @@
           data-member-id="<%= member.id %>"
           data-member-name="<%= (member.name || '').toLowerCase() %>"
           data-member-email="<%= (member.email || '').toLowerCase() %>"
+          data-member-employee-id="<%= (member.employeeId || '').toLowerCase() %>"
           data-member-designation="<%= (member.designation || '').toLowerCase() %>"
           data-member-department="<%= (member.departmentName || 'Unassigned').toLowerCase() %>"
           data-member-teams="<%= (member.teamNames || []).join('||').toLowerCase() %>"
@@ -245,6 +246,20 @@
                 />
               <% } else { %>
                 <div><strong><%= member.designation || 'Not set' %></strong></div>
+              <% } %>
+            </div>
+            <div>
+              <label>Employee ID</label>
+              <% if (canManageMemberMetadata) { %>
+                <input
+                  type="text"
+                  class="role-select"
+                  value="<%= member.employeeId || '' %>"
+                  placeholder="Set employee ID"
+                  onchange="updateEmployeeId('<%= member.id %>', this.value)"
+                />
+              <% } else { %>
+                <div><strong><%= member.employeeId || 'Not set' %></strong></div>
               <% } %>
             </div>
             <div>
@@ -560,6 +575,8 @@
 
       const memberCard = memberCards.find((card) => normalizeId(card.dataset.memberId) === normalizeId(memberId));
       if (memberCard) {
+        memberCard.dataset.memberEmployeeId = (member.employeeId || '').toLowerCase();
+        memberCard.dataset.memberDesignation = (member.designation || '').toLowerCase();
         memberCard.dataset.memberDepartment = (member.departmentName || 'Unassigned').toLowerCase();
         memberCard.dataset.memberTeams = (member.teamNames || []).join('||').toLowerCase();
       }
@@ -614,7 +631,7 @@
           <div class="card" style="margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
               <div>
-                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}</div>
+                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''}</div>
                 <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
               </div>
               <div style="display: flex; gap: 8px; align-items: center;">
@@ -634,7 +651,7 @@
               <label for="newMemberId">Add Member</label>
               <select id="newMemberId" required>
                 <option value="">Choose a member...</option>
-                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
+                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -674,7 +691,21 @@
           const data = await response.json();
           alert(data.error || errorMessage);
           window.location.reload();
+          return;
         }
+
+        const data = await response.json().catch(() => ({}));
+        const member = getOrgMemberById(memberId);
+        if (member) {
+          if (Object.prototype.hasOwnProperty.call(payload, 'designation')) {
+            member.designation = String(data.designation ?? payload.designation ?? '').trim();
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'employeeId')) {
+            member.employeeId = String(data.employeeId ?? payload.employeeId ?? '').trim();
+          }
+        }
+
+        syncMemberState(memberId);
       } catch (error) {
         alert(errorMessage);
         window.location.reload();
@@ -691,6 +722,10 @@
 
     async function updateDesignation(memberId, designation) {
       await updateMember(memberId, { designation }, 'Failed to update designation');
+    }
+
+    async function updateEmployeeId(memberId, employeeId) {
+      await updateMember(memberId, { employeeId }, 'Failed to update employee ID');
     }
 
     async function updateAppAccess(memberId, appAccess) {
@@ -791,6 +826,7 @@
         const haystack = [
           card.dataset.memberName || '',
           card.dataset.memberEmail || '',
+          card.dataset.memberEmployeeId || '',
           card.dataset.memberDesignation || ''
         ].join(' ');
 

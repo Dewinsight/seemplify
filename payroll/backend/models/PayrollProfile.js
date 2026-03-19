@@ -95,7 +95,33 @@ const TaxConfigSchema = new Schema({
     enum: ['standard', 'simplified', 'exempt', 'custom'],
     default: 'standard'
   },
+  calculationMode: {
+    type: String,
+    enum: ['builtin', 'manual'],
+    default: 'manual'
+  },
+  jurisdictionCode: {
+    type: String,
+    uppercase: true,
+    trim: true,
+    maxlength: 16,
+    default: 'OTHER'
+  },
+  jurisdictionName: String,
+  taxSubdivision: String,
+  residencyStatus: {
+    type: String,
+    enum: ['resident', 'non_resident'],
+    default: 'resident'
+  },
+  manualCalculationType: {
+    type: String,
+    enum: ['none', 'flat', 'progressive'],
+    default: 'progressive'
+  },
+  manualTaxFreeAllowance: { type: Number, min: 0, default: 0 },
   // Payroll calculation settings (kept generic; not a tax-filing system)
+  // Legacy compatibility field - superseded by calculationMode + jurisdictionCode.
   calculationRegime: {
     type: String,
     enum: ['none', 'flat', 'progressive_uk', 'progressive_us', 'progressive_generic'],
@@ -116,6 +142,10 @@ const TaxConfigSchema = new Schema({
     validUntil: Date
   }],
   additionalWithholding: { type: Number, default: 0 },
+  otherIncome: { type: Number, default: 0 }, // Annualized extra income for withholding worksheets
+  deductionsAdjustment: { type: Number, default: 0 }, // Annualized deduction adjustment
+  taxCredits: { type: Number, default: 0 }, // Annualized credit amount
+  multipleJobs: { type: Boolean, default: false }, // Used by the IRS Step 2 multiple-jobs tables
   // For countries with tax declarations
   taxDeclarationSubmitted: { type: Boolean, default: false },
   taxDeclarationYear: Number,
@@ -385,6 +415,7 @@ PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
     ...this.employeeInfo,
     name: idpUser.name,
     email: idpUser.email,
+    employeeId: idpUser.employeeId || this.employeeInfo?.employeeId,
     designation: idpUser.designation || idpUser.jobTitle,
     department: idpUser.department,
     teamId: idpUser.teamId,

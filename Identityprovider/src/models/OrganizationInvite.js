@@ -21,6 +21,17 @@ const OrganizationInviteSchema = new mongoose.Schema({
     enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
     default: 'recruiter'
   },
+  designation: {
+    type: String,
+    required: true,
+    trim: true,
+    maxLength: 120
+  },
+  employeeId: {
+    type: String,
+    trim: true,
+    maxLength: 80
+  },
   department: {
     type: mongoose.Schema.Types.ObjectId,
     required: true

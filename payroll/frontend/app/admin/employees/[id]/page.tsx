@@ -4,6 +4,14 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { authApi, isAuthenticated } from '@/lib/api';
 import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
+import {
+    filingStatusOptions,
+    isManualOnlyJurisdiction,
+    manualTaxModeOptions,
+    payrollTaxJurisdictions,
+    residencyStatusOptions,
+    ukTaxSubdivisionOptions
+} from '@/lib/payrollTaxJurisdictions';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -17,6 +25,106 @@ import {
     PiggyBank
 } from 'lucide-react';
 
+function getDefaultTaxConfig() {
+    return {
+        taxId: '',
+        calculationMode: 'manual',
+        jurisdictionCode: 'OTHER',
+        jurisdictionName: '',
+        taxSubdivision: 'standard',
+        residencyStatus: 'resident',
+        filingStatus: 'single',
+        dependents: 0,
+        additionalWithholding: 0,
+        manualCalculationType: 'progressive',
+        manualTaxFreeAllowance: 0,
+        flatTaxRate: 0,
+        otherIncome: 0,
+        deductionsAdjustment: 0,
+        taxCredits: 0,
+        multipleJobs: false,
+        socialSecurityRate: 0,
+        socialSecurityCap: 0,
+        customBrackets: [] as Array<{ min: number; max: number | ''; rate: number }>
+    };
+}
+
+function mapTaxConfigForForm(raw: any = {}) {
+    const defaults = getDefaultTaxConfig();
+    const jurisdictionCode = String(raw?.jurisdictionCode || raw?.jurisdictionCountry || '').toUpperCase();
+    const legacyRegime = String(raw?.calculationRegime || '').toLowerCase();
+
+    let calculationMode = raw?.calculationMode || '';
+    let manualCalculationType = raw?.manualCalculationType || '';
+    let resolvedJurisdictionCode = jurisdictionCode || defaults.jurisdictionCode;
+
+    if (!calculationMode) {
+        if (legacyRegime === 'progressive_us') {
+            calculationMode = 'builtin';
+            resolvedJurisdictionCode = 'US';
+        } else if (legacyRegime === 'progressive_uk') {
+            calculationMode = 'builtin';
+            resolvedJurisdictionCode = 'GB';
+        } else if (legacyRegime === 'flat') {
+            calculationMode = 'manual';
+            manualCalculationType = 'flat';
+        } else if (legacyRegime === 'none') {
+            calculationMode = 'manual';
+            manualCalculationType = 'none';
+        } else if (legacyRegime === 'progressive_generic') {
+            calculationMode = 'manual';
+            manualCalculationType = 'progressive';
+        }
+    }
+
+    if (!calculationMode) {
+        calculationMode = isManualOnlyJurisdiction(resolvedJurisdictionCode) ? 'manual' : 'builtin';
+    }
+
+    if (!manualCalculationType) {
+        manualCalculationType = 'progressive';
+    }
+
+    return {
+        ...defaults,
+        ...raw,
+        calculationMode,
+        jurisdictionCode: resolvedJurisdictionCode,
+        jurisdictionName: raw?.jurisdictionName || '',
+        taxSubdivision: raw?.taxSubdivision || 'standard',
+        residencyStatus: raw?.residencyStatus || 'resident',
+        filingStatus: raw?.filingStatus || 'single',
+        dependents: Number(raw?.dependents || 0),
+        additionalWithholding: Number(raw?.additionalWithholding || 0),
+        manualCalculationType,
+        manualTaxFreeAllowance: Number(raw?.manualTaxFreeAllowance || 0),
+        flatTaxRate: Number(raw?.flatTaxRate || 0),
+        otherIncome: Number(raw?.otherIncome || 0),
+        deductionsAdjustment: Number(raw?.deductionsAdjustment || 0),
+        taxCredits: Number(raw?.taxCredits || 0),
+        multipleJobs: !!raw?.multipleJobs,
+        socialSecurityRate: Number(raw?.socialSecurityRate || 0),
+        socialSecurityCap: Number(raw?.socialSecurityCap || 0),
+        customBrackets: Array.isArray(raw?.customBrackets)
+            ? raw.customBrackets.map((bracket: any) => ({
+                min: Number(bracket?.min || 0),
+                max: bracket?.max === null || bracket?.max === undefined ? '' : Number(bracket.max || 0),
+                rate: Number(bracket?.rate || 0)
+            }))
+            : defaults.customBrackets
+    };
+}
+
+function serializeCustomBrackets(brackets: Array<{ min: number; max: number | ''; rate: number }>) {
+    return (Array.isArray(brackets) ? brackets : [])
+        .filter((bracket) => Number(bracket?.rate || 0) > 0 || Number(bracket?.max || 0) > 0 || Number(bracket?.min || 0) > 0)
+        .map((bracket) => ({
+            min: Number(bracket.min || 0),
+            max: bracket.max === '' ? null : Number(bracket.max || 0),
+            rate: Number(bracket.rate || 0)
+        }));
+}
+
 export default function EmployeeEditPage({ params }: { params: { id: string } }) {
     const router = useRouter();
     const { currencies } = usePayrollCurrencies();
@@ -25,7 +133,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [profile, setProfile] = useState<any>(null);
 
     // Form State
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<any>({
         basicSalary: 0,
         currency: 'USD',
         isActive: true,
@@ -35,14 +143,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             holdPayment: false,
             holdReason: ''
         },
-        taxConfig: {
-            taxId: '',
-            filingStatus: 'single',
-            dependents: 0,
-            additionalWithholding: 0,
-            calculationRegime: 'flat',
-            flatTaxRate: 10
-        },
+        taxConfig: getDefaultTaxConfig(),
         statutoryContributions: {
             socialSecurityOptIn: true,
             socialSecurityNumber: '',
@@ -102,14 +203,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         holdPayment: !!res.data.payrollFlags?.holdPayment,
                         holdReason: res.data.payrollFlags?.holdReason || ''
                     },
-                    taxConfig: {
-                        taxId: res.data.taxConfig?.taxId || '',
-                        filingStatus: res.data.taxConfig?.filingStatus || 'single',
-                        dependents: res.data.taxConfig?.dependents || 0,
-                        additionalWithholding: res.data.taxConfig?.additionalWithholding || 0,
-                        calculationRegime: res.data.taxConfig?.calculationRegime || 'flat',
-                        flatTaxRate: res.data.taxConfig?.flatTaxRate ?? 10
-                    },
+                    taxConfig: mapTaxConfigForForm(res.data.taxConfig),
                     statutoryContributions: {
                         socialSecurityOptIn: res.data.statutoryContributions?.socialSecurityOptIn !== false,
                         socialSecurityNumber: res.data.statutoryContributions?.socialSecurityNumber || '',
@@ -172,7 +266,15 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     ...formData.taxConfig,
                     dependents: Number(formData.taxConfig.dependents || 0),
                     additionalWithholding: Number(formData.taxConfig.additionalWithholding || 0),
-                    flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0)
+                    flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0),
+                    manualTaxFreeAllowance: Number(formData.taxConfig.manualTaxFreeAllowance || 0),
+                    otherIncome: Number(formData.taxConfig.otherIncome || 0),
+                    deductionsAdjustment: Number(formData.taxConfig.deductionsAdjustment || 0),
+                    taxCredits: Number(formData.taxConfig.taxCredits || 0),
+                    socialSecurityRate: Number(formData.taxConfig.socialSecurityRate || 0),
+                    socialSecurityCap: Number(formData.taxConfig.socialSecurityCap || 0),
+                    multipleJobs: !!formData.taxConfig.multipleJobs,
+                    customBrackets: serializeCustomBrackets(formData.taxConfig.customBrackets || [])
                 },
                 statutoryContributions: {
                     ...formData.statutoryContributions,
@@ -295,6 +397,57 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         setFormData({ ...formData, recurringDeductions: updated });
     };
 
+    const updateTaxConfig = (patch: Record<string, any>) => {
+        setFormData({
+            ...formData,
+            taxConfig: {
+                ...formData.taxConfig,
+                ...patch,
+            }
+        });
+    };
+
+    const setJurisdictionCode = (code: string) => {
+        const manualOnly = isManualOnlyJurisdiction(code);
+        updateTaxConfig({
+            jurisdictionCode: code,
+            calculationMode: manualOnly ? 'manual' : 'builtin',
+            taxSubdivision: code === 'GB' ? (formData.taxConfig.taxSubdivision || 'standard') : '',
+        });
+    };
+
+    const addManualBracket = () => {
+        updateTaxConfig({
+            customBrackets: [
+                ...(formData.taxConfig.customBrackets || []),
+                { min: 0, max: '', rate: 0 }
+            ]
+        });
+    };
+
+    const updateManualBracket = (index: number, key: 'min' | 'max' | 'rate', value: string) => {
+        const next = [...(formData.taxConfig.customBrackets || [])];
+        next[index] = {
+            ...next[index],
+            [key]: key === 'max' && value === '' ? '' : Number(value)
+        };
+        updateTaxConfig({ customBrackets: next });
+    };
+
+    const removeManualBracket = (index: number) => {
+        const next = [...(formData.taxConfig.customBrackets || [])];
+        next.splice(index, 1);
+        updateTaxConfig({ customBrackets: next });
+    };
+
+    const selectedJurisdiction = payrollTaxJurisdictions.find((item) => item.code === formData.taxConfig.jurisdictionCode)
+        || payrollTaxJurisdictions[payrollTaxJurisdictions.length - 1];
+    const canUseBuiltInTax = selectedJurisdiction?.mode === 'builtin';
+    const showUsTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'US' && formData.taxConfig.calculationMode === 'builtin';
+    const showUkTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'GB' && formData.taxConfig.calculationMode === 'builtin';
+    const showResidencyStatus = canUseBuiltInTax && ['GH', 'KE'].includes(formData.taxConfig.jurisdictionCode) && formData.taxConfig.calculationMode === 'builtin';
+    const showManualTaxFields = formData.taxConfig.calculationMode === 'manual';
+
     if (loading) {
         return (
             <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
@@ -372,6 +525,149 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${formData.isActive ? 'left-7' : 'left-1'}`} />
                                 </div>
                             </div>
+
+                            <div className="mt-4 bg-zinc-800/30 border border-zinc-700/60 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <p className="text-sm font-semibold text-zinc-200">{selectedJurisdiction.label}</p>
+                                        <p className="text-xs text-zinc-500 mt-1">{selectedJurisdiction.description}</p>
+                                    </div>
+                                    {canUseBuiltInTax && (
+                                        <div className="flex items-center gap-2 bg-zinc-900/70 p-1 rounded-lg border border-zinc-700/60">
+                                            <button
+                                                type="button"
+                                                onClick={() => updateTaxConfig({ calculationMode: 'builtin' })}
+                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'builtin' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                            >
+                                                Built-In Rule
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateTaxConfig({ calculationMode: 'manual' })}
+                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'manual' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                            >
+                                                Manual Override
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {(showUkTaxFields || showResidencyStatus || showUsTaxFields || showManualTaxFields) && (
+                                <div className="mt-4 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {showUkTaxFields && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">UK Tax Region</label>
+                                                <select
+                                                    value={formData.taxConfig.taxSubdivision}
+                                                    onChange={(e) => updateTaxConfig({ taxSubdivision: e.target.value })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                >
+                                                    {ukTaxSubdivisionOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {showResidencyStatus && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Residency Status</label>
+                                                <select
+                                                    value={formData.taxConfig.residencyStatus}
+                                                    onChange={(e) => updateTaxConfig({ residencyStatus: e.target.value })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                >
+                                                    {residencyStatusOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {showUsTaxFields && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
+                                                <select
+                                                    value={formData.taxConfig.filingStatus}
+                                                    onChange={(e) => updateTaxConfig({ filingStatus: e.target.value })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                >
+                                                    {filingStatusOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents (record only)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={formData.taxConfig.dependents}
+                                                    onChange={(e) => updateTaxConfig({ dependents: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Other Income (W-4 Step 4a)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.otherIncome}
+                                                    onChange={(e) => updateTaxConfig({ otherIncome: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Deductions Adjustment (W-4 Step 4b)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.deductionsAdjustment}
+                                                    onChange={(e) => updateTaxConfig({ deductionsAdjustment: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax Credits (W-4 Step 3)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.taxCredits}
+                                                    onChange={(e) => updateTaxConfig({ taxCredits: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                                <span className="text-sm text-zinc-300">Use IRS Multiple Jobs Table</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!formData.taxConfig.multipleJobs}
+                                                    onChange={(e) => updateTaxConfig({ multipleJobs: e.target.checked })}
+                                                    className="rounded bg-zinc-900 border-zinc-700"
+                                                />
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
@@ -489,7 +785,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
                             {/* List Existing */}
                             <div className="space-y-3 mb-6">
-                                {(formData.allowances || []).map((allowance, idx) => (
+                                {(formData.allowances || []).map((allowance: any, idx: number) => (
                                     <div key={idx} className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
                                         <div>
                                             <div className="flex items-center gap-2">
@@ -618,7 +914,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
                             {/* List Existing */}
                             <div className="space-y-3 mb-6">
-                                {formData.recurringDeductions.map((deduction, idx) => (
+                                {formData.recurringDeductions.map((deduction: any, idx: number) => (
                                     <div key={idx} className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
                                         <div>
                                             <div className="flex items-center gap-2">
@@ -831,45 +1127,42 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     <input
                                         type="text"
                                         value={formData.taxConfig.taxId}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            taxConfig: { ...formData.taxConfig, taxId: e.target.value }
-                                        })}
+                                        onChange={(e) => updateTaxConfig({ taxId: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         placeholder="e.g. XXX-XX-XXXX"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Tax Jurisdiction</label>
                                     <select
-                                        value={formData.taxConfig.filingStatus}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            taxConfig: { ...formData.taxConfig, filingStatus: e.target.value }
-                                        })}
+                                        value={formData.taxConfig.jurisdictionCode}
+                                        onChange={(e) => setJurisdictionCode(e.target.value)}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     >
-                                        <option value="single">Single</option>
-                                        <option value="married_filing_jointly">Married Filing Jointly</option>
-                                        <option value="married_filing_separately">Married Filing Separately</option>
-                                        <option value="head_of_household">Head of Household</option>
+                                        {payrollTaxJurisdictions.map((jurisdiction) => (
+                                            <option key={jurisdiction.code} value={jurisdiction.code}>
+                                                {jurisdiction.label}
+                                            </option>
+                                        ))}
                                     </select>
+                                    <p className="text-xs text-zinc-500 mt-1.5">
+                                        Payroll tax follows the employee&apos;s tax jurisdiction, not the company&apos;s country.
+                                    </p>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formData.taxConfig.dependents}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            taxConfig: { ...formData.taxConfig, dependents: Number(e.target.value) }
-                                        })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                    />
-                                </div>
+                                {(formData.taxConfig.jurisdictionCode === 'EU' || formData.taxConfig.jurisdictionCode === 'OTHER') && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Jurisdiction Name</label>
+                                        <input
+                                            type="text"
+                                            value={formData.taxConfig.jurisdictionName}
+                                            onChange={(e) => updateTaxConfig({ jurisdictionName: e.target.value })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            placeholder="e.g. France, Germany, Rwanda"
+                                        />
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Additional Withholding</label>
@@ -878,55 +1171,281 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         min="0"
                                         step="0.01"
                                         value={formData.taxConfig.additionalWithholding}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            taxConfig: { ...formData.taxConfig, additionalWithholding: Number(e.target.value) }
-                                        })}
+                                        onChange={(e) => updateTaxConfig({ additionalWithholding: Number(e.target.value) })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     />
                                 </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Tax Calculation</label>
-                                    <select
-                                        value={formData.taxConfig.calculationRegime}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            taxConfig: { ...formData.taxConfig, calculationRegime: e.target.value }
-                                        })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                    >
-                                        <option value="none">No Income Tax</option>
-                                        <option value="flat">Flat Percentage</option>
-                                        <option value="progressive_us">Progressive (US)</option>
-                                        <option value="progressive_uk">Progressive (UK)</option>
-                                        <option value="progressive_generic">Progressive (Generic)</option>
-                                    </select>
-                                </div>
-
-                                {formData.taxConfig.calculationRegime === 'flat' && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Flat Tax Rate (%)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.01"
-                                            value={formData.taxConfig.flatTaxRate}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                taxConfig: { ...formData.taxConfig, flatTaxRate: Number(e.target.value) }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        />
-                                    </div>
-                                )}
                             </div>
 
+                            <div className="mt-4 bg-zinc-800/30 border border-zinc-700/60 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <p className="text-sm font-semibold text-zinc-200">{selectedJurisdiction.label}</p>
+                                        <p className="text-xs text-zinc-500 mt-1">{selectedJurisdiction.description}</p>
+                                    </div>
+                                    {canUseBuiltInTax && (
+                                        <div className="flex items-center gap-2 bg-zinc-900/70 p-1 rounded-lg border border-zinc-700/60">
+                                            <button
+                                                type="button"
+                                                onClick={() => updateTaxConfig({ calculationMode: 'builtin' })}
+                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'builtin' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                            >
+                                                Built-In Rule
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateTaxConfig({ calculationMode: 'manual' })}
+                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'manual' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                            >
+                                                Manual Override
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {(showUkTaxFields || showResidencyStatus || showUsTaxFields) && (
+                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {showUkTaxFields && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">UK Tax Region</label>
+                                            <select
+                                                value={formData.taxConfig.taxSubdivision}
+                                                onChange={(e) => updateTaxConfig({ taxSubdivision: e.target.value })}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            >
+                                                {ukTaxSubdivisionOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {showResidencyStatus && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">Residency Status</label>
+                                            <select
+                                                value={formData.taxConfig.residencyStatus}
+                                                onChange={(e) => updateTaxConfig({ residencyStatus: e.target.value })}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            >
+                                                {residencyStatusOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {showUsTaxFields && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
+                                                <select
+                                                    value={formData.taxConfig.filingStatus}
+                                                    onChange={(e) => updateTaxConfig({ filingStatus: e.target.value })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                >
+                                                    {filingStatusOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents (record only)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={formData.taxConfig.dependents}
+                                                    onChange={(e) => updateTaxConfig({ dependents: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Other Income (W-4 Step 4a)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.otherIncome}
+                                                    onChange={(e) => updateTaxConfig({ otherIncome: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Deductions Adjustment (W-4 Step 4b)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.deductionsAdjustment}
+                                                    onChange={(e) => updateTaxConfig({ deductionsAdjustment: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax Credits (W-4 Step 3)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.taxCredits}
+                                                    onChange={(e) => updateTaxConfig({ taxCredits: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                                <span className="text-sm text-zinc-300">Use IRS Multiple Jobs Table</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!formData.taxConfig.multipleJobs}
+                                                    onChange={(e) => updateTaxConfig({ multipleJobs: e.target.checked })}
+                                                    className="rounded bg-zinc-900 border-zinc-700"
+                                                />
+                                            </label>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {showManualTaxFields && (
+                                <div className="mt-4 space-y-4 border-t border-zinc-800/70 pt-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Tax Mode</label>
+                                            <select
+                                                value={formData.taxConfig.manualCalculationType}
+                                                onChange={(e) => updateTaxConfig({ manualCalculationType: e.target.value })}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            >
+                                                {manualTaxModeOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {formData.taxConfig.manualCalculationType === 'flat' && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Flat Tax Rate (%)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.flatTaxRate}
+                                                    onChange={(e) => updateTaxConfig({ flatTaxRate: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {formData.taxConfig.manualCalculationType === 'progressive' && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax-Free Allowance</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={formData.taxConfig.manualTaxFreeAllowance}
+                                                    onChange={(e) => updateTaxConfig({ manualTaxFreeAllowance: Number(e.target.value) })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {formData.taxConfig.manualCalculationType === 'progressive' && (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-zinc-300">Manual Tax Brackets</h4>
+                                                    <p className="text-xs text-zinc-500">Enter annual bracket thresholds for unsupported countries or custom cases.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={addManualBracket}
+                                                    className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-sm text-zinc-200 transition-colors"
+                                                >
+                                                    Add Bracket
+                                                </button>
+                                            </div>
+
+                                            {(formData.taxConfig.customBrackets || []).length === 0 && (
+                                                <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-sm text-zinc-500">
+                                                    No manual brackets configured yet.
+                                                </div>
+                                            )}
+
+                                            {(formData.taxConfig.customBrackets || []).map((bracket: any, index: number) => (
+                                                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-zinc-800/20 border border-zinc-700/50 rounded-lg p-3">
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 block mb-1">Annual Min</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={bracket.min}
+                                                            onChange={(e) => updateManualBracket(index, 'min', e.target.value)}
+                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 block mb-1">Annual Max</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={bracket.max}
+                                                            onChange={(e) => updateManualBracket(index, 'max', e.target.value)}
+                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                                            placeholder="Leave blank for no upper limit"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 block mb-1">Rate (%)</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            step="0.01"
+                                                            value={bracket.rate}
+                                                            onChange={(e) => updateManualBracket(index, 'rate', e.target.value)}
+                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-end">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeManualBracket(index)}
+                                                            className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="mt-6 pt-6 border-t border-zinc-800/70">
-                                <h4 className="text-sm font-semibold text-zinc-300 mb-4">Statutory Contributions</h4>
+                                <h4 className="text-sm font-semibold text-zinc-300 mb-2">Statutory Contributions</h4>
+                                <p className="text-xs text-zinc-500 mb-4">
+                                    Built-in statutory deductions apply automatically for supported countries when possible. Manual rate and cap fields below override the preset if you need a local exception.
+                                </p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                    <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
                                         <span className="text-sm text-zinc-300">Social Security Opt-In</span>
                                         <input
                                             type="checkbox"
@@ -940,7 +1459,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             })}
                                             className="rounded bg-zinc-900 border-zinc-700"
                                         />
-                                    </div>
+                                    </label>
 
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Social Security Number</label>
@@ -959,7 +1478,32 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         />
                                     </div>
 
-                                    <div className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Social Security Rate (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value={formData.taxConfig.socialSecurityRate}
+                                            onChange={(e) => updateTaxConfig({ socialSecurityRate: Number(e.target.value) })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Annual Social Security Cap</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={formData.taxConfig.socialSecurityCap}
+                                            onChange={(e) => updateTaxConfig({ socialSecurityCap: Number(e.target.value) })}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
                                         <span className="text-sm text-zinc-300">Pension Opt-In</span>
                                         <input
                                             type="checkbox"
@@ -973,7 +1517,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             })}
                                             className="rounded bg-zinc-900 border-zinc-700"
                                         />
-                                    </div>
+                                    </label>
 
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Pension (%)</label>

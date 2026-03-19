@@ -5,6 +5,8 @@
  * Extensible permission system - supports app-specific permissions
  */
 
+import Organization from '../models/Organization.js'
+
 // Base permissions (organization-level)
 const basePermissions = {
   owner: ['*'], // All permissions
@@ -245,11 +247,32 @@ export async function buildOrganizationClaims(account) {
     return []
   }
 
+  const organizationIds = activeOrgs
+    .map((org) => org.organization?._id?.toString() || org.organization?.toString())
+    .filter(Boolean)
+
+  const organizationDocs = organizationIds.length > 0
+    ? await Organization.find({ _id: { $in: organizationIds } })
+      .select('name departments members.account members.status members.designation members.employeeId')
+      .lean()
+    : []
+
+  const organizationDocById = new Map(
+    organizationDocs.map((orgDoc) => [orgDoc._id.toString(), orgDoc])
+  )
+
   // Build claims in PARALLEL for all organizations
   const claimsPromises = activeOrgs.map(async (org) => {
     const orgDoc = org.organization
     const orgId = orgDoc._id?.toString() || orgDoc.toString()
-    const departments = Array.isArray(orgDoc.departments) ? orgDoc.departments : []
+    const fullOrgDoc = organizationDocById.get(orgId) || orgDoc
+    const departments = Array.isArray(fullOrgDoc.departments) ? fullOrgDoc.departments : []
+    const memberEntry = Array.isArray(fullOrgDoc.members)
+      ? fullOrgDoc.members.find((member) =>
+        member?.status === 'active' &&
+        member.account?.toString() === account._id.toString()
+      )
+      : null
     const memberDepartmentIds = Array.from(new Set(
       (account.teams || [])
         .filter((teamMembership) =>
@@ -276,8 +299,10 @@ export async function buildOrganizationClaims(account) {
 
     return {
       id: orgId,
-      name: orgDoc.name || null,
+      name: fullOrgDoc.name || orgDoc.name || null,
       role: org.role,
+      designation: memberEntry?.designation || null,
+      employeeId: memberEntry?.employeeId || null,
       departmentId: memberDepartmentId,
       departmentName: memberDepartment?.name || null,
       departmentHeadPermissions: headedDepartments,

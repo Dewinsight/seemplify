@@ -229,6 +229,29 @@ class PayrollEngineService {
     };
   }
 
+  async getEmployeeYearToDatePayrollContext(profile, paymentDate) {
+    const payDate = paymentDate ? new Date(paymentDate) : new Date();
+    const taxYear = taxService.getTaxYearContext(profile?.taxConfig || {}, payDate);
+
+    const priorPayslips = await Payslip.find({
+      organizationId: profile.organizationId,
+      userId: profile.userId,
+      'payPeriod.paymentDate': {
+        $gte: taxYear.start,
+        $lt: payDate,
+      },
+    })
+      .select('earningsSummary taxBreakdown')
+      .lean();
+
+    return {
+      taxYear,
+      ytdGrossPay: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.earningsSummary?.grossPay || 0), 0)),
+      ytdTaxableIncome: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.taxBreakdown?.grossTaxableIncome || 0), 0)),
+      ytdIncomeTax: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.taxBreakdown?.taxAmount || 0), 0)),
+    };
+  }
+
   /**
    * Process a payroll run for an organization (used by scheduler)
    * @param {string} organizationId
@@ -750,60 +773,69 @@ class PayrollEngineService {
         .reduce((sum, d) => sum + (d.amount || 0), 0);
 
       const netTaxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
+      const taxPaymentDate = payslip.payPeriod?.paymentDate || payEnd;
+      const ytdContext = await this.getEmployeeYearToDatePayrollContext(profile, taxPaymentDate);
+      const taxResult = taxService.calculatePayrollTaxes({
+        taxConfig: profile.taxConfig || {},
+        statutoryContributions: profile.statutoryContributions || {},
+        grossPay: roundMoney(payslip.earningsSummary?.grossPay || taxableEarnings),
+        taxableIncome: netTaxableIncome,
+        basicSalary: roundMoney(payslip.earningsSummary?.basicSalary || profile.basicSalary || 0),
+        preTaxDeductions: roundMoney(preTaxDeductions),
+        paymentDate: taxPaymentDate,
+        payFrequency: payslip.payPeriod?.type || profile.payFrequency || 'monthly',
+        employeeInfo: profile.employeeInfo || {},
+        ytdGrossPay: ytdContext.ytdGrossPay,
+        ytdTaxableIncome: ytdContext.ytdTaxableIncome,
+      });
 
-      // Income tax
       if (settings.calculateTax !== false) {
-        const taxCfg = profile.taxConfig || {};
+        const incomeTaxAmount = roundMoney(taxResult?.incomeTax?.taxAmount || 0);
 
-        const regime = taxCfg.taxRegime === 'exempt' ? 'none' : (taxCfg.calculationRegime || 'flat');
-        let taxAmount = 0;
-        let taxRate = 0;
-
-        if (regime !== 'none') {
-          const taxResult = taxService.calculateIncomeTax(netTaxableIncome, {
-            taxRegime: regime,
-            taxRate: taxCfg.flatTaxRate,
-            customBrackets: Array.isArray(taxCfg.customBrackets)
-              ? taxCfg.customBrackets.map(b => ({
-                min: Number(b.min || 0),
-                max: b.max === null || b.max === undefined ? Infinity : Number(b.max),
-                rate: Number(b.rate || 0),
-              }))
-              : undefined,
-          });
-          taxAmount = roundMoney(taxResult.taxAmount || 0);
-          taxRate = Number(taxResult.taxRate || 0);
-        }
-
-        // Add employee-specific additional withholding (monthly)
-        if (Number(taxCfg.additionalWithholding || 0) > 0) {
-          taxAmount = roundMoney(taxAmount + Number(taxCfg.additionalWithholding || 0));
-        }
-
-        if (taxAmount > 0) {
-          payslip.addDeduction('income_tax', 'Income Tax', taxAmount, { isPreTax: false });
+        if (incomeTaxAmount > 0) {
+          payslip.addDeduction('income_tax', 'Income Tax', incomeTaxAmount, { isPreTax: false });
         }
 
         payslip.taxBreakdown = {
-          grossTaxableIncome: roundMoney(taxableEarnings),
-          deductionsBeforeTax: roundMoney(preTaxDeductions),
-          netTaxableIncome,
-          taxRate: roundMoney(taxRate),
-          taxAmount,
+          grossTaxableIncome: roundMoney(taxResult?.incomeTax?.grossTaxableIncome || taxableEarnings),
+          taxExemptIncome: roundMoney(taxResult?.incomeTax?.taxExemptIncome || 0),
+          deductionsBeforeTax: roundMoney(taxResult?.incomeTax?.deductionsBeforeTax || preTaxDeductions),
+          netTaxableIncome: roundMoney(taxResult?.incomeTax?.netTaxableIncome || netTaxableIncome),
+          taxRate: roundMoney(taxResult?.incomeTax?.taxRate || 0),
+          taxAmount: incomeTaxAmount,
+          yearToDateTax: roundMoney(ytdContext.ytdIncomeTax + incomeTaxAmount),
+          jurisdictionCode: taxResult?.incomeTax?.jurisdictionCode || '',
+          jurisdictionName: taxResult?.incomeTax?.jurisdictionName || '',
+          taxYearLabel: taxResult?.incomeTax?.taxYearLabel || ytdContext.taxYear?.label || '',
+          calculationMode: taxResult?.incomeTax?.calculationMode || '',
+          method: taxResult?.incomeTax?.method || '',
+          annualizedIncome: roundMoney(taxResult?.incomeTax?.annualizedIncome || 0),
+          annualizedTaxableIncome: roundMoney(taxResult?.incomeTax?.annualizedTaxableIncome || 0),
+          taxableIncomeAfterReliefs: roundMoney(taxResult?.incomeTax?.taxableIncomeAfterReliefs || 0),
+          notes: Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : [],
+          details: taxResult?.incomeTax?.details || undefined,
         };
       }
 
-      // Social security (employee)
-      if (profile.statutoryContributions?.socialSecurityOptIn !== false) {
-        const taxCfg = profile.taxConfig || {};
-        const ssResult = taxService.calculateSocialSecurity(netTaxableIncome, {
-          socialSecurityRate: taxCfg.socialSecurityRate,
-          socialSecurityCap: taxCfg.socialSecurityCap,
-          ytdEarnings: 0, // TODO: support cumulative mode
-        });
-        if (ssResult.amount > 0) {
-          payslip.addDeduction('social_security', 'Social Security', roundMoney(ssResult.amount), { isPreTax: false });
-        }
+      for (const component of taxResult?.statutoryContributions?.components || []) {
+        if (Number(component?.amount || 0) <= 0) continue;
+        payslip.addDeduction(
+          'social_security',
+          component.name || 'Social Security',
+          roundMoney(component.amount),
+          {
+            isPreTax: false,
+            metadata: {
+              source: component.source,
+              taxableAmount: roundMoney(component.taxableAmount || 0),
+              rate: component.rate,
+              cap: component.cap,
+              threshold: component.threshold,
+              hitCap: component.hitCap,
+              reducesTaxableIncome: !!component.reducesTaxableIncome,
+            },
+          }
+        );
       }
     }
 

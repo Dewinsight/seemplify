@@ -122,6 +122,10 @@ const UserSchema = new mongoose.Schema({
     slug: String,
     logo: String,
     role: String, // 'owner', 'admin', 'hr_manager', 'employee'
+    designation: String,
+    employeeId: String,
+    departmentId: String,
+    departmentName: String,
     joinedAt: Date
   }],
 

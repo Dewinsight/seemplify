@@ -1,5 +1,6 @@
 import express from 'express'
 import { Organization } from '../models/Organization.js'
+import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Team } from '../models/Team.js'
 import { getHubApps } from '../config/hubApps.js'
 import {
@@ -10,6 +11,7 @@ import {
 import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
+import { buildPayrollProfileSyncData } from '../utils/profileCompletion.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -32,6 +34,27 @@ function getHubAppMetadata() {
   }
 }
 
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function getEmployeeIdKey(value = '') {
+  return normalizeEmployeeId(value).toLowerCase()
+}
+
+async function hasPendingInviteWithEmployeeId(organizationId, employeeId) {
+  const employeeIdKey = getEmployeeIdKey(employeeId)
+  if (!employeeIdKey) return false
+
+  const pendingInvites = await OrganizationInvite.find({
+    organization: organizationId,
+    status: 'pending',
+    expiresAt: { $gt: new Date() }
+  }).select('employeeId')
+
+  return pendingInvites.some((invite) => getEmployeeIdKey(invite.employeeId) === employeeIdKey)
+}
+
 function getMemberAppAccessSummary(member, appNameById = new Map(), validAppIds = null) {
   const appAccess = normalizeAppAccess(member?.appAccess, validAppIds)
   if (appAccess.mode !== APP_ACCESS_MODE_SELECTED) {
@@ -48,6 +71,11 @@ function getMemberAppAccessSummary(member, appNameById = new Map(), validAppIds 
     appAccessLabel: appAccessAppNames.length > 0 ? `${appAccessAppNames.length} selected` : 'Selected apps',
     appAccessAppNames
   }
+}
+
+function matchesMemberIdentity(memberAccount, requestedId) {
+  if (!memberAccount) return false
+  return memberAccount._id.toString() === requestedId || memberAccount.sub === requestedId
 }
 
 /**
@@ -97,6 +125,7 @@ router.get('/:orgId/members',
             email: m.account.email,
             name: m.account.profile?.name,
             designation: m.designation || '',
+            employeeId: m.employeeId || '',
             emailVerified: m.account.emailVerified,
             role: m.role,
             joinedAt: m.joinedAt,
@@ -163,7 +192,7 @@ router.get('/:orgId/members/:memberId',
         .lean()
 
       const member = organization.members.find(
-        m => m.account._id.toString() === req.params.memberId && m.status === 'active'
+        m => matchesMemberIdentity(m.account, req.params.memberId) && m.status === 'active'
       )
 
       if (!member) {
@@ -188,6 +217,7 @@ router.get('/:orgId/members/:memberId',
         email: member.account.email,
         name: member.account.profile?.name,
         designation: member.designation || '',
+        employeeId: member.employeeId || '',
         emailVerified: member.account.emailVerified,
         role: member.role,
         joinedAt: member.joinedAt,
@@ -209,6 +239,83 @@ router.get('/:orgId/members/:memberId',
   }
 )
 
+router.get('/:orgId/members/:memberId/payroll-sync',
+  requireAuthOrAPIToken,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      const organization = await Organization.findById(req.params.orgId)
+        .populate('members.account', 'sub email profile')
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const member = organization.members.find(
+        entry => entry.status === 'active' && matchesMemberIdentity(entry.account, req.params.memberId)
+      )
+
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' })
+      }
+
+      const teams = await Team.find({
+        organization: req.params.orgId,
+        'members.account': member.account._id,
+        'members.status': 'active'
+      })
+        .select('name department members.account members.status')
+        .lean()
+
+      const onboardingAssignments = await OnboardingAssignment.find({
+        organization: req.params.orgId,
+        member: member.account._id,
+        workflowType: 'onboarding'
+      })
+        .select('member status workflowType updatedAt createdAt completedAt')
+        .sort({ updatedAt: -1 })
+        .lean()
+
+      const structure = getMemberStructure(
+        buildMemberStructureMap(organization, teams),
+        member.account._id,
+        organization
+      )
+      const onboardingStateByMember = buildOnboardingStateMap({
+        members: [member],
+        assignments: onboardingAssignments,
+        workflowType: 'onboarding'
+      })
+      const onboardingState = getMemberOnboardingState(member.account._id, onboardingStateByMember)
+
+      res.json({
+        departmentId: structure.departmentId,
+        departmentName: structure.departmentName,
+        teamIds: structure.teamIds,
+        teamNames: structure.teamNames,
+        id: member.account._id,
+        sub: member.account.sub,
+        email: member.account.email,
+        name: member.account.profile?.name,
+        designation: member.designation || '',
+        employeeId: member.employeeId || '',
+        role: member.role,
+        onboardingStatus: onboardingState.status,
+        onboardingStatusSource: onboardingState.source,
+        onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
+        payrollSync: buildPayrollProfileSyncData(member.account)
+      })
+    } catch (error) {
+      console.error('Get member payroll sync error:', error)
+      res.status(500).json({ error: 'Failed to get member payroll sync data' })
+    }
+  }
+)
+
 /**
  * Update member details
  * PUT /api/organizations/:orgId/members/:memberId
@@ -222,22 +329,23 @@ router.put('/:orgId/members/:memberId',
       const body = req.body || {}
       const hasRole = Object.prototype.hasOwnProperty.call(body, 'role')
       const hasDesignation = Object.prototype.hasOwnProperty.call(body, 'designation')
+      const hasEmployeeId = Object.prototype.hasOwnProperty.call(body, 'employeeId')
       const hasAppAccess = Object.prototype.hasOwnProperty.call(body, 'appAccess')
       const hasDepartment = Object.prototype.hasOwnProperty.call(body, 'department')
-      const { role, designation, appAccess } = body
+      const { role, designation, employeeId, appAccess } = body
 
       const canManageRole = ['owner', 'admin'].includes(req.memberRole)
       const canManageMemberMetadata = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
 
-      if (!hasRole && !hasDesignation && !hasDepartment && !hasAppAccess) {
-        return res.status(400).json({ error: 'At least one of role, designation, or appAccess is required' })
+      if (!hasRole && !hasDesignation && !hasEmployeeId && !hasDepartment && !hasAppAccess) {
+        return res.status(400).json({ error: 'At least one of role, designation, employeeId, or appAccess is required' })
       }
 
       if (hasRole && !canManageRole) {
         return res.status(403).json({ error: 'Admin or owner role required to update role' })
       }
 
-      if ((hasDesignation || hasDepartment || hasAppAccess) && !canManageMemberMetadata) {
+      if ((hasDesignation || hasEmployeeId || hasDepartment || hasAppAccess) && !canManageMemberMetadata) {
         return res.status(403).json({ error: 'Admin, owner, or HR manager role required to update member details' })
       }
 
@@ -265,6 +373,11 @@ router.put('/:orgId/members/:memberId',
         }
       }
 
+      const normalizedEmployeeId = normalizeEmployeeId(employeeId)
+      if (hasEmployeeId && await hasPendingInviteWithEmployeeId(req.params.orgId, normalizedEmployeeId)) {
+        return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
+      }
+
       try {
         if (hasRole) {
           await req.organization.updateMemberRole(req.params.memberId, role, req.user._id)
@@ -273,6 +386,13 @@ router.put('/:orgId/members/:memberId',
           await req.organization.updateMemberDetails(
             req.params.memberId,
             { designation },
+            req.user._id
+          )
+        }
+        if (hasEmployeeId) {
+          await req.organization.updateMemberDetails(
+            req.params.memberId,
+            { employeeId: normalizedEmployeeId },
             req.user._id
           )
         }
@@ -289,7 +409,8 @@ router.put('/:orgId/members/:memberId',
 
       console.log('Member updated in', req.organization.name, 'by', req.user.email, {
         role: hasRole ? role : undefined,
-        designation: hasDesignation ? String(designation || '').trim() : undefined
+        designation: hasDesignation ? String(designation || '').trim() : undefined,
+        employeeId: hasEmployeeId ? normalizedEmployeeId : undefined
       })
 
       res.json({
@@ -297,6 +418,7 @@ router.put('/:orgId/members/:memberId',
         memberId: req.params.memberId,
         newRole: hasRole ? role : undefined,
         designation: hasDesignation ? String(designation || '').trim() : undefined,
+        employeeId: hasEmployeeId ? normalizedEmployeeId : undefined,
         appAccess: hasAppAccess ? normalizedAppAccess : undefined
       })
     } catch (error) {
