@@ -50,3 +50,6 @@ lms/docker/site_config_restored.json
 lms/docker/site_config_931.json
 lms/docker/lms-prod-dump.sql
 
+
+# CV Files
+cv/

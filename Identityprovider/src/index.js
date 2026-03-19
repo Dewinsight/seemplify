@@ -3776,12 +3776,22 @@ const getSessionUser = async (req, res, next) => {
     const profileCompletion = await getProfileCompletionForAccount(account, {
       organizationId: account?.currentOrganization?._id?.toString?.() || account?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
     })
+    const nextIncompleteStepKey = String(profileCompletion?.nextIncompleteStep?.key || '').trim().toLowerCase()
+    const isProfileRoute = req.path.startsWith('/profile')
+    const isDocumentWorkspaceRoute = req.path === '/documents'
+      || req.path === '/onboarding'
+      || req.path.startsWith('/onboarding/')
+    const isCurrentCompletionRoute = isProfileRoute
+      || (nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute)
+
     req.profileCompletion = profileCompletion
     res.locals.user = account
     res.locals.profileCompletion = profileCompletion
-    res.locals.currentProfileSection = ''
+    res.locals.currentProfileSection = nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute
+      ? 'documents'
+      : ''
     res.locals.activeProfileSection = res.locals.activeProfileSection || ''
-    res.locals.profileCompletionEnforced = !profileCompletion.complete && !req.path.startsWith('/profile')
+    res.locals.profileCompletionEnforced = !profileCompletion.complete && !isCurrentCompletionRoute
   }
 
   // Check if user has a session (set during login)
