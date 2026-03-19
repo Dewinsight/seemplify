@@ -392,6 +392,9 @@ router.get('/:orgId/members/:memberId/payroll-sync',
         workflowType: 'onboarding'
       })
       const onboardingState = getMemberOnboardingState(member.account._id, onboardingStateByMember)
+      const completion = await getProfileCompletionForAccount(member.account, {
+        organizationId: req.params.orgId
+      })
 
       res.json({
         departmentId: structure.departmentId,
@@ -408,7 +411,10 @@ router.get('/:orgId/members/:memberId/payroll-sync',
         onboardingStatus: onboardingState.status,
         onboardingStatusSource: onboardingState.source,
         onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
-        payrollSync: buildPayrollProfileSyncData(member.account)
+        payrollSync: {
+          ...buildPayrollProfileSyncData(member.account),
+          profileCompletion: completion
+        }
       })
     } catch (error) {
       console.error('Get member payroll sync error:', error)

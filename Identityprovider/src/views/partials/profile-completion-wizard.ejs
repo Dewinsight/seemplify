@@ -261,16 +261,41 @@
                 document.body.classList.add('profile-wizard-open');
             }
 
+            function appendWizardQuery(route) {
+                if (!route) {
+                    return '/profile/personal?wizard=1';
+                }
+
+                const hasQuery = route.includes('?');
+                const hasWizard = /(?:\?|&)wizard=/.test(route);
+                if (hasWizard) {
+                    return route;
+                }
+                return `${route}${hasQuery ? '&' : '?'}wizard=1`;
+            }
+
+            function resolveStepRoute(step) {
+                if (!step?.route) {
+                    return '/profile/personal';
+                }
+
+                if (step.key === 'documents') {
+                    return '/profile/documents?workflow=onboarding&status=needs_action';
+                }
+
+                return step.route;
+            }
+
             function resolveWizardTarget() {
                 if (!nextStep) {
-                    return '/profile/personal';
+                    return '/profile/personal?wizard=1';
                 }
 
                 if (nextStep.key === currentProfileSection) {
                     return null;
                 }
 
-                return `${nextStep.route}?wizard=1`;
+                return appendWizardQuery(resolveStepRoute(nextStep));
             }
 
             primaryButton?.addEventListener('click', () => {
@@ -305,7 +330,7 @@
                         throw new Error(result.error || 'Failed to confirm dependents status');
                     }
 
-                    const nextRoute = result?.nextStep?.route ? `${result.nextStep.route}?wizard=1` : null;
+                    const nextRoute = result?.nextStep ? appendWizardQuery(resolveStepRoute(result.nextStep)) : null;
                     if (nextRoute) {
                         window.location.href = nextRoute;
                         return;

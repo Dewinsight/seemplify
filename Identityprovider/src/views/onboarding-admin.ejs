@@ -211,6 +211,8 @@
                               class="onboarding-step-panel<%= index === 0 ? ' active' : '' %>"
                               data-step-panel
                               data-step="<%= index %>"
+                              data-step-item-id="<%= item._id %>"
+                              data-step-item-type="<%= item.type %>"
                               data-step-required="<%= isRequired ? 1 : 0 %>"
                               data-step-actionable="<%= userActionable ? 1 : 0 %>"
                               data-step-userdone="<%= userDone ? 1 : 0 %>"
@@ -5228,12 +5230,16 @@
 
         const saved = storageKey ? localStorage.getItem(storageKey) : null;
         selectStep(pickInitialIndex(saved), { persist: false, scroll: false });
+        flow.__selectStep = selectStep;
       });
     }
 
     initOnboardingFlows();
 
-    const focusAssignmentId = new URLSearchParams(window.location.search).get('focusAssignment');
+    const workspaceParams = new URLSearchParams(window.location.search);
+    const focusAssignmentId = workspaceParams.get('focusAssignment');
+    const focusItemId = workspaceParams.get('focusItem');
+    const requestedAction = workspaceParams.get('action');
     if (focusAssignmentId) {
       try {
         localStorage.setItem('onboardingAdmin:activeTab', 'my');
@@ -5241,7 +5247,25 @@
       setActiveOnboardingTab('my');
       const assignmentCard = document.querySelector(`[data-personal-assignment][data-assignment-id="${focusAssignmentId}"]`);
       if (assignmentCard) {
+        const targetFlow = assignmentCard.querySelector(`[data-onboarding-flow][data-assignment="${focusAssignmentId}"]`);
+        const targetPanel = focusItemId && targetFlow
+          ? targetFlow.querySelector(`[data-step-panel][data-step-item-id="${focusItemId}"]`)
+          : null;
+
+        if (targetFlow && targetPanel && typeof targetFlow.__selectStep === 'function') {
+          targetFlow.__selectStep(targetPanel.dataset.step || 0, { persist: true, scroll: false });
+        }
+
         assignmentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        if (requestedAction === 'sign' && targetPanel) {
+          const signButton = targetPanel.querySelector('[data-esign-button]');
+          if (signButton) {
+            window.setTimeout(() => {
+              signButton.click();
+            }, 180);
+          }
+        }
       }
     }
   </script>

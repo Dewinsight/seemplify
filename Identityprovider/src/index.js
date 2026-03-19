@@ -5848,6 +5848,31 @@ const buildDocumentViewUrl = (assignmentId, itemId, version) => {
   return `/onboarding/assignments/${assignmentId}/items/${itemId}/document${query ? `?${query}` : ''}`
 }
 
+const buildDocumentWorkspaceActionUrl = ({
+  assignmentId,
+  itemId,
+  workflowType,
+  itemType,
+  statusKey
+} = {}) => {
+  const params = new URLSearchParams()
+  params.set('workflow', normalizeWorkflowType(workflowType, { allowAll: false, fallback: 'onboarding' }))
+
+  if (assignmentId) {
+    params.set('focusAssignment', String(assignmentId))
+  }
+
+  if (itemId) {
+    params.set('focusItem', String(itemId))
+  }
+
+  if (statusKey === 'needs_action' && itemType === 'esign') {
+    params.set('action', 'sign')
+  }
+
+  return `/documents?${params.toString()}`
+}
+
 const buildProfileDocumentEntries = (assignments = [], user = {}) => {
   const currentUserId = user?._id?.toString?.() || user?.toString?.() || ''
   const entries = []
@@ -5912,6 +5937,14 @@ const buildProfileDocumentEntries = (assignments = [], user = {}) => {
 
       const fileName = descriptor.docFileName || item?.data?.upload?.fileName || item?.config?.document?.fileName || item?.title || 'Document'
       const title = item?.title || fileName
+      const requiresSignature = item.type === 'esign' && statusKey === 'needs_action'
+      const workspaceActionUrl = buildDocumentWorkspaceActionUrl({
+        assignmentId,
+        itemId: item?._id?.toString?.() || '',
+        workflowType,
+        itemType: item.type,
+        statusKey
+      })
       const searchText = [
         title,
         fileName,
@@ -5946,12 +5979,25 @@ const buildProfileDocumentEntries = (assignments = [], user = {}) => {
         dueAt: assignment?.dueAt || null,
         viewUrl: buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
         downloadUrl: buildDocumentDownloadUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
-        searchText
+        actionUrl: requiresSignature ? workspaceActionUrl : buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+        actionLabel: requiresSignature ? 'Review & Sign' : 'View',
+        actionHint: requiresSignature
+          ? 'Open the signing screen for this exact document and finish your signature there.'
+          : (statusKey === 'completed'
+              ? 'Open the completed document.'
+              : 'Open the document to review it.'),
+        requiresSignature,
+        searchText,
+        sortPriority: requiresSignature ? 0 : (statusKey === 'needs_action' ? 1 : (statusKey === 'available' ? 2 : 3))
       })
     })
   })
 
   return entries.sort((left, right) => {
+    const priorityDelta = Number(left?.sortPriority || 0) - Number(right?.sortPriority || 0)
+    if (priorityDelta !== 0) {
+      return priorityDelta
+    }
     const leftTime = left?.issuedAt ? new Date(left.issuedAt).getTime() : 0
     const rightTime = right?.issuedAt ? new Date(right.issuedAt).getTime() : 0
     return rightTime - leftTime
@@ -8360,12 +8406,24 @@ app.get('/profile/documents', getSessionUser, async (req, res) => {
 
     const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
     const documents = buildProfileDocumentEntries(assignments, req.user)
+    const defaultWorkflowFilter = normalizeWorkflowType(req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const rawStatusFilter = String(req.query.status || '').trim().toLowerCase()
+    const defaultStatusFilter = ['all', 'needs_action', 'completed', 'available'].includes(rawStatusFilter)
+      ? rawStatusFilter
+      : 'all'
+    const defaultSearchQuery = String(req.query.search || '').trim()
 
     res.render('profile-documents', {
       ...buildProfilePageViewModel(req, 'documents'),
       documents,
       workflowLabels: WORKFLOW_LABELS,
-      workflowTypes: WORKFLOW_TYPES
+      workflowTypes: WORKFLOW_TYPES,
+      defaultWorkflowFilter,
+      defaultStatusFilter,
+      defaultSearchQuery
     })
   } catch (error) {
     console.error('Error loading documents page:', error)

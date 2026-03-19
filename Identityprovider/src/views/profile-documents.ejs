@@ -36,6 +36,28 @@
             gap: 10px;
         }
 
+        .document-callout {
+            display: grid;
+            gap: 10px;
+            padding: 16px 18px;
+            border: 1px solid rgba(245, 158, 11, 0.22);
+            border-radius: 16px;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .document-callout-title {
+            margin: 0;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .document-callout-copy {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
         .document-stat {
             min-width: 120px;
             padding: 12px 14px;
@@ -79,6 +101,11 @@
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 18px;
             align-items: center;
+        }
+
+        .document-card--needs-action {
+            border-color: rgba(245, 158, 11, 0.24);
+            box-shadow: 0 16px 32px rgba(245, 158, 11, 0.08);
         }
 
         .document-card-main {
@@ -151,11 +178,26 @@
             line-height: 1.6;
         }
 
+        .document-card-instruction {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
         .document-card-actions {
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
             justify-content: flex-end;
+        }
+
+        .document-action-primary {
+            min-width: 140px;
+            justify-content: center;
         }
 
         .document-empty {
@@ -194,9 +236,13 @@
     <%- include('partials/nav', { activePage: 'profile' }) %>
 
     <% const documentList = Array.isArray(documents) ? documents : []; %>
+    <% const defaultWorkflow = defaultWorkflowFilter || 'all'; %>
+    <% const defaultStatus = defaultStatusFilter || 'all'; %>
+    <% const defaultSearch = defaultSearchQuery || ''; %>
+    <% const isOnboardingActionView = defaultWorkflow === 'onboarding' && defaultStatus === 'needs_action'; %>
     <% const actionCount = documentList.filter(doc => doc.statusKey === 'needs_action').length; %>
     <% const completedCount = documentList.filter(doc => doc.statusKey === 'completed').length; %>
-    <% const availableWorkflows = (workflowTypes || []).filter(type => documentList.some(doc => doc.workflowType === type)); %>
+    <% const availableWorkflows = (workflowTypes || []).filter(type => type === defaultWorkflow || documentList.some(doc => doc.workflowType === type)); %>
 
     <div class="container">
         <div class="header">
@@ -214,10 +260,26 @@
             <div class="document-toolbar">
                 <div class="document-summary">
                     <div class="document-summary-copy">
-                        This list shows your document-workspace files across onboarding, agreements, policy acknowledgements, and other document workflows.
+                        <% if (isOnboardingActionView) { %>
+                            This view is focused on onboarding documents that still need your signature or action so you can finish setup quickly.
+                        <% } else { %>
+                            This list shows your document-workspace files across onboarding, agreements, policy acknowledgements, and other document workflows.
+                        <% } %>
                     </div>
-                    <a href="/documents" class="btn btn-secondary">Open Document Workspace</a>
+                    <a href="<%= isOnboardingActionView ? '/documents?workflow=onboarding' : '/documents' %>" class="btn btn-secondary">Open Document Workspace</a>
                 </div>
+
+                <% if (actionCount > 0) { %>
+                    <div class="document-callout">
+                        <h2 class="document-callout-title">
+                            <%= actionCount %> document<%= actionCount === 1 ? '' : 's' %> still need your action
+                        </h2>
+                        <div class="document-callout-copy">
+                            Use <strong>Review &amp; Sign</strong> on any highlighted row. That opens the exact onboarding step where the signing controls live.
+                            <strong>Download</strong> only saves a copy and does not complete the signature.
+                        </div>
+                    </div>
+                <% } %>
 
                 <div class="document-stats">
                     <div class="document-stat">
@@ -239,15 +301,15 @@
                         <div class="document-filters">
                             <div class="form-group" style="margin: 0;">
                                 <label for="documentSearch">Search</label>
-                                <input type="search" id="documentSearch" placeholder="Search by title, file name, organization, or workflow">
+                                <input type="search" id="documentSearch" value="<%= defaultSearch %>" placeholder="Search by title, file name, organization, or workflow">
                             </div>
 
                             <div class="form-group" style="margin: 0;">
                                 <label for="workflowFilter">Workflow</label>
                                 <select id="workflowFilter">
-                                    <option value="all">All workflows</option>
+                                    <option value="all" <%= defaultWorkflow === 'all' ? 'selected' : '' %>>All workflows</option>
                                     <% availableWorkflows.forEach(type => { %>
-                                        <option value="<%= type %>"><%= (workflowLabels && workflowLabels[type]) || type %></option>
+                                        <option value="<%= type %>" <%= defaultWorkflow === type ? 'selected' : '' %>><%= (workflowLabels && workflowLabels[type]) || type %></option>
                                     <% }) %>
                                 </select>
                             </div>
@@ -255,10 +317,10 @@
                             <div class="form-group" style="margin: 0;">
                                 <label for="statusFilter">Status</label>
                                 <select id="statusFilter">
-                                    <option value="all">All statuses</option>
-                                    <option value="needs_action">Needs action</option>
-                                    <option value="completed">Completed</option>
-                                    <option value="available">Available</option>
+                                    <option value="all" <%= defaultStatus === 'all' ? 'selected' : '' %>>All statuses</option>
+                                    <option value="needs_action" <%= defaultStatus === 'needs_action' ? 'selected' : '' %>>Needs action</option>
+                                    <option value="completed" <%= defaultStatus === 'completed' ? 'selected' : '' %>>Completed</option>
+                                    <option value="available" <%= defaultStatus === 'available' ? 'selected' : '' %>>Available</option>
                                 </select>
                             </div>
                         </div>
@@ -279,13 +341,19 @@
         <% } else { %>
             <div id="documentFilteredEmpty" class="card document-empty" hidden>
                 <h3>No matching documents</h3>
-                <p>Try changing the search text or filter selections.</p>
+                <p>
+                    <% if (isOnboardingActionView) { %>
+                        No onboarding documents currently need your signature or action here. If onboarding is still incomplete, open Document Workspace to finish any non-document tasks.
+                    <% } else { %>
+                        Try changing the search text or filter selections.
+                    <% } %>
+                </p>
             </div>
 
             <div id="documentList" class="document-list">
                 <% documentList.forEach(doc => { %>
                     <article
-                        class="card document-card"
+                        class="card document-card<%= doc.requiresSignature ? ' document-card--needs-action' : '' %>"
                         data-document-card
                         data-search="<%= doc.searchText %>"
                         data-workflow="<%= doc.workflowType %>"
@@ -316,11 +384,26 @@
                             <% if (doc.description) { %>
                                 <div class="document-card-description"><%= doc.description %></div>
                             <% } %>
+
+                            <% if (doc.requiresSignature) { %>
+                                <div class="document-card-instruction">
+                                    This document still needs your signature. Open <strong>Review &amp; Sign</strong> to jump into the signing screen for this exact onboarding document.
+                                </div>
+                            <% } %>
                         </div>
 
                         <div class="document-card-actions">
-                            <a href="<%= doc.viewUrl %>" class="btn btn-secondary" target="_blank" rel="noreferrer">View</a>
-                            <a href="<%= doc.downloadUrl %>" class="btn btn-primary">Download</a>
+                            <a
+                                href="<%= doc.actionUrl || doc.viewUrl %>"
+                                class="btn <%= doc.requiresSignature ? 'btn-primary document-action-primary' : 'btn-secondary' %>"
+                                <%= doc.requiresSignature ? '' : 'target="_blank" rel="noreferrer"' %>
+                            >
+                                <%= doc.actionLabel || 'View' %>
+                            </a>
+                            <% if (doc.requiresSignature) { %>
+                                <a href="<%= doc.viewUrl %>" class="btn btn-secondary" target="_blank" rel="noreferrer">Preview</a>
+                            <% } %>
+                            <a href="<%= doc.downloadUrl %>" class="btn <%= doc.requiresSignature ? 'btn-secondary' : 'btn-primary' %>">Download</a>
                         </div>
                     </article>
                 <% }) %>
