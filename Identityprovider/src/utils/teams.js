@@ -8,6 +8,7 @@
 import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
 import { getPermissionsForRole } from './permissions.js'
+import { getDerivedManagerAccountId } from './teamManager.js'
 
 // Cache for hierarchy paths (team ID -> path array)
 const hierarchyPathCache = new Map()
@@ -57,8 +58,12 @@ export async function getTeamClaims(account) {
 
   // Use lean() for read-only queries - significantly faster
   const teams = await Team.find({
-    'members.account': account._id,
-    'members.status': 'active'
+    members: {
+      $elemMatch: {
+        account: account._id,
+        status: 'active'
+      }
+    }
   })
     .populate('organization', 'name departments')
     .populate('parentTeam', 'name')
@@ -117,9 +122,16 @@ export async function getTeamClaims(account) {
   // -----------------------------------------------------
   const directReportAccountIdsByTeamId = new Map()
   const allDirectReportAccountIds = new Set()
+  const managerAccountIdByTeamId = new Map()
 
   for (const team of teams) {
     const teamIdStr = team._id.toString()
+    const derivedManagerAccountId = getDerivedManagerAccountId(team)?.toString() || null
+    managerAccountIdByTeamId.set(teamIdStr, derivedManagerAccountId)
+    if (derivedManagerAccountId) {
+      allDirectReportAccountIds.add(derivedManagerAccountId)
+    }
+
     const teamMember = team.members.find(
       m => m.account.toString() === accountIdStr && m.status === 'active'
     )
@@ -136,13 +148,13 @@ export async function getTeamClaims(account) {
     ids.forEach(id => allDirectReportAccountIds.add(id))
   }
 
-  let subByAccountId = new Map()
+  let accountInfoById = new Map()
   if (allDirectReportAccountIds.size > 0) {
     const accounts = await Account.find({
       _id: { $in: Array.from(allDirectReportAccountIds) }
-    }).select('_id sub').lean()
+    }).select('_id sub email profile.name').lean()
 
-    subByAccountId = new Map(accounts.map(a => [a._id.toString(), a.sub]))
+    accountInfoById = new Map(accounts.map(a => [a._id.toString(), a]))
   }
 
   // Process all teams in parallel
@@ -158,8 +170,8 @@ export async function getTeamClaims(account) {
     const hierarchyPath = await getOptimizedHierarchyPath(team, allTeamsMap)
 
     // Determine if user has approval role
-    const isManager = team.manager?._id?.toString() === accountIdStr ||
-                      team.manager?.toString() === accountIdStr
+    const derivedManagerAccountId = managerAccountIdByTeamId.get(teamIdStr)
+    const isManager = derivedManagerAccountId === accountIdStr
     const hasApprovalRole = teamMember.role === 'line_manager' || teamMember.role === 'team_lead'
 
     // Get direct reports only if user has approval role
@@ -168,7 +180,7 @@ export async function getTeamClaims(account) {
     let directReportAccountIds = []
     if (hasApprovalRole) {
       directReportAccountIds = directReportAccountIdsByTeamId.get(teamIdStr) || []
-      directReports = directReportAccountIds.map(id => subByAccountId.get(id) || id)
+      directReports = directReportAccountIds.map(id => accountInfoById.get(id)?.sub || id)
     }
 
     // Get sub-teams from pre-fetched map
@@ -181,6 +193,10 @@ export async function getTeamClaims(account) {
       console.warn(`⚠️ Team ${team.name} (${teamIdStr}) has no organization - skipping`)
       return null
     }
+
+    const managerAccount = derivedManagerAccountId
+      ? accountInfoById.get(derivedManagerAccountId) || null
+      : null
 
     return {
       id: teamIdStr,
@@ -196,8 +212,8 @@ export async function getTeamClaims(account) {
       hierarchyPath: hierarchyPath,
       role: teamMember.role,
       isManager: isManager,
-      managerId: team.manager?.sub || null,
-      managerName: team.manager?.profile?.name || team.manager?.email || null,
+      managerId: managerAccount?.sub || null,
+      managerName: managerAccount?.profile?.name || managerAccount?.email || null,
       directReports: directReports,
       directReportAccountIds: directReportAccountIds,
       subTeams: subTeams,
@@ -229,8 +245,12 @@ export async function getTeamPermissions(account, organizationId) {
   // Use lean() for read-only query - significantly faster
   const teams = await Team.find({
     organization: organizationId,
-    'members.account': account._id,
-    'members.status': 'active'
+    members: {
+      $elemMatch: {
+        account: account._id,
+        status: 'active'
+      }
+    }
   }).populate('organization', 'departments').lean()
 
   // Resolve Account._id -> Account.sub for direct report lists.
@@ -307,7 +327,13 @@ export async function getTeamPermissions(account, organizationId) {
  */
 export async function getManagedTeams(account) {
   const teams = await Team.find({
-    manager: account._id
+    members: {
+      $elemMatch: {
+        account: account._id,
+        role: 'line_manager',
+        status: 'active'
+      }
+    }
   })
     .populate('organization', 'name')
     .populate('members.account', 'email profile.name')
@@ -337,12 +363,15 @@ export async function getManagedTeams(account) {
  * @returns {boolean} - True if approver can approve target's leaves
  */
 export async function canApproveLeaves(approverAccountId, targetAccountId) {
-  // Get teams where approver is manager with line_manager role
+  // Get teams where approver is line_manager
   const approverTeams = await Team.find({
-    manager: approverAccountId,
-    'members.account': approverAccountId,
-    'members.role': 'line_manager',
-    'members.status': 'active'
+    members: {
+      $elemMatch: {
+        account: approverAccountId,
+        role: 'line_manager',
+        status: 'active'
+      }
+    }
   })
 
   for (const team of approverTeams) {

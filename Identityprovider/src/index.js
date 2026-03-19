@@ -28,6 +28,7 @@ import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { buildMemberStructureMap, getMemberStructure } from './utils/memberStructure.js'
+import { getDerivedManagerInfo } from './utils/teamManager.js'
 import {
   SIMPLE_PERFORMANCE_DEFAULT_FIELDS,
   PERFORMANCE_RATING_SCALE,
@@ -5396,11 +5397,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           id: team.parentTeam._id.toString(),
           name: team.parentTeam.name
         } : null,
-        manager: team.manager ? {
-          id: team.manager._id.toString(),
-          email: team.manager.email,
-          name: team.manager.profile?.name
-        } : null,
+        manager: getDerivedManagerInfo(team),
         members: team.members.filter(m => m.status === 'active').map(m => ({
           id: m.account._id.toString(),
           email: m.account.email,

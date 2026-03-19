@@ -2,6 +2,7 @@ import express from 'express'
 import { Team } from '../models/Team.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
+import { getDerivedManagerInfo, hasLineManagerRole } from '../utils/teamManager.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -71,11 +72,7 @@ router.get('/organizations/:orgId/teams',
           id: team.parentTeam._id,
           name: team.parentTeam.name
         } : null,
-        manager: team.manager ? {
-          id: team.manager._id,
-          email: team.manager.email,
-          name: team.manager.profile?.name
-        } : null,
+        manager: getDerivedManagerInfo(team),
         memberCount: team.memberCount,
         createdAt: team.createdAt
       })))
@@ -134,7 +131,7 @@ router.post('/organizations/:orgId/teams',
         description: description?.trim(),
         department: departmentId,
         parentTeam: parentTeamId || null,
-        manager: null, // Manager must be set separately with line_manager role
+        manager: null,
         members: []
       })
 
@@ -204,11 +201,7 @@ router.get('/:teamId',
           name: team.parentTeam.name
         } : null,
         hierarchyPath,
-        manager: team.manager ? {
-          id: team.manager._id,
-          email: team.manager.email,
-          name: team.manager.profile?.name
-        } : null,
+        manager: getDerivedManagerInfo(team),
         members: team.members
           .filter(m => m.status === 'active')
           .map(m => ({
@@ -217,7 +210,7 @@ router.get('/:teamId',
             name: m.account.profile?.name,
             role: m.role,
             joinedAt: m.joinedAt,
-            isManager: team.manager?.toString() === m.account._id.toString()
+            isManager: m.role === 'line_manager'
           })),
         subTeams: subTeams.map(st => ({
           id: st._id,
@@ -472,7 +465,8 @@ router.post('/:teamId/members',
       })
     } catch (error) {
       console.error('Add team member error:', error)
-      res.status(500).json({ error: 'Failed to add member to team' })
+      const isValidationError = String(error?.message || '').includes('line manager')
+      res.status(isValidationError ? 400 : 500).json({ error: error?.message || 'Failed to add member to team' })
     }
   }
 )
@@ -567,62 +561,26 @@ router.put('/:teamId/members/:memberId',
       })
     } catch (error) {
       console.error('Update team member role error:', error)
-      res.status(500).json({ error: 'Failed to update team member role' })
+      const isValidationError = String(error?.message || '').includes('line manager')
+      res.status(isValidationError ? 400 : 500).json({ error: error?.message || 'Failed to update team member role' })
     }
   }
 )
 
 /**
- * Set team manager
- * POST /api/teams/:teamId/manager
- * CRITICAL: Account must have line_manager role in team
- * Requires org admin
+ * Team manager is derived from the member with the line_manager role.
+ * Manual manager assignment is deprecated.
  */
 router.post('/:teamId/manager',
   requireAuth,
   async (req, res) => {
-    try {
-      const { accountId } = req.body
-      const team = await Team.findById(req.params.teamId)
+    return res.status(410).json({
+      error: 'Team manager is derived from the member with the line_manager role'
+    })
 
-      if (!team) {
-        return res.status(404).json({ error: 'Team not found' })
-      }
-
-      // Verify org admin
-      const organization = await Organization.findById(team.organization)
-      const member = organization.members.find(
-        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-      )
-
-      const isDepartmentHead = organization.isDepartmentHead(req.user._id, team.department)
-      if (!member || (!['owner', 'admin'].includes(member.role) && !isDepartmentHead)) {
-        return res.status(403).json({ error: 'Organization admin, owner, or department head role required' })
-      }
-
-      // Clear manager if accountId is null
-      if (accountId === null) {
-        team.manager = null
-        await team.save()
-        return res.json({ message: 'Team manager cleared' })
-      }
-
-      try {
-        await team.setManager(accountId)
-      } catch (err) {
-        return res.status(400).json({ error: err.message })
-      }
+    // Team manager is derived from the line_manager role.
 
       console.log('✅ Team manager set for', team.name, 'by', req.user.email)
-
-      res.json({
-        message: 'Team manager set successfully',
-        managerId: accountId
-      })
-    } catch (error) {
-      console.error('Set team manager error:', error)
-      res.status(500).json({ error: 'Failed to set team manager' })
-    }
   }
 )
 
@@ -686,16 +644,7 @@ router.get('/:teamId/reports',
         return res.status(404).json({ error: 'Team not found' })
       }
 
-      // Verify user is team manager with line_manager role
-      if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ error: 'Only team manager can view direct reports' })
-      }
-
-      const teamMember = team.members.find(
-        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-      )
-
-      if (!teamMember || teamMember.role !== 'line_manager') {
+      if (!hasLineManagerRole(team, req.user._id)) {
         return res.status(403).json({ error: 'Line manager role required' })
       }
 

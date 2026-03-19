@@ -4,6 +4,7 @@ import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
 import { Notification } from '../models/Notification.js'
 import { notificationService } from '../services/notificationService.js'
+import { hasLineManagerRole } from '../utils/teamManager.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -115,11 +116,7 @@ router.post('/:orgId/notifications',
       if (targetType === 'team' && !canSend) {
         const team = await Team.findById(targetId)
         if (team && team.organization.toString() === organizationId) {
-          const isTeamManager = team.manager?.toString() === req.user._id.toString()
-          const teamMember = team.members.find(
-            m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-          )
-          if (isTeamManager && teamMember?.role === 'line_manager') {
+          if (hasLineManagerRole(team, req.user._id)) {
             canSend = true
           }
         }

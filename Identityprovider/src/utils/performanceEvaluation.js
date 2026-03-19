@@ -191,10 +191,6 @@ export async function getEvaluableMembersForEvaluator({
       let scopeRole = null
       if (membership && EVALUATOR_ROLES.has(membership.role)) {
         scopeRole = membership.role
-      } else if (toIdString(team.manager) === evaluatorIdStr) {
-        // Data resilience: allow explicit team manager records to evaluate the team
-        // even if role metadata is missing/misaligned on a legacy membership row.
-        scopeRole = 'line_manager'
       }
 
       if (!scopeRole) continue

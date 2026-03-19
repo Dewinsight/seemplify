@@ -137,21 +137,20 @@
 
         <% if (teams && teams.length > 0) { %>
           <% teams.forEach(team => { %>
-            <div class="card team-card" style="margin-bottom: 16px;">
+            <div class="card team-card" data-team-id="<%= team.id %>" style="margin-bottom: 16px;">
               <div class="team-info">
                 <div class="team-name"><%= team.name %></div>
                 <% if (team.description) { %><div class="team-description"><%= team.description %></div><% } %>
                 <div class="mini-meta">
                   <span>Department: <strong><%= team.department?.name || 'General' %></strong></span>
                   <span>Parent Team: <%= team.parentTeam?.name || 'None' %></span>
-                  <span>Manager: <%= team.manager?.name || team.manager?.email || 'Not assigned' %></span>
-                  <span><%= team.memberCount || 0 %> member<%= team.memberCount !== 1 ? 's' : '' %></span>
+                  <span>Line Manager: <span id="team-manager-<%= team.id %>"><%= team.manager?.name || team.manager?.email || 'Not assigned' %></span></span>
+                  <span id="team-member-count-<%= team.id %>"><%= team.memberCount || 0 %> member<%= team.memberCount !== 1 ? 's' : '' %></span>
                 </div>
               </div>
               <div class="team-actions">
                 <button class="btn btn-secondary btn-sm" onclick="manageMembers('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Members</button>
                 <% if (canManageTeams) { %>
-                  <button class="btn btn-secondary btn-sm" onclick="setManager('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Manager</button>
                   <button class="btn btn-secondary btn-sm" onclick='editTeam(<%- JSON.stringify(team) %>)'>Edit</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Delete</button>
                 <% } %>
@@ -206,6 +205,7 @@
       <% members.forEach(member => { %>
         <div
           class="card member-card"
+          data-member-id="<%= member.id %>"
           data-member-name="<%= (member.name || '').toLowerCase() %>"
           data-member-email="<%= (member.email || '').toLowerCase() %>"
           data-member-designation="<%= (member.designation || '').toLowerCase() %>"
@@ -222,7 +222,7 @@
             <div class="member-meta">
               <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
               <span class="role-badge onboarding-badge onboarding-<%= member.onboardingStatus %>">Onboarding: <%= member.onboardingStatus.replace('_', ' ') %></span>
-              <span>Teams: <%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></span>
+              <span id="member-teams-<%= member.id %>">Teams: <%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></span>
               <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
             </div>
           </div>
@@ -230,7 +230,7 @@
           <div class="member-fields">
             <div>
               <label>Department</label>
-              <div><strong><%= member.departmentName || 'Unassigned' %></strong></div>
+              <div><strong id="member-department-<%= member.id %>"><%= member.departmentName || 'Unassigned' %></strong></div>
               <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">Derived from active team assignments.</div>
             </div>
             <div>
@@ -448,22 +448,219 @@
     </div>
   </div>
 
-  <div class="modal" id="managerModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 id="managerModalTitle">Set Team Manager</h2>
-        <button class="modal-close" onclick="hideManagerModal()">&times;</button>
-      </div>
-      <div id="managerModalContent"></div>
-    </div>
-  </div>
-
   <script>
     const orgId = '<%= organization._id %>';
     const memberCards = Array.from(document.querySelectorAll('.member-card'));
     const departments = <%- JSON.stringify(departments || []) %>;
     const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
     const teams = <%- JSON.stringify(teams || []) %>;
+    let activeMembersTeamId = '';
+
+    function normalizeId(value) {
+      return value == null ? '' : String(value);
+    }
+
+    function normalizeTeam(team) {
+      if (!team) return null;
+      return {
+        ...team,
+        id: normalizeId(team.id),
+        department: team.department ? {
+          ...team.department,
+          id: normalizeId(team.department.id)
+        } : null,
+        parentTeam: team.parentTeam ? {
+          ...team.parentTeam,
+          id: normalizeId(team.parentTeam.id)
+        } : null,
+        manager: team.manager ? {
+          ...team.manager,
+          id: normalizeId(team.manager.id)
+        } : null,
+        members: Array.isArray(team.members) ? team.members.map((member) => ({
+          ...member,
+          id: normalizeId(member.id)
+        })) : [],
+        memberCount: Number(team.memberCount || (team.members || []).length || 0)
+      };
+    }
+
+    function getTeamById(teamId) {
+      return teams.find((team) => normalizeId(team.id) === normalizeId(teamId)) || null;
+    }
+
+    function getOrgMemberById(memberId) {
+      return orgMembers.find((member) => normalizeId(member.id) === normalizeId(memberId)) || null;
+    }
+
+    function getMemberTeamAssignments(memberId) {
+      const normalizedMemberId = normalizeId(memberId);
+      return teams.filter((team) => (team.members || []).some((member) => normalizeId(member.id) === normalizedMemberId));
+    }
+
+    function deriveTeamManager(team) {
+      const lineManager = (team.members || []).find((member) => member.role === 'line_manager');
+      if (!lineManager) return null;
+
+      return {
+        id: normalizeId(lineManager.id),
+        email: lineManager.email || '',
+        name: lineManager.name || ''
+      };
+    }
+
+    function upsertTeamState(teamData) {
+      const normalizedTeam = normalizeTeam(teamData);
+      if (!normalizedTeam) return null;
+
+      const existingIndex = teams.findIndex((team) => normalizeId(team.id) === normalizedTeam.id);
+      if (existingIndex === -1) {
+        teams.push(normalizedTeam);
+      } else {
+        teams.splice(existingIndex, 1, {
+          ...teams[existingIndex],
+          ...normalizedTeam
+        });
+      }
+
+      return getTeamById(normalizedTeam.id);
+    }
+
+    function syncTeamCard(teamId) {
+      const team = getTeamById(teamId);
+      if (!team) return null;
+
+      team.manager = deriveTeamManager(team);
+      team.memberCount = (team.members || []).length;
+
+      const managerEl = document.getElementById(`team-manager-${team.id}`);
+      if (managerEl) {
+        managerEl.textContent = team.manager?.name || team.manager?.email || 'Not assigned';
+      }
+
+      const memberCountEl = document.getElementById(`team-member-count-${team.id}`);
+      if (memberCountEl) {
+        const memberCount = team.memberCount || 0;
+        memberCountEl.textContent = `${memberCount} member${memberCount === 1 ? '' : 's'}`;
+      }
+
+      return team;
+    }
+
+    function syncMemberCard(memberId) {
+      const member = getOrgMemberById(memberId);
+      if (!member) return;
+
+      const memberTeams = getMemberTeamAssignments(memberId);
+      const primaryDepartment = memberTeams[0]?.department || null;
+
+      member.teamNames = memberTeams.map((team) => team.name);
+      member.departmentId = primaryDepartment?.id || '';
+      member.departmentName = primaryDepartment?.name || '';
+
+      const memberCard = memberCards.find((card) => normalizeId(card.dataset.memberId) === normalizeId(memberId));
+      if (memberCard) {
+        memberCard.dataset.memberDepartment = (member.departmentName || 'Unassigned').toLowerCase();
+        memberCard.dataset.memberTeams = (member.teamNames || []).join('||').toLowerCase();
+      }
+
+      const teamsEl = document.getElementById(`member-teams-${normalizeId(memberId)}`);
+      if (teamsEl) {
+        teamsEl.textContent = `Teams: ${member.teamNames?.length ? member.teamNames.join(', ') : 'No team'}`;
+      }
+
+      const departmentEl = document.getElementById(`member-department-${normalizeId(memberId)}`);
+      if (departmentEl) {
+        departmentEl.textContent = member.departmentName || 'Unassigned';
+      }
+    }
+
+    function syncMemberState(memberId) {
+      syncMemberCard(memberId);
+      applyMemberFilters();
+    }
+
+    async function refreshTeamState(teamId) {
+      const response = await fetch(`/api/teams/${teamId}`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to load team');
+      }
+
+      const team = upsertTeamState(await response.json());
+      return syncTeamCard(team?.id || teamId);
+    }
+
+    function renderMembersModal(team) {
+      const currentTeam = upsertTeamState(team);
+      if (!currentTeam) return;
+
+      activeMembersTeamId = currentTeam.id;
+      document.getElementById('membersModalTitle').textContent = `Team Members - ${currentTeam.name}`;
+      document.getElementById('membersModal').classList.add('active');
+
+      const availableMembers = orgMembers.filter((member) => {
+        if ((currentTeam.members || []).some((current) => normalizeId(current.id) === normalizeId(member.id))) return false;
+        return !member.departmentId || normalizeId(member.departmentId) === normalizeId(currentTeam.department?.id);
+      });
+
+      document.getElementById('membersModalContent').innerHTML = `
+        <div class="mini-meta" style="margin-bottom: 16px;">
+          <span>Department: ${escapeHtml(currentTeam.department?.name || 'General')}</span>
+          <span>Assigning a member to this team sets their department to this team's department.</span>
+          <span>The member marked Line Manager is treated as the team's manager.</span>
+        </div>
+        ${(currentTeam.members || []).map(member => `
+          <div class="card" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+              <div>
+                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}</div>
+                <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)">
+                  <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
+                  <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager (manages team)</option>
+                  <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
+                </select>
+                <button class="btn btn-danger btn-sm" onclick="removeMemberFromTeam('${currentTeam.id}', '${member.id}', '${escapeHtml(member.name || member.email)}')">Remove</button>
+              </div>
+            </div>
+          </div>
+        `).join('') || '<p style="color: var(--muted);">No members yet.</p>'}
+        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);">
+          <form onsubmit="event.preventDefault(); addMemberToTeam('${currentTeam.id}');">
+            <div class="form-group">
+              <label for="newMemberId">Add Member</label>
+              <select id="newMemberId" required>
+                <option value="">Choose a member...</option>
+                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="newMemberRole">Role</label>
+              <select id="newMemberRole">
+                <option value="member">Member</option>
+                <option value="line_manager">Line Manager (manages team)</option>
+                <option value="team_lead">Team Lead</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit">Add Member</button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    async function refreshMembersModal(teamId, affectedMemberIds = []) {
+      const team = await refreshTeamState(teamId);
+      affectedMemberIds.forEach((memberId) => syncMemberState(memberId));
+
+      if (normalizeId(activeMembersTeamId) === normalizeId(teamId)) {
+        renderMembersModal(team);
+      }
+    }
 
     async function updateMember(memberId, payload, errorMessage) {
       try {
@@ -695,77 +892,32 @@
     }
 
     async function manageMembers(teamId, teamName) {
-      document.getElementById('membersModalTitle').textContent = `Team Members - ${teamName}`;
-      document.getElementById('membersModal').classList.add('active');
-      const response = await fetch(`/api/teams/${teamId}`);
-      const team = await response.json();
-      const availableMembers = orgMembers.filter((member) => {
-        if (team.members.some(current => current.id === member.id)) return false;
-        return !member.departmentId || member.departmentId === team.department?.id;
-      });
-      document.getElementById('membersModalContent').innerHTML = `
-        <div class="mini-meta" style="margin-bottom: 16px;">
-          <span>Department: ${escapeHtml(team.department?.name || 'General')}</span>
-          <span>Assigning a member to this team sets their department to this team's department.</span>
-        </div>
-        ${team.members.map(member => `
-          <div class="card" style="margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <div>
-                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}</div>
-                <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
-              </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <select onchange="updateTeamMemberRole('${teamId}', '${member.id}', this.value)">
-                  <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
-                  <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
-                  <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
-                </select>
-                <button class="btn btn-danger btn-sm" onclick="removeMemberFromTeam('${teamId}', '${member.id}', '${escapeHtml(member.name || member.email)}')">Remove</button>
-              </div>
-            </div>
-          </div>
-        `).join('') || '<p style="color: var(--muted);">No members yet.</p>'}
-        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);">
-          <form onsubmit="event.preventDefault(); addMemberToTeam('${teamId}');">
-            <div class="form-group">
-              <label for="newMemberId">Add Member</label>
-              <select id="newMemberId" required>
-                <option value="">Choose a member...</option>
-                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="newMemberRole">Role</label>
-              <select id="newMemberRole">
-                <option value="member">Member</option>
-                <option value="line_manager">Line Manager</option>
-                <option value="team_lead">Team Lead</option>
-              </select>
-            </div>
-            <div class="form-actions">
-              <button class="btn btn-primary" type="submit">Add Member</button>
-            </div>
-          </form>
-        </div>
-      `;
+      activeMembersTeamId = normalizeId(teamId);
+      try {
+        const team = await refreshTeamState(teamId);
+        renderMembersModal(team);
+      } catch (error) {
+        activeMembersTeamId = '';
+        alert(error.message || `Failed to load ${teamName || 'team'} members`);
+      }
     }
 
     function hideMembersModal() {
+      activeMembersTeamId = '';
       document.getElementById('membersModal').classList.remove('active');
     }
 
     async function addMemberToTeam(teamId) {
       const accountId = document.getElementById('newMemberId').value;
       const role = document.getElementById('newMemberRole').value;
+      if (!accountId) return;
       const response = await fetch(`/api/teams/${teamId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId, role })
       });
       if (response.ok) {
-        const team = teams.find(item => item.id === teamId);
-        manageMembers(teamId, team?.name || 'Team');
+        await refreshMembersModal(teamId, [accountId]);
       } else {
         const data = await response.json();
         alert(data.error || 'Failed to add member');
@@ -776,8 +928,7 @@
       if (!confirm(`Remove ${memberName} from this team?`)) return;
       const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' });
       if (response.ok) {
-        const team = teams.find(item => item.id === teamId);
-        manageMembers(teamId, team?.name || 'Team');
+        await refreshMembersModal(teamId, [memberId]);
       } else {
         const data = await response.json();
         alert(data.error || 'Failed to remove member');
@@ -790,51 +941,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role })
       });
-      if (!response.ok) {
-        const data = await response.json();
-        alert(data.error || 'Failed to update role');
-      }
-    }
-
-    async function setManager(teamId, teamName) {
-      document.getElementById('managerModalTitle').textContent = `Set Team Manager - ${teamName}`;
-      document.getElementById('managerModal').classList.add('active');
-      const response = await fetch(`/api/teams/${teamId}`);
-      const team = await response.json();
-      const lineManagers = team.members.filter(member => member.role === 'line_manager');
-      document.getElementById('managerModalContent').innerHTML = `
-        <form onsubmit="event.preventDefault(); doSetManager('${teamId}');">
-          <div class="form-group">
-            <label for="managerAccountId">Select Manager</label>
-            <select id="managerAccountId">
-              <option value="">Clear manager</option>
-              ${lineManagers.map(member => `<option value="${member.id}" ${team.manager?.id === member.id ? 'selected' : ''}>${escapeHtml(member.name || member.email)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Manager</button>
-          </div>
-        </form>
-      `;
-    }
-
-    function hideManagerModal() {
-      document.getElementById('managerModal').classList.remove('active');
-    }
-
-    async function doSetManager(teamId) {
-      const accountId = document.getElementById('managerAccountId').value || null;
-      const response = await fetch(`/api/teams/${teamId}/manager`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId })
-      });
       if (response.ok) {
-        window.location.reload();
+        await refreshMembersModal(teamId, [memberId]);
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to set manager');
+        alert(data.error || 'Failed to update role');
       }
     }
 
