@@ -242,6 +242,8 @@
             const closeButton = document.getElementById('profileWizardClose');
             const dismissButton = document.getElementById('profileWizardDismiss');
             const noDependentsButton = document.getElementById('profileWizardNoDependents');
+            const isProfileSectionPage = Boolean(currentProfileSection);
+            const shouldAutoOpen = profileCompletionEnforced || !isProfileSectionPage;
 
             if (!modal || !profileCompletion || profileCompletion.complete) {
                 return;
@@ -315,6 +317,10 @@
                     noDependentsButton.disabled = false;
                 }
             });
+
+            if (!shouldAutoOpen) {
+                return;
+            }
 
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => {
