@@ -8,6 +8,8 @@ import {
   normalizeAppAccess
 } from '../utils/appAccess.js'
 import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
+import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
+import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -66,12 +68,25 @@ router.get('/:orgId/members',
       const teams = await Team.find({ organization: req.params.orgId })
         .select('name department members.account members.status')
         .lean()
+      const onboardingAssignments = await OnboardingAssignment.find({
+        organization: req.params.orgId,
+        workflowType: 'onboarding'
+      })
+        .select('member status workflowType updatedAt createdAt completedAt')
+        .sort({ updatedAt: -1 })
+        .lean()
       const memberStructure = buildMemberStructureMap(organization, teams)
+      const onboardingStateByMember = buildOnboardingStateMap({
+        members: organization.members.filter(m => m.status === 'active'),
+        assignments: onboardingAssignments,
+        workflowType: 'onboarding'
+      })
 
       const members = organization.members
         .filter(m => m.status === 'active')
         .map((m) => {
           const structure = getMemberStructure(memberStructure, m.account._id, organization)
+          const onboardingState = getMemberOnboardingState(m.account._id, onboardingStateByMember)
           return {
             departmentId: structure.departmentId,
             departmentName: structure.departmentName,
@@ -90,6 +105,9 @@ router.get('/:orgId/members',
               name: m.invitedBy.profile?.name
             } : null,
             isOwner: m.account._id.toString() === organization.owner.toString(),
+            onboardingStatus: onboardingState.status,
+            onboardingStatusSource: onboardingState.source,
+            onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
             ...getMemberAppAccessSummary(m, appNameById, appIdSet)
           }
         })
@@ -135,6 +153,14 @@ router.get('/:orgId/members/:memberId',
       })
         .select('name department members.account members.status')
         .lean()
+      const onboardingAssignments = await OnboardingAssignment.find({
+        organization: req.params.orgId,
+        member: req.params.memberId,
+        workflowType: 'onboarding'
+      })
+        .select('member status workflowType updatedAt createdAt completedAt')
+        .sort({ updatedAt: -1 })
+        .lean()
 
       const member = organization.members.find(
         m => m.account._id.toString() === req.params.memberId && m.status === 'active'
@@ -145,6 +171,12 @@ router.get('/:orgId/members/:memberId',
       }
 
       const structure = getMemberStructure(buildMemberStructureMap(organization, teams), member.account._id, organization)
+      const onboardingStateByMember = buildOnboardingStateMap({
+        members: [member],
+        assignments: onboardingAssignments,
+        workflowType: 'onboarding'
+      })
+      const onboardingState = getMemberOnboardingState(member.account._id, onboardingStateByMember)
 
       res.json({
         departmentId: structure.departmentId,
@@ -165,6 +197,9 @@ router.get('/:orgId/members/:memberId',
         } : null,
         isOwner: member.account._id.toString() === organization.owner.toString(),
         accountCreatedAt: member.account.createdAt,
+        onboardingStatus: onboardingState.status,
+        onboardingStatusSource: onboardingState.source,
+        onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
         ...getMemberAppAccessSummary(member, appNameById, appIdSet)
       })
     } catch (error) {

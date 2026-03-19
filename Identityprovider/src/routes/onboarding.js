@@ -9,6 +9,7 @@ import { OnboardingActivity } from '../models/OnboardingActivity.js'
 import { emailService } from '../services/emailService.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { normalizeManualOnboardingStatus } from '../utils/onboardingStatus.js'
 
 const router = express.Router()
 
@@ -614,6 +615,12 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
       })
     }
 
+    if ((useDefaultTemplate === true || useDefaultTemplate === 'true') && !template && customItems.length === 0) {
+      return res.status(400).json({
+        error: 'No default onboarding template found. Create one in the document workspace or assign onboarding manually there.'
+      })
+    }
+
     const templateItems = template ? normalizeItems(template.items.map(item => item.toObject())) : []
     const items = [...templateItems, ...customItems]
     const resolvedWorkflowType = template
@@ -627,6 +634,10 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
     const resolvedItems = await Promise.all(
       items.map(item => resolveEsignSigners(item, memberId, organization))
     )
+
+    if (memberEntry.onboardingStatusOverride) {
+      await organization.setMemberOnboardingStatusOverride(memberId, null, req.user._id)
+    }
 
     const assignment = await OnboardingAssignment.create({
       organization: req.params.orgId,
@@ -678,6 +689,53 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
   } catch (error) {
     console.error('Assign onboarding error:', error)
     res.status(500).json({ error: 'Failed to assign onboarding' })
+  }
+})
+
+router.patch('/organizations/:orgId/onboarding/members/:memberId/status', requireAuth, requireOrganizationMember, async (req, res) => {
+  if (!canManageOnboarding(req.memberRole)) {
+    return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
+  }
+
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+
+    const normalizedStatus = normalizeManualOnboardingStatus(req.body?.status)
+    const shouldClearOverride = req.body?.clearOverride === true || req.body?.clearOverride === 'true'
+
+    if (!shouldClearOverride && !normalizedStatus) {
+      return res.status(400).json({
+        error: 'A valid onboarding status is required'
+      })
+    }
+
+    const memberEntry = organization.members.find(
+      m => m.account.toString() === req.params.memberId && m.status === 'active'
+    )
+
+    if (!memberEntry) {
+      return res.status(404).json({ error: 'Member not found in this organization' })
+    }
+
+    const updatedMember = await organization.setMemberOnboardingStatusOverride(
+      req.params.memberId,
+      shouldClearOverride ? null : normalizedStatus,
+      req.user._id
+    )
+
+    res.json({
+      message: shouldClearOverride
+        ? 'Onboarding status reset to automatic tracking'
+        : 'Onboarding status updated',
+      memberId: req.params.memberId,
+      onboardingStatusOverride: updatedMember.onboardingStatusOverride || null
+    })
+  } catch (error) {
+    console.error('Update onboarding member status error:', error)
+    res.status(500).json({ error: 'Failed to update onboarding status' })
   }
 })
 

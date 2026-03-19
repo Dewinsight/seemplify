@@ -406,6 +406,12 @@
     <% const defaultTemplate = templateList.find(template => template.isDefault); %>
     <% const activeAssignmentCount = assignmentList.filter(assignment => assignment.status !== 'completed' && assignment.status !== 'cancelled').length; %>
     <% const completedAssignmentCount = assignmentList.filter(assignment => assignment.status === 'completed').length; %>
+    <% const centerStepNumbers = workspaceMode
+      ? { workflow: 1, recipient: 2, custom: 3, review: 4 }
+      : { workflow: null, recipient: 1, custom: 2, review: 3 }; %>
+    <% const templateStepNumbers = workspaceMode
+      ? { workflow: 1, basics: 2, items: 3, review: 4 }
+      : { workflow: null, basics: 1, items: 2, review: 3 }; %>
 
     <div class="onboarding-center-shell">
       <% if (workspaceMode) { %>
@@ -496,25 +502,74 @@
 
       <div class="assign-onboarding-tab-panel active" id="assign-tab-assign" data-assign-panel="assign" role="tabpanel" aria-label="New assignment">
         <div class="center-wizard">
-      <div class="center-wizard-step-list" role="tablist" aria-label="Assignment steps">
-        <button type="button" class="center-wizard-step active" data-center-step="1" role="tab" aria-selected="true">
-          <span class="center-wizard-step-index">1</span>
+      <div
+        class="center-wizard-step-list"
+        style="--center-wizard-step-count:<%= workspaceMode ? 4 : 3 %>;"
+        role="tablist"
+        aria-label="Assignment steps"
+      >
+        <% if (workspaceMode) { %>
+          <button type="button" class="center-wizard-step active" data-center-step="<%= centerStepNumbers.workflow %>" role="tab" aria-selected="true">
+            <span class="center-wizard-step-index"><%= centerStepNumbers.workflow %></span>
+            <span>Workflow</span>
+          </button>
+        <% } %>
+        <button type="button" class="center-wizard-step <%= workspaceMode ? '' : 'active' %>" data-center-step="<%= centerStepNumbers.recipient %>" role="tab" aria-selected="<%= workspaceMode ? 'false' : 'true' %>">
+          <span class="center-wizard-step-index"><%= centerStepNumbers.recipient %></span>
           <span>Recipient</span>
         </button>
-        <button type="button" class="center-wizard-step" data-center-step="2" role="tab" aria-selected="false">
-          <span class="center-wizard-step-index">2</span>
+        <button type="button" class="center-wizard-step" data-center-step="<%= centerStepNumbers.custom %>" role="tab" aria-selected="false">
+          <span class="center-wizard-step-index"><%= centerStepNumbers.custom %></span>
           <span>Custom Items</span>
         </button>
-        <button type="button" class="center-wizard-step" data-center-step="3" role="tab" aria-selected="false">
-          <span class="center-wizard-step-index">3</span>
+        <button type="button" class="center-wizard-step" data-center-step="<%= centerStepNumbers.review %>" role="tab" aria-selected="false">
+          <span class="center-wizard-step-index"><%= centerStepNumbers.review %></span>
           <span>Review</span>
         </button>
       </div>
 
       <div class="center-wizard-panels">
-        <section class="center-step-panel active" data-center-step-panel="1" role="tabpanel" aria-label="Step 1: Recipient and schedule">
+        <% if (workspaceMode) { %>
+          <section class="center-step-panel active" data-center-step-panel="<%= centerStepNumbers.workflow %>" role="tabpanel" aria-label="Step <%= centerStepNumbers.workflow %>: Choose workflow type">
+            <div class="center-panel-heading">
+              <h3 tabindex="-1">Step <%= centerStepNumbers.workflow %>: Choose Workflow Type</h3>
+              <p>Start by choosing the workflow lane. The rest of the form will follow that choice.</p>
+            </div>
+            <div class="workflow-lane" role="list" aria-label="Workflow types">
+              <% workflowOrder.forEach(workflowType => { %>
+                <% const summary = workflowSummaryMap[workflowType] || {}; %>
+                <button
+                  type="button"
+                  class="workflow-lane-card"
+                  data-workflow-choice="assignment"
+                  data-workflow-value="<%= workflowType %>"
+                  aria-pressed="false"
+                >
+                  <div class="workflow-lane-title"><%= workflowLabelMap[workflowType] || workflowType %></div>
+                  <div class="workflow-lane-meta">
+                    <span><%= summary.active || 0 %> active</span>
+                    <span><%= summary.completed || 0 %> completed</span>
+                    <span><%= summary.templates || 0 %> templates</span>
+                  </div>
+                </button>
+              <% }) %>
+            </div>
+            <div class="form-hint" data-workflow-choice-summary="assignment">Choose a workflow type to continue.</div>
+            <div class="form-group" hidden>
+              <label for="assignmentWorkflowType">Workflow Type</label>
+              <select id="assignmentWorkflowType">
+                <option value="">Select workflow type</option>
+                <% workflowOrder.forEach(workflowType => { %>
+                  <option value="<%= workflowType %>"><%= workflowLabelMap[workflowType] || workflowType %></option>
+                <% }) %>
+              </select>
+            </div>
+          </section>
+        <% } %>
+
+        <section class="center-step-panel <%= workspaceMode ? '' : 'active' %>" data-center-step-panel="<%= centerStepNumbers.recipient %>" role="tabpanel" aria-label="Step <%= centerStepNumbers.recipient %>: Recipient and schedule" <%= workspaceMode ? 'hidden' : '' %>>
           <div class="center-panel-heading">
-            <h3 tabindex="-1">Step 1: Recipient and Schedule</h3>
+            <h3 tabindex="-1">Step <%= centerStepNumbers.recipient %>: Recipient and Schedule</h3>
             <p>Select member, optional template, and due date.</p>
           </div>
         <div class="form-group">
@@ -527,17 +582,19 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label for="assignmentWorkflowType">Workflow Type</label>
-          <select id="assignmentWorkflowType">
-            <% workflowOrder.forEach(workflowType => { %>
-              <option value="<%= workflowType %>" <%= workflowType === 'onboarding' ? 'selected' : '' %>>
-                <%= workflowLabelMap[workflowType] || workflowType %>
-              </option>
-            <% }) %>
-          </select>
-          <div class="form-hint">Choose the workflow lane for this assignment.</div>
-        </div>
+        <% if (!workspaceMode) { %>
+          <div class="form-group">
+            <label for="assignmentWorkflowType">Workflow Type</label>
+            <select id="assignmentWorkflowType">
+              <% workflowOrder.forEach(workflowType => { %>
+                <option value="<%= workflowType %>" <%= workflowType === 'onboarding' ? 'selected' : '' %>>
+                  <%= workflowLabelMap[workflowType] || workflowType %>
+                </option>
+              <% }) %>
+            </select>
+            <div class="form-hint">Choose the workflow lane for this assignment.</div>
+          </div>
+        <% } %>
 
         <div class="form-group">
           <label for="assignmentTemplate">Template (optional)</label>
@@ -545,7 +602,7 @@
             <option value="">No template</option>
             <% templates.forEach(template => { %>
               <% const templateWorkflowType = template.workflowType || 'onboarding'; %>
-              <option value="<%= template._id %>" data-workflow="<%= templateWorkflowType %>" <%= template.isDefault ? 'selected' : '' %>>
+              <option value="<%= template._id %>" data-workflow="<%= templateWorkflowType %>" <%= (!workspaceMode && template.isDefault) ? 'selected' : '' %>>
                 <%= template.name %><%= template.isDefault ? ' (Default)' : '' %>
               </option>
             <% }) %>
@@ -559,9 +616,9 @@
 
         </section>
 
-        <section class="center-step-panel" data-center-step-panel="2" role="tabpanel" aria-label="Step 2: Custom items" hidden>
+        <section class="center-step-panel" data-center-step-panel="<%= centerStepNumbers.custom %>" role="tabpanel" aria-label="Step <%= centerStepNumbers.custom %>: Custom items" hidden>
           <div class="center-panel-heading">
-            <h3 tabindex="-1">Step 2: Add Custom Items</h3>
+            <h3 tabindex="-1">Step <%= centerStepNumbers.custom %>: Add Custom Items</h3>
             <p>Create any extra tasks needed for this assignment.</p>
             <div class="center-step-helper" id="custom-step-helper">
               Configure an item, then click <strong>Add Custom Item</strong>. Continue is unlocked only after at least one item is added and no draft item is left in progress.
@@ -744,9 +801,9 @@
 
         </section>
 
-        <section class="center-step-panel" data-center-step-panel="3" role="tabpanel" aria-label="Step 3: Review and assign" hidden>
+        <section class="center-step-panel" data-center-step-panel="<%= centerStepNumbers.review %>" role="tabpanel" aria-label="Step <%= centerStepNumbers.review %>: Review and assign" hidden>
           <div class="center-panel-heading">
-            <h3 tabindex="-1">Step 3: Review and Assign</h3>
+            <h3 tabindex="-1">Step <%= centerStepNumbers.review %>: Review and Assign</h3>
             <p>Double-check details before assigning.</p>
           </div>
           <div class="center-review-grid">
@@ -1038,30 +1095,80 @@
         <h2><%= workspaceMode ? 'Create Workflow Template' : 'Create Template' %></h2>
         <button class="modal-close" onclick="hideTemplateModal()">&times;</button>
       </div>
-      <div class="template-modal-step-list" role="tablist" aria-label="Template builder steps">
-        <button type="button" class="template-modal-step active" data-template-modal-step="1" role="tab" aria-selected="true">
-          <span class="template-modal-step-index">A</span>
+      <div
+        class="template-modal-step-list"
+        style="--template-modal-step-count:<%= workspaceMode ? 4 : 3 %>;"
+        role="tablist"
+        aria-label="Template builder steps"
+      >
+        <% if (workspaceMode) { %>
+          <button type="button" class="template-modal-step active" data-template-modal-step="<%= templateStepNumbers.workflow %>" role="tab" aria-selected="true">
+            <span class="template-modal-step-index">A</span>
+            <span>Workflow</span>
+          </button>
+        <% } %>
+        <button type="button" class="template-modal-step <%= workspaceMode ? '' : 'active' %>" data-template-modal-step="<%= templateStepNumbers.basics %>" role="tab" aria-selected="<%= workspaceMode ? 'false' : 'true' %>">
+          <span class="template-modal-step-index"><%= workspaceMode ? 'B' : 'A' %></span>
           <span>Basics</span>
         </button>
-        <button type="button" class="template-modal-step" data-template-modal-step="2" role="tab" aria-selected="false">
-          <span class="template-modal-step-index">B</span>
+        <button type="button" class="template-modal-step" data-template-modal-step="<%= templateStepNumbers.items %>" role="tab" aria-selected="false">
+          <span class="template-modal-step-index"><%= workspaceMode ? 'C' : 'B' %></span>
           <span>Items</span>
         </button>
-        <button type="button" class="template-modal-step" data-template-modal-step="3" role="tab" aria-selected="false">
-          <span class="template-modal-step-index">C</span>
+        <button type="button" class="template-modal-step" data-template-modal-step="<%= templateStepNumbers.review %>" role="tab" aria-selected="false">
+          <span class="template-modal-step-index"><%= workspaceMode ? 'D' : 'C' %></span>
           <span>Review</span>
         </button>
       </div>
 
-      <section class="template-modal-panel active" data-template-modal-panel="1" role="tabpanel" aria-label="Template basics">
+      <% if (workspaceMode) { %>
+      <section class="template-modal-panel active" data-template-modal-panel="<%= templateStepNumbers.workflow %>" role="tabpanel" aria-label="Template workflow">
         <div class="template-modal-panel-heading">
-          <h3 tabindex="-1">Step A: Basics</h3>
-          <p><%= workspaceMode ? 'Name the workflow template, choose a lane, and set default behavior.' : 'Name the template and set default behavior.' %></p>
+          <h3 tabindex="-1">Step A: Choose Workflow Type</h3>
+          <p>Select the workflow lane first, then continue to the template details.</p>
+        </div>
+        <div class="workflow-lane" role="list" aria-label="Template workflow types">
+          <% workflowOrder.forEach(workflowType => { %>
+            <% const summary = workflowSummaryMap[workflowType] || {}; %>
+            <button
+              type="button"
+              class="workflow-lane-card"
+              data-workflow-choice="template"
+              data-workflow-value="<%= workflowType %>"
+              aria-pressed="false"
+            >
+              <div class="workflow-lane-title"><%= workflowLabelMap[workflowType] || workflowType %></div>
+              <div class="workflow-lane-meta">
+                <span><%= summary.templates || 0 %> templates</span>
+                <span><%= summary.active || 0 %> active</span>
+                <span><%= summary.completed || 0 %> completed</span>
+              </div>
+            </button>
+          <% }) %>
+        </div>
+        <div class="form-hint" data-workflow-choice-summary="template">Choose a workflow type to continue.</div>
+        <div class="form-group" hidden>
+          <label for="template-workflow-type">Workflow Type</label>
+          <select id="template-workflow-type">
+            <option value="">Select workflow type</option>
+            <% workflowOrder.forEach(workflowType => { %>
+              <option value="<%= workflowType %>"><%= workflowLabelMap[workflowType] || workflowType %></option>
+            <% }) %>
+          </select>
+        </div>
+      </section>
+      <% } %>
+
+      <section class="template-modal-panel <%= workspaceMode ? '' : 'active' %>" data-template-modal-panel="<%= templateStepNumbers.basics %>" role="tabpanel" aria-label="Template basics" <%= workspaceMode ? 'hidden' : '' %>>
+        <div class="template-modal-panel-heading">
+          <h3 tabindex="-1">Step <%= workspaceMode ? 'B' : 'A' %>: Basics</h3>
+          <p><%= workspaceMode ? 'Name the workflow template and set default behavior.' : 'Name the template and set default behavior.' %></p>
         </div>
       <div class="form-group">
         <label for="template-name">Template name</label>
         <input type="text" id="template-name" placeholder="General Onboarding" />
       </div>
+      <% if (!workspaceMode) { %>
       <div class="form-group">
         <label for="template-workflow-type">Workflow Type</label>
         <select id="template-workflow-type">
@@ -1072,6 +1179,7 @@
           <% }) %>
         </select>
       </div>
+      <% } %>
       <div class="form-group">
         <label for="template-description">Description</label>
         <textarea id="template-description" placeholder="<%= workspaceMode ? 'Reusable agreement or onboarding flow template' : 'Standard onboarding for new hires' %>"></textarea>
@@ -1083,9 +1191,9 @@
       </div>
       </section>
 
-      <section class="template-modal-panel" data-template-modal-panel="2" role="tabpanel" aria-label="Template items" hidden>
+      <section class="template-modal-panel" data-template-modal-panel="<%= templateStepNumbers.items %>" role="tabpanel" aria-label="Template items" hidden>
         <div class="template-modal-panel-heading">
-          <h3 tabindex="-1">Step B: Build Items</h3>
+          <h3 tabindex="-1">Step <%= workspaceMode ? 'C' : 'B' %>: Build Items</h3>
           <p>Add form, upload, and e-sign steps to your template.</p>
         </div>
 
@@ -1262,9 +1370,9 @@
       </div>
       </section>
 
-      <section class="template-modal-panel" data-template-modal-panel="3" role="tabpanel" aria-label="Template review" hidden>
+      <section class="template-modal-panel" data-template-modal-panel="<%= templateStepNumbers.review %>" role="tabpanel" aria-label="Template review" hidden>
         <div class="template-modal-panel-heading">
-          <h3 tabindex="-1">Step C: Review</h3>
+          <h3 tabindex="-1">Step <%= workspaceMode ? 'D' : 'C' %>: Review</h3>
           <p>Validate template details before creating it.</p>
         </div>
         <div class="center-review-grid">
@@ -1404,9 +1512,6 @@
     const paletteDragState = { active: false, candidate: null, prefix: null, type: null, btn: null, pointerId: null, startX: 0, startY: 0, ghost: null };
     const suppressNextOverlayClick = { template: false, custom: false };
     const SIGNER_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#22c55e', '#f97316'];
-    const centerWizardState = { step: 1, total: 3 };
-    const templateModalState = { step: 1, total: 3 };
-    const assignmentFilterState = { query: '', status: 'all' };
     const workflowLabels = <%- JSON.stringify(workflowLabelMap || {
       onboarding: 'Onboarding',
       agreement: 'Agreement Signing',
@@ -1415,6 +1520,15 @@
     }) %>;
     const workflowOptions = <%- JSON.stringify(workflowOrder || ['onboarding', 'agreement', 'policy', 'general']) %>;
     const workspaceModeEnabled = <%= workspaceMode ? 'true' : 'false' %>;
+    const centerWizardConfig = workspaceModeEnabled
+      ? { workflowStep: 1, recipientStep: 2, customStep: 3, reviewStep: 4 }
+      : { workflowStep: null, recipientStep: 1, customStep: 2, reviewStep: 3 };
+    const templateModalConfig = workspaceModeEnabled
+      ? { workflowStep: 1, basicsStep: 2, itemsStep: 3, reviewStep: 4 }
+      : { workflowStep: null, basicsStep: 1, itemsStep: 2, reviewStep: 3 };
+    const centerWizardState = { step: 1, total: centerWizardConfig.reviewStep };
+    const templateModalState = { step: 1, total: templateModalConfig.reviewStep };
+    const assignmentFilterState = { query: '', status: 'all' };
     const defaultWorkflowFilter = '<%= activeWorkflow || (workspaceMode ? "all" : "onboarding") %>';
     const workflowFilterState = { active: defaultWorkflowFilter };
     const fieldTypeOptions = ['text', 'textarea', 'email', 'tel', 'number', 'date', 'select'];
@@ -1532,7 +1646,7 @@
       const noteEl = document.getElementById('center-step-note');
       if (!nextBtn) return;
 
-      if (centerWizardState.step === 2) {
+      if (centerWizardState.step === centerWizardConfig.customStep) {
         const blockReason = getCustomStepBlockReason();
         nextBtn.disabled = !!blockReason;
         if (noteEl) {
@@ -1634,6 +1748,74 @@
       }
     }
 
+    function getWorkflowSelectId(scope) {
+      return scope === 'template' ? 'template-workflow-type' : 'assignmentWorkflowType';
+    }
+
+    function getWorkflowSelection(scope) {
+      const select = document.getElementById(getWorkflowSelectId(scope));
+      const value = String(select?.value || '').trim().toLowerCase();
+      return workflowOptions.includes(value) ? value : '';
+    }
+
+    function syncWorkflowChoiceCards(scope) {
+      const selectedWorkflow = getWorkflowSelection(scope);
+      document.querySelectorAll(`[data-workflow-choice="${scope}"]`).forEach(button => {
+        const isActive = (button.dataset.workflowValue || '') === selectedWorkflow;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+
+      const summary = document.querySelector(`[data-workflow-choice-summary="${scope}"]`);
+      if (summary) {
+        summary.textContent = selectedWorkflow
+          ? `Selected: ${workflowLabels[selectedWorkflow] || selectedWorkflow}`
+          : 'Choose a workflow type to continue.';
+      }
+    }
+
+    function syncAssignmentTemplateOptions() {
+      const workflowType = getWorkflowSelection('assignment');
+      const templateSelect = document.getElementById('assignmentTemplate');
+      if (!templateSelect) return;
+
+      Array.from(templateSelect.options).forEach(option => {
+        if (!option.value) {
+          option.hidden = false;
+          option.disabled = false;
+          return;
+        }
+
+        const optionWorkflow = option.dataset.workflow || 'onboarding';
+        const matches = !workflowType || optionWorkflow === workflowType;
+        option.hidden = !matches;
+        option.disabled = !matches;
+      });
+
+      const selectedOption = templateSelect.selectedOptions?.[0];
+      if (templateSelect.value && (!selectedOption || selectedOption.disabled || selectedOption.hidden)) {
+        templateSelect.value = '';
+      }
+    }
+
+    function setWorkflowSelection(scope, workflowType, options = {}) {
+      const select = document.getElementById(getWorkflowSelectId(scope));
+      if (!select) return;
+
+      const normalized = workflowOptions.includes(workflowType) ? workflowType : '';
+      select.value = normalized;
+      syncWorkflowChoiceCards(scope);
+
+      if (scope === 'assignment') {
+        syncAssignmentTemplateOptions();
+        if (options.renderReview !== false) {
+          renderCenterReview();
+        }
+      } else if (options.renderReview !== false) {
+        renderTemplateReview();
+      }
+    }
+
     function renderCenterReview() {
       const memberSelect = document.getElementById('assignmentMember');
       const templateSelect = document.getElementById('assignmentTemplate');
@@ -1642,8 +1824,8 @@
 
       const memberLabel = memberSelect?.selectedOptions?.[0]?.textContent || '';
       const templateLabel = templateSelect?.selectedOptions?.[0]?.textContent || '';
-      const workflowType = workflowSelect?.value || 'onboarding';
-      const workflowLabel = workflowLabels[workflowType] || 'Onboarding';
+      const workflowType = String(workflowSelect?.value || '').trim().toLowerCase();
+      const workflowLabel = workflowType ? (workflowLabels[workflowType] || workflowType) : 'Not selected';
       const dueLabel = dueInput?.value ? new Date(`${dueInput.value}T00:00:00`).toLocaleDateString() : 'Not set';
       const esignCount = customItems.filter(item => item.type === 'esign').length;
 
@@ -1708,14 +1890,21 @@
     }
 
     function validateCenterStep(step) {
-      if (step === 1) {
+      if (workspaceModeEnabled && step === centerWizardConfig.workflowStep) {
+        const workflowType = getWorkflowSelection('assignment');
+        if (!workflowType) {
+          alert('Please select a workflow type before continuing.');
+          return false;
+        }
+      }
+      if (step === centerWizardConfig.recipientStep) {
         const memberId = document.getElementById('assignmentMember')?.value;
         if (!memberId) {
           alert('Please select a member before continuing.');
           return false;
         }
       }
-      if (step === 2) {
+      if (step === centerWizardConfig.customStep) {
         const blockReason = getCustomStepBlockReason();
         if (blockReason) {
           alert(blockReason);
@@ -1739,15 +1928,15 @@
       const select = document.getElementById('assignmentTemplate');
       if (!select || !templateId) return;
       select.value = String(templateId);
-      const workflowSelect = document.getElementById('assignmentWorkflowType');
       const selectedOption = select.selectedOptions?.[0] || null;
       const templateWorkflow = selectedOption?.dataset?.workflow;
-      if (workflowSelect && templateWorkflow) {
-        workflowSelect.value = templateWorkflow;
+      if (templateWorkflow) {
+        setWorkflowSelection('assignment', templateWorkflow, { renderReview: false });
       }
+      syncAssignmentTemplateOptions();
       renderCenterReview();
       if (options.jumpToStep !== false) {
-        setCenterStep(1, { focus: false });
+        setCenterStep(centerWizardConfig.recipientStep, { focus: false });
       }
     }
 
@@ -1844,8 +2033,8 @@
     function renderTemplateReview() {
       const name = document.getElementById('template-name')?.value.trim() || '';
       const description = document.getElementById('template-description')?.value.trim() || '';
-      const workflowType = document.getElementById('template-workflow-type')?.value || 'onboarding';
-      const workflowLabel = workflowLabels[workflowType] || 'Onboarding';
+      const workflowType = getWorkflowSelection('template');
+      const workflowLabel = workflowType ? (workflowLabels[workflowType] || workflowType) : 'Not selected';
       const isDefault = !!document.getElementById('template-default')?.checked;
       const esignCount = templateItems.filter(item => item.type === 'esign').length;
 
@@ -1906,14 +2095,21 @@
     }
 
     function validateTemplateModalStep(step) {
-      if (step === 1) {
+      if (workspaceModeEnabled && step === templateModalConfig.workflowStep) {
+        const workflowType = getWorkflowSelection('template');
+        if (!workflowType) {
+          alert('Please select a workflow type before continuing.');
+          return false;
+        }
+      }
+      if (step === templateModalConfig.basicsStep) {
         const name = document.getElementById('template-name')?.value.trim();
         if (!name) {
           alert('Template name is required.');
           return false;
         }
       }
-      if (step === 2 && templateItems.length === 0) {
+      if (step === templateModalConfig.itemsStep && templateItems.length === 0) {
         alert('Add at least one item before continuing.');
         return false;
       }
@@ -1934,7 +2130,11 @@
       document.getElementById('templateModal').classList.add('active');
       setTemplateModalStep(1, { focus: false });
       setTimeout(() => {
-        document.getElementById('template-name')?.focus();
+        if (workspaceModeEnabled) {
+          document.querySelector('[data-workflow-choice="template"]')?.focus?.();
+        } else {
+          document.getElementById('template-name')?.focus();
+        }
       }, 30);
     }
 
@@ -3586,11 +3786,14 @@
       if (assignmentWorkflowSelect && normalized !== 'all' && workflowOptions.includes(normalized) && options.syncAssignment !== false) {
         assignmentWorkflowSelect.value = normalized;
       }
+      syncWorkflowChoiceCards('assignment');
+      syncAssignmentTemplateOptions();
 
       const templateWorkflowSelect = document.getElementById('template-workflow-type');
       if (templateWorkflowSelect && normalized !== 'all' && workflowOptions.includes(normalized) && options.syncTemplate !== false) {
         templateWorkflowSelect.value = normalized;
       }
+      syncWorkflowChoiceCards('template');
 
       filterTemplateLibrary(templateFilterInput?.value || '');
       filterAssignments({ query: assignmentFilterInput?.value || assignmentFilterState.query || '', status: assignmentFilterState.status || 'all' });
@@ -3715,10 +3918,10 @@
     assignmentTemplateSelect?.addEventListener('change', () => {
       const selectedOption = assignmentTemplateSelect.selectedOptions?.[0];
       const templateWorkflow = selectedOption?.dataset?.workflow;
-      const assignmentWorkflowSelect = document.getElementById('assignmentWorkflowType');
-      if (assignmentWorkflowSelect && templateWorkflow) {
-        assignmentWorkflowSelect.value = templateWorkflow;
+      if (templateWorkflow) {
+        setWorkflowSelection('assignment', templateWorkflow, { renderReview: false });
       }
+      syncAssignmentTemplateOptions();
       renderCenterReview();
     });
 
@@ -3727,6 +3930,27 @@
       if (!el) return;
       el.addEventListener('change', renderTemplateReview);
       el.addEventListener('input', renderTemplateReview);
+    });
+
+    document.querySelectorAll('[data-workflow-choice]').forEach(button => {
+      button.addEventListener('click', () => {
+        const scope = button.dataset.workflowChoice || 'assignment';
+        const workflowType = button.dataset.workflowValue || '';
+        setWorkflowSelection(scope, workflowType);
+      });
+    });
+
+    const assignmentWorkflowSelect = document.getElementById('assignmentWorkflowType');
+    assignmentWorkflowSelect?.addEventListener('change', () => {
+      syncWorkflowChoiceCards('assignment');
+      syncAssignmentTemplateOptions();
+      renderCenterReview();
+    });
+
+    const templateWorkflowSelect = document.getElementById('template-workflow-type');
+    templateWorkflowSelect?.addEventListener('change', () => {
+      syncWorkflowChoiceCards('template');
+      renderTemplateReview();
     });
 
     [
@@ -3922,11 +4146,11 @@
     async function createTemplate() {
       const name = document.getElementById('template-name').value.trim();
       const description = document.getElementById('template-description').value.trim();
-      const workflowType = document.getElementById('template-workflow-type').value || 'onboarding';
+      const workflowType = getWorkflowSelection('template');
       const isDefault = document.getElementById('template-default').checked;
 
-      if (!name || templateItems.length === 0) {
-        alert('Template name and at least one item are required');
+      if (!workflowType || !name || templateItems.length === 0) {
+        alert('Workflow type, template name, and at least one item are required');
         return;
       }
 
@@ -3988,11 +4212,15 @@
     async function assignOnboarding() {
       const memberId = document.getElementById('assignmentMember').value;
       const templateId = document.getElementById('assignmentTemplate').value;
-      const workflowType = document.getElementById('assignmentWorkflowType').value || 'onboarding';
+      const workflowType = getWorkflowSelection('assignment');
       const dueAt = document.getElementById('assignmentDue').value;
 
       if (!memberId) {
         alert('Please select a member');
+        return;
+      }
+      if (!workflowType) {
+        alert('Please select a workflow type');
         return;
       }
 
@@ -4836,7 +5064,7 @@
     renderTemplateReview();
     setCenterStep(1, { focus: false });
     setTemplateModalStep(1, { focus: false });
-    setWorkflowFilter(defaultWorkflowFilter, { syncAssignment: false, syncTemplate: false });
+    setWorkflowFilter(defaultWorkflowFilter);
     filterTemplateLibrary(templateFilterInput?.value || '');
     filterAssignments({ query: assignmentFilterInput?.value || '', status: 'all' });
     if (document.querySelector('[data-onboarding-tab]')) {

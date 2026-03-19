@@ -51,6 +51,79 @@ async function fetchIdpOrgMembers(accessToken, organizationId) {
   return res.data;
 }
 
+async function fetchIdpOrgTeams(accessToken, organizationId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/teams`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function addIdpTeamMember(accessToken, teamId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/teams/${teamId}/members`;
+
+  const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function assignIdpOnboarding(accessToken, organizationId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/assign`;
+
+  const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function updateIdpOnboardingStatus(accessToken, organizationId, memberId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${memberId}/status`;
+
+  const res = await axios.patch(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+function getPrimaryMemberTeam(member = {}) {
+  const teamIds = Array.isArray(member?.teamIds) ? member.teamIds.map((value) => String(value || '').trim()).filter(Boolean) : [];
+  const teamNames = Array.isArray(member?.teamNames) ? member.teamNames.map((value) => String(value || '').trim()).filter(Boolean) : [];
+
+  return {
+    teamId: teamIds[0] || '',
+    teamName: teamNames[0] || '',
+  };
+}
+
+function buildEmployeeSnapshotFromMember(member = {}, existingEmployeeInfo = {}) {
+  const { teamId, teamName } = getPrimaryMemberTeam(member);
+
+  return {
+    ...(existingEmployeeInfo || {}),
+    name: member.name || existingEmployeeInfo?.name,
+    email: member.email || existingEmployeeInfo?.email,
+    department: member.departmentName || '',
+    designation: member.designation || existingEmployeeInfo?.designation,
+    teamId: teamId || existingEmployeeInfo?.teamId || '',
+    teamName: teamName || existingEmployeeInfo?.teamName || '',
+    lastSyncedAt: new Date()
+  };
+}
+
 // =====================================================
 // PAYROLL PROFILE ROUTES (Employee & HR Admin)
 // =====================================================
@@ -287,6 +360,125 @@ router.get('/idp/members', requireHRAdmin, async (req, res) => {
   }
 });
 
+router.get('/idp/teams', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    const data = await fetchIdpOrgTeams(accessToken, organizationId);
+    const teams = Array.isArray(data) ? data : (Array.isArray(data?.teams) ? data.teams : []);
+
+    res.json({
+      organizationId,
+      teams
+    });
+  } catch (err) {
+    console.error('IDP Teams Proxy Error:', err?.response?.data || err.message || err);
+    res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP teams' });
+  }
+});
+
+router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
+  try {
+    const accessToken = req.session?.user?.accessToken;
+    const { teamId } = req.params;
+    const { accountId, role = 'member' } = req.body || {};
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    if (!teamId || !accountId) {
+      return res.status(400).json({ error: 'teamId and accountId are required' });
+    }
+
+    const data = await addIdpTeamMember(accessToken, teamId, { accountId, role });
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('IDP Team Member Add Proxy Error:', err?.response?.data || err.message || err);
+    res.status(err?.response?.status || 500).json({
+      error: err?.response?.data?.error || 'Failed to assign member to team'
+    });
+  }
+});
+
+router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+    const memberId = String(req.body?.memberId || '').trim();
+    const dueAt = req.body?.dueAt;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await assignIdpOnboarding(accessToken, organizationId, {
+      memberId,
+      workflowType: 'onboarding',
+      useDefaultTemplate: true,
+      dueAt
+    });
+
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Assign Proxy Error:', err?.response?.data || err.message || err);
+    res.status(err?.response?.status || 500).json({
+      error: err?.response?.data?.error || 'Failed to assign onboarding'
+    });
+  }
+});
+
+router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+    const memberId = String(req.params?.memberId || '').trim();
+    const status = String(req.body?.status || '').trim().toLowerCase();
+    const clearOverride = req.body?.clearOverride === true;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await updateIdpOnboardingStatus(accessToken, organizationId, memberId, {
+      status,
+      clearOverride
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Status Proxy Error:', err?.response?.data || err.message || err);
+    res.status(err?.response?.status || 500).json({
+      error: err?.response?.data?.error || 'Failed to update onboarding status'
+    });
+  }
+});
+
 /**
  * GET /api/payroll/profiles
  * Get all payroll profiles (HR Admin only)
@@ -345,14 +537,7 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
         const member = members.find((m) => m?.sub === req.params.userId || m?.id === req.params.userId);
 
         if (member) {
-          profile.employeeInfo = {
-            ...(profile.employeeInfo || {}),
-            name: member.name || profile.employeeInfo?.name,
-            email: member.email || profile.employeeInfo?.email,
-            department: member.departmentName || '',
-            designation: member.designation || profile.employeeInfo?.designation,
-            lastSyncedAt: new Date()
-          };
+          profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
           await profile.save();
           profile = await PayrollProfile.findOne({
             userId: req.params.userId,
@@ -550,14 +735,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     }
 
     if (existing) {
-      existing.employeeInfo = {
-        ...(existing.employeeInfo || {}),
-        name: member.name || existing.employeeInfo?.name,
-        email: member.email || existing.employeeInfo?.email,
-        department: member.departmentName || '',
-        designation: member.designation || existing.employeeInfo?.designation,
-        lastSyncedAt: new Date()
-      };
+      existing.employeeInfo = buildEmployeeSnapshotFromMember(member, existing.employeeInfo);
       await existing.save();
       return res.json({ success: true, profile: existing, existed: true });
     }
@@ -566,13 +744,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       userId: targetUserId,
       organizationId,
       basicSalary: 0,
-      employeeInfo: {
-        name: member.name,
-        email: member.email,
-        department: member.departmentName || '',
-        designation: member.designation || '',
-        lastSyncedAt: new Date(),
-      },
+      employeeInfo: buildEmployeeSnapshotFromMember(member),
       createdBy: adminId,
       status: 'active',
       isActive: true,

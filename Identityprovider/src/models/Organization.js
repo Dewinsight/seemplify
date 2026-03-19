@@ -55,6 +55,16 @@ const OrganizationSchema = new mongoose.Schema({
         default: []
       }
     },
+    onboardingStatusOverride: {
+      type: String,
+      enum: ['not_started', 'pending', 'in_progress', 'completed', 'cancelled'],
+      default: undefined
+    },
+    onboardingStatusUpdatedAt: Date,
+    onboardingStatusUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount'
+    },
     joinedAt: {
       type: Date,
       default: Date.now
@@ -588,6 +598,33 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
 
   member.updatedAt = new Date()
   member.updatedBy = updatedBy
+
+  await this.save()
+
+  return member
+}
+
+OrganizationSchema.methods.setMemberOnboardingStatusOverride = async function(accountId, status, updatedBy) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  const allowedStatuses = ['not_started', 'pending', 'in_progress', 'completed', 'cancelled']
+  const normalizedStatus = status == null ? null : String(status || '').trim().toLowerCase()
+
+  if (normalizedStatus && !allowedStatuses.includes(normalizedStatus)) {
+    throw new Error(`Invalid onboarding status. Must be one of: ${allowedStatuses.join(', ')}`)
+  }
+
+  member.onboardingStatusOverride = normalizedStatus || undefined
+  member.onboardingStatusUpdatedAt = new Date()
+  member.onboardingStatusUpdatedBy = updatedBy || undefined
+  member.updatedAt = new Date()
+  member.updatedBy = updatedBy || undefined
 
   await this.save()
 

@@ -28,6 +28,7 @@ import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { buildMemberStructureMap, getMemberStructure } from './utils/memberStructure.js'
+import { buildOnboardingStateMap, getMemberOnboardingState } from './utils/onboardingStatus.js'
 import { getDerivedManagerInfo } from './utils/teamManager.js'
 import {
   SIMPLE_PERFORMANCE_DEFAULT_FIELDS,
@@ -4722,15 +4723,10 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
       role: m.role
     }))
 
-  const onboardingStatusByMember = {}
-  const latestAssignmentByMember = {}
-  assignments.forEach(assignment => {
-    const memberId = assignment.member?._id?.toString() || assignment.member?.toString()
-    if (!memberId) return
-    if (!onboardingStatusByMember[memberId]) {
-      onboardingStatusByMember[memberId] = assignment.status
-      latestAssignmentByMember[memberId] = assignment
-    }
+  const onboardingStateByMember = buildOnboardingStateMap({
+    members: organization.members.filter(m => m.status === 'active'),
+    assignments,
+    workflowType: 'onboarding'
   })
 
   const statusSortOrder = {
@@ -4744,12 +4740,14 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
   const memberOnboardingRows = members
     .map(m => {
       const memberId = m.id?.toString ? m.id.toString() : String(m.id || '')
-      const latestAssignment = latestAssignmentByMember[memberId] || null
-      const onboardingStatus = onboardingStatusByMember[memberId] || 'not_started'
+      const onboardingState = getMemberOnboardingState(memberId, onboardingStateByMember)
+      const latestAssignment = onboardingState.latestAssignment || null
+      const onboardingStatus = onboardingState.status || 'not_started'
 
       return {
         ...m,
         onboardingStatus,
+        onboardingStatusSource: onboardingState.source,
         latestAssignment: latestAssignment
           ? {
               id: latestAssignment._id,
@@ -4799,7 +4797,9 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
     assignments,
     onboardingActivities,
     members,
-    onboardingStatusByMember,
+    onboardingStatusByMember: Object.fromEntries(
+      Array.from(onboardingStateByMember.entries()).map(([memberId, state]) => [memberId, state.status])
+    ),
     memberOnboardingRows,
     memberOnboardingSummary,
     workflowSummary,
@@ -5345,13 +5345,10 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       teamNamesByMemberId.set(key, value.teamNames || [])
     })
 
-    const onboardingStatusByMember = {}
-    assignments.forEach(assignment => {
-      const memberId = assignment.member?.toString()
-      if (!memberId) return
-      if (!onboardingStatusByMember[memberId]) {
-        onboardingStatusByMember[memberId] = assignment.status
-      }
+    const onboardingStateByMember = buildOnboardingStateMap({
+      members: organization.members.filter(m => m.status === 'active'),
+      assignments,
+      workflowType: 'onboarding'
     })
 
     const mappedMembers = organization.members
@@ -5359,6 +5356,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       .map((m) => {
         const accountId = (m.account?._id || m.account).toString()
         const structure = getMemberStructure(memberStructure, accountId, organization)
+        const onboardingState = getMemberOnboardingState(accountId, onboardingStateByMember)
         return {
           id: m.account?._id || m.account,
           name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
@@ -5371,7 +5369,8 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           teamNames: teamNamesByMemberId.get(accountId) || [],
           joinedAt: m.joinedAt,
           isOwner: m.role === 'owner',
-          onboardingStatus: onboardingStatusByMember[accountId] || 'not_started'
+          onboardingStatus: onboardingState.status,
+          onboardingStatusSource: onboardingState.source
         }
       })
 

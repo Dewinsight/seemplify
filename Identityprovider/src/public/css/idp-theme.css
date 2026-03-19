@@ -2111,7 +2111,7 @@ p {
 
 .center-wizard-step-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--center-wizard-step-count, 3), minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -2655,7 +2655,7 @@ p {
 
 .template-modal-step-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--template-modal-step-count, 3), minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 14px;
 }
