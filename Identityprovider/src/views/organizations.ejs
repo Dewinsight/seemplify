@@ -83,6 +83,17 @@
                         <button type="submit" class="btn btn-secondary">Switch</button>
                       </form>
                       <% } %>
+                        <% if (['owner', 'admin'].includes(org.role)) { %>
+                          <button
+                            type="button"
+                            class="btn btn-secondary"
+                            data-org-id="<%= org.id %>"
+                            data-org-name="<%= org.name %>"
+                            data-org-description="<%= org.description || '' %>"
+                            onclick="showEditModalFromButton(this)">
+                            Edit
+                          </button>
+                        <% } %>
                         <a href="/organizations/<%= org.id %>/members" class="btn btn-secondary">Members</a>
                         <a href="/organizations/<%= org.id %>/teams" class="btn btn-secondary">Teams</a>
                         <% if (['owner', 'admin' ].includes(org.role)) { %>
@@ -156,6 +167,31 @@
     </div>
   </div>
 
+  <!-- Edit Organization Modal -->
+  <div class="modal" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Organization</h2>
+        <button class="modal-close" onclick="hideEditModal()">&times;</button>
+      </div>
+      <form id="editForm">
+        <input type="hidden" id="editOrgId" name="orgId">
+        <div class="form-group">
+          <label for="editName">Organization Name *</label>
+          <input type="text" id="editName" name="name" required maxlength="100" placeholder="Enter organization name">
+        </div>
+        <div class="form-group">
+          <label for="editDescription">Description</label>
+          <textarea id="editDescription" name="description" maxlength="500" placeholder="Brief description (optional)"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     // Track if we've already shown the popup this session
     const pendingInvitationsCount = <%= typeof pendingInvitationsCount !== 'undefined' ? pendingInvitationsCount : 0 %>;
@@ -167,6 +203,17 @@
 
     function hideCreateModal() {
       document.getElementById('createModal').classList.remove('active');
+    }
+
+    function showEditModalFromButton(button) {
+      document.getElementById('editOrgId').value = button.dataset.orgId || '';
+      document.getElementById('editName').value = button.dataset.orgName || '';
+      document.getElementById('editDescription').value = button.dataset.orgDescription || '';
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    function hideEditModal() {
+      document.getElementById('editModal').classList.remove('active');
     }
 
     function showInvitationsPopup() {
@@ -336,10 +383,45 @@
       }
     });
 
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      const orgId = formData.get('orgId');
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            name: formData.get('name'),
+            description: formData.get('description')
+          })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to update organization');
+        }
+      } catch (error) {
+        console.error('Update organization error:', error);
+        alert('Failed to update organization');
+      }
+    });
+
     // Close modal on outside click
     document.getElementById('createModal').addEventListener('click', (e) => {
       if (e.target.classList.contains('modal')) {
         hideCreateModal();
+      }
+    });
+
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        hideEditModal();
       }
     });
 

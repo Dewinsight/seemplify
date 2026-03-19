@@ -689,17 +689,22 @@ class PayrollEngineService {
     // 2) Pre-tax deductions (e.g., pension contributions)
     // =====================================================
 
+    const effectivePension = taxService.resolveEffectivePensionSettings(
+      profile.taxConfig || {},
+      profile.statutoryContributions || {}
+    );
+
     // Pension contribution (employee)
-    if (profile.statutoryContributions?.pensionOptIn && (profile.statutoryContributions?.pensionContributionPercent || 0) > 0) {
-      const pensionAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (profile.statutoryContributions.pensionContributionPercent / 100));
+    if (effectivePension.enabled && effectivePension.employeePercent > 0) {
+      const pensionAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (effectivePension.employeePercent / 100));
       if (pensionAmt > 0) {
         payslip.addDeduction('pension', 'Pension Contribution', pensionAmt, { isPreTax: true });
       }
     }
 
     // Employer pension contribution (not deducted from employee)
-    if (profile.statutoryContributions?.pensionOptIn && (profile.statutoryContributions?.employerPensionPercent || 0) > 0) {
-      const employerAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (profile.statutoryContributions.employerPensionPercent / 100));
+    if (effectivePension.enabled && effectivePension.employerPercent > 0) {
+      const employerAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (effectivePension.employerPercent / 100));
       if (employerAmt > 0) {
         payslip.employerContributions.push({
           type: 'pension_match',

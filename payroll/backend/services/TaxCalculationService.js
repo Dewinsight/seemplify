@@ -22,6 +22,51 @@ const BUILT_IN_JURISDICTIONS = new Map([
   ['ZA', { code: 'ZA', name: 'South Africa' }],
 ]);
 
+const STATUTORY_PROFILES = Object.freeze({
+  GB: Object.freeze({
+    code: 'GB',
+    name: 'National Insurance',
+    allowManualStatutoryOverride: true,
+  }),
+  US: Object.freeze({
+    code: 'US',
+    name: 'Social Security and Medicare',
+    allowManualStatutoryOverride: true,
+  }),
+  NG: Object.freeze({
+    code: 'NG',
+    name: 'Contributory Pension Scheme',
+    allowManualStatutoryOverride: false,
+    defaultEmployeePensionPercent: 8,
+    defaultEmployerPensionPercent: 10,
+  }),
+  GH: Object.freeze({
+    code: 'GH',
+    name: 'SSNIT',
+    allowManualStatutoryOverride: true,
+  }),
+  KE: Object.freeze({
+    code: 'KE',
+    name: 'Statutory Contributions',
+    allowManualStatutoryOverride: true,
+  }),
+  ZA: Object.freeze({
+    code: 'ZA',
+    name: 'Statutory Contributions',
+    allowManualStatutoryOverride: true,
+  }),
+  EU: Object.freeze({
+    code: 'EU',
+    name: 'Statutory Contributions',
+    allowManualStatutoryOverride: true,
+  }),
+  OTHER: Object.freeze({
+    code: 'OTHER',
+    name: 'Statutory Contributions',
+    allowManualStatutoryOverride: true,
+  }),
+});
+
 const LEGACY_REGIME_TO_CONFIG = {
   flat: { calculationMode: 'manual', manualCalculationType: 'flat' },
   none: { calculationMode: 'manual', manualCalculationType: 'none' },
@@ -245,6 +290,38 @@ class TaxCalculationService {
       { code: 'EU', name: 'European Union (manual by member state)', mode: 'manual_only' },
       { code: 'OTHER', name: 'Other / Custom jurisdiction', mode: 'manual_only' },
     ];
+  }
+
+  getStatutoryProfile(jurisdictionCode = 'OTHER') {
+    const code = normalizeCode(jurisdictionCode, 'OTHER');
+    return STATUTORY_PROFILES[code] || STATUTORY_PROFILES.OTHER;
+  }
+
+  resolveEffectivePensionSettings(config = {}, statutoryContributions = {}) {
+    const profile = this.getStatutoryProfile(config?.jurisdictionCode);
+    const enabled = statutoryContributions?.pensionOptIn !== false;
+    let employeePercent = Math.max(0, toNumber(statutoryContributions?.pensionContributionPercent));
+    let employerPercent = Math.max(0, toNumber(statutoryContributions?.employerPensionPercent));
+    let source = 'custom';
+
+    if (
+      enabled
+      && profile.code === 'NG'
+      && employeePercent <= 0
+      && employerPercent <= 0
+    ) {
+      employeePercent = profile.defaultEmployeePensionPercent;
+      employerPercent = profile.defaultEmployerPensionPercent;
+      source = 'builtin_default';
+    }
+
+    return {
+      enabled,
+      employeePercent: roundRate(employeePercent),
+      employerPercent: roundRate(employerPercent),
+      source,
+      profile,
+    };
   }
 
   normalizeConfig(config = {}) {
@@ -928,9 +1005,13 @@ class TaxCalculationService {
 
   calculateStatutoryContributions(input = {}) {
     const { config, grossPay, ytdGrossPay, taxYear, statutoryContributions } = input;
+    const statutoryProfile = this.getStatutoryProfile(config.jurisdictionCode);
     const socialSecurityOptIn = statutoryContributions?.socialSecurityOptIn !== false;
 
-    if (!socialSecurityOptIn) {
+    if (
+      !socialSecurityOptIn
+      && ['GB', 'US', 'GH'].includes(config.jurisdictionCode)
+    ) {
       return {
         totalAmount: 0,
         reducesTaxableIncome: 0,
@@ -938,7 +1019,14 @@ class TaxCalculationService {
       };
     }
 
-    if (config.socialSecurityRate > 0) {
+    if (statutoryProfile.allowManualStatutoryOverride && config.socialSecurityRate > 0) {
+      if (!socialSecurityOptIn) {
+        return {
+          totalAmount: 0,
+          reducesTaxableIncome: 0,
+          components: [],
+        };
+      }
       return this.calculateManualSocialSecurity({
         rate: config.socialSecurityRate,
         cap: config.socialSecurityCap,

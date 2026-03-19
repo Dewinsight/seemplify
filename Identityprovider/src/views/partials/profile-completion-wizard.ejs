@@ -1,4 +1,5 @@
 <% if (profileCompletion && !profileCompletion.complete) { %>
+    <% const isEnforcedWizard = profileCompletionEnforced === true %>
     <style>
         body.profile-wizard-open {
             overflow: hidden;
@@ -17,6 +18,10 @@
             padding: 24px;
             background: rgba(15, 23, 42, 0.68);
             z-index: 1200;
+        }
+
+        .profile-wizard-overlay.is-locked {
+            backdrop-filter: blur(10px);
         }
 
         .profile-wizard-modal {
@@ -65,6 +70,12 @@
         .profile-wizard-copy {
             margin: 0 0 18px;
             color: var(--muted);
+        }
+
+        .profile-wizard-copy--locked {
+            margin-top: -6px;
+            color: var(--text);
+            font-weight: 600;
         }
 
         .profile-wizard-progress {
@@ -166,14 +177,21 @@
         }
     </style>
 
-    <div id="profileCompletionWizard" class="profile-wizard-overlay" hidden>
+    <div id="profileCompletionWizard" class="profile-wizard-overlay <%= isEnforcedWizard ? 'is-locked' : '' %>" hidden>
         <div class="profile-wizard-modal" role="dialog" aria-modal="true" aria-labelledby="profileWizardTitle">
-            <button type="button" class="profile-wizard-close" id="profileWizardClose" aria-label="Close wizard">&times;</button>
+            <% if (!isEnforcedWizard) { %>
+                <button type="button" class="profile-wizard-close" id="profileWizardClose" aria-label="Close wizard">&times;</button>
+            <% } %>
             <div class="profile-wizard-kicker">Profile Setup</div>
             <h2 id="profileWizardTitle" class="profile-wizard-title">Complete your employee profile</h2>
             <p class="profile-wizard-copy">
                 Payroll and HR need these details before your profile is fully ready. Complete each step below.
             </p>
+            <% if (isEnforcedWizard) { %>
+                <p class="profile-wizard-copy profile-wizard-copy--locked">
+                    You need to finish this setup before you can use the rest of the app.
+                </p>
+            <% } %>
 
             <div class="profile-wizard-progress">
                 <div class="profile-wizard-progress-bar" style="width: <%= profileCompletion.percent %>%;"></div>
@@ -197,7 +215,7 @@
 
             <div class="profile-wizard-actions">
                 <button type="button" class="btn btn-primary" id="profileWizardPrimary">
-                    Continue
+                    <%= isEnforcedWizard ? 'Complete Setup' : 'Continue' %>
                 </button>
                 <% const dependentsStep = (profileCompletion.steps || []).find(step => step.key === 'dependents') %>
                 <% if (currentProfileSection === 'dependents' && dependentsStep && !dependentsStep.complete) { %>
@@ -205,9 +223,11 @@
                         I have no dependents
                     </button>
                 <% } %>
-                <button type="button" class="btn btn-secondary" id="profileWizardDismiss">
-                    Remind me later
-                </button>
+                <% if (!isEnforcedWizard) { %>
+                    <button type="button" class="btn btn-secondary" id="profileWizardDismiss">
+                        Remind me later
+                    </button>
+                <% } %>
             </div>
         </div>
     </div>
@@ -216,6 +236,7 @@
         (() => {
             const profileCompletion = <%- JSON.stringify(profileCompletion) %>;
             const currentProfileSection = <%- JSON.stringify(currentProfileSection || '') %>;
+            const profileCompletionEnforced = <%- JSON.stringify(isEnforcedWizard) %>;
             const modal = document.getElementById('profileCompletionWizard');
             const primaryButton = document.getElementById('profileWizardPrimary');
             const closeButton = document.getElementById('profileWizardClose');
@@ -263,7 +284,7 @@
             closeButton?.addEventListener('click', closeWizard);
             dismissButton?.addEventListener('click', closeWizard);
             modal.addEventListener('click', (event) => {
-                if (event.target === modal) {
+                if (!profileCompletionEnforced && event.target === modal) {
                     closeWizard();
                 }
             });

@@ -115,6 +115,225 @@ function getDefaultTaxConfig() {
     };
 }
 
+type StatutoryProfile = {
+    code: string;
+    intro: string;
+    socialTitle: string;
+    socialOptInLabel: string;
+    socialIdentifierLabel: string;
+    socialIdentifierPlaceholder: string;
+    manualRateLabel: string;
+    manualCapLabel: string;
+    manualOverrideHelpText: string;
+    socialEnabled: boolean;
+    manualOverrideEnabled: boolean;
+    retirementTitle: string;
+    retirementDescription: string;
+    retirementOptInLabel: string;
+    retirementIdentifierLabel: string;
+    retirementIdentifierPlaceholder: string;
+    retirementIsStatutory: boolean;
+    defaultEmployeePensionPercent: number;
+    defaultEmployerPensionPercent: number;
+};
+
+const PAYROLL_STATUTORY_PROFILES: Record<string, StatutoryProfile> = {
+    GB: {
+        code: 'GB',
+        intro: 'UK payroll uses National Insurance, not U.S.-style social security labels.',
+        socialTitle: 'National Insurance',
+        socialOptInLabel: 'National Insurance Opt-In',
+        socialIdentifierLabel: 'National Insurance Number',
+        socialIdentifierPlaceholder: 'QQ 12 34 56 C',
+        manualRateLabel: 'Manual National Insurance Rate (%)',
+        manualCapLabel: 'Manual Annual National Insurance Cap',
+        manualOverrideHelpText: 'Use the manual override only when you need a payroll-specific NI exception.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Pension Reference',
+        retirementIdentifierPlaceholder: 'Enter pension reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    US: {
+        code: 'US',
+        intro: 'U.S. payroll uses FICA for Social Security and Medicare. Retirement plans stay separate.',
+        socialTitle: 'FICA / Social Security',
+        socialOptInLabel: 'FICA / Social Security Opt-In',
+        socialIdentifierLabel: 'Social Security Number',
+        socialIdentifierPlaceholder: '123-45-6789',
+        manualRateLabel: 'Manual Social Security Rate (%)',
+        manualCapLabel: 'Manual Annual Social Security Cap',
+        manualOverrideHelpText: 'Use the manual override only if you need a local payroll exception to the built-in FICA rules.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Retirement Plan Reference',
+        retirementIdentifierPlaceholder: 'Enter retirement plan reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    NG: {
+        code: 'NG',
+        intro: 'Nigeria payroll should use the Contributory Pension Scheme. This is pension/RSA-based, not U.S.-style social security.',
+        socialTitle: '',
+        socialOptInLabel: '',
+        socialIdentifierLabel: '',
+        socialIdentifierPlaceholder: '',
+        manualRateLabel: '',
+        manualCapLabel: '',
+        manualOverrideHelpText: '',
+        socialEnabled: false,
+        manualOverrideEnabled: false,
+        retirementTitle: 'Contributory Pension Scheme',
+        retirementDescription: 'Set the employee and employer pension rates for the RSA-backed pension contribution.',
+        retirementOptInLabel: 'Pension Scheme Opt-In',
+        retirementIdentifierLabel: 'RSA PIN / Pension Account Number',
+        retirementIdentifierPlaceholder: 'PEN1234567890',
+        retirementIsStatutory: true,
+        defaultEmployeePensionPercent: 8,
+        defaultEmployerPensionPercent: 10,
+    },
+    GH: {
+        code: 'GH',
+        intro: 'Ghana payroll uses SSNIT for statutory employee contribution withholding.',
+        socialTitle: 'SSNIT',
+        socialOptInLabel: 'SSNIT Opt-In',
+        socialIdentifierLabel: 'SSNIT Number',
+        socialIdentifierPlaceholder: 'Enter SSNIT number',
+        manualRateLabel: 'Manual SSNIT Rate (%)',
+        manualCapLabel: 'Manual Annual SSNIT Cap',
+        manualOverrideHelpText: 'Use the manual override only when you need a payroll exception to the built-in SSNIT rate.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Pension Reference',
+        retirementIdentifierPlaceholder: 'Enter pension reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    KE: {
+        code: 'KE',
+        intro: 'Kenya PAYE is built in. Use manual statutory overrides only if you need an extra payroll withholding for local schemes.',
+        socialTitle: 'Statutory Contribution Override',
+        socialOptInLabel: 'Enable Manual Statutory Contribution',
+        socialIdentifierLabel: 'Statutory Reference Number',
+        socialIdentifierPlaceholder: 'Enter statutory reference',
+        manualRateLabel: 'Manual Statutory Rate (%)',
+        manualCapLabel: 'Manual Annual Statutory Cap',
+        manualOverrideHelpText: 'This manual override is for country-specific statutory deductions that are not yet modeled separately.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Retirement Plan Reference',
+        retirementIdentifierPlaceholder: 'Enter retirement plan reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    ZA: {
+        code: 'ZA',
+        intro: 'South Africa PAYE is built in. Use manual statutory overrides only if you need an additional payroll deduction that is not yet modeled separately.',
+        socialTitle: 'Statutory Contribution Override',
+        socialOptInLabel: 'Enable Manual Statutory Contribution',
+        socialIdentifierLabel: 'Statutory Reference Number',
+        socialIdentifierPlaceholder: 'Enter statutory reference',
+        manualRateLabel: 'Manual Statutory Rate (%)',
+        manualCapLabel: 'Manual Annual Statutory Cap',
+        manualOverrideHelpText: 'This manual override is for country-specific statutory deductions that are not yet modeled separately.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Retirement Plan Reference',
+        retirementIdentifierPlaceholder: 'Enter retirement plan reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    EU: {
+        code: 'EU',
+        intro: 'EU payroll rules vary by member state, so statutory contributions should be configured manually.',
+        socialTitle: 'Manual Statutory Contribution',
+        socialOptInLabel: 'Enable Manual Statutory Contribution',
+        socialIdentifierLabel: 'Statutory Reference Number',
+        socialIdentifierPlaceholder: 'Enter statutory reference',
+        manualRateLabel: 'Manual Statutory Rate (%)',
+        manualCapLabel: 'Manual Annual Statutory Cap',
+        manualOverrideHelpText: 'There is no single EU-wide statutory payroll rule, so configure the member-state contribution manually here.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Retirement Plan Reference',
+        retirementIdentifierPlaceholder: 'Enter retirement plan reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+    OTHER: {
+        code: 'OTHER',
+        intro: 'Use manual statutory fields for countries that are not built in yet.',
+        socialTitle: 'Manual Statutory Contribution',
+        socialOptInLabel: 'Enable Manual Statutory Contribution',
+        socialIdentifierLabel: 'Statutory Reference Number',
+        socialIdentifierPlaceholder: 'Enter statutory reference',
+        manualRateLabel: 'Manual Statutory Rate (%)',
+        manualCapLabel: 'Manual Annual Statutory Cap',
+        manualOverrideHelpText: 'Configure the exact statutory rate and cap manually for unsupported jurisdictions.',
+        socialEnabled: true,
+        manualOverrideEnabled: true,
+        retirementTitle: 'Pension / Retirement Plan',
+        retirementDescription: 'Optional retirement deductions can still be run through payroll when needed.',
+        retirementOptInLabel: 'Retirement Plan Opt-In',
+        retirementIdentifierLabel: 'Retirement Plan Reference',
+        retirementIdentifierPlaceholder: 'Enter retirement plan reference',
+        retirementIsStatutory: false,
+        defaultEmployeePensionPercent: 0,
+        defaultEmployerPensionPercent: 0,
+    },
+};
+
+function getStatutoryProfile(jurisdictionCode: string): StatutoryProfile {
+    return PAYROLL_STATUTORY_PROFILES[String(jurisdictionCode || 'OTHER').toUpperCase()] || PAYROLL_STATUTORY_PROFILES.OTHER;
+}
+
+function normalizeStatutoryContributionsForJurisdiction(raw: any = {}, jurisdictionCode = 'OTHER') {
+    const profile = getStatutoryProfile(jurisdictionCode);
+    const next = {
+        socialSecurityOptIn: raw?.socialSecurityOptIn !== false,
+        socialSecurityNumber: String(raw?.socialSecurityNumber || ''),
+        pensionOptIn: !!raw?.pensionOptIn,
+        pensionAccountNumber: String(raw?.pensionAccountNumber || ''),
+        pensionContributionPercent: Number(raw?.pensionContributionPercent || 0),
+        employerPensionPercent: Number(raw?.employerPensionPercent || 0)
+    };
+
+    if (profile.code === 'NG') {
+        next.pensionOptIn = raw?.pensionOptIn !== false;
+        if (next.pensionContributionPercent <= 0 && next.employerPensionPercent <= 0) {
+            next.pensionContributionPercent = profile.defaultEmployeePensionPercent;
+            next.employerPensionPercent = profile.defaultEmployerPensionPercent;
+        }
+    }
+
+    return next;
+}
+
 function mapTaxConfigForForm(raw: any = {}) {
     const defaults = getDefaultTaxConfig();
     const jurisdictionCode = String(raw?.jurisdictionCode || raw?.jurisdictionCountry || '').toUpperCase();
@@ -191,6 +410,20 @@ function serializeCustomBrackets(brackets: Array<{ min: number; max: number | ''
         }));
 }
 
+function formatCurrencyAmount(amount: any, currency = 'USD') {
+    const resolvedCurrency = String(currency || 'USD').trim().toUpperCase() || 'USD';
+    const numericAmount = Number(amount || 0);
+    try {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: resolvedCurrency,
+            maximumFractionDigits: 2
+        }).format(numericAmount);
+    } catch {
+        return `${resolvedCurrency} ${numericAmount.toFixed(2)}`;
+    }
+}
+
 export default function EmployeeEditPage({ params }: { params: { id: string } }) {
     const router = useRouter();
     const { currencies } = usePayrollCurrencies();
@@ -201,6 +434,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [profileCompletion, setProfileCompletion] = useState<any>(null);
     const [idpSyncWarning, setIdpSyncWarning] = useState('');
     const [canSyncIdpProfile, setCanSyncIdpProfile] = useState(false);
+    const [taxPreview, setTaxPreview] = useState<any>(null);
+    const [taxPreviewLoading, setTaxPreviewLoading] = useState(false);
+    const [taxPreviewError, setTaxPreviewError] = useState('');
 
     // Form State
     const [formData, setFormData] = useState<any>({
@@ -217,6 +453,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         statutoryContributions: {
             socialSecurityOptIn: true,
             socialSecurityNumber: '',
+            pensionAccountNumber: '',
             pensionOptIn: false,
             pensionContributionPercent: 0,
             employerPensionPercent: 0
@@ -322,6 +559,12 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     dependentsDeclarationStatus: nextDependentsStatus
                 });
 
+                const nextTaxConfig = mapTaxConfigForForm(res.data.taxConfig);
+                const nextStatutoryContributions = normalizeStatutoryContributionsForJurisdiction(
+                    res.data.statutoryContributions,
+                    nextTaxConfig.jurisdictionCode
+                );
+
                 // Initialize form
                 setFormData({
                     basicSalary: res.data.basicSalary || 0,
@@ -333,14 +576,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         holdPayment: !!res.data.payrollFlags?.holdPayment,
                         holdReason: res.data.payrollFlags?.holdReason || ''
                     },
-                    taxConfig: mapTaxConfigForForm(res.data.taxConfig),
-                    statutoryContributions: {
-                        socialSecurityOptIn: res.data.statutoryContributions?.socialSecurityOptIn !== false,
-                        socialSecurityNumber: res.data.statutoryContributions?.socialSecurityNumber || '',
-                        pensionOptIn: !!res.data.statutoryContributions?.pensionOptIn,
-                        pensionContributionPercent: res.data.statutoryContributions?.pensionContributionPercent || 0,
-                        employerPensionPercent: res.data.statutoryContributions?.employerPensionPercent || 0
-                    },
+                    taxConfig: nextTaxConfig,
+                    statutoryContributions: nextStatutoryContributions,
                     bankAccount: {
                         country: resolvedCountry,
                         bankName: syncedBankAccount?.bankName || payrollBankAccount?.bankName || '',
@@ -368,6 +605,81 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
         fetchProfile();
     }, [params.id, router]);
+
+    const taxPreviewInputKey = JSON.stringify({
+        basicSalary: formData.basicSalary,
+        currency: formData.currency,
+        payFrequency: profile?.payFrequency || 'monthly',
+        allowances: formData.allowances,
+        recurringDeductions: formData.recurringDeductions,
+        taxConfig: formData.taxConfig,
+        statutoryContributions: formData.statutoryContributions,
+        dateOfBirth: setupData.personalInfo?.dateOfBirth || profile?.employeeInfo?.dateOfBirth || null
+    });
+
+    useEffect(() => {
+        if (loading || !profile?._id) {
+            return;
+        }
+
+        let cancelled = false;
+        const timeoutId = window.setTimeout(async () => {
+            setTaxPreviewLoading(true);
+            setTaxPreviewError('');
+
+            try {
+                const previewRes = await api.post(`/payroll/profiles/${params.id}/tax-preview`, {
+                    basicSalary: Number(formData.basicSalary || 0),
+                    currency: formData.currency,
+                    payFrequency: profile?.payFrequency || 'monthly',
+                    allowances: formData.allowances,
+                    recurringDeductions: formData.recurringDeductions,
+                    taxConfig: {
+                        ...formData.taxConfig,
+                        dependents: Number(formData.taxConfig.dependents || 0),
+                        additionalWithholding: Number(formData.taxConfig.additionalWithholding || 0),
+                        flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0),
+                        manualTaxFreeAllowance: Number(formData.taxConfig.manualTaxFreeAllowance || 0),
+                        otherIncome: Number(formData.taxConfig.otherIncome || 0),
+                        deductionsAdjustment: Number(formData.taxConfig.deductionsAdjustment || 0),
+                        taxCredits: Number(formData.taxConfig.taxCredits || 0),
+                        socialSecurityRate: Number(formData.taxConfig.socialSecurityRate || 0),
+                        socialSecurityCap: Number(formData.taxConfig.socialSecurityCap || 0),
+                        multipleJobs: !!formData.taxConfig.multipleJobs,
+                        customBrackets: serializeCustomBrackets(formData.taxConfig.customBrackets || [])
+                    },
+                    statutoryContributions: {
+                        ...formData.statutoryContributions,
+                        pensionContributionPercent: Number(formData.statutoryContributions.pensionContributionPercent || 0),
+                        employerPensionPercent: Number(formData.statutoryContributions.employerPensionPercent || 0)
+                    },
+                    employeeInfo: {
+                        ...(profile?.employeeInfo || {}),
+                        dateOfBirth: setupData.personalInfo?.dateOfBirth || profile?.employeeInfo?.dateOfBirth || null
+                    }
+                });
+
+                if (!cancelled) {
+                    setTaxPreview(previewRes.data);
+                }
+            } catch (error: any) {
+                if (!cancelled) {
+                    console.error('Failed to preview tax configuration:', error);
+                    setTaxPreview(null);
+                    setTaxPreviewError(error?.response?.data?.error || 'Failed to preview tax calculation');
+                }
+            } finally {
+                if (!cancelled) {
+                    setTaxPreviewLoading(false);
+                }
+            }
+        }, 350);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
+    }, [loading, params.id, profile?._id, profile?.payFrequency, setupData.personalInfo?.dateOfBirth, taxPreviewInputKey]);
 
     const handleSubmit = async (e?: React.SyntheticEvent) => {
         e?.preventDefault?.();
@@ -465,8 +777,12 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     otherIncome: Number(formData.taxConfig.otherIncome || 0),
                     deductionsAdjustment: Number(formData.taxConfig.deductionsAdjustment || 0),
                     taxCredits: Number(formData.taxConfig.taxCredits || 0),
-                    socialSecurityRate: Number(formData.taxConfig.socialSecurityRate || 0),
-                    socialSecurityCap: Number(formData.taxConfig.socialSecurityCap || 0),
+                    socialSecurityRate: formData.taxConfig.jurisdictionCode === 'NG'
+                        ? 0
+                        : Number(formData.taxConfig.socialSecurityRate || 0),
+                    socialSecurityCap: formData.taxConfig.jurisdictionCode === 'NG'
+                        ? 0
+                        : Number(formData.taxConfig.socialSecurityCap || 0),
                     multipleJobs: !!formData.taxConfig.multipleJobs,
                     customBrackets: serializeCustomBrackets(formData.taxConfig.customBrackets || [])
                 },
@@ -479,6 +795,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 },
                 statutoryContributions: {
                     ...formData.statutoryContributions,
+                    pensionAccountNumber: String(formData.statutoryContributions.pensionAccountNumber || '').trim(),
                     pensionContributionPercent: Number(formData.statutoryContributions.pensionContributionPercent || 0),
                     employerPensionPercent: Number(formData.statutoryContributions.employerPensionPercent || 0)
                 },
@@ -611,10 +928,18 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
     const setJurisdictionCode = (code: string) => {
         const manualOnly = isManualOnlyJurisdiction(code);
-        updateTaxConfig({
-            jurisdictionCode: code,
-            calculationMode: manualOnly ? 'manual' : 'builtin',
-            taxSubdivision: code === 'GB' ? (formData.taxConfig.taxSubdivision || 'standard') : '',
+        setFormData({
+            ...formData,
+            taxConfig: {
+                ...formData.taxConfig,
+                jurisdictionCode: code,
+                calculationMode: manualOnly ? 'manual' : 'builtin',
+                taxSubdivision: code === 'GB' ? (formData.taxConfig.taxSubdivision || 'standard') : '',
+            },
+            statutoryContributions: normalizeStatutoryContributionsForJurisdiction(
+                formData.statutoryContributions,
+                code
+            )
         });
     };
 
@@ -644,11 +969,27 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
     const selectedJurisdiction = payrollTaxJurisdictions.find((item) => item.code === formData.taxConfig.jurisdictionCode)
         || payrollTaxJurisdictions[payrollTaxJurisdictions.length - 1];
+    const statutoryProfile = getStatutoryProfile(formData.taxConfig.jurisdictionCode);
     const canUseBuiltInTax = selectedJurisdiction?.mode === 'builtin';
     const showUsTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'US' && formData.taxConfig.calculationMode === 'builtin';
     const showUkTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'GB' && formData.taxConfig.calculationMode === 'builtin';
     const showResidencyStatus = canUseBuiltInTax && ['GH', 'KE'].includes(formData.taxConfig.jurisdictionCode) && formData.taxConfig.calculationMode === 'builtin';
     const showManualTaxFields = formData.taxConfig.calculationMode === 'manual';
+    const hasRetirementConfig = statutoryProfile.retirementIsStatutory
+        || formData.statutoryContributions.pensionOptIn
+        || Number(formData.statutoryContributions.pensionContributionPercent || 0) > 0
+        || Number(formData.statutoryContributions.employerPensionPercent || 0) > 0
+        || hasText(formData.statutoryContributions.pensionAccountNumber);
+    const nigeriaPensionEmployeeRate = Number(formData.statutoryContributions.pensionContributionPercent || 0);
+    const nigeriaPensionEmployerRate = Number(formData.statutoryContributions.employerPensionPercent || 0);
+    const nigeriaPensionMeetsMinimum = statutoryProfile.code !== 'NG'
+        || !formData.statutoryContributions.pensionOptIn
+        || nigeriaPensionEmployerRate >= 18
+        || (
+            nigeriaPensionEmployeeRate >= 8
+            && nigeriaPensionEmployerRate >= 10
+            && (nigeriaPensionEmployeeRate + nigeriaPensionEmployerRate) >= 18
+        );
 
     if (loading) {
         return (
@@ -1841,6 +2182,152 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                             </div>
 
+                            <div className="mt-4 rounded-xl border border-zinc-700/60 bg-zinc-950/40 p-4">
+                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-zinc-200">Estimated Tax This Pay Period</h4>
+                                        <p className="text-xs text-zinc-500 mt-1">
+                                            This preview uses the current salary, allowances, deductions, and jurisdiction settings on this page. Change any field below and the estimate updates automatically.
+                                        </p>
+                                    </div>
+                                    <span className="rounded-full border border-zinc-700 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                                        {formData.taxConfig.calculationMode === 'builtin' ? 'Built-In Estimate' : 'Manual Estimate'}
+                                    </span>
+                                </div>
+
+                                {taxPreviewLoading ? (
+                                    <div className="mt-4 flex items-center gap-2 text-sm text-zinc-400">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Calculating preview...
+                                    </div>
+                                ) : taxPreviewError ? (
+                                    <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                                        {taxPreviewError}
+                                    </div>
+                                ) : taxPreview ? (
+                                    <>
+                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                                                <p className="text-xs uppercase tracking-wide text-zinc-500">Gross Pay</p>
+                                                <p className="mt-1 text-lg font-semibold text-zinc-100">
+                                                    {formatCurrencyAmount(taxPreview.summary?.grossPay, taxPreview.currency || formData.currency)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                                                <p className="text-xs uppercase tracking-wide text-zinc-500">Income Tax</p>
+                                                <p className="mt-1 text-lg font-semibold text-amber-300">
+                                                    {formatCurrencyAmount(taxPreview.summary?.incomeTax, taxPreview.currency || formData.currency)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                                                <p className="text-xs uppercase tracking-wide text-zinc-500">Statutory Deductions</p>
+                                                <p className="mt-1 text-lg font-semibold text-zinc-100">
+                                                    {formatCurrencyAmount(taxPreview.summary?.statutoryDeductions, taxPreview.currency || formData.currency)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                                                <p className="text-xs uppercase tracking-wide text-zinc-500">Estimated Net Pay</p>
+                                                <p className="mt-1 text-lg font-semibold text-emerald-300">
+                                                    {formatCurrencyAmount(taxPreview.summary?.estimatedNetPay, taxPreview.currency || formData.currency)}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                                                <h5 className="text-sm font-semibold text-zinc-200 mb-3">Calculation Breakdown</h5>
+                                                <div className="space-y-2 text-sm">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Taxable earnings</span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.summary?.taxableEarnings, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Pre-tax recurring deductions</span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.summary?.recurringPreTaxDeductions, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">
+                                                            {statutoryProfile.code === 'NG' ? 'Employee pension' : 'Employee retirement'}
+                                                        </span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.summary?.employeePensionAmount, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">
+                                                            {statutoryProfile.code === 'NG' ? 'Employer pension' : 'Employer retirement'}
+                                                        </span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.summary?.employerPensionAmount, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Post-tax recurring deductions</span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.summary?.recurringPostTaxDeductions, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3 border-t border-zinc-800 pt-2">
+                                                        <span className="text-zinc-400">Estimated employee deductions</span>
+                                                        <span className="font-medium text-zinc-100">{formatCurrencyAmount(taxPreview.summary?.estimatedEmployeeDeductions, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                                                <h5 className="text-sm font-semibold text-zinc-200 mb-3">Jurisdiction Detail</h5>
+                                                <div className="space-y-2 text-sm">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Rule</span>
+                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.jurisdictionName || selectedJurisdiction.label}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Method</span>
+                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.method || formData.taxConfig.calculationMode}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Annualized taxable income</span>
+                                                        <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.incomeTax?.annualizedTaxableIncome, taxPreview.currency || formData.currency)}</span>
+                                                    </div>
+                                                    {taxPreview.incomeTax?.details?.consolidatedReliefAllowance !== undefined && (
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <span className="text-zinc-500">Consolidated relief allowance</span>
+                                                            <span className="text-zinc-200">{formatCurrencyAmount(taxPreview.incomeTax.details.consolidatedReliefAllowance, taxPreview.currency || formData.currency)}</span>
+                                                        </div>
+                                                    )}
+                                                    {taxPreview.pension?.enabled && (
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <span className="text-zinc-500">Retirement source</span>
+                                                            <span className="text-zinc-200">
+                                                                {taxPreview.pension?.source === 'builtin_default' ? 'Built-in default' : 'Custom rate'}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {Array.isArray(taxPreview.statutoryContributions?.components) && taxPreview.statutoryContributions.components.length > 0 && (
+                                                    <div className="mt-4 border-t border-zinc-800 pt-3">
+                                                        <p className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Statutory Components</p>
+                                                        <div className="space-y-2">
+                                                            {taxPreview.statutoryContributions.components.map((component: any, index: number) => (
+                                                                <div key={`${component.name}-${index}`} className="flex items-center justify-between gap-3 text-sm">
+                                                                    <span className="text-zinc-400">{component.name}</span>
+                                                                    <span className="text-zinc-200">{formatCurrencyAmount(component.amount, taxPreview.currency || formData.currency)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {Array.isArray(taxPreview.incomeTax?.notes) && taxPreview.incomeTax.notes.length > 0 && (
+                                            <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-3">
+                                                <p className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Calculation Notes</p>
+                                                <div className="space-y-1 text-sm text-zinc-400">
+                                                    {taxPreview.incomeTax.notes.map((note: string, index: number) => (
+                                                        <p key={`${note}-${index}`}>{note}</p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : null}
+                            </div>
+
                             {(showUkTaxFields || showResidencyStatus || showUsTaxFields) && (
                                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {showUkTaxFields && (
@@ -2079,123 +2566,179 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             <div className="mt-6 pt-6 border-t border-zinc-800/70">
                                 <h4 className="text-sm font-semibold text-zinc-300 mb-2">Statutory Contributions</h4>
                                 <p className="text-xs text-zinc-500 mb-4">
-                                    Built-in statutory deductions apply automatically for supported countries when possible. Manual rate and cap fields below override the preset if you need a local exception.
+                                    {statutoryProfile.intro}
                                 </p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
-                                        <span className="text-sm text-zinc-300">Social Security Opt-In</span>
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.statutoryContributions.socialSecurityOptIn}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                statutoryContributions: {
-                                                    ...formData.statutoryContributions,
-                                                    socialSecurityOptIn: e.target.checked
-                                                }
-                                            })}
-                                            className="rounded bg-zinc-900 border-zinc-700"
-                                        />
-                                    </label>
+                                {statutoryProfile.socialEnabled && (
+                                    <div className="rounded-xl border border-zinc-800/70 bg-zinc-950/30 p-4 mb-4">
+                                        <h5 className="text-sm font-semibold text-zinc-200 mb-1">{statutoryProfile.socialTitle}</h5>
+                                        <p className="text-xs text-zinc-500 mb-4">{statutoryProfile.manualOverrideHelpText}</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                                <span className="text-sm text-zinc-300">{statutoryProfile.socialOptInLabel}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.statutoryContributions.socialSecurityOptIn}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            socialSecurityOptIn: e.target.checked
+                                                        }
+                                                    })}
+                                                    className="rounded bg-zinc-900 border-zinc-700"
+                                                />
+                                            </label>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Social Security Number</label>
-                                        <input
-                                            type="text"
-                                            value={formData.statutoryContributions.socialSecurityNumber}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                statutoryContributions: {
-                                                    ...formData.statutoryContributions,
-                                                    socialSecurityNumber: e.target.value
-                                                }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            placeholder="XXX-XX-XXXX"
-                                        />
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">{statutoryProfile.socialIdentifierLabel}</label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.statutoryContributions.socialSecurityNumber}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            socialSecurityNumber: e.target.value
+                                                        }
+                                                    })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                    placeholder={statutoryProfile.socialIdentifierPlaceholder}
+                                                />
+                                            </div>
+
+                                            {statutoryProfile.manualOverrideEnabled && (
+                                                <>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">{statutoryProfile.manualRateLabel}</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            step="0.01"
+                                                            value={formData.taxConfig.socialSecurityRate}
+                                                            onChange={(e) => updateTaxConfig({ socialSecurityRate: Number(e.target.value) })}
+                                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">{statutoryProfile.manualCapLabel}</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.01"
+                                                            value={formData.taxConfig.socialSecurityCap}
+                                                            onChange={(e) => updateTaxConfig({ socialSecurityCap: Number(e.target.value) })}
+                                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
+                                )}
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Social Security Rate (%)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.01"
-                                            value={formData.taxConfig.socialSecurityRate}
-                                            onChange={(e) => updateTaxConfig({ socialSecurityRate: Number(e.target.value) })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        />
+                                {(hasRetirementConfig || statutoryProfile.retirementIsStatutory) && (
+                                    <div className="rounded-xl border border-zinc-800/70 bg-zinc-950/30 p-4">
+                                        <div className="flex items-start justify-between gap-4 mb-4">
+                                            <div>
+                                                <h5 className="text-sm font-semibold text-zinc-200 mb-1">{statutoryProfile.retirementTitle}</h5>
+                                                <p className="text-xs text-zinc-500">{statutoryProfile.retirementDescription}</p>
+                                            </div>
+                                            {statutoryProfile.retirementIsStatutory && (
+                                                <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-300">
+                                                    Built In
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
+                                                <span className="text-sm text-zinc-300">{statutoryProfile.retirementOptInLabel}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.statutoryContributions.pensionOptIn}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            pensionOptIn: e.target.checked
+                                                        }
+                                                    })}
+                                                    className="rounded bg-zinc-900 border-zinc-700"
+                                                />
+                                            </label>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">{statutoryProfile.retirementIdentifierLabel}</label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.statutoryContributions.pensionAccountNumber}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            pensionAccountNumber: e.target.value
+                                                        }
+                                                    })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                    placeholder={statutoryProfile.retirementIdentifierPlaceholder}
+                                                    disabled={!formData.statutoryContributions.pensionOptIn}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                                    {statutoryProfile.code === 'NG' ? 'Employee Pension (%)' : 'Employee Retirement (%)'}
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={formData.statutoryContributions.pensionContributionPercent}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            pensionContributionPercent: Number(e.target.value)
+                                                        }
+                                                    })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                    disabled={!formData.statutoryContributions.pensionOptIn}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                                    {statutoryProfile.code === 'NG' ? 'Employer Pension (%)' : 'Employer Retirement (%)'}
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={formData.statutoryContributions.employerPensionPercent}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        statutoryContributions: {
+                                                            ...formData.statutoryContributions,
+                                                            employerPensionPercent: Number(e.target.value)
+                                                        }
+                                                    })}
+                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                    disabled={!formData.statutoryContributions.pensionOptIn}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {statutoryProfile.code === 'NG' && formData.statutoryContributions.pensionOptIn && !nigeriaPensionMeetsMinimum && (
+                                            <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                                                Nigeria pension usually needs at least 8% employee and 10% employer, or the employer can fully fund at least 18%. Adjust the rates if this employee is not on a documented exception.
+                                            </div>
+                                        )}
                                     </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Annual Social Security Cap</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={formData.taxConfig.socialSecurityCap}
-                                            onChange={(e) => updateTaxConfig({ socialSecurityCap: Number(e.target.value) })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        />
-                                    </div>
-
-                                    <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
-                                        <span className="text-sm text-zinc-300">Pension Opt-In</span>
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.statutoryContributions.pensionOptIn}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                statutoryContributions: {
-                                                    ...formData.statutoryContributions,
-                                                    pensionOptIn: e.target.checked
-                                                }
-                                            })}
-                                            className="rounded bg-zinc-900 border-zinc-700"
-                                        />
-                                    </label>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Pension (%)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.01"
-                                            value={formData.statutoryContributions.pensionContributionPercent}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                statutoryContributions: {
-                                                    ...formData.statutoryContributions,
-                                                    pensionContributionPercent: Number(e.target.value)
-                                                }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            disabled={!formData.statutoryContributions.pensionOptIn}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employer Pension (%)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.01"
-                                            value={formData.statutoryContributions.employerPensionPercent}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                statutoryContributions: {
-                                                    ...formData.statutoryContributions,
-                                                    employerPensionPercent: Number(e.target.value)
-                                                }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            disabled={!formData.statutoryContributions.pensionOptIn}
-                                        />
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </div>
 

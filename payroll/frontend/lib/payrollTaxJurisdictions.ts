@@ -22,7 +22,7 @@ export const payrollTaxJurisdictions: PayrollTaxJurisdictionOption[] = [
     code: 'NG',
     label: 'Nigeria',
     mode: 'builtin',
-    description: 'Uses Nigeria PAYE with consolidated relief allowance and minimum-tax handling.',
+    description: 'Uses Nigeria PAYE with consolidated relief allowance, minimum-tax handling, and pension-led statutory setup.',
   },
   {
     code: 'GH',

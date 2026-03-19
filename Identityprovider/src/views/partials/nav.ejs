@@ -136,6 +136,7 @@
     </details>
   </div>
 </nav>
+<%- include('profile-completion-wizard', { profileCompletion, currentProfileSection, profileCompletionEnforced }) %>
 <script>
   (function initNotificationBadge() {
     const badges = Array.from(document.querySelectorAll('[data-notification-badge]'));

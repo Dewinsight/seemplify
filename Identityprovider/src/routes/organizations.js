@@ -308,11 +308,35 @@ router.put('/:orgId',
         }
       }
 
-      const organization = await Organization.findByIdAndUpdate(
-        req.params.orgId,
-        { $set: updates },
-        { new: true }
-      )
+      const organization = req.organization
+
+      if (updates.name !== undefined) {
+        organization.name = updates.name
+      }
+      if (updates.description !== undefined) {
+        organization.description = updates.description
+      }
+      if (updates.settings !== undefined) {
+        organization.settings = updates.settings
+      }
+
+      await organization.save()
+
+      const memberAccountIds = Array.isArray(organization.members)
+        ? organization.members.map(member => member.account).filter(Boolean)
+        : []
+
+      if (memberAccountIds.length > 0) {
+        const memberAccounts = await Account.find({ _id: { $in: memberAccountIds } })
+          .select('sub')
+          .lean()
+
+        memberAccounts.forEach((account) => {
+          if (account?.sub) {
+            invalidateClaimsCache(account.sub)
+          }
+        })
+      }
 
       console.log('✅ Organization updated:', organization.name, 'by', req.user.email)
 

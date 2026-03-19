@@ -321,6 +321,39 @@ function normalizeTaxConfigPayload(input) {
   };
 }
 
+function roundMoney(value) {
+  const parsed = Number(value || 0);
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function sumAllowanceAmount(allowances = [], { taxableOnly = false } = {}) {
+  return roundMoney(
+    (Array.isArray(allowances) ? allowances : [])
+      .filter((item) => item && item.isActive !== false)
+      .filter((item) => !taxableOnly || item.isTaxable !== false)
+      .reduce((sum, item) => sum + Math.max(0, toNumber(item.amount)), 0)
+  );
+}
+
+function sumRecurringDeductionAmount(deductions = [], grossPay = 0, { isPreTax = false } = {}) {
+  return roundMoney(
+    (Array.isArray(deductions) ? deductions : [])
+      .filter((item) => item && item.isActive !== false)
+      .filter((item) => !!item.isPreTax === isPreTax)
+      .reduce((sum, item) => {
+        if (item.isPercentage) {
+          return sum + (grossPay * (Math.max(0, toNumber(item.percentage)) / 100));
+        }
+        return sum + Math.max(0, toNumber(item.amount));
+      }, 0)
+  );
+}
+
 // =====================================================
 // PAYROLL PROFILE ROUTES (Employee & HR Admin)
 // =====================================================
@@ -787,6 +820,117 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Get Profile Error:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+/**
+ * POST /api/payroll/profiles/:userId/tax-preview
+ * Preview tax and statutory calculations for the current profile form state
+ */
+router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const profile = await PayrollProfile.findOne({
+      userId: req.params.userId,
+      organizationId
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const basicSalary = Math.max(0, toNumber(req.body?.basicSalary, profile.basicSalary || 0));
+    const currency = String(req.body?.currency || profile.currency || 'USD').trim().toUpperCase() || 'USD';
+    const payFrequency = String(req.body?.payFrequency || profile.payFrequency || 'monthly').trim() || 'monthly';
+    const allowances = Array.isArray(req.body?.allowances) ? req.body.allowances : (profile.allowances || []);
+    const recurringDeductions = Array.isArray(req.body?.recurringDeductions)
+      ? req.body.recurringDeductions
+      : (profile.recurringDeductions || []);
+    const employeeInfo = {
+      ...(profile.employeeInfo || {}),
+      ...(req.body?.employeeInfo || {}),
+    };
+    const taxConfig = normalizeTaxConfigPayload(
+      req.body?.taxConfig !== undefined ? req.body.taxConfig : (profile.taxConfig || {})
+    ) || {};
+    const statutoryContributions = {
+      ...(profile.statutoryContributions || {}),
+      ...(req.body?.statutoryContributions || {}),
+    };
+
+    const totalAllowances = sumAllowanceAmount(allowances);
+    const taxableAllowances = sumAllowanceAmount(allowances, { taxableOnly: true });
+    const grossPay = roundMoney(basicSalary + totalAllowances);
+    const taxableEarnings = roundMoney(basicSalary + taxableAllowances);
+    const recurringPreTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: true });
+    const recurringPostTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: false });
+    const effectivePension = taxService.resolveEffectivePensionSettings(taxConfig, statutoryContributions);
+    const employeePensionAmount = effectivePension.enabled
+      ? roundMoney(grossPay * (toNumber(effectivePension.employeePercent) / 100))
+      : 0;
+    const employerPensionAmount = effectivePension.enabled
+      ? roundMoney(grossPay * (toNumber(effectivePension.employerPercent) / 100))
+      : 0;
+    const preTaxDeductions = roundMoney(recurringPreTaxDeductions + employeePensionAmount);
+    const taxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
+
+    const taxResult = taxService.calculatePayrollTaxes({
+      taxConfig,
+      statutoryContributions,
+      grossPay,
+      taxableIncome,
+      basicSalary,
+      preTaxDeductions,
+      paymentDate: new Date(),
+      payFrequency,
+      employeeInfo,
+      ytdGrossPay: 0,
+      ytdTaxableIncome: 0,
+    });
+
+    const statutoryDeductions = roundMoney(taxResult?.statutoryContributions?.totalAmount || 0);
+    const incomeTax = roundMoney(taxResult?.incomeTax?.taxAmount || 0);
+    const estimatedEmployeeDeductions = roundMoney(
+      recurringPreTaxDeductions
+      + employeePensionAmount
+      + statutoryDeductions
+      + incomeTax
+      + recurringPostTaxDeductions
+    );
+    const estimatedNetPay = roundMoney(grossPay - estimatedEmployeeDeductions);
+
+    res.json({
+      currency,
+      payFrequency,
+      calculationMode: taxConfig.calculationMode,
+      summary: {
+        basicSalary: roundMoney(basicSalary),
+        grossPay,
+        taxableEarnings,
+        recurringPreTaxDeductions,
+        recurringPostTaxDeductions,
+        employeePensionAmount,
+        employerPensionAmount,
+        statutoryDeductions,
+        incomeTax,
+        estimatedEmployeeDeductions,
+        estimatedNetPay,
+      },
+      pension: {
+        enabled: effectivePension.enabled,
+        employeePercent: roundMoney(effectivePension.employeePercent),
+        employerPercent: roundMoney(effectivePension.employerPercent),
+        source: effectivePension.source,
+      },
+      incomeTax: taxResult?.incomeTax || {},
+      statutoryContributions: taxResult?.statutoryContributions || { totalAmount: 0, reducesTaxableIncome: 0, components: [] },
+    });
+  } catch (err) {
+    console.error('Tax Preview Error:', err);
+    res.status(500).json({
+      error: 'Failed to preview payroll tax',
+      details: err.message,
+    });
   }
 });
 

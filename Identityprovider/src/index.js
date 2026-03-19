@@ -3761,6 +3761,16 @@ app.get('/api/apps', async (req, res) => {
 
 // Helper middleware to check session and get current user
 const getSessionUser = async (req, res, next) => {
+  const attachProfileCompletionLocals = (account) => {
+    const profileCompletion = getProfileCompletion(account)
+    req.profileCompletion = profileCompletion
+    res.locals.user = account
+    res.locals.profileCompletion = profileCompletion
+    res.locals.currentProfileSection = ''
+    res.locals.activeProfileSection = res.locals.activeProfileSection || ''
+    res.locals.profileCompletionEnforced = !profileCompletion.complete && !req.path.startsWith('/profile')
+  }
+
   // Check if user has a session (set during login)
   const sessionAccountId = req.session?.accountId
   if (!sessionAccountId) {
@@ -3771,6 +3781,7 @@ const getSessionUser = async (req, res, next) => {
       req.user = await Account.findOne({ sub: cookieAccount.sub })
         .populate('organizations.organization', 'name')
         .populate('currentOrganization', 'name')
+      attachProfileCompletionLocals(req.user)
       return next()
     }
 
@@ -3786,7 +3797,10 @@ const getSessionUser = async (req, res, next) => {
           req.user = await Account.findOne({ sub: payload.sub })
             .populate('organizations.organization', 'name')
             .populate('currentOrganization', 'name')
-          if (req.user) return next()
+          if (req.user) {
+            attachProfileCompletionLocals(req.user)
+            return next()
+          }
         }
       } catch (e) {
         console.log('Session token invalid:', e.message)
@@ -3804,6 +3818,7 @@ const getSessionUser = async (req, res, next) => {
   }
 
   req.user = account
+  attachProfileCompletionLocals(account)
   next()
 }
 
@@ -8258,7 +8273,8 @@ function buildProfilePageViewModel(account, currentProfileSection) {
     user: account,
     currentProfileSection,
     activeProfileSection: currentProfileSection,
-    profileCompletion: getProfileCompletion(account)
+    profileCompletion: getProfileCompletion(account),
+    profileCompletionEnforced: false
   }
 }
 
