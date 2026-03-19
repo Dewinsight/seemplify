@@ -29,6 +29,10 @@ const TeamSchema = new mongoose.Schema({
     trim: true,
     maxLength: 500
   },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    index: true
+  },
 
   // Manager assignment (line manager of this team)
   // CRITICAL: Manager must have line_manager role in the team
@@ -76,6 +80,7 @@ const TeamSchema = new mongoose.Schema({
 
 // Indexes for efficient queries
 TeamSchema.index({ organization: 1, parentTeam: 1 })
+TeamSchema.index({ organization: 1, department: 1 })
 TeamSchema.index({ manager: 1 })
 TeamSchema.index({ 'members.account': 1 })
 TeamSchema.index({ name: 'text' })
@@ -154,6 +159,7 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
           teams: {
             team: this._id,
             organization: this.organization,
+            department: this.department || null,
             role: role,
             joinedAt: new Date(),
             isActive: true

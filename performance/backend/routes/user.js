@@ -166,6 +166,8 @@ router.get('/context', requireAuth, async (req, res) => {
         teams: teams.map(t => ({
           id: t.id,
           name: t.name,
+          departmentId: t.departmentId,
+          departmentName: t.departmentName,
           role: t.role,
           roleDisplay: formatTeamRole(t.role),
           isManager: t.isManager,
@@ -250,6 +252,8 @@ router.get('/teams', requireAuth, async (req, res) => {
         teams: teams.map(t => ({
           id: t.id,
           name: t.name,
+          departmentId: t.departmentId,
+          departmentName: t.departmentName,
           organizationId: t.organizationId,
           organizationName: t.organizationName,
           role: t.role,
@@ -307,6 +311,10 @@ router.get('/direct-reports', requireAuth, async (req, res) => {
       teamId: member.teamId,
       teamName: member.teamName,
       teamRole: member.teamRole
+      ,
+      department: member.department,
+      departmentId: member.departmentId,
+      departmentName: member.departmentName
     }));
 
     res.json({
@@ -375,7 +383,9 @@ router.get('/all-employees', requireAuth, async (req, res) => {
           'Unknown',
         email: u.email,
         jobTitle: u.profile?.title || primaryTeam?.role || 'Employee',
-        department: primaryTeam?.name || u.profile?.department || '',
+        department: primaryTeam?.departmentName || u.profile?.department || '',
+        departmentId: primaryTeam?.departmentId || '',
+        departmentName: primaryTeam?.departmentName || '',
         managerId: primaryTeam?.managerId,
         managerName: primaryTeam?.managerName,
         managerEmail: primaryTeam?.managerEmail
@@ -753,6 +763,8 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       email: member.email,
       jobTitle: member.jobTitle,
       department: member.department,
+      departmentId: member.departmentId,
+      departmentName: member.departmentName,
       teamId: member.teamId,
       teamIds: Array.isArray(member.teamIds)
         ? member.teamIds.filter(Boolean).map(String)
@@ -820,7 +832,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
             name,
             email: userDoc.email,
             jobTitle: userDoc.profile?.title || teamInOrg?.role || 'Employee',
-            department: teamInOrg?.name || userDoc.profile?.department || '',
+            department: teamInOrg?.departmentName || userDoc.profile?.department || '',
+            departmentId: teamInOrg?.departmentId || '',
+            departmentName: teamInOrg?.departmentName || '',
             teamId: teamInOrg?.id,
             teamIds: normalizedTeamIds,
             teamName: teamInOrg?.name,
@@ -985,6 +999,9 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
             name,
             jobTitle: userDoc.profile?.title || 'Team Member',
             avatar: null,
+            department: teamInOrg?.departmentName || '',
+            departmentId: teamInOrg?.departmentId || '',
+            departmentName: teamInOrg?.departmentName || '',
             teamId: teamInOrg?.id,
             teamName: teamInOrg?.name,
             teamRole: teamInOrg?.role || 'member',

@@ -21,6 +21,9 @@ type IdpMember = {
     sub?: string;
     email?: string;
     name?: string;
+    designation?: string;
+    departmentId?: string;
+    departmentName?: string;
     role?: string;
     teamName?: string;
     team?: { id?: string; name?: string };
@@ -49,6 +52,16 @@ function resolveTeamName(row: EmployeeRow): string {
     return 'Unassigned';
 }
 
+function resolveDepartmentName(row: EmployeeRow): string {
+    const profileDepartment = String(row.profile?.employeeInfo?.department || '').trim();
+    if (profileDepartment) return profileDepartment;
+
+    const memberDepartment = String(row.member?.departmentName || '').trim();
+    if (memberDepartment) return memberDepartment;
+
+    return 'Unassigned';
+}
+
 export default function EmployeesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -56,6 +69,7 @@ export default function EmployeesPage() {
     const [employees, setEmployees] = useState<EmployeeRow[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [teamFilter, setTeamFilter] = useState<string>('all');
+    const [departmentFilter, setDepartmentFilter] = useState<string>('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'needs_setup' | 'configured'>(
         searchParams.get('setup') === 'pending' ? 'needs_setup' : 'all'
     );
@@ -125,6 +139,12 @@ export default function EmployeesPage() {
         return Array.from(set).sort((a, b) => a.localeCompare(b));
     }, [employees]);
 
+    const availableDepartments = useMemo(() => {
+        const set = new Set<string>();
+        employees.forEach((row) => set.add(resolveDepartmentName(row)));
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [employees]);
+
     const filteredEmployees = useMemo(() => {
         return employees.filter((row) => {
             const p = row.profile;
@@ -133,16 +153,19 @@ export default function EmployeesPage() {
             const needsOnboarding = !p;
             const needsSetup = !p?.basicSalary || Number(p.basicSalary) === 0;
             const teamName = resolveTeamName(row);
+            const departmentName = resolveDepartmentName(row);
 
             const name = String(p?.employeeInfo?.name || m?.name || '').toLowerCase();
             const email = String(p?.employeeInfo?.email || m?.email || '').toLowerCase();
-            const department = String(p?.employeeInfo?.department || '').toLowerCase();
+            const department = String(departmentName || '').toLowerCase();
+            const designation = String(p?.employeeInfo?.designation || m?.designation || '').toLowerCase();
             const team = String(teamName || '').toLowerCase();
 
             const q = searchQuery.toLowerCase().trim();
-            const searchMatch = !q || name.includes(q) || email.includes(q) || department.includes(q) || team.includes(q);
+            const searchMatch = !q || name.includes(q) || email.includes(q) || department.includes(q) || designation.includes(q) || team.includes(q);
 
             const teamMatch = teamFilter === 'all' || teamName === teamFilter;
+            const departmentMatch = departmentFilter === 'all' || departmentName === departmentFilter;
 
             let statusMatch = true;
             if (statusFilter === 'needs_setup') {
@@ -151,9 +174,9 @@ export default function EmployeesPage() {
                 statusMatch = !needsOnboarding && !needsSetup;
             }
 
-            return searchMatch && teamMatch && statusMatch;
+            return searchMatch && teamMatch && departmentMatch && statusMatch;
         });
-    }, [employees, searchQuery, teamFilter, statusFilter]);
+    }, [departmentFilter, employees, searchQuery, statusFilter, teamFilter]);
 
     if (loading) {
         return (
@@ -215,6 +238,16 @@ export default function EmployeesPage() {
                     <option value="configured">Configured</option>
                 </select>
                 <select
+                    value={departmentFilter}
+                    onChange={(e) => setDepartmentFilter(e.target.value)}
+                    className="px-3 py-2.5 bg-zinc-900 border border-zinc-700/50 rounded-xl text-zinc-300 focus:outline-none focus:border-amber-500/50"
+                >
+                    <option value="all">All Departments</option>
+                    {availableDepartments.map((department) => (
+                        <option key={department} value={department}>{department}</option>
+                    ))}
+                </select>
+                <select
                     value={teamFilter}
                     onChange={(e) => setTeamFilter(e.target.value)}
                     className="px-3 py-2.5 bg-zinc-900 border border-zinc-700/50 rounded-xl text-zinc-300 focus:outline-none focus:border-amber-500/50"
@@ -233,6 +266,7 @@ export default function EmployeesPage() {
                     const member = row.member;
                     const hasProfile = !!employee;
                     const teamName = resolveTeamName(row);
+                    const departmentName = resolveDepartmentName(row);
 
                     const needsOnboarding = !hasProfile;
                     const needsSetup = !employee?.basicSalary || employee.basicSalary === 0;
@@ -257,7 +291,7 @@ export default function EmployeesPage() {
                                         <h3 className="font-semibold text-zinc-200 group-hover:text-amber-400 transition-colors">
                                             {employee?.employeeInfo?.name || member?.name || 'Unknown'}
                                         </h3>
-                                        <p className="text-xs text-zinc-500">{employee?.employeeInfo?.designation || 'No Designation'}</p>
+                                        <p className="text-xs text-zinc-500">{employee?.employeeInfo?.designation || member?.designation || 'No Designation'}</p>
                                     </div>
                                 </div>
                                 {needsOnboarding && (
@@ -284,7 +318,7 @@ export default function EmployeesPage() {
                                     <span className="text-zinc-500 flex items-center gap-1.5">
                                         <Briefcase className="w-3.5 h-3.5" /> Department
                                     </span>
-                                    <span className="text-zinc-300">{employee?.employeeInfo?.department || '--'}</span>
+                                    <span className="text-zinc-300">{departmentName}</span>
                                 </div>
 
                                 <div className="flex items-center justify-between text-sm">

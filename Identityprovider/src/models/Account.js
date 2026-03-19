@@ -104,6 +104,9 @@ const AccountSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
     },
+    department: {
+      type: mongoose.Schema.Types.ObjectId
+    },
     appAccess: {
       mode: {
         type: String,
@@ -140,6 +143,9 @@ const AccountSchema = new mongoose.Schema({
     organization: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AiinOrganization'
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId
     },
     role: {
       type: String,

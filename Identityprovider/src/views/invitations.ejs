@@ -1,110 +1,69 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <meta charset="UTF-8">
   <title>Invitations - <%= organization.name %> - AIIN Identity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
-
-      .access-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 600;
-        background: rgba(56, 189, 248, 0.16);
-        color: #38bdf8;
-        border: 1px solid rgba(56, 189, 248, 0.28);
-      }
-
-      .app-access-mode-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .app-access-mode-option {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: rgba(255, 255, 255, 0.02);
-        cursor: pointer;
-      }
-
-      .app-access-mode-option strong {
-        display: block;
-        font-size: 14px;
-        margin-bottom: 4px;
-      }
-
-      .app-access-mode-option span {
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .app-access-selector {
-        margin-top: 10px;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 12px;
-        background: rgba(255, 255, 255, 0.02);
-      }
-
-      .app-access-toolbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-      }
-
-      .app-access-toolbar .btn {
-        padding: 6px 10px;
-        font-size: 12px;
-      }
-
-      .app-access-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 8px;
-      }
-
-      .app-access-item {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: rgba(15, 23, 42, 0.45);
-      }
-
-      .app-access-item .app-name {
-        font-weight: 600;
-        font-size: 13px;
-      }
-
-      .app-access-item .app-desc {
-        font-size: 11px;
-        color: var(--muted);
-      }
-
-      .app-access-note {
-        margin-top: 8px;
-        font-size: 12px;
-        color: var(--muted);
-      }
+    .access-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.16);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+    .app-access-mode-option {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+    }
+    .app-access-selector {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .app-access-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .app-access-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .app-access-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .app-name {
+      font-weight: 600;
+      font-size: 13px;
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
 </head>
-
 <body>
   <%- include('partials/nav', { activePage: 'organizations' }) %>
 
@@ -114,74 +73,49 @@
     <div class="header">
       <div>
         <h1>Pending Invitations</h1>
-        <div class="header-subtitle">
-          <%= organization.name %>
-        </div>
+        <div class="header-subtitle"><%= organization.name %></div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" onclick="showInviteModal()">
-          + Invite Member
-        </button>
+        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
       </div>
     </div>
 
-    <% if (typeof error !=='undefined' && error) { %>
-      <div class="alert alert-error">
-        <%= error %>
-      </div>
-      <% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-        <% if (typeof success !=='undefined' && success) { %>
-          <div class="alert alert-success">
-            <%= success %>
+    <% if (invitations && invitations.length > 0) { %>
+      <% invitations.forEach(invite => { %>
+        <div class="card invite-card">
+          <div class="invite-info">
+            <div class="invite-email"><%= invite.email %></div>
+            <div class="invite-meta">
+              <span class="role-badge role-<%= invite.role %>"><%= invite.role %></span>
+              <span class="access-badge"><%= invite.appAccessLabel || 'All apps' %></span>
+              <span class="status-pending">Pending</span>
+              <span>Department: <%= invite.departmentName || 'General' %></span>
+              <span>Team: <%= invite.teamName || 'Not assigned' %></span>
+              <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
+              <% if (invite.appAccess?.mode === 'selected' && invite.appAccessAppNames?.length) { %>
+                <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
+              <% } %>
+              <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
+            </div>
           </div>
-          <% } %>
-
-            <% if (invitations && invitations.length> 0) { %>
-              <% invitations.forEach(invite=> { %>
-                <div class="card invite-card">
-                  <div class="invite-info">
-                    <div class="invite-email">
-                      <%= invite.email %>
-                    </div>
-                    <div class="invite-meta">
-                      <span class="role-badge role-<%= invite.role %>">
-                        <%= invite.role %>
-                      </span>
-                      <span class="access-badge">
-                        <%= invite.appAccessLabel || 'All apps' %>
-                      </span>
-                      <span class="status-pending">Pending</span>
-                      <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
-                      <% if (invite.appAccess && invite.appAccess.mode === 'selected' && invite.appAccessAppNames && invite.appAccessAppNames.length > 0) { %>
-                        <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
-                      <% } %>
-                      <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
-                    </div>
-                  </div>
-                  <div class="invite-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">
-                      Resend
-                    </button>
-                    <button class="btn btn-danger btn-sm"
-                      onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-                <% }) %>
-                  <% } else { %>
-                    <div class="card empty-state">
-                      <h3>No pending invitations</h3>
-                      <p>Invite members to join your organization.</p>
-                      <button class="btn btn-primary" onclick="showInviteModal()">
-                        + Invite Member
-                      </button>
-                    </div>
-                    <% } %>
+          <div class="invite-actions">
+            <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">Resend</button>
+            <button class="btn btn-danger btn-sm" onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">Cancel</button>
+          </div>
+        </div>
+      <% }) %>
+    <% } else { %>
+      <div class="card empty-state">
+        <h3>No pending invitations</h3>
+        <p>Invite members to join your organization.</p>
+        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
+      </div>
+    <% } %>
   </div>
 
-  <!-- Invite Modal -->
   <div class="modal" id="inviteModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -204,8 +138,22 @@
           </select>
         </div>
         <div class="form-group">
+          <label for="department">Department *</label>
+          <select id="department" name="department" required onchange="syncTeamOptions()">
+            <% departments.forEach(department => { %>
+              <option value="<%= department.id %>"><%= department.name %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="team">Team (optional)</label>
+          <select id="team" name="team">
+            <option value="">No team yet</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Initial App Access</label>
-          <div class="app-access-mode-list">
+          <div style="display: grid; gap: 10px;">
             <label class="app-access-mode-option">
               <input type="radio" name="appAccessMode" value="all" checked>
               <div>
@@ -230,27 +178,18 @@
                 <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelectedApps()">Clear</button>
               </div>
             </div>
-
             <% if (availableApps && availableApps.length > 0) { %>
               <div class="app-access-grid">
                 <% availableApps.forEach(app => { %>
                   <label class="app-access-item">
                     <input type="checkbox" class="app-access-checkbox" value="<%= app.appId %>">
-                    <span>
-                      <span class="app-name"><%= app.name %></span>
-                      <% if (app.description) { %>
-                        <span class="app-desc"><%= app.description %></span>
-                      <% } %>
-                    </span>
+                    <span><span class="app-name"><%= app.name %></span></span>
                   </label>
                 <% }) %>
               </div>
             <% } else { %>
-              <div style="font-size: 13px; color: var(--muted);">
-                No apps are currently configured.
-              </div>
+              <div style="font-size: 13px; color: var(--muted);">No apps are currently configured.</div>
             <% } %>
-            <div class="app-access-note">This controls initial hub access for this member.</div>
           </div>
         </div>
         <div class="form-actions">
@@ -264,9 +203,11 @@
   <script>
     const orgId = '<%= organization._id %>';
     const availableApps = <%- JSON.stringify(availableApps || []) %>;
+    const teams = <%- JSON.stringify(teams || []) %>;
 
     function showInviteModal() {
       document.getElementById('inviteModal').classList.add('active');
+      syncTeamOptions();
       updateAppAccessSelectorVisibility();
     }
 
@@ -274,13 +215,22 @@
       document.getElementById('inviteModal').classList.remove('active');
       document.getElementById('inviteForm').reset();
       clearSelectedApps();
+      syncTeamOptions();
       updateAppAccessSelectorVisibility();
+    }
+
+    function syncTeamOptions() {
+      const departmentId = document.getElementById('department').value;
+      const teamSelect = document.getElementById('team');
+      const matchingTeams = teams.filter(team => team.departmentId === departmentId);
+      teamSelect.innerHTML = '<option value="">No team yet</option>' + matchingTeams.map(team => (
+        `<option value="${team.id}">${escapeHtml(team.name)}</option>`
+      )).join('');
     }
 
     function updateAppAccessSelectorVisibility() {
       const mode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
-      const selector = document.getElementById('appAccessSelector');
-      selector.style.display = mode === 'selected' ? 'block' : 'none';
+      document.getElementById('appAccessSelector').style.display = mode === 'selected' ? 'block' : 'none';
     }
 
     function getSelectedAppIds() {
@@ -288,53 +238,46 @@
     }
 
     function selectAllApps() {
-      document.querySelectorAll('.app-access-checkbox').forEach(cb => {
-        cb.checked = true;
-      });
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => { cb.checked = true; });
     }
 
     function clearSelectedApps() {
-      document.querySelectorAll('.app-access-checkbox').forEach(cb => {
-        cb.checked = false;
-      });
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => { cb.checked = false; });
     }
 
     document.getElementById('inviteForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('email').value;
       const role = document.getElementById('role').value;
+      const department = document.getElementById('department').value;
+      const team = document.getElementById('team').value || null;
       const appAccessMode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
       const selectedAppIds = appAccessMode === 'selected' ? getSelectedAppIds() : [];
       const sendInviteBtn = document.getElementById('sendInviteBtn');
 
-      if (appAccessMode === 'selected') {
-        if (availableApps.length === 0) {
-          alert('No apps are configured, so selected access cannot be used yet.');
-          return;
-        }
-        if (selectedAppIds.length === 0) {
-          alert('Select at least one app or switch to "All apps".');
-          return;
-        }
+      if (!department) {
+        alert('Department is required.');
+        return;
+      }
+      if (appAccessMode === 'selected' && selectedAppIds.length === 0) {
+        alert('Select at least one app or switch to "All apps".');
+        return;
       }
 
       try {
         sendInviteBtn.disabled = true;
         sendInviteBtn.textContent = 'Sending...';
-
         const response = await fetch(`/api/organizations/${orgId}/invitations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email,
             role,
-            appAccess: {
-              mode: appAccessMode,
-              appIds: selectedAppIds
-            }
+            department,
+            team,
+            appAccess: { mode: appAccessMode, appIds: selectedAppIds }
           })
         });
-
         if (response.ok) {
           window.location.reload();
         } else {
@@ -352,55 +295,40 @@
 
     async function resendInvite(inviteId) {
       if (!confirm('Resend invitation?')) return;
-
-      try {
-        const response = await fetch(`/api/invitations/${inviteId}/resend`, {
-          method: 'POST'
-        });
-
-        if (response.ok) {
-          alert('Invitation resent successfully');
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to resend invitation');
-        }
-      } catch (error) {
-        alert('Failed to resend invitation');
+      const response = await fetch(`/api/invitations/${inviteId}/resend`, { method: 'POST' });
+      if (response.ok) {
+        alert('Invitation resent successfully');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to resend invitation');
       }
     }
 
     async function cancelInvite(inviteId, email) {
       if (!confirm(`Cancel invitation for ${email}?`)) return;
-
-      try {
-        const response = await fetch(`/api/invitations/${inviteId}`, {
-          method: 'DELETE'
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to cancel invitation');
-        }
-      } catch (error) {
-        alert('Failed to cancel invitation');
+      const response = await fetch(`/api/invitations/${inviteId}`, { method: 'DELETE' });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to cancel invitation');
       }
     }
 
-    // Close modal on outside click
-    document.getElementById('inviteModal').addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal')) {
-        hideInviteModal();
-      }
-    });
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
 
+    document.getElementById('inviteModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) hideInviteModal();
+    });
     document.querySelectorAll('input[name="appAccessMode"]').forEach(input => {
       input.addEventListener('change', updateAppAccessSelectorVisibility);
     });
-
+    syncTeamOptions();
     updateAppAccessSelectorVisibility();
   </script>
 </body>
-
 </html>

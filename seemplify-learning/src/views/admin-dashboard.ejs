@@ -789,78 +789,44 @@
       gap: 8px;
       align-items: end;
     }
-    .course-manage-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 12px;
-    }
-    .course-manage-card {
-      border: 1px solid rgba(109, 40, 217, 0.14);
-      border-radius: 18px;
-      padding: 14px;
-      background:
-        radial-gradient(circle at top right, rgba(167, 139, 250, 0.16), transparent 30%),
-        linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 255, 0.9));
-      display: grid;
-      gap: 12px;
-      box-shadow: 0 16px 32px -30px rgba(15, 23, 42, 0.42);
-    }
-    .course-manage-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      flex-wrap: wrap;
-    }
-    .course-manage-copy {
-      display: grid;
-      gap: 8px;
-      min-width: 0;
-    }
-    .course-manage-copy h3 {
-      margin: 0;
-      font-size: 24px;
-      line-height: 1.06;
-      letter-spacing: -0.03em;
-      color: var(--admin-text);
-    }
     .course-manage-pill-row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
     }
-    .course-manage-stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
+    .course-management-table, .admin-data-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 900px;
     }
-    .course-manage-stat {
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 12px;
-      padding: 10px;
-      background: rgba(255, 255, 255, 0.86);
-      display: grid;
-      gap: 4px;
-    }
-    .course-manage-stat small {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #7c3aed;
-    }
-    .course-manage-stat strong {
-      font-size: 14px;
-      line-height: 1.35;
-      color: var(--admin-text);
-      word-break: break-word;
-    }
-    .course-manage-stat span {
+    .course-management-table th, .admin-data-table th {
+      background: linear-gradient(180deg, rgba(248, 245, 255, 0.95), rgba(243, 238, 255, 0.8));
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 12px 16px;
       font-size: 12px;
-      line-height: 1.5;
-      color: var(--admin-muted);
-      word-break: break-word;
+      font-weight: 700;
+      text-align: left;
+      color: #6b5b8d;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 2px solid rgba(109, 40, 217, 0.1);
+    }
+    .course-management-table td, .admin-data-table td {
+      padding: 16px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      vertical-align: top;
+      background: #ffffff;
+      transition: background-color 0.15s ease;
+    }
+    .course-management-table tbody tr:hover td, .admin-data-table tbody tr:hover td {
+      background-color: rgba(248, 245, 255, 0.4);
+    }
+    .course-management-table tbody tr:last-child td, .admin-data-table tbody tr:last-child td {
+      border-bottom: none;
     }
     .course-lock-note,
     .course-delete-note {
@@ -2736,8 +2702,7 @@
       h2 {
         font-size: 27px;
       }
-      .course-mode-grid,
-      .course-manage-grid {
+      .course-mode-grid {
         grid-template-columns: minmax(0, 1fr);
       }
       .course-management-table { min-width: 740px; }
@@ -3310,132 +3275,117 @@
       </section>
 
       <% if (currentSection === 'overview') { %>
-        <section class="card overview-hero">
-          <div class="overview-hero-grid">
-            <div class="overview-copy">
-              <span class="eyebrow">Admin Command Center</span>
-              <div>
-                <h3>See platform demand, partner activity, and publishing pressure in one view.</h3>
-                <p class="mini">The overview should answer three questions immediately: what needs approval, what is generating revenue, and where partner operations are blocked.</p>
+        <section class="admin-overview-dashboard">
+          
+          <!-- 1. The Zenith Strip (North Star Metrics) -->
+          <div class="overview-zenith-strip" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 32px;">
+            <article style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(49, 46, 129, 0.2);">
+              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Total Revenue</span>
+              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= paymentStats.revenueDisplay %></strong>
+            </article>
+            <article style="background: linear-gradient(135deg, #4c1d95, #6d28d9); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(109, 40, 217, 0.2);">
+              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Live Courses</span>
+              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= stats?.publishedCourseCount || 0 %></strong>
+            </article>
+            <article style="background: linear-gradient(135deg, #5b21b6, #7c3aed); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);">
+              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Total Learners</span>
+              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= stats.learnerCount %></strong>
+            </article>
+            <article style="background: linear-gradient(135deg, #6b21a8, #9333ea); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(147, 51, 234, 0.2);">
+              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Partner Network</span>
+              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= partnerOrgRows.length %> Orgs</strong>
+            </article>
+          </div>
+
+          <!-- 2. The Operations Grid -->
+          <div class="overview-ops-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px;">
+            
+            <!-- Publishing Column -->
+            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
+              <div style="margin-bottom: 24px;">
+                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Publishing Ops</h3>
+                <p class="mini" style="margin: 0; color: #64748b;">Manage course submissions and creator catalogs.</p>
               </div>
-              <div class="overview-badges">
-                <span class="pill"><%= roleBreakdown.super_admin %> super admins</span>
-                <span class="pill"><%= roleBreakdown.admin %> admins</span>
-                <span class="pill"><%= partnerOrgRows.length %> partner orgs</span>
-                <span class="pill"><%= pendingPartnerRequestCount %> role requests pending</span>
+              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Review Queue</span>
+                  <span class="pill" style="<%= pendingOnly.length > 0 ? 'background: #fee2e2; color: #b91c1c;' : '' %>"><strong><%= pendingOnly.length %></strong> pending</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Changes Requested</span>
+                  <span class="pill"><strong><%= approvalDecisionCounts.changes_requested %></strong> returned</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Partner Drafts</span>
+                  <span class="pill"><strong><%= partnerDraftCourseCount %></strong> drafts</span>
+                </div>
+              </div>
+              <div style="margin-top: 24px;">
+                <a class="btn btn-primary" href="/admin/approvals" style="width: 100%; justify-content: center; padding: 10px;">Clear Review Queue</a>
               </div>
             </div>
-            <aside class="hero-panel">
-              <div class="hero-panel-top">
-                <div>
-                  <strong style="display:block;font-size:18px;letter-spacing:-0.02em;">Platform pulse</strong>
-                  <p class="mini">Immediate numbers for the public site, internal operations, and partner network.</p>
+
+            <!-- Financial Column -->
+            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
+              <div style="margin-bottom: 24px;">
+                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Financial Ops</h3>
+                <p class="mini" style="margin: 0; color: #64748b;">Track payouts, commissions, and revenue flows.</p>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Transactions</span>
+                  <span class="pill" style="<%= paymentStats.pendingCount > 0 ? 'background: #fef08a; color: #854d0e;' : '' %>"><strong><%= paymentStats.pendingCount %></strong> unprocessed</span>
                 </div>
-                <span class="pill hero-panel-live">Admin live</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Creator Payouts</span>
+                  <span class="pill"><strong><%= paymentStats.creatorPayoutDisplay %></strong></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Partner Wallets</span>
+                  <span class="pill"><strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong></span>
+                </div>
               </div>
-              <div class="hero-panel-media">
-                <img src="/images/aiin-learning-hero-graphic-new.png" alt="AIIN Learning admin command center">
+              <div style="margin-top: 24px;">
+                <a class="btn btn-secondary" href="/admin/payments" style="width: 100%; justify-content: center; padding: 10px;">Review Payments</a>
               </div>
-              <div class="hero-panel-grid">
-                <article class="hero-panel-stat">
-                  <span>Revenue</span>
-                  <strong><%= paymentStats.revenueDisplay %></strong>
-                </article>
-                <article class="hero-panel-stat">
-                  <span>Payouts</span>
-                  <strong><%= paymentStats.creatorPayoutDisplay %></strong>
-                </article>
-                <article class="hero-panel-stat">
-                  <span>Partners Wallet</span>
-                  <strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong>
-                </article>
-                <article class="hero-panel-stat">
-                  <span>Success Rate</span>
-                  <strong><%= paymentStats.successRatePercent %>%</strong>
-                </article>
+            </div>
+
+            <!-- Network Column -->
+            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
+              <div style="margin-bottom: 24px;">
+                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Network Ops</h3>
+                <p class="mini" style="margin: 0; color: #64748b;">Manage partner organizations, agents, and access.</p>
               </div>
-            </aside>
+              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Role Requests</span>
+                  <span class="pill" style="<%= pendingPartnerRequestCount > 0 ? 'background: #e0e7ff; color: #3730a3;' : '' %>"><strong><%= pendingPartnerRequestCount %></strong> waiting</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Active Agents</span>
+                  <span class="pill"><strong><%= totalPartnerAgents %></strong> linked</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
+                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Admins & Super Admins</span>
+                  <span class="pill"><strong><%= roleBreakdown.super_admin + roleBreakdown.admin %></strong> personnel</span>
+                </div>
+              </div>
+              <div style="margin-top: 24px;">
+                <a class="btn btn-secondary" href="/admin/partners" style="width: 100%; justify-content: center; padding: 10px;">Manage Directory</a>
+              </div>
+            </div>
+            
           </div>
-          <div class="kpis">
-            <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
-            <article class="kpi"><small>Admins</small><strong><%= roleBreakdown.admin %></strong></article>
-            <article class="kpi"><small>Learners</small><strong><%= stats.learnerCount %></strong></article>
-            <article class="kpi"><small>Pending Reviews</small><strong><%= pendingOnly.length %></strong></article>
-            <article class="kpi"><small>Changes Needed</small><strong><%= approvalDecisionCounts.changes_requested %></strong></article>
-            <article class="kpi"><small>Revenue</small><strong><%= paymentStats.revenueDisplay %></strong></article>
-            <article class="kpi"><small>Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
-            <article class="kpi"><small>Success Rate</small><strong><%= paymentStats.successRatePercent %>%</strong></article>
+
+          <!-- 3. Minimal Footer Nav -->
+          <div class="overview-footer-nav" style="display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; padding-top: 24px; border-top: 1px solid rgba(148,163,184,0.2);">
+            <a href="/admin/courses" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Manage Courses</a>
+            <a href="/admin/creators" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Manage Creators</a>
+            <a href="/admin/users" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">User Roles</a>
+            <a href="/admin/analytics" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Platform Analytics</a>
+            <a href="<%= websiteHref %>" target="_blank" rel="noreferrer" style="font-size: 13px; font-weight: 600; color: #4f46e5; text-decoration: none; display: flex; align-items: center; gap: 4px;">Visit Public Site ↗</a>
           </div>
-          <div class="overview-command-grid">
-            <article class="command-card">
-              <div>
-                <h3>Publishing pressure</h3>
-                <p class="mini">What needs review before it can go live.</p>
-              </div>
-              <div class="section-stat-strip">
-                <div class="stack-metric"><span>Pending review</span><strong><%= pendingOnly.length %></strong></div>
-                <div class="stack-metric"><span>Partner drafts</span><strong><%= partnerDraftCourseCount %></strong></div>
-                <div class="stack-metric"><span>Pending partner requests</span><strong><%= pendingPartnerRequestCount %></strong></div>
-              </div>
-              <ul>
-                <li><%= approvalDecisionCounts.changes_requested %> recent submissions were returned with required changes.</li>
-                <li><%= pendingReviewCourses.length %> creator submissions are already in the public review lane.</li>
-                <li><%= approvalDecisionCounts.denied %> recent submissions were denied with a final review note.</li>
-              </ul>
-              <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/approvals">Open Approval Queue</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/courses">Review Courses</a>
-              </div>
-            </article>
-            <article class="command-card">
-              <div>
-                <h3>Partner operations</h3>
-                <p class="mini">Organization health, pending requests, and commission exposure.</p>
-              </div>
-              <div class="section-stat-strip">
-                <div class="stack-metric"><span>Active orgs</span><strong><%= activePartnerOrgCount %></strong></div>
-                <div class="stack-metric"><span>Agents</span><strong><%= totalPartnerAgents %></strong></div>
-                <div class="stack-metric"><span>Commission due</span><strong><%= moneyText(partnerPendingCommissionMinor, 'NGN') %></strong></div>
-              </div>
-              <ul>
-                <li><%= channelPartnerOrgCount %> channel partners are running agent programs.</li>
-                <li><%= standardPartnerOrgCount %> standard partners are creating courses without agent teams.</li>
-                <li><%= suspendedPartnerOrgCount %> organizations are suspended and need a status review.</li>
-              </ul>
-              <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/partners">Manage Partners</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/users">Manage Roles</a>
-              </div>
-            </article>
-            <article class="command-card">
-              <div>
-                <h3>Financial operations</h3>
-                <p class="mini">Cash movement across creators, partners, and agent payouts.</p>
-              </div>
-              <div class="section-stat-strip">
-                <div class="stack-metric"><span>Revenue</span><strong><%= paymentStats.revenueDisplay %></strong></div>
-                <div class="stack-metric"><span>Creator payouts</span><strong><%= paymentStats.creatorPayoutDisplay %></strong></div>
-                <div class="stack-metric"><span>Pending payments</span><strong><%= paymentStats.pendingCount %></strong></div>
-              </div>
-              <ul>
-                <li><%= (partnerWithdrawalRequests || []).filter((request) => ['pending', 'approved'].includes(String(request.status || '').toLowerCase())).length %> partner withdrawals are still in queue.</li>
-                <li><%= (agentPayoutRows || []).length %> agent commission rows are awaiting admin action.</li>
-                <li>Payment success rate is currently <%= paymentStats.successRatePercent %>% across the active reporting window.</li>
-              </ul>
-              <div class="actions">
-                <a class="btn btn-primary btn-sm" href="/admin/payments">Review Payments</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/analytics">Open Analytics</a>
-              </div>
-            </article>
-          </div>
-          <div class="quick-links">
-            <a class="quick-link" href="/admin/courses"><strong>Manage Courses</strong><span>Edit, preview, approve, archive.</span></a>
-            <a class="quick-link" href="/admin/creators"><strong>Manage Creators</strong><span>Control creator commissions and course catalogs.</span></a>
-            <a class="quick-link" href="/admin/approvals"><strong>Open Approval Queue</strong><span>Publish draft/pending creator courses.</span></a>
-            <a class="quick-link" href="/admin/users"><strong>Manage Roles</strong><span>Control admin and super admin access.</span></a>
-            <a class="quick-link" href="/admin/payments"><strong>Review Payments</strong><span>Filter and re-verify transactions.</span></a>
-            <a class="quick-link" href="<%= websiteHref %>" target="_blank" rel="noreferrer"><strong>Visit Website</strong><span>Open the live public experience in a new tab.</span></a>
-          </div>
+          
         </section>
       <% } %>
 
@@ -3850,111 +3800,93 @@
           <% } else if (!courses || courses.length === 0) { %>
             <div class="empty">No courses found for this filter.</div>
           <% } else { %>
-            <div class="course-manage-grid">
-              <% courses.forEach((course) => { %>
-                <article class="course-manage-card">
-                  <div class="course-manage-top">
-                    <div class="course-manage-copy">
-                      <div class="course-manage-pill-row">
-                        <span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span>
-                        <span class="pill"><%= course.status || 'draft' %></span>
-                        <span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span>
-                        <span class="pill"><%= isPaidCourse(course) ? 'Paid' : 'Free' %></span>
-                        <% if (course.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
-                        <% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %>
-                        <% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %>
-                        <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
-                      </div>
-                      <h3><%= course.title %></h3>
-                      <p class="mini"><%= course.summaryText %></p>
-                    </div>
-                  </div>
-
-                  <div class="course-manage-stats">
-                    <article class="course-manage-stat">
-                      <small>Creator</small>
-                      <strong><%= course.createdByName || course.authorName || 'Unknown' %></strong>
-                      <span><%= course.createdByEmail || '-' %></span>
-                    </article>
-                    <article class="course-manage-stat">
-                      <small>Delivery</small>
-                      <strong><%= course.levelLabel || 'Mixed' %></strong>
-                      <span><%= Number(course.lessonCount || 0) %> lessons • <%= Number(course.estimatedDurationMinutes || 0) %> mins</span>
-                    </article>
-                    <article class="course-manage-stat">
-                      <small>Learners</small>
-                      <strong><%= Number(course.enrollmentCount || 0) %> enrolled</strong>
-                      <span><%= Number(course.completionCount || 0) %> completed</span>
-                    </article>
-                    <article class="course-manage-stat">
-                      <small>Updated</small>
-                      <strong><%= dateText(course.updatedAt) %></strong>
-                      <span><%= course.displayPrice %></span>
-                    </article>
-                    <article class="course-manage-stat">
-                      <small>Sell Through</small>
-                      <strong><%= course.partnerSellingSummary %></strong>
-                      <span><%= course.assignedOrganizationCount %> assigned organizations</span>
-                    </article>
-                  </div>
-
-                  <% if (course.reviewHasFeedback) { %>
-                    <article class="course-review-feedback is-<%= reviewFeedbackTone(course) %>">
-                      <div class="course-review-feedback-head">
-                        <div>
-                          <h4>Review status: <%= course.reviewDecisionLabel %></h4>
-                          <p class="course-review-feedback-copy"><%= reviewMessageForCourse(course) %></p>
+            <div class="table-wrap">
+              <table class="course-management-table">
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    <th>Creator</th>
+                    <th>Delivery</th>
+                    <th>Learners</th>
+                    <th>Status & Pricing</th>
+                    <th style="min-width: 140px; text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% courses.forEach((course) => { %>
+                    <tr>
+                      <td>
+                        <div class="course-manage-pill-row" style="margin-bottom: 8px;">
+                          <span class="pill"><%= course.isSystemCourse ? 'System' : 'Creator' %></span>
+                          <span class="pill"><%= course.visibilityDisplay || course.visibility || 'private' %></span>
+                          <% if (course.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
+                          <% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %>
+                          <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
                         </div>
-                        <div class="course-review-feedback-meta">
-                          <span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span>
-                          <% if (course.reviewedAt) { %><span class="pill">Reviewed <%= dateText(course.reviewedAt) %></span><% } %>
-                          <% if (course.reviewedByName) { %><span class="pill">By <%= course.reviewedByName %></span><% } %>
+                        <strong style="display:block; font-size:16px; color:var(--admin-text); line-height:1.2; margin-bottom:4px;"><%= course.title %></strong>
+                        <p class="mini" style="margin: 0; max-width: 320px; white-space: normal;"><%= course.summaryText %></p>
+                      </td>
+                      <td>
+                        <strong style="display:block; font-size:14px; color:var(--admin-text);"><%= course.createdByName || course.authorName || 'Unknown' %></strong>
+                        <span class="mini"><%= course.createdByEmail || '-' %></span>
+                      </td>
+                      <td>
+                        <strong style="display:block; font-size:14px; color:var(--admin-text);"><%= course.levelLabel || 'Mixed' %></strong>
+                        <span class="mini"><%= Number(course.lessonCount || 0) %> lessons • <%= Number(course.estimatedDurationMinutes || 0) %> mins</span>
+                      </td>
+                      <td>
+                        <strong style="display:block; font-size:14px; color:var(--admin-text);"><%= Number(course.enrollmentCount || 0) %> enrolled</strong>
+                        <span class="mini"><%= Number(course.completionCount || 0) %> completed</span>
+                      </td>
+                      <td>
+                        <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                          <span class="pill"><%= course.status || 'draft' %></span>
+                          <span class="mini">Updated <%= dateText(course.updatedAt) %></span>
+                          <strong style="font-size:13px; margin-top: 4px; color:var(--admin-text);"><%= course.displayPrice %> • <%= isPaidCourse(course) ? 'Paid' : 'Free' %></strong>
+                          <span class="mini"><%= course.partnerSellingSummary %> (<%= course.assignedOrganizationCount %> orgs)</span>
                         </div>
-                      </div>
-                      <% if (String(course.reviewNotes || '').trim()) { %>
-                        <p class="course-review-feedback-note"><%= course.reviewNotes %></p>
-                      <% } %>
-                    </article>
-                  <% } %>
-
-                  <% if (!course.canEdit) { %>
-                    <p class="course-lock-note">Course content is owner-locked. Admins can still review, archive, restore, or approve this course without taking over authorship.</p>
-                  <% } %>
-                  <% if (course.deleteBlockedReason) { %>
-                    <p class="course-delete-note"><%= course.deleteBlockedReason %></p>
-                  <% } %>
-
-                  <div class="course-action-bar">
-                    <a class="btn btn-primary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>">Open Record</a>
-                    <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>#course-selling-assignments">Assign To Partner Org</a>
-                    <% if (course.canEdit) { %>
-                      <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(course._id, coursesReturnTo) %>">Edit Course</a>
+                      </td>
+                      <td style="text-align: right; vertical-align: top;">
+                        <div class="actions" style="justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+                          <a class="btn btn-primary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>">Record</a>
+                          <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>#course-selling-assignments">Assign</a>
+                          <% if (course.canEdit) { %>
+                            <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(course._id, coursesReturnTo) %>">Edit</a>
+                          <% } %>
+                          <% if (course.canDuplicate) { %>
+                            <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
+                              <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                              <input type="hidden" name="studioPath" value="/admin/courses">
+                              <input type="hidden" name="studioContext" value="admin">
+                              <input type="hidden" name="isSystemCourse" value="on">
+                              <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
+                            </form>
+                          <% } %>
+                          <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View</a>
+                        </div>
+                        <% if (!course.canEdit) { %>
+                          <p class="mini" style="margin:4px 0 0; text-align:right; font-size:10px; color:#6b5b8d;">Owner locked</p>
+                        <% } %>
+                        <% if (course.deleteBlockedReason) { %>
+                          <p class="mini" style="margin:2px 0 0; text-align:right; font-size:10px; color:#991b1b;"><%= course.deleteBlockedReason %></p>
+                        <% } %>
+                      </td>
+                    </tr>
+                    <% if (course.reviewHasFeedback && course.reviewDecisionLabel) { %>
+                      <tr class="course-mgmt-table-feedback-row">
+                        <td colspan="6" style="padding-top:0; border-top:none; padding-bottom:12px;">
+                          <div class="course-review-feedback is-<%= reviewFeedbackTone(course) %>" style="margin:0; border-radius: 8px; padding: 10px;">
+                            <div class="course-review-feedback-head" style="margin:0;">
+                              <p class="course-review-feedback-note" style="margin:0; flex:1;"><%= course.reviewNotes || reviewMessageForCourse(course) %></p>
+                              <% if (course.reviewedByName) { %><span class="pill">By <%= course.reviewedByName %></span><% } %>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     <% } %>
-                    <% if (course.canDuplicate) { %>
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
-                        <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                        <input type="hidden" name="studioPath" value="/admin/courses">
-                        <input type="hidden" name="studioContext" value="admin">
-                        <input type="hidden" name="isSystemCourse" value="on">
-                        <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
-                      </form>
-                    <% } %>
-                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View Course</a>
-                    <% if (course.createdById) { %>
-                      <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(course.createdById) %>">Open Creator</a>
-                    <% } %>
-                  </div>
-                  <p class="mini" style="margin-top:8px;">
-                    <% if (course.assignedOrganizationCount > 0) { %>
-                      This course is already assigned to <strong><%= course.assignedOrganizationCount %></strong> partner organization<%= Number(course.assignedOrganizationCount) === 1 ? '' : 's' %>. Open the assignment panel to review or update selling access.
-                    <% } else if (course.isSellThroughEnabled || course.organization) { %>
-                      This course is ready to be assigned to a partner or channel partner organization for selling.
-                    <% } else { %>
-                      This course cannot be assigned yet because partner selling has not been enabled for it.
-                    <% } %>
-                  </p>
-                </article>
-              <% }) %>
+                  <% }) %>
+                </tbody>
+              </table>
             </div>
           <% } %>
 
@@ -4129,15 +4061,37 @@
             </div>
           </div>
 
-          <div class="approval-main-grid">
-            <section class="approval-lane">
-              <div class="approval-lane-head">
-                <div>
-                  <h3>Pending review queue</h3>
-                  <p>Each submission has one review form. Approve publishes instantly. Request changes and deny require a note so the creator knows exactly what to fix or why the course was rejected.</p>
-                </div>
-                <span class="approval-count-chip"><%= approvalCourses.length %> queued</span>
-              </div>
+          <nav class="partner-subnav" style="margin-bottom: 24px; display: flex; gap: 24px; border-bottom: 2px solid rgba(148,163,184,0.1); padding-bottom: 12px;" aria-label="Approval lanes">
+            <button class="partner-subnav-link active" onclick="switchApprovalTab('pending')" id="tab-btn-pending" style="background:none; border:none; font-size: 15px; font-weight: 600; cursor:pointer; padding: 0 0 8px 0;">Pending queue (<%= approvalCourses.length %>)</button>
+            <button class="partner-subnav-link" onclick="switchApprovalTab('recent')" id="tab-btn-recent" style="background:none; border:none; font-size: 15px; font-weight: 600; cursor:pointer; padding: 0 0 8px 0; color: #64748b;">Recent decisions (<%= recentReviewDecisions.length %>)</button>
+          </nav>
+
+          <script>
+            function switchApprovalTab(tabId) {
+              document.getElementById('approval-tab-pending').style.display = tabId === 'pending' ? 'block' : 'none';
+              document.getElementById('approval-tab-recent').style.display = tabId === 'recent' ? 'block' : 'none';
+              
+              const btnPending = document.getElementById('tab-btn-pending');
+              const btnRecent = document.getElementById('tab-btn-recent');
+              
+              if (tabId === 'pending') {
+                btnPending.classList.add('active');
+                btnPending.style.color = '';
+                btnRecent.classList.remove('active');
+                btnRecent.style.color = '#64748b';
+              } else {
+                btnRecent.classList.add('active');
+                btnRecent.style.color = '';
+                btnPending.classList.remove('active');
+                btnPending.style.color = '#64748b';
+              }
+            }
+          </script>
+
+          <div style="display: block;">
+            <div id="approval-tab-pending">
+              <section class="approval-lane">
+                <p class="mini" style="margin-bottom: 16px; max-width: 600px;">Each submission has one review form. Approve publishes instantly. Request changes and deny require a note so the creator knows exactly what to fix or why the course was rejected.</p>
 
               <% if (!approvalCourses || approvalCourses.length === 0) { %>
                 <div class="approval-empty">
@@ -4145,76 +4099,75 @@
                   <p class="mini">New courses appear here after a creator submits them for public review.</p>
                 </div>
               <% } else { %>
-                <div class="approval-list">
-                  <% approvalCourses.forEach((course) => { %>
-                    <article class="approval-card">
-                      <div class="approval-card-top">
-                        <div>
-                          <p class="approval-card-kicker">Submitted <%= dateText(course.submittedAt) %></p>
-                          <h4><%= course.title %></h4>
-                          <p class="mini"><strong><%= course.creatorName %></strong><%= course.creatorEmail ? ` • ${course.creatorEmail}` : '' %></p>
-                        </div>
-                        <div class="approval-card-badges">
-                          <span class="pill status-<%= course.status %>"><%= course.status %></span>
-                          <span class="pill"><%= course.visibilityDisplay %></span>
-                          <span class="pill"><%= course.displayPrice %></span>
-                        </div>
-                      </div>
-
-                      <div class="approval-card-meta">
-                        <article>
-                          <span>Lessons</span>
-                          <strong><%= Number(course.lessonCount || 0) %></strong>
-                        </article>
-                        <article>
-                          <span>Duration</span>
-                          <strong><%= Number(course.estimatedDurationMinutes || 0) %> mins</strong>
-                        </article>
-                        <article>
-                          <span>Category</span>
-                          <strong><%= course.category || 'Uncategorized' %></strong>
-                        </article>
-                        <article>
-                          <span>Level</span>
-                          <strong><%= course.levelLabel || course.level || 'Mixed' %></strong>
-                        </article>
-                      </div>
-
-                      <p class="approval-card-summary"><%= course.summaryText %></p>
-
-                      <div class="actions">
-                        <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview Course</a>
-                        <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, '/admin/approvals') %>">Open Record</a>
-                      </div>
-
-                      <form method="post" action="/simple-lms/courses/<%= course._id %>/review-public" class="approval-review-form" data-course-review-form>
-                        <input type="hidden" name="returnTo" value="/admin/approvals">
-                        <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
-                        <label class="approval-review-note">
-                          <span>Feedback for the creator</span>
-                          <textarea class="input" name="reviewNotes" rows="5" data-review-notes placeholder="Explain what changed, what is missing, or why the submission is denied."></textarea>
-                        </label>
-                        <div class="approval-review-actions">
-                          <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= course._id %>/approve-public" data-review-submit="approved">Approve & Publish</button>
-                          <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested">Request Changes</button>
-                          <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied">Deny Submission</button>
-                        </div>
-                        <p class="approval-form-footnote">Change requests and denials both email the creator and keep the course editable in Course Studio.</p>
-                      </form>
-                    </article>
-                  <% }) %>
+                <div class="table-wrap">
+                  <table class="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Submission</th>
+                        <th>Details</th>
+                        <th>Review Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% approvalCourses.forEach((course) => { %>
+                        <tr>
+                          <td style="border-bottom: none; padding-bottom: 8px;">
+                            <strong style="display:block; font-size:14px; color:var(--admin-text);"><%= course.title %></strong>
+                            <p class="mini" style="margin-top: 4px; max-width: 300px;"><%= course.summaryText %></p>
+                            <span class="mini" style="display: block; margin-top: 6px;"><strong><%= course.creatorName %></strong><%= course.creatorEmail ? ` • ${course.creatorEmail}` : '' %></span>
+                          </td>
+                          <td style="border-bottom: none; padding-bottom: 8px;">
+                            <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                              <span class="pill"><%= course.levelLabel || course.level || 'Mixed' %></span>
+                              <span class="pill"><%= course.displayPrice %></span>
+                              <span class="mini"><%= Number(course.lessonCount || 0) %> lessons • <%= Number(course.estimatedDurationMinutes || 0) %> mins</span>
+                            </div>
+                          </td>
+                          <td style="border-bottom: none; padding-bottom: 8px;">
+                            <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                              <span class="pill status-<%= course.status %>"><%= course.status %></span>
+                              <span class="pill"><%= course.visibilityDisplay %></span>
+                              <span class="mini">Submitted <%= dateText(course.submittedAt) %></span>
+                            </div>
+                          </td>
+                          <td style="border-bottom: none; padding-bottom: 8px; text-align: right; vertical-align: top;">
+                            <div class="actions" style="justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                              <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/admin/approvals') %>" target="_blank" rel="noreferrer">Preview</a>
+                              <a class="btn btn-primary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, '/admin/approvals') %>">Open Record</a>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colspan="4" style="padding-top: 0; padding-bottom: 24px;">
+                            <form method="post" action="/simple-lms/courses/<%= course._id %>/review-public" class="approval-review-form" data-course-review-form style="margin: 0; padding: 16px; border: 1px solid rgba(148,163,184,0.25); border-radius: 8px; background: rgba(248,250,252,0.8); text-align: left; display: flex; flex-direction: column; gap: 12px;">
+                              <input type="hidden" name="returnTo" value="/admin/approvals">
+                              <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
+                              <div style="display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap;">
+                                <label class="approval-review-note" style="flex: 1; min-width: 300px; display: grid; gap: 6px;">
+                                  <span class="mini" style="font-weight: 600; color: #475569;">Fast Review Decision</span>
+                                  <textarea class="input" style="font-size: 13px; min-height: 80px; padding: 10px; border-color: rgba(148,163,184,0.3);" name="reviewNotes" data-review-notes placeholder="Explain what changed, or why the submission is denied."></textarea>
+                                </label>
+                                <div class="approval-review-actions" style="display: flex; flex-direction: column; gap: 8px; min-width: 140px; margin-top: 24px;">
+                                  <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= course._id %>/approve-public" data-review-submit="approved" style="width: 100%; justify-content: center;">Approve</button>
+                                  <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested" style="width: 100%; justify-content: center;">Return</button>
+                                  <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied" style="width: 100%; justify-content: center;">Deny</button>
+                                </div>
+                              </div>
+                            </form>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
                 </div>
               <% } %>
-            </section>
+              </section>
+            </div>
 
-            <aside class="approval-lane">
-              <div class="approval-lane-head">
-                <div>
-                  <h3>Recent review decisions</h3>
-                  <p>Quick visibility into the last completed review actions so approvals, requested changes, and denials are easy to audit without leaving this page.</p>
-                </div>
-                <span class="approval-count-chip"><%= recentReviewDecisions.length %> recent</span>
-              </div>
+            <div id="approval-tab-recent" style="display: none;">
+              <section class="approval-lane">
+                <p class="mini" style="margin-bottom: 16px; max-width: 600px;">Quick visibility into the last completed review actions so approvals, requested changes, and denials are easy to audit without leaving this page.</p>
 
               <% if (!recentReviewDecisions || recentReviewDecisions.length === 0) { %>
                 <div class="approval-empty">
@@ -4250,7 +4203,8 @@
                   <% }) %>
                 </div>
               <% } %>
-            </aside>
+              </section>
+            </div>
           </div>
         </section>
       <% } %>
@@ -4388,8 +4342,8 @@
                   <p class="mini">New partner and channel-partner applications will appear here once they are submitted and approved.</p>
                 </div>
               <% } else { %>
-                <div class="table partner-preview-table">
-                  <table>
+                <div class="table-wrap partner-preview-table">
+                  <table class="admin-data-table">
                     <thead>
                       <tr>
                         <th>Organization</th>
@@ -6246,7 +6200,7 @@
   </main>
   </div>
   <script>
-    (() => {
+    function initAdminBehaviors() {
       const tabGroups = document.querySelectorAll('[data-tab-group]')
       tabGroups.forEach((group) => {
         const triggers = Array.from(group.querySelectorAll('[data-tab-trigger]'))
@@ -6266,44 +6220,110 @@
           })
         }
 
+        // Clean up old listeners by replacing the node (edge case for PJAX) if needed or just add
         triggers.forEach((trigger) => {
-          trigger.addEventListener('click', () => {
-            activate(trigger.getAttribute('data-tab-trigger'))
-          })
+          trigger.onclick = () => activate(trigger.getAttribute('data-tab-trigger'))
         })
 
         const defaultTrigger = triggers.find((trigger) => trigger.classList.contains('is-active')) || triggers[0]
         activate(defaultTrigger.getAttribute('data-tab-trigger'))
       })
-    })()
 
-    (() => {
       const reviewForms = document.querySelectorAll('[data-course-review-form]')
-      if (!reviewForms.length) return
+      if (reviewForms.length) {
+        reviewForms.forEach((form) => {
+          const decisionInput = form.querySelector('[data-review-decision-input]')
+          const notesInput = form.querySelector('[data-review-notes]')
+          const buttons = form.querySelectorAll('[data-review-submit]')
+          if (!buttons.length) return
 
-      reviewForms.forEach((form) => {
-        const decisionInput = form.querySelector('[data-review-decision-input]')
-        const notesInput = form.querySelector('[data-review-notes]')
-        const buttons = form.querySelectorAll('[data-review-submit]')
-        if (!buttons.length) return
+          buttons.forEach((button) => {
+            button.onclick = (event) => {
+              const decision = String(button.getAttribute('data-review-submit') || '').trim().toLowerCase()
+              if (decisionInput) decisionInput.value = decision
+              if (!notesInput) return
 
-        buttons.forEach((button) => {
-          button.addEventListener('click', (event) => {
-            const decision = String(button.getAttribute('data-review-submit') || '').trim().toLowerCase()
-            if (decisionInput) decisionInput.value = decision
-            if (!notesInput) return
-
-            const requiresNotes = decision !== 'approved'
-            notesInput.required = requiresNotes
-            if (requiresNotes && !String(notesInput.value || '').trim()) {
-              event.preventDefault()
-              notesInput.reportValidity()
-              notesInput.focus()
+              const requiresNotes = decision !== 'approved'
+              notesInput.required = requiresNotes
+              if (requiresNotes && !String(notesInput.value || '').trim()) {
+                event.preventDefault()
+                notesInput.reportValidity()
+                notesInput.focus()
+              }
             }
           })
         })
-      })
-    })()
+      }
+    }
+
+    // Initialize on first paint
+    initAdminBehaviors();
+
+    // The SPA Router (PJAX)
+    document.addEventListener('click', async (e) => {
+      const link = e.target.closest('a');
+      if (!link) return;
+      
+      // Standard click validation
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      
+      const url = new URL(link.href, window.location.origin);
+      
+      // Only internal admin routes
+      if (url.origin !== window.location.origin || !url.pathname.startsWith('/admin')) return;
+      if (link.target === '_blank' || link.hasAttribute('download')) return;
+
+      e.preventDefault();
+      
+      if (url.href === window.location.href) return;
+
+      // Loading state
+      const layout = document.querySelector('.layout');
+      if (layout) {
+        layout.style.transition = 'opacity 0.15s ease';
+        layout.style.opacity = '0.4';
+        layout.style.pointerEvents = 'none';
+      }
+
+      try {
+        const res = await fetch(url.href, { headers: { 'X-PJAX': 'true' } });
+        if (!res.ok) {
+          window.location.href = url.href;
+          return;
+        }
+
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        
+        // Push State
+        window.history.pushState({}, '', url.href);
+        document.title = doc.title;
+
+        // Replace layout contents seamlessly
+        const newLayout = doc.querySelector('.layout');
+        if (newLayout && layout) {
+          layout.innerHTML = newLayout.innerHTML;
+          layout.style.opacity = '1';
+          layout.style.pointerEvents = 'auto';
+          
+          // Re-mount JS behaviors
+          initAdminBehaviors();
+          
+          // If the page needs scrolling to top
+          window.scrollTo(0, 0);
+        } else {
+          window.location.href = url.href;
+        }
+      } catch (err) {
+        console.error('SPA Navigation failed:', err);
+        window.location.href = url.href;
+      }
+    });
+
+    // Handle back/forward gracefully
+    window.addEventListener('popstate', async () => {
+      window.location.reload();
+    });
   </script>
 </body>
 </html>

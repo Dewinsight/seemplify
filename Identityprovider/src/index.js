@@ -506,7 +506,7 @@ const config = {
     const findAccountStart = Date.now()
     // Use lean() for read-only query - significantly faster
     const acc = await Account.findOne({ sub: id })
-      .populate('organizations.organization', 'name')
+      .populate('organizations.organization', 'name departments')
       .populate('currentOrganization', 'name')
       .lean()
     console.log(`⏱️ [PERF] findAccount query: ${Date.now() - findAccountStart}ms`)
@@ -5308,6 +5308,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
+    await organization.save()
 
     const member = organization.members.find(
       m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
@@ -5337,6 +5338,9 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         id: m.account?._id || m.account,
         name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
         email: m.account?.email || '',
+        designation: m.designation || '',
+        departmentId: m.department || null,
+        departmentName: organization.getDepartmentById(m.department)?.name || 'General',
         role: m.role,
         joinedAt: m.joinedAt,
         isOwner: m.role === 'owner',
@@ -5346,6 +5350,13 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
     res.render('members', {
       organization,
       members: mappedMembers,
+      departments: (organization.departments || []).map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        parentDepartment: department.parentDepartment?.toString() || ''
+      })),
+      canManageMemberRoles: ['owner', 'admin'].includes(member.role),
+      canManageMemberMetadata: ['owner', 'admin', 'hr_manager'].includes(member.role),
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
       user: req.user,
@@ -5364,32 +5375,49 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
+    await organization.save()
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
-      return res.redirect('/organizations?error=Admin or owner role required')
+    if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+      return res.redirect('/organizations?error=Admin, owner, or HR manager role required')
     }
 
     const invitations = await OrganizationInvite.find({
       organization: req.params.orgId,
       status: 'pending',
       expiresAt: { $gt: new Date() }
-    }).populate('invitedBy', 'email profile.name')
+    })
+      .populate('invitedBy', 'email profile.name')
+      .populate('team', 'name')
 
     const { apps: availableApps, appIdSet, appNameById } = getHubAppMetadata()
     const invitationRows = invitations.map(invite => ({
       id: invite._id.toString(),
       ...invite.toObject(),
+      departmentName: organization.getDepartmentById(invite.department)?.name || 'General',
+      teamName: invite.team?.name || '',
       ...getInvitationAccessSummary(invite, appNameById, appIdSet)
     }))
+
+    const teams = await Team.find({ organization: req.params.orgId }).select('name department').lean()
 
     res.render('invitations', {
       organization,
       invitations: invitationRows,
       availableApps,
+      departments: (organization.departments || []).map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        parentDepartment: department.parentDepartment?.toString() || ''
+      })),
+      teams: teams.map((team) => ({
+        id: team._id.toString(),
+        name: team.name,
+        departmentId: team.department?.toString() || ''
+      })),
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
@@ -6623,6 +6651,7 @@ app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
+    await organization.save()
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
@@ -6645,10 +6674,22 @@ app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
 
     res.render('teams', {
       organization,
+      departments: (organization.departments || []).map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        description: department.description || '',
+        parentDepartment: department.parentDepartment?.toString() || '',
+        headAccount: department.headAccount?.toString() || '',
+        headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || ''
+      })),
       teams: teams.map(t => ({
         id: t._id.toString(),
         name: t.name,
         description: t.description,
+        department: t.department ? {
+          id: t.department.toString(),
+          name: organization.getDepartmentById(t.department)?.name || 'General'
+        } : null,
         parentTeam: t.parentTeam ? {
           id: t.parentTeam._id.toString(),
           name: t.parentTeam.name
@@ -6669,8 +6710,13 @@ app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
       orgMembers: orgMembers.map(m => ({
         id: m._id.toString(),
         email: m.email,
-        name: m.profile?.name
+        name: m.profile?.name,
+        departmentId: organization.members.find(memberEntry => memberEntry.account.toString() === m._id.toString())?.department?.toString() || '',
+        departmentName: organization.getDepartmentById(
+          organization.members.find(memberEntry => memberEntry.account.toString() === m._id.toString())?.department
+        )?.name || 'General'
       })),
+      canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
       yourRole: member.role,
       user: req.user,
       error: req.query.error,

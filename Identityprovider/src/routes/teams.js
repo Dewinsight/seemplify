@@ -22,6 +22,7 @@ router.get('/organizations/:orgId/teams',
   requireOrganizationMember,
   async (req, res) => {
     try {
+      await req.organization.save()
       const { tree } = req.query
 
       if (tree === 'true') {
@@ -41,6 +42,10 @@ router.get('/organizations/:orgId/teams',
         id: team._id,
         name: team.name,
         description: team.description,
+        department: team.department ? {
+          id: team.department,
+          name: req.organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
         parentTeam: team.parentTeam ? {
           id: team.parentTeam._id,
           name: team.parentTeam.name
@@ -71,7 +76,8 @@ router.post('/organizations/:orgId/teams',
   requireOrganizationAdmin,
   async (req, res) => {
     try {
-      const { name, description, parentTeamId, managerId } = req.body
+      await req.organization.save()
+      const { name, description, parentTeamId, departmentId } = req.body
 
       if (!name || name.trim().length === 0) {
         return res.status(400).json({ error: 'Team name is required' })
@@ -81,11 +87,23 @@ router.post('/organizations/:orgId/teams',
         return res.status(400).json({ error: 'Team name must be 100 characters or less' })
       }
 
+      if (!departmentId) {
+        return res.status(400).json({ error: 'Department is required' })
+      }
+
+      const department = req.organization.getDepartmentById(departmentId)
+      if (!department) {
+        return res.status(400).json({ error: 'Invalid department' })
+      }
+
       // Verify parent team belongs to same organization
       if (parentTeamId) {
         const parentTeam = await Team.findById(parentTeamId)
         if (!parentTeam || parentTeam.organization.toString() !== req.params.orgId) {
           return res.status(400).json({ error: 'Invalid parent team' })
+        }
+        if (parentTeam.department?.toString() !== departmentId.toString()) {
+          return res.status(400).json({ error: 'Parent team must belong to the same department' })
         }
       }
 
@@ -93,6 +111,7 @@ router.post('/organizations/:orgId/teams',
         organization: req.params.orgId,
         name: name.trim(),
         description: description?.trim(),
+        department: departmentId,
         parentTeam: parentTeamId || null,
         manager: null, // Manager must be set separately with line_manager role
         members: []
@@ -104,6 +123,7 @@ router.post('/organizations/:orgId/teams',
         id: team._id,
         name: team.name,
         description: team.description,
+        departmentId: team.department,
         parentTeamId: team.parentTeam,
         message: 'Team created successfully'
       })
@@ -134,6 +154,7 @@ router.get('/:teamId',
 
       // Verify user is member of organization
       const organization = await Organization.findById(team.organization._id)
+      await organization.save()
       if (!organization.isMember(req.user._id)) {
         return res.status(403).json({ error: 'Not a member of this organization' })
       }
@@ -149,6 +170,10 @@ router.get('/:teamId',
         id: team._id,
         name: team.name,
         description: team.description,
+        department: team.department ? {
+          id: team.department,
+          name: organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
         organization: {
           id: team.organization._id,
           name: team.organization.name
@@ -198,7 +223,8 @@ router.put('/:teamId',
   requireTeamAdminOrManager,
   async (req, res) => {
     try {
-      const { name, description, parentTeamId } = req.body
+      await req.organization.save()
+      const { name, description, parentTeamId, departmentId } = req.body
 
       const updates = {}
       if (name !== undefined) {
@@ -213,12 +239,26 @@ router.put('/:teamId',
       if (description !== undefined) {
         updates.description = description?.trim()
       }
+      if (departmentId !== undefined) {
+        if (!departmentId) {
+          return res.status(400).json({ error: 'Department is required' })
+        }
+        const department = req.organization.getDepartmentById(departmentId)
+        if (!department) {
+          return res.status(400).json({ error: 'Invalid department' })
+        }
+        updates.department = departmentId
+      }
       if (parentTeamId !== undefined) {
         // Verify parent team belongs to same organization
         if (parentTeamId) {
           const parentTeam = await Team.findById(parentTeamId)
           if (!parentTeam || parentTeam.organization.toString() !== req.team.organization.toString()) {
             return res.status(400).json({ error: 'Invalid parent team' })
+          }
+          const effectiveDepartmentId = (updates.department || req.team.department || '').toString()
+          if (parentTeam.department?.toString() !== effectiveDepartmentId) {
+            return res.status(400).json({ error: 'Parent team must belong to the same department' })
           }
           // Prevent circular reference
           if (parentTeamId === req.team._id.toString()) {
@@ -234,12 +274,21 @@ router.put('/:teamId',
         { new: true }
       )
 
+      if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
+        await Account.updateMany(
+          { 'teams.team': team._id },
+          { $set: { 'teams.$[membership].department': team.department || null } },
+          { arrayFilters: [{ 'membership.team': team._id }] }
+        )
+      }
+
       console.log('✅ Team updated:', team.name, 'by', req.user.email)
 
       res.json({
         id: team._id,
         name: team.name,
         description: team.description,
+        departmentId: team.department,
         parentTeamId: team.parentTeam
       })
     } catch (error) {
@@ -265,6 +314,7 @@ router.delete('/:teamId',
 
       // Verify org admin
       const organization = await Organization.findById(team.organization)
+      await organization.save()
       const member = organization.members.find(
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
@@ -330,6 +380,13 @@ router.post('/:teamId/members',
 
       if (!req.organization.isMember(accountId)) {
         return res.status(400).json({ error: 'Account must be a member of the organization' })
+      }
+
+      const orgMember = req.organization.members.find(
+        m => m.account.toString() === accountId.toString() && m.status === 'active'
+      )
+      if (!orgMember?.department || orgMember.department.toString() !== req.team.department?.toString()) {
+        return res.status(400).json({ error: 'Member must belong to the same department as the team' })
       }
 
       await req.team.addMember(accountId, role)
@@ -479,8 +536,9 @@ router.post('/:teamId/manager',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Organization admin or owner role required' })
+      const isDepartmentHead = organization.isDepartmentHead(req.user._id, team.department)
+      if (!member || (!['owner', 'admin'].includes(member.role) && !isDepartmentHead)) {
+        return res.status(403).json({ error: 'Organization admin, owner, or department head role required' })
       }
 
       // Clear manager if accountId is null

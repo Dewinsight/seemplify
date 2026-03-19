@@ -1,5 +1,11 @@
 import mongoose from 'mongoose'
 import { normalizeAppAccess } from '../utils/appAccess.js'
+import {
+  buildSeedDepartments,
+  buildDepartmentLookup,
+  getGeneralDepartment,
+  normalizeDepartmentName
+} from '../utils/departments.js'
 
 const OrganizationSchema = new mongoose.Schema({
   name: {
@@ -28,6 +34,15 @@ const OrganizationSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
       default: 'recruiter'
+    },
+    designation: {
+      type: String,
+      trim: true,
+      maxLength: 120
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
     },
     appAccess: {
       mode: {
@@ -83,6 +98,40 @@ const OrganizationSchema = new mongoose.Schema({
       }
     }
   },
+  departments: [{
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxLength: 120
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxLength: 500
+    },
+    parentDepartment: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    headAccount: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      default: null
+    },
+    isSystem: {
+      type: Boolean,
+      default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   // For linking with SmartHR organization during migration
   smarthrOrganizationId: {
     type: String,
@@ -142,6 +191,28 @@ OrganizationSchema.index({ subscriptionExpiresAt: 1 })
 
 // Pre-save middleware to update timestamp
 OrganizationSchema.pre('save', function(next) {
+  if (!Array.isArray(this.departments) || this.departments.length === 0) {
+    this.departments = buildSeedDepartments()
+  }
+
+  const generalDepartment = getGeneralDepartment(this.departments)
+  const generalDepartmentId = generalDepartment?._id || null
+  const departmentLookup = buildDepartmentLookup(this.departments)
+
+  if (Array.isArray(this.members) && generalDepartmentId) {
+    this.members.forEach((member) => {
+      if (!member.department || !departmentLookup.has(member.department.toString())) {
+        member.department = generalDepartmentId
+      }
+    })
+  }
+
+  if (Array.isArray(this.departments)) {
+    this.departments.forEach((department) => {
+      department.updatedAt = Date.now()
+    })
+  }
+
   if (this.settings?.simpleLms) {
     const defaultCurrency = String(this.settings.simpleLms.defaultCurrency || 'NGN')
       .trim()
@@ -191,9 +262,106 @@ OrganizationSchema.methods.getMemberRole = function(accountId) {
   return member ? member.role : null
 }
 
+OrganizationSchema.methods.getGeneralDepartment = function() {
+  return getGeneralDepartment(this.departments || [])
+}
+
+OrganizationSchema.methods.getDepartmentById = function(departmentId) {
+  const targetId = departmentId?.toString()
+  return (this.departments || []).find((department) => department._id.toString() === targetId) || null
+}
+
+OrganizationSchema.methods.isDepartmentHead = function(accountId, departmentId = null) {
+  return (this.departments || []).some((department) => {
+    if (!department.headAccount) return false
+    if (department.headAccount.toString() !== accountId.toString()) return false
+    if (!departmentId) return true
+    return department._id.toString() === departmentId.toString()
+  })
+}
+
+OrganizationSchema.methods.addDepartment = async function(data = {}, createdBy = null) {
+  const name = normalizeDepartmentName(data.name)
+  if (!name) {
+    throw new Error('Department name is required')
+  }
+
+  const exists = (this.departments || []).some(
+    (department) => normalizeDepartmentName(department.name).toLowerCase() === name.toLowerCase()
+  )
+  if (exists) {
+    throw new Error('Department with this name already exists')
+  }
+
+  const parentDepartment = data.parentDepartment || this.getGeneralDepartment()?._id || null
+  if (parentDepartment && !this.getDepartmentById(parentDepartment)) {
+    throw new Error('Parent department not found')
+  }
+
+  this.departments.push({
+    name,
+    description: String(data.description || '').trim(),
+    parentDepartment,
+    headAccount: data.headAccount || null,
+    isSystem: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    createdBy
+  })
+
+  await this.save()
+  return this.departments[this.departments.length - 1]
+}
+
+OrganizationSchema.methods.updateDepartment = async function(departmentId, updates = {}) {
+  const department = this.getDepartmentById(departmentId)
+  if (!department) {
+    throw new Error('Department not found')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+    const nextName = normalizeDepartmentName(updates.name)
+    if (!nextName) {
+      throw new Error('Department name is required')
+    }
+    const duplicate = (this.departments || []).some((candidate) =>
+      candidate._id.toString() !== department._id.toString() &&
+      normalizeDepartmentName(candidate.name).toLowerCase() === nextName.toLowerCase()
+    )
+    if (duplicate) {
+      throw new Error('Department with this name already exists')
+    }
+    department.name = nextName
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'description')) {
+    department.description = String(updates.description || '').trim()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'headAccount')) {
+    department.headAccount = updates.headAccount || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'parentDepartment')) {
+    const parentDepartment = updates.parentDepartment || null
+    if (parentDepartment && parentDepartment.toString() === department._id.toString()) {
+      throw new Error('Department cannot be its own parent')
+    }
+    if (parentDepartment && !this.getDepartmentById(parentDepartment)) {
+      throw new Error('Parent department not found')
+    }
+    department.parentDepartment = parentDepartment
+  }
+
+  department.updatedAt = new Date()
+  await this.save()
+  return department
+}
+
 // Add member to organization
-OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null) {
+OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null, options = {}) {
   const normalizedAppAccess = normalizeAppAccess(appAccess)
+  const departmentId = options.departmentId || this.getGeneralDepartment()?._id || null
 
   // Check if already a member
   const existing = this.members.find(
@@ -208,6 +376,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     existing.status = 'active'
     existing.role = role
     existing.appAccess = normalizedAppAccess
+    existing.department = departmentId
     existing.joinedAt = new Date()
     existing.invitedBy = invitedBy
     await this.save()
@@ -221,6 +390,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
           organizations: {
             organization: this._id,
             role: role,
+            department: departmentId,
             appAccess: normalizedAppAccess,
             joinedAt: new Date(),
             isActive: true
@@ -235,6 +405,7 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
   this.members.push({
     account: accountId,
     role: role,
+    department: departmentId,
     appAccess: normalizedAppAccess,
     joinedAt: new Date(),
     invitedBy: invitedBy,
@@ -249,12 +420,13 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     { _id: accountId },
     {
       $push: {
-        organizations: {
-          organization: this._id,
-          role: role,
-          appAccess: normalizedAppAccess,
-          joinedAt: new Date(),
-          isActive: true
+          organizations: {
+            organization: this._id,
+            role: role,
+            department: departmentId,
+            appAccess: normalizedAppAccess,
+            joinedAt: new Date(),
+            isActive: true
         }
       }
     }
@@ -341,6 +513,41 @@ OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole,
   )
 
   return this
+}
+
+OrganizationSchema.methods.updateMemberDetails = async function(accountId, updates = {}, updatedBy) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'designation')) {
+    member.designation = String(updates.designation || '').trim() || undefined
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
+    const departmentId = updates.department || this.getGeneralDepartment()?._id || null
+    if (departmentId && !this.getDepartmentById(departmentId)) {
+      throw new Error('Department not found')
+    }
+    member.department = departmentId
+
+    const Account = mongoose.model('AiinAccount')
+    await Account.updateOne(
+      { _id: accountId, 'organizations.organization': this._id },
+      { $set: { 'organizations.$.department': departmentId } }
+    )
+  }
+
+  member.updatedAt = new Date()
+  member.updatedBy = updatedBy
+
+  await this.save()
+
+  return member
 }
 
 // Transfer ownership (explicit method)

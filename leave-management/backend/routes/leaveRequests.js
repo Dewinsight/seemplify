@@ -113,6 +113,8 @@ router.get('/approvals',
     // If user has full org permissions, show all pending
     if (req.hasFullAccess || req.organizationRole === 'admin' || req.organizationRole === 'hr_manager') {
       // Show all pending requests for org
+    } else if (req.hasDepartmentHeadAccess) {
+      query.userId = { $in: req.scopedEmployeeIds || [] };
     } else if (req.hasTeamPermission) {
       // Show only requests from team members (direct reports + sub-team members)
       const userTeams = (userinfo.teams || []).filter(
@@ -181,6 +183,9 @@ router.get('/team',
 
     // If not full access, filter to team members
     if (!req.hasFullAccess && req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager') {
+      if (req.hasDepartmentHeadAccess) {
+        query.userId = { $in: req.scopedEmployeeIds || [] };
+      } else {
       const userTeams = (userinfo.teams || []).filter(
         t => t.organizationId === req.organizationId && 
              (t.role === 'line_manager' || t.role === 'team_lead' || t.isManager)
@@ -198,6 +203,7 @@ router.get('/team',
       } else {
         // Fallback: check by assigned approver
         query['assignedApprover.userId'] = req.user.id;
+      }
       }
     }
 
@@ -319,6 +325,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
     const hasPermission = req.hasFullAccess ||
       req.organizationRole === 'admin' ||
       req.organizationRole === 'hr_manager' ||
+      req.hasDepartmentHeadAccess ||
       req.teamPermissions?.includes('view_team_leaves');
 
     if (!hasPermission) {

@@ -327,14 +327,41 @@ router.get('/profiles', requireHRAdmin, async (req, res) => {
 router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
 
-    const profile = await PayrollProfile.findOne({
+    let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
       organizationId
     }).populate('salaryGrade.gradeId');
 
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    if (accessToken) {
+      try {
+        const membersPayload = await fetchIdpOrgMembers(accessToken, organizationId);
+        const members = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
+        const member = members.find((m) => m?.sub === req.params.userId || m?.id === req.params.userId);
+
+        if (member) {
+          profile.employeeInfo = {
+            ...(profile.employeeInfo || {}),
+            name: member.name || profile.employeeInfo?.name,
+            email: member.email || profile.employeeInfo?.email,
+            department: member.departmentName || profile.employeeInfo?.department,
+            designation: member.designation || profile.employeeInfo?.designation,
+            lastSyncedAt: new Date()
+          };
+          await profile.save();
+          profile = await PayrollProfile.findOne({
+            userId: req.params.userId,
+            organizationId
+          }).populate('salaryGrade.gradeId');
+        }
+      } catch (syncErr) {
+        console.warn('Profile IDP sync failed:', syncErr?.message || syncErr);
+      }
     }
 
     res.json(profile);
@@ -513,9 +540,6 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     }
 
     const existing = await PayrollProfile.findOne({ userId: targetUserId, organizationId });
-    if (existing) {
-      return res.json({ success: true, profile: existing, existed: true });
-    }
 
     const membersPayload = await fetchIdpOrgMembers(accessToken, organizationId);
     const members = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
@@ -525,6 +549,19 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Employee not found in IDP organization members' });
     }
 
+    if (existing) {
+      existing.employeeInfo = {
+        ...(existing.employeeInfo || {}),
+        name: member.name || existing.employeeInfo?.name,
+        email: member.email || existing.employeeInfo?.email,
+        department: member.departmentName || existing.employeeInfo?.department,
+        designation: member.designation || existing.employeeInfo?.designation,
+        lastSyncedAt: new Date()
+      };
+      await existing.save();
+      return res.json({ success: true, profile: existing, existed: true });
+    }
+
     const profile = new PayrollProfile({
       userId: targetUserId,
       organizationId,
@@ -532,6 +569,8 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       employeeInfo: {
         name: member.name,
         email: member.email,
+        department: member.departmentName || '',
+        designation: member.designation || '',
         lastSyncedAt: new Date(),
       },
       createdBy: adminId,

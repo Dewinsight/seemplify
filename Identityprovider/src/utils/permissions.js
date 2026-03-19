@@ -249,6 +249,18 @@ export async function buildOrganizationClaims(account) {
   const claimsPromises = activeOrgs.map(async (org) => {
     const orgDoc = org.organization
     const orgId = orgDoc._id?.toString() || orgDoc.toString()
+    const departments = Array.isArray(orgDoc.departments) ? orgDoc.departments : []
+    const memberDepartmentId = org.department?.toString() || null
+    const memberDepartment = memberDepartmentId
+      ? departments.find((department) => department._id?.toString() === memberDepartmentId)
+      : null
+    const headedDepartments = departments
+      .filter((department) => department.headAccount?.toString() === account._id.toString())
+      .map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves', 'manage_attendance', 'manage_performance', 'manage_idp_department']
+      }))
 
     // Get team permissions for this organization (now optimized)
     const teamPermissions = await getTeamPermissions(account, orgId)
@@ -257,6 +269,9 @@ export async function buildOrganizationClaims(account) {
       id: orgId,
       name: orgDoc.name || null,
       role: org.role,
+      departmentId: memberDepartmentId,
+      departmentName: memberDepartment?.name || null,
+      departmentHeadPermissions: headedDepartments,
       permissions: getPermissionsForRole(org.role),
       appPermissions: {
         smarthr: getPermissionsForRole(org.role, 'smarthr'),

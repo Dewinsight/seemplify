@@ -72,6 +72,7 @@ export const requireOrganizationMember = async (req, res, next) => {
     if (!organization) {
       return res.status(404).json({ error: 'Organization not found' })
     }
+    await organization.save()
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
@@ -268,6 +269,7 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
     )
 
     const isOrgAdmin = orgMember && ['owner', 'admin'].includes(orgMember.role)
+    const isDepartmentHead = organization.isDepartmentHead(req.user._id, team.department)
 
     // Check team manager with line_manager role
     const isTeamManager = team.manager &&
@@ -279,9 +281,9 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
 
     const hasLineManagerRole = teamMember && teamMember.role === 'line_manager'
 
-    if (!isOrgAdmin && !(isTeamManager && hasLineManagerRole)) {
+    if (!isOrgAdmin && !isDepartmentHead && !(isTeamManager && hasLineManagerRole)) {
       return res.status(403).json({
-        error: 'Organization admin or team manager (with line_manager role) required'
+        error: 'Organization admin, department head, or team manager (with line_manager role) required'
       })
     }
 
@@ -290,6 +292,7 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
     req.memberRole = orgMember?.role
     req.teamMember = teamMember
     req.isOrgAdmin = isOrgAdmin
+    req.isDepartmentHead = isDepartmentHead
     req.isTeamManager = isTeamManager && hasLineManagerRole
 
     next()

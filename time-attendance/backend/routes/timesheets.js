@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
+const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { Timesheet, TimeEntry, AttendancePolicy } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
 const emailService = require('../services/emailService');
@@ -21,7 +21,10 @@ router.get('/', async (req, res) => {
 
         if (userId && userId !== req.user.id) {
             // Permission check: HR or Manager can view others
-            if (!isHRAdmin(req) && !isLineManager(req)) {
+            if (!isHRAdmin(req) && !isLineManager(req) && !isDepartmentHead(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(userId))) {
                 return res.status(403).json({ error: 'Access denied' });
             }
             targetUserId = userId;
@@ -85,7 +88,10 @@ router.get('/:id', async (req, res) => {
         // Check access - user can view own, managers can view team's, HR can view all
         if (timesheet.userId !== userId && !isHRAdmin(req)) {
             // Check if user is manager of this employee's team
-            if (!isLineManager(req)) {
+            if (!isLineManager(req) && !isDepartmentHead(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
                 return res.status(403).json({ error: 'Access denied' });
             }
         }
@@ -114,7 +120,10 @@ router.get('/:id/export', async (req, res) => {
 
         // Check access - user can export own, managers can export team's, HR can export all
         if (timesheet.userId !== userId && !isHRAdmin(req)) {
-            if (!isLineManager(req)) {
+            if (!isLineManager(req) && !isDepartmentHead(req)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
                 return res.status(403).json({ error: 'Access denied' });
             }
         }

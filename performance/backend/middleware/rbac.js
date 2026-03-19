@@ -137,6 +137,15 @@ function getUserRole(user) {
     return 'hr_admin';
   }
 
+  const departmentHeadPermissions = Array.isArray(
+    (user.organizations || user.userinfo?.organizations || []).find((org) => org.id === currentOrgId)?.departmentHeadPermissions
+  )
+    ? (user.organizations || user.userinfo?.organizations || []).find((org) => org.id === currentOrgId)?.departmentHeadPermissions
+    : [];
+  if (departmentHeadPermissions.length > 0) {
+    return 'line_manager';
+  }
+
   // Check team roles from IdP claims
   const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
     if (!currentOrgId) return true;
@@ -171,6 +180,8 @@ function getDirectReports(user) {
     return !team.organizationId || team.organizationId === currentOrgId;
   });
   const teamPermissions = user.idpTeamPermissions || user.userinfo?.team_permissions || [];
+  const departmentHeadPermissions = (user.organizations || user.userinfo?.organizations || [])
+    .find((org) => org.id === currentOrgId)?.departmentHeadPermissions || [];
 
   const directReportIds = new Set();
 
@@ -191,6 +202,15 @@ function getDirectReports(user) {
     }
   });
 
+  const headedDepartmentIds = departmentHeadPermissions.map((department) => String(department.id)).filter(Boolean);
+  if (headedDepartmentIds.length > 0) {
+    teams.forEach((team) => {
+      if (!team.departmentId || !headedDepartmentIds.includes(String(team.departmentId))) return;
+      (team.directReports || []).forEach(id => directReportIds.add(id));
+      (team.directReportAccountIds || []).forEach(id => directReportIds.add(id));
+    });
+  }
+
   return Array.from(directReportIds);
 }
 
@@ -207,10 +227,15 @@ function getManagedTeams(user) {
     return !team.organizationId || team.organizationId === currentOrgId;
   });
 
+  const departmentHeadPermissions = (user.organizations || user.userinfo?.organizations || [])
+    .find((org) => org.id === currentOrgId)?.departmentHeadPermissions || [];
+  const headedDepartmentIds = departmentHeadPermissions.map((department) => String(department.id)).filter(Boolean);
+
   return teams.filter(t =>
     t.role === 'line_manager' ||
     t.role === 'team_lead' ||
-    t.isManager
+    t.isManager ||
+    (t.departmentId && headedDepartmentIds.includes(String(t.departmentId)))
   );
 }
 

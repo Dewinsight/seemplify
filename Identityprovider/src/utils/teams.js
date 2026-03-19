@@ -60,7 +60,7 @@ export async function getTeamClaims(account) {
     'members.account': account._id,
     'members.status': 'active'
   })
-    .populate('organization', 'name')
+    .populate('organization', 'name departments')
     .populate('parentTeam', 'name')
     // Include `sub` so downstream apps can use OIDC `sub` as the user identifier.
     .populate('manager', 'sub email profile.name')
@@ -187,6 +187,10 @@ export async function getTeamClaims(account) {
       name: team.name,
       organizationId: team.organization._id.toString(),
       organizationName: team.organization.name,
+      departmentId: team.department?.toString() || null,
+      departmentName: team.organization.departments?.find(
+        (department) => department._id?.toString() === team.department?.toString()
+      )?.name || null,
       parentTeamId: team.parentTeam?._id?.toString() || null,
       parentTeamName: team.parentTeam?.name || null,
       hierarchyPath: hierarchyPath,
@@ -227,7 +231,7 @@ export async function getTeamPermissions(account, organizationId) {
     organization: organizationId,
     'members.account': account._id,
     'members.status': 'active'
-  }).lean()
+  }).populate('organization', 'departments').lean()
 
   // Resolve Account._id -> Account.sub for direct report lists.
   const directReportAccountIds = new Set()
@@ -278,6 +282,10 @@ export async function getTeamPermissions(account, organizationId) {
       permissions.push({
         teamId: team._id.toString(),
         teamName: team.name,
+        departmentId: team.department?.toString() || null,
+        departmentName: team.organization?.departments?.find(
+          (department) => department._id?.toString() === team.department?.toString()
+        )?.name || null,
         role: teamMember.role,
         permissions: teamPerms,
         directReports: directReports,

@@ -21,6 +21,15 @@ const OrganizationInviteSchema = new mongoose.Schema({
     enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
     default: 'recruiter'
   },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: true
+  },
+  team: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinTeam',
+    default: null
+  },
   appAccess: {
     mode: {
       type: String,

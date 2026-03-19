@@ -1,11 +1,9 @@
 import express from 'express'
 import { Organization } from '../models/Organization.js'
-import { Account } from '../models/Account.js'
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
-  requireOrganizationOwner
+  requireOrganizationAdmin
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 
@@ -22,17 +20,20 @@ router.get('/:orgId/members',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        // Include both `_id` and `sub` so downstream apps can reliably map members to OIDC `sub`.
         .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
+      await organization.save()
 
       const members = organization.members
         .filter(m => m.status === 'active')
         .map(m => ({
+          departmentId: m.department || null,
+          departmentName: organization.getDepartmentById(m.department)?.name || '',
           id: m.account._id,
           sub: m.account.sub,
           email: m.account.email,
           name: m.account.profile?.name,
+          designation: m.designation || '',
           emailVerified: m.account.emailVerified,
           role: m.role,
           joinedAt: m.joinedAt,
@@ -43,7 +44,6 @@ router.get('/:orgId/members',
           isOwner: m.account._id.toString() === organization.owner.toString()
         }))
         .sort((a, b) => {
-          // Sort by role priority: owner > admin > hr_manager > recruiter > interviewer > staff
           const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, staff: 5 }
           return (rolePriority[a.role] || 6) - (rolePriority[b.role] || 6)
         })
@@ -74,9 +74,9 @@ router.get('/:orgId/members/:memberId',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        // Include both `_id` and `sub` so downstream apps can reliably map members to OIDC `sub`.
         .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
+      await organization.save()
 
       const member = organization.members.find(
         m => m.account._id.toString() === req.params.memberId && m.status === 'active'
@@ -87,10 +87,13 @@ router.get('/:orgId/members/:memberId',
       }
 
       res.json({
+        departmentId: member.department || null,
+        departmentName: organization.getDepartmentById(member.department)?.name || '',
         id: member.account._id,
         sub: member.account.sub,
         email: member.account.email,
         name: member.account.profile?.name,
+        designation: member.designation || '',
         emailVerified: member.account.emailVerified,
         role: member.role,
         joinedAt: member.joinedAt,
@@ -109,48 +112,84 @@ router.get('/:orgId/members/:memberId',
 )
 
 /**
- * Update member role
+ * Update member details
  * PUT /api/organizations/:orgId/members/:memberId
  * Requires admin or owner role
  */
 router.put('/:orgId/members/:memberId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
   async (req, res) => {
     try {
-      const { role } = req.body
+      const body = req.body || {}
+      const hasRole = Object.prototype.hasOwnProperty.call(body, 'role')
+      const hasDesignation = Object.prototype.hasOwnProperty.call(body, 'designation')
+      const hasDepartment = Object.prototype.hasOwnProperty.call(body, 'department')
+      const { role, designation, department } = body
 
-      if (!role) {
-        return res.status(400).json({ error: 'Role is required' })
+      const canManageRole = ['owner', 'admin'].includes(req.memberRole)
+      const canManageMemberMetadata = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+
+      if (!hasRole && !hasDesignation && !hasDepartment) {
+        return res.status(400).json({ error: 'At least one of role, designation, or department is required' })
       }
 
-      const validRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
-      if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      if (hasRole && !canManageRole) {
+        return res.status(403).json({ error: 'Admin or owner role required to update role' })
       }
 
-      // Only owner can assign owner role
-      if (role === 'owner' && req.memberRole !== 'owner') {
+      if ((hasDesignation || hasDepartment) && !canManageMemberMetadata) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required to update member details' })
+      }
+
+      if (hasRole) {
+        const validRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+        }
+      }
+
+      if (hasRole && role === 'owner' && req.memberRole !== 'owner') {
         return res.status(403).json({ error: 'Only owner can assign owner role' })
       }
 
       try {
-        await req.organization.updateMemberRole(req.params.memberId, role, req.user._id)
+        if (hasRole) {
+          await req.organization.updateMemberRole(req.params.memberId, role, req.user._id)
+        }
+        if (hasDesignation) {
+          await req.organization.updateMemberDetails(
+            req.params.memberId,
+            { designation },
+            req.user._id
+          )
+        }
+        if (hasDepartment) {
+          await req.organization.updateMemberDetails(
+            req.params.memberId,
+            { department },
+            req.user._id
+          )
+        }
       } catch (err) {
         return res.status(400).json({ error: err.message })
       }
 
-      console.log('✅ Member role updated to', role, 'in', req.organization.name, 'by', req.user.email)
+      console.log('Member updated in', req.organization.name, 'by', req.user.email, {
+        role: hasRole ? role : undefined,
+        designation: hasDesignation ? String(designation || '').trim() : undefined
+      })
 
       res.json({
-        message: 'Member role updated successfully',
+        message: 'Member updated successfully',
         memberId: req.params.memberId,
-        newRole: role
+        newRole: hasRole ? role : undefined,
+        designation: hasDesignation ? String(designation || '').trim() : undefined,
+        department: hasDepartment ? department || null : undefined
       })
     } catch (error) {
-      console.error('Update member role error:', error)
-      res.status(500).json({ error: 'Failed to update member role' })
+      console.error('Update member error:', error)
+      res.status(500).json({ error: 'Failed to update member' })
     }
   }
 )
@@ -167,11 +206,8 @@ router.delete('/:orgId/members/:memberId',
   async (req, res) => {
     try {
       const memberId = req.params.memberId
-
-      // Users can remove themselves
       const isSelf = memberId === req.user._id.toString()
 
-      // Get target member
       const targetMember = req.organization.members.find(
         m => m.account.toString() === memberId && m.status === 'active'
       )
@@ -180,7 +216,6 @@ router.delete('/:orgId/members/:memberId',
         return res.status(404).json({ error: 'Member not found' })
       }
 
-      // Only owner can remove other owners
       if (targetMember.role === 'owner' && req.memberRole !== 'owner' && !isSelf) {
         return res.status(403).json({ error: 'Only owner can remove other owners' })
       }
@@ -191,7 +226,7 @@ router.delete('/:orgId/members/:memberId',
         return res.status(400).json({ error: err.message })
       }
 
-      console.log('✅ Member removed from', req.organization.name, 'by', req.user.email)
+      console.log('Member removed from', req.organization.name, 'by', req.user.email)
 
       res.json({
         message: 'Member removed successfully',
@@ -222,7 +257,6 @@ router.post('/:orgId/leave',
         return res.status(404).json({ error: 'You are not a member of this organization' })
       }
 
-      // Check if user is the last owner
       if (member.role === 'owner' && req.organization.getOwnerCount() === 1) {
         return res.status(400).json({
           error: 'Cannot leave as the last owner. Transfer ownership first or delete the organization.'
@@ -235,7 +269,7 @@ router.post('/:orgId/leave',
         return res.status(400).json({ error: err.message })
       }
 
-      console.log('✅ User left organization:', req.organization.name, 'by', req.user.email)
+      console.log('User left organization:', req.organization.name, 'by', req.user.email)
 
       res.json({
         message: 'Successfully left the organization',

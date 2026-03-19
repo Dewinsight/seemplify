@@ -168,6 +168,7 @@ router.get('/:orgId',
   requireOrganizationMember,
   async (req, res) => {
     try {
+      await req.organization.save()
       const organization = await Organization.findById(req.params.orgId)
         .populate('owner', 'email profile.name')
         .populate('members.account', 'email profile.name')
@@ -198,6 +199,71 @@ router.get('/:orgId',
     } catch (error) {
       console.error('Get organization error:', error)
       res.status(500).json({ error: 'Failed to get organization' })
+    }
+  }
+)
+
+router.get('/:orgId/departments',
+  requireAuth,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      await req.organization.save()
+      res.json({
+        departments: (req.organization.departments || []).map((department) => ({
+          id: department._id,
+          name: department.name,
+          description: department.description || '',
+          parentDepartment: department.parentDepartment || null,
+          headAccount: department.headAccount || null,
+          isSystem: !!department.isSystem
+        }))
+      })
+    } catch (error) {
+      console.error('Get departments error:', error)
+      res.status(500).json({ error: 'Failed to get departments' })
+    }
+  }
+)
+
+router.post('/:orgId/departments',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationAdmin,
+  async (req, res) => {
+    try {
+      const department = await req.organization.addDepartment(req.body || {}, req.user._id)
+      res.status(201).json({
+        id: department._id,
+        name: department.name,
+        description: department.description || '',
+        parentDepartment: department.parentDepartment || null,
+        headAccount: department.headAccount || null
+      })
+    } catch (error) {
+      console.error('Create department error:', error)
+      res.status(400).json({ error: error.message || 'Failed to create department' })
+    }
+  }
+)
+
+router.put('/:orgId/departments/:departmentId',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationAdmin,
+  async (req, res) => {
+    try {
+      const department = await req.organization.updateDepartment(req.params.departmentId, req.body || {})
+      res.json({
+        id: department._id,
+        name: department.name,
+        description: department.description || '',
+        parentDepartment: department.parentDepartment || null,
+        headAccount: department.headAccount || null
+      })
+    } catch (error) {
+      console.error('Update department error:', error)
+      res.status(400).json({ error: error.message || 'Failed to update department' })
     }
   }
 )

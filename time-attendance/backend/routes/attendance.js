@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, isHRAdmin, isLineManager } = require('../middleware/auth');
+const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const emailService = require('../services/emailService');
 const { generateTeamAttendanceTableExcel } = require('../services/teamAttendanceTableExportService');
@@ -48,12 +48,14 @@ router.get('/dashboard', async (req, res) => {
 
         // Get pending approvals count (for managers)
         let pendingApprovalsCount = 0;
-        if (isHRAdmin(req) || isLineManager(req)) {
+        if (isHRAdmin(req) || isLineManager(req) || isDepartmentHead(req)) {
             pendingApprovalsCount = await Timesheet.countDocuments({
                 organizationId,
                 status: 'submitted',
-                ...(isLineManager(req) && !isHRAdmin(req)
-                    ? { 'assignedApprover.userId': userId }
+                ...((isLineManager(req) || isDepartmentHead(req)) && !isHRAdmin(req)
+                    ? (isDepartmentHead(req)
+                        ? { userId: { $in: getDepartmentHeadScope(req).directReports } }
+                        : { 'assignedApprover.userId': userId })
                     : {}
                 ),
             });
@@ -362,10 +364,19 @@ router.get('/summary', async (req, res) => {
 });
 
 function getManagedTeams(req, organizationId) {
-    return (req.user.teams || []).filter(team =>
+    const directManagedTeams = (req.user.teams || []).filter(team =>
         team.organizationId === organizationId &&
         MANAGER_ROLES.includes(team.role)
     );
+    const departmentTeams = isDepartmentHead(req)
+        ? getDepartmentHeadScope(req).scopedTeams
+        : [];
+
+    return Array.from(new Map(
+        [...directManagedTeams, ...departmentTeams]
+            .filter(Boolean)
+            .map(team => [String(team.id), team])
+    ).values());
 }
 
 function buildEmptyTeamSummary() {

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, requireManager, isHRAdmin } = require('../middleware/auth');
+const { requireAuth, requireOrganization, requireManager, isHRAdmin, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { Timesheet, AttendancePolicy } = require('../models');
 const emailService = require('../services/emailService');
 
@@ -23,7 +23,11 @@ router.get('/', async (req, res) => {
 
         // If not HR admin, only show timesheets assigned to this manager
         if (!isHRAdmin(req)) {
-            query['assignedApprover.userId'] = userId;
+            if (isDepartmentHead(req)) {
+                query.userId = { $in: getDepartmentHeadScope(req).directReports };
+            } else {
+                query['assignedApprover.userId'] = userId;
+            }
         }
 
         const timesheets = await Timesheet.find(query)
@@ -54,11 +58,15 @@ router.get('/history', async (req, res) => {
 
         // If not HR admin, only show timesheets this manager processed
         if (!isHRAdmin(req)) {
+            if (isDepartmentHead(req)) {
+                query.userId = { $in: getDepartmentHeadScope(req).directReports };
+            } else {
             query.$or = [
                 { 'approvedBy.userId': userId },
                 { 'rejectedBy.userId': userId },
                 { 'revisionRequestedBy.userId': userId },
             ];
+            }
         }
 
         const timesheets = await Timesheet.find(query)
@@ -83,7 +91,11 @@ router.get('/counts', async (req, res) => {
 
         const matchQuery = { organizationId };
         if (!isHRAdmin(req)) {
-            matchQuery['assignedApprover.userId'] = userId;
+            if (isDepartmentHead(req)) {
+                matchQuery.userId = { $in: getDepartmentHeadScope(req).directReports };
+            } else {
+                matchQuery['assignedApprover.userId'] = userId;
+            }
         }
 
         const counts = await Timesheet.aggregate([
@@ -127,7 +139,7 @@ router.post('/:id/approve', async (req, res) => {
         }
 
         // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId) {
+        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
             return res.status(403).json({ error: 'Not authorized to approve this timesheet' });
         }
 
@@ -182,7 +194,7 @@ router.post('/:id/reject', async (req, res) => {
         }
 
         // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId) {
+        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
             return res.status(403).json({ error: 'Not authorized to reject this timesheet' });
         }
 
@@ -237,7 +249,7 @@ router.post('/:id/request-revision', async (req, res) => {
         }
 
         // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId) {
+        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
             return res.status(403).json({ error: 'Not authorized' });
         }
 
@@ -419,7 +431,11 @@ router.post('/bulk-approve', async (req, res) => {
         };
 
         if (!isHRAdmin(req)) {
-            query['assignedApprover.userId'] = userId;
+            if (isDepartmentHead(req)) {
+                query.userId = { $in: getDepartmentHeadScope(req).directReports };
+            } else {
+                query['assignedApprover.userId'] = userId;
+            }
         }
 
         const result = await Timesheet.updateMany(query, {

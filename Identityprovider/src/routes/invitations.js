@@ -2,6 +2,7 @@ import express from 'express'
 import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Account } from '../models/Account.js'
+import { Team } from '../models/Team.js'
 import { emailService } from '../services/emailService.js'
 import { getHubApps } from '../config/hubApps.js'
 import {
@@ -91,6 +92,8 @@ router.get('/pending',
           description: inv.organization.description
         },
         role: inv.role,
+        department: inv.department || null,
+        team: inv.team || null,
         invitedBy: {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
@@ -133,8 +136,8 @@ router.post('/:invitationId/resend',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin or owner role required' })
+      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
       }
 
       // Generate new token
@@ -201,8 +204,8 @@ router.delete('/:invitationId',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin or owner role required' })
+      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
       }
 
       await OrganizationInvite.findByIdAndDelete(req.params.invitationId)
@@ -255,8 +258,16 @@ router.post('/accept/:invitationId',
         req.user._id,
         invitation.role,
         invitation.invitedBy,
-        normalizeAppAccess(invitation.appAccess)
+        normalizeAppAccess(invitation.appAccess),
+        { departmentId: invitation.department }
       )
+
+      if (invitation.team) {
+        const team = await Team.findById(invitation.team)
+        if (team) {
+          await team.addMember(req.user._id, 'member')
+        }
+      }
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -320,8 +331,16 @@ router.post('/:token/accept',
         req.user._id,
         matchedInvite.role,
         matchedInvite.invitedBy,
-        normalizeAppAccess(matchedInvite.appAccess)
+        normalizeAppAccess(matchedInvite.appAccess),
+        { departmentId: matchedInvite.department }
       )
+
+      if (matchedInvite.team) {
+        const team = await Team.findById(matchedInvite.team)
+        if (team) {
+          await team.addMember(req.user._id, 'member')
+        }
+      }
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -449,6 +468,8 @@ router.get('/:orgId/invitations',
         id: inv._id,
         email: inv.email,
         role: inv.role,
+        department: inv.department || null,
+        team: inv.team || null,
         status: inv.status,
         invitedBy: {
           email: inv.invitedBy?.email,
@@ -473,7 +494,6 @@ router.get('/:orgId/invitations',
 router.post('/:orgId/invitations',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
   rateLimit({ keyPrefix: 'invite', maxRequests: 50, windowMs: 60 * 60 * 1000 }), // 50 per hour
   async (req, res) => {
     try {
@@ -484,11 +504,38 @@ router.post('/:orgId/invitations',
         body: req.body
       })
 
-      const { email, role = 'recruiter' } = req.body
+      const canInvite = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+      if (!canInvite) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      await req.organization.save()
+
+      const { email, role = 'recruiter', department: departmentId, team: teamId = null } = req.body
       const { appIdSet, appNameById } = getHubAppMetadata()
 
       if (!email || !email.includes('@')) {
         return res.status(400).json({ error: 'Valid email is required' })
+      }
+
+      if (!departmentId) {
+        return res.status(400).json({ error: 'Department is required' })
+      }
+
+      const department = req.organization.getDepartmentById(departmentId)
+      if (!department) {
+        return res.status(400).json({ error: 'Invalid department' })
+      }
+
+      let invitedTeam = null
+      if (teamId) {
+        invitedTeam = await Team.findById(teamId).select('name organization department').lean()
+        if (!invitedTeam || invitedTeam.organization.toString() !== req.params.orgId) {
+          return res.status(400).json({ error: 'Invalid team' })
+        }
+        if (invitedTeam.department?.toString() !== departmentId.toString()) {
+          return res.status(400).json({ error: 'Selected team must belong to the selected department' })
+        }
       }
 
       const normalizedEmail = email.toLowerCase().trim()
@@ -533,6 +580,8 @@ router.post('/:orgId/invitations',
         organization: req.params.orgId,
         email: normalizedEmail,
         role,
+        department: departmentId,
+        team: teamId,
         appAccess,
         tokenHash,
         invitedBy: req.user._id,
@@ -550,6 +599,8 @@ router.post('/:orgId/invitations',
             <h2>You've been invited to join ${req.organization.name}</h2>
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
+            <p><strong>Department:</strong> ${department.name}</p>
+            ${invitedTeam ? `<p><strong>Team:</strong> ${invitedTeam.name}</p>` : '<p><strong>Team:</strong> Optional / not assigned yet</p>'}
             ${formatAppAccessHtml(appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
@@ -573,6 +624,8 @@ router.post('/:orgId/invitations',
         id: invitation._id,
         email: invitation.email,
         role: invitation.role,
+        department: invitation.department,
+        team: invitation.team,
         appAccess: normalizeAppAccess(invitation.appAccess),
         expiresAt: invitation.expiresAt,
         message: 'Invitation sent successfully'
