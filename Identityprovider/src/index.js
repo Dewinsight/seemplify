@@ -3313,12 +3313,17 @@ app.post('/login', async (req, res) => {
       maxAge: expiresIn * 1000
     })
 
-    // Redirect to return_to URL if provided (e.g., for invitation acceptance), otherwise home
+    const profileCompletion = getProfileCompletion(account)
+    const profileSetupRoute = profileCompletion?.complete
+      ? '/'
+      : `${profileCompletion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
+
+    // Redirect to return_to URL if provided (e.g., for invitation acceptance), otherwise profile setup or home
     if (return_to && return_to.startsWith('/')) {
       console.log('Redirecting to return_to:', return_to)
       res.redirect(return_to)
     } else {
-      res.redirect('/')
+      res.redirect(profileSetupRoute)
     }
   } catch (err) {
     console.error('Hub login error:', err)
@@ -5241,7 +5246,7 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
 app.get('/profile', getSessionUser, async (req, res) => {
   try {
     const completion = getProfileCompletion(req.user)
-    const targetRoute = completion?.nextIncompleteStep?.route || '/profile/personal'
+    const targetRoute = `${completion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
     res.redirect(targetRoute)
   } catch (error) {
     console.error('Profile page error:', error)
