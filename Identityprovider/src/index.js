@@ -3319,6 +3319,9 @@ app.post('/login', async (req, res) => {
       maxAge: expiresIn * 1000
     })
 
+    const currentOrgId = account.currentOrganization?._id?.toString?.()
+      || account.currentOrganization?.toString?.()
+      || null
     const profileCompletion = await getProfileCompletionForAccount(account, {
       organizationId: currentOrgId
     })
