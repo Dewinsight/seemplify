@@ -4,6 +4,7 @@ const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
 const taxService = require('./TaxCalculationService');
 const LeaveIntegrationService = require('./LeaveIntegrationService');
+const currencyService = require('./CurrencyService');
 
 // Instantiate integration services
 const leaveService = new LeaveIntegrationService();
@@ -29,6 +30,11 @@ function roundMoney(amount, precision = 2) {
   const n = Number(amount || 0);
   const factor = 10 ** precision;
   return Math.round(n * factor) / factor;
+}
+
+function normalizeCurrencyCode(code, fallback = 'USD') {
+  const normalized = String(code || fallback || 'USD').trim().toUpperCase();
+  return normalized || fallback || 'USD';
 }
 
 function startOfDay(d) {
@@ -70,6 +76,159 @@ function maskSensitive(value) {
  * This prepares payroll (no direct payout / tax remittance).
  */
 class PayrollEngineService {
+  async convertAmountToCurrency(organizationId, amount, fromCurrency, toCurrency, asOfDate = new Date()) {
+    const numericAmount = roundMoney(amount);
+    const sourceCurrency = normalizeCurrencyCode(fromCurrency, toCurrency);
+    const targetCurrency = normalizeCurrencyCode(toCurrency, sourceCurrency);
+
+    if (numericAmount === 0 || sourceCurrency === targetCurrency) {
+      return numericAmount;
+    }
+
+    const conversion = await currencyService.convert(
+      organizationId,
+      numericAmount,
+      sourceCurrency,
+      targetCurrency,
+      asOfDate
+    );
+
+    return roundMoney(conversion.convertedAmount);
+  }
+
+  async applyRunCurrencySummary(run, payslips) {
+    const breakdownMap = new Map();
+    const payDate = run?.payPeriod?.paymentDate ? new Date(run.payPeriod.paymentDate) : new Date();
+    const requestedReportingCurrency = run?.settings?.reportingCurrency
+      ? normalizeCurrencyCode(run.settings.reportingCurrency)
+      : null;
+
+    for (const payslip of payslips) {
+      const currency = normalizeCurrencyCode(payslip.currency);
+      const current = breakdownMap.get(currency) || {
+        currency,
+        employeeCount: 0,
+        totalGrossPayroll: 0,
+        totalDeductions: 0,
+        totalNetPayroll: 0,
+        totalTaxWithheld: 0,
+        totalEmployerContributions: 0,
+      };
+
+      current.employeeCount += 1;
+      current.totalGrossPayroll = roundMoney(current.totalGrossPayroll + Number(payslip.earningsSummary?.grossPay || 0));
+      current.totalDeductions = roundMoney(current.totalDeductions + Number(payslip.deductionsSummary?.totalDeductions || 0));
+      current.totalNetPayroll = roundMoney(current.totalNetPayroll + Number(payslip.netPay || 0));
+      current.totalTaxWithheld = roundMoney(current.totalTaxWithheld + Number(payslip.taxBreakdown?.taxAmount || 0));
+      current.totalEmployerContributions = roundMoney(current.totalEmployerContributions + Number(payslip.totalEmployerContributions || 0));
+
+      breakdownMap.set(currency, current);
+    }
+
+    const currencyBreakdown = Array.from(breakdownMap.values())
+      .sort((a, b) => a.currency.localeCompare(b.currency));
+    const currencies = currencyBreakdown.map((entry) => entry.currency);
+    const isMultiCurrency = currencies.length > 1;
+
+    let summaryCurrency = currencies[0] || requestedReportingCurrency || normalizeCurrencyCode(run?.summary?.currency);
+    let reportingCurrency = null;
+    let hasAggregateTotals = true;
+    let totalGrossPayroll = 0;
+    let totalDeductions = 0;
+    let totalNetPayroll = 0;
+    let totalTaxWithheld = 0;
+    let totalEmployerContributions = 0;
+    const unconvertedCurrencies = [];
+    const conversionWarnings = [];
+
+    if (requestedReportingCurrency) {
+      reportingCurrency = requestedReportingCurrency;
+      summaryCurrency = requestedReportingCurrency;
+
+      try {
+        for (const entry of currencyBreakdown) {
+          totalGrossPayroll = roundMoney(totalGrossPayroll + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalGrossPayroll,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
+          totalDeductions = roundMoney(totalDeductions + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalDeductions,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
+          totalNetPayroll = roundMoney(totalNetPayroll + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalNetPayroll,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
+          totalTaxWithheld = roundMoney(totalTaxWithheld + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalTaxWithheld,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
+          totalEmployerContributions = roundMoney(totalEmployerContributions + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalEmployerContributions,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
+        }
+      } catch (conversionError) {
+        hasAggregateTotals = !isMultiCurrency;
+        conversionWarnings.push(conversionError.message);
+        unconvertedCurrencies.push(...currencies.filter((currency) => currency !== requestedReportingCurrency));
+
+        if (!isMultiCurrency && currencyBreakdown[0]) {
+          const [entry] = currencyBreakdown;
+          summaryCurrency = entry.currency;
+          totalGrossPayroll = entry.totalGrossPayroll;
+          totalDeductions = entry.totalDeductions;
+          totalNetPayroll = entry.totalNetPayroll;
+          totalTaxWithheld = entry.totalTaxWithheld;
+          totalEmployerContributions = entry.totalEmployerContributions;
+        }
+      }
+    } else if (currencyBreakdown.length === 1) {
+      const [entry] = currencyBreakdown;
+      summaryCurrency = entry.currency;
+      totalGrossPayroll = entry.totalGrossPayroll;
+      totalDeductions = entry.totalDeductions;
+      totalNetPayroll = entry.totalNetPayroll;
+      totalTaxWithheld = entry.totalTaxWithheld;
+      totalEmployerContributions = entry.totalEmployerContributions;
+    } else {
+      summaryCurrency = 'MIXED';
+      hasAggregateTotals = false;
+    }
+
+    run.summary = {
+      ...(run.summary || {}),
+      currency: summaryCurrency,
+      reportingCurrency,
+      hasAggregateTotals,
+      isMultiCurrency,
+      currencies,
+      currencyBreakdown,
+      unconvertedCurrencies: Array.from(new Set(unconvertedCurrencies)),
+      conversionWarnings,
+      totalGrossPayroll: hasAggregateTotals ? roundMoney(totalGrossPayroll) : 0,
+      totalDeductions: hasAggregateTotals ? roundMoney(totalDeductions) : 0,
+      totalNetPayroll: hasAggregateTotals ? roundMoney(totalNetPayroll) : 0,
+      totalTaxWithheld: hasAggregateTotals ? roundMoney(totalTaxWithheld) : 0,
+      totalEmployerContributions: hasAggregateTotals ? roundMoney(totalEmployerContributions) : 0,
+    };
+  }
+
   /**
    * Process a payroll run for an organization (used by scheduler)
    * @param {string} organizationId
@@ -173,14 +332,25 @@ class PayrollEngineService {
     // Reset run summary/breakdown for idempotent recalculation
     run.employees = [];
     run.errors = [];
-    run.initializeSummary(profiles.length, run.summary?.currency || 'USD');
+    run.initializeSummary(
+      profiles.length,
+      run.settings?.reportingCurrency || run.summary?.currency || 'USD',
+      { reportingCurrency: run.settings?.reportingCurrency || null }
+    );
 
     const payslips = [];
     const errors = [];
     let skippedCount = 0;
+    let nextPayslipSequence = await Payslip.getNextPayslipSequence(
+      run.organizationId,
+      payPeriod.year,
+      payPeriod.month,
+      { excludePayrollRunId: run._id }
+    );
 
     for (const profile of profiles) {
       const employeeName = profile.employeeInfo?.name || 'Employee';
+      const employeeCurrency = normalizeCurrencyCode(profile.currency);
       try {
         // Skip on hold
         if (profile.payrollFlags?.holdPayment) {
@@ -188,6 +358,7 @@ class PayrollEngineService {
           run.employees.push({
             userId: profile.userId,
             employeeName,
+            currency: employeeCurrency,
             grossPay: 0,
             deductions: 0,
             netPay: 0,
@@ -197,12 +368,20 @@ class PayrollEngineService {
           continue;
         }
 
-        const payslip = await this.calculateEmployeePay(profile, run);
+        const payslipNumber = Payslip.buildPayslipNumber(
+          payPeriod.year,
+          payPeriod.month,
+          nextPayslipSequence
+        );
+        nextPayslipSequence += 1;
+
+        const payslip = await this.calculateEmployeePay(profile, run, { payslipNumber });
         payslips.push(payslip);
 
         run.employees.push({
           userId: profile.userId,
           employeeName,
+          currency: payslip.currency || employeeCurrency,
           grossPay: payslip.earningsSummary?.grossPay || 0,
           deductions: payslip.deductionsSummary?.totalDeductions || 0,
           netPay: payslip.netPay || 0,
@@ -224,6 +403,7 @@ class PayrollEngineService {
         run.employees.push({
           userId: profile.userId,
           employeeName,
+          currency: employeeCurrency,
           grossPay: 0,
           deductions: 0,
           netPay: 0,
@@ -241,6 +421,7 @@ class PayrollEngineService {
 
     // Totals & status
     run.updateTotalsFromPayslips(payslips);
+    await this.applyRunCurrencySummary(run, payslips);
     run.summary.totalEmployees = profiles.length;
     run.summary.processedCount = payslips.length;
     run.summary.errorCount = errors.length;
@@ -273,14 +454,13 @@ class PayrollEngineService {
    * @param {Object} profile - PayrollProfile document
    * @param {Object} run - PayrollRun document
    */
-  async calculateEmployeePay(profile, run) {
+  async calculateEmployeePay(profile, run, options = {}) {
     const { month, year, startDate, endDate, paymentDate } = run.payPeriod;
     const settings = run.settings || {};
     const payStart = new Date(startDate);
     const payEnd = new Date(endDate);
-
-    // Generate payslip number
-    const payslipNumber = await Payslip.generatePayslipNumber(run.organizationId, year, month);
+    const payslipCurrency = normalizeCurrencyCode(profile.currency);
+    const payslipNumber = options.payslipNumber || await Payslip.generatePayslipNumber(run.organizationId, year, month);
 
     // Bank snapshot (masked)
     const bank = (profile.bankAccounts || []).find(b => b.isPrimary) || profile.bankAccounts?.[0];
@@ -319,7 +499,7 @@ class PayrollEngineService {
         } : undefined,
       },
       salaryGrade: profile.salaryGrade,
-      currency: profile.currency || 'USD',
+      currency: payslipCurrency,
       status: 'draft',
       createdBy: run.createdBy,
       employerContributions: [],
@@ -388,9 +568,20 @@ class PayrollEngineService {
           const hourlyRate = basicSalary > 0 ? (basicSalary / 176) : 0; // default working hours/month
           const hours = Number(req.overtimeHours || 0);
           const multiplier = Number(req.overtimeMultiplier || 1.5);
+          const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
 
           const overtimePayFromHours = hours > 0 ? roundMoney(hourlyRate * hours * multiplier) : 0;
-          const overtimePay = overtimePayFromHours > 0 ? overtimePayFromHours : roundMoney(req.amount || 0);
+          let overtimePay = overtimePayFromHours > 0 ? overtimePayFromHours : roundMoney(req.amount || 0);
+
+          if (hours <= 0 && overtimePay > 0 && requestCurrency !== payslipCurrency) {
+            overtimePay = await this.convertAmountToCurrency(
+              run.organizationId,
+              overtimePay,
+              requestCurrency,
+              payslipCurrency,
+              req.effectiveDate || paymentDate
+            );
+          }
 
           if (overtimePay > 0) {
             payslip.addEarning('overtime', req.reason || `Overtime${hours ? ` (${hours}h @ ${multiplier}x)` : ''}`, overtimePay, {
@@ -404,7 +595,17 @@ class PayrollEngineService {
 
         if ((req.type === 'bonus' || req.type === 'commission' || req.type === 'incentive') && settings.includeBonuses !== false) {
           const earningType = req.type; // matches Payslip earning types
-          const amt = roundMoney(req.amount || 0);
+          let amt = roundMoney(req.amount || 0);
+          const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
+          if (amt > 0 && requestCurrency !== payslipCurrency) {
+            amt = await this.convertAmountToCurrency(
+              run.organizationId,
+              amt,
+              requestCurrency,
+              payslipCurrency,
+              req.effectiveDate || paymentDate
+            );
+          }
           if (amt > 0) {
             payslip.addEarning(earningType, req.reason || earningType.replace(/_/g, ' '), amt, {
               linkedRequestId,
@@ -416,7 +617,17 @@ class PayrollEngineService {
         }
 
         if (req.type === 'reimbursement') {
-          const amt = roundMoney(req.amount || 0);
+          let amt = roundMoney(req.amount || 0);
+          const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
+          if (amt > 0 && requestCurrency !== payslipCurrency) {
+            amt = await this.convertAmountToCurrency(
+              run.organizationId,
+              amt,
+              requestCurrency,
+              payslipCurrency,
+              req.effectiveDate || paymentDate
+            );
+          }
           if (amt > 0) {
             payslip.addEarning('reimbursement', req.reason || 'Reimbursement', amt, {
               linkedRequestId,
@@ -428,7 +639,17 @@ class PayrollEngineService {
         }
 
         if (req.type === 'allowance') {
-          const amt = roundMoney(req.amount || 0);
+          let amt = roundMoney(req.amount || 0);
+          const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
+          if (amt > 0 && requestCurrency !== payslipCurrency) {
+            amt = await this.convertAmountToCurrency(
+              run.organizationId,
+              amt,
+              requestCurrency,
+              payslipCurrency,
+              req.effectiveDate || paymentDate
+            );
+          }
           if (amt > 0) {
             payslip.addEarning('other', req.reason || 'Allowance', amt, {
               linkedRequestId,
@@ -621,4 +842,3 @@ class PayrollEngineService {
 }
 
 module.exports = PayrollEngineService;
-

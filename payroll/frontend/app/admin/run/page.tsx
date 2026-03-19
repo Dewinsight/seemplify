@@ -27,7 +27,9 @@ export default function AdminPayrollRunPage() {
     processUnpaidLeave: true,
     calculateTax: true,
     prorate: true,
+    reportingCurrency: '',
   });
+  const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name: string }>>([]);
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -54,6 +56,12 @@ export default function AdminPayrollRunPage() {
           return;
         }
         setIsHRAdmin(true);
+        try {
+          const currenciesRes = await api.get('/currencies');
+          setAvailableCurrencies(Array.isArray(currenciesRes.data?.currencies) ? currenciesRes.data.currencies : []);
+        } catch (currencyError) {
+          console.error('Failed to load payroll currencies:', currencyError);
+        }
       } catch (e) {
         router.push('/login');
       } finally {
@@ -76,7 +84,10 @@ export default function AdminPayrollRunPage() {
         month,
         year,
         paymentDate,
-        settings,
+        settings: {
+          ...settings,
+          reportingCurrency: settings.reportingCurrency || undefined,
+        },
       });
 
       const runId = res.data?.run?._id;
@@ -175,6 +186,25 @@ export default function AdminPayrollRunPage() {
               />
               <p className="text-xs text-zinc-500 mt-2">Used for reporting and export; no payout is executed.</p>
             </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-zinc-400 mb-1.5">Reporting Currency (optional)</label>
+              <select
+                value={settings.reportingCurrency}
+                onChange={(e) => setSettings(s => ({ ...s, reportingCurrency: e.target.value }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+              >
+                <option value="">No roll-up currency</option>
+                {availableCurrencies.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.code} - {currency.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-zinc-500 mt-2">
+                When employees are paid in different currencies, payroll will convert run totals into this currency using your configured exchange rates.
+              </p>
+            </div>
           </div>
 
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6">
@@ -230,4 +260,3 @@ export default function AdminPayrollRunPage() {
     </div>
   );
 }
-

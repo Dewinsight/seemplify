@@ -1,6 +1,18 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
+const PAYSLIP_NUMBER_PREFIX = 'PS';
+
+function buildPayslipPrefix(year, month) {
+  return `${PAYSLIP_NUMBER_PREFIX}-${year}-${String(month).padStart(2, '0')}`;
+}
+
+function parsePayslipSequence(payslipNumber) {
+  const parts = String(payslipNumber || '').split('-');
+  const sequence = Number.parseInt(parts[3], 10);
+  return Number.isFinite(sequence) ? sequence : 0;
+}
+
 /**
  * Comprehensive Payslip Model
  * 
@@ -232,7 +244,9 @@ const PayslipSchema = new Schema({
   currency: { 
     type: String, 
     default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'INR', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY']
+    uppercase: true,
+    trim: true,
+    maxlength: 3
   },
   
   // ===== YEAR-TO-DATE SUMMARY =====
@@ -454,22 +468,26 @@ PayslipSchema.methods.addDeduction = function(type, name, amount, options = {}) 
 
 // Generate payslip number
 PayslipSchema.statics.generatePayslipNumber = async function(organizationId, year, month) {
-  const prefix = 'PS';
-  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
-  
-  // Find the highest number for this month
-  const lastPayslip = await this.findOne({
+  const sequence = await this.getNextPayslipSequence(organizationId, year, month);
+  return this.buildPayslipNumber(year, month, sequence);
+};
+
+PayslipSchema.statics.buildPayslipNumber = function(year, month, sequence) {
+  return `${buildPayslipPrefix(year, month)}-${String(sequence).padStart(4, '0')}`;
+};
+
+PayslipSchema.statics.getNextPayslipSequence = async function(organizationId, year, month, options = {}) {
+  const query = {
     organizationId,
-    payslipNumber: new RegExp(`^${prefix}-${yearMonth}-`)
-  }).sort({ payslipNumber: -1 });
-  
-  let sequence = 1;
-  if (lastPayslip) {
-    const parts = lastPayslip.payslipNumber.split('-');
-    sequence = parseInt(parts[3]) + 1;
+    payslipNumber: new RegExp(`^${buildPayslipPrefix(year, month)}-`)
+  };
+
+  if (options.excludePayrollRunId) {
+    query.payrollRunId = { $ne: options.excludePayrollRunId };
   }
-  
-  return `${prefix}-${yearMonth}-${String(sequence).padStart(4, '0')}`;
+
+  const lastPayslip = await this.findOne(query).sort({ payslipNumber: -1 }).lean();
+  return lastPayslip ? parsePayslipSequence(lastPayslip.payslipNumber) + 1 : 1;
 };
 
 // Get payslips for a user

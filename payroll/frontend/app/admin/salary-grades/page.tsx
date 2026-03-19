@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { isAuthenticated } from '@/lib/api';
-import { payrollCurrencies } from '@/lib/payrollCurrencies';
+import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -34,6 +34,7 @@ interface SalaryGrade {
 
 export default function SalaryGradesPage() {
     const router = useRouter();
+    const { currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [grades, setGrades] = useState<SalaryGrade[]>([]);
     const [showModal, setShowModal] = useState(false);
@@ -258,7 +259,7 @@ export default function SalaryGradesPage() {
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
                                     >
-                                        {payrollCurrencies.map((currency) => (
+                                        {currencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
                                                 {currency.label}
                                             </option>

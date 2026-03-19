@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { authApi, isAuthenticated } from '@/lib/api';
+import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
     FileText,
@@ -53,6 +54,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 
 export default function MyRequestsPage() {
     const router = useRouter();
+    const { currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [requests, setRequests] = useState<any[]>([]);
@@ -63,6 +65,7 @@ export default function MyRequestsPage() {
     const [formData, setFormData] = useState({
         type: 'overtime',
         amount: '',
+        currency: 'USD',
         overtimeHours: '',
         overtimeMultiplier: '1.5',
         reason: '',
@@ -112,6 +115,7 @@ export default function MyRequestsPage() {
             setFormData({
                 type: 'overtime',
                 amount: '',
+                currency: 'USD',
                 overtimeHours: '',
                 overtimeMultiplier: '1.5',
                 reason: '',
@@ -241,8 +245,7 @@ export default function MyRequestsPage() {
                                 <label className="block text-sm font-medium text-zinc-400 mb-1.5">
                                     {formData.type === 'overtime' ? 'Amount (Optional)' : 'Amount'}
                                 </label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-2.5 text-zinc-500">$</span>
+                                <div className="grid grid-cols-3 gap-3">
                                     <input
                                         type="number"
                                         required={formData.type === 'reimbursement'}
@@ -250,9 +253,20 @@ export default function MyRequestsPage() {
                                         step="0.01"
                                         value={formData.amount}
                                         onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                                        className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-8 pr-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                        className="col-span-2 w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
                                         placeholder="0.00"
                                     />
+                                    <select
+                                        value={formData.currency}
+                                        onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                                        className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                    >
+                                        {currencies.map((currency) => (
+                                            <option key={currency.code} value={currency.code}>
+                                                {currency.code}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 {formData.type === 'overtime' && (
                                     <p className="text-xs text-zinc-500 mt-1.5">

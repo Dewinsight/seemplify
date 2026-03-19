@@ -279,11 +279,13 @@ export function useTeamCompensationRequests(filters?: { status?: string; type?: 
  * Get pending approvals (manager/admin view)
  */
 export function usePendingApprovals() {
-  const { data, error, isLoading, mutate } = useSWR('/compensation/approvals', fetcher, defaultConfig);
+  const { data, error, isLoading, mutate } = useSWR('/compensation/approvals?status=pending', fetcher, defaultConfig);
+
+  const approvals = Array.isArray(data) ? data : data?.requests || data || [];
 
   return {
-    approvals: data || [],
-    count: data?.length || 0,
+    approvals,
+    count: approvals.length,
     isLoading,
     isError: error,
     mutate,

@@ -31,6 +31,14 @@ interface PayrollRun {
         totalGrossPayroll: number;
         totalNetPayroll: number;
         currency?: string;
+        hasAggregateTotals?: boolean;
+        isMultiCurrency?: boolean;
+        currencyBreakdown?: Array<{
+            currency: string;
+            employeeCount: number;
+            totalGrossPayroll: number;
+            totalNetPayroll: number;
+        }>;
     };
     calculatedAt: string;
     paidAt?: string;
@@ -44,10 +52,32 @@ const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
     pending_approval: { icon: Clock, color: 'text-purple-400', bg: 'bg-purple-500/10' },
     approved: { icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
     exported: { icon: CheckCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-    paid: { icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' }
+    paid: { icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    cancelled: { icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10' }
 };
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const formatMoney = (currency: string, amount: number) => (
+    `${currency} ${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+);
+
+const formatSummaryAmount = (
+    summary: PayrollRun['summary'] | undefined,
+    key: 'totalGrossPayroll' | 'totalNetPayroll'
+) => {
+    if (summary?.hasAggregateTotals !== false) {
+        return formatMoney(summary?.currency || 'USD', Number(summary?.[key] || 0));
+    }
+
+    if (summary?.currencyBreakdown?.length) {
+        return summary.currencyBreakdown
+            .map((entry) => formatMoney(entry.currency, Number(entry[key] || 0)))
+            .join(' · ');
+    }
+
+    return 'Mixed';
+};
 
 export default function PayrollRunsPage() {
     const router = useRouter();
@@ -108,7 +138,6 @@ export default function PayrollRunsPage() {
                     {runs.map((run) => {
                         const config = statusConfig[run.status] || statusConfig.draft;
                         const StatusIcon = config.icon;
-                        const currency = run.summary?.currency || 'USD';
 
                         return (
                             <Link
@@ -145,13 +174,13 @@ export default function PayrollRunsPage() {
                                         <div className="text-right">
                                             <p className="text-xs text-zinc-500">Gross</p>
                                             <p className="font-mono font-semibold text-zinc-200">
-                                                {currency} {(run.summary?.totalGrossPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {formatSummaryAmount(run.summary, 'totalGrossPayroll')}
                                             </p>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs text-zinc-500">Net</p>
                                             <p className="font-mono font-semibold text-emerald-400">
-                                                {currency} {(run.summary?.totalNetPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {formatSummaryAmount(run.summary, 'totalNetPayroll')}
                                             </p>
                                         </div>
                                         <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-amber-500 transition-colors" />

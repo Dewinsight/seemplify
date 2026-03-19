@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { authApi, isAuthenticated } from '@/lib/api';
-import { payrollCurrencies } from '@/lib/payrollCurrencies';
+import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -19,6 +19,7 @@ import {
 
 export default function EmployeeEditPage({ params }: { params: { id: string } }) {
     const router = useRouter();
+    const { currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<any>(null);
@@ -455,7 +456,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     >
-                                        {payrollCurrencies.map((currency) => (
+                                        {currencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
                                                 {currency.label}
                                             </option>

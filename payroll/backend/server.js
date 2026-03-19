@@ -11,9 +11,12 @@ require('./models/PayrollRun');
 require('./models/Payslip');
 require('./models/CompensationRequest');
 require('./models/SalaryGrade');
+require('./models/ExchangeRate');
+require('./models/CurrencySyncSettings');
 
 // Now we can safely import services that depend on models
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
+const ExchangeRateScheduler = require('./jobs/ExchangeRateScheduler');
 
 // Import webhook routes and claims middleware
 const webhooksRouter = require('./routes/webhooks');
@@ -92,6 +95,8 @@ app.use('/api/webhooks', webhooksRouter);
 // Initialize Payroll Scheduler
 const payrollScheduler = new MonthlyPayrollScheduler();
 payrollScheduler.initializeScheduler();
+const exchangeRateScheduler = new ExchangeRateScheduler();
+exchangeRateScheduler.initializeScheduler();
 
 // Health Check
 app.get('/health', (req, res) => {

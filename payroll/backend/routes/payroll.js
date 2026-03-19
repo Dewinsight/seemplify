@@ -23,6 +23,7 @@ const getUserInfo = (req) => ({
 });
 
 const HR_ADMIN_ORG_ROLES = new Set(['owner', 'admin', 'hr_manager']);
+const ORG_ADMIN_ONLY_ROLES = new Set(['owner', 'admin']);
 
 function getVisiblePayslipStatusesForRole(role) {
   if (HR_ADMIN_ORG_ROLES.has(role)) {
@@ -30,6 +31,19 @@ function getVisiblePayslipStatusesForRole(role) {
     return ['draft', 'pending_approval', 'approved', 'exported', 'paid', 'revised'];
   }
   return ['approved', 'exported', 'paid'];
+}
+
+function requireOrganizationAdminOnly(req, res, next) {
+  return requireHRAdmin(req, res, () => {
+    const { role } = getUserInfo(req);
+    if (!ORG_ADMIN_ONLY_ROLES.has(role)) {
+      return res.status(403).json({
+        error: 'Only organization admins can retract payroll runs'
+      });
+    }
+
+    next();
+  });
 }
 
 const getIdpBaseUrl = () =>
@@ -1277,6 +1291,10 @@ router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
+    if (run.status === 'cancelled') {
+      return res.status(400).json({ error: 'Cannot export a retracted payroll run' });
+    }
+
     const payslips = await Payslip.find({
       payrollRunId: run._id,
       organizationId
@@ -1385,6 +1403,123 @@ router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to export payroll run' });
   }
 });
+
+async function retractPayrollRun(runId, organizationId, adminId, adminName, comments) {
+  const run = await PayrollRun.findOne({ _id: runId, organizationId });
+  if (!run) {
+    const err = new Error('Payroll run not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (run.status === 'cancelled') {
+    const err = new Error('This payroll run has already been retracted');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (['calculating', 'processing_payment'].includes(run.status)) {
+    const err = new Error(`Cannot retract run while status is ${run.status}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const payslips = await Payslip.find({ payrollRunId: run._id, organizationId });
+
+  if (['exported', 'paid'].includes(run.status)) {
+    for (const payslip of payslips) {
+      if (!Array.isArray(payslip.deductions) || payslip.deductions.length === 0) continue;
+
+      const loanDeductions = payslip.deductions.filter((deduction) => deduction.type === 'loan_repayment');
+      if (loanDeductions.length === 0) continue;
+
+      const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
+      if (!profile || !Array.isArray(profile.recurringDeductions)) continue;
+
+      let modified = false;
+      for (const deduction of loanDeductions) {
+        const profileDeduction = profile.recurringDeductions.find((item) =>
+          item.type === 'loan_repayment' && item.name === deduction.name
+        );
+        if (!profileDeduction) continue;
+
+        const currentRemaining = Number(profileDeduction.remainingAmount || 0);
+        const totalAmount = Number(
+          profileDeduction.totalAmount
+          || profileDeduction.remainingAmount
+          || deduction.amount
+          || 0
+        );
+        const restoredBalance = currentRemaining + Number(deduction.amount || 0);
+
+        profileDeduction.remainingAmount = totalAmount > 0
+          ? Math.min(restoredBalance, totalAmount)
+          : restoredBalance;
+
+        if (profileDeduction.remainingAmount > 0) {
+          profileDeduction.isActive = true;
+        }
+
+        modified = true;
+      }
+
+      if (modified) {
+        await profile.save();
+      }
+    }
+  }
+
+  const processedRequests = await CompensationRequest.find({
+    organizationId,
+    processedInRunId: run._id
+  }).select('_id').lean();
+  const processedRequestIds = processedRequests.map((request) => request._id);
+
+  if (processedRequestIds.length > 0) {
+    await CompensationRequest.updateMany(
+      {
+        _id: { $in: processedRequestIds },
+        organizationId
+      },
+      {
+        $set: {
+          status: 'approved',
+          processedInRunId: null
+        },
+        $unset: {
+          processedAt: ''
+        }
+      }
+    );
+  }
+
+  const deletedPayslips = await Payslip.deleteMany({
+    payrollRunId: run._id,
+    organizationId
+  });
+
+  run.status = 'cancelled';
+  run.retractedAt = new Date();
+  run.retractedBy = adminId;
+  run.retractedByName = adminName;
+  run.retractionReason = comments || 'Retracted by organization admin';
+  run.addApproval('retracted', adminId, adminName, 'admin', comments || 'Retracted payroll run');
+
+  const warningNotes = [
+    `Retracted on ${run.retractedAt.toISOString()} by ${adminName || adminId}.`,
+    `Removed ${deletedPayslips.deletedCount || 0} payslip(s).`,
+    `Reset ${processedRequestIds.length} processed compensation request(s).`
+  ];
+  run.internalNotes = [run.internalNotes, ...warningNotes].filter(Boolean).join(' ');
+
+  await run.save();
+
+  return {
+    run,
+    deletedPayslips: deletedPayslips.deletedCount || 0,
+    resetCompensationRequests: processedRequestIds.length
+  };
+}
 
 async function finalizePayrollRun(runId, organizationId, adminId, adminName, comments) {
   const run = await PayrollRun.findOne({ _id: runId, organizationId });
@@ -1514,6 +1649,40 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Process Payment (Legacy) Error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to finalize payroll run' });
+  }
+});
+
+/**
+ * POST /api/payroll/runs/:id/retract
+ * Retract a payroll run, remove generated payslips, and reopen processed requests
+ *
+ * Restricted to organization owner/admin only.
+ */
+router.post('/runs/:id/retract', requireOrganizationAdminOnly, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const result = await retractPayrollRun(
+      req.params.id,
+      organizationId,
+      adminId,
+      adminName,
+      req.body?.comments
+    );
+
+    res.json({
+      success: true,
+      run: result.run,
+      deletedPayslips: result.deletedPayslips,
+      resetCompensationRequests: result.resetCompensationRequests,
+      warnings: [
+        'Generated payslips for this run were removed.',
+        'Compensation requests finalized by this run were reopened.',
+        'Use this only when you need to re-run payroll for the month.'
+      ]
+    });
+  } catch (err) {
+    console.error('Retract Run Error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retract payroll run' });
   }
 });
 

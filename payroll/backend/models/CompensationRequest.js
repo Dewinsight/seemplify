@@ -34,7 +34,13 @@ const CompensationRequestSchema = new Schema({
 
   // Details
   amount: { type: Number, min: 0 }, // optional for overtime if hours provided
-  currency: { type: String, default: 'USD' },
+  currency: {
+    type: String,
+    default: 'USD',
+    uppercase: true,
+    trim: true,
+    maxlength: 3
+  },
   taxable: { type: Boolean, default: true },
 
   // Overtime-specific fields
@@ -85,4 +91,3 @@ const CompensationRequestSchema = new Schema({
 CompensationRequestSchema.index({ organizationId: 1, status: 1, effectiveDate: -1 });
 
 module.exports = mongoose.model('CompensationRequest', CompensationRequestSchema);
-

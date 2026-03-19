@@ -209,16 +209,28 @@ router.get('/team', requireAuth, async (req, res) => {
 
 /**
  * GET /api/compensation/approvals
- * HR view of pending approvals
+ * HR view of compensation approvals and approval history
  */
 router.get('/approvals', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
+    const statusFilter = String(req.query.status || '').trim().toLowerCase();
 
-    const requests = await CompensationRequest.find({
-      organizationId,
-      status: { $in: ['pending', 'approved_l1'] },
-    }).sort({ createdAt: 1 });
+    const query = { organizationId };
+
+    if (statusFilter === 'pending') {
+      query.status = { $in: ['pending', 'approved_l1', 'approved_l2'] };
+    } else if (statusFilter === 'approved') {
+      query.status = { $in: ['approved', 'processed'] };
+    } else if (statusFilter === 'rejected') {
+      query.status = 'rejected';
+    } else if (statusFilter && statusFilter !== 'all') {
+      query.status = req.query.status;
+    } else {
+      query.status = { $ne: 'cancelled' };
+    }
+
+    const requests = await CompensationRequest.find(query).sort({ createdAt: -1 });
 
     res.json(requests);
   } catch (err) {

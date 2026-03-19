@@ -179,7 +179,9 @@ const PayrollProfileSchema = new Schema({
   currency: {
     type: String,
     default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'INR', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY']
+    uppercase: true,
+    trim: true,
+    maxlength: 3
   },
   payFrequency: {
     type: String,
