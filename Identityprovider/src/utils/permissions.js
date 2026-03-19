@@ -5,7 +5,7 @@
  * Extensible permission system - supports app-specific permissions
  */
 
-import Organization from '../models/Organization.js'
+import { Organization } from '../models/Organization.js'
 
 // Base permissions (organization-level)
 const basePermissions = {
