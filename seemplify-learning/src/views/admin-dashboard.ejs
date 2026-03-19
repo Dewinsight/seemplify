@@ -277,6 +277,58 @@
       box-shadow: 0 14px 32px -30px rgba(15, 23, 42, 0.45);
       backdrop-filter: blur(8px);
     }
+    .admin-tab-shell {
+      display: grid;
+      gap: 12px;
+    }
+    .admin-tab-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid var(--admin-border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .admin-tab {
+      appearance: none;
+      border: 1px solid rgba(139, 92, 246, 0.12);
+      background: rgba(124, 58, 237, 0.04);
+      color: var(--admin-muted);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .admin-tab:hover {
+      border-color: rgba(139, 92, 246, 0.24);
+      background: rgba(124, 58, 237, 0.08);
+      color: var(--admin-text);
+    }
+    .admin-tab.is-active {
+      border-color: rgba(124, 58, 237, 0.28);
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(196, 181, 253, 0.14));
+      color: var(--admin-accent-strong);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+    }
+    .admin-tab-panel[hidden] {
+      display: none !important;
+    }
+    .admin-tab-panel {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .admin-tab-intro {
+      margin: 0;
+      color: var(--admin-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
     .page-header {
       background: linear-gradient(130deg, rgba(255, 255, 255, 0.95), rgba(244, 249, 255, 0.84));
       border-color: var(--admin-border-strong);
@@ -3617,164 +3669,181 @@
                 </div>
 
                 <aside class="course-record-side">
-                  <% if (String(focusedCourse.status || '') === 'pending_public_review') { %>
-                    <article class="course-record-panel">
-                      <h4>Review This Submission</h4>
-                      <p class="course-record-note">This course is already in the public review queue. Approve it here, or request changes or denial with a creator-facing note.</p>
-                      <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/review-public" class="course-record-review-form" data-course-review-form>
-                        <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                        <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
-                        <label>
-                          <span>Feedback for the creator</span>
-                          <textarea class="input" name="reviewNotes" rows="6" data-review-notes placeholder="Explain required changes or the denial reason."></textarea>
-                        </label>
-                        <div class="course-action-bar">
-                          <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= focusedCourse._id %>/approve-public" data-review-submit="approved">Approve & Publish</button>
-                          <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested">Request Changes</button>
-                          <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied">Deny Submission</button>
-                        </div>
-                      </form>
-                    </article>
-                  <% } else { %>
-                    <article class="course-record-panel">
-                      <h4>Admin Status Control</h4>
-                      <p class="course-record-note">Use this when the course is not already in the public review queue. Draft admin-created courses can be published directly from here.</p>
-                      <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/admin-status" class="course-record-status-form">
-                        <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                        <div class="course-record-status-grid">
-                          <label>
-                            <span>Status</span>
-                            <select class="input" name="status">
-                              <% courseLifecycleChoices.forEach((statusOption) => { %>
-                                <option value="<%= statusOption %>" <%= String(focusedCourse.status || '') === statusOption ? 'selected' : '' %>><%= statusOption %></option>
-                              <% }) %>
-                            </select>
-                          </label>
-                          <label style="grid-column: 1 / -1;">
-                            <span>Admin note (optional)</span>
-                            <textarea class="input" name="statusNote" rows="4" placeholder="Internal context for this status change."></textarea>
-                          </label>
-                        </div>
-                        <div class="course-action-bar">
-                          <button class="btn btn-primary btn-sm" type="submit">Save Status</button>
-                          <a class="btn btn-secondary btn-sm" href="/admin/approvals">Open Approval Queue</a>
-                        </div>
-                      </form>
-                    </article>
-                  <% } %>
+                  <div class="admin-tab-shell" data-tab-group>
+                    <div class="admin-tab-bar" role="tablist" aria-label="Course record panels">
+                      <button class="admin-tab is-active" type="button" data-tab-trigger="course-status">Status</button>
+                      <button class="admin-tab" type="button" data-tab-trigger="course-selling">Selling</button>
+                      <button class="admin-tab" type="button" data-tab-trigger="course-tools">Tools</button>
+                    </div>
 
-                  <article class="course-record-panel">
-                    <h4>Partner Selling Assignments</h4>
-                    <p class="course-record-note">Creator-owned courses must opt into partner selling before you can assign them. Assigned organizations can sell without taking over course ownership or editing rights.</p>
-                    <% if (focusedCourse.activeSellingAssignments && focusedCourse.activeSellingAssignments.length > 0) { %>
-                      <div class="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Organization</th>
-                              <th>Type</th>
-                              <th>Split</th>
-                              <th>Status</th>
-                              <th>Action</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <% focusedCourse.activeSellingAssignments.forEach((assignment) => { %>
-                              <tr>
-                                <td><strong><%= assignment.organizationName || 'Organization' %></strong></td>
-                                <td><%= assignment.partnerType || 'partner' %></td>
-                                <td><%= assignment.creatorSharePercent %>% creator / <%= assignment.partnerSharePercent %>% partner / <%= assignment.platformSharePercent %>% platform</td>
-                                <td><%= assignment.status %></td>
-                                <td>
-                                  <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/unassign-organization" class="inline-form">
-                                    <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                                    <input type="hidden" name="organizationId" value="<%= assignment.organization %>">
-                                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                                  </form>
-                                </td>
-                              </tr>
-                            <% }) %>
-                          </tbody>
-                        </table>
-                      </div>
-                    <% } else { %>
-                      <p class="course-record-note">No selling organizations assigned yet.</p>
-                    <% } %>
-                    <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/assign-organization" class="course-record-status-form" style="margin-top:12px;">
-                      <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                      <div class="course-record-status-grid">
-                        <label>
-                          <span>Organization</span>
-                          <select class="input" name="organizationId" required>
-                            <option value="">Select organization</option>
-                            <% (partnerOrganizations || []).forEach((organization) => { %>
-                              <% if (String(organization._id || '') !== String(focusedCourse.organization || '')) { %>
-                                <option value="<%= organization._id %>"><%= organization.name || 'Partner Organization' %> (<%= organization.partnerType || 'partner' %>)</option>
-                              <% } %>
-                            <% }) %>
-                          </select>
-                        </label>
-                        <label>
-                          <span>Creator Share (%)</span>
-                          <input class="input" type="number" step="0.01" min="0" max="100" name="creatorSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.creatorSharePercent)) ? Number(focusedCourse.partnerSelling.creatorSharePercent) : 70 %>">
-                        </label>
-                        <label>
-                          <span>Partner Share (%)</span>
-                          <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.partnerSharePercent)) ? Number(focusedCourse.partnerSelling.partnerSharePercent) : 20 %>">
-                        </label>
-                        <label>
-                          <span>Status</span>
-                          <select class="input" name="assignmentStatus">
-                            <option value="active">active</option>
-                            <option value="inactive">inactive</option>
-                          </select>
-                        </label>
-                      </div>
-                      <div class="course-action-bar">
-                        <button class="btn btn-primary btn-sm" type="submit">Assign Organization</button>
-                      </div>
-                    </form>
-                  </article>
-
-                  <article class="course-record-panel">
-                    <h4>Moderation Tools</h4>
-                    <div class="course-action-bar">
-                      <a class="btn btn-secondary btn-sm" href="<%= focusedCourse.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View Course</a>
-                      <% if (focusedCourse.createdById) { %>
-                        <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(focusedCourse.createdById) %>">Open Creator</a>
-                      <% } %>
-                      <% if (focusedCourse.canEdit) { %>
-                        <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(focusedCourse._id, coursesReturnTo) %>">Edit Content</a>
-                      <% } %>
-                      <% if (focusedCourse.canDuplicate) { %>
-                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/duplicate" class="inline-form">
-                          <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                          <input type="hidden" name="studioPath" value="/admin/courses">
-                          <input type="hidden" name="studioContext" value="admin">
-                          <input type="hidden" name="isSystemCourse" value="on">
-                          <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
-                        </form>
-                      <% } %>
-                      <% if (focusedCourse.canArchive) { %>
-                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/archive" class="inline-form">
-                          <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                          <button class="btn btn-danger btn-sm" type="submit">Archive</button>
-                        </form>
-                      <% } %>
-                      <% if (focusedCourse.canRestore) { %>
-                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/restore" class="inline-form">
-                          <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
-                          <button class="btn btn-primary btn-sm" type="submit">Restore</button>
-                        </form>
-                      <% } %>
-                      <% if (focusedCourse.canDelete) { %>
-                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/delete" class="inline-form" onsubmit="return confirm('Permanently delete this course? This cannot be undone.');">
-                          <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
-                          <button class="btn btn-danger btn-sm" type="submit">Delete Permanently</button>
-                        </form>
+                    <div class="admin-tab-panel is-active" data-tab-panel="course-status">
+                      <p class="admin-tab-intro">Publishing and review actions live here so selling setup and moderation tools do not compete for attention.</p>
+                      <% if (String(focusedCourse.status || '') === 'pending_public_review') { %>
+                        <article class="course-record-panel">
+                          <h4>Review This Submission</h4>
+                          <p class="course-record-note">This course is already in the public review queue. Approve it here, or request changes or denial with a creator-facing note.</p>
+                          <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/review-public" class="course-record-review-form" data-course-review-form>
+                            <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                            <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
+                            <label>
+                              <span>Feedback for the creator</span>
+                              <textarea class="input" name="reviewNotes" rows="6" data-review-notes placeholder="Explain required changes or the denial reason."></textarea>
+                            </label>
+                            <div class="course-action-bar">
+                              <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= focusedCourse._id %>/approve-public" data-review-submit="approved">Approve & Publish</button>
+                              <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested">Request Changes</button>
+                              <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied">Deny Submission</button>
+                            </div>
+                          </form>
+                        </article>
+                      <% } else { %>
+                        <article class="course-record-panel">
+                          <h4>Admin Status Control</h4>
+                          <p class="course-record-note">Use this when the course is not already in the public review queue. Draft admin-created courses can be published directly from here.</p>
+                          <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/admin-status" class="course-record-status-form">
+                            <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                            <div class="course-record-status-grid">
+                              <label>
+                                <span>Status</span>
+                                <select class="input" name="status">
+                                  <% courseLifecycleChoices.forEach((statusOption) => { %>
+                                    <option value="<%= statusOption %>" <%= String(focusedCourse.status || '') === statusOption ? 'selected' : '' %>><%= statusOption %></option>
+                                  <% }) %>
+                                </select>
+                              </label>
+                              <label style="grid-column: 1 / -1;">
+                                <span>Admin note (optional)</span>
+                                <textarea class="input" name="statusNote" rows="4" placeholder="Internal context for this status change."></textarea>
+                              </label>
+                            </div>
+                            <div class="course-action-bar">
+                              <button class="btn btn-primary btn-sm" type="submit">Save Status</button>
+                              <a class="btn btn-secondary btn-sm" href="/admin/approvals">Open Approval Queue</a>
+                            </div>
+                          </form>
+                        </article>
                       <% } %>
                     </div>
-                  </article>
+
+                    <div class="admin-tab-panel" data-tab-panel="course-selling" hidden>
+                      <p class="admin-tab-intro">Partner and channel-partner selling assignments are isolated here so they read as a selling workflow, not part of course editing.</p>
+                      <article class="course-record-panel" id="course-selling-assignments">
+                        <h4>Assign To Partner / Channel Partner</h4>
+                        <p class="course-record-note">Use this panel to assign a course to a partner or channel partner organization for selling. Creator-owned courses must opt into partner selling before you can assign them. Assigned organizations can sell without taking over course ownership or editing rights.</p>
+                        <% if (focusedCourse.activeSellingAssignments && focusedCourse.activeSellingAssignments.length > 0) { %>
+                          <div class="table-wrap">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Organization</th>
+                                  <th>Type</th>
+                                  <th>Split</th>
+                                  <th>Status</th>
+                                  <th>Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <% focusedCourse.activeSellingAssignments.forEach((assignment) => { %>
+                                  <tr>
+                                    <td><strong><%= assignment.organizationName || 'Organization' %></strong></td>
+                                    <td><%= assignment.partnerType || 'partner' %></td>
+                                    <td><%= assignment.creatorSharePercent %>% creator / <%= assignment.partnerSharePercent %>% partner / <%= assignment.platformSharePercent %>% platform</td>
+                                    <td><%= assignment.status %></td>
+                                    <td>
+                                      <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/unassign-organization" class="inline-form">
+                                        <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                                        <input type="hidden" name="organizationId" value="<%= assignment.organization %>">
+                                        <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                                      </form>
+                                    </td>
+                                  </tr>
+                                <% }) %>
+                              </tbody>
+                            </table>
+                          </div>
+                        <% } else { %>
+                          <p class="course-record-note">No selling organizations assigned yet.</p>
+                        <% } %>
+                        <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/assign-organization" class="course-record-status-form" style="margin-top:12px;">
+                          <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                          <div class="course-record-status-grid">
+                            <label>
+                              <span>Organization</span>
+                              <select class="input" name="organizationId" required>
+                                <option value="">Select organization</option>
+                                <% (partnerOrganizations || []).forEach((organization) => { %>
+                                  <% if (String(organization._id || '') !== String(focusedCourse.organization || '')) { %>
+                                    <option value="<%= organization._id %>"><%= organization.name || 'Partner Organization' %> (<%= organization.partnerType || 'partner' %>)</option>
+                                  <% } %>
+                                <% }) %>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Creator Share (%)</span>
+                              <input class="input" type="number" step="0.01" min="0" max="100" name="creatorSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.creatorSharePercent)) ? Number(focusedCourse.partnerSelling.creatorSharePercent) : 70 %>">
+                            </label>
+                            <label>
+                              <span>Partner Share (%)</span>
+                              <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSharePercent" value="<%= Number.isFinite(Number(focusedCourse.partnerSelling?.partnerSharePercent)) ? Number(focusedCourse.partnerSelling.partnerSharePercent) : 20 %>">
+                            </label>
+                            <label>
+                              <span>Status</span>
+                              <select class="input" name="assignmentStatus">
+                                <option value="active">active</option>
+                                <option value="inactive">inactive</option>
+                              </select>
+                            </label>
+                          </div>
+                          <div class="course-action-bar">
+                            <button class="btn btn-primary btn-sm" type="submit">Assign Organization</button>
+                          </div>
+                        </form>
+                      </article>
+                    </div>
+
+                    <div class="admin-tab-panel" data-tab-panel="course-tools" hidden>
+                      <p class="admin-tab-intro">Everything here is moderation-only. It stays separate from publishing and selling so ownership boundaries stay obvious.</p>
+                      <article class="course-record-panel">
+                        <h4>Moderation Tools</h4>
+                        <div class="course-action-bar">
+                          <a class="btn btn-secondary btn-sm" href="<%= focusedCourse.courseUrl %>?returnTo=<%= encodeURIComponent(coursesReturnTo) %>" target="_blank" rel="noreferrer">View Course</a>
+                          <% if (focusedCourse.createdById) { %>
+                            <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(focusedCourse.createdById) %>">Open Creator</a>
+                          <% } %>
+                          <% if (focusedCourse.canEdit) { %>
+                            <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(focusedCourse._id, coursesReturnTo) %>">Edit Content</a>
+                          <% } %>
+                          <% if (focusedCourse.canDuplicate) { %>
+                            <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/duplicate" class="inline-form">
+                              <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                              <input type="hidden" name="studioPath" value="/admin/courses">
+                              <input type="hidden" name="studioContext" value="admin">
+                              <input type="hidden" name="isSystemCourse" value="on">
+                              <button class="btn btn-secondary btn-sm" type="submit">Duplicate as New</button>
+                            </form>
+                          <% } %>
+                          <% if (focusedCourse.canArchive) { %>
+                            <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/archive" class="inline-form">
+                              <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                              <button class="btn btn-danger btn-sm" type="submit">Archive</button>
+                            </form>
+                          <% } %>
+                          <% if (focusedCourse.canRestore) { %>
+                            <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/restore" class="inline-form">
+                              <input type="hidden" name="returnTo" value="<%= buildAdminCourseRecordPath(focusedCourse._id, coursesReturnTo) %>">
+                              <button class="btn btn-primary btn-sm" type="submit">Restore</button>
+                            </form>
+                          <% } %>
+                          <% if (focusedCourse.canDelete) { %>
+                            <form method="post" action="/simple-lms/courses/<%= focusedCourse._id %>/delete" class="inline-form" onsubmit="return confirm('Permanently delete this course? This cannot be undone.');">
+                              <input type="hidden" name="returnTo" value="<%= coursesReturnTo %>">
+                              <button class="btn btn-danger btn-sm" type="submit">Delete Permanently</button>
+                            </form>
+                          <% } %>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
                 </aside>
               </div>
             </section>
@@ -3857,6 +3926,7 @@
 
                   <div class="course-action-bar">
                     <a class="btn btn-primary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>">Open Record</a>
+                    <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseRecordPath(course._id, coursesReturnTo) %>#course-selling-assignments">Assign To Partner Org</a>
                     <% if (course.canEdit) { %>
                       <a class="btn btn-secondary btn-sm" href="<%= buildAdminCourseEditPath(course._id, coursesReturnTo) %>">Edit Course</a>
                     <% } %>
@@ -3874,6 +3944,15 @@
                       <a class="btn btn-secondary btn-sm" href="/admin/creators?creatorId=<%= encodeURIComponent(course.createdById) %>">Open Creator</a>
                     <% } %>
                   </div>
+                  <p class="mini" style="margin-top:8px;">
+                    <% if (course.assignedOrganizationCount > 0) { %>
+                      This course is already assigned to <strong><%= course.assignedOrganizationCount %></strong> partner organization<%= Number(course.assignedOrganizationCount) === 1 ? '' : 's' %>. Open the assignment panel to review or update selling access.
+                    <% } else if (course.isSellThroughEnabled || course.organization) { %>
+                      This course is ready to be assigned to a partner or channel partner organization for selling.
+                    <% } else { %>
+                      This course cannot be assigned yet because partner selling has not been enabled for it.
+                    <% } %>
+                  </p>
                 </article>
               <% }) %>
             </div>
@@ -4378,133 +4457,152 @@
                   </div>
                 </div>
                 <div class="partner-detail-stack">
-                  <section class="partner-detail-section">
-                    <div class="partner-detail-section-head">
-                      <div>
-                        <h4>Operating snapshot</h4>
-                        <p class="mini">The org summary stays read-only here so the actual write actions are isolated below.</p>
-                      </div>
+                  <div class="admin-tab-shell" data-tab-group>
+                    <div class="admin-tab-bar" role="tablist" aria-label="Partner organization panels">
+                      <button class="admin-tab is-active" type="button" data-tab-trigger="partner-overview">Overview</button>
+                      <button class="admin-tab" type="button" data-tab-trigger="partner-access">Access</button>
+                      <button class="admin-tab" type="button" data-tab-trigger="partner-members">Members</button>
                     </div>
-                    <div class="section-stat-strip">
-                      <div class="stack-metric"><span>Members</span><strong><%= Array.isArray(selectedPartnerOrganization.members) ? selectedPartnerOrganization.members.length : 0 %></strong></div>
-                      <div class="stack-metric"><span>Agents</span><strong><%= Number(selectedPartnerOrganization.agentCount || 0) %></strong></div>
-                      <div class="stack-metric"><span>Published</span><strong><%= Number(selectedPartnerOrganization.publishedCourses || 0) %></strong></div>
-                      <div class="stack-metric"><span>Drafts</span><strong><%= Number(selectedPartnerOrganization.draftCourses || 0) %></strong></div>
-                    </div>
-                    <div class="partner-detail-grid">
-                      <div class="stack-metric"><span>Gross sales</span><strong><%= selectedPartnerOrganization.partnerSalesDisplay %></strong></div>
-                      <div class="stack-metric"><span>Partner revenue</span><strong><%= selectedPartnerOrganization.partnerRevenueDisplay %></strong></div>
-                      <div class="stack-metric"><span>Available wallet</span><strong><%= selectedPartnerOrganization.partnerWithdrawalAvailableDisplay %></strong></div>
-                      <div class="stack-metric"><span>Pending withdrawal</span><strong><%= selectedPartnerOrganization.partnerWithdrawalPendingDisplay %></strong></div>
-                    </div>
-                    <div class="partner-detail-note">
-                      <strong>Owner: <%= selectedPartnerOrganization.ownerName || 'Not captured' %></strong>
-                      <p class="mini">Pending commission: <%= selectedPartnerOrganization.pendingCommissionDisplay %>. Recommended commission: <%= selectedPartnerOrganization.recommendedCommissionDisplay %>. Approved commission: <%= selectedPartnerOrganization.approvedCommissionDisplay %>.</p>
-                    </div>
-                  </section>
-                  <section class="partner-detail-section">
-                    <div class="partner-detail-section-head">
-                      <div>
-                        <h4>Status control</h4>
-                        <p class="mini">Keep onboarding in pending, activate when operations can start, and suspend when access needs to pause.</p>
-                      </div>
-                    </div>
-                    <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/status" class="partner-detail-form-grid">
-                      <label>
-                        <span class="mini">Status</span>
-                        <select class="input" name="partnerStatus">
-                          <option value="pending" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
-                          <option value="active" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
-                          <option value="suspended" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
-                        </select>
-                      </label>
-                      <div class="actions">
-                        <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
-                        <button class="btn btn-primary btn-sm" type="submit">Update status</button>
-                      </div>
-                    </form>
-                  </section>
-                  <section class="partner-detail-section">
-                    <div class="partner-detail-section-head">
-                      <div>
-                        <h4>Attach existing account</h4>
-                        <p class="mini">Partner org membership is managed here. Platform admin access stays in Access Control.</p>
-                      </div>
-                    </div>
-                    <% if (selectedAddableAccounts.length === 0) { %>
-                      <div class="member-empty-state">
-                        <p class="mini">No eligible accounts are available to attach to this organization right now.</p>
-                      </div>
-                    <% } else { %>
-                      <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members" class="partner-detail-form-grid">
-                        <label>
-                          <span class="mini">Account</span>
-                          <select class="input" name="accountId" required>
-                            <option value="">Add existing account</option>
-                            <% selectedAddableAccounts.forEach((account) => { %>
-                              <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
-                            <% }) %>
-                          </select>
-                        </label>
-                        <label>
-                          <span class="mini">Partner role</span>
-                          <select class="input" name="role">
-                            <option value="<%= selectedDefaultMemberRole %>"><%= selectedDefaultMemberRole %></option>
-                            <option value="<%= selectedDefaultSuperRole %>"><%= selectedDefaultSuperRole %></option>
-                          </select>
-                        </label>
-                        <div class="actions">
-                          <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
-                          <button class="btn btn-secondary btn-sm" type="submit">Add member</button>
+
+                    <div class="admin-tab-panel is-active" data-tab-panel="partner-overview">
+                      <p class="admin-tab-intro">Keep the organization snapshot and status control together. Membership and access changes are moved to their own tabs.</p>
+                      <section class="partner-detail-section">
+                        <div class="partner-detail-section-head">
+                          <div>
+                            <h4>Operating snapshot</h4>
+                            <p class="mini">The org summary stays read-only here so the actual write actions are isolated below.</p>
+                          </div>
                         </div>
-                      </form>
-                    <% } %>
-                  </section>
-                  <section class="partner-detail-section">
-                    <div class="partner-detail-section-head">
-                      <div>
-                        <h4>Current members</h4>
-                        <p class="mini">Promote or demote partner-super access here without touching the platform admin model.</p>
-                      </div>
+                        <div class="section-stat-strip">
+                          <div class="stack-metric"><span>Members</span><strong><%= Array.isArray(selectedPartnerOrganization.members) ? selectedPartnerOrganization.members.length : 0 %></strong></div>
+                          <div class="stack-metric"><span>Agents</span><strong><%= Number(selectedPartnerOrganization.agentCount || 0) %></strong></div>
+                          <div class="stack-metric"><span>Published</span><strong><%= Number(selectedPartnerOrganization.publishedCourses || 0) %></strong></div>
+                          <div class="stack-metric"><span>Drafts</span><strong><%= Number(selectedPartnerOrganization.draftCourses || 0) %></strong></div>
+                        </div>
+                        <div class="partner-detail-grid">
+                          <div class="stack-metric"><span>Gross sales</span><strong><%= selectedPartnerOrganization.partnerSalesDisplay %></strong></div>
+                          <div class="stack-metric"><span>Partner revenue</span><strong><%= selectedPartnerOrganization.partnerRevenueDisplay %></strong></div>
+                          <div class="stack-metric"><span>Available wallet</span><strong><%= selectedPartnerOrganization.partnerWithdrawalAvailableDisplay %></strong></div>
+                          <div class="stack-metric"><span>Pending withdrawal</span><strong><%= selectedPartnerOrganization.partnerWithdrawalPendingDisplay %></strong></div>
+                        </div>
+                        <div class="partner-detail-note">
+                          <strong>Owner: <%= selectedPartnerOrganization.ownerName || 'Not captured' %></strong>
+                          <p class="mini">Pending commission: <%= selectedPartnerOrganization.pendingCommissionDisplay %>. Recommended commission: <%= selectedPartnerOrganization.recommendedCommissionDisplay %>. Approved commission: <%= selectedPartnerOrganization.approvedCommissionDisplay %>.</p>
+                        </div>
+                      </section>
+                      <section class="partner-detail-section">
+                        <div class="partner-detail-section-head">
+                          <div>
+                            <h4>Status control</h4>
+                            <p class="mini">Keep onboarding in pending, activate when operations can start, and suspend when access needs to pause.</p>
+                          </div>
+                        </div>
+                        <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/status" class="partner-detail-form-grid">
+                          <label>
+                            <span class="mini">Status</span>
+                            <select class="input" name="partnerStatus">
+                              <option value="pending" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'pending' ? 'selected' : '' %>>pending</option>
+                              <option value="active" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'active' ? 'selected' : '' %>>active</option>
+                              <option value="suspended" <%= String(selectedPartnerOrganization.partnerStatus || '') === 'suspended' ? 'selected' : '' %>>suspended</option>
+                            </select>
+                          </label>
+                          <div class="actions">
+                            <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                            <button class="btn btn-primary btn-sm" type="submit">Update status</button>
+                          </div>
+                        </form>
+                      </section>
                     </div>
-                    <% if (!selectedPartnerOrganization.members || selectedPartnerOrganization.members.length === 0) { %>
-                      <div class="member-empty-state">
-                        <p class="mini">No partner members are linked to this organization yet.</p>
-                      </div>
-                    <% } else { %>
-                      <div class="partner-member-grid">
-                        <% selectedPartnerOrganization.members.forEach((member) => { %>
-                          <article class="partner-member-card">
-                            <div class="partner-org-head">
-                              <div>
-                                <h3 style="font-size:17px;"><%= member.displayName %></h3>
-                                <p class="mini"><%= member.email || '-' %></p>
-                              </div>
-                              <div class="partner-org-meta">
-                                <span class="pill"><%= String(member.memberRoleLabel || member.memberRole || '').replace(/_/g, ' ') %></span>
-                                <% if (member.platformRole) { %><span class="pill"><%= String(member.platformRole).replace(/_/g, ' ') %></span><% } %>
-                                <% if (member.baseLearningRole) { %><span class="pill">base: <%= String(member.baseLearningRole).replace(/_/g, ' ') %></span><% } %>
-                              </div>
+
+                    <div class="admin-tab-panel" data-tab-panel="partner-access" hidden>
+                      <p class="admin-tab-intro">Attach accounts here without mixing the org roster with the role-management list below.</p>
+                      <section class="partner-detail-section">
+                        <div class="partner-detail-section-head">
+                          <div>
+                            <h4>Attach existing account</h4>
+                            <p class="mini">Partner org membership is managed here. Platform admin access stays in Access Control.</p>
+                          </div>
+                        </div>
+                        <% if (selectedAddableAccounts.length === 0) { %>
+                          <div class="member-empty-state">
+                            <p class="mini">No eligible accounts are available to attach to this organization right now.</p>
+                          </div>
+                        <% } else { %>
+                          <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members" class="partner-detail-form-grid">
+                            <label>
+                              <span class="mini">Account</span>
+                              <select class="input" name="accountId" required>
+                                <option value="">Add existing account</option>
+                                <% selectedAddableAccounts.forEach((account) => { %>
+                                  <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                                <% }) %>
+                              </select>
+                            </label>
+                            <label>
+                              <span class="mini">Partner role</span>
+                              <select class="input" name="role">
+                                <option value="<%= selectedDefaultMemberRole %>"><%= selectedDefaultMemberRole %></option>
+                                <option value="<%= selectedDefaultSuperRole %>"><%= selectedDefaultSuperRole %></option>
+                              </select>
+                            </label>
+                            <div class="actions">
+                              <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                              <button class="btn btn-secondary btn-sm" type="submit">Add member</button>
                             </div>
-                            <div class="partner-member-actions">
-                              <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/role" class="inline-form">
-                                <select class="input" name="role">
-                                  <option value="<%= selectedDefaultMemberRole %>" <%= member.memberRoleLabel === selectedDefaultMemberRole ? 'selected' : '' %>><%= selectedDefaultMemberRole %></option>
-                                  <option value="<%= selectedDefaultSuperRole %>" <%= member.memberRoleLabel === selectedDefaultSuperRole ? 'selected' : '' %>><%= selectedDefaultSuperRole %></option>
-                                </select>
-                                <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
-                                <button class="btn btn-secondary btn-sm" type="submit">Update member</button>
-                              </form>
-                              <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/remove" class="inline-form">
-                                <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
-                                <button class="btn btn-danger btn-sm" type="submit">Remove</button>
-                              </form>
-                            </div>
-                          </article>
-                        <% }) %>
-                      </div>
-                    <% } %>
-                  </section>
+                          </form>
+                        <% } %>
+                      </section>
+                    </div>
+
+                    <div class="admin-tab-panel" data-tab-panel="partner-members" hidden>
+                      <p class="admin-tab-intro">Only the member roster is shown here so promotions, demotions, and removals read as one focused workflow.</p>
+                      <section class="partner-detail-section">
+                        <div class="partner-detail-section-head">
+                          <div>
+                            <h4>Current members</h4>
+                            <p class="mini">Promote or demote partner-super access here without touching the platform admin model.</p>
+                          </div>
+                        </div>
+                        <% if (!selectedPartnerOrganization.members || selectedPartnerOrganization.members.length === 0) { %>
+                          <div class="member-empty-state">
+                            <p class="mini">No partner members are linked to this organization yet.</p>
+                          </div>
+                        <% } else { %>
+                          <div class="partner-member-grid">
+                            <% selectedPartnerOrganization.members.forEach((member) => { %>
+                              <article class="partner-member-card">
+                                <div class="partner-org-head">
+                                  <div>
+                                    <h3 style="font-size:17px;"><%= member.displayName %></h3>
+                                    <p class="mini"><%= member.email || '-' %></p>
+                                  </div>
+                                  <div class="partner-org-meta">
+                                    <span class="pill"><%= String(member.memberRoleLabel || member.memberRole || '').replace(/_/g, ' ') %></span>
+                                    <% if (member.platformRole) { %><span class="pill"><%= String(member.platformRole).replace(/_/g, ' ') %></span><% } %>
+                                    <% if (member.baseLearningRole) { %><span class="pill">base: <%= String(member.baseLearningRole).replace(/_/g, ' ') %></span><% } %>
+                                  </div>
+                                </div>
+                                <div class="partner-member-actions">
+                                  <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/role" class="inline-form">
+                                    <select class="input" name="role">
+                                      <option value="<%= selectedDefaultMemberRole %>" <%= member.memberRoleLabel === selectedDefaultMemberRole ? 'selected' : '' %>><%= selectedDefaultMemberRole %></option>
+                                      <option value="<%= selectedDefaultSuperRole %>" <%= member.memberRoleLabel === selectedDefaultSuperRole ? 'selected' : '' %>><%= selectedDefaultSuperRole %></option>
+                                    </select>
+                                    <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                                    <button class="btn btn-secondary btn-sm" type="submit">Update member</button>
+                                  </form>
+                                  <form method="post" action="/simple-lms/admin/partners/<%= selectedPartnerOrganization._id %>/members/<%= member.id %>/remove" class="inline-form">
+                                    <input type="hidden" name="returnTo" value="<%= partnerViewPath('directory', { organizationId: selectedPartnerOrganization._id }) %>">
+                                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                                  </form>
+                                </div>
+                              </article>
+                            <% }) %>
+                          </div>
+                        <% } %>
+                      </section>
+                    </div>
+                  </div>
                 </div>
               </aside>
             <% } %>
@@ -5025,131 +5123,152 @@
             <% } %>
           </div>
 
-          <article class="card">
-            <strong>Invite New Admin or Super Admin</strong>
-            <form method="post" action="/simple-lms/admin/super-users/invite" class="inline-form">
-              <input class="input" type="email" name="email" placeholder="new-admin@company.com" required>
-              <select class="input" name="requestedRole">
-                <option value="admin">admin</option>
-                <option value="super_admin">super_admin</option>
-              </select>
-              <input class="input" type="text" name="notes" maxlength="1200" placeholder="Optional note for the invite">
-              <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
-              <input type="hidden" name="returnTo" value="/admin/super-users">
-              <button class="btn btn-primary btn-sm" type="submit">Send Invite</button>
-            </form>
-            <p class="mini">The invitee receives a Brevo email, registers with the invite link, verifies a one-time code, and then lands in the admin dashboard.</p>
-          </article>
+          <div class="admin-tab-shell" data-tab-group>
+            <div class="admin-tab-bar" role="tablist" aria-label="Platform admin actions">
+              <button class="admin-tab is-active" type="button" data-tab-trigger="platform-invite">Invite</button>
+              <button class="admin-tab" type="button" data-tab-trigger="platform-promote">Promote</button>
+              <button class="admin-tab" type="button" data-tab-trigger="platform-invites">Invite Log</button>
+              <button class="admin-tab" type="button" data-tab-trigger="platform-super-admins">Super Admins</button>
+            </div>
 
-          <article class="card">
-            <strong>Promote Existing Platform Admin to Super Admin</strong>
-            <form method="post" action="/simple-lms/admin/super-users/promote" class="inline-form">
-              <select class="input" name="targetAccountId">
-                <option value="">Select account</option>
-                <% platformAdminRows.filter((account) => account.platformRole !== 'super_admin').forEach((account) => { %>
-                  <option value="<%= account._id %>"><%= account.displayName %> (<%= account.email %>)</option>
-                <% }) %>
-              </select>
-              <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
-              <input type="hidden" name="returnTo" value="/admin/super-users">
-              <button class="btn btn-primary btn-sm" type="submit">Promote</button>
-            </form>
-            <p class="mini">Your password is required for every super-user elevation action.</p>
-          </article>
+            <div class="admin-tab-panel is-active" data-tab-panel="platform-invite">
+              <p class="admin-tab-intro">Invite creation is isolated here so the page does not stack forms and audit tables on first load.</p>
+              <article class="card">
+                <strong>Invite New Admin or Super Admin</strong>
+                <form method="post" action="/simple-lms/admin/super-users/invite" class="inline-form">
+                  <input class="input" type="email" name="email" placeholder="new-admin@company.com" required>
+                  <select class="input" name="requestedRole">
+                    <option value="admin">admin</option>
+                    <option value="super_admin">super_admin</option>
+                  </select>
+                  <input class="input" type="text" name="notes" maxlength="1200" placeholder="Optional note for the invite">
+                  <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                  <input type="hidden" name="returnTo" value="/admin/super-users">
+                  <button class="btn btn-primary btn-sm" type="submit">Send Invite</button>
+                </form>
+                <p class="mini">The invitee receives a Brevo email, registers with the invite link, verifies a one-time code, and then lands in the admin dashboard.</p>
+              </article>
+            </div>
 
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Invited By</th>
-                  <th>Registered Account</th>
-                  <th>Expires</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!adminInviteRows || adminInviteRows.length === 0) { %>
-                  <tr><td colspan="7" class="mini">No admin invites recorded yet.</td></tr>
-                <% } else { %>
-                  <% adminInviteRows.forEach((invite) => { %>
+            <div class="admin-tab-panel" data-tab-panel="platform-promote" hidden>
+              <p class="admin-tab-intro">Elevation actions are kept separate from invites so sensitive role changes are easier to scan and review.</p>
+              <article class="card">
+                <strong>Promote Existing Platform Admin to Super Admin</strong>
+                <form method="post" action="/simple-lms/admin/super-users/promote" class="inline-form">
+                  <select class="input" name="targetAccountId">
+                    <option value="">Select account</option>
+                    <% platformAdminRows.filter((account) => account.platformRole !== 'super_admin').forEach((account) => { %>
+                      <option value="<%= account._id %>"><%= account.displayName %> (<%= account.email %>)</option>
+                    <% }) %>
+                  </select>
+                  <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                  <input type="hidden" name="returnTo" value="/admin/super-users">
+                  <button class="btn btn-primary btn-sm" type="submit">Promote</button>
+                </form>
+                <p class="mini">Your password is required for every super-user elevation action.</p>
+              </article>
+            </div>
+
+            <div class="admin-tab-panel" data-tab-panel="platform-invites" hidden>
+              <p class="admin-tab-intro">Open the invite log only when you need to track pending onboarding, registration progress, or revocations.</p>
+              <div class="table">
+                <table>
+                  <thead>
                     <tr>
-                      <td>
-                        <strong><%= invite.email %></strong>
-                        <% if (invite.notes) { %><br><span class="mini"><%= invite.notes %></span><% } %>
-                      </td>
-                      <td><span class="pill"><%= invite.requestedRole %></span></td>
-                      <td><span class="pill"><%= invite.statusLabel %></span></td>
-                      <td><%= invite.invitedByName || '-' %></td>
-                      <td>
-                        <% if (invite.registeredAccountName) { %>
-                          <strong><%= invite.registeredAccountName %></strong><br>
-                          <span class="mini"><%= invite.registeredAccount?.email || '' %></span><br>
-                          <span class="mini"><%= invite.registeredAccount?.emailVerified ? 'verified' : 'waiting for OTP' %></span>
-                        <% } else { %>
-                          <span class="mini">Not registered yet</span>
-                        <% } %>
-                      </td>
-                      <td><%= dateText(invite.expiresAt) %></td>
-                      <td>
-                        <% if (invite.canRevoke) { %>
-                          <form method="post" action="/simple-lms/admin/super-users/invites/<%= invite._id %>/revoke" class="inline-form">
-                            <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
-                            <input type="hidden" name="returnTo" value="/admin/super-users">
-                            <button class="btn btn-danger btn-sm" type="submit">Revoke</button>
-                          </form>
-                        <% } else { %>
-                          <span class="mini">
-                            <%= invite.acceptedByName ? `Accepted by ${invite.acceptedByName}` : 'No action available' %>
-                          </span>
-                        <% } %>
-                      </td>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Invited By</th>
+                      <th>Registered Account</th>
+                      <th>Expires</th>
+                      <th>Action</th>
                     </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    <% if (!adminInviteRows || adminInviteRows.length === 0) { %>
+                      <tr><td colspan="7" class="mini">No admin invites recorded yet.</td></tr>
+                    <% } else { %>
+                      <% adminInviteRows.forEach((invite) => { %>
+                        <tr>
+                          <td>
+                            <strong><%= invite.email %></strong>
+                            <% if (invite.notes) { %><br><span class="mini"><%= invite.notes %></span><% } %>
+                          </td>
+                          <td><span class="pill"><%= invite.requestedRole %></span></td>
+                          <td><span class="pill"><%= invite.statusLabel %></span></td>
+                          <td><%= invite.invitedByName || '-' %></td>
+                          <td>
+                            <% if (invite.registeredAccountName) { %>
+                              <strong><%= invite.registeredAccountName %></strong><br>
+                              <span class="mini"><%= invite.registeredAccount?.email || '' %></span><br>
+                              <span class="mini"><%= invite.registeredAccount?.emailVerified ? 'verified' : 'waiting for OTP' %></span>
+                            <% } else { %>
+                              <span class="mini">Not registered yet</span>
+                            <% } %>
+                          </td>
+                          <td><%= dateText(invite.expiresAt) %></td>
+                          <td>
+                            <% if (invite.canRevoke) { %>
+                              <form method="post" action="/simple-lms/admin/super-users/invites/<%= invite._id %>/revoke" class="inline-form">
+                                <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                                <input type="hidden" name="returnTo" value="/admin/super-users">
+                                <button class="btn btn-danger btn-sm" type="submit">Revoke</button>
+                              </form>
+                            <% } else { %>
+                              <span class="mini">
+                                <%= invite.acceptedByName ? `Accepted by ${invite.acceptedByName}` : 'No action available' %>
+                              </span>
+                            <% } %>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    <% } %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-          <div class="table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Promoted At</th>
-                  <th>Promoted By</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% if (!superUserAccounts || superUserAccounts.length === 0) { %>
-                  <tr><td colspan="5" class="mini">No super admins found.</td></tr>
-                <% } else { %>
-                  <% superUserAccounts.forEach((superUser) => { %>
+            <div class="admin-tab-panel" data-tab-panel="platform-super-admins" hidden>
+              <p class="admin-tab-intro">Only the current super-admin roster is shown here so demotion decisions are not mixed with the rest of the page.</p>
+              <div class="table">
+                <table>
+                  <thead>
                     <tr>
-                      <td><strong><%= superUser.displayName %></strong></td>
-                      <td><%= superUser.email %></td>
-                      <td><%= dateText(superUser.promotedAt) %></td>
-                      <td><%= superUser.promotedByName || '-' %></td>
-                      <td>
-                        <% if (String(user?._id || '') !== String(superUser._id || '')) { %>
-                          <form method="post" action="/simple-lms/admin/super-users/<%= superUser._id %>/demote" class="inline-form">
-                            <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
-                            <input type="hidden" name="returnTo" value="/admin/super-users">
-                            <button class="btn btn-danger btn-sm" type="submit">Demote</button>
-                          </form>
-                        <% } else { %>
-                          <span class="mini">Current account</span>
-                        <% } %>
-                      </td>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Promoted At</th>
+                      <th>Promoted By</th>
+                      <th>Action</th>
                     </tr>
-                  <% }) %>
-                <% } %>
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    <% if (!superUserAccounts || superUserAccounts.length === 0) { %>
+                      <tr><td colspan="5" class="mini">No super admins found.</td></tr>
+                    <% } else { %>
+                      <% superUserAccounts.forEach((superUser) => { %>
+                        <tr>
+                          <td><strong><%= superUser.displayName %></strong></td>
+                          <td><%= superUser.email %></td>
+                          <td><%= dateText(superUser.promotedAt) %></td>
+                          <td><%= superUser.promotedByName || '-' %></td>
+                          <td>
+                            <% if (String(user?._id || '') !== String(superUser._id || '')) { %>
+                              <form method="post" action="/simple-lms/admin/super-users/<%= superUser._id %>/demote" class="inline-form">
+                                <input class="input" type="password" name="currentPassword" placeholder="Your current password" required>
+                                <input type="hidden" name="returnTo" value="/admin/super-users">
+                                <button class="btn btn-danger btn-sm" type="submit">Demote</button>
+                              </form>
+                            <% } else { %>
+                              <span class="mini">Current account</span>
+                            <% } %>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    <% } %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       <% } %>
@@ -6127,6 +6246,37 @@
   </main>
   </div>
   <script>
+    (() => {
+      const tabGroups = document.querySelectorAll('[data-tab-group]')
+      tabGroups.forEach((group) => {
+        const triggers = Array.from(group.querySelectorAll('[data-tab-trigger]'))
+        const panels = Array.from(group.querySelectorAll('[data-tab-panel]'))
+        if (!triggers.length || !panels.length) return
+
+        const activate = (name) => {
+          triggers.forEach((trigger) => {
+            const isActive = trigger.getAttribute('data-tab-trigger') === name
+            trigger.classList.toggle('is-active', isActive)
+            trigger.setAttribute('aria-selected', isActive ? 'true' : 'false')
+          })
+          panels.forEach((panel) => {
+            const isActive = panel.getAttribute('data-tab-panel') === name
+            panel.classList.toggle('is-active', isActive)
+            panel.hidden = !isActive
+          })
+        }
+
+        triggers.forEach((trigger) => {
+          trigger.addEventListener('click', () => {
+            activate(trigger.getAttribute('data-tab-trigger'))
+          })
+        })
+
+        const defaultTrigger = triggers.find((trigger) => trigger.classList.contains('is-active')) || triggers[0]
+        activate(defaultTrigger.getAttribute('data-tab-trigger'))
+      })
+    })()
+
     (() => {
       const reviewForms = document.querySelectorAll('[data-course-review-form]')
       if (!reviewForms.length) return
