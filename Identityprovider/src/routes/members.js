@@ -11,7 +11,7 @@ import {
 import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
-import { buildPayrollProfileSyncData, getProfileCompletion } from '../utils/profileCompletion.js'
+import { buildPayrollProfileSyncData, getProfileCompletionForAccount } from '../utils/profileCompletion.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -164,8 +164,8 @@ function normalizeBankingAccount(country = '', input = {}, fallback = {}) {
   }
 }
 
-function updateCompletionTracking(account) {
-  const completion = getProfileCompletion(account)
+async function updateCompletionTracking(account, organizationId) {
+  const completion = await getProfileCompletionForAccount(account, { organizationId })
   account.profile = account.profile || {}
   account.profile.completionReminders = {
     ...(account.profile.completionReminders || {}),
@@ -552,7 +552,7 @@ router.put('/:orgId/members/:memberId/payroll-sync',
             }
       }
 
-      const completion = updateCompletionTracking(account)
+      const completion = await updateCompletionTracking(account, req.params.orgId)
       account.markModified('profile')
       await account.save()
 

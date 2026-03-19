@@ -185,7 +185,7 @@
             <div class="profile-wizard-kicker">Profile Setup</div>
             <h2 id="profileWizardTitle" class="profile-wizard-title">Complete your employee profile</h2>
             <p class="profile-wizard-copy">
-                Payroll and HR need these details before your profile is fully ready. Complete each step below.
+                Payroll, HR<% if (profileCompletion.onboarding && profileCompletion.onboarding.isAssigned) { %>, and onboarding<% } %> need these items before your profile is fully ready. Complete each step below.
             </p>
             <% if (isEnforcedWizard) { %>
                 <p class="profile-wizard-copy profile-wizard-copy--locked">

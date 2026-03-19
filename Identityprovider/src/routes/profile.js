@@ -1,7 +1,7 @@
 import express from 'express';
 import { Account } from '../models/Account.js';
 import CrossModuleApiService from '../../services/CrossModuleApiService.js';
-import { getProfileCompletion } from '../utils/profileCompletion.js';
+import { getProfileCompletionForAccount } from '../utils/profileCompletion.js';
 
 const router = express.Router();
 
@@ -13,8 +13,17 @@ function ensureAuthenticated(req, res, next) {
     res.status(401).json({ error: 'Unauthorized' });
 }
 
-function updateCompletionTracking(account) {
-    const completion = getProfileCompletion(account);
+function resolveOrganizationId(req, account) {
+    return req.session?.currentOrganization
+        || account?.currentOrganization?._id?.toString?.()
+        || account?.currentOrganization?.toString?.()
+        || null;
+}
+
+async function updateCompletionTracking(req, account) {
+    const completion = await getProfileCompletionForAccount(account, {
+        organizationId: resolveOrganizationId(req, account)
+    });
     account.profile = account.profile || {};
     account.profile.completionReminders = {
         ...(account.profile.completionReminders || {}),
@@ -199,7 +208,7 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
         if (phoneNumbers) account.profile.personalInfo.phoneNumbers = phoneNumbers;
         if (emergencyContacts) account.profile.personalInfo.emergencyContacts = emergencyContacts;
 
-        const completion = updateCompletionTracking(account);
+        const completion = await updateCompletionTracking(req, account);
         account.markModified('profile');
         await account.save();
 
@@ -303,7 +312,7 @@ router.put('/api/profile/banking', ensureAuthenticated, async (req, res) => {
             message = 'Payment account added successfully! Payroll has been notified.';
         }
 
-        const completion = updateCompletionTracking(userAccount);
+        const completion = await updateCompletionTracking(req, userAccount);
         userAccount.markModified('profile');
         await userAccount.save();
 
@@ -353,7 +362,7 @@ router.put('/api/profile/dependents', ensureAuthenticated, async (req, res) => {
                 confirmedAt: new Date(),
                 lastUpdated: new Date()
             };
-            const completion = updateCompletionTracking(account);
+            const completion = await updateCompletionTracking(req, account);
             account.markModified('profile');
             await account.save();
 
@@ -376,7 +385,7 @@ router.put('/api/profile/dependents', ensureAuthenticated, async (req, res) => {
             lastUpdated: new Date()
         };
 
-        const completion = updateCompletionTracking(account);
+        const completion = await updateCompletionTracking(req, account);
         account.markModified('profile');
         await account.save();
 

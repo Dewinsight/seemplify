@@ -1,6 +1,6 @@
 import { Account } from '../models/Account.js'
 import { emailService } from '../services/emailService.js'
-import { getProfileCompletion } from '../utils/profileCompletion.js'
+import { getProfileCompletionForAccount } from '../utils/profileCompletion.js'
 
 let reminderInterval = null
 let isRunning = false
@@ -71,7 +71,7 @@ export async function sendProfileCompletionReminders() {
     let sentCount = 0
 
     for (const account of accounts) {
-      const completion = getProfileCompletion(account)
+      const completion = await getProfileCompletionForAccount(account)
       if (completion.complete) {
         continue
       }
@@ -149,4 +149,3 @@ export function stopProfileCompletionReminderJobs() {
   reminderInterval = null
   console.log('🛑 [PROFILE] Profile completion reminders stopped')
 }
-

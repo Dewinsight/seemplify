@@ -48,7 +48,7 @@ import {
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startProfileCompletionReminderJobs } from './jobs/profileCompletionReminders.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
-import { getProfileCompletion } from './utils/profileCompletion.js'
+import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
@@ -3200,7 +3200,9 @@ app.get('/', async (req, res) => {
     const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
     const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
     const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
-    const profileCompletion = getProfileCompletion(account)
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: account.currentOrganization?._id?.toString?.() || account.currentOrganization?.toString?.() || null
+    })
 
     // Render the hub homepage using EJS template
     res.render('home', {
@@ -3317,7 +3319,9 @@ app.post('/login', async (req, res) => {
       maxAge: expiresIn * 1000
     })
 
-    const profileCompletion = getProfileCompletion(account)
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: currentOrgId
+    })
     const profileSetupRoute = profileCompletion?.complete
       ? '/'
       : `${profileCompletion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
@@ -3765,8 +3769,10 @@ app.get('/api/apps', async (req, res) => {
 
 // Helper middleware to check session and get current user
 const getSessionUser = async (req, res, next) => {
-  const attachProfileCompletionLocals = (account) => {
-    const profileCompletion = getProfileCompletion(account)
+  const attachProfileCompletionLocals = async (account) => {
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: account?.currentOrganization?._id?.toString?.() || account?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
+    })
     req.profileCompletion = profileCompletion
     res.locals.user = account
     res.locals.profileCompletion = profileCompletion
@@ -3785,7 +3791,7 @@ const getSessionUser = async (req, res, next) => {
       req.user = await Account.findOne({ sub: cookieAccount.sub })
         .populate('organizations.organization', 'name')
         .populate('currentOrganization', 'name')
-      attachProfileCompletionLocals(req.user)
+      await attachProfileCompletionLocals(req.user)
       return next()
     }
 
@@ -3802,7 +3808,7 @@ const getSessionUser = async (req, res, next) => {
             .populate('organizations.organization', 'name')
             .populate('currentOrganization', 'name')
           if (req.user) {
-            attachProfileCompletionLocals(req.user)
+            await attachProfileCompletionLocals(req.user)
             return next()
           }
         }
@@ -3822,7 +3828,7 @@ const getSessionUser = async (req, res, next) => {
   }
 
   req.user = account
-  attachProfileCompletionLocals(account)
+  await attachProfileCompletionLocals(account)
   next()
 }
 
@@ -5264,7 +5270,9 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
 // Profile page
 app.get('/profile', getSessionUser, async (req, res) => {
   try {
-    const completion = getProfileCompletion(req.user)
+    const completion = req.profileCompletion || await getProfileCompletionForAccount(req.user, {
+      organizationId: req.user?.currentOrganization?._id?.toString?.() || req.user?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
+    })
     const targetRoute = `${completion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
     res.redirect(targetRoute)
   } catch (error) {
@@ -8272,12 +8280,12 @@ function getAppIcon(iconName) {
 // Register profile API routes
 app.use(profileRouter)
 
-function buildProfilePageViewModel(account, currentProfileSection) {
+function buildProfilePageViewModel(req, currentProfileSection) {
   return {
-    user: account,
+    user: req.user,
     currentProfileSection,
     activeProfileSection: currentProfileSection,
-    profileCompletion: getProfileCompletion(account),
+    profileCompletion: req.profileCompletion || getProfileCompletion(req.user),
     profileCompletionEnforced: false
   }
 }
@@ -8285,7 +8293,7 @@ function buildProfilePageViewModel(account, currentProfileSection) {
 // Profile page GET routes
 app.get('/profile/personal', getSessionUser, async (req, res) => {
   try {
-    res.render('profile-personal', buildProfilePageViewModel(req.user, 'personal'))
+    res.render('profile-personal', buildProfilePageViewModel(req, 'personal'))
   } catch (error) {
     console.error('Error loading personal page:', error)
     res.status(500).send('Error loading page')
@@ -8303,7 +8311,7 @@ app.get('/profile/tax', getSessionUser, async (req, res) => {
 
 app.get('/profile/banking', getSessionUser, async (req, res) => {
   try {
-    res.render('profile-banking', buildProfilePageViewModel(req.user, 'banking'))
+    res.render('profile-banking', buildProfilePageViewModel(req, 'banking'))
   } catch (error) {
     console.error('Error loading banking page:', error)
     res.status(500).send('Error loading page')
@@ -8312,7 +8320,7 @@ app.get('/profile/banking', getSessionUser, async (req, res) => {
 
 app.get('/profile/dependents', getSessionUser, async (req, res) => {
   try {
-    res.render('profile-dependents', buildProfilePageViewModel(req.user, 'dependents'))
+    res.render('profile-dependents', buildProfilePageViewModel(req, 'dependents'))
   } catch (error) {
     console.error('Error loading dependents page:', error)
     res.status(500).send('Error loading page')
@@ -8341,7 +8349,7 @@ app.get('/profile/documents', getSessionUser, async (req, res) => {
     const documents = buildProfileDocumentEntries(assignments, req.user)
 
     res.render('profile-documents', {
-      ...buildProfilePageViewModel(req.user, 'documents'),
+      ...buildProfilePageViewModel(req, 'documents'),
       documents,
       workflowLabels: WORKFLOW_LABELS,
       workflowTypes: WORKFLOW_TYPES
