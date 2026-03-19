@@ -3200,6 +3200,7 @@ app.get('/', async (req, res) => {
     const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
     const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
     const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
+    const profileCompletion = getProfileCompletion(account)
 
     // Render the hub homepage using EJS template
     res.render('home', {
@@ -3216,6 +3217,9 @@ app.get('/', async (req, res) => {
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       notificationSummary,
       simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
+      profileCompletion,
+      currentProfileSection: '',
+      profileCompletionEnforced: !profileCompletion.complete,
       activePage: 'home'
     })
   } catch (err) {

@@ -136,7 +136,16 @@
     </details>
   </div>
 </nav>
-<%- include('profile-completion-wizard', { profileCompletion, currentProfileSection, profileCompletionEnforced }) %>
+<%
+  const navProfileCompletion = typeof profileCompletion === 'undefined' ? null : profileCompletion;
+  const navCurrentProfileSection = typeof currentProfileSection === 'undefined' ? '' : currentProfileSection;
+  const navProfileCompletionEnforced = typeof profileCompletionEnforced === 'undefined' ? false : profileCompletionEnforced;
+%>
+<%- include('profile-completion-wizard', {
+  profileCompletion: navProfileCompletion,
+  currentProfileSection: navCurrentProfileSection,
+  profileCompletionEnforced: navProfileCompletionEnforced
+}) %>
 <script>
   (function initNotificationBadge() {
     const badges = Array.from(document.querySelectorAll('[data-notification-badge]'));
