@@ -46,6 +46,67 @@
       gap: 8px;
     }
 
+    .notifications-signature-callout {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      border-color: rgba(245, 158, 11, 0.28);
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(249, 115, 22, 0.08));
+    }
+
+    .notifications-signature-content {
+      display: grid;
+      gap: 8px;
+    }
+
+    .notifications-signature-eyebrow {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #f59e0b;
+    }
+
+    .notifications-signature-title {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    .notifications-signature-copy {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 760px;
+    }
+
+    .notifications-signature-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .notifications-signature-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(245, 158, 11, 0.24);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .notifications-signature-chip span {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
     .notifications-filter-chip {
       border: 1px solid var(--border);
       border-radius: 999px;
@@ -160,6 +221,8 @@
 
 <body>
   <%- include('partials/nav', { activePage: 'notifications' }) %>
+  <% const pendingSignatureCount = notificationSummary?.pendingSignatureCount || 0; %>
+  <% const pendingSignatureDocuments = Array.isArray(notificationSummary?.pendingSignatureDocuments) ? notificationSummary.pendingSignatureDocuments : []; %>
 
   <div class="container notifications-shell">
     <a href="/" class="back-link">&larr; Back to Hub</a>
@@ -186,11 +249,39 @@
       <div class="notifications-summary-actions">
         <span class="pill pill--soft">Documents: <%= notificationSummary?.counts?.documents || 0 %></span>
         <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary?.counts?.simplePerformance || 0 %></span>
+        <% if (pendingSignatureCount > 0) { %>
+          <span class="pill pill--soft">To Sign: <%= pendingSignatureCount %></span>
+        <% } %>
         <button class="btn btn-secondary btn-sm" type="button" data-mark-all-read>
           Mark <%= selectedCategory === 'all' ? 'All' : 'Shown' %> as Read
         </button>
       </div>
     </div>
+
+    <% if (pendingSignatureCount > 0) { %>
+      <div class="card notifications-signature-callout">
+        <div class="notifications-signature-content">
+          <div class="notifications-signature-eyebrow">Signature Required</div>
+          <h2 class="notifications-signature-title">
+            You have <%= pendingSignatureCount %> pending document<%= pendingSignatureCount === 1 ? '' : 's' %> to sign
+          </h2>
+          <p class="notifications-signature-copy">
+            Review and sign the pending documents from your documents workspace. This reminder stays visible here until the documents are completed.
+          </p>
+          <% if (pendingSignatureDocuments.length > 0) { %>
+            <div class="notifications-signature-preview">
+              <% pendingSignatureDocuments.slice(0, 3).forEach(doc => { %>
+                <span class="notifications-signature-chip">
+                  <%= doc.title %>
+                  <span><%= doc.organizationName || 'Organization' %></span>
+                </span>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+        <a href="/profile/documents?status=needs_action" class="btn btn-primary">Review &amp; Sign</a>
+      </div>
+    <% } %>
 
     <div class="notifications-filters">
       <a href="/notifications" class="notifications-filter-chip<%= selectedCategory === 'all' ? ' active' : '' %>">All</a>

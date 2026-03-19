@@ -137,6 +137,34 @@
   </div>
 </nav>
 <%
+  const navInitialPendingSignatureCount = Math.max(
+    0,
+    Number(
+      (typeof notificationSummary !== 'undefined' && notificationSummary?.pendingSignatureCount)
+      || (typeof pendingSignatureCount !== 'undefined' && pendingSignatureCount)
+      || 0
+    ) || 0
+  );
+%>
+<div
+  class="top-action-strip"
+  data-pending-signature-banner
+  <%= navInitialPendingSignatureCount > 0 ? '' : 'hidden' %>
+>
+  <div class="top-action-strip__content">
+    <div class="top-action-strip__eyebrow">Signature Required</div>
+    <div class="top-action-strip__title">You have pending documents to sign</div>
+    <div class="top-action-strip__meta" data-pending-signature-copy>
+      <%= navInitialPendingSignatureCount === 1
+        ? '1 document is waiting for your signature.'
+        : `${navInitialPendingSignatureCount} documents are waiting for your signature.` %>
+    </div>
+  </div>
+  <a href="/profile/documents?status=needs_action" class="btn btn-primary btn-sm">
+    Review &amp; Sign
+  </a>
+</div>
+<%
   const navProfileCompletion = typeof profileCompletion === 'undefined' ? null : profileCompletion;
   const navCurrentProfileSection = typeof currentProfileSection === 'undefined' ? '' : currentProfileSection;
   const navProfileCompletionEnforced = typeof profileCompletionEnforced === 'undefined' ? false : profileCompletionEnforced;
@@ -149,7 +177,9 @@
 <script>
   (function initNotificationBadge() {
     const badges = Array.from(document.querySelectorAll('[data-notification-badge]'));
-    if (!badges.length) return;
+    const pendingSignatureBanner = document.querySelector('[data-pending-signature-banner]');
+    const pendingSignatureCopy = document.querySelector('[data-pending-signature-copy]');
+    if (!badges.length && !pendingSignatureBanner) return;
 
     const setCount = (count) => {
       const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
@@ -164,6 +194,21 @@
       });
     };
 
+    const setPendingSignatureBanner = (count) => {
+      if (!pendingSignatureBanner || !pendingSignatureCopy) return;
+
+      const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+      if (safeCount > 0) {
+        pendingSignatureBanner.hidden = false;
+        pendingSignatureCopy.textContent = safeCount === 1
+          ? '1 document is waiting for your signature.'
+          : `${safeCount} documents are waiting for your signature.`;
+      } else {
+        pendingSignatureBanner.hidden = true;
+        pendingSignatureCopy.textContent = '0 documents are waiting for your signature.';
+      }
+    };
+
     fetch('/api/notifications/summary', {
       method: 'GET',
       credentials: 'same-origin',
@@ -175,9 +220,11 @@
       })
       .then((payload) => {
         setCount(payload?.totalUnread || 0);
+        setPendingSignatureBanner(payload?.pendingSignatureCount || 0);
       })
       .catch(() => {
         setCount(0);
+        setPendingSignatureBanner(<%= navInitialPendingSignatureCount %>);
       });
   })();
 </script>

@@ -4087,13 +4087,17 @@ const buildNotificationActionUrl = ({
   organizationId,
   assignmentId,
   workflowType,
-  evaluationId
+  evaluationId,
+  itemId,
+  action
 }) => {
   const params = new URLSearchParams()
   params.set('type', type)
   if (organizationId) params.set('org', String(organizationId))
   if (assignmentId) params.set('assignment', String(assignmentId))
   if (evaluationId) params.set('evaluation', String(evaluationId))
+  if (itemId) params.set('item', String(itemId))
+  if (action) params.set('action', String(action))
   if (workflowType && WORKFLOW_TYPES.includes(String(workflowType))) {
     params.set('workflow', String(workflowType))
   }
@@ -4109,6 +4113,8 @@ const buildNotificationCenterData = async (account, options = {}) => {
         simplePerformance: 0
       },
       tasks: [],
+      pendingSignatureCount: 0,
+      pendingSignatureDocuments: [],
       unreadDocumentAssignments: [],
       unreadPerformanceEvaluations: []
     }
@@ -4144,10 +4150,43 @@ const buildNotificationCenterData = async (account, options = {}) => {
     ],
     status: { $nin: ['completed', 'cancelled'] }
   })
-    .select('organization workflowType status createdAt updatedAt')
+    .select([
+      'organization',
+      'member',
+      'workflowType',
+      'status',
+      'dueAt',
+      'completedAt',
+      'createdAt',
+      'updatedAt',
+      'items._id',
+      'items.type',
+      'items.title',
+      'items.description',
+      'items.status',
+      'items.config.document',
+      'items.config.signers',
+      'items.data.esign.signedAt',
+      'items.data.esign.signedUrl',
+      'items.data.esign.signedFileName',
+      'items.data.esign.signers'
+    ].join(' '))
     .populate('organization', 'name')
     .sort({ updatedAt: -1, createdAt: -1 })
     .lean()
+
+  const pendingSignatureDocuments = buildProfileDocumentEntries(pendingOnboardingAssignments, account)
+    .filter(document => document.requiresSignature)
+
+  const pendingSignatureDocumentsByAssignmentId = new Map()
+  pendingSignatureDocuments.forEach(document => {
+    const assignmentId = String(document?.assignmentId || '').trim()
+    if (!assignmentId) return
+
+    const documentsForAssignment = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    documentsForAssignment.push(document)
+    pendingSignatureDocumentsByAssignmentId.set(assignmentId, documentsForAssignment)
+  })
 
   // Documents notifications represent pending work until explicitly read.
   // A pending assignment reappears if it is updated after it was marked as read.
@@ -4240,22 +4279,45 @@ const buildNotificationCenterData = async (account, options = {}) => {
     const workflowType = normalizeWorkflowType(assignment.workflowType, { allowAll: false, fallback: 'onboarding' })
     const workflowLabel = WORKFLOW_LABELS[workflowType] || WORKFLOW_LABELS.onboarding
     const createdAt = assignment.updatedAt || assignment.createdAt || new Date()
+    const assignmentId = assignment?._id?.toString?.() || ''
+    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    const pendingSignatureCount = signatureDocuments.length
+    const primarySignatureDocument = signatureDocuments[0] || null
+    const organizationName = assignment?.organization?.name || organizationNameById.get(organizationId) || 'your organization'
 
     return {
       id: `documents:${assignment._id}`,
       category: NOTIFICATION_CATEGORY.documents,
-      title: `${workflowLabel} task pending`,
-      message: `Complete your ${workflowLabel.toLowerCase()} step for ${assignment?.organization?.name || organizationNameById.get(organizationId) || 'your organization'}.`,
+      title: pendingSignatureCount === 1
+        ? 'Document signature pending'
+        : (pendingSignatureCount > 1 ? `${pendingSignatureCount} documents pending signature` : `${workflowLabel} task pending`),
+      message: pendingSignatureCount === 1
+        ? `${primarySignatureDocument?.title || 'A document'} is waiting for your signature for ${organizationName}.`
+        : (pendingSignatureCount > 1
+            ? `${pendingSignatureCount} documents are waiting for your signature in ${workflowLabel.toLowerCase()} for ${organizationName}.`
+            : `Complete your ${workflowLabel.toLowerCase()} step for ${organizationName}.`),
       organizationId,
       organizationName: assignment?.organization?.name || organizationNameById.get(organizationId) || 'Organization',
       createdAt,
-      actionLabel: 'Open task',
-      actionUrl: buildNotificationActionUrl({
-        type: NOTIFICATION_CATEGORY.documents,
-        organizationId,
-        assignmentId: assignment._id,
-        workflowType
-      }),
+      actionLabel: pendingSignatureCount > 0 ? 'Review & Sign' : 'Open task',
+      actionUrl: buildNotificationActionUrl(
+        pendingSignatureCount > 0
+          ? {
+              type: NOTIFICATION_CATEGORY.documents,
+              organizationId,
+              assignmentId: assignment._id,
+              workflowType,
+              itemId: primarySignatureDocument?.itemId,
+              action: 'sign'
+            }
+          : {
+              type: NOTIFICATION_CATEGORY.documents,
+              organizationId,
+              assignmentId: assignment._id,
+              workflowType
+            }
+      ),
+      pendingSignatureCount,
       workflowType
     }
   })
@@ -4300,6 +4362,8 @@ const buildNotificationCenterData = async (account, options = {}) => {
       simplePerformance: performanceTasks.length
     },
     tasks,
+    pendingSignatureCount: pendingSignatureDocuments.length,
+    pendingSignatureDocuments,
     unreadDocumentAssignments,
     unreadPerformanceEvaluations
   }
@@ -5067,6 +5131,7 @@ app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
       success: true,
       totalUnread: summary.totalUnread,
       counts: summary.counts,
+      pendingSignatureCount: summary.pendingSignatureCount || 0,
       tasks: summary.tasks
     })
   } catch (error) {
@@ -5130,7 +5195,8 @@ app.post('/api/notifications/read', getSessionUser, async (req, res) => {
     return res.json({
       success: true,
       totalUnread: summary.totalUnread,
-      counts: summary.counts
+      counts: summary.counts,
+      pendingSignatureCount: summary.pendingSignatureCount || 0
     })
   } catch (error) {
     console.error('Mark notification read API error:', error)
@@ -5167,7 +5233,8 @@ app.post('/api/notifications/read-all', getSessionUser, async (req, res) => {
       success: true,
       markedCount: references.length,
       totalUnread: updatedSummary.totalUnread,
-      counts: updatedSummary.counts
+      counts: updatedSummary.counts,
+      pendingSignatureCount: updatedSummary.pendingSignatureCount || 0
     })
   } catch (error) {
     console.error('Mark all notifications read API error:', error)
@@ -5238,6 +5305,8 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
     if (type === NOTIFICATION_CATEGORY.documents) {
       const workflow = normalizeWorkflowType(req.query.workflow, { allowAll: false, fallback: 'all' })
       const assignmentId = String(req.query.assignment || '').trim()
+      const itemId = String(req.query.item || '').trim()
+      const action = String(req.query.action || '').trim().toLowerCase()
       if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
         await markNotificationReferencesAsRead({
           accountId: req.user._id,
@@ -5253,6 +5322,12 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
       params.set('tab', 'my')
       if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
         params.set('focusAssignment', assignmentId)
+      }
+      if (itemId && mongoose.Types.ObjectId.isValid(itemId)) {
+        params.set('focusItem', itemId)
+      }
+      if (action === 'sign') {
+        params.set('action', 'sign')
       }
       const query = params.toString()
       return res.redirect(query ? `/documents?${query}` : '/documents')
