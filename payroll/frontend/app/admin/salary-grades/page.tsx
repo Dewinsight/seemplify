@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { isAuthenticated } from '@/lib/api';
+import { payrollCurrencies } from '@/lib/payrollCurrencies';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -257,9 +258,11 @@ export default function SalaryGradesPage() {
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
                                     >
-                                        <option value="USD">USD</option>
-                                        <option value="GBP">GBP</option>
-                                        <option value="EUR">EUR</option>
+                                        {payrollCurrencies.map((currency) => (
+                                            <option key={currency.code} value={currency.code}>
+                                                {currency.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
