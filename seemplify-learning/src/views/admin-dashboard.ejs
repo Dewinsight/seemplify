@@ -6277,11 +6277,28 @@
       
       if (url.href === window.location.href) return;
 
-      // Loading state
+      // Loading state (Top Progress Bar & Layout Fade)
+      let loader = document.getElementById('spa-global-loader');
+      if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'spa-global-loader';
+        loader.style.cssText = 'position:fixed; top:0; left:0; height:3px; background:#a855f7; z-index:9999; width:0; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s; opacity:0; pointer-events:none; box-shadow: 0 0 12px rgba(168, 85, 247, 0.8);';
+        document.body.appendChild(loader);
+      }
+      
+      loader.style.opacity = '1';
+      loader.style.width = '20%';
+
+      let progress = 20;
+      const progressInterval = setInterval(() => {
+        progress += (90 - progress) * 0.1;
+        loader.style.width = progress + '%';
+      }, 100);
+
       const layout = document.querySelector('.layout');
       if (layout) {
-        layout.style.transition = 'opacity 0.15s ease';
-        layout.style.opacity = '0.4';
+        layout.style.transition = 'opacity 0.2s ease';
+        layout.style.opacity = '0.5';
         layout.style.pointerEvents = 'none';
       }
 
@@ -6295,6 +6312,9 @@
         const html = await res.text();
         const doc = new DOMParser().parseFromString(html, 'text/html');
         
+        clearInterval(progressInterval);
+        loader.style.width = '100%';
+
         // Push State
         window.history.pushState({}, '', url.href);
         document.title = doc.title;
@@ -6309,11 +6329,17 @@
           // Re-mount JS behaviors
           initAdminBehaviors();
           
-          // If the page needs scrolling to top
           window.scrollTo(0, 0);
         } else {
           window.location.href = url.href;
         }
+
+        // Hide loader gracefully
+        setTimeout(() => {
+          loader.style.opacity = '0';
+          setTimeout(() => { loader.style.width = '0'; }, 200);
+        }, 300);
+
       } catch (err) {
         console.error('SPA Navigation failed:', err);
         window.location.href = url.href;

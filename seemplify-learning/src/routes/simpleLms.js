@@ -1,4 +1,4 @@
-﻿
+
 import express from 'express'
 import bcrypt from 'bcrypt'
 import mongoose from 'mongoose'
@@ -94,7 +94,7 @@ const PAYMENT_PROVIDERS = ['flutterwave', 'paystack']
 const PAYMENT_STATUSES = ['initiated', 'pending', 'successful', 'failed', 'cancelled', 'refunded']
 const WITHDRAWAL_STATUSES = ['pending', 'approved', 'paid', 'rejected', 'cancelled']
 const SETTINGS_TABS = ['profile', 'creator', 'payments']
-const CREATOR_SETTINGS_SECTIONS = ['defaults', 'actions', 'payout', 'performance', 'wallet', 'withdrawals']
+const CREATOR_SETTINGS_SECTIONS = ['overview', 'profile', 'defaults', 'actions', 'payout', 'performance', 'wallet', 'withdrawals']
 const ADMIN_SECTIONS = ['overview', 'courses', 'approvals', 'partners', 'super-users', 'audit-log', 'creators', 'users', 'commission', 'payments', 'settings', 'analytics']
 const PAYMENT_PROVIDER_SESSION_KEY = 'simpleLmsPreferredPaymentProvider'
 const REAUTH_MAX_ATTEMPTS_PER_HOUR = 5
@@ -2735,12 +2735,12 @@ const parseViewMode = (value) => {
 
 const parseSettingsTab = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
-  return SETTINGS_TABS.includes(normalized) ? normalized : 'profile'
+  return SETTINGS_TABS.includes(normalized) ? normalized : 'creator'
 }
 
 const parseCreatorSettingsSection = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
-  return CREATOR_SETTINGS_SECTIONS.includes(normalized) ? normalized : 'defaults'
+  return CREATOR_SETTINGS_SECTIONS.includes(normalized) ? normalized : 'overview'
 }
 
 const parseStudioMode = (value, fallback = 'overview') => {
@@ -8975,7 +8975,7 @@ const renderWorkspacePage = async (
     const settingsTab = parseSettingsTab(req.query.settingsTab || req.query.tab)
     const creatorSection = settingsTab === 'creator'
       ? parseCreatorSettingsSection(req.query.creatorSection || req.query.creatorTab || req.query.creatorView)
-      : 'defaults'
+      : 'overview'
     const query = String(req.query.q || '').trim()
     const categoryFilter = String(req.query.category || '').trim()
     const levelFilter = String(req.query.level || '').trim().toLowerCase()
