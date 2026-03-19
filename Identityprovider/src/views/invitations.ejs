@@ -138,7 +138,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="department">Department *</label>
+          <label for="department">Department</label>
           <select id="department" name="department" required onchange="syncTeamOptions()">
             <% departments.forEach(department => { %>
               <option value="<%= department.id %>"><%= department.name %></option>
@@ -146,10 +146,11 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="team">Team (optional)</label>
-          <select id="team" name="team">
-            <option value="">No team yet</option>
+          <label for="team">Team *</label>
+          <select id="team" name="team" required>
+            <option value="">Select a team</option>
           </select>
+          <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">Department is derived from the selected team.</div>
         </div>
         <div class="form-group">
           <label>Initial App Access</label>
@@ -223,7 +224,7 @@
       const departmentId = document.getElementById('department').value;
       const teamSelect = document.getElementById('team');
       const matchingTeams = teams.filter(team => team.departmentId === departmentId);
-      teamSelect.innerHTML = '<option value="">No team yet</option>' + matchingTeams.map(team => (
+      teamSelect.innerHTML = '<option value="">Select a team</option>' + matchingTeams.map(team => (
         `<option value="${team.id}">${escapeHtml(team.name)}</option>`
       )).join('');
     }
@@ -255,8 +256,8 @@
       const selectedAppIds = appAccessMode === 'selected' ? getSelectedAppIds() : [];
       const sendInviteBtn = document.getElementById('sendInviteBtn');
 
-      if (!department) {
-        alert('Department is required.');
+      if (!team) {
+        alert('Team is required.');
         return;
       }
       if (appAccessMode === 'selected' && selectedAppIds.length === 0) {

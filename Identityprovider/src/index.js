@@ -27,6 +27,7 @@ import { emailService } from './services/emailService.js'
 import { otpService } from './services/otpService.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
+import { buildMemberStructureMap, getMemberStructure } from './utils/memberStructure.js'
 import {
   SIMPLE_PERFORMANCE_DEFAULT_FIELDS,
   PERFORMANCE_RATING_SCALE,
@@ -5309,6 +5310,10 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       return res.redirect('/organizations?error=Organization not found')
     }
     await organization.save()
+    const generalDepartmentId = organization.getGeneralDepartment()?._id
+    if (generalDepartmentId) {
+      await Team.ensureDepartmentAssignments(req.params.orgId, generalDepartmentId)
+    }
 
     const member = organization.members.find(
       m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
@@ -5322,6 +5327,22 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       .select('member status updatedAt')
       .sort({ updatedAt: -1 })
       .lean()
+    const { apps: availableApps, appIdSet, appNameById } = getHubAppMetadata()
+    const teams = await Team.find({ organization: req.params.orgId })
+      .populate('manager', 'email profile.name')
+      .populate('members.account', 'email profile.name')
+      .populate('parentTeam', 'name')
+      .sort({ name: 1 })
+
+    const orgMembers = await Account.find({
+      _id: { $in: organization.members.filter(m => m.status === 'active').map(m => m.account) }
+    }).select('email profile.name')
+
+    const teamNamesByMemberId = new Map()
+    const memberStructure = buildMemberStructureMap(organization, teams)
+    memberStructure.forEach((value, key) => {
+      teamNamesByMemberId.set(key, value.teamNames || [])
+    })
 
     const onboardingStatusByMember = {}
     assignments.forEach(assignment => {
@@ -5334,29 +5355,71 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
 
     const mappedMembers = organization.members
       .filter(m => m.status === 'active')
-      .map(m => ({
-        id: m.account?._id || m.account,
-        name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
-        email: m.account?.email || '',
-        designation: m.designation || '',
-        departmentId: m.department || null,
-        departmentName: organization.getDepartmentById(m.department)?.name || 'General',
-        role: m.role,
-        joinedAt: m.joinedAt,
-        isOwner: m.role === 'owner',
-        onboardingStatus: onboardingStatusByMember[(m.account?._id || m.account).toString()] || 'not_started'
-      }))
+      .map((m) => {
+        const accountId = (m.account?._id || m.account).toString()
+        const structure = getMemberStructure(memberStructure, accountId, organization)
+        return {
+          id: m.account?._id || m.account,
+          name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
+          email: m.account?.email || '',
+          designation: m.designation || '',
+          departmentId: structure.departmentId,
+          departmentName: structure.departmentName || '',
+          role: m.role,
+          ...getInvitationAccessSummary(m, appNameById, appIdSet),
+          teamNames: teamNamesByMemberId.get(accountId) || [],
+          joinedAt: m.joinedAt,
+          isOwner: m.role === 'owner',
+          onboardingStatus: onboardingStatusByMember[accountId] || 'not_started'
+        }
+      })
 
     res.render('members', {
       organization,
       members: mappedMembers,
+      availableApps,
+      orgMembers: orgMembers.map(m => ({
+        ...getMemberStructure(memberStructure, m._id, organization),
+        id: m._id.toString(),
+        email: m.email,
+        name: m.profile?.name
+      })),
+      teams: teams.map((team) => ({
+        id: team._id.toString(),
+        name: team.name,
+        description: team.description,
+        department: team.department ? {
+          id: team.department.toString(),
+          name: organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
+        parentTeam: team.parentTeam ? {
+          id: team.parentTeam._id.toString(),
+          name: team.parentTeam.name
+        } : null,
+        manager: team.manager ? {
+          id: team.manager._id.toString(),
+          email: team.manager.email,
+          name: team.manager.profile?.name
+        } : null,
+        members: team.members.filter(m => m.status === 'active').map(m => ({
+          id: m.account._id.toString(),
+          email: m.account.email,
+          name: m.account.profile?.name,
+          role: m.role
+        })),
+        memberCount: team.memberCount
+      })),
       departments: (organization.departments || []).map((department) => ({
         id: department._id.toString(),
         name: department.name,
+        description: department.description || '',
+        headAccount: department.headAccount?.toString() || '',
+        headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || '',
         parentDepartment: department.parentDepartment?.toString() || ''
       })),
       canManageMemberRoles: ['owner', 'admin'].includes(member.role),
       canManageMemberMetadata: ['owner', 'admin', 'hr_manager'].includes(member.role),
+      canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
       user: req.user,
@@ -5376,6 +5439,10 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
       return res.redirect('/organizations?error=Organization not found')
     }
     await organization.save()
+    const generalDepartmentId = organization.getGeneralDepartment()?._id
+    if (generalDepartmentId) {
+      await Team.ensureDepartmentAssignments(req.params.orgId, generalDepartmentId)
+    }
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
@@ -6646,86 +6713,7 @@ app.get('/onboarding', getSessionUser, async (req, res) => {
 })
 
 app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
-  try {
-    const organization = await Organization.findById(req.params.orgId)
-    if (!organization) {
-      return res.redirect('/organizations?error=Organization not found')
-    }
-    await organization.save()
-
-    const member = organization.members.find(
-      m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-    )
-
-    if (!member) {
-      return res.redirect('/organizations?error=Not a member of this organization')
-    }
-
-    const teams = await Team.find({ organization: req.params.orgId })
-      .populate('manager', 'email profile.name')
-      .populate('members.account', 'email profile.name')
-      .populate('parentTeam', 'name')
-      .sort({ name: 1 })
-
-    // Get all organization members for adding to teams
-    const orgMembers = await Account.find({
-      _id: { $in: organization.members.filter(m => m.status === 'active').map(m => m.account) }
-    }).select('email profile.name')
-
-    res.render('teams', {
-      organization,
-      departments: (organization.departments || []).map((department) => ({
-        id: department._id.toString(),
-        name: department.name,
-        description: department.description || '',
-        parentDepartment: department.parentDepartment?.toString() || '',
-        headAccount: department.headAccount?.toString() || '',
-        headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || ''
-      })),
-      teams: teams.map(t => ({
-        id: t._id.toString(),
-        name: t.name,
-        description: t.description,
-        department: t.department ? {
-          id: t.department.toString(),
-          name: organization.getDepartmentById(t.department)?.name || 'General'
-        } : null,
-        parentTeam: t.parentTeam ? {
-          id: t.parentTeam._id.toString(),
-          name: t.parentTeam.name
-        } : null,
-        manager: t.manager ? {
-          id: t.manager._id.toString(),
-          email: t.manager.email,
-          name: t.manager.profile?.name
-        } : null,
-        members: t.members.filter(m => m.status === 'active').map(m => ({
-          id: m.account._id.toString(),
-          email: m.account.email,
-          name: m.account.profile?.name,
-          role: m.role
-        })),
-        memberCount: t.memberCount
-      })),
-      orgMembers: orgMembers.map(m => ({
-        id: m._id.toString(),
-        email: m.email,
-        name: m.profile?.name,
-        departmentId: organization.members.find(memberEntry => memberEntry.account.toString() === m._id.toString())?.department?.toString() || '',
-        departmentName: organization.getDepartmentById(
-          organization.members.find(memberEntry => memberEntry.account.toString() === m._id.toString())?.department
-        )?.name || 'General'
-      })),
-      canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
-      yourRole: member.role,
-      user: req.user,
-      error: req.query.error,
-      success: req.query.success
-    })
-  } catch (error) {
-    console.error('Teams page error:', error)
-    res.redirect('/organizations?error=Failed to load teams')
-  }
+  return res.redirect(`/organizations/${req.params.orgId}/members`)
 })
 
 // User's pending invitations page

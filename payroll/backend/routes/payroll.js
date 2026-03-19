@@ -349,7 +349,7 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
             ...(profile.employeeInfo || {}),
             name: member.name || profile.employeeInfo?.name,
             email: member.email || profile.employeeInfo?.email,
-            department: member.departmentName || profile.employeeInfo?.department,
+            department: member.departmentName || '',
             designation: member.designation || profile.employeeInfo?.designation,
             lastSyncedAt: new Date()
           };
@@ -554,7 +554,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
         ...(existing.employeeInfo || {}),
         name: member.name || existing.employeeInfo?.name,
         email: member.email || existing.employeeInfo?.email,
-        department: member.departmentName || existing.employeeInfo?.department,
+        department: member.departmentName || '',
         designation: member.designation || existing.employeeInfo?.designation,
         lastSyncedAt: new Date()
       };

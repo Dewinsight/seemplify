@@ -195,14 +195,12 @@ OrganizationSchema.pre('save', function(next) {
     this.departments = buildSeedDepartments()
   }
 
-  const generalDepartment = getGeneralDepartment(this.departments)
-  const generalDepartmentId = generalDepartment?._id || null
   const departmentLookup = buildDepartmentLookup(this.departments)
 
-  if (Array.isArray(this.members) && generalDepartmentId) {
+  if (Array.isArray(this.members)) {
     this.members.forEach((member) => {
-      if (!member.department || !departmentLookup.has(member.department.toString())) {
-        member.department = generalDepartmentId
+      if (member.department && !departmentLookup.has(member.department.toString())) {
+        member.department = null
       }
     })
   }
@@ -358,10 +356,55 @@ OrganizationSchema.methods.updateDepartment = async function(departmentId, updat
   return department
 }
 
+OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(accountId) {
+  const Team = mongoose.model('AiinTeam')
+  const teams = await Team.find({
+    organization: this._id,
+    'members.account': accountId,
+    'members.status': 'active'
+  }).select('department').lean()
+
+  const departmentIds = Array.from(new Set(
+    teams
+      .map((team) => team.department?.toString())
+      .filter(Boolean)
+  ))
+
+  return departmentIds[0] || null
+}
+
+OrganizationSchema.methods.syncMemberDepartmentFromTeams = async function(accountId) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    return null
+  }
+
+  const departmentId = await this.getDerivedMemberDepartmentId(accountId)
+  member.department = departmentId
+
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: accountId, 'organizations.organization': this._id },
+    { $set: { 'organizations.$.department': departmentId } }
+  )
+
+  await this.save()
+  return departmentId
+}
+
+OrganizationSchema.methods.syncMemberDepartmentsFromTeams = async function(accountIds = []) {
+  for (const accountId of accountIds) {
+    await this.syncMemberDepartmentFromTeams(accountId)
+  }
+}
+
 // Add member to organization
 OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null, options = {}) {
   const normalizedAppAccess = normalizeAppAccess(appAccess)
-  const departmentId = options.departmentId || this.getGeneralDepartment()?._id || null
+  const departmentId = null
 
   // Check if already a member
   const existing = this.members.find(
@@ -529,16 +572,17 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
   }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
-    const departmentId = updates.department || this.getGeneralDepartment()?._id || null
-    if (departmentId && !this.getDepartmentById(departmentId)) {
-      throw new Error('Department not found')
-    }
-    member.department = departmentId
+    throw new Error('Department is derived from active team assignments')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'appAccess')) {
+    const normalizedAppAccess = normalizeAppAccess(updates.appAccess)
+    member.appAccess = normalizedAppAccess
 
     const Account = mongoose.model('AiinAccount')
     await Account.updateOne(
       { _id: accountId, 'organizations.organization': this._id },
-      { $set: { 'organizations.$.department': departmentId } }
+      { $set: { 'organizations.$.appAccess': normalizedAppAccess } }
     )
   }
 

@@ -1,5 +1,13 @@
 import express from 'express'
 import { Organization } from '../models/Organization.js'
+import { Team } from '../models/Team.js'
+import { getHubApps } from '../config/hubApps.js'
+import {
+  APP_ACCESS_MODE_SELECTED,
+  buildValidAppIdSet,
+  normalizeAppAccess
+} from '../utils/appAccess.js'
+import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -8,6 +16,37 @@ import {
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 
 const router = express.Router()
+
+function getHubAppMetadata() {
+  const apps = getHubApps().map(app => ({
+    appId: app.appId,
+    name: app.name
+  }))
+
+  return {
+    apps,
+    appIdSet: buildValidAppIdSet(apps),
+    appNameById: new Map(apps.map(app => [app.appId, app.name]))
+  }
+}
+
+function getMemberAppAccessSummary(member, appNameById = new Map(), validAppIds = null) {
+  const appAccess = normalizeAppAccess(member?.appAccess, validAppIds)
+  if (appAccess.mode !== APP_ACCESS_MODE_SELECTED) {
+    return {
+      appAccess,
+      appAccessLabel: 'All apps',
+      appAccessAppNames: []
+    }
+  }
+
+  const appAccessAppNames = appAccess.appIds.map(appId => appNameById.get(appId) || appId)
+  return {
+    appAccess,
+    appAccessLabel: appAccessAppNames.length > 0 ? `${appAccessAppNames.length} selected` : 'Selected apps',
+    appAccessAppNames
+  }
+}
 
 /**
  * Get organization members
@@ -23,26 +62,37 @@ router.get('/:orgId/members',
         .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
       await organization.save()
+      const { appIdSet, appNameById } = getHubAppMetadata()
+      const teams = await Team.find({ organization: req.params.orgId })
+        .select('name department members.account members.status')
+        .lean()
+      const memberStructure = buildMemberStructureMap(organization, teams)
 
       const members = organization.members
         .filter(m => m.status === 'active')
-        .map(m => ({
-          departmentId: m.department || null,
-          departmentName: organization.getDepartmentById(m.department)?.name || '',
-          id: m.account._id,
-          sub: m.account.sub,
-          email: m.account.email,
-          name: m.account.profile?.name,
-          designation: m.designation || '',
-          emailVerified: m.account.emailVerified,
-          role: m.role,
-          joinedAt: m.joinedAt,
-          invitedBy: m.invitedBy ? {
-            email: m.invitedBy.email,
-            name: m.invitedBy.profile?.name
-          } : null,
-          isOwner: m.account._id.toString() === organization.owner.toString()
-        }))
+        .map((m) => {
+          const structure = getMemberStructure(memberStructure, m.account._id, organization)
+          return {
+            departmentId: structure.departmentId,
+            departmentName: structure.departmentName,
+            teamIds: structure.teamIds,
+            teamNames: structure.teamNames,
+            id: m.account._id,
+            sub: m.account.sub,
+            email: m.account.email,
+            name: m.account.profile?.name,
+            designation: m.designation || '',
+            emailVerified: m.account.emailVerified,
+            role: m.role,
+            joinedAt: m.joinedAt,
+            invitedBy: m.invitedBy ? {
+              email: m.invitedBy.email,
+              name: m.invitedBy.profile?.name
+            } : null,
+            isOwner: m.account._id.toString() === organization.owner.toString(),
+            ...getMemberAppAccessSummary(m, appNameById, appIdSet)
+          }
+        })
         .sort((a, b) => {
           const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, staff: 5 }
           return (rolePriority[a.role] || 6) - (rolePriority[b.role] || 6)
@@ -77,6 +127,14 @@ router.get('/:orgId/members/:memberId',
         .populate('members.account', 'sub email profile.name emailVerified createdAt')
         .populate('members.invitedBy', 'email profile.name')
       await organization.save()
+      const { appIdSet, appNameById } = getHubAppMetadata()
+      const teams = await Team.find({
+        organization: req.params.orgId,
+        'members.account': req.params.memberId,
+        'members.status': 'active'
+      })
+        .select('name department members.account members.status')
+        .lean()
 
       const member = organization.members.find(
         m => m.account._id.toString() === req.params.memberId && m.status === 'active'
@@ -86,9 +144,13 @@ router.get('/:orgId/members/:memberId',
         return res.status(404).json({ error: 'Member not found' })
       }
 
+      const structure = getMemberStructure(buildMemberStructureMap(organization, teams), member.account._id, organization)
+
       res.json({
-        departmentId: member.department || null,
-        departmentName: organization.getDepartmentById(member.department)?.name || '',
+        departmentId: structure.departmentId,
+        departmentName: structure.departmentName,
+        teamIds: structure.teamIds,
+        teamNames: structure.teamNames,
         id: member.account._id,
         sub: member.account.sub,
         email: member.account.email,
@@ -102,7 +164,8 @@ router.get('/:orgId/members/:memberId',
           name: member.invitedBy.profile?.name
         } : null,
         isOwner: member.account._id.toString() === organization.owner.toString(),
-        accountCreatedAt: member.account.createdAt
+        accountCreatedAt: member.account.createdAt,
+        ...getMemberAppAccessSummary(member, appNameById, appIdSet)
       })
     } catch (error) {
       console.error('Get member error:', error)
@@ -124,22 +187,27 @@ router.put('/:orgId/members/:memberId',
       const body = req.body || {}
       const hasRole = Object.prototype.hasOwnProperty.call(body, 'role')
       const hasDesignation = Object.prototype.hasOwnProperty.call(body, 'designation')
+      const hasAppAccess = Object.prototype.hasOwnProperty.call(body, 'appAccess')
       const hasDepartment = Object.prototype.hasOwnProperty.call(body, 'department')
-      const { role, designation, department } = body
+      const { role, designation, appAccess } = body
 
       const canManageRole = ['owner', 'admin'].includes(req.memberRole)
       const canManageMemberMetadata = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
 
-      if (!hasRole && !hasDesignation && !hasDepartment) {
-        return res.status(400).json({ error: 'At least one of role, designation, or department is required' })
+      if (!hasRole && !hasDesignation && !hasDepartment && !hasAppAccess) {
+        return res.status(400).json({ error: 'At least one of role, designation, or appAccess is required' })
       }
 
       if (hasRole && !canManageRole) {
         return res.status(403).json({ error: 'Admin or owner role required to update role' })
       }
 
-      if ((hasDesignation || hasDepartment) && !canManageMemberMetadata) {
+      if ((hasDesignation || hasDepartment || hasAppAccess) && !canManageMemberMetadata) {
         return res.status(403).json({ error: 'Admin, owner, or HR manager role required to update member details' })
+      }
+
+      if (hasDepartment) {
+        return res.status(400).json({ error: 'Department is derived from active team assignments' })
       }
 
       if (hasRole) {
@@ -153,6 +221,15 @@ router.put('/:orgId/members/:memberId',
         return res.status(403).json({ error: 'Only owner can assign owner role' })
       }
 
+      let normalizedAppAccess
+      if (hasAppAccess) {
+        const { appIdSet } = getHubAppMetadata()
+        normalizedAppAccess = normalizeAppAccess(appAccess, appIdSet)
+        if (normalizedAppAccess.mode === APP_ACCESS_MODE_SELECTED && normalizedAppAccess.appIds.length === 0) {
+          return res.status(400).json({ error: 'Select at least one app when using selected apps access' })
+        }
+      }
+
       try {
         if (hasRole) {
           await req.organization.updateMemberRole(req.params.memberId, role, req.user._id)
@@ -164,10 +241,10 @@ router.put('/:orgId/members/:memberId',
             req.user._id
           )
         }
-        if (hasDepartment) {
+        if (hasAppAccess) {
           await req.organization.updateMemberDetails(
             req.params.memberId,
-            { department },
+            { appAccess: normalizedAppAccess },
             req.user._id
           )
         }
@@ -185,7 +262,7 @@ router.put('/:orgId/members/:memberId',
         memberId: req.params.memberId,
         newRole: hasRole ? role : undefined,
         designation: hasDesignation ? String(designation || '').trim() : undefined,
-        department: hasDepartment ? department || null : undefined
+        appAccess: hasAppAccess ? normalizedAppAccess : undefined
       })
     } catch (error) {
       console.error('Update member error:', error)

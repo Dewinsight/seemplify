@@ -115,6 +115,7 @@ TeamSchema.methods.addMember = async function(accountId, role = 'member') {
 
     // Update Account's teams array
     await this.updateAccountTeamMembership(accountId, role)
+    await this.syncOrganizationMemberDepartment(accountId)
 
     return this
   }
@@ -129,6 +130,7 @@ TeamSchema.methods.addMember = async function(accountId, role = 'member') {
 
   // Update Account's teams array
   await this.updateAccountTeamMembership(accountId, role)
+  await this.syncOrganizationMemberDepartment(accountId)
 
   return this
 }
@@ -146,6 +148,7 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
       { _id: accountId, 'teams.team': this._id },
       {
         $set: {
+          'teams.$.department': this.department || null,
           'teams.$.role': role,
           'teams.$.isActive': true
         }
@@ -170,6 +173,14 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
   }
 }
 
+TeamSchema.methods.syncOrganizationMemberDepartment = async function(accountId) {
+  const Organization = mongoose.model('AiinOrganization')
+  const organization = await Organization.findById(this.organization)
+  if (!organization) return
+
+  await organization.syncMemberDepartmentFromTeams(accountId)
+}
+
 // Remove member from team
 TeamSchema.methods.removeMember = async function(accountId) {
   this.members = this.members.filter(
@@ -189,6 +200,8 @@ TeamSchema.methods.removeMember = async function(accountId) {
     { _id: accountId },
     { $pull: { teams: { team: this._id } } }
   )
+
+  await this.syncOrganizationMemberDepartment(accountId)
 
   return this
 }
@@ -439,6 +452,27 @@ TeamSchema.statics.buildTeamTree = async function(organizationId) {
   })
 
   return rootTeams
+}
+
+TeamSchema.statics.ensureDepartmentAssignments = async function(organizationId, fallbackDepartmentId) {
+  if (!organizationId || !fallbackDepartmentId) return 0
+
+  const result = await this.updateMany(
+    {
+      organization: organizationId,
+      $or: [
+        { department: null },
+        { department: { $exists: false } }
+      ]
+    },
+    {
+      $set: {
+        department: fallbackDepartmentId
+      }
+    }
+  )
+
+  return result.modifiedCount || 0
 }
 
 // Ensure virtual fields are serialized

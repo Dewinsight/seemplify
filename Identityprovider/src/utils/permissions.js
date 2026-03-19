@@ -250,7 +250,16 @@ export async function buildOrganizationClaims(account) {
     const orgDoc = org.organization
     const orgId = orgDoc._id?.toString() || orgDoc.toString()
     const departments = Array.isArray(orgDoc.departments) ? orgDoc.departments : []
-    const memberDepartmentId = org.department?.toString() || null
+    const memberDepartmentIds = Array.from(new Set(
+      (account.teams || [])
+        .filter((teamMembership) =>
+          teamMembership?.isActive &&
+          teamMembership.organization?.toString() === orgId &&
+          teamMembership.department
+        )
+        .map((teamMembership) => teamMembership.department.toString())
+    ))
+    const memberDepartmentId = memberDepartmentIds[0] || null
     const memberDepartment = memberDepartmentId
       ? departments.find((department) => department._id?.toString() === memberDepartmentId)
       : null

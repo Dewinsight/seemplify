@@ -13,6 +13,27 @@ import webhookService from '../services/webhookService.js'
 
 const router = express.Router()
 
+async function findCrossDepartmentTeamMembership(organizationId, accountId, departmentId, excludedTeamId = null) {
+  if (!departmentId) return null
+
+  const query = {
+    organization: organizationId,
+    department: { $ne: departmentId },
+    members: {
+      $elemMatch: {
+        account: accountId,
+        status: 'active'
+      }
+    }
+  }
+
+  if (excludedTeamId) {
+    query._id = { $ne: excludedTeamId }
+  }
+
+  return Team.findOne(query).select('name department').lean()
+}
+
 /**
  * Get teams for an organization
  * GET /api/organizations/:orgId/teams
@@ -247,6 +268,26 @@ router.put('/:teamId',
         if (!department) {
           return res.status(400).json({ error: 'Invalid department' })
         }
+
+        const activeMemberIds = req.team.members
+          .filter(member => member.status === 'active')
+          .map(member => member.account.toString())
+
+        for (const memberId of activeMemberIds) {
+          const conflictingTeam = await findCrossDepartmentTeamMembership(
+            req.team.organization,
+            memberId,
+            departmentId,
+            req.team._id
+          )
+
+          if (conflictingTeam) {
+            return res.status(400).json({
+              error: 'Cannot move this team to another department while members belong to teams in a different department'
+            })
+          }
+        }
+
         updates.department = departmentId
       }
       if (parentTeamId !== undefined) {
@@ -275,11 +316,17 @@ router.put('/:teamId',
       )
 
       if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
+        const activeMemberIds = req.team.members
+          .filter(member => member.status === 'active')
+          .map(member => member.account.toString())
+
         await Account.updateMany(
           { 'teams.team': team._id },
           { $set: { 'teams.$[membership].department': team.department || null } },
           { arrayFilters: [{ 'membership.team': team._id }] }
         )
+
+        await req.organization.syncMemberDepartmentsFromTeams(activeMemberIds)
       }
 
       console.log('✅ Team updated:', team.name, 'by', req.user.email)
@@ -339,6 +386,7 @@ router.delete('/:teamId',
       )
 
       await Team.findByIdAndDelete(req.params.teamId)
+      await organization.syncMemberDepartmentsFromTeams(memberIds)
 
       console.log('✅ Team deleted:', team.name, 'by', req.user.email)
 
@@ -385,8 +433,19 @@ router.post('/:teamId/members',
       const orgMember = req.organization.members.find(
         m => m.account.toString() === accountId.toString() && m.status === 'active'
       )
-      if (!orgMember?.department || orgMember.department.toString() !== req.team.department?.toString()) {
-        return res.status(400).json({ error: 'Member must belong to the same department as the team' })
+      if (!orgMember) {
+        return res.status(400).json({ error: 'Account must be an active member of the organization' })
+      }
+
+      const conflictingTeam = await findCrossDepartmentTeamMembership(
+        req.team.organization,
+        accountId,
+        req.team.department,
+        req.team._id
+      )
+
+      if (conflictingTeam) {
+        return res.status(400).json({ error: 'Member already belongs to a team in a different department' })
       }
 
       await req.team.addMember(accountId, role)

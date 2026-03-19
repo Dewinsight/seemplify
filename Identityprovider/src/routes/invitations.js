@@ -258,8 +258,7 @@ router.post('/accept/:invitationId',
         req.user._id,
         invitation.role,
         invitation.invitedBy,
-        normalizeAppAccess(invitation.appAccess),
-        { departmentId: invitation.department }
+        normalizeAppAccess(invitation.appAccess)
       )
 
       if (invitation.team) {
@@ -331,8 +330,7 @@ router.post('/:token/accept',
         req.user._id,
         matchedInvite.role,
         matchedInvite.invitedBy,
-        normalizeAppAccess(matchedInvite.appAccess),
-        { departmentId: matchedInvite.department }
+        normalizeAppAccess(matchedInvite.appAccess)
       )
 
       if (matchedInvite.team) {
@@ -511,31 +509,30 @@ router.post('/:orgId/invitations',
 
       await req.organization.save()
 
-      const { email, role = 'recruiter', department: departmentId, team: teamId = null } = req.body
+      const { email, role = 'recruiter', department: requestedDepartmentId = null, team: teamId = null } = req.body
       const { appIdSet, appNameById } = getHubAppMetadata()
 
       if (!email || !email.includes('@')) {
         return res.status(400).json({ error: 'Valid email is required' })
       }
 
-      if (!departmentId) {
-        return res.status(400).json({ error: 'Department is required' })
+      if (!teamId) {
+        return res.status(400).json({ error: 'Team is required' })
       }
 
-      const department = req.organization.getDepartmentById(departmentId)
+      const invitedTeam = await Team.findById(teamId).select('name organization department').lean()
+      if (!invitedTeam || invitedTeam.organization.toString() !== req.params.orgId) {
+        return res.status(400).json({ error: 'Invalid team' })
+      }
+
+      const departmentId = invitedTeam.department?.toString() || null
+      const department = departmentId ? req.organization.getDepartmentById(departmentId) : null
       if (!department) {
-        return res.status(400).json({ error: 'Invalid department' })
+        return res.status(400).json({ error: 'Selected team must belong to a valid department' })
       }
 
-      let invitedTeam = null
-      if (teamId) {
-        invitedTeam = await Team.findById(teamId).select('name organization department').lean()
-        if (!invitedTeam || invitedTeam.organization.toString() !== req.params.orgId) {
-          return res.status(400).json({ error: 'Invalid team' })
-        }
-        if (invitedTeam.department?.toString() !== departmentId.toString()) {
-          return res.status(400).json({ error: 'Selected team must belong to the selected department' })
-        }
+      if (requestedDepartmentId && requestedDepartmentId.toString() !== departmentId) {
+        return res.status(400).json({ error: 'Selected team does not belong to the selected department' })
       }
 
       const normalizedEmail = email.toLowerCase().trim()
@@ -600,7 +597,7 @@ router.post('/:orgId/invitations',
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
             <p><strong>Department:</strong> ${department.name}</p>
-            ${invitedTeam ? `<p><strong>Team:</strong> ${invitedTeam.name}</p>` : '<p><strong>Team:</strong> Optional / not assigned yet</p>'}
+            <p><strong>Team:</strong> ${invitedTeam.name}</p>
             ${formatAppAccessHtml(appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
